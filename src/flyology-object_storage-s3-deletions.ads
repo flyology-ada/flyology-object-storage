@@ -7,6 +7,8 @@ package Flyology.Object_Storage.S3.Deletions is
 
    Malformed_Delete : exception;
    Maximum_Objects : constant := 1_000;
+   Maximum_Version_ID_Length : constant := 1_024;
+   Maximum_Document_Bytes : constant := 2 * 1_024 * 1_024;
 
    type Object_Identifier is record
       Key        : Ada.Strings.Unbounded.Unbounded_String;

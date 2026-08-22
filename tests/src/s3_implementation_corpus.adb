@@ -13,6 +13,7 @@ with Flyology.HTTP.Client;
 with Flyology.Object_Storage;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Client.Transfers;
+with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.SigV4;
 
@@ -20,6 +21,7 @@ procedure S3_Implementation_Corpus is
    package HTTP_Client renames Flyology.HTTP.Client;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
+   package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
    package Stream_IO renames Ada.Streams.Stream_IO;
@@ -34,6 +36,7 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Create_Multipart_Outcome_Kind;
    use type Low_Level.Delete_Bucket_Outcome_Kind;
    use type Low_Level.Delete_Object_Outcome_Kind;
+   use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
@@ -362,6 +365,53 @@ procedure S3_Implementation_Corpus is
             end if;
          end;
       end Copy_Whole_Object;
+
+      procedure Delete_Many is
+         First_Key  : constant String := Key & "-delete-many-a";
+         Second_Key : constant String := Key & "-delete-many-b";
+         Request    : Deletions.Delete_Objects_Request;
+         Parameters : Low_Level.Delete_Objects_Parameters;
+
+         procedure Create_Copy (Destination : String) is
+            Copied : constant Transfers.Copy_Outcome :=
+              Transfers.Copy_Object
+                (HTTP, Origin, Bucket, Key, Bucket, Destination, Identity,
+                 Timeout => 60.0);
+         begin
+            if Copied.Kind /= Transfers.Object_Copied then
+               raise Program_Error with
+                 "S3 implementation could not set up DeleteObjects";
+            end if;
+         end Create_Copy;
+      begin
+         Create_Copy (First_Key);
+         Create_Copy (Second_Key);
+         Request.Objects.Append
+           (Deletions.Object_Identifier'
+              (Key        => US.To_Unbounded_String (First_Key),
+               Version_ID => US.Null_Unbounded_String));
+         Request.Objects.Append
+           (Deletions.Object_Identifier'
+              (Key        => US.To_Unbounded_String (Second_Key),
+               Version_ID => US.Null_Unbounded_String));
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Objects
+                (Origin, Low_Level.Path_Style, Bucket, Request, Parameters,
+                 Identity, "us-east-1", Timestamp);
+            Deleted : constant Low_Level.Delete_Objects_Outcome :=
+              Low_Level.Execute_Delete_Objects
+                (HTTP, Prepared, Timeout => 60.0);
+         begin
+            if Deleted.Kind /= Low_Level.Objects_Deleted
+              or else Deleted.Result.Result.Deleted.Length /= 2
+              or else not Deleted.Result.Result.Errors.Is_Empty
+            then
+               raise Program_Error with
+                 "S3 implementation rejected typed DeleteObjects";
+            end if;
+         end;
+      end Delete_Many;
    begin
       HTTP_Client.Configure (HTTP, Origin);
       declare
@@ -454,6 +504,7 @@ procedure S3_Implementation_Corpus is
       Copy_With_Multipart;
       Upload_High_Level_File;
       Copy_Whole_Object;
+      Delete_Many;
       declare
          Abort_Key : constant String := Key & "-aborted";
          Prepared_Create : constant Low_Level.Prepared_Request :=

@@ -66,6 +66,19 @@ do
   test "$OBSERVED_SHA256" = "$EXPECTED_SHA256"
 done
 
+for KEY in \
+  native-object-delete-many-a \
+  native-object-delete-many-b \
+  lightweight-object-delete-many-a \
+  lightweight-object-delete-many-b
+do
+  if s5cmd head "s3://$BUCKET/$KEY" >/dev/null 2>&1; then
+    echo "typed DeleteObjects left $KEY visible" >&2
+    exit 1
+  fi
+done
+echo "independent s5cmd DeleteObjects oracle: OK"
+
 echo "independent s5cmd byte oracle: OK"
 TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
 ./bin/s3_implementation_corpus \

@@ -1,4 +1,5 @@
 with Ada.Characters.Handling;
+with Ada.Streams;
 with Ada.Strings;
 with Ada.Strings.Fixed;
 with Flyology.Bytes;
@@ -6,6 +7,7 @@ with Flyology.HTTP.Headers;
 with Flyology.Object_Storage.Secrets;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.Wire_Core;
+with GNAT.MD5;
 
 package body Flyology.Object_Storage.Client.Low_Level is
 
@@ -1802,6 +1804,184 @@ package body Flyology.Object_Storage.Client.Low_Level is
       when Flyology.HTTP.Client.Response_Too_Large =>
          raise Invalid_Response with "DeleteObject response exceeds XML limit";
    end Execute_Delete_Object;
+
+   function Content_MD5 (Value : String) return String is
+      Digest : constant GNAT.MD5.Binary_Message_Digest :=
+        GNAT.MD5.Digest (Value);
+      Alphabet : constant String :=
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+      Result : String (1 .. 24);
+      Output : Positive := Result'First;
+
+      function Byte (Index : Ada.Streams.Stream_Element_Offset)
+        return Natural is (Natural (Digest (Index)));
+
+      procedure Encode_Three
+        (First : Ada.Streams.Stream_Element_Offset)
+      is
+         A : constant Natural := Byte (First);
+         B : constant Natural := Byte
+           (Ada.Streams.Stream_Element_Offset'Succ (First));
+         C : constant Natural := Byte
+           (Ada.Streams.Stream_Element_Offset'Succ
+              (Ada.Streams.Stream_Element_Offset'Succ (First)));
+      begin
+         Result (Output) := Alphabet (A / 4 + 1);
+         Result (Output + 1) := Alphabet ((A mod 4) * 16 + B / 16 + 1);
+         Result (Output + 2) := Alphabet ((B mod 16) * 4 + C / 64 + 1);
+         Result (Output + 3) := Alphabet (C mod 64 + 1);
+         Output := Output + 4;
+      end Encode_Three;
+   begin
+      Encode_Three (1);
+      Encode_Three (4);
+      Encode_Three (7);
+      Encode_Three (10);
+      Encode_Three (13);
+      declare
+         A : constant Natural := Byte (16);
+      begin
+         Result (21) := Alphabet (A / 4 + 1);
+         Result (22) := Alphabet ((A mod 4) * 16 + 1);
+         Result (23 .. 24) := "==";
+      end;
+      return Result;
+   end Content_MD5;
+
+   function Prepare_Delete_Objects
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Request    : S3.Deletions.Delete_Objects_Request;
+      Parameters : Delete_Objects_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Header_Count : constant Natural :=
+        1 + Boolean'Pos (US.Length (Parameters.MFA) > 0) +
+        Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (Parameters.Bypass_Governance_Retention.Is_Set) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0);
+      Headers : SigV4.Name_Value_Array (1 .. Header_Count);
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("delete", ""));
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         if Value'Length > 0 then
+            Last := Last + 1;
+            Headers (Last) := SigV4.Pair (Name, Value);
+         end if;
+      end Add;
+   begin
+      if Request_Payer'Length > 0 and then Request_Payer /= "requester" then
+         raise Invalid_Request with "invalid DeleteObjects request payer";
+      end if;
+      declare
+         Payload : constant String :=
+           S3.Deletions.Serialize_Request (Request);
+      begin
+         Add ("content-md5", Content_MD5 (Payload));
+         Add ("x-amz-mfa", US.To_String (Parameters.MFA));
+         Add ("x-amz-request-payer", Request_Payer);
+         if Parameters.Bypass_Governance_Retention.Is_Set then
+            Add
+              ("x-amz-bypass-governance-retention",
+               (if Parameters.Bypass_Governance_Retention.Value
+                then "true" else "false"));
+         end if;
+         Add
+           ("x-amz-expected-bucket-owner",
+            US.To_String (Parameters.Expected_Bucket_Owner));
+         return Result : Prepared_Request := Prepare_Object_Request
+           (Delete_Objects_Operation, "POST", Origin, Style, Bucket, "",
+            Query, Headers, Payload, "", Identity, Region, Timestamp,
+            Object_Resource => False)
+         do
+            Result.Operation := Delete_Objects_Operation;
+         end return;
+      end;
+   exception
+      when S3.Deletions.Malformed_Delete =>
+         raise Invalid_Request with "invalid DeleteObjects request body";
+   end Prepare_Delete_Objects;
+
+   function Decode_Delete_Objects_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Objects_Outcome
+   is
+   begin
+      if Status = 200 then
+         if Request_Charged'Length > 0
+           and then Request_Charged /= "requester"
+         then
+            raise Invalid_Response with
+              "invalid DeleteObjects request-charged header";
+         end if;
+         return
+           (Kind   => Objects_Deleted,
+            Status => Status,
+            Result =>
+              (Result => S3.Deletions.Parse_Result (Payload, Limits),
+               Request_Charged =>
+                 US.To_Unbounded_String (Request_Charged)));
+      end if;
+      return
+        (Kind   => Delete_Objects_Rejected,
+         Status => Status,
+         Error  => Error_Response
+           (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when S3.Deletions.Malformed_Delete | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed DeleteObjects response";
+   end Decode_Delete_Objects_Response;
+
+   function Execute_Delete_Objects
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Objects_Outcome
+   is
+   begin
+      if Prepared.Operation /= Delete_Objects_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Request_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+         Host_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         Request_Charged : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-charged");
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Delete_Objects_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload),
+            Request_Charged, Request_ID, Host_ID, Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "DeleteObjects response exceeds XML limit";
+   end Execute_Delete_Objects;
 
    function Decode_Abort_Multipart_Response
      (Status     : Flyology.HTTP.Status_Code;

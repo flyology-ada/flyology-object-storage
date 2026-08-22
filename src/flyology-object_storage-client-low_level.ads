@@ -6,6 +6,7 @@ with Flyology.HTTP.Client;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Copies;
+with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
@@ -402,6 +403,63 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Object_Outcome;
 
+   --  Common DeleteObjects request policy. Content-MD5 is generated from the
+   --  exact serialized body and is not caller supplied. The optional modeled
+   --  SDK checksum-algorithm member remains at the generic model boundary
+   --  until its paired checksum value/trailer policy is qualified.
+   type Delete_Objects_Parameters is record
+      MFA                         : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer               : Ada.Strings.Unbounded.Unbounded_String;
+      Bypass_Governance_Retention : Optional_Boolean;
+      Expected_Bucket_Owner       : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_Delete_Objects
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Request    : S3.Deletions.Delete_Objects_Request;
+      Parameters : Delete_Objects_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type Delete_Objects_Result is record
+      Result          : S3.Deletions.Delete_Objects_Result;
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Delete_Objects_Outcome_Kind is
+     (Objects_Deleted, Delete_Objects_Rejected);
+
+   type Delete_Objects_Outcome
+     (Kind : Delete_Objects_Outcome_Kind := Delete_Objects_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Objects_Deleted =>
+            Result : Delete_Objects_Result;
+         when Delete_Objects_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Delete_Objects_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Objects_Outcome;
+
+   function Execute_Delete_Objects
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Objects_Outcome;
+
    function Prepare_Create_Multipart_Upload
      (Origin    : Flyology.HTTP.Origin;
       Style     : Addressing_Style;
@@ -789,6 +847,7 @@ private
       Head_Bucket_Operation,
       Delete_Bucket_Operation,
       Delete_Object_Operation,
+      Delete_Objects_Operation,
       Create_Multipart_Operation,
       Complete_Multipart_Operation,
       Abort_Multipart_Operation,

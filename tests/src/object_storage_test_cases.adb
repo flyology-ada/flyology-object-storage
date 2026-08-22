@@ -3097,6 +3097,33 @@ package body Object_Storage_Test_Cases is
         ("<DeleteResult><Error><Key><Nested/></Key>" &
          "<Code>Bad</Code></Error></DeleteResult>",
          "nested DeleteObjects result scalar was accepted");
+      Must_Reject
+        ("<DeleteResult><Deleted><Key>" & String'(1 .. 1_025 => 'k') &
+         "</Key></Deleted></DeleteResult>",
+         "oversized DeleteObjects result key was accepted");
+      declare
+         Request : Deletions.Delete_Objects_Request;
+         Raised  : Boolean := False;
+      begin
+         Request.Objects.Append
+           (Deletions.Object_Identifier'
+              (Key        => US.To_Unbounded_String
+                 (String'(1 .. 1_025 => 'k')),
+               Version_ID => US.Null_Unbounded_String));
+         begin
+            declare
+               Ignored : constant String :=
+                 Deletions.Serialize_Request (Request);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Deletions.Malformed_Delete =>
+               Raised := True;
+         end;
+         Assert (Raised, "oversized DeleteObjects request key was accepted");
+      end;
       declare
          Document : US.Unbounded_String :=
            US.To_Unbounded_String ("<DeleteResult>");
@@ -4126,9 +4153,11 @@ package body Object_Storage_Test_Cases is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
       package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+      package Deletions renames Flyology.Object_Storage.S3.Deletions;
       package US renames Ada.Strings.Unbounded;
       use type Low_Level.Delete_Bucket_Outcome_Kind;
       use type Low_Level.Delete_Object_Outcome_Kind;
+      use type Low_Level.Delete_Objects_Outcome_Kind;
       Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
         ("AKIAIOSFODNN7EXAMPLE",
          "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
@@ -4270,6 +4299,128 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "invalid DeleteObject request payer was accepted");
+      end;
+
+      declare
+         Request : Deletions.Delete_Objects_Request;
+         Parameters : Low_Level.Delete_Objects_Parameters;
+      begin
+         Request.Objects.Append
+           (Deletions.Object_Identifier'
+              (Key        => US.To_Unbounded_String ("a&b"),
+               Version_ID => US.Null_Unbounded_String));
+         Request.Objects.Append
+           (Deletions.Object_Identifier'
+              (Key        => US.To_Unbounded_String ("second"),
+               Version_ID => US.To_Unbounded_String ("v1")));
+         Request.Quiet := True;
+         Parameters.MFA := US.To_Unbounded_String ("device 123456");
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Bypass_Governance_Retention :=
+           (Is_Set => True, Value => False);
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Objects
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Request,
+                 Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Canonical : constant String :=
+              Low_Level.Canonical_Request (Prepared);
+         begin
+            Assert
+              (Low_Level.Target (Prepared) = "/example-bucket?delete",
+               "DeleteObjects exact subresource target");
+            Assert
+              (Low_Level.Signed_Headers (Prepared) =
+                 "content-md5;host;x-amz-bypass-governance-retention;" &
+                 "x-amz-content-sha256;x-amz-date;" &
+                 "x-amz-expected-bucket-owner;x-amz-mfa;" &
+                 "x-amz-request-payer"
+               and then Ada.Strings.Fixed.Index
+                 (Canonical, "content-md5:oHu1qjgIzoBt4qEk27Rx2Q==") > 0,
+               "DeleteObjects Content-MD5 and modeled headers are signed");
+         end;
+      end;
+
+      declare
+         Outcome : constant Low_Level.Delete_Objects_Outcome :=
+           Low_Level.Decode_Delete_Objects_Response
+             (200,
+              "<DeleteResult><Deleted><Key>a&amp;b</Key></Deleted>" &
+              "<Error><Key>locked</Key><Code>AccessDenied</Code>" &
+              "<Message>denied</Message></Error></DeleteResult>",
+              "requester");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Objects_Deleted
+            and then Outcome.Result.Result.Deleted.Length = 1
+            and then Outcome.Result.Result.Errors.Length = 1
+            and then US.To_String
+              (Outcome.Result.Result.Deleted.First_Element.Key) = "a&b"
+            and then US.To_String (Outcome.Result.Request_Charged) =
+              "requester",
+            "typed DeleteObjects success response");
+      end;
+
+      declare
+         Outcome : constant Low_Level.Delete_Objects_Outcome :=
+           Low_Level.Decode_Delete_Objects_Response
+             (403, "<Error><Code>AccessDenied</Code>" &
+              "<Message>denied</Message></Error>", Request_ID => "request");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Delete_Objects_Rejected
+            and then US.To_String (Outcome.Error.Code) = "AccessDenied"
+            and then US.To_String (Outcome.Error.Request_ID) = "request",
+            "typed DeleteObjects error response");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Delete_Objects_Outcome :=
+                 Low_Level.Decode_Delete_Objects_Response
+                   (200, "<DeleteResult/>", "owner");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "invalid DeleteObjects response header was accepted");
+      end;
+
+      declare
+         HTTP : aliased Flyology.HTTP.Client.Client (Capacity => 1);
+         Parameters : Low_Level.Delete_Object_Parameters;
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_Delete_Object
+             (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+              Low_Level.Path_Style, "example-bucket", "key", Parameters,
+              Identity, "us-east-1", "20130524T000000Z");
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Delete_Objects_Outcome :=
+                 Low_Level.Execute_Delete_Objects (HTTP, Prepared);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "DeleteObjects operation mismatch reached HTTP");
       end;
 
       declare

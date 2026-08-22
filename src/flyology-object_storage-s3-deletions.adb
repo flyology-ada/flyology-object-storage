@@ -154,6 +154,19 @@ package body Flyology.Object_Storage.S3.Deletions is
       Item.Depth := Item.Depth - 1;
    end End_Element;
 
+   function Valid_Version_ID (Item : String) return Boolean is
+   begin
+      if Item'Length > Maximum_Version_ID_Length then
+         return False;
+      end if;
+      for Character_Value of Item loop
+         if Character_Value = Character'Val (0) then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Valid_Version_ID;
+
    procedure Validate (Value : Delete_Objects_Request) is
    begin
       if Value.Objects.Is_Empty
@@ -162,8 +175,10 @@ package body Flyology.Object_Storage.S3.Deletions is
          raise Malformed_Delete with "invalid DeleteObjects entry count";
       end if;
       for Item of Value.Objects loop
-         if US.Length (Item.Key) = 0 then
-            raise Malformed_Delete with "empty DeleteObjects key";
+         if not Valid_Object_Key (US.To_String (Item.Key)) then
+            raise Malformed_Delete with "invalid DeleteObjects key";
+         elsif not Valid_Version_ID (US.To_String (Item.Version_ID)) then
+            raise Malformed_Delete with "invalid DeleteObjects version ID";
          end if;
       end loop;
    end Validate;
@@ -208,6 +223,9 @@ package body Flyology.Object_Storage.S3.Deletions is
          US.Append (Result, "<Quiet>true</Quiet>");
       end if;
       US.Append (Result, "</Delete>");
+      if US.Length (Result) > Maximum_Document_Bytes then
+         raise Malformed_Delete with "DeleteObjects request is too large";
+      end if;
       return US.To_String (Result);
    end Serialize_Request;
 
@@ -393,13 +411,22 @@ package body Flyology.Object_Storage.S3.Deletions is
       elsif Item.Depth = 2 then
          if Item.Current_Entry = Deleted_Entry then
             if not Item.Seen_Key
-              or else US.Length (Item.Current_Deleted.Key) = 0
+              or else not Valid_Object_Key
+                (US.To_String (Item.Current_Deleted.Key))
               or else (Item.Seen_Version
-                       and then US.Length
-                         (Item.Current_Deleted.Version_ID) = 0)
+                       and then
+                         (US.Length (Item.Current_Deleted.Version_ID) = 0
+                          or else not Valid_Version_ID
+                            (US.To_String
+                               (Item.Current_Deleted.Version_ID))))
               or else (Item.Seen_Marker_Version
-                       and then US.Length
-                         (Item.Current_Deleted.Delete_Marker_Version_ID) = 0)
+                       and then
+                         (US.Length
+                            (Item.Current_Deleted.Delete_Marker_Version_ID) = 0
+                          or else not Valid_Version_ID
+                            (US.To_String
+                               (Item.Current_Deleted
+                                  .Delete_Marker_Version_ID))))
             then
                raise Malformed_Delete with
                  "invalid DeleteObjects deleted entry";
@@ -407,12 +434,15 @@ package body Flyology.Object_Storage.S3.Deletions is
             Item.Value.Deleted.Append (Item.Current_Deleted);
          elsif Item.Current_Entry = Error_Entry then
             if not Item.Seen_Key
-              or else US.Length (Item.Current_Error.Key) = 0
+              or else not Valid_Object_Key
+                (US.To_String (Item.Current_Error.Key))
               or else not Item.Seen_Code
               or else US.Length (Item.Current_Error.Code) = 0
               or else (Item.Seen_Version
-                       and then US.Length
-                         (Item.Current_Error.Version_ID) = 0)
+                       and then
+                         (US.Length (Item.Current_Error.Version_ID) = 0
+                          or else not Valid_Version_ID
+                            (US.To_String (Item.Current_Error.Version_ID))))
             then
                raise Malformed_Delete with
                  "invalid DeleteObjects error entry";
@@ -456,7 +486,11 @@ package body Flyology.Object_Storage.S3.Deletions is
          "<?xml version=""1.0"" encoding=""UTF-8""?>" &
          "<DeleteResult xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">");
       for Item of Value.Deleted loop
-         if US.Length (Item.Key) = 0 then
+         if not Valid_Object_Key (US.To_String (Item.Key))
+           or else not Valid_Version_ID (US.To_String (Item.Version_ID))
+           or else not Valid_Version_ID
+             (US.To_String (Item.Delete_Marker_Version_ID))
+         then
             raise Malformed_Delete with "invalid deleted object";
          end if;
          US.Append (Result, "<Deleted>" & Element
@@ -480,7 +514,10 @@ package body Flyology.Object_Storage.S3.Deletions is
          US.Append (Result, "</Deleted>");
       end loop;
       for Item of Value.Errors loop
-         if US.Length (Item.Key) = 0 or else US.Length (Item.Code) = 0 then
+         if not Valid_Object_Key (US.To_String (Item.Key))
+           or else not Valid_Version_ID (US.To_String (Item.Version_ID))
+           or else US.Length (Item.Code) = 0
+         then
             raise Malformed_Delete with "invalid DeleteObjects error";
          end if;
          US.Append (Result, "<Error>" & Element
