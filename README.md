@@ -44,7 +44,7 @@ The core crate includes:
 - signed, bounded CreateBucket, HeadBucket, GetObject, HeadObject, PutObject,
   ListObjects, ListObjectsV2, DeleteBucket,
   DeleteObject, DeleteObjects REST/XML, and multipart
-  initiate/upload/complete/abort low-level
+  initiate/upload/complete/abort/ListParts low-level
   operations over caller-owned `flyology_http` clients, with UploadPart
   bodies borrowed from streaming sources;
 - exhaustive request projection and a raw streaming-response execution

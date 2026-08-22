@@ -3919,6 +3919,7 @@ package body Object_Storage_Test_Cases is
       use type Low_Level.Create_Multipart_Outcome_Kind;
       use type Low_Level.Complete_Multipart_Outcome_Kind;
       use type Low_Level.Abort_Multipart_Outcome_Kind;
+      use type Low_Level.List_Parts_Outcome_Kind;
       use type Low_Level.Upload_Part_Outcome_Kind;
       use type Low_Level.Upload_Part_Copy_Outcome_Kind;
       use type Low_Level.Put_Object_Outcome_Kind;
@@ -4114,6 +4115,187 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "AbortMultipartUpload accepted a 204 body");
+      end;
+
+      declare
+         Parameters : Low_Level.List_Parts_Parameters;
+      begin
+         Parameters.Max_Parts := 7;
+         Parameters.Part_Number_Marker := 3;
+         Parameters.Upload_ID := US.To_Unbounded_String ("upload+/=");
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_List_Parts
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "photos/a b+%",
+                 Parameters, Identity, "us-east-1", "20130524T000000Z");
+            Signed : constant String :=
+              ";" & Low_Level.Signed_Headers (Prepared) & ";";
+
+            function Has (Name : String) return Boolean is
+              (Ada.Strings.Fixed.Index (Signed, ";" & Name & ";") > 0);
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket/photos/a%20b%2B%25?max-parts=7&" &
+                 "part-number-marker=3&uploadId=upload%2B%2F%3D",
+               "ListParts exact modeled wire target");
+            Assert
+              (Has ("x-amz-expected-bucket-owner")
+               and then Has ("x-amz-request-payer")
+               and then Has
+                 ("x-amz-server-side-encryption-customer-algorithm")
+               and then Has ("x-amz-server-side-encryption-customer-key")
+               and then Has
+                 ("x-amz-server-side-encryption-customer-key-md5"),
+               "ListParts modeled headers are signed");
+         end;
+      end;
+
+      declare
+         Outcome : constant Low_Level.List_Parts_Outcome :=
+           Low_Level.Decode_List_Parts_Response
+             (200,
+              "<ListPartsResult><Bucket>example-bucket</Bucket>" &
+              "<Key>key</Key><UploadId>upload</UploadId>" &
+              "<PartNumberMarker>0</PartNumberMarker>" &
+              "<MaxParts>1</MaxParts><IsTruncated>false</IsTruncated>" &
+              "<Part><PartNumber>1</PartNumber>" &
+              "<LastModified>2026-08-21T00:00:00Z</LastModified>" &
+              "<ETag>&quot;part&quot;</ETag><Size>42</Size></Part>" &
+              "</ListPartsResult>",
+              Abort_Date => "Fri, 21 Aug 2026 00:00:00 GMT",
+              Abort_Rule_ID => "cleanup",
+              Request_Charged => "requester");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Parts_Listed
+            and then Outcome.Result.Listing.Parts.Length = 1
+            and then Outcome.Result.Listing.Parts.First_Element.Size = 42
+            and then US.To_String (Outcome.Result.Abort_Rule_ID) = "cleanup"
+            and then US.To_String (Outcome.Result.Request_Charged) =
+              "requester",
+            "typed ListParts complete success response");
+      end;
+
+      declare
+         Outcome : constant Low_Level.List_Parts_Outcome :=
+           Low_Level.Decode_List_Parts_Response
+             (404, "<Error><Code>NoSuchUpload</Code>" &
+              "<Message>gone</Message></Error>",
+              Request_ID => "list-parts-request",
+              Host_ID => "list-parts-host");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.List_Parts_Rejected
+            and then US.To_String (Outcome.Error.Code) = "NoSuchUpload"
+            and then US.To_String (Outcome.Error.Request_ID) =
+              "list-parts-request"
+            and then US.To_String (Outcome.Error.Host_ID) =
+              "list-parts-host",
+            "typed ListParts S3 error response");
+      end;
+
+      declare
+         Parameters : Low_Level.List_Parts_Parameters;
+         Raised : Boolean := False;
+      begin
+         Parameters.Upload_ID := US.To_Unbounded_String ("upload");
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Parts
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "ListParts allowed an SSE-C key over plaintext HTTP");
+      end;
+
+      declare
+         Parameters : Low_Level.List_Parts_Parameters;
+
+         procedure Require_Rejected (Message : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_List_Parts
+                      (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                       Low_Level.Path_Style, "example-bucket", "key",
+                       Parameters, Identity, "us-east-1",
+                       "20130524T000000Z");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Require_Rejected;
+      begin
+         Require_Rejected ("ListParts accepted an empty upload identifier");
+
+         Parameters.Upload_ID := US.To_Unbounded_String ("upload");
+         Parameters.Request_Payer := US.To_Unbounded_String ("owner");
+         Require_Rejected ("ListParts accepted an invalid requester payer");
+
+         Parameters.Request_Payer := US.Null_Unbounded_String;
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Require_Rejected ("ListParts accepted an incomplete SSE-C group");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.List_Parts_Outcome :=
+                 Low_Level.Decode_List_Parts_Response
+                   (200,
+                    "<ListPartsResult><Bucket>example-bucket</Bucket>" &
+                    "<Key>key</Key><UploadId>upload</UploadId>" &
+                    "<PartNumberMarker>0</PartNumberMarker>" &
+                    "<MaxParts>0</MaxParts>" &
+                    "<IsTruncated>false</IsTruncated>" &
+                    "</ListPartsResult>",
+                    Request_Charged => "owner");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert (Raised, "ListParts invalid request-charged was accepted");
       end;
 
       declare

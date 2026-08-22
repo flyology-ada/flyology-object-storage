@@ -988,6 +988,69 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Abort_Multipart_Outcome;
 
+   --  Every non-resource member in the pinned ListParts input shape.
+   type List_Parts_Parameters is record
+      Max_Parts              : S3.Core.Page_Size := 1_000;
+      Part_Number_Marker     : S3.Multipart.Part_Marker_Value := 0;
+      Upload_ID              : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer          : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner  : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Algorithm : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key       : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5   : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_List_Parts
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : List_Parts_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   --  Every member in the pinned ListParts output shape. The REST/XML body
+   --  members are grouped in Listing; the remaining values are HTTP headers.
+   type List_Parts_Result is record
+      Listing         : S3.Multipart.List_Parts_Result;
+      Abort_Date      : Ada.Strings.Unbounded.Unbounded_String;
+      Abort_Rule_ID   : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type List_Parts_Outcome_Kind is (Parts_Listed, List_Parts_Rejected);
+
+   type List_Parts_Outcome
+     (Kind : List_Parts_Outcome_Kind := List_Parts_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Parts_Listed =>
+            Result : List_Parts_Result;
+         when List_Parts_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_List_Parts_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Abort_Date      : String := "";
+      Abort_Rule_ID   : String := "";
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Parts_Outcome;
+
+   function Execute_List_Parts
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Parts_Outcome;
+
    type Upload_Part_Parameters is record
       Part_Number       : S3.Core.Part_Number := S3.Core.Part_Number'First;
       Upload_ID         : Ada.Strings.Unbounded.Unbounded_String;
@@ -1264,6 +1327,7 @@ private
       Create_Multipart_Operation,
       Complete_Multipart_Operation,
       Abort_Multipart_Operation,
+      List_Parts_Operation,
       Upload_Part_Operation,
       Upload_Part_Copy_Operation,
       Copy_Object_Operation);
