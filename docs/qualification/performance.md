@@ -143,6 +143,31 @@ record one sample per completed request before p50/p95/p99 claims are
 accepted. Resource telemetry must also be added before the `full` profile is
 used to ratify a performance threshold.
 
+## Bucket-tagging lifecycle benchmark
+
+`benchmarks/run-bucket-tagging-matrix.sh` measures one deliberately narrow
+control-plane workload with a persistent Flyology HTTP client:
+PutBucketTagging, an immediately validated GetBucketTagging snapshot,
+DeleteBucketTagging, and a second Get that must return NoSuchTagSet. Values
+alternate between lifecycles. Every timed lifecycle checks the typed outcomes
+and exact state, so a stale Put, no-op Delete, rejected request, or incomplete
+endpoint fails rather than producing a sample. The benchmark starts with
+negative self-oracles for stale Put, no-op Delete, and a NoSuchTagSet body with
+the wrong HTTP status. Successful lifecycle statuses are checked exactly. The same
+driver runs against digest-pinned RustFS,
+SeaweedFS, and supplemental MinIO plus Flyology memory, files, and SQLite.
+RustFS and SeaweedFS remain the permissively licensed comparison baselines;
+MinIO is reported only as supplemental compatibility evidence.
+
+The smoke profile defaults to three repetitions of 64 sequential lifecycles
+after eight warmups. The full profile defaults to seven repetitions of 2,000
+lifecycles after 100 warmups and requires a clean revision plus host, power,
+and CPU policy labels. Samples record monotonic elapsed time, lifecycle and
+four-request rates, exact server revision, and the persistent-client/correctness
+policy. This is a throughput regression tool for small control-plane requests;
+it does not claim concurrent saturation, tail latency, or durability-equivalent
+configuration between implementations.
+
 ## Checksum microbenchmark
 
 Run 'benchmarks/run-checksums.sh [MiB-per-algorithm]' for a focused streaming

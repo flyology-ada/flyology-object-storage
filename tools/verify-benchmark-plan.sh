@@ -159,9 +159,13 @@ echo "benchmark exclusions: SeaweedFS multipart listing defect is explicit"
 test -x "$PROJECT_DIR/benchmarks/run-endpoint.sh"
 test -x "$PROJECT_DIR/benchmarks/run-matrix.sh"
 test -x "$PROJECT_DIR/benchmarks/summarize.sh"
+test -x "$PROJECT_DIR/benchmarks/run-bucket-tagging-endpoint.sh"
+test -x "$PROJECT_DIR/benchmarks/run-bucket-tagging-matrix.sh"
 bash -n "$PROJECT_DIR/benchmarks/run-endpoint.sh" \
   "$PROJECT_DIR/benchmarks/run-matrix.sh" \
-  "$PROJECT_DIR/benchmarks/summarize.sh"
+  "$PROJECT_DIR/benchmarks/summarize.sh" \
+  "$PROJECT_DIR/benchmarks/run-bucket-tagging-endpoint.sh" \
+  "$PROJECT_DIR/benchmarks/run-bucket-tagging-matrix.sh"
 
 echo "benchmark launchers: executable and syntax-clean"
 

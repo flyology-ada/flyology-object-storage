@@ -31,7 +31,7 @@ evidence_pattern() {
     DeleteObjectTagging)
       printf '%s\n' 'Delete_Object_Tags|object.tagging'
       ;;
-    GetBucketTagging|PutBucketTagging)
+    DeleteBucketTagging|GetBucketTagging|PutBucketTagging)
       printf '%s\n' 'Bucket_Tags|Bucket_Tagging|bucket tagging'
       ;;
     GetBucketVersioning|PutBucketVersioning)

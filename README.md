@@ -56,7 +56,7 @@ The core crate includes:
   delete-marker, requester-charged, and structured error outcomes (see
   [object convenience client](docs/architecture/client-objects.md));
 - signed, bounded CreateBucket, GetBucketLocation, HeadBucket,
-  PutBucketTagging, GetBucketTagging, GetObject,
+  PutBucketTagging, GetBucketTagging, DeleteBucketTagging, GetObject,
   HeadObject, PutObject,
   ListBuckets, ListObjects, ListObjectsV2, DeleteBucket,
   DeleteObject, DeleteObjects REST/XML, and multipart
@@ -74,7 +74,7 @@ The core crate includes:
   boundary for all 116 pinned operations, while operation-specific typed
   codecs and interoperability gates remain tracked as incomplete;
 - an authenticated path-style S3 server application for the initial
-  Create/GetLocation/Head/DeleteBucket, Put/GetBucketTagging,
+  Create/GetLocation/Head/DeleteBucket, Put/Get/DeleteBucketTagging,
   ListObjects v1/v2, DeleteObjects,
   Put/Copy/Get/Head/GetAttributes/DeleteObject, and core multipart/ListParts/
   ListMultipartUploads slice, with SigV4 admission before body acceptance,
