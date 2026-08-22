@@ -78,6 +78,9 @@ exercise_admin_api() {
   code=$(admin_request GET "$base/api/status" "$body" "$headers")
   test "$code" = 401
   test "$(tr -d '\r\n' <"$body")" = '{"authenticated":false}'
+  code=$(admin_request GET "$base/api/buckets" "$body" "$headers")
+  test "$code" = 401
+  test "$(tr -d '\r\n' <"$body")" = '{"authenticated":false}'
 
   code=$(admin_request POST "$base/api/login" "$body" "$headers" \
     -H "Origin: $base" \
@@ -110,6 +113,12 @@ exercise_admin_api() {
   test "$(tr -d '\r\n' <"$body")" = \
     "{\"authenticated\":true,\"backend\":\"$backend\",\"region\":\"us-east-1\",\"s3_address\":\"127.0.0.1\",\"s3_port\":$s3_port}"
 
+  code=$(admin_request GET "$base/api/buckets" "$body" "$headers" \
+    -b "$cookies")
+  test "$code" = 200
+  test "$(tr -d '\r\n' <"$body")" = \
+    '{"buckets":[],"truncated":false,"limit":256}'
+
   code=$(admin_request GET "$base/api/status" "$body" "$headers" \
     -H "Cookie: notflyology_admin=$token")
   test "$code" = 401
@@ -129,6 +138,27 @@ exercise_admin_api() {
   code=$(admin_request GET "$base/api/status" "$body" "$headers" \
     -b "$cookies")
   test "$code" = 401
+}
+
+verify_bucket_inventory() {
+  local admin_port=$1
+  local password=$2
+  local bucket=$3
+  local base="http://127.0.0.1:$admin_port"
+  local body="$RUN_ROOT/inventory.body"
+  local headers="$RUN_ROOT/inventory.headers"
+  local cookies="$RUN_ROOT/inventory.cookies"
+  local code
+
+  code=$(admin_request POST "$base/api/login" "$body" "$headers" \
+    -H "Origin: $base" -c "$cookies" \
+    --data-binary "username=admin&password=$password")
+  test "$code" = 200
+  code=$(admin_request GET "$base/api/buckets" "$body" "$headers" \
+    -b "$cookies")
+  test "$code" = 200
+  grep -q "\"name\":\"$bucket\"" "$body"
+  grep -q '"truncated":false,"limit":256' "$body"
 }
 
 verify_persisted_admin() {
@@ -253,9 +283,11 @@ do
   exercise_admin_api "$backend" "$admin_port" "$port" "$admin_password" \
     "$backend-admin"
 
+  slice_bucket="flyology-production-$backend-$$"
   "$PROJECT_DIR/tests/scripts/run-s3-server-slice.sh" \
     "http://host.docker.internal:$port" \
-    "flyology-production-$backend-$$" "$ACCESS_KEY" "$SECRET_KEY"
+    "$slice_bucket" "$ACCESS_KEY" "$SECRET_KEY"
+  verify_bucket_inventory "$admin_port" "$admin_password" "$slice_bucket"
 
   kill -TERM "$SERVER_PID"
   wait "$SERVER_PID"

@@ -204,6 +204,37 @@ input:read-only { color: var(--ink-soft); }
 .session-state strong { font-size: .8rem; }
 .session-state small { color: var(--ready-deep); font-size: .68rem; margin-top: .2rem; }
 
+.inventory-panel {
+  border-right: 0 !important;
+  border-top: 1px solid var(--line);
+  grid-column: 1 / -1;
+  min-height: 13rem;
+}
+.inventory-heading { align-items: start; display: flex; justify-content: space-between; }
+.inventory-count { align-items: baseline; display: flex; gap: .55rem; }
+.inventory-count strong { font-family: var(--mono); font-size: 1.25rem; }
+.inventory-count span { color: var(--ink-soft); font-family: var(--mono); font-size: .62rem; text-transform: uppercase; }
+.inventory-columns, .bucket-list li {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(12rem, 1.5fr) minmax(12rem, 1fr) minmax(8rem, .7fr);
+}
+.inventory-columns {
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: .61rem;
+  margin-top: 1.35rem;
+  padding: 0 .5rem .55rem;
+  text-transform: uppercase;
+}
+.bucket-list { list-style: none; margin: 0; padding: 0; }
+.bucket-list li { align-items: center; border-bottom: 1px solid var(--line); min-height: 3.1rem; padding: .6rem .5rem; }
+.bucket-list strong { font-family: var(--mono); font-size: .74rem; overflow-wrap: anywhere; }
+.bucket-list time, .bucket-list span { color: var(--ink-soft); font-size: .7rem; }
+.inventory-state { color: var(--ink-soft); font-size: .78rem; padding: 2rem .5rem 1.25rem; }
+.inventory-note { color: var(--ink-soft); font-size: .7rem; line-height: 1.5; margin: 1rem .5rem 0; max-width: 70ch; }
+
 .workbench-footer { color: var(--ink-soft); display: flex; font-family: var(--mono); font-size: .62rem; justify-content: space-between; padding: 1rem .25rem 0; }
 .toast { background: var(--ink); bottom: 1.5rem; color: var(--surface); font-size: .75rem; left: 50%; padding: .75rem 1rem; position: fixed; transform: translateX(-50%); z-index: 20; }
 
@@ -224,6 +255,11 @@ input:read-only { color: var(--ink-soft); }
   .runtime-facts { grid-template-columns: 1fr; }
   .runtime-facts div:nth-child(odd) { margin-right: 0; }
   .workbench-footer { align-items: start; flex-direction: column; gap: .5rem; }
+  .inventory-heading { gap: 1rem; }
+  .inventory-columns { display: none; }
+  .bucket-list li { gap: .3rem; grid-template-columns: 1fr; padding: .85rem .5rem; }
+  .bucket-list time, .bucket-list span { display: block; }
+  .bucket-list span::before { content: "Region: "; }
 }
 
 @media (prefers-reduced-motion: no-preference) {

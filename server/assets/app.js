@@ -9,6 +9,9 @@
   const refreshButton = document.querySelector("#refresh");
   const logoutButton = document.querySelector("#logout");
   const copyEndpoint = document.querySelector("#copy-endpoint");
+  const bucketList = document.querySelector("#bucket-list");
+  const inventoryState = document.querySelector("#inventory-state");
+  const inventoryNote = document.querySelector("#inventory-note");
   const toast = document.querySelector("#toast");
   let pollTimer;
   let toastTimer;
@@ -62,6 +65,68 @@
     pollTimer = setTimeout(() => refreshStatus(true), 5000);
   }
 
+  function renderBuckets(inventory) {
+    bucketList.replaceChildren();
+    document.querySelector("#bucket-count").textContent =
+      new Intl.NumberFormat().format(inventory.buckets.length);
+    inventory.buckets.forEach(bucket => {
+      const row = document.createElement("li");
+      const name = document.createElement("strong");
+      const created = document.createElement("time");
+      const region = document.createElement("span");
+      name.textContent = bucket.name;
+      if (bucket.created > 0) {
+        const date = new Date(bucket.created * 1000);
+        if (Number.isNaN(date.getTime())) {
+          created.textContent = "Not recorded";
+        } else {
+          created.dateTime = date.toISOString();
+          created.textContent = new Intl.DateTimeFormat(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short"
+          }).format(date);
+        }
+      } else {
+        created.textContent = "Not recorded";
+      }
+      region.textContent = document.querySelector("#region").textContent;
+      region.setAttribute("aria-label", `Region ${region.textContent}`);
+      row.append(name, created, region);
+      bucketList.append(row);
+    });
+    inventoryState.hidden = inventory.buckets.length > 0;
+    inventoryState.textContent = inventory.buckets.length > 0
+      ? ""
+      : "No buckets yet. Create one through the signed S3 endpoint, then refresh.";
+    inventoryNote.hidden = !inventory.truncated;
+  }
+
+  function renderBucketError() {
+    bucketList.replaceChildren();
+    document.querySelector("#bucket-count").textContent = "—";
+    inventoryState.hidden = false;
+    inventoryState.textContent =
+      "The backend inventory could not be read. Runtime status is still available.";
+    inventoryNote.hidden = true;
+  }
+
+  async function refreshBuckets() {
+    try {
+      const response = await fetch("/api/buckets", {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" }
+      });
+      if (response.status === 401) {
+        showLogin("Your session ended. Sign in again.");
+        return;
+      }
+      if (!response.ok) throw new Error(`buckets ${response.status}`);
+      renderBuckets(await response.json());
+    } catch (_error) {
+      renderBucketError();
+    }
+  }
+
   async function refreshStatus(quiet = false) {
     if (!quiet) {
       refreshButton.disabled = true;
@@ -78,6 +143,7 @@
       }
       if (!response.ok) throw new Error(`status ${response.status}`);
       renderStatus(await response.json());
+      await refreshBuckets();
     } catch (_error) {
       clearTimeout(pollTimer);
       setConnection("error", "Server unavailable");

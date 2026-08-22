@@ -15,6 +15,8 @@ with Flyology.HTTP.Server.Routing;
 with Flyology.IO.Connections;
 with Flyology.IO.Sockets;
 with Flyology.IO.Structured_Servers;
+with Flyology.Object_Storage;
+with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Server.Authentication;
 with Flyology.Object_Storage.Server.S3_Applications;
 with Flyology.Object_Storage.Server.Static_Credentials;
@@ -43,6 +45,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
      Flyology_Object_Storage_Server_Credentials;
 
    use type Flyology.Supervision.Supervisor_Outcome;
+   use type Flyology.Object_Storage.Status;
    use type Sockets.Port;
 
    function Required_Environment (Name : String) return String is
@@ -464,6 +467,55 @@ procedure Flyology_Object_Storage_Server_Runtime is
             Compact (Natural (State.Status.S3_Port)) & "}");
       end Status;
 
+      procedure Bucket_Inventory
+        (State : in out Application_Context; X : in out Apps.Exchange)
+      is
+         Options : constant
+           Flyology.Object_Storage.Backends.List_Buckets_Options :=
+           (Prefix  => US.Null_Unbounded_String,
+            After   => US.Null_Unbounded_String,
+            Maximum => 256);
+         Page : Flyology.Object_Storage.Backends.Bucket_Page;
+         Outcome : Flyology.Object_Storage.Status;
+         Document : US.Unbounded_String := US.To_Unbounded_String
+           ("{""buckets"":[");
+         First : Boolean := True;
+      begin
+         No_Store (X);
+         if not Local_Request (State, X)
+           or else not Authenticated (State, X)
+         then
+            X.JSON (401, "{""authenticated"":false}");
+            return;
+         end if;
+         Store.List_Buckets
+           (Options, X.Cancellation, X.Deadline, Page, Outcome);
+         if Outcome /= Flyology.Object_Storage.Success then
+            X.JSON (503, "{""error"":""storage_unavailable""}");
+            return;
+         end if;
+         for Value of Page.Buckets loop
+            if not First then
+               US.Append (Document, ',');
+            end if;
+            First := False;
+            US.Append
+              (Document,
+               "{""name"":""" &
+               JSON_Escape (US.To_String (Value.Name)) &
+               """,""created"":" &
+               Ada.Strings.Fixed.Trim
+                 (Flyology.Object_Storage.Unix_Time'Image (Value.Created),
+                  Ada.Strings.Both) & "}");
+         end loop;
+         US.Append
+           (Document,
+            "],""truncated"":" &
+            (if Page.Is_Truncated then "true" else "false") &
+            ",""limit"":256}");
+         X.JSON (200, US.To_String (Document));
+      end Bucket_Inventory;
+
       procedure Logout
         (State : in out Application_Context; X : in out Apps.Exchange)
       is
@@ -492,7 +544,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
       type Service_Context is limited record
          Application : aliased Application_Context;
          Routes : aliased Routing.Router
-           (Capacity => 6, Slashes => Routing.Strict_Slashes);
+           (Capacity => 7, Slashes => Routing.Strict_Slashes);
          Budget : aliased HTTP.Ingress_Budget (Limit => 4 * 1_024);
       end record;
 
@@ -549,6 +601,11 @@ procedure Flyology_Object_Storage_Server_Runtime is
               Concurrency => 1, Rate_Per_Second => 2));
       State.Routes.Get
         ("/api/status", Status'Access, Name => "admin.status");
+      State.Routes.Get
+        ("/api/buckets", Bucket_Inventory'Access, Name => "admin.buckets",
+         Policy =>
+           (Routing.Default_Route_Policy with delta
+              Concurrency => 2, Rate_Per_Second => 4));
       State.Routes.Post
         ("/api/logout", Logout'Access, Name => "admin.logout",
          Policy =>

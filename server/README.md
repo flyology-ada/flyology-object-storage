@@ -15,8 +15,10 @@ uses the psqlbench example's compact instrument-panel structure without
 copying its replication-specific complexity. The current vertical slice signs
 in with the bootstrapped `admin` identity and reports the actual S3 address and
 port, region, selected backend, authenticated session, and supervised service
-relationship. Storage mutation remains on the signed S3 endpoint rather than
-being implied by an incomplete browser control surface.
+relationship. It also presents a read-only, name-ordered bucket inventory from
+an atomic backend snapshot, bounded to 256 visible entries with an explicit
+truncation state. Storage mutation remains on the signed S3 endpoint rather
+than being implied by an incomplete browser control surface.
 
 The generated 192-bit administrator password is printed once to standard
 error. Only a random 256-bit salt and PBKDF2-HMAC-SHA256 verifier are persisted
@@ -73,4 +75,5 @@ backends, including independent service-level bucket listing immediately
 after bucket creation. It also verifies invalid configuration, asset tamper
 rejection, bootstrap and persisted login, same-origin and Host enforcement,
 session cookie shape and revocation, byte-exact asset delivery, actual endpoint
-status, and supervised SIGTERM shutdown.
+status, authenticated empty and populated bucket inventories, and supervised
+SIGTERM shutdown.

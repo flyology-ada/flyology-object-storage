@@ -65,7 +65,7 @@
         </div>
       </nav>
 
-      <div class="desktop" aria-live="polite">
+      <div class="desktop">
         <section class="panel endpoint-panel" aria-labelledby="endpoint-title">
           <div class="panel-title">
             <span>01</span>
@@ -132,6 +132,29 @@
             <div><strong>Authenticated as admin</strong><small>No credential is stored in this page.</small></div>
           </div>
           <p>The persistent file contains a salted verifier only. Signing keys for the S3 endpoint remain separate from this management session.</p>
+        </section>
+
+        <section class="panel inventory-panel" aria-labelledby="inventory-title">
+          <div class="inventory-heading">
+            <div class="panel-title">
+              <span>05</span>
+              <div><h2 id="inventory-title">bucket.inventory</h2><code>atomic snapshot / name ordered</code></div>
+            </div>
+            <div class="inventory-count" aria-live="polite">
+              <strong id="bucket-count">0</strong><span>visible buckets</span>
+            </div>
+          </div>
+          <div class="inventory-columns" aria-hidden="true">
+            <span>Bucket</span><span>Created</span><span>Region</span>
+          </div>
+          <ul class="bucket-list" id="bucket-list" aria-label="Storage buckets"></ul>
+          <div class="inventory-state" id="inventory-state" role="status">
+            Reading the backend namespace.
+          </div>
+          <p class="inventory-note" id="inventory-note" hidden>
+            Showing the first 256 buckets. Use the signed S3 endpoint for the
+            complete paginated namespace.
+          </p>
         </section>
       </div>
 
