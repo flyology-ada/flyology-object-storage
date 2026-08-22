@@ -3125,6 +3125,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Has_Range : Boolean := False;
                   Valid_SSE_C : Boolean := False;
                   Owner_OK : Boolean := False;
+                  Snapshot : Backends.Object_Attribute_Snapshot;
                   Selected_Part : constant Backends.Multipart_Part_Marker :=
                     (if Object_Read_Request.Has_Part_Number
                      then Backends.Multipart_Part_Marker
@@ -3389,15 +3390,40 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      end;
                   end if;
 
-                  Store.Head_Object
-                    (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
-                     Info, Result,
-                     Conditions =>
-                       (if Valid_SSE_C
-                        then Backends.Default_Read_Conditions
-                        else Conditions),
-                     Part_Number =>
-                       (if Valid_SSE_C then 0 else Selected_Part));
+                  declare
+                     Effective_Part : constant
+                       Backends.Multipart_Part_Marker :=
+                         (if Valid_SSE_C then 0 else Selected_Part);
+                     Options : constant Backends.Object_Attribute_Options :=
+                       (After =>
+                          (if Effective_Part = 0
+                           then 0 else Effective_Part - 1),
+                        Maximum =>
+                          (if Effective_Part = 0 then 0 else 1));
+                  begin
+                     Store.Get_Object_Attributes
+                       (Bucket, Key, Options, Apps.Cancellation (X),
+                        Apps.Deadline (X), Snapshot, Result,
+                        Conditions =>
+                          (if Valid_SSE_C
+                           then Backends.Default_Read_Conditions
+                           else Conditions));
+                     Info := Snapshot.Info;
+                     if Result = Success and then Effective_Part /= 0 then
+                        if not Snapshot.Is_Multipart then
+                           if Effective_Part /= 1 then
+                              Result := Invalid_Part;
+                           end if;
+                        elsif Natural (Snapshot.Parts.Length) = 1
+                          and then Snapshot.Parts.First_Element.Number =
+                            Effective_Part
+                        then
+                           Info.Size := Snapshot.Parts.First_Element.Size;
+                        else
+                           Result := Invalid_Part;
+                        end if;
+                     end if;
+                  end;
                   if Result = Success and then Valid_SSE_C then
                      Send_Error
                        (X, 400, "InvalidRequest",
@@ -3412,13 +3438,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Send_Backend_Error (X, Result, False, Target_Text);
                      else
                         if Object_Read_Request.Has_Part_Number
-                          and then Info.Multipart_Parts > 0
+                          and then Snapshot.Is_Multipart
                         then
                            Apps.Set_Header
                              (X, "x-amz-mp-parts-count",
                               Ada.Strings.Fixed.Trim
-                                (Multipart_Part_Count'Image
-                                   (Info.Multipart_Parts),
+                                (Natural'Image (Snapshot.Total_Parts),
                                  Ada.Strings.Both));
                         end if;
                         Set_Response_Overrides;

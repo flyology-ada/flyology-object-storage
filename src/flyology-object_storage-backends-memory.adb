@@ -571,6 +571,7 @@ package body Flyology.Object_Storage.Backends.Memory is
         (Bucket   : String;
          Key      : String;
          Options  : Object_Attribute_Options;
+         Conditions : Read_Conditions;
          Snapshot : out Object_Attribute_Snapshot;
          Result   : out Status)
       is
@@ -582,6 +583,13 @@ package body Flyology.Object_Storage.Backends.Memory is
             return;
          end if;
          Snapshot.Info := Objects (Index).Info;
+         Result := Evaluate_Read_Conditions
+           (Conditions,
+            Ada.Strings.Unbounded.To_String (Snapshot.Info.Entity_Tag),
+            Snapshot.Info.Modified);
+         if Result /= Success then
+            return;
+         end if;
          Snapshot.Is_Multipart := not Objects (Index).Completed_Parts.Is_Empty;
          Snapshot.Total_Parts :=
            Natural (Objects (Index).Completed_Parts.Length);
@@ -1558,7 +1566,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Snapshot : out Object_Attribute_Snapshot;
-      Result   : out Status)
+      Result   : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions)
    is
    begin
       Snapshot := (others => <>);
@@ -1568,7 +1577,9 @@ package body Flyology.Object_Storage.Backends.Memory is
       then
          Result := Invalid_Request;
       else
-         Item.State.Attributes (Bucket, Key, Options, Snapshot, Result);
+         Item.State.Attributes
+           (Bucket, Key, Options, Conditions, Snapshot, Result);
+         Check_Context (Token, Deadline);
       end if;
    end Get_Object_Attributes;
 

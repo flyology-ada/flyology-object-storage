@@ -799,7 +799,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Snapshot : out Object_Attribute_Snapshot;
-      Result   : out Status)
+      Result   : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions)
    is
       procedure Check is
       begin
@@ -815,7 +816,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
          return;
       end if;
       Catalogs.Get_Object_Attributes
-        (Item.Catalog, Bucket, Key, Options, Check'Access,
+        (Item.Catalog, Bucket, Key, Options, Conditions, Check'Access,
          Snapshot, Result);
    exception
       when Flyology.Cancellation.Operation_Cancelled

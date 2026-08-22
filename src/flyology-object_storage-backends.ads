@@ -428,7 +428,10 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Snapshot : out Object_Attribute_Snapshot;
-      Result   : out Status) is abstract;
+      Result   : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions) is abstract;
+   --  Conditions are evaluated against Snapshot.Info within the same atomic
+   --  metadata boundary used to collect the completed-part snapshot.
 
    procedure Delete_Object
      (Item   : in out Backend;

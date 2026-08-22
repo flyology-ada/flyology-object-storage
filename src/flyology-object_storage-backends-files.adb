@@ -1660,12 +1660,14 @@ package body Flyology.Object_Storage.Backends.Files is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Snapshot : out Object_Attribute_Snapshot;
-      Result   : out Status)
+      Result   : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions)
    is
       File    : SIO.File_Type;
       Body_At : SIO.Positive_Count;
       All_Parts : Completed_Object_Part_List;
       Path : constant String := Object_Path (Item, Bucket, Key);
+      Locked : Boolean := False;
    begin
       Snapshot := (others => <>);
       Check_Context (Token, Deadline);
@@ -1674,14 +1676,28 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          Result := Invalid_Request;
          return;
-      elsif not Ada.Directories.Exists (Path) then
+      end if;
+      Item.Publication.Acquire;
+      Locked := True;
+      Check_Context (Token, Deadline);
+      if not Ada.Directories.Exists (Path) then
          Result := Not_Found;
+         Item.Publication.Release;
+         Locked := False;
          return;
       end if;
       SIO.Open (File, SIO.In_File, Path);
       Read_Header_With_Parts
         (File, Key, Snapshot.Info, All_Parts, Body_At);
       SIO.Close (File);
+      Result := Evaluate_Read_Conditions
+        (Conditions, US.To_String (Snapshot.Info.Entity_Tag),
+         Snapshot.Info.Modified);
+      if Result /= Success then
+         Item.Publication.Release;
+         Locked := False;
+         return;
+      end if;
       Snapshot.Is_Multipart := not All_Parts.Is_Empty;
       Snapshot.Total_Parts := Natural (All_Parts.Length);
       if Options.Maximum > 0 then
@@ -1703,16 +1719,24 @@ package body Flyology.Object_Storage.Backends.Files is
          end loop;
       end if;
       Result := Success;
+      Item.Publication.Release;
+      Locked := False;
    exception
       when Flyology.Cancellation.Operation_Cancelled |
            Flyology.IO.Timeout_Error =>
          if SIO.Is_Open (File) then
             SIO.Close (File);
          end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
          raise;
       when others =>
          if SIO.Is_Open (File) then
             SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
          end if;
          Snapshot := (others => <>);
          Result := Backend_Unavailable;

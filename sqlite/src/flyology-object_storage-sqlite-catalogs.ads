@@ -73,6 +73,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket   : String;
       Key      : String;
       Options  : Backends.Object_Attribute_Options;
+      Conditions : Backends.Read_Conditions;
       Check    : not null access procedure;
       Snapshot : out Backends.Object_Attribute_Snapshot;
       Result   : out Status);

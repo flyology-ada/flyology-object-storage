@@ -768,6 +768,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Bucket   : String;
       Key      : String;
       Options  : Backends.Object_Attribute_Options;
+      Conditions : Backends.Read_Conditions;
       Check    : not null access procedure;
       Snapshot : out Backends.Object_Attribute_Snapshot;
       Result   : out Status)
@@ -783,6 +784,14 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Check.all;
       Find_Object_Internal
         (Item, Bucket, Key, Payload, Snapshot.Info, Result);
+      if Result /= Success then
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      Result := Backends.Evaluate_Read_Conditions
+        (Conditions, US.To_String (Snapshot.Info.Entity_Tag),
+         Snapshot.Info.Modified);
       if Result /= Success then
          Item.Gate.Release;
          Locked := False;
