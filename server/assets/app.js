@@ -76,6 +76,9 @@
       const name = document.createElement("strong");
       const created = document.createElement("time");
       const region = document.createElement("span");
+      const actions = document.createElement("div");
+      const remove = document.createElement("button");
+      const cancel = document.createElement("button");
       name.textContent = bucket.name;
       if (bucket.created > 0) {
         const date = new Date(bucket.created * 1000);
@@ -93,7 +96,66 @@
       }
       region.textContent = document.querySelector("#region").textContent;
       region.setAttribute("aria-label", `Region ${region.textContent}`);
-      row.append(name, created, region);
+      actions.className = "bucket-actions";
+      remove.className = "button quiet bucket-delete";
+      remove.type = "button";
+      remove.textContent = "Delete";
+      remove.setAttribute("aria-label", `Delete empty bucket ${bucket.name}`);
+      cancel.className = "button quiet bucket-delete-cancel";
+      cancel.type = "button";
+      cancel.textContent = "Cancel";
+      cancel.hidden = true;
+      cancel.addEventListener("click", () => {
+        row.dataset.confirmDelete = "false";
+        remove.textContent = "Delete";
+        remove.classList.remove("danger");
+        cancel.hidden = true;
+      });
+      remove.addEventListener("click", async () => {
+        if (row.dataset.confirmDelete !== "true") {
+          row.dataset.confirmDelete = "true";
+          remove.textContent = "Confirm delete";
+          remove.classList.add("danger");
+          cancel.hidden = false;
+          remove.focus();
+          return;
+        }
+        remove.disabled = true;
+        cancel.disabled = true;
+        remove.textContent = "Deleting…";
+        try {
+          const response = await fetch("/api/buckets/delete", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `name=${bucket.name}`
+          });
+          if (response.status === 401) {
+            showLogin("Your session ended. Sign in again.");
+            return;
+          }
+          if (response.status === 409) {
+            showToast(`Bucket ${bucket.name} is not empty`);
+            return;
+          }
+          if (response.status !== 404 && !response.ok) {
+            throw new Error(`delete bucket ${response.status}`);
+          }
+          showToast(`Bucket ${bucket.name} deleted`);
+          await refreshBuckets();
+        } catch (_error) {
+          showToast(`Bucket ${bucket.name} could not be deleted`);
+        } finally {
+          remove.disabled = false;
+          cancel.disabled = false;
+          row.dataset.confirmDelete = "false";
+          remove.textContent = "Delete";
+          remove.classList.remove("danger");
+          cancel.hidden = true;
+        }
+      });
+      actions.append(remove, cancel);
+      row.append(name, created, region, actions);
       bucketList.append(row);
     });
     inventoryState.hidden = inventory.buckets.length > 0;

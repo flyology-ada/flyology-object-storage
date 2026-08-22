@@ -19,8 +19,11 @@ relationship. It also presents a read-only, name-ordered bucket inventory from
 an atomic backend snapshot, bounded to 256 visible entries with an explicit
 truncation state. Administrators can create a validated bucket inline; the
 request requires an exact loopback Origin and uses the backend's atomic create
-primitive. Object mutation and destructive bucket operations remain on the
-signed S3 endpoint rather than being implied by incomplete browser controls.
+primitive. They can also delete an empty bucket through an inline, two-step
+confirmation. Deletion requires the same exact loopback Origin, uses the
+backend's atomic delete primitive, and reports a non-empty bucket as a conflict
+without changing it. Object mutation remains on the signed S3 endpoint rather
+than being implied by incomplete browser controls.
 
 The generated 192-bit administrator password is printed once to standard
 error. Only a random 256-bit salt and PBKDF2-HMAC-SHA256 verifier are persisted
@@ -80,3 +83,7 @@ session cookie shape and revocation, byte-exact asset delivery, actual endpoint
 status, authenticated empty and populated bucket inventories, and supervised
 SIGTERM shutdown. Bucket creation tests cover missing/wrong Origin, invalid
 names, success, duplicate conflict, and visibility through the inventory API.
+Bucket deletion tests cover unauthenticated, missing/hostile-Origin, and wrong
+media-type rejection, successful empty deletion, a repeated not-found
+response, disappearance from inventory, and preservation of a non-empty bucket
+after conflict.

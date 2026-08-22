@@ -577,6 +577,57 @@ procedure Flyology_Object_Storage_Server_Runtime is
          end;
       end Create_Bucket;
 
+      procedure Delete_Bucket
+        (State : in out Application_Context; X : in out Apps.Exchange)
+      is
+         Prefix : constant String := "name=";
+         Form   : constant String := X.Content;
+         Outcome : Flyology.Object_Storage.Status;
+      begin
+         No_Store (X);
+         if not Strict_Same_Origin (State, X)
+           or else not Authenticated (State, X)
+         then
+            X.JSON (401, "{""authenticated"":false}");
+            return;
+         elsif X.Request_Header_Count ("Content-Type") /= 1
+           or else X.Request_Header ("Content-Type") /=
+             "application/x-www-form-urlencoded"
+           or else Form'Length <= Prefix'Length
+           or else Form'Length > Prefix'Length + 63
+           or else Form (Form'First .. Form'First + Prefix'Length - 1) /=
+             Prefix
+         then
+            X.JSON (400, "{""error"":""invalid_bucket_name""}");
+            return;
+         end if;
+         declare
+            Name : constant String :=
+              Form (Form'First + Prefix'Length .. Form'Last);
+         begin
+            if not Flyology.Object_Storage.Valid_Bucket_Name (Name) then
+               X.JSON (400, "{""error"":""invalid_bucket_name""}");
+               return;
+            end if;
+            Store.Delete_Bucket
+              (Name, X.Cancellation, X.Deadline, Outcome);
+            case Outcome is
+               when Flyology.Object_Storage.Success =>
+                  X.JSON
+                    (200, "{""deleted"":true,""name"":""" &
+                     JSON_Escape (Name) & """}");
+               when Flyology.Object_Storage.Not_Found =>
+                  X.JSON (404, "{""error"":""bucket_not_found""}");
+               when Flyology.Object_Storage.Bucket_Not_Empty =>
+                  X.JSON (409, "{""error"":""bucket_not_empty""}");
+               when Flyology.Object_Storage.Backend_Unavailable =>
+                  X.JSON (503, "{""error"":""storage_unavailable""}");
+               when others =>
+                  X.JSON (500, "{""error"":""storage_failure""}");
+            end case;
+         end;
+      end Delete_Bucket;
+
       procedure Logout
         (State : in out Application_Context; X : in out Apps.Exchange)
       is
@@ -605,7 +656,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
       type Service_Context is limited record
          Application : aliased Application_Context;
          Routes : aliased Routing.Router
-           (Capacity => 8, Slashes => Routing.Strict_Slashes);
+           (Capacity => 9, Slashes => Routing.Strict_Slashes);
          Budget : aliased HTTP.Ingress_Budget (Limit => 4 * 1_024);
       end record;
 
@@ -670,6 +721,13 @@ procedure Flyology_Object_Storage_Server_Runtime is
       State.Routes.Post
         ("/api/buckets", Create_Bucket'Access,
          Name => "admin.buckets.create",
+         Policy =>
+           (Routing.Default_Route_Policy with delta
+              Body_Handling => Apps.Buffer_Body, Max_Body => 68,
+              Concurrency => 1, Rate_Per_Second => 2));
+      State.Routes.Post
+        ("/api/buckets/delete", Delete_Bucket'Access,
+         Name => "admin.buckets.delete",
          Policy =>
            (Routing.Default_Route_Policy with delta
               Body_Handling => Apps.Buffer_Body, Max_Body => 68,

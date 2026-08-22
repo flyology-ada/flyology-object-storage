@@ -150,6 +150,8 @@ input:read-only { color: var(--ink-soft); }
 .button.secondary:hover, .copy-button:hover { border-color: var(--accent); color: var(--accent-deep); }
 .button.quiet { background: transparent; color: var(--ink-soft); }
 .button.quiet:hover { background: var(--surface-muted); color: var(--ink); }
+.button.danger { background: var(--error); color: var(--surface); }
+.button.danger:hover { background: oklch(45% 0.16 25); color: var(--surface); }
 .button:active, .copy-button:active { transform: translateY(1px); }
 .button:disabled { cursor: wait; opacity: .58; }
 
@@ -222,7 +224,7 @@ input:read-only { color: var(--ink-soft); }
 .inventory-columns, .bucket-list li {
   display: grid;
   gap: 1rem;
-  grid-template-columns: minmax(12rem, 1.5fr) minmax(12rem, 1fr) minmax(8rem, .7fr);
+  grid-template-columns: minmax(12rem, 1.5fr) minmax(12rem, 1fr) minmax(8rem, .7fr) minmax(9rem, auto);
 }
 .inventory-columns {
   border-bottom: 1px solid var(--line);
@@ -237,6 +239,8 @@ input:read-only { color: var(--ink-soft); }
 .bucket-list li { align-items: center; border-bottom: 1px solid var(--line); min-height: 3.1rem; padding: .6rem .5rem; }
 .bucket-list strong { font-family: var(--mono); font-size: .74rem; overflow-wrap: anywhere; }
 .bucket-list time, .bucket-list span { color: var(--ink-soft); font-size: .7rem; }
+.bucket-actions { display: flex; gap: .25rem; justify-content: end; }
+.bucket-actions .button { min-height: 2rem; padding: .35rem .55rem; }
 .inventory-state { color: var(--ink-soft); font-size: .78rem; padding: 2rem .5rem 1.25rem; }
 .inventory-note { color: var(--ink-soft); font-size: .7rem; line-height: 1.5; margin: 1rem .5rem 0; max-width: 70ch; }
 

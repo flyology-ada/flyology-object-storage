@@ -85,6 +85,10 @@ exercise_admin_api() {
     --data-binary 'name=unauthorized-bucket')
   test "$code" = 401
   test "$(tr -d '\r\n' <"$body")" = '{"authenticated":false}'
+  code=$(admin_request POST "$base/api/buckets/delete" "$body" "$headers" \
+    --data-binary 'name=unauthorized-bucket')
+  test "$code" = 401
+  test "$(tr -d '\r\n' <"$body")" = '{"authenticated":false}'
 
   code=$(admin_request POST "$base/api/login" "$body" "$headers" \
     -H "Origin: $base" \
@@ -170,6 +174,43 @@ exercise_admin_api() {
   test "$code" = 200
   grep -q "\"name\":\"$managed_bucket\"" "$body"
 
+  code=$(admin_request POST "$base/api/buckets/delete" "$body" "$headers" \
+    -b "$cookies" --data-binary "name=$managed_bucket")
+  test "$code" = 401
+  sleep 1
+  code=$(admin_request POST "$base/api/buckets/delete" "$body" "$headers" \
+    -H 'Origin: http://attacker.invalid' -b "$cookies" \
+    --data-binary "name=$managed_bucket")
+  test "$code" = 401
+  sleep 1
+  code=$(admin_request POST "$base/api/buckets/delete" "$body" "$headers" \
+    -H "Origin: $base" -H 'Content-Type: text/plain' -b "$cookies" \
+    --data-binary "name=$managed_bucket")
+  test "$code" = 400
+  test "$(tr -d '\r\n' <"$body")" = \
+    '{"error":"invalid_bucket_name"}'
+  sleep 1
+  code=$(admin_request POST "$base/api/buckets/delete" "$body" "$headers" \
+    -H "Origin: $base" -b "$cookies" \
+    --data-binary "name=$managed_bucket")
+  test "$code" = 200
+  test "$(tr -d '\r\n' <"$body")" = \
+    "{\"deleted\":true,\"name\":\"$managed_bucket\"}"
+  sleep 1
+  code=$(admin_request POST "$base/api/buckets/delete" "$body" "$headers" \
+    -H "Origin: $base" -b "$cookies" \
+    --data-binary "name=$managed_bucket")
+  test "$code" = 404
+  test "$(tr -d '\r\n' <"$body")" = \
+    '{"error":"bucket_not_found"}'
+  code=$(admin_request GET "$base/api/buckets" "$body" "$headers" \
+    -b "$cookies")
+  test "$code" = 200
+  if grep -q "\"name\":\"$managed_bucket\"" "$body"; then
+    echo "deleted management bucket remains visible" >&2
+    exit 1
+  fi
+
   code=$(admin_request GET "$base/api/status" "$body" "$headers" \
     -H "Cookie: notflyology_admin=$token")
   test "$code" = 401
@@ -210,6 +251,15 @@ verify_bucket_inventory() {
   test "$code" = 200
   grep -q "\"name\":\"$bucket\"" "$body"
   grep -q '"truncated":false,"limit":256' "$body"
+  code=$(admin_request POST "$base/api/buckets/delete" "$body" "$headers" \
+    -H "Origin: $base" -b "$cookies" --data-binary "name=$bucket")
+  test "$code" = 409
+  test "$(tr -d '\r\n' <"$body")" = \
+    '{"error":"bucket_not_empty"}'
+  code=$(admin_request GET "$base/api/buckets" "$body" "$headers" \
+    -b "$cookies")
+  test "$code" = 200
+  grep -q "\"name\":\"$bucket\"" "$body"
 }
 
 verify_persisted_admin() {
