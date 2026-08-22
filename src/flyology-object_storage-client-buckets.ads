@@ -5,6 +5,7 @@ with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Errors;
+with Flyology.Object_Storage.Tags;
 
 --  High-level bucket operations over a configured Flyology HTTP client.
 package Flyology.Object_Storage.Client.Buckets is
@@ -213,5 +214,88 @@ package Flyology.Object_Storage.Client.Buckets is
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
       return Location_Outcome;
+
+   type Put_Tags_Outcome_Kind is (Tags_Replaced, Put_Tags_Rejected);
+
+   type Put_Tags_Outcome
+     (Kind : Put_Tags_Outcome_Kind := Put_Tags_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Tags_Replaced =>
+            Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+         when Put_Tags_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Atomically replace the complete tag set of one bucket. Content-MD5 and
+   --  the strict S3 XML body are generated automatically.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose complete tag set is replaced
+   --  @param Value Nonempty, unique, AWS-valid bucket tag set
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Completed replacement or structured S3 rejection
+   function Put_Tags
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Value    : Flyology.Object_Storage.Tags.Tag_Set;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Put_Tags_Outcome;
+
+   type Get_Tags_Outcome_Kind is (Tags_Found, Get_Tags_Rejected);
+
+   type Get_Tags_Outcome
+     (Kind : Get_Tags_Outcome_Kind := Get_Tags_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Tags_Found =>
+            Value : Flyology.Object_Storage.Tags.Tag_Set;
+            Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+         when Get_Tags_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Fetch one atomic bucket tag snapshot. An untagged bucket is returned as
+   --  the structured NoSuchTagSet S3 rejection.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose tag snapshot is requested
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed tag snapshot or structured S3 rejection
+   function Get_Tags
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Get_Tags_Outcome;
 
 end Flyology.Object_Storage.Client.Buckets;

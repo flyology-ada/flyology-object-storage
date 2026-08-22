@@ -20,6 +20,7 @@ with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.SigV4;
+with Flyology.Object_Storage.Tags;
 
 procedure S3_Implementation_Corpus is
    package HTTP_Client renames Flyology.HTTP.Client;
@@ -30,6 +31,7 @@ procedure S3_Implementation_Corpus is
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
+   package Tags renames Flyology.Object_Storage.Tags;
    package Stream_IO renames Ada.Streams.Stream_IO;
    package US renames Ada.Strings.Unbounded;
 
@@ -58,6 +60,9 @@ procedure S3_Implementation_Corpus is
    use type Client_Buckets.Delete_Outcome_Kind;
    use type Client_Buckets.Location_Outcome_Kind;
    use type Client_Buckets.List_Outcome_Kind;
+   use type Client_Buckets.Put_Tags_Outcome_Kind;
+   use type Client_Buckets.Get_Tags_Outcome_Kind;
+   use type Tags.Tag_Vectors.Vector;
    use type Client_Objects.Delete_Outcome_Kind;
    use type Client_Objects.Tagging_Outcome_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
@@ -173,6 +178,31 @@ procedure S3_Implementation_Corpus is
       HTTP     : aliased HTTP_Client.Client (Capacity => 1);
       Identity : constant Low_Level.Credentials :=
         Low_Level.Make_Credentials (Access_Key, Secret_Key);
+
+      procedure Check_Bucket_Tags is
+         Value : Tags.Tag_Set;
+      begin
+         Value.Append
+           (Tags.Tag'
+              (Key   => US.To_Unbounded_String ("corpus"),
+               Value => US.To_Unbounded_String ("flyology")));
+         declare
+            Put_Result : constant Client_Buckets.Put_Tags_Outcome :=
+              Client_Buckets.Put_Tags
+                (HTTP, Origin, Bucket, Value, Identity, Timeout => 30.0);
+            Get_Result : constant Client_Buckets.Get_Tags_Outcome :=
+              Client_Buckets.Get_Tags
+                (HTTP, Origin, Bucket, Identity, Timeout => 30.0);
+         begin
+            if Put_Result.Kind /= Client_Buckets.Tags_Replaced
+              or else Get_Result.Kind /= Client_Buckets.Tags_Found
+              or else Get_Result.Value /= Value
+            then
+               raise Program_Error with
+                 "S3 implementation rejected bucket tagging round trip";
+            end if;
+         end;
+      end Check_Bucket_Tags;
 
       procedure Upload_High_Level_File is
          Local_Path : constant String :=
@@ -970,6 +1000,7 @@ procedure S3_Implementation_Corpus is
       end Delete_Many;
    begin
       HTTP_Client.Configure (HTTP, Origin);
+      Check_Bucket_Tags;
       declare
          Parameters : Low_Level.List_Objects_Parameters;
          Prepared : Low_Level.Prepared_Request;

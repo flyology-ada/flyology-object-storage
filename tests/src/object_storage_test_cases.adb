@@ -5529,6 +5529,37 @@ package body Object_Storage_Test_Cases is
             "bucket tagging XML did not preserve typed values");
       end;
 
+      declare
+         Namespace_Free : constant String :=
+           "<Tagging><TagSet>" & Tag_XML ("project", "flyology") &
+           "</TagSet></Tagging>";
+         Parsed : constant Tags.Tag_Set :=
+           Tagging.Parse_Bucket_Response (Namespace_Free);
+         Rejected_Foreign : Boolean := False;
+      begin
+         Assert
+           (Parsed.Length = 1
+            and then US.To_String (Parsed.First_Element.Key) = "project",
+            "namespace-free compatible response was rejected");
+         begin
+            declare
+               Ignored : constant Tags.Tag_Set :=
+                 Tagging.Parse_Bucket_Response
+                   ("<x:Tagging xmlns:x=""urn:foreign""><x:TagSet/>" &
+                    "</x:Tagging>");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Tagging.Malformed_Tagging =>
+               Rejected_Foreign := True;
+         end;
+         Assert
+           (Rejected_Foreign,
+            "foreign namespace in compatible response was accepted");
+      end;
+
       Must_Reject_Malformed
         ("<Wrong/>", "bucket tagging wrong root was accepted");
       Must_Reject_Malformed
@@ -7864,6 +7895,8 @@ package body Object_Storage_Test_Cases is
       package US renames Ada.Strings.Unbounded;
       use type Low_Level.Create_Bucket_Outcome_Kind;
       use type Low_Level.Get_Bucket_Location_Outcome_Kind;
+      use type Low_Level.Put_Bucket_Tagging_Outcome_Kind;
+      use type Low_Level.Get_Bucket_Tagging_Outcome_Kind;
       use type Low_Level.Head_Bucket_Outcome_Kind;
       use type Low_Level.Head_Object_Outcome_Kind;
       use type Low_Level.Get_Object_Attributes_Outcome_Kind;
@@ -8576,6 +8609,153 @@ package body Object_Storage_Test_Cases is
             and then US.To_String (Outcome.Error.Code) = "NoSuchBucket"
             and then US.To_String (Outcome.Error.Request_ID) = "request-id",
             "typed GetBucketLocation error response");
+      end;
+
+      declare
+         Value : Flyology.Object_Storage.Tags.Tag_Set;
+         Parameters : Low_Level.Put_Bucket_Tagging_Parameters;
+      begin
+         Value.Append
+           (Flyology.Object_Storage.Tags.Tag'
+              (Key   => US.To_Unbounded_String ("project"),
+               Value => US.To_Unbounded_String ("flyology")));
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         declare
+            Document : constant String :=
+              Flyology.Object_Storage.S3.Tagging.Serialize_Bucket (Value);
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Bucket_Tagging
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Value, Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) = "/example-bucket?tagging"
+               and then Low_Level.Signed_Headers (Prepared) =
+                 "content-md5;host;x-amz-content-sha256;x-amz-date;" &
+                 "x-amz-expected-bucket-owner;x-amz-request-payer"
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Canonical_Request (Prepared),
+                  SigV4.SHA256_Hex (Document)) > 0,
+               "PutBucketTagging exact signed request projection");
+         end;
+
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("SHA256");
+         declare
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Put_Bucket_Tagging
+                      (Flyology.HTTP.Parse_Origin
+                         ("http://localhost:9000"),
+                       Low_Level.Path_Style, "example-bucket", Value,
+                       Parameters, Identity, "us-east-1",
+                       "20130524T000000Z");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request => Raised := True;
+            end;
+            Assert
+              (Raised,
+               "PutBucketTagging silently emitted an incomplete checksum");
+         end;
+      end;
+
+      declare
+         Headers : Low_Level.Put_Bucket_Tagging_Result;
+      begin
+         Headers.Request_Charged := US.To_Unbounded_String ("requester");
+         declare
+            Outcome : constant Low_Level.Put_Bucket_Tagging_Outcome :=
+              Low_Level.Decode_Put_Bucket_Tagging_Response
+                (200, "", Headers);
+         begin
+            Assert
+              (Outcome.Kind = Low_Level.Bucket_Tags_Replaced
+               and then US.To_String (Outcome.Result.Request_Charged) =
+                 "requester",
+               "typed PutBucketTagging success response");
+         end;
+      end;
+
+      declare
+         Headers : Low_Level.Put_Bucket_Tagging_Result;
+         Raised  : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Put_Bucket_Tagging_Outcome :=
+                 Low_Level.Decode_Put_Bucket_Tagging_Response
+                   (200, "unexpected", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "PutBucketTagging accepted a success body");
+      end;
+
+      declare
+         Parameters : Low_Level.Get_Bucket_Tagging_Parameters;
+      begin
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Tagging
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) = "/example-bucket?tagging"
+               and then Low_Level.Signed_Headers (Prepared) =
+                 "host;x-amz-content-sha256;x-amz-date;" &
+                 "x-amz-expected-bucket-owner",
+               "GetBucketTagging exact signed request projection");
+         end;
+      end;
+
+      declare
+         Headers : Low_Level.Get_Bucket_Tagging_Result;
+         Document : constant String :=
+           "<Tagging>" &
+           "<TagSet><Tag><Key>project</Key><Value>flyology</Value>" &
+           "</Tag></TagSet></Tagging>";
+         Outcome : constant Low_Level.Get_Bucket_Tagging_Outcome :=
+           Low_Level.Decode_Get_Bucket_Tagging_Response
+             (200, Document, Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Bucket_Tags_Found
+            and then Outcome.Result.Value.Length = 1
+            and then US.To_String
+              (Outcome.Result.Value.First_Element.Value) = "flyology",
+            "typed namespace-free GetBucketTagging success response");
+      end;
+
+      declare
+         Headers : Low_Level.Get_Bucket_Tagging_Result;
+         Outcome : constant Low_Level.Get_Bucket_Tagging_Outcome :=
+           Low_Level.Decode_Get_Bucket_Tagging_Response
+             (404,
+              "<Error><Code>NoSuchTagSet</Code>" &
+              "<Message>missing</Message></Error>", Headers, "request-id");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Get_Bucket_Tagging_Rejected
+            and then US.To_String (Outcome.Error.Code) = "NoSuchTagSet"
+            and then US.To_String (Outcome.Error.Request_ID) = "request-id",
+            "typed GetBucketTagging error response");
       end;
 
       declare

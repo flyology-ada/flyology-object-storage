@@ -9,6 +9,8 @@ package body Flyology.Object_Storage.Client.Buckets is
    use type Low_Level.Delete_Bucket_Outcome_Kind;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
    use type Low_Level.Head_Bucket_Outcome_Kind;
+   use type Low_Level.Put_Bucket_Tagging_Outcome_Kind;
+   use type Low_Level.Get_Bucket_Tagging_Outcome_Kind;
 
    function Timestamp return String is
       Image : constant String := Ada.Calendar.Formatting.Image
@@ -213,5 +215,78 @@ package body Flyology.Object_Storage.Client.Buckets is
             Legacy_Constraint => Outcome.Result.Location_Constraint);
       end;
    end Get_Location;
+
+   function Put_Tags
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Value    : Flyology.Object_Storage.Tags.Tag_Set;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Put_Tags_Outcome
+   is
+      Parameters : constant Low_Level.Put_Bucket_Tagging_Parameters :=
+        (Content_MD5           => US.Null_Unbounded_String,
+         Checksum_Algorithm    => US.Null_Unbounded_String,
+         Expected_Bucket_Owner =>
+           US.To_Unbounded_String (Expected_Bucket_Owner),
+         Request_Payer         => US.To_Unbounded_String (Request_Payer));
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Put_Bucket_Tagging
+          (Origin, Style, Bucket, Value, Parameters, Identity, Region,
+           Timestamp);
+      Outcome : constant Low_Level.Put_Bucket_Tagging_Outcome :=
+        Low_Level.Execute_Put_Bucket_Tagging
+          (Client, Prepared, Timeout, Token);
+   begin
+      if Outcome.Kind = Low_Level.Put_Bucket_Tagging_Rejected then
+         return
+           (Kind => Put_Tags_Rejected, Status => Outcome.Status,
+            Error => Outcome.Error);
+      end if;
+      return
+        (Kind => Tags_Replaced, Status => Outcome.Status,
+         Request_Charged => Outcome.Result.Request_Charged);
+   end Put_Tags;
+
+   function Get_Tags
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Get_Tags_Outcome
+   is
+      Parameters : constant Low_Level.Get_Bucket_Tagging_Parameters :=
+        (Expected_Bucket_Owner =>
+           US.To_Unbounded_String (Expected_Bucket_Owner),
+         Request_Payer         => US.To_Unbounded_String (Request_Payer));
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Get_Bucket_Tagging
+          (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
+      Outcome : constant Low_Level.Get_Bucket_Tagging_Outcome :=
+        Low_Level.Execute_Get_Bucket_Tagging
+          (Client, Prepared, Timeout, Token);
+   begin
+      if Outcome.Kind = Low_Level.Get_Bucket_Tagging_Rejected then
+         return
+           (Kind => Get_Tags_Rejected, Status => Outcome.Status,
+            Error => Outcome.Error);
+      end if;
+      return
+        (Kind => Tags_Found, Status => Outcome.Status,
+         Value => Outcome.Result.Value,
+         Request_Charged => Outcome.Result.Request_Charged);
+   end Get_Tags;
 
 end Flyology.Object_Storage.Client.Buckets;

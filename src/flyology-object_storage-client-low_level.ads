@@ -16,6 +16,7 @@ with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.XML;
+with Flyology.Object_Storage.Tags;
 
 --  Prepared model-driven S3 operations over a caller-owned Flyology client.
 package Flyology.Object_Storage.Client.Low_Level is
@@ -425,6 +426,116 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null;
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Location_Outcome;
+
+   --  Every modeled PutBucketTagging control. Content_MD5 is generated from
+   --  the serialized tag document when omitted. Optional SDK checksum
+   --  algorithms are represented explicitly and rejected until the client
+   --  can emit their required paired checksum header.
+   type Put_Bucket_Tagging_Parameters is record
+      Content_MD5            : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm     : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner  : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer          : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_Put_Bucket_Tagging
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Value      : Tags.Tag_Set;
+      Parameters : Put_Bucket_Tagging_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type Put_Bucket_Tagging_Result is record
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Put_Bucket_Tagging_Outcome_Kind is
+     (Bucket_Tags_Replaced, Put_Bucket_Tagging_Rejected);
+
+   type Put_Bucket_Tagging_Outcome
+     (Kind : Put_Bucket_Tagging_Outcome_Kind :=
+       Put_Bucket_Tagging_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Tags_Replaced =>
+            Result : Put_Bucket_Tagging_Result;
+         when Put_Bucket_Tagging_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Put_Bucket_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Put_Bucket_Tagging_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Tagging_Outcome;
+
+   function Execute_Put_Bucket_Tagging
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Tagging_Outcome;
+
+   type Get_Bucket_Tagging_Parameters is record
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_Get_Bucket_Tagging
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Get_Bucket_Tagging_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type Get_Bucket_Tagging_Result is record
+      Value           : Tags.Tag_Set;
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Get_Bucket_Tagging_Outcome_Kind is
+     (Bucket_Tags_Found, Get_Bucket_Tagging_Rejected);
+
+   type Get_Bucket_Tagging_Outcome
+     (Kind : Get_Bucket_Tagging_Outcome_Kind :=
+       Get_Bucket_Tagging_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Tags_Found =>
+            Result : Get_Bucket_Tagging_Result;
+         when Get_Bucket_Tagging_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Get_Bucket_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Get_Bucket_Tagging_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Tagging_Outcome;
+
+   function Execute_Get_Bucket_Tagging
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Tagging_Outcome;
 
    type Head_Bucket_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
@@ -1751,6 +1862,8 @@ private
       Model_Driven_Operation,
       Create_Bucket_Operation,
       Get_Bucket_Location_Operation,
+      Put_Bucket_Tagging_Operation,
+      Get_Bucket_Tagging_Operation,
       Head_Bucket_Operation,
       Head_Object_Operation,
       Get_Object_Operation,

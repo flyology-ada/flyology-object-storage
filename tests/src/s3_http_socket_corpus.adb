@@ -14,19 +14,23 @@ with Flyology.IO;
 with Flyology.IO.Sockets;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Client.Objects;
+with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.SigV4;
+with Flyology.Object_Storage.Tags;
 
 procedure S3_HTTP_Socket_Corpus is
    package HTTP_Client renames Flyology.HTTP.Client;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
    package Objects renames Flyology.Object_Storage.Client.Objects;
+   package Buckets renames Flyology.Object_Storage.Client.Buckets;
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
    package Model renames Flyology.Object_Storage.S3.Model;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
+   package Tags renames Flyology.Object_Storage.Tags;
    package Sockets renames Flyology.IO.Sockets;
    package US renames Ada.Strings.Unbounded;
 
@@ -45,6 +49,9 @@ procedure S3_HTTP_Socket_Corpus is
    use type Objects.Tagging_Outcome_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
+   use type Buckets.Put_Tags_Outcome_Kind;
+   use type Buckets.Get_Tags_Outcome_Kind;
+   use type Tags.Tag_Vectors.Vector;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
    use type Transfers.Copy_Outcome_Kind;
@@ -618,6 +625,10 @@ procedure S3_HTTP_Socket_Corpus is
         "<Part><PartNumber>2</PartNumber><Size>7</Size></Part>" &
         "</ObjectParts><ObjectSize>14</ObjectSize>" &
         "</GetObjectAttributesResponse>";
+      Tagging_XML : constant String :=
+        "<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+        "<TagSet><Tag><Key>project</Key><Value>flyology</Value></Tag>" &
+        "</TagSet></Tagging>";
    begin
       Sockets.Create_Socket (Listener);
       Sockets.Bind_Socket
@@ -961,6 +972,13 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "x",
                "x-amz-checksum-sha256: not-base64" & CRLF),
             "GET", "/example-bucket/typed-get-invalid");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket?tagging", "<Tagging",
+            Expected_Content_MD5 => "2VvoA0oifGYAP5yZrGu55w==");
+         Serve
+           (HTTP_Response ("200 OK", Tagging_XML), "GET",
+            "/example-bucket?tagging", Fragmented => True);
          Serve
            (HTTP_Response ("200 OK", Create_XML), "POST",
             "/example-bucket/object%20key?uploads", Fragmented => True);
@@ -2182,6 +2200,32 @@ procedure S3_HTTP_Socket_Corpus is
                raise Program_Error with
                  "typed GetObject accepted an invalid checksum";
             end if;
+         end;
+         declare
+            Value : Tags.Tag_Set;
+         begin
+            Value.Append
+              (Tags.Tag'
+                 (Key   => US.To_Unbounded_String ("project"),
+                  Value => US.To_Unbounded_String ("flyology")));
+            declare
+               Put_Result : constant Buckets.Put_Tags_Outcome :=
+                 Buckets.Put_Tags
+                   (HTTP, Origin, "example-bucket", Value, Identity,
+                    Timeout => 5.0);
+               Get_Result : constant Buckets.Get_Tags_Outcome :=
+                 Buckets.Get_Tags
+                   (HTTP, Origin, "example-bucket", Identity,
+                    Timeout => 5.0);
+            begin
+               if Put_Result.Kind /= Buckets.Tags_Replaced
+                 or else Get_Result.Kind /= Buckets.Tags_Found
+                 or else Get_Result.Value /= Value
+               then
+                  raise Program_Error with
+                    "high-level bucket tagging socket mismatch";
+               end if;
+            end;
          end;
          declare
             Prepared_Create : constant Low_Level.Prepared_Request :=

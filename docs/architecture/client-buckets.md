@@ -39,6 +39,16 @@ controls and rejects malformed or duplicate controls before backend mutation.
 while preserving the wire spelling. `Delete` removes an empty bucket and
 preserves `BucketNotEmpty`, owner-precondition, and other S3 rejections.
 
+`Put_Tags` and `Get_Tags` expose the complete bucket tag set as the shared
+HTTP-independent `Tags.Tag_Set`. Put generates the strict REST/XML document and
+Content-MD5 automatically and replaces the entire set atomically. Get returns a
+typed snapshot; an existing untagged bucket remains the structured
+`NoSuchTagSet` rejection. Both convenience calls retain expected-owner,
+requester-pays, timeout, cancellation, addressing-style, and signing-region
+controls. The low-level surface additionally exposes an explicit Content-MD5
+for protocol tests and the modeled checksum-algorithm member; checksum selection
+currently fails locally until paired checksum generation is implemented.
+
 These operations are deliberately individual. Parallel work across many
 buckets or objects belongs in an application-owned joined scope, while
 multi-file data transfer uses `Client.Transfers.Transfer_Many` and its explicit

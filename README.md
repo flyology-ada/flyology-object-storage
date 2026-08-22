@@ -43,13 +43,15 @@ The core crate includes:
   ListObjects v1/v2 and multipart initiation, completion, ListParts, and
   ListMultipartUploads REST/XML codecs, plus the complete GetObjectAttributes
   request/output model, with high-level paginated ListBuckets,
-  HeadBucket, CreateBucket, GetBucketLocation and DeleteBucket convenience
+  HeadBucket, CreateBucket, GetBucketLocation, DeleteBucket, and bucket-tag
+  convenience
   APIs (see [bucket convenience client](docs/architecture/client-buckets.md));
 - high-level GetObjectAttributes and idempotent DeleteObject clients that
   preserve selected metadata, version,
   delete-marker, requester-charged, and structured error outcomes (see
   [object convenience client](docs/architecture/client-objects.md));
-- signed, bounded CreateBucket, GetBucketLocation, HeadBucket, GetObject,
+- signed, bounded CreateBucket, GetBucketLocation, HeadBucket,
+  PutBucketTagging, GetBucketTagging, GetObject,
   HeadObject, PutObject,
   ListBuckets, ListObjects, ListObjectsV2, DeleteBucket,
   DeleteObject, DeleteObjects REST/XML, and multipart
@@ -60,7 +62,8 @@ The core crate includes:
   boundary for all 116 pinned operations, while operation-specific typed
   codecs and interoperability gates remain tracked as incomplete;
 - an authenticated path-style S3 server application for the initial
-  Create/GetLocation/Head/DeleteBucket, ListObjects v1/v2, DeleteObjects,
+  Create/GetLocation/Head/DeleteBucket, Put/GetBucketTagging,
+  ListObjects v1/v2, DeleteObjects,
   Put/Copy/Get/Head/GetAttributes/DeleteObject, and core multipart/ListParts/
   ListMultipartUploads slice, with SigV4 admission before body acceptance,
   streamed payload-hash verification before commit, atomic suffix-range

@@ -354,6 +354,7 @@ package body Flyology.Object_Storage.S3.Tagging is
       In_Tag        : Boolean := False;
       Seen_Key      : Boolean := False;
       Seen_Value    : Boolean := False;
+      Allow_Empty_Namespace : Boolean := False;
    end record;
 
    overriding procedure Start_Element
@@ -383,9 +384,10 @@ package body Flyology.Object_Storage.S3.Tagging is
       Namespace_URI   : String;
       Attribute_Count : Natural)
    is
-      pragma Unreferenced (Item);
    begin
-      if Namespace_URI /= "http://s3.amazonaws.com/doc/2006-03-01/"
+      if (Namespace_URI /= "http://s3.amazonaws.com/doc/2006-03-01/"
+          and then
+            (not Item.Allow_Empty_Namespace or else Namespace_URI'Length > 0))
         or else Attribute_Count /= 0
       then
          raise Malformed_Tagging with
@@ -493,12 +495,14 @@ package body Flyology.Object_Storage.S3.Tagging is
       Item.Depth := Item.Depth - 1;
    end End_Element;
 
-   function Parse_Bucket
+   function Parse_Bucket_Document
      (Document : String;
-      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      Limits   : XML.Parse_Limits;
+      Allow_Empty_Namespace : Boolean)
       return Tags.Tag_Set
    is
-      Handler : aliased Bucket_Tagging_Handler;
+      Handler : aliased Bucket_Tagging_Handler :=
+        (Allow_Empty_Namespace => Allow_Empty_Namespace, others => <>);
    begin
       if Document'Length > Maximum_Bucket_Document_Bytes then
          raise Malformed_Tagging with "bucket tagging document is too large";
@@ -513,7 +517,21 @@ package body Flyology.Object_Storage.S3.Tagging is
    exception
       when XML.XML_Error =>
          raise Malformed_Tagging with "malformed bucket tagging XML";
-   end Parse_Bucket;
+   end Parse_Bucket_Document;
+
+   function Parse_Bucket
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Tags.Tag_Set is
+     (Parse_Bucket_Document
+        (Document, Limits, Allow_Empty_Namespace => False));
+
+   function Parse_Bucket_Response
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Tags.Tag_Set is
+     (Parse_Bucket_Document
+        (Document, Limits, Allow_Empty_Namespace => True));
 
    function Element (Name, Value : String) return String is
      ("<" & Name & ">" & XML.Escape_Text (Value) & "</" & Name & ">");

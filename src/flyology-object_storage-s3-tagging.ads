@@ -35,6 +35,14 @@ package Flyology.Object_Storage.S3.Tagging is
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Tags.Tag_Set;
 
+   --  Parse a bucket-tagging response from S3-compatible implementations.
+   --  The official S3 namespace and an absent namespace are accepted;
+   --  foreign namespaces and attributes remain invalid.
+   function Parse_Bucket_Response
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Tags.Tag_Set;
+
    function Serialize_Bucket (Value : Tags.Tag_Set) return String;
 
    --  Validate AWS's Unicode-character count and allowed repertoire.

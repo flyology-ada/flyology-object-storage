@@ -22,7 +22,7 @@ intentionally retained until that recovery pass so an already-open reader is
 never invalidated by replacement.
 
 The database carries a fixed application ID and schema version. Schema version
-4 adds `object_tags`, keyed by bucket, opaque object key, and a one-based tag
+4 added `object_tags`, keyed by bucket, opaque object key, and a one-based tag
 order. Its composite foreign key cascades object deletion. Complete tag-set
 replacement and deletion run in one catalog transaction, while object PUT and
 multipart completion clear any prior rows in the same transaction that
@@ -36,18 +36,29 @@ missing payload, or a payload with the wrong size fails closed. Foreign keys,
 opaque BLOB keys/metadata, bounded metadata, strict statement state, and exact
 64-bit size conversions are enforced at the adapter boundary.
 
-Schema version 5 retains completed-multipart part numbers and sizes in an
+Schema version 6 combines completed-multipart attributes and bucket tags.
+Completed part numbers and sizes live in an
 `object_parts` child table. Completion replaces the object row and its part
 rows in one transaction; ordinary PUT and COPY remove stale part rows in the
 same transaction. GetObjectAttributes selects object metadata, total count,
 and one bounded part page while holding the catalog operation gate. The
-version-4 migration creates the child table under an exclusive transaction;
 multipart objects completed by an older development schema have no
 reconstructable per-part rows.
 
-Schema version 3 introduced bucket creation time transactionally. Version 4
-added the tag table. Earlier migrations add both missing tables under an
-exclusive transaction; existing buckets use
+Bounded bucket tags use binary unique keys, stable
+ordinals, and a cascading bucket foreign key. Put deletes the prior rows and
+inserts the complete validated set in one transaction under the catalog gate;
+Get returns ordinal order and fails closed on invalid catalog data. Tags do not
+participate in the bucket-nonempty check and are removed with their bucket.
+
+Version 3 records bucket creation time transactionally. Version 4 introduced
+the object-tag table; the independently developed bucket-tag-only version-4
+layout is also recognized. Version 5 existed in two released-development
+layouts: object tags plus `object_parts`, and object tags plus `bucket_tags`.
+Opening any recognized version-1 through version-5 catalog upgrades it under
+an exclusive transaction to version 6, creates only missing tables, and
+preserves existing object tags, completed-part rows, and bucket tags. Existing
+buckets use
 `0` to mean that the historical creation time is unavailable, while every new
 bucket receives its actual commit-time value. Bucket pages are selected under
 the catalog operation gate with binary ordering, exclusive continuation,

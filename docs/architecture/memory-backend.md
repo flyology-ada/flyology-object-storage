@@ -53,3 +53,9 @@ therefore one atomic namespace snapshot, sorted bytewise and bounded to the S3
 `MaxBuckets` ceiling. The exclusive continuation cursor and prefix filter are
 applied before publication of the page. Creation times are captured when the
 bucket slot is committed and remain stable for that slot's lifetime.
+
+Bucket tags live in the same protected bucket slot. Put validates before
+entering the protected state and replaces the complete vector in one protected
+operation; Get returns a copied snapshot, so caller mutation cannot alias store
+state. Tags consume bounded configuration memory, do not make a bucket
+nonempty, and disappear with bucket deletion.
