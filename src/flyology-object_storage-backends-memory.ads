@@ -132,6 +132,15 @@ package Flyology.Object_Storage.Backends.Memory is
       Page      : out Multipart_Part_Page;
       Result    : out Status);
 
+   overriding procedure List_Multipart_Uploads
+     (Item      : in out Store;
+      Bucket    : String;
+      Options   : List_Multipart_Uploads_Options;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Page      : out Multipart_Upload_Page;
+      Result    : out Status);
+
    overriding procedure Copy_Multipart_Part
      (Item               : in out Store;
       Source_Bucket      : String;
@@ -215,6 +224,7 @@ private
       Bucket     : Ada.Strings.Unbounded.Unbounded_String;
       Key        : Ada.Strings.Unbounded.Unbounded_String;
       Options    : Multipart_Options := Default_Multipart_Options;
+      Created    : Unix_Time := 0;
    end record;
    type Upload_Array is array (Positive range <>) of Upload_Slot;
 
@@ -276,8 +286,14 @@ private
         (Bucket    : String;
          Key       : String;
          Options   : Multipart_Options;
+         Created   : Unix_Time;
          Upload_ID : out Ada.Strings.Unbounded.Unbounded_String;
          Result    : out Status);
+      procedure List_Uploads
+        (Bucket  : String;
+         Options : List_Multipart_Uploads_Options;
+         Page    : out Multipart_Upload_Page;
+         Result  : out Status);
       procedure Commit_Part
         (Bucket      : String;
          Key         : String;

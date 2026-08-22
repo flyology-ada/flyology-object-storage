@@ -159,6 +159,37 @@ package Flyology.Object_Storage.Backends is
       Next_After   : Multipart_Part_Marker := 0;
    end record;
 
+   --  Exclusive S3 marker pair for active-upload listing.  Upload_ID may be
+   --  empty to skip every upload whose key equals Key.
+   type Multipart_Upload_Marker is record
+      Key       : Ada.Strings.Unbounded.Unbounded_String;
+      Upload_ID : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type List_Multipart_Uploads_Options is record
+      Prefix    : Ada.Strings.Unbounded.Unbounded_String;
+      Delimiter : Ada.Strings.Unbounded.Unbounded_String;
+      After     : Multipart_Upload_Marker;
+      Maximum   : List_Limit := List_Limit'Last;
+   end record;
+
+   type Listed_Multipart_Upload is record
+      Key       : Ada.Strings.Unbounded.Unbounded_String;
+      Upload_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Initiated : Unix_Time := 0;
+      Options   : Multipart_Options;
+   end record;
+
+   package Listed_Multipart_Upload_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Listed_Multipart_Upload);
+
+   type Multipart_Upload_Page is record
+      Uploads         : Listed_Multipart_Upload_Vectors.Vector;
+      Common_Prefixes : Common_Prefix_Vectors.Vector;
+      Is_Truncated    : Boolean := False;
+      Next_After      : Multipart_Upload_Marker;
+   end record;
+
    procedure Create_Bucket
      (Item   : in out Backend;
       Bucket : String;
@@ -291,6 +322,20 @@ package Flyology.Object_Storage.Backends is
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Page      : out Multipart_Part_Page;
+      Result    : out Status) is abstract;
+
+   --  Return one atomic snapshot of active uploads after the exclusive marker.
+   --  Keys use unsigned bytewise lexical order. Uploads with the same key use
+   --  initiation-time order and upload ID breaks equal-time ties; marker
+   --  filtering independently follows S3's lexical upload-ID rule.
+   --  Delimiter-collapsed prefixes count toward Maximum like returned uploads.
+   procedure List_Multipart_Uploads
+     (Item      : in out Backend;
+      Bucket    : String;
+      Options   : List_Multipart_Uploads_Options;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Page      : out Multipart_Upload_Page;
       Result    : out Status) is abstract;
 
    --  Copy one immutable source-object interval into a staged part. Source

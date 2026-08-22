@@ -665,6 +665,46 @@ begin
          null, Ada.Real_Time.Time_Last, SQLite_Abort_ID, Result);
       Assert (Result = Success, "SQLite second multipart create failed");
       declare
+         Page    : Multipart_Upload_Page;
+         Options : List_Multipart_Uploads_Options;
+      begin
+         Options.Maximum := 1;
+         Store.List_Multipart_Uploads
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Uploads.Length = 1
+            and then US.To_String (Page.Uploads.First_Element.Key) =
+              "aborted-target"
+            and then Page.Is_Truncated
+            and then US.To_String (Page.Next_After.Key) = "aborted-target"
+            and then US.To_String (Page.Next_After.Upload_ID) =
+              US.To_String (SQLite_Abort_ID),
+            "SQLite multipart upload listing first page failed");
+         Options.After := Page.Next_After;
+         Store.List_Multipart_Uploads
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Uploads.Length = 1
+            and then US.To_String (Page.Uploads.First_Element.Key) =
+              "multipart-target"
+            and then US.To_String
+              (Page.Uploads.First_Element.Options.Content_Type) =
+                "application/x-multipart-test"
+            and then not Page.Is_Truncated,
+            "SQLite multipart upload listing continuation failed");
+         Options := (others => <>);
+         Options.Prefix := US.To_Unbounded_String ("multipart-");
+         Store.List_Multipart_Uploads
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Uploads.Length = 1
+            and then Page.Uploads.First_Element.Initiated > 0,
+            "SQLite multipart upload listing metadata failed");
+      end;
+      declare
          Page    : List_Page;
          Options : List_Options;
       begin
@@ -772,6 +812,20 @@ begin
         (Result = Success and then Info.Size = 11 and then
          US.To_String (Info.Entity_Tag) = "etag-2",
          "SQLite backend metadata did not persist");
+      declare
+         Page    : Multipart_Upload_Page;
+         Options : List_Multipart_Uploads_Options;
+      begin
+         Store.List_Multipart_Uploads
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Uploads.Length = 2
+            and then US.To_String (Page.Uploads (1).Key) = "aborted-target"
+            and then US.To_String (Page.Uploads (2).Key) =
+              "multipart-target",
+            "SQLite multipart upload listing did not persist across reopen");
+      end;
       declare
          Page : Multipart_Part_Page;
          Options : List_Multipart_Parts_Options :=

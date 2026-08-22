@@ -70,7 +70,7 @@ ListBucketInventoryConfigurations	extended	missing	partial	missing	missing
 ListBucketMetricsConfigurations	extended	missing	partial	missing	missing
 ListBuckets	core	missing	partial	missing	missing
 ListDirectoryBuckets	extended	missing	partial	missing	missing
-ListMultipartUploads	core	missing	partial	missing	partial
+ListMultipartUploads	core	covered	partial	missing	partial
 ListObjectAnnotations	extended	missing	partial	missing	missing
 ListObjectVersions	core	missing	partial	missing	missing
 ListObjects	core	partial	partial	partial	covered

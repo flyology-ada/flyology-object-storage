@@ -130,6 +130,15 @@ package Flyology.Object_Storage.Backends.Files is
       Page      : out Multipart_Part_Page;
       Result    : out Status);
 
+   overriding procedure List_Multipart_Uploads
+     (Item      : in out Store;
+      Bucket    : String;
+      Options   : List_Multipart_Uploads_Options;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Page      : out Multipart_Upload_Page;
+      Result    : out Status);
+
    overriding procedure Copy_Multipart_Part
      (Item               : in out Store;
       Source_Bucket      : String;

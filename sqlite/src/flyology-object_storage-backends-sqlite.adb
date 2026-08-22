@@ -1099,6 +1099,39 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end List_Multipart_Parts;
 
+   overriding procedure List_Multipart_Uploads
+     (Item      : in out Store;
+      Bucket    : String;
+      Options   : List_Multipart_Uploads_Options;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Page      : out Multipart_Upload_Page;
+      Result    : out Status)
+   is
+      procedure Check is
+      begin
+         Check_Context (Token, Deadline);
+      end Check;
+   begin
+      Page := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Catalogs.List_Multipart_Uploads
+        (Item.Catalog, Bucket, Options, Check'Access, Page, Result);
+      Check_Context (Token, Deadline);
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         Page := (others => <>);
+         raise;
+      when others =>
+         Page := (others => <>);
+         Result := Backend_Unavailable;
+   end List_Multipart_Uploads;
+
    overriding procedure Copy_Multipart_Part
      (Item               : in out Store;
       Source_Bucket      : String;

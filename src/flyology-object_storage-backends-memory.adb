@@ -6,6 +6,7 @@ with Ada.Strings.Fixed;
 with Ada.Unchecked_Deallocation;
 with Flyology.IO;
 with Flyology.Object_Storage.Backends.Listing;
+with Flyology.Object_Storage.Backends.Multipart_Listing;
 with GNAT.MD5;
 with GNAT.SHA256;
 
@@ -564,6 +565,7 @@ package body Flyology.Object_Storage.Backends.Memory is
         (Bucket    : String;
          Key       : String;
          Options   : Multipart_Options;
+         Created   : Unix_Time;
          Upload_ID : out Ada.Strings.Unbounded.Unbounded_String;
          Result    : out Status)
       is
@@ -594,9 +596,39 @@ package body Flyology.Object_Storage.Backends.Memory is
             ID      => Upload_ID,
             Bucket  => Ada.Strings.Unbounded.To_Unbounded_String (Bucket),
             Key     => Ada.Strings.Unbounded.To_Unbounded_String (Key),
-            Options => Options);
+            Options => Options,
+            Created => Created);
          Result := Success;
       end Start_Multipart;
+
+      procedure List_Uploads
+        (Bucket  : String;
+         Options : List_Multipart_Uploads_Options;
+         Page    : out Multipart_Upload_Page;
+         Result  : out Status)
+      is
+         Builder : Multipart_Listing.Builder;
+      begin
+         Page := (others => <>);
+         if Bucket_Index (Bucket) = 0 then
+            Result := Not_Found;
+            return;
+         end if;
+         Multipart_Listing.Initialize (Builder, Options);
+         for Upload of Uploads loop
+            if Upload.Used
+              and then Ada.Strings.Unbounded.To_String (Upload.Bucket) =
+                Bucket
+            then
+               Multipart_Listing.Consider
+                 (Builder, Ada.Strings.Unbounded.To_String (Upload.Key),
+                  Ada.Strings.Unbounded.To_String (Upload.ID),
+                  Upload.Created, Upload.Options);
+            end if;
+         end loop;
+         Page := Multipart_Listing.Finish (Builder);
+         Result := Success;
+      end List_Uploads;
 
       procedure Commit_Part
         (Bucket      : String;
@@ -1432,7 +1464,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result := Invalid_Request;
       else
          Item.State.Start_Multipart
-           (Bucket, Key, Options, Upload_ID, Result);
+           (Bucket, Key, Options, Current_Unix_Time, Upload_ID, Result);
       end if;
    end Create_Multipart_Upload;
 
@@ -1594,6 +1626,25 @@ package body Flyology.Object_Storage.Backends.Memory is
            (Bucket, Key, Upload_ID, Options, Page, Result);
       end if;
    end List_Multipart_Parts;
+
+   overriding procedure List_Multipart_Uploads
+     (Item      : in out Store;
+      Bucket    : String;
+      Options   : List_Multipart_Uploads_Options;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Page      : out Multipart_Upload_Page;
+      Result    : out Status)
+   is
+   begin
+      Page := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.List_Uploads (Bucket, Options, Page, Result);
+      end if;
+   end List_Multipart_Uploads;
 
    overriding procedure Copy_Multipart_Part
      (Item               : in out Store;

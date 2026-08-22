@@ -279,6 +279,231 @@ package body Object_Storage_Test_Cases is
       Assert (Result = Success, "listing cleanup bucket");
    end Exercise_Listing;
 
+   procedure Exercise_Multipart_Upload_Listing
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package US renames Ada.Strings.Unbounded;
+      Upload_IDs : array (Positive range 1 .. 5) of US.Unbounded_String;
+      Page       : Multipart_Upload_Page;
+      Options    : List_Multipart_Uploads_Options;
+      Result     : Status;
+
+      function Key_At (Index : Positive) return String is
+        (case Index is
+           when 1 => "zeta",
+           when 2 => "same",
+           when 3 => "dir/b",
+           when 4 => "same",
+           when 5 => "dir/a",
+           when others => raise Program_Error);
+
+      function Content_Type_At (Index : Positive) return String is
+        ("application/x-upload-" & Positive'Image (Index));
+
+      function Expected_Content_Type (Upload_ID : String) return String is
+      begin
+         for Index in Upload_IDs'Range loop
+            if US.To_String (Upload_IDs (Index)) = Upload_ID then
+               return Content_Type_At (Index);
+            end if;
+         end loop;
+         raise Program_Error with "unknown multipart upload ID";
+      end Expected_Content_Type;
+
+      function Smaller_ID return US.Unbounded_String is
+        (if US.To_String (Upload_IDs (2)) < US.To_String (Upload_IDs (4))
+         then Upload_IDs (2) else Upload_IDs (4));
+
+      function Larger_ID return US.Unbounded_String is
+        (if US.To_String (Upload_IDs (2)) < US.To_String (Upload_IDs (4))
+         then Upload_IDs (4) else Upload_IDs (2));
+   begin
+      Store.List_Multipart_Uploads
+        ("missing-multipart-list-bucket", Options, null,
+         Ada.Real_Time.Time_Last, Page, Result);
+      Assert (Result = Not_Found, "multipart listing absent bucket");
+      Store.List_Multipart_Uploads
+        ("Invalid_Bucket", Options, null, Ada.Real_Time.Time_Last,
+         Page, Result);
+      Assert (Result = Invalid_Request, "multipart listing invalid bucket");
+
+      Store.Create_Bucket
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "multipart listing bucket create");
+      for Index in Upload_IDs'Range loop
+         Store.Create_Multipart_Upload
+           (Bucket, Key_At (Index),
+            (Content_Type =>
+               US.To_Unbounded_String (Content_Type_At (Index))),
+            null, Ada.Real_Time.Time_Last, Upload_IDs (Index), Result);
+         Assert
+           (Result = Success and then US.Length (Upload_IDs (Index)) = 64,
+            "multipart listing upload setup");
+      end loop;
+
+      Store.List_Multipart_Uploads
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Uploads.Length = 5
+         and then Page.Common_Prefixes.Is_Empty
+         and then US.To_String (Page.Uploads (1).Key) = "dir/a"
+         and then US.To_String (Page.Uploads (2).Key) = "dir/b"
+         and then US.To_String (Page.Uploads (3).Key) = "same"
+         and then US.To_String (Page.Uploads (4).Key) = "same"
+         and then US.To_String (Page.Uploads (5).Key) = "zeta"
+         and then not Page.Is_Truncated,
+         "multipart listing key order and complete page");
+      Assert
+        (Page.Uploads (3).Initiated < Page.Uploads (4).Initiated
+         or else
+           (Page.Uploads (3).Initiated = Page.Uploads (4).Initiated
+            and then US.To_String (Page.Uploads (3).Upload_ID) <
+              US.To_String (Page.Uploads (4).Upload_ID)),
+         "same-key uploads are not initiation-time ordered");
+      for Upload of Page.Uploads loop
+         Assert
+           (US.To_String (Upload.Options.Content_Type) =
+              Expected_Content_Type (US.To_String (Upload.Upload_ID)),
+            "multipart listing lost initiation options");
+      end loop;
+
+      Options.Maximum := 2;
+      Store.List_Multipart_Uploads
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Uploads.Length = 2
+         and then US.To_String (Page.Uploads (1).Key) = "dir/a"
+         and then US.To_String (Page.Uploads (2).Key) = "dir/b"
+         and then Page.Is_Truncated
+         and then US.To_String (Page.Next_After.Key) = "dir/b"
+         and then US.Length (Page.Next_After.Upload_ID) = 64,
+         "multipart listing bounded first page");
+      Options.After := Page.Next_After;
+      Options.Maximum := 10;
+      Store.List_Multipart_Uploads
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Uploads.Length = 3
+         and then US.To_String (Page.Uploads (1).Key) = "same"
+         and then US.To_String (Page.Uploads (2).Key) = "same"
+         and then US.To_String (Page.Uploads (3).Key) = "zeta"
+         and then not Page.Is_Truncated,
+         "multipart listing continuation");
+
+      Options := (others => <>);
+      Options.After.Key := US.To_Unbounded_String ("same");
+      Options.After.Upload_ID := Smaller_ID;
+      Store.List_Multipart_Uploads
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Uploads.Length = 2
+         and then US.To_String (Page.Uploads (1).Upload_ID) =
+           US.To_String (Larger_ID)
+         and then US.To_String (Page.Uploads (2).Key) = "zeta",
+         "multipart upload-ID marker filtering");
+      Options.After.Upload_ID := US.Null_Unbounded_String;
+      Store.List_Multipart_Uploads
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Uploads.Length = 1
+         and then US.To_String (Page.Uploads.First_Element.Key) = "zeta",
+         "key-only multipart marker did not skip equal keys");
+
+      Options := (others => <>);
+      Options.Delimiter := US.To_Unbounded_String ("/");
+      Options.Maximum := 1;
+      Store.List_Multipart_Uploads
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Uploads.Is_Empty
+         and then Page.Common_Prefixes.Length = 1
+         and then US.To_String (Page.Common_Prefixes.First_Element) = "dir/"
+         and then Page.Is_Truncated
+         and then US.To_String (Page.Next_After.Key) = "dir/"
+         and then US.Length (Page.Next_After.Upload_ID) = 0,
+         "multipart delimiter prefix and page budget");
+      Options.After := Page.Next_After;
+      Options.Maximum := 10;
+      Store.List_Multipart_Uploads
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Uploads.Length = 3
+         and then Page.Common_Prefixes.Is_Empty
+         and then not Page.Is_Truncated,
+         "multipart delimiter continuation");
+
+      Options := (others => <>);
+      Options.Prefix := US.To_Unbounded_String ("same");
+      Store.List_Multipart_Uploads
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Uploads.Length = 2,
+         "multipart listing prefix filter");
+
+      Store.Abort_Multipart_Upload
+        (Bucket, "same", US.To_String (Upload_IDs (2)), null,
+         Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "multipart listing abort setup");
+      Store.List_Multipart_Uploads
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Uploads.Length = 1
+         and then US.To_String (Page.Uploads.First_Element.Upload_ID) =
+           US.To_String (Upload_IDs (4)),
+         "aborted multipart upload remained visible");
+
+      Options := (others => <>);
+      Options.Maximum := 0;
+      Store.List_Multipart_Uploads
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Uploads.Is_Empty
+         and then Page.Common_Prefixes.Is_Empty and then not Page.Is_Truncated,
+         "zero-sized multipart listing is empty and final");
+
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.List_Multipart_Uploads
+              (Bucket, Options, Cancel'Access, Ada.Real_Time.Time_Last,
+               Page, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "multipart listing ignored cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.List_Multipart_Uploads
+              (Bucket, Options, null, Ada.Real_Time.Time_First, Page, Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "multipart listing ignored expired deadline");
+      end;
+
+      for Index in Upload_IDs'Range loop
+         if Index /= 2 then
+            Store.Abort_Multipart_Upload
+              (Bucket, Key_At (Index), US.To_String (Upload_IDs (Index)),
+               null, Ada.Real_Time.Time_Last, Result);
+            Assert (Result = Success, "multipart listing cleanup upload");
+         end if;
+      end loop;
+      Store.Delete_Bucket
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "multipart listing cleanup bucket");
+   end Exercise_Multipart_Upload_Listing;
+
    overriding procedure Read
      (Item     : in out Buffer_Source;
       Data     : out Ada.Streams.Stream_Element_Array;
@@ -712,6 +937,7 @@ package body Object_Storage_Test_Cases is
          ETag := Info.Entity_Tag;
       end Upload;
    begin
+      Exercise_Multipart_Upload_Listing (Store, "multipart-listing");
       Store.Create_Bucket
         ("multipart-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "memory multipart bucket create failed");
@@ -1344,6 +1570,7 @@ package body Object_Storage_Test_Cases is
          Info   : Object_Information;
          Result : Status;
       begin
+         Exercise_Multipart_Upload_Listing (Store, "file-multipart-list");
          Store.Create_Bucket
            ("file-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "files create bucket");

@@ -1,5 +1,6 @@
 with Ada.Containers;
 with Flyology.Object_Storage.Backends.Listing;
+with Flyology.Object_Storage.Backends.Multipart_Listing;
 
 package body Flyology.Object_Storage.SQLite.Catalogs is
 
@@ -820,6 +821,69 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Page := (others => <>);
          raise;
    end List_Multipart_Parts;
+
+   procedure List_Multipart_Uploads
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Multipart_Uploads_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Multipart_Upload_Page;
+      Result  : out Status)
+   is
+      Bucket_Query : DB.Statement;
+      Query        : DB.Statement;
+      Builder      : Backends.Multipart_Listing.Builder;
+      Locked       : Boolean := False;
+   begin
+      Page := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Bucket_Query, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Bucket_Query, 1, Bucket);
+      if DB.Step (Bucket_Query) /= DB.Row then
+         raise Catalog_Error with "bucket existence query returned no row";
+      elsif DB.Column (Bucket_Query, 0) = 0 then
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      Backends.Multipart_Listing.Initialize (Builder, Options);
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT object_key,upload_id,created,content_type " &
+         "FROM multipart_uploads WHERE bucket_name=?1");
+      DB.Bind (Query, 1, Bucket);
+      loop
+         Check.all;
+         case DB.Step (Query) is
+            when DB.Done =>
+               exit;
+            when DB.Row =>
+               Backends.Multipart_Listing.Consider
+                 (Builder,
+                  DB.Column_Bytes (Query, 0),
+                  DB.Column (Query, 1),
+                  Unix_Time
+                    (Long_Long_Integer'(DB.Column (Query, 2))),
+                  Backends.Multipart_Options'
+                    (Content_Type => US.To_Unbounded_String
+                       (DB.Column_Bytes (Query, 3))));
+         end case;
+      end loop;
+      Page := Backends.Multipart_Listing.Finish (Builder);
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end List_Multipart_Uploads;
 
    procedure Read_Multipart_Parts
      (Item      : in out Catalog;

@@ -9,6 +9,7 @@ with Ada.Streams;
 with Ada.Streams.Stream_IO;
 with Flyology.IO;
 with Flyology.Object_Storage.Backends.Listing;
+with Flyology.Object_Storage.Backends.Multipart_Listing;
 with GNAT.MD5;
 with GNAT.OS_Lib;
 with GNAT.SHA256;
@@ -1716,6 +1717,117 @@ package body Flyology.Object_Storage.Backends.Files is
          Page := (others => <>);
          Result := Backend_Unavailable;
    end List_Multipart_Parts;
+
+   overriding procedure List_Multipart_Uploads
+     (Item      : in out Store;
+      Bucket    : String;
+      Options   : List_Multipart_Uploads_Options;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Page      : out Multipart_Upload_Page;
+      Result    : out Status)
+   is
+      Builder        : Multipart_Listing.Builder;
+      Search         : Ada.Directories.Search_Type;
+      Directory_Item : Ada.Directories.Directory_Entry_Type;
+      Filter         : constant Ada.Directories.Filter_Type :=
+        (Ada.Directories.Ordinary_File => False,
+         Ada.Directories.Directory     => True,
+         Ada.Directories.Special_File  => False);
+      File      : SIO.File_Type;
+      Opened    : Boolean := False;
+      Searching : Boolean := False;
+      Locked    : Boolean := False;
+   begin
+      Page := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Item.Publication.Release;
+         Locked := False;
+         Result := Not_Found;
+         return;
+      end if;
+      Multipart_Listing.Initialize (Builder, Options);
+      if Ada.Directories.Exists (Multipart_Path (Item, Bucket)) then
+         Ada.Directories.Start_Search
+           (Search, Multipart_Path (Item, Bucket), "*", Filter);
+         Searching := True;
+         while Ada.Directories.More_Entries (Search) loop
+            Check_Context (Token, Deadline);
+            Ada.Directories.Get_Next_Entry (Search, Directory_Item);
+            declare
+               Manifest : constant String := Join
+                 (Ada.Directories.Full_Name (Directory_Item), "upload.fos");
+            begin
+               if Ada.Directories.Exists (Manifest) then
+                  declare
+                     Key     : US.Unbounded_String;
+                     Info    : Object_Information;
+                     Body_At : SIO.Positive_Count;
+                  begin
+                     SIO.Open (File, SIO.In_File, Manifest);
+                     Opened := True;
+                     Read_Header_Any (File, Key, Info, Body_At);
+                     SIO.Close (File);
+                     Opened := False;
+                     if Info.Size /= 0
+                       or else US.Length (Info.Entity_Tag) = 0
+                       or else Ada.Directories.Simple_Name (Directory_Item) /=
+                         GNAT.SHA256.Digest
+                           (US.To_String (Info.Entity_Tag))
+                     then
+                        raise Ada.IO_Exceptions.Data_Error;
+                     end if;
+                     Multipart_Listing.Consider
+                       (Builder, US.To_String (Key),
+                        US.To_String (Info.Entity_Tag), Info.Modified,
+                        Multipart_Options'
+                          (Content_Type => Info.Content_Type));
+                  end;
+               end if;
+            end;
+         end loop;
+         Ada.Directories.End_Search (Search);
+         Searching := False;
+      end if;
+      Page := Multipart_Listing.Finish (Builder);
+      Item.Publication.Release;
+      Locked := False;
+      Result := Success;
+      Check_Context (Token, Deadline);
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Page := (others => <>);
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Page := (others => <>);
+         Result := Backend_Unavailable;
+   end List_Multipart_Uploads;
 
    overriding procedure Copy_Multipart_Part
      (Item               : in out Store;

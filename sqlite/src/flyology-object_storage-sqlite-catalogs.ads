@@ -112,6 +112,14 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Page      : out Backends.Multipart_Part_Page;
       Result    : out Status);
 
+   procedure List_Multipart_Uploads
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Multipart_Uploads_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Multipart_Upload_Page;
+      Result  : out Status);
+
    procedure Read_Multipart_Parts
      (Item      : in out Catalog;
       Bucket    : String;
