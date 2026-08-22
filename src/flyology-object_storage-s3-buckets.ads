@@ -6,6 +6,7 @@ with Flyology.Object_Storage.S3.XML;
 package Flyology.Object_Storage.S3.Buckets is
 
    Invalid_Bucket_Configuration : exception;
+   Malformed_Bucket_Configuration : exception;
    Malformed_Bucket_Location : exception;
 
    subtype Max_Buckets_Value is Positive range 1 .. 10_000;
@@ -66,6 +67,14 @@ package Flyology.Object_Storage.S3.Buckets is
    --  emits the namespaced CreateBucketConfiguration document.
    function Serialize_Create_Configuration
      (Value : Create_Bucket_Configuration) return String;
+
+   --  Parse the exact CreateBucketConfiguration shape. Empty input means the
+   --  configuration member is absent. Unknown, duplicate, misplaced, or
+   --  incomplete elements fail, as do documents outside the supplied limits.
+   function Parse_Create_Configuration
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Create_Bucket_Configuration;
 
    --  Legacy GetBucketLocation represents us-east-1 as an empty root value;
    --  EU remains the legacy spelling for eu-west-1. Other values follow the

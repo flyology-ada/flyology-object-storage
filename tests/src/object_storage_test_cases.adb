@@ -6858,6 +6858,138 @@ package body Object_Storage_Test_Cases is
               "<Value>storage&lt;core&gt;</Value></Tag></Tags>" &
               "</CreateBucketConfiguration>",
             "CreateBucket complete nested configuration serialization");
+         declare
+            Parsed : constant Buckets.Create_Bucket_Configuration :=
+              Buckets.Parse_Create_Configuration
+                (Buckets.Serialize_Create_Configuration (Configuration));
+         begin
+            Assert
+              (US.To_String (Parsed.Location_Type) = "AvailabilityZone"
+               and then US.To_String (Parsed.Location_Name) = "usw2-az1"
+               and then US.To_String (Parsed.Data_Redundancy) =
+                 "SingleAvailabilityZone"
+               and then US.To_String (Parsed.Bucket_Type) = "Directory"
+               and then Parsed.Tags.Length = 1
+               and then US.To_String (Parsed.Tags.First_Element.Key) =
+                 "team&owner"
+               and then US.To_String (Parsed.Tags.First_Element.Value) =
+                 "storage<core>",
+               "CreateBucket configuration round trip");
+         end;
+      end;
+
+      declare
+         procedure Rejects (Document : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Buckets.Create_Bucket_Configuration :=
+                    Buckets.Parse_Create_Configuration (Document);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Buckets.Malformed_Bucket_Configuration => Raised := True;
+            end;
+            Assert (Raised, "malformed CreateBucket XML was accepted");
+         end Rejects;
+      begin
+         Assert
+           (Buckets.Is_Empty (Buckets.Parse_Create_Configuration ("")),
+            "empty CreateBucket configuration was not accepted");
+         Rejects ("<WrongRoot/>");
+         Rejects
+           ("<CreateBucketConfiguration><LocationConstraint>us-west-2" &
+            "</LocationConstraint><LocationConstraint>us-west-2" &
+            "</LocationConstraint></CreateBucketConfiguration>");
+         Rejects
+           ("<CreateBucketConfiguration><LocationConstraint/>" &
+            "</CreateBucketConfiguration>");
+         Rejects
+           ("<CreateBucketConfiguration><Location><Type>" &
+            "AvailabilityZone</Type></Location>" &
+            "</CreateBucketConfiguration>");
+         Rejects
+           ("<CreateBucketConfiguration><Location><Type/>" &
+            "<Name/></Location></CreateBucketConfiguration>");
+         Rejects
+           ("<CreateBucketConfiguration><Bucket><Type>Directory</Type>" &
+            "</Bucket></CreateBucketConfiguration>");
+         Rejects
+           ("<CreateBucketConfiguration><Bucket><DataRedundancy/>" &
+            "<Type/></Bucket></CreateBucketConfiguration>");
+         Rejects
+           ("<CreateBucketConfiguration><Tags/></CreateBucketConfiguration>");
+         Rejects
+           ("<CreateBucketConfiguration><Tags><Tag><Key>one</Key>" &
+            "</Tag></Tags></CreateBucketConfiguration>");
+         Rejects
+           ("<CreateBucketConfiguration><Tags>" &
+            "<Tag><Key>same</Key><Value>one</Value></Tag>" &
+            "<Tag><Key>same</Key><Value>two</Value></Tag>" &
+            "</Tags></CreateBucketConfiguration>");
+         Rejects
+           ("<CreateBucketConfiguration><Tags><Tag><Key>" &
+            String'(1 .. 129 => 'k') &
+            "</Key><Value>value</Value></Tag></Tags>" &
+            "</CreateBucketConfiguration>");
+         Rejects
+           ("<CreateBucketConfiguration><Tags><Tag><Key>key</Key>" &
+            "<Value>" & String'(1 .. 257 => 'v') &
+            "</Value></Tag></Tags></CreateBucketConfiguration>");
+         Rejects
+           ("<CreateBucketConfiguration><LocationConstraint>us-east-1" &
+            "</LocationConstraint></CreateBucketConfiguration>");
+         declare
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant
+                    Buckets.Create_Bucket_Configuration :=
+                      Buckets.Parse_Create_Configuration
+                        ("<CreateBucketConfiguration/>",
+                         Limits =>
+                           (Maximum_Document_Bytes => 8,
+                            Maximum_Depth          => 1,
+                            Maximum_Elements       => 1,
+                            Maximum_Text_Bytes     => 1));
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Buckets.Malformed_Bucket_Configuration => Raised := True;
+            end;
+            Assert (Raised, "CreateBucket XML byte limit was ignored");
+         end;
+         declare
+            Configuration : Buckets.Create_Bucket_Configuration;
+            Raised        : Boolean := False;
+         begin
+            for Index in 1 .. 51 loop
+               Configuration.Tags.Append
+                 (Buckets.Tag'
+                    (Key   => US.To_Unbounded_String
+                       ("key-" & Ada.Strings.Fixed.Trim
+                          (Positive'Image (Index), Ada.Strings.Both)),
+                     Value => US.Null_Unbounded_String));
+            end loop;
+            begin
+               declare
+                  Ignored : constant String :=
+                    Buckets.Serialize_Create_Configuration (Configuration);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Buckets.Invalid_Bucket_Configuration => Raised := True;
+            end;
+            Assert (Raised, "CreateBucket serialized more than 50 tags");
+         end;
       end;
 
       declare
@@ -7099,6 +7231,25 @@ package body Object_Storage_Test_Cases is
                  "/example-bucket",
                "typed CreateBucket success headers");
          end;
+      end;
+
+      declare
+         Headers : Low_Level.Create_Bucket_Result;
+         Raised  : Boolean := False;
+      begin
+         Headers.Bucket_ARN := US.To_Unbounded_String ("arn::s3:::bucket");
+         begin
+            declare
+               Ignored : constant Low_Level.Create_Bucket_Outcome :=
+                 Low_Level.Decode_Create_Bucket_Response (200, "", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "CreateBucket accepted an invalid bucket ARN");
       end;
 
       declare

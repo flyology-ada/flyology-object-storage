@@ -566,18 +566,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          end;
       end Body_Length;
 
-      procedure Drain (Source : in out Request_IO.Request_Source) is
-         Buffer   : Ada.Streams.Stream_Element_Array (1 .. 16 * 1_024);
-         Last     : Ada.Streams.Stream_Element_Offset;
-         Finished : Boolean := False;
-      begin
-         while not Finished loop
-            Source.Read
-              (Buffer, Last, Finished, Apps.Cancellation (X),
-               Apps.Deadline (X));
-         end loop;
-      end Drain;
-
       function Read_Document
         (Source : in out Request_IO.Request_Source) return String
       is
@@ -931,17 +919,168 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Observed  => 0,
                      Maximum   => Maximum_Create_Bucket_Body,
                      Completed => False);
+                  Document : constant String := Read_Document (Source);
+                  Configuration : constant
+                    Buckets.Create_Bucket_Configuration :=
+                      Buckets.Parse_Create_Configuration
+                        (Document,
+                         (Maximum_Document_Bytes =>
+                            Natural (Maximum_Create_Bucket_Body),
+                          Maximum_Depth      => 5,
+                          Maximum_Elements   => 256,
+                          Maximum_Text_Bytes =>
+                            Natural (Maximum_Create_Bucket_Body)));
+                  Configured : constant String :=
+                    US.To_String (Rules.Expected_Region);
+                  Effective_Region : constant String :=
+                    (if Configured'Length = 0
+                     then "us-east-1" else Configured);
+                  Constraint : constant String := US.To_String
+                    (Configuration.Location_Constraint);
+                  Requested_Region : constant String :=
+                    (if Constraint = "EU" then "eu-west-1"
+                     elsif Constraint'Length = 0 then "us-east-1"
+                     else Constraint);
+                  ACL_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-acl");
+                  ACL : constant String :=
+                    (if ACL_Count = 1
+                     then Apps.Request_Header (X, "x-amz-acl") else "");
+                  Ownership_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-object-ownership");
+                  Ownership : constant String :=
+                    (if Ownership_Count = 1
+                     then Apps.Request_Header
+                       (X, "x-amz-object-ownership") else "");
+                  Object_Lock_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-bucket-object-lock-enabled");
+                  Object_Lock : constant String :=
+                    (if Object_Lock_Count = 1
+                     then Apps.Request_Header
+                       (X, "x-amz-bucket-object-lock-enabled") else "");
+                  Namespace_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-bucket-namespace");
+                  Namespace : constant String :=
+                    (if Namespace_Count = 1
+                     then Apps.Request_Header
+                       (X, "x-amz-bucket-namespace") else "");
+                  Duplicate_Grant : constant Boolean :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-grant-full-control") > 1
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-grant-read") > 1
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-grant-read-acp") > 1
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-grant-write") > 1
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-grant-write-acp") > 1;
+                  Has_Grant : constant Boolean :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-grant-full-control") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-grant-read") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-grant-read-acp") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-grant-write") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-grant-write-acp") > 0;
+                  Directory_Configuration : constant Boolean :=
+                    US.Length (Configuration.Location_Type) > 0
+                    or else US.Length (Configuration.Location_Name) > 0
+                    or else US.Length (Configuration.Data_Redundancy) > 0
+                    or else US.Length (Configuration.Bucket_Type) > 0;
                begin
-                  Drain (Source);
+                  if ACL_Count > 1 or else Ownership_Count > 1
+                    or else Object_Lock_Count > 1
+                    or else Namespace_Count > 1 or else Duplicate_Grant
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A CreateBucket header is duplicated", Target_Text);
+                     return;
+                  elsif ACL'Length > 0
+                    and then ACL /= "private"
+                    and then ACL /= "public-read"
+                    and then ACL /= "public-read-write"
+                    and then ACL /= "authenticated-read"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The canned ACL is invalid", Target_Text);
+                     return;
+                  elsif Ownership'Length > 0
+                    and then Ownership /= "BucketOwnerPreferred"
+                    and then Ownership /= "ObjectWriter"
+                    and then Ownership /= "BucketOwnerEnforced"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The object ownership value is invalid", Target_Text);
+                     return;
+                  elsif Object_Lock'Length > 0
+                    and then Object_Lock /= "true"
+                    and then Object_Lock /= "false"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The Object Lock value is invalid", Target_Text);
+                     return;
+                  elsif Namespace'Length > 0
+                    and then Namespace /= "account-regional"
+                    and then Namespace /= "global"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The bucket namespace is invalid", Target_Text);
+                     return;
+                  elsif Directory_Configuration then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Directory buckets are not implemented", Target_Text);
+                     return;
+                  elsif not Configuration.Tags.Is_Empty then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Bucket tags are not implemented", Target_Text);
+                     return;
+                  elsif Has_Grant or else ACL not in "" | "private"
+                    or else Object_Lock_Count > 0
+                    or else Ownership not in "" | "BucketOwnerEnforced"
+                    or else Namespace_Count > 0
+                  then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "The requested bucket controls are not implemented",
+                        Target_Text);
+                     return;
+                  elsif Effective_Region /= "us-east-1"
+                    and then not
+                      Buckets.Valid_Location_Constraint (Effective_Region)
+                  then
+                     Send_Error
+                       (X, 500, "InternalError",
+                        "The configured S3 region is invalid", Target_Text);
+                     return;
+                  elsif Requested_Region /= Effective_Region then
+                     Send_Error
+                       (X, 400, "IllegalLocationConstraintException",
+                        "The location constraint is incompatible with this " &
+                        "endpoint", Target_Text);
+                     return;
+                  end if;
+                  Store.Create_Bucket
+                    (Bucket, Apps.Cancellation (X), Apps.Deadline (X), Result);
+                  if Result = Success then
+                     Apps.Set_Header (X, "Location", "/" & Bucket);
+                     Apps.Respond (X, 200, "", "");
+                  else
+                     Send_Backend_Error (X, Result, True, Target_Text);
+                  end if;
+
                end;
-               Store.Create_Bucket
-                 (Bucket, Apps.Cancellation (X), Apps.Deadline (X), Result);
-               if Result = Success then
-                  Apps.Set_Header (X, "Location", "/" & Bucket);
-                  Apps.Respond (X, 200, "", "");
-               else
-                  Send_Backend_Error (X, Result, True, Target_Text);
-               end if;
 
             when Head_Bucket =>
                declare
@@ -2085,6 +2224,15 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          | Flyology.IO.Timeout_Error =>
          Apps.Mark_Failed (X);
          raise;
+      when Buckets.Malformed_Bucket_Configuration =>
+         if Apps.Wire_Response_Started (X) then
+            Apps.Mark_Failed (X);
+         else
+            Send_Error
+              (X, 400, "MalformedXML",
+               "The XML provided was not well-formed or did not validate " &
+               "against the published schema", Target_Text);
+         end if;
       when Body_Entity_Too_Large =>
          if Apps.Wire_Response_Started (X) then
             Apps.Mark_Failed (X);

@@ -4,6 +4,7 @@ with Ada.Calendar.Formatting;
 package body Flyology.Object_Storage.Client.Buckets is
 
    package US renames Ada.Strings.Unbounded;
+   use type Low_Level.Create_Bucket_Outcome_Kind;
    use type Low_Level.Delete_Bucket_Outcome_Kind;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
    use type Low_Level.Head_Bucket_Outcome_Kind;
@@ -19,6 +20,46 @@ package body Flyology.Object_Storage.Client.Buckets is
         & Image (Image'First + 14 .. Image'First + 15)
         & Image (Image'First + 17 .. Image'First + 18) & "Z";
    end Timestamp;
+
+   function Create
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Location_Constraint : String := "";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Create_Outcome
+   is
+      Parameters : Low_Level.Create_Bucket_Parameters;
+   begin
+      Parameters.Configuration.Location_Constraint :=
+        US.To_Unbounded_String
+          (if Location_Constraint'Length > 0 then Location_Constraint
+           elsif Region /= "us-east-1" then Region
+           else "");
+      declare
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_Create_Bucket
+             (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
+         Outcome : constant Low_Level.Create_Bucket_Outcome :=
+           Low_Level.Execute_Create_Bucket
+             (Client, Prepared, Timeout, Token);
+      begin
+         if Outcome.Kind = Low_Level.Create_Bucket_Rejected then
+            return
+              (Kind => Create_Rejected, Status => Outcome.Status,
+               Error => Outcome.Error);
+         end if;
+         return
+           (Kind       => Creation_Completed,
+            Status     => Outcome.Status,
+            Location   => Outcome.Result.Location,
+            Bucket_ARN => Outcome.Result.Bucket_ARN);
+      end;
+   end Create;
 
    function Delete
      (Client   : aliased in out Flyology.HTTP.Client.Client;

@@ -8,6 +8,46 @@ with Flyology.Object_Storage.S3.Errors;
 --  High-level bucket operations over a configured Flyology HTTP client.
 package Flyology.Object_Storage.Client.Buckets is
 
+   type Create_Outcome_Kind is (Creation_Completed, Create_Rejected);
+
+   type Create_Outcome
+     (Kind : Create_Outcome_Kind := Create_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Creation_Completed =>
+            Location   : Ada.Strings.Unbounded.Unbounded_String;
+            Bucket_ARN : Ada.Strings.Unbounded.Unbounded_String;
+         when Create_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Create a general-purpose bucket. Unless explicitly supplied,
+   --  Location_Constraint follows Region and is omitted for us-east-1.
+   --  Advanced ACL, Object Lock, tagging, namespace, and directory-bucket
+   --  inputs remain available through the typed Low_Level API.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket New general-purpose bucket name
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region Region used to sign the CreateBucket request
+   --  @param Location_Constraint Optional explicit legacy region constraint
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled creation headers or structured S3 rejection
+   function Create
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Location_Constraint : String := "";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Create_Outcome;
+
    type Delete_Outcome_Kind is (Deletion_Completed, Delete_Rejected);
 
    type Delete_Outcome

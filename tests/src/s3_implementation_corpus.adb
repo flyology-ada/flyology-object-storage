@@ -35,7 +35,6 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Abort_Multipart_Outcome_Kind;
    use type Low_Level.Complete_Multipart_Outcome_Kind;
    use type Low_Level.Copy_Object_Outcome_Kind;
-   use type Low_Level.Create_Bucket_Outcome_Kind;
    use type Low_Level.Create_Multipart_Outcome_Kind;
    use type Low_Level.Delete_Object_Outcome_Kind;
    use type Low_Level.Delete_Objects_Outcome_Kind;
@@ -53,6 +52,7 @@ procedure S3_Implementation_Corpus is
    use type Transfers.Head_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
    use type Client_Buckets.Head_Outcome_Kind;
+   use type Client_Buckets.Create_Outcome_Kind;
    use type Client_Buckets.Delete_Outcome_Kind;
    use type Client_Buckets.Location_Outcome_Kind;
 
@@ -953,24 +953,20 @@ procedure S3_Implementation_Corpus is
       Bucket    : String;
       Timestamp : String)
    is
+      pragma Unreferenced (Timestamp);
       HTTP       : aliased HTTP_Client.Client (Capacity => 1);
       Identity   : constant Low_Level.Credentials :=
         Low_Level.Make_Credentials (Access_Key, Secret_Key);
-      Parameters : Low_Level.Create_Bucket_Parameters;
-      Prepared   : constant Low_Level.Prepared_Request :=
-        Low_Level.Prepare_Create_Bucket
-          (Origin, Low_Level.Path_Style, Bucket, Parameters, Identity,
-           "us-east-1", Timestamp);
    begin
       HTTP_Client.Configure (HTTP, Origin);
       declare
-         Outcome : constant Low_Level.Create_Bucket_Outcome :=
-           Low_Level.Execute_Create_Bucket
-             (HTTP, Prepared, Timeout => 30.0);
+         Outcome : constant Client_Buckets.Create_Outcome :=
+           Client_Buckets.Create
+             (HTTP, Origin, Bucket, Identity, Timeout => 30.0);
       begin
-         if Outcome.Kind /= Low_Level.Bucket_Created then
+         if Outcome.Kind /= Client_Buckets.Creation_Completed then
             raise Program_Error with
-              "S3 implementation rejected CreateBucket";
+              "S3 implementation rejected high-level CreateBucket";
          end if;
       end;
       HTTP_Client.Shutdown (HTTP);

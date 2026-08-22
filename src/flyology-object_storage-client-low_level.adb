@@ -1629,11 +1629,31 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Create_Bucket_Outcome
    is
+      ARN : constant String := US.To_String (Headers.Bucket_ARN);
+      S3_Service : constant Natural :=
+        Ada.Strings.Fixed.Index (ARN, ":s3:");
+      Express_Service : constant Natural :=
+        Ada.Strings.Fixed.Index (ARN, ":s3express:");
+      Service : constant Natural :=
+        (if S3_Service > 0 then S3_Service else Express_Service);
    begin
       if Status = 200 then
          if not Whitespace_Only (Payload) then
             raise Invalid_Response with
               "CreateBucket success contains a response body";
+         elsif ARN'Length > 128
+           or else
+             (ARN'Length > 0
+              and then Ada.Strings.Fixed.Index (ARN, "arn:") /= ARN'First)
+           or else
+             (ARN'Length > 0 and then Service <= ARN'First + 4)
+           or else
+             (Service > ARN'First + 4
+              and then Ada.Strings.Fixed.Index
+                (ARN (ARN'First + 4 .. Service - 1), ":") > 0)
+         then
+            raise Invalid_Response with
+              "CreateBucket returned an invalid bucket ARN";
          end if;
          return
            (Kind => Bucket_Created, Status => Status, Result => Headers);

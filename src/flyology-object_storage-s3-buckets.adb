@@ -423,8 +423,8 @@ package body Flyology.Object_Storage.S3.Buckets is
    function Element (Name, Value : String) return String is
      ("<" & Name & ">" & XML.Escape_Text (Value) & "</" & Name & ">");
 
-   function Serialize_Create_Configuration
-     (Value : Create_Bucket_Configuration) return String
+   procedure Validate_Create_Configuration
+     (Value : Create_Bucket_Configuration)
    is
       Constraint_Value : constant String :=
         US.To_String (Value.Location_Constraint);
@@ -436,11 +436,7 @@ package body Flyology.Object_Storage.S3.Buckets is
         Location_Type'Length > 0 or else Location_Name'Length > 0;
       Has_Bucket : constant Boolean :=
         Redundancy'Length > 0 or else Bucket_Type'Length > 0;
-      Result : US.Unbounded_String;
    begin
-      if Is_Empty (Value) then
-         return "";
-      end if;
       if (Constraint_Value'Length > 0
           and then not Valid_Location_Constraint (Constraint_Value))
         or else (Has_Location
@@ -449,6 +445,11 @@ package body Flyology.Object_Storage.S3.Buckets is
         or else (Location_Type'Length > 0
                  and then Location_Type /= "AvailabilityZone"
                  and then Location_Type /= "LocalZone")
+        or else (Location_Name'Length > 63
+                 or else
+                   (Location_Name'Length > 0
+                    and then not
+                      SigV4_Encoding.Valid_Scope_Segment (Location_Name)))
         or else (Has_Bucket
                  and then (Redundancy'Length = 0
                            or else Bucket_Type'Length = 0))
@@ -456,18 +457,305 @@ package body Flyology.Object_Storage.S3.Buckets is
                  and then Redundancy /= "SingleAvailabilityZone"
                  and then Redundancy /= "SingleLocalZone")
         or else (Bucket_Type'Length > 0 and then Bucket_Type /= "Directory")
+        or else Has_Location /= Has_Bucket
         or else (Constraint_Value'Length > 0
                  and then (Has_Location or else Has_Bucket))
+        or else Value.Tags.Length > 50
       then
          raise Invalid_Bucket_Configuration with
            "invalid CreateBucket configuration";
       end if;
-      for Item of Value.Tags loop
-         if US.Length (Item.Key) = 0 then
-            raise Invalid_Bucket_Configuration with
-              "CreateBucket tag key is empty";
+      for Index in Value.Tags.First_Index .. Value.Tags.Last_Index loop
+         declare
+            Item : constant Tag := Value.Tags (Index);
+         begin
+            if US.Length (Item.Key) = 0
+              or else US.Length (Item.Key) > 128
+              or else US.Length (Item.Value) > 256
+            then
+               raise Invalid_Bucket_Configuration with
+                 "invalid CreateBucket tag";
+            end if;
+            if Index > Value.Tags.First_Index then
+               for Earlier in Value.Tags.First_Index .. Index - 1 loop
+                  if US.To_String (Item.Key) =
+                    US.To_String (Value.Tags (Earlier).Key)
+                  then
+                     raise Invalid_Bucket_Configuration with
+                       "duplicate CreateBucket tag key";
+                  end if;
+               end loop;
+            end if;
+         end;
+      end loop;
+   end Validate_Create_Configuration;
+
+   type Create_Field is
+     (No_Field, Constraint_Field, Location_Type_Field, Location_Name_Field,
+      Redundancy_Field, Bucket_Type_Field, Tag_Key_Field, Tag_Value_Field);
+
+   type Create_Handler is new XML.Event_Handler with record
+      Depth : Natural := 0;
+      Result : Create_Bucket_Configuration;
+      Field : Create_Field := No_Field;
+      Root_Seen, Constraint_Seen, Location_Seen, Bucket_Seen, Tags_Seen :
+        Boolean := False;
+      Location_Type_Seen, Location_Name_Seen : Boolean := False;
+      Redundancy_Seen, Bucket_Type_Seen : Boolean := False;
+      In_Location, In_Bucket, In_Tags, In_Tag : Boolean := False;
+      Tag_Key_Seen, Tag_Value_Seen : Boolean := False;
+      Current_Tag : Tag;
+   end record;
+
+   overriding procedure Start_Element
+     (Item : in out Create_Handler; Local_Name : String);
+   overriding procedure Text
+     (Item : in out Create_Handler; Value : String);
+   overriding procedure End_Element
+     (Item : in out Create_Handler; Local_Name : String);
+
+   procedure Require_Create_Whitespace (Value : String) is
+   begin
+      for Character_Value of Value loop
+         if Character_Value not in ' ' | ASCII.HT | ASCII.LF | ASCII.CR then
+            raise Malformed_Bucket_Configuration with
+              "non-whitespace CreateBucket container text";
          end if;
       end loop;
+   end Require_Create_Whitespace;
+
+   overriding procedure Start_Element
+     (Item : in out Create_Handler; Local_Name : String) is
+   begin
+      if Item.Depth = Natural'Last then
+         raise Malformed_Bucket_Configuration with
+           "CreateBucket depth overflow";
+      end if;
+      Item.Depth := Item.Depth + 1;
+      if Item.Depth = 1 then
+         if Item.Root_Seen or else Local_Name /= "CreateBucketConfiguration"
+         then
+            raise Malformed_Bucket_Configuration with
+              "invalid CreateBucket root";
+         end if;
+         Item.Root_Seen := True;
+      elsif Item.Depth = 2 then
+         if Local_Name = "LocationConstraint"
+           and then not Item.Constraint_Seen
+         then
+            Item.Constraint_Seen := True;
+            Item.Field := Constraint_Field;
+         elsif Local_Name = "Location" and then not Item.Location_Seen then
+            Item.Location_Seen := True;
+            Item.In_Location := True;
+         elsif Local_Name = "Bucket" and then not Item.Bucket_Seen then
+            Item.Bucket_Seen := True;
+            Item.In_Bucket := True;
+         elsif Local_Name = "Tags" and then not Item.Tags_Seen then
+            Item.Tags_Seen := True;
+            Item.In_Tags := True;
+         else
+            raise Malformed_Bucket_Configuration with
+              "unexpected or duplicate CreateBucket member";
+         end if;
+      elsif Item.Depth = 3 and then Item.In_Location then
+         if Local_Name = "Type" and then not Item.Location_Type_Seen then
+            Item.Location_Type_Seen := True;
+            Item.Field := Location_Type_Field;
+         elsif Local_Name = "Name" and then not Item.Location_Name_Seen then
+            Item.Location_Name_Seen := True;
+            Item.Field := Location_Name_Field;
+         else
+            raise Malformed_Bucket_Configuration with
+              "invalid CreateBucket Location member";
+         end if;
+      elsif Item.Depth = 3 and then Item.In_Bucket then
+         if Local_Name = "DataRedundancy"
+           and then not Item.Redundancy_Seen
+         then
+            Item.Redundancy_Seen := True;
+            Item.Field := Redundancy_Field;
+         elsif Local_Name = "Type" and then not Item.Bucket_Type_Seen then
+            Item.Bucket_Type_Seen := True;
+            Item.Field := Bucket_Type_Field;
+         else
+            raise Malformed_Bucket_Configuration with
+              "invalid CreateBucket Bucket member";
+         end if;
+      elsif Item.Depth = 3 and then Item.In_Tags
+        and then Local_Name = "Tag" and then not Item.In_Tag
+      then
+         Item.In_Tag := True;
+         Item.Tag_Key_Seen := False;
+         Item.Tag_Value_Seen := False;
+         Item.Current_Tag := (others => <>);
+      elsif Item.Depth = 4 and then Item.In_Tag then
+         if Local_Name = "Key" and then not Item.Tag_Key_Seen then
+            Item.Tag_Key_Seen := True;
+            Item.Field := Tag_Key_Field;
+         elsif Local_Name = "Value" and then not Item.Tag_Value_Seen then
+            Item.Tag_Value_Seen := True;
+            Item.Field := Tag_Value_Field;
+         else
+            raise Malformed_Bucket_Configuration with
+              "invalid CreateBucket Tag member";
+         end if;
+      else
+         raise Malformed_Bucket_Configuration with
+           "invalid CreateBucket nesting";
+      end if;
+   end Start_Element;
+
+   overriding procedure Text
+     (Item : in out Create_Handler; Value : String) is
+   begin
+      case Item.Field is
+         when No_Field =>
+            Require_Create_Whitespace (Value);
+         when Constraint_Field =>
+            US.Append (Item.Result.Location_Constraint, Value);
+         when Location_Type_Field =>
+            US.Append (Item.Result.Location_Type, Value);
+         when Location_Name_Field =>
+            US.Append (Item.Result.Location_Name, Value);
+         when Redundancy_Field =>
+            US.Append (Item.Result.Data_Redundancy, Value);
+         when Bucket_Type_Field =>
+            US.Append (Item.Result.Bucket_Type, Value);
+         when Tag_Key_Field =>
+            US.Append (Item.Current_Tag.Key, Value);
+         when Tag_Value_Field =>
+            US.Append (Item.Current_Tag.Value, Value);
+      end case;
+   end Text;
+
+   overriding procedure End_Element
+     (Item : in out Create_Handler; Local_Name : String) is
+      Expected : constant String :=
+        (case Item.Field is
+            when No_Field            => "",
+            when Constraint_Field    => "LocationConstraint",
+            when Location_Type_Field => "Type",
+            when Location_Name_Field => "Name",
+            when Redundancy_Field    => "DataRedundancy",
+            when Bucket_Type_Field   => "Type",
+            when Tag_Key_Field       => "Key",
+            when Tag_Value_Field     => "Value");
+   begin
+      if Item.Field /= No_Field then
+         if Local_Name /= Expected then
+            raise Malformed_Bucket_Configuration with
+              "invalid CreateBucket closing element";
+         elsif Item.Field = Constraint_Field
+           and then US.Length (Item.Result.Location_Constraint) = 0
+         then
+            raise Malformed_Bucket_Configuration with
+              "empty CreateBucket location constraint";
+         end if;
+         Item.Field := No_Field;
+      elsif Item.Depth = 4 then
+         raise Malformed_Bucket_Configuration with
+           "incomplete CreateBucket tag field";
+      elsif Item.Depth = 3 and then Item.In_Tag
+        and then Local_Name = "Tag"
+      then
+         if not Item.Tag_Key_Seen or else not Item.Tag_Value_Seen
+           or else Item.Result.Tags.Length = 50
+         then
+            raise Malformed_Bucket_Configuration with
+              "incomplete or excessive CreateBucket tag";
+         end if;
+         Item.Result.Tags.Append (Item.Current_Tag);
+         Item.In_Tag := False;
+      elsif Item.Depth = 3 then
+         raise Malformed_Bucket_Configuration with
+           "invalid CreateBucket closing element";
+      elsif Item.Depth = 2 and then Item.In_Location
+        and then Local_Name = "Location"
+      then
+         if not Item.Location_Type_Seen or else not Item.Location_Name_Seen
+           or else US.Length (Item.Result.Location_Type) = 0
+           or else US.Length (Item.Result.Location_Name) = 0
+         then
+            raise Malformed_Bucket_Configuration with
+              "incomplete CreateBucket Location";
+         end if;
+         Item.In_Location := False;
+      elsif Item.Depth = 2 and then Item.In_Bucket
+        and then Local_Name = "Bucket"
+      then
+         if not Item.Redundancy_Seen or else not Item.Bucket_Type_Seen
+           or else US.Length (Item.Result.Data_Redundancy) = 0
+           or else US.Length (Item.Result.Bucket_Type) = 0
+         then
+            raise Malformed_Bucket_Configuration with
+              "incomplete CreateBucket Bucket";
+         end if;
+         Item.In_Bucket := False;
+      elsif Item.Depth = 2 and then Item.In_Tags
+        and then Local_Name = "Tags" and then not Item.In_Tag
+      then
+         if Item.Result.Tags.Is_Empty then
+            raise Malformed_Bucket_Configuration with
+              "empty CreateBucket Tags";
+         end if;
+         Item.In_Tags := False;
+      elsif Item.Depth = 1
+        and then Local_Name = "CreateBucketConfiguration"
+      then
+         Item.Depth := 0;
+         return;
+      else
+         raise Malformed_Bucket_Configuration with
+           "invalid CreateBucket closing element";
+      end if;
+      Item.Depth := Item.Depth - 1;
+   end End_Element;
+
+   function Parse_Create_Configuration
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Create_Bucket_Configuration
+   is
+      Handler : aliased Create_Handler;
+   begin
+      if Document'Length = 0 then
+         return (others => <>);
+      end if;
+      XML.Parse (Document, Handler, Limits);
+      if Handler.Depth /= 0 or else not Handler.Root_Seen
+        or else Handler.In_Location or else Handler.In_Bucket
+        or else Handler.In_Tags or else Handler.In_Tag
+        or else Handler.Field /= No_Field
+      then
+         raise Malformed_Bucket_Configuration with
+           "incomplete CreateBucket configuration";
+      end if;
+      Validate_Create_Configuration (Handler.Result);
+      return Handler.Result;
+   exception
+      when XML.XML_Error | Invalid_Bucket_Configuration =>
+         raise Malformed_Bucket_Configuration with
+           "malformed CreateBucket configuration";
+   end Parse_Create_Configuration;
+
+   function Serialize_Create_Configuration
+     (Value : Create_Bucket_Configuration) return String
+   is
+      Constraint_Value : constant String :=
+        US.To_String (Value.Location_Constraint);
+      Location_Type : constant String := US.To_String (Value.Location_Type);
+      Location_Name : constant String := US.To_String (Value.Location_Name);
+      Redundancy : constant String := US.To_String (Value.Data_Redundancy);
+      Bucket_Type : constant String := US.To_String (Value.Bucket_Type);
+      Has_Location : constant Boolean := Location_Type'Length > 0;
+      Has_Bucket : constant Boolean := Redundancy'Length > 0;
+      Result : US.Unbounded_String;
+   begin
+      if Is_Empty (Value) then
+         return "";
+      end if;
+      Validate_Create_Configuration (Value);
       US.Append
         (Result,
          "<?xml version=""1.0"" encoding=""UTF-8""?>" &

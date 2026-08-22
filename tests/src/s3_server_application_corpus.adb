@@ -206,6 +206,47 @@ procedure S3_Server_Application_Corpus is
         "Connection: close" & CRLF & CRLF & Wire_Body;
    end Signed_Request;
 
+   function Signed_Create_Bucket_Request
+     (Target       : String;
+      Payload      : String;
+      Header_Name  : String := "";
+      Header_Value : String := "";
+      Second_Value : String := "") return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Headers : constant SigV4.Name_Value_Array :=
+        (if Header_Name'Length = 0 then
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp))
+         else
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp),
+            SigV4.Pair
+              (Header_Name,
+               Header_Value &
+                 (if Second_Value'Length = 0
+                  then "" else ", " & Second_Value))));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+   begin
+      return "PUT " & Target & " HTTP/1.1" & CRLF &
+        "Host: " & Host & CRLF &
+        "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        (if Header_Name'Length = 0 then ""
+         else Header_Name & ": " & Header_Value & CRLF) &
+        (if Second_Value'Length = 0 then ""
+         else Header_Name & ": " & Second_Value & CRLF) &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Content-Length: " &
+          Ada.Strings.Fixed.Trim
+            (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
+        "Connection: close" & CRLF & CRLF & Payload;
+   end Signed_Create_Bucket_Request;
+
    function Signed_Bucket_Request
      (Method         : String;
       Target         : String;
@@ -923,6 +964,207 @@ begin
          and then not Has (Response, "<Code>NoSuchKey</Code>"),
          "PutObject on an absent bucket did not return NoSuchBucket");
    end;
+
+   declare
+      Wrong_Root : constant String := "<WrongRoot/>";
+      Wrong_Region : constant String :=
+        "<CreateBucketConfiguration>" &
+        "<LocationConstraint>us-west-2</LocationConstraint>" &
+        "</CreateBucketConfiguration>";
+      Empty_Constraint : constant String :=
+        "<CreateBucketConfiguration><LocationConstraint/>" &
+        "</CreateBucketConfiguration>";
+      Directory : constant String :=
+        "<CreateBucketConfiguration>" &
+        "<Location><Type>AvailabilityZone</Type>" &
+        "<Name>usw2-az1</Name></Location>" &
+        "<Bucket><DataRedundancy>SingleAvailabilityZone" &
+        "</DataRedundancy><Type>Directory</Type></Bucket>" &
+        "</CreateBucketConfiguration>";
+      Tagged_Document : constant String :=
+        "<CreateBucketConfiguration><Tags><Tag><Key>team</Key>" &
+        "<Value>storage</Value></Tag></Tags>" &
+        "</CreateBucketConfiguration>";
+   begin
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Create_Bucket_Request
+                ("/malformed-create", Wrong_Root));
+      begin
+         Require
+           (Has (Response, "400 Bad Request")
+            and then Has (Response, "<Code>MalformedXML</Code>"),
+            "CreateBucket accepted an invalid XML root");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/wrong-region-create", Wrong_Region)),
+            "<Code>IllegalLocationConstraintException</Code>"),
+         "CreateBucket accepted a mismatched location constraint");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/empty-constraint-create", Empty_Constraint)),
+            "<Code>MalformedXML</Code>"),
+         "CreateBucket accepted an empty location constraint");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/directory-create", Directory)),
+            "501 Not Implemented"),
+         "CreateBucket silently accepted directory-bucket configuration");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/tagged-create", Tagged_Document)),
+            "501 Not Implemented"),
+         "CreateBucket silently accepted unpersisted tags");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/public-create", "", "x-amz-acl", "public-read")),
+            "501 Not Implemented"),
+         "CreateBucket silently accepted an unsupported public ACL");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/invalid-acl-create", "", "x-amz-acl", "bogus")),
+            "<Code>InvalidArgument</Code>"),
+         "CreateBucket accepted an invalid canned ACL");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/duplicate-acl-create", "", "x-amz-acl", "private",
+                  "private")),
+            "400 Bad Request"),
+         "CreateBucket accepted duplicate ACL fields");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/invalid-ownership-create", "",
+                  "x-amz-object-ownership", "bogus")),
+            "<Code>InvalidArgument</Code>"),
+         "CreateBucket accepted invalid object ownership");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/lock-create", "",
+                  "x-amz-bucket-object-lock-enabled", "true")),
+            "501 Not Implemented"),
+         "CreateBucket silently accepted Object Lock");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/invalid-lock-create", "",
+                  "x-amz-bucket-object-lock-enabled", "yes")),
+            "<Code>InvalidArgument</Code>"),
+         "CreateBucket accepted an invalid Object Lock value");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/namespace-create", "", "x-amz-bucket-namespace",
+                  "global")),
+            "501 Not Implemented"),
+         "CreateBucket silently accepted bucket namespace controls");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/invalid-namespace-create", "",
+                  "x-amz-bucket-namespace", "bogus")),
+            "<Code>InvalidArgument</Code>"),
+         "CreateBucket accepted an invalid bucket namespace");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/grant-create", "", "x-amz-grant-read", "id=reader")),
+            "501 Not Implemented"),
+         "CreateBucket silently accepted an ACL grant");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/duplicate-grant-create", "", "x-amz-grant-read",
+                  "id=reader", "id=reader")),
+            "<Code>InvalidRequest</Code>"),
+         "CreateBucket accepted duplicate ACL grant fields");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/oversized-create", String'(1 .. 65 * 1_024 => 'x'))),
+            "<Code>EntityTooLarge</Code>"),
+         "CreateBucket body size limit was not enforced");
+      Require
+        (Has
+           (Run (Signed_Bucket_Request ("HEAD", "/wrong-region-create")),
+            "404 Not Found"),
+         "rejected CreateBucket request mutated backend state");
+      Require
+        (Has
+           (Run (Signed_Bucket_Request ("HEAD", "/malformed-create")),
+            "404 Not Found")
+         and then Has
+           (Run (Signed_Bucket_Request ("HEAD", "/tagged-create")),
+            "404 Not Found")
+         and then Has
+           (Run (Signed_Bucket_Request ("HEAD", "/public-create")),
+            "404 Not Found"),
+         "rejected CreateBucket controls mutated backend state");
+   end;
+
+   Require
+     (Has
+        (Run
+           (Signed_Create_Bucket_Request
+              ("/configured-create", "<CreateBucketConfiguration/>")),
+         "200 OK"),
+      "valid empty CreateBucket configuration failed");
+   Require
+     (Has
+        (Run
+           (Signed_Bucket_Request ("DELETE", "/configured-create")),
+         "204 No Content"),
+      "configured CreateBucket cleanup failed");
+   Require
+     (Has
+        (Run
+           (Signed_Create_Bucket_Request
+              ("/private-create", "", "x-amz-acl", "private")),
+         "200 OK"),
+      "CreateBucket rejected the supported private ACL");
+   Require
+     (Has
+        (Run (Signed_Bucket_Request ("DELETE", "/private-create")),
+         "204 No Content"),
+      "private CreateBucket cleanup failed");
+   Require
+     (Has
+        (Run
+           (Signed_Create_Bucket_Request
+              ("/owned-create", "", "x-amz-object-ownership",
+               "BucketOwnerEnforced")),
+         "200 OK"),
+      "CreateBucket rejected BucketOwnerEnforced");
+   Require
+     (Has
+        (Run (Signed_Bucket_Request ("DELETE", "/owned-create")),
+         "204 No Content"),
+      "owned CreateBucket cleanup failed");
 
    Require
      (Has (Run (Signed_Request ("PUT", "/test-bucket", ""), 1),

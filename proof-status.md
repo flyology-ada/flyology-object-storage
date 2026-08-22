@@ -2,7 +2,7 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest post-ListObjects-oracle forced six-unit manifest-wide level-0 proof
+The latest post-CreateBucket-hardening forced six-unit manifest-wide level-0 proof
 completed with 405/405 checks proved, warnings as errors, zero justified
 checks, and zero Assume statements.
 
