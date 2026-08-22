@@ -51,10 +51,13 @@ currently fails locally until paired checksum generation is implemented.
 
 `Set_Versioning` enables or suspends versioning configuration and
 `Get_Versioning` preserves the distinction between an absent configuration and
-Suspended. The convenience setter deliberately omits MFA-delete; callers that
-own a separately verified MFA policy use the complete typed low-level request.
-These calls do not imply object-version creation or ListObjectVersions support
-at the target endpoint.
+Suspended. `Set_Versioning_Configuration` exposes both presence-preserving
+configuration fields, the physical MFA credential, concrete checksum
+selection, and expected-owner control. It rejects MFA credentials on cleartext
+origins and requires an explicit status and credential for an MFA Delete
+change. The synchronous request retains the credential only through signing
+and execution. These calls configure a bucket; they do not imply object-version
+creation, version IDs, delete markers, or ListObjectVersions support.
 
 These operations are deliberately individual. Parallel work across many
 buckets or objects belongs in an application-owned joined scope, while

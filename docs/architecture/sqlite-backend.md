@@ -85,10 +85,13 @@ buckets use
 `0` to mean that the historical creation time is unavailable, while every new
 bucket receives its actual commit-time value. Versioning and MFA-delete use
 separate checked state columns; one atomic SQL update merges only configured
-fields, and migrated buckets remain unconfigured. Bucket pages are selected under
-the catalog operation gate with binary ordering, exclusive continuation,
-prefix filtering, and a SQL `MaxBuckets + 1` limit, so no unbounded account
-listing is retained in Ada memory.
+fields. The same catalog gate reads current MFA Delete, validates a fail-closed
+caller attestation, and publishes the merged row, so concurrent status and MFA
+writers have one linearization order. Migrated buckets remain unconfigured.
+Bucket pages are selected under the catalog operation gate with binary
+ordering, exclusive continuation, prefix filtering, and a SQL
+`MaxBuckets + 1` limit, so no unbounded account listing is retained in Ada
+memory.
 
 Startup reconciliation is mutually exclusive with live access. A system-wide
 root lock rejects a second store or process for the same root. This is an

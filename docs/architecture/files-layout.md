@@ -80,7 +80,10 @@ independently supplied status and MFA-delete fields while holding the same
 publication gate, synchronize a temporary record, atomically rename it, and
 synchronize both affected directories. DeleteBucket removes both records with
 the bucket tree, and a later bucket with the same name begins unconfigured.
-Symlinked or malformed configuration records fail closed.
+The publication gate also rechecks current MFA Delete and a fail-closed caller
+attestation before creating the temporary record. Symlinked or malformed
+configuration records fail closed. Abrupt-crash tests accept only the complete
+old or complete new Status/MFADelete pair.
 
 DeleteObjects holds the publication gate and performs a complete nonmutating
 preflight before the first removal. Conditions therefore observe one stable

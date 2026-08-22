@@ -50,7 +50,7 @@ GetBucketPolicyStatus	extended	missing	partial	missing	missing
 GetBucketReplication	extended	missing	partial	missing	missing
 GetBucketRequestPayment	extended	missing	partial	missing	missing
 GetBucketTagging	core	covered	covered	covered	covered
-GetBucketVersioning	core	covered	covered	partial	covered
+GetBucketVersioning	core	covered	covered	covered	covered
 GetBucketWebsite	extended	missing	partial	missing	missing
 GetObject	core	covered	covered	partial	covered
 GetObjectAcl	extended	missing	partial	missing	missing
@@ -95,7 +95,7 @@ PutBucketPolicy	extended	missing	partial	missing	missing
 PutBucketReplication	extended	missing	partial	missing	missing
 PutBucketRequestPayment	extended	missing	partial	missing	missing
 PutBucketTagging	core	covered	covered	covered	covered
-PutBucketVersioning	core	covered	covered	partial	covered
+PutBucketVersioning	core	covered	covered	covered	covered
 PutBucketWebsite	extended	missing	partial	missing	missing
 PutObject	core	partial	partial	partial	partial
 PutObjectAcl	extended	missing	partial	missing	missing

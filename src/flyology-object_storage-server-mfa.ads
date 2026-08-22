@@ -25,7 +25,9 @@ package Flyology.Object_Storage.Server.MFA is
    --  Copy borrowed input views into bounded request-scoped storage. This is
    --  the sole mutable application-owned credential copy. Controls, overlong
    --  values, and an empty principal are rejected. The caller must wipe the
-   --  request with Clear on every exit path.
+   --  request with Clear on every exit path. Clear does not erase the parsed
+   --  header retained by Flyology.HTTP until exchange cleanup; this S3 layer
+   --  neither logs nor retains that header or either borrowed view.
    procedure Initialize
      (Item             : in out Authorization_Request;
       Principal        : String;

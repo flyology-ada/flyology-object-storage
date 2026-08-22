@@ -72,6 +72,9 @@ nonempty, and disappear with bucket deletion.
 
 Each bucket slot also holds presence-preserving versioning configuration.
 Status and MFA-delete fields can be updated independently inside the same
-protected operation, so readers observe one old-or-new snapshot. This state is
-configuration metadata only: the memory backend does not thereby create object
-versions or claim ListObjectVersions behavior.
+protected operation, so readers observe one old-or-new snapshot. The same
+protected action rechecks the current MFA Delete state and a fail-closed caller
+attestation before publishing either field. A two-writer race admits only
+linearizable old/new combinations. This state is configuration metadata only:
+the memory backend does not thereby create object versions or claim
+ListObjectVersions behavior.

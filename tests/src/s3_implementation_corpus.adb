@@ -2379,10 +2379,13 @@ procedure S3_Implementation_Corpus is
            Client_Buckets.Get_Versioning
              (HTTP, Origin, Probe, Identity, Timeout => 30.0);
          Enabled : constant Client_Buckets.Set_Versioning_Outcome :=
-           Client_Buckets.Set_Versioning
+           Client_Buckets.Set_Versioning_Configuration
              (HTTP, Origin, Probe,
-              Flyology.Object_Storage.Versioning_Enabled,
-              Identity, Timeout => 30.0);
+              (Status => Flyology.Object_Storage.Versioning_Enabled,
+               MFA_Delete =>
+                 Flyology.Object_Storage.MFA_Delete_Unconfigured),
+              Identity, Checksum_Algorithm => "SHA256",
+              Timeout => 30.0);
          Enabled_Value : constant Client_Buckets.Get_Versioning_Outcome :=
            Client_Buckets.Get_Versioning
              (HTTP, Origin, Probe, Identity, Timeout => 30.0);
