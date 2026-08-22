@@ -133,6 +133,8 @@ package body Object_Storage_Test_Cases is
       is
          Sink : Buffer_Sink;
          Info : Object_Information;
+         Head_Info : Object_Information;
+         Head_Result : Status;
       begin
          Store.Get_Object
            (Bucket, Key, Whole_Object, Sink, null,
@@ -145,6 +147,15 @@ package body Object_Storage_Test_Cases is
                         and then Info.Modified = Snapshot.Modified
                         and then Info.Entity_Tag = Snapshot.Entity_Tag),
             Message);
+         Store.Head_Object
+           (Bucket, Key, null, Ada.Real_Time.Time_Last, Head_Info,
+            Head_Result, Conditions);
+         Assert
+           (Head_Result = Expected
+            and then Head_Info.Size = Snapshot.Size
+            and then Head_Info.Modified = Snapshot.Modified
+            and then Head_Info.Entity_Tag = Snapshot.Entity_Tag,
+            "atomic HeadObject: " & Message);
       end Read_And_Require;
    begin
       Store.Head_Object

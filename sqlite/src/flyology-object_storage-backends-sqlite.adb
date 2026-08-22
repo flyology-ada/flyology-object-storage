@@ -746,10 +746,27 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
-      Result   : out Status)
+      Result   : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions)
    is
       Payload : US.Unbounded_String;
-      Path    : US.Unbounded_String;
+
+      procedure Check_Payload
+        (Payload : String; Snapshot : Object_Information)
+      is
+         Payload_Path : constant String := Join (Objects_Path (Item), Payload);
+      begin
+         Check_Context (Token, Deadline);
+         if not Is_Payload_Name (Payload)
+           or else not Ada.Directories.Exists (Payload_Path)
+           or else Ada.Directories.Kind (Payload_Path) /=
+             Ada.Directories.Ordinary_File
+           or else Ada.Directories.Size (Payload_Path) /=
+             Ada.Directories.File_Size (Snapshot.Size)
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+      end Check_Payload;
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
@@ -757,23 +774,14 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Invalid_Request;
          return;
       end if;
-      Catalogs.Find_Object (Item.Catalog, Bucket, Key, Payload, Info, Result);
+      Catalogs.Find_Object
+        (Item.Catalog, Bucket, Key, Payload, Info, Result,
+         Check_Payload'Access);
       if Result /= Success then
          return;
       end if;
-      if not Is_Payload_Name (US.To_String (Payload)) then
-         raise Ada.IO_Exceptions.Data_Error;
-      end if;
-      Path := US.To_Unbounded_String
-        (Join (Objects_Path (Item), US.To_String (Payload)));
-      if not Ada.Directories.Exists (US.To_String (Path))
-        or else Ada.Directories.Kind (US.To_String (Path)) /=
-          Ada.Directories.Ordinary_File
-        or else Ada.Directories.Size (US.To_String (Path)) /=
-          Ada.Directories.File_Size (Info.Size)
-      then
-         raise Ada.IO_Exceptions.Data_Error;
-      end if;
+      Result := Evaluate_Read_Conditions
+        (Conditions, US.To_String (Info.Entity_Tag), Info.Modified);
    exception
       when Flyology.Cancellation.Operation_Cancelled
          | Flyology.IO.Timeout_Error =>

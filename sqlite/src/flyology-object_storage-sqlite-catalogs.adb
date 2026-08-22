@@ -741,13 +741,18 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Key     : String;
       Payload : out US.Unbounded_String;
       Info    : out Object_Information;
-      Result  : out Status)
+      Result  : out Status;
+      Check   : access procedure
+        (Payload : String; Info : Object_Information) := null)
    is
       Locked : Boolean := False;
    begin
       Item.Gate.Acquire;
       Locked := True;
       Find_Object_Internal (Item, Bucket, Key, Payload, Info, Result);
+      if Result = Success and then Check /= null then
+         Check.all (US.To_String (Payload), Info);
+      end if;
       Item.Gate.Release;
       Locked := False;
    exception

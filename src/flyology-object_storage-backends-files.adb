@@ -1601,11 +1601,13 @@ package body Flyology.Object_Storage.Backends.Files is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
-      Result   : out Status)
+      Result   : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions)
    is
       File : SIO.File_Type;
       Body_At : SIO.Positive_Count;
       Path : constant String := Object_Path (Item, Bucket, Key);
+      Locked : Boolean := False;
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
@@ -1613,21 +1615,38 @@ package body Flyology.Object_Storage.Backends.Files is
         or else not Valid_Object_Key (Key)
       then
          Result := Invalid_Request;
-      elsif not Ada.Directories.Exists (Path) then
+         return;
+      end if;
+      Item.Publication.Acquire;
+      Locked := True;
+      Check_Context (Token, Deadline);
+      if not Ada.Directories.Exists (Path) then
          Result := Not_Found;
       else
          SIO.Open (File, SIO.In_File, Path);
          Read_Header (File, Key, Info, Body_At);
          SIO.Close (File);
-         Result := Success;
+         Result := Evaluate_Read_Conditions
+           (Conditions, US.To_String (Info.Entity_Tag), Info.Modified);
       end if;
+      Item.Publication.Release;
+      Locked := False;
    exception
       when Flyology.Cancellation.Operation_Cancelled
          | Flyology.IO.Timeout_Error =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
          raise;
       when others =>
          if SIO.Is_Open (File) then
             SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
          end if;
          Info := Empty_Info;
          Result := Backend_Unavailable;

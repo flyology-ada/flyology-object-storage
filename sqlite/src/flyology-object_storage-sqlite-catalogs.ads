@@ -61,7 +61,12 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Key     : String;
       Payload : out Ada.Strings.Unbounded.Unbounded_String;
       Info    : out Object_Information;
-      Result  : out Status);
+      Result  : out Status;
+      Check   : access procedure
+        (Payload : String; Info : Object_Information) := null);
+   --  When present, Check runs after a successful lookup while the catalog
+   --  operation gate is still held. It may validate the immutable external
+   --  payload before a concurrent publication retires the previous file.
 
    procedure Get_Object_Attributes
      (Item     : in out Catalog;

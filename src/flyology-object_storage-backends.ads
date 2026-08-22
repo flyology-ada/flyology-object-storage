@@ -394,7 +394,10 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info   : out Object_Information;
-      Result : out Status) is abstract;
+      Result : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions) is abstract;
+   --  Conditions are evaluated against the exact immutable metadata snapshot
+   --  returned in Info. Conditional failures retain that snapshot in Info.
 
    procedure Get_Object
      (Item     : in out Backend;

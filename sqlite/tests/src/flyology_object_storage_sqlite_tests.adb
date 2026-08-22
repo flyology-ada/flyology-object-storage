@@ -349,6 +349,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       is
          Sink : Buffer_Sink;
          Info : Object_Information;
+         Head_Info : Object_Information;
+         Head_Result : Status;
       begin
          Store.Get_Object
            (Bucket, Key, Whole_Object, Sink, null,
@@ -362,6 +364,16 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
                         and then US.To_String (Info.Entity_Tag) =
                           US.To_String (Snapshot.Entity_Tag)),
             Message);
+         Store.Head_Object
+           (Bucket, Key, null, Ada.Real_Time.Time_Last, Head_Info,
+            Head_Result, Conditions);
+         Assert
+           (Head_Result = Expected
+            and then Head_Info.Size = Snapshot.Size
+            and then Head_Info.Modified = Snapshot.Modified
+            and then US.To_String (Head_Info.Entity_Tag) =
+              US.To_String (Snapshot.Entity_Tag),
+            "SQLite atomic HeadObject: " & Message);
       end Read_And_Require;
    begin
       Store.Head_Object
