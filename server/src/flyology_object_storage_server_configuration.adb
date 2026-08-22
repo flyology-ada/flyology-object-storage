@@ -1,5 +1,6 @@
 with Ada.Characters.Handling;
 with Ada.Environment_Variables;
+with Ada.Directories;
 with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
 
 package body Flyology_Object_Storage_Server_Configuration is
@@ -43,6 +44,18 @@ package body Flyology_Object_Storage_Server_Configuration is
            "FLYOLOGY_OBJECT_STORAGE_ROOT is required for " & Backend_Name;
       end if;
       Result.Storage_Root := To_Unbounded_String (Root);
+      Result.Admin_Credentials_Path := To_Unbounded_String
+        (if Ada.Environment_Variables.Exists
+              ("FLYOLOGY_ADMIN_CREDENTIALS_FILE")
+         then Ada.Environment_Variables.Value
+           ("FLYOLOGY_ADMIN_CREDENTIALS_FILE")
+         elsif Root'Length > 0
+         then Ada.Directories.Compose (Root, "admin.credentials")
+         else "flyology-admin.credentials");
+      if Length (Result.Admin_Credentials_Path) = 0 then
+         raise Constraint_Error with
+           "FLYOLOGY_ADMIN_CREDENTIALS_FILE must not be empty";
+      end if;
 
       if not Flyology.IO.Sockets.Is_IP_Address
         (Address, Flyology.IO.Sockets.IPv4)
@@ -55,6 +68,17 @@ package body Flyology_Object_Storage_Server_Configuration is
         (Environment ("FLYOLOGY_S3_PORT", "9000"));
       Result.Capacity := Server_Capacity'Value
         (Environment ("FLYOLOGY_S3_CAPACITY", "128"));
+      if not Ada.Environment_Variables.Exists ("AWS_ACCESS_KEY_ID")
+        or else Ada.Environment_Variables.Value
+          ("AWS_ACCESS_KEY_ID")'Length = 0
+        or else not Ada.Environment_Variables.Exists
+          ("AWS_SECRET_ACCESS_KEY")
+        or else Ada.Environment_Variables.Value
+          ("AWS_SECRET_ACCESS_KEY")'Length = 0
+      then
+         raise Constraint_Error with
+           "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required";
+      end if;
       return Result;
    exception
       when Constraint_Error =>

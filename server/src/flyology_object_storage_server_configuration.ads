@@ -9,6 +9,7 @@ package Flyology_Object_Storage_Server_Configuration is
    type Settings is record
       Backend      : Backend_Kind := Files;
       Storage_Root : Ada.Strings.Unbounded.Unbounded_String;
+      Admin_Credentials_Path : Ada.Strings.Unbounded.Unbounded_String;
       S3_Address   : Flyology.IO.Sockets.IP_Address :=
         Flyology.IO.Sockets.Loopback_IPv4;
       S3_Port      : Flyology.IO.Sockets.Port := 9_000;

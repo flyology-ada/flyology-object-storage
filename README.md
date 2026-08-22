@@ -70,9 +70,11 @@ The separate [`flyology_object_storage_server`](server/README.md) executable
 crate selects memory, files, or SQLite at startup and runs the S3 application
 under Flyology supervision. Its first slice includes bounded connection
 handling, conservative loopback binding, graceful SIGTERM drain, and the same
-independent s5cmd qualification on all three backends. The authenticated
-management API and psqlbench-inspired browser workbench are being added in
-subsequent reviewed slices.
+independent s5cmd qualification on all three backends. It now creates an
+owner-only, slow-hashed administrator credential and displays the random
+bootstrap password exactly once. The authenticated management API and
+psqlbench-inspired browser workbench are being added in subsequent reviewed
+slices.
 
 The files backend is persistent, but it is not yet advertised as
 power-loss-durable: an fsync-backed durability mode remains required before

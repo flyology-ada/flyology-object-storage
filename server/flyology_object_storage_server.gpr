@@ -5,17 +5,23 @@ with "flyology_object_storage.gpr";
 with "flyology_object_storage_sqlite.gpr";
 
 project Flyology_Object_Storage_Server is
+   for Languages use ("Ada", "C");
    for Source_Dirs use ("src/", "config/");
    for Object_Dir use
      "obj/" & Flyology_Object_Storage_Server_Config.Build_Profile;
    for Create_Missing_Dirs use "True";
    for Exec_Dir use "bin";
-   for Main use ("flyology_object_storage_server.adb");
+   for Main use
+     ("flyology_object_storage_server.adb",
+      "flyology_object_storage_server_credentials_corpus.adb");
 
    package Compiler is
       for Default_Switches ("Ada") use
         Flyology_Object_Storage_Server_Config.Ada_Compiler_Switches
         & ("-gnatwJ");
+      for Default_Switches ("C") use
+        ("-std=c11", "-O2", "-fPIC", "-Wall", "-Wextra", "-Wconversion",
+         "-Werror");
    end Compiler;
 
    package Binder is

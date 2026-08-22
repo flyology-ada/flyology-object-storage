@@ -5,15 +5,43 @@ with Flyology.Object_Storage.Backends.Files;
 with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.Backends.SQLite;
 with Flyology_Object_Storage_Server_Configuration;
+with Flyology_Object_Storage_Server_Credentials;
 with Flyology_Object_Storage_Server_Runtime;
 
 procedure Flyology_Object_Storage_Server is
    package Configuration renames
      Flyology_Object_Storage_Server_Configuration;
    package US renames Ada.Strings.Unbounded;
+   package Admin_Credentials renames
+     Flyology_Object_Storage_Server_Credentials;
 
    Settings : constant Configuration.Settings := Configuration.Load;
+   Admin : Admin_Credentials.Credential;
+   Generated : Boolean;
+   Password : String
+     (1 .. Admin_Credentials.Generated_Password_Length);
 begin
+   if not Admin_Credentials.Cryptographic_Self_Test then
+      raise Program_Error with
+        "administrator password hashing self-test failed";
+   end if;
+   Admin_Credentials.Load_Or_Bootstrap
+     (US.To_String (Settings.Admin_Credentials_Path), Admin, Generated,
+      Password);
+   if Generated then
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error,
+         "BOOTSTRAP ADMIN username=" &
+         Admin_Credentials.Username &
+         " password=" & Password);
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error,
+         "Store this password now; it will not be shown again. credentials=" &
+         US.To_String (Settings.Admin_Credentials_Path));
+      Ada.Text_IO.Flush (Ada.Text_IO.Standard_Error);
+   end if;
+   Admin_Credentials.Wipe (Password);
+
    case Settings.Backend is
       when Configuration.Memory =>
          declare
@@ -60,6 +88,7 @@ begin
    end case;
 exception
    when Error : others =>
+      Admin_Credentials.Wipe (Password);
       Ada.Text_IO.Put_Line
         (Ada.Text_IO.Standard_Error,
          "object-storage server startup failed: " &
