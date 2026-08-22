@@ -1020,6 +1020,18 @@ begin
 
    declare
       Response : constant String := Run
+        ("HEAD /test-bucket/object?partNumber=0 HTTP/1.1" & CRLF &
+         "Host: " & Host & CRLF & "Content-Length: 0" & CRLF &
+         "Connection: close" & CRLF & CRLF);
+   begin
+      Require
+        (Has (Response, "403 Forbidden")
+         and then not Has (Response, "InvalidArgument"),
+         "malformed HeadObject query bypassed authentication");
+   end;
+
+   declare
+      Response : constant String := Run
         (Signed_Request ("PUT", "/absent-bucket/object", "payload"));
    begin
       Require
@@ -1623,6 +1635,51 @@ begin
          "HeadObject used streaming transfer coding");
       Require (not Has (Response, "hello world"),
                "HeadObject emitted an object body");
+   end;
+
+   declare
+      Version : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("versionId", "version-one"));
+      Part : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("partNumber", "1"));
+      Override : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("response-content-type", "text/plain"));
+      Duplicate : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("partNumber", "1"),
+         SigV4.Pair ("partNumber", "2"));
+      Unknown : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("unknown", "value"));
+   begin
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("HEAD", "/test-bucket/object", Version)),
+            "501 Not Implemented"),
+         "HeadObject silently ignored versionId");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("HEAD", "/test-bucket/object", Part)),
+            "501 Not Implemented"),
+         "HeadObject silently ignored partNumber");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("HEAD", "/test-bucket/object", Override)),
+            "501 Not Implemented"),
+         "HeadObject silently ignored a response override");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("HEAD", "/test-bucket/object", Duplicate)),
+            "400 Bad Request"),
+         "HeadObject accepted a duplicate query member");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("HEAD", "/test-bucket/object", Unknown)),
+            "400 Bad Request"),
+         "HeadObject accepted an unknown query member");
    end;
 
    declare

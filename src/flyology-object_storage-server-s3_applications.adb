@@ -15,6 +15,7 @@ with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
+with Flyology.Object_Storage.S3.Object_Reads;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
@@ -31,6 +32,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Listings renames S3.Listings;
    package Multipart renames S3.Multipart;
    package Multipart_Uploads renames S3.Multipart_Uploads;
+   package Object_Reads renames S3.Object_Reads;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Calendar.Time;
    use type Apps.Response_State;
@@ -292,6 +294,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Multipart_Query_Invalid : Boolean := False;
       Delete_Object_Query_Invalid : Boolean := False;
       Delete_Request : Deletions.Delete_Object_Request;
+      Object_Read_Query_Invalid : Boolean := False;
+      Object_Read_Request : Object_Reads.Object_Read_Request;
       Has_Copy_Source : constant Boolean :=
         Apps.Request_Header_Count (X, "x-amz-copy-source") > 0;
 
@@ -622,6 +626,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
              (Method in "POST" | "PUT" | "DELETE"
               or else (Method = "GET" and then Has_Upload_ID_Query)))
         and then not
+          (Parsed.Kind = Requests.Object_Target and then Method = "HEAD")
+        and then not
           (Parsed.Kind = Requests.Bucket_Target and then Method = "GET")
       then
          Send_Error
@@ -671,6 +677,16 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                elsif Method = "HEAD" then Head_Object
                elsif Method = "DELETE" then Delete_Object
                else Unsupported);
+         elsif Method = "HEAD" then
+            begin
+               Object_Read_Request := Object_Reads.Parse_Query
+                 (Query_Text, Object_Reads.Head_Object);
+               Operation := Head_Object;
+            exception
+               when Object_Reads.Malformed_Object_Read_Request =>
+                  Object_Read_Query_Invalid := True;
+                  Operation := Head_Object;
+            end;
          elsif Method = "DELETE" and then not Has_Upload_ID_Query then
             begin
                Delete_Request :=
@@ -777,6 +793,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Send_Error
            (X, 400, "InvalidArgument",
             "The DeleteObject request query is invalid", Target_Text);
+         return;
+      elsif Object_Read_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The HeadObject request query is invalid", Target_Text);
          return;
       end if;
 
@@ -2076,25 +2097,38 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                end if;
 
             when Head_Object =>
-               Store.Head_Object
-                 (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
-                  Info, Result);
-               if Result = Success then
-                  Apps.Set_Header
-                    (X, "ETag", '"' & US.To_String (Info.Entity_Tag) & '"');
-                  Apps.Set_Header (X, "Accept-Ranges", "bytes");
-                  Apps.Set_Header
-                    (X, "Last-Modified", HTTP_Last_Modified (Info.Modified));
-                  if US.Length (Info.Version) > 0 then
-                     Apps.Set_Header
-                       (X, "x-amz-version-id", US.To_String (Info.Version));
-                  end if;
-                  Apps.Begin_Stream
-                    (X, 200, US.To_String (Info.Content_Type),
-                     Flyology.HTTP.Body_Size (Info.Size));
-                  Apps.End_Stream (X);
+               if Object_Read_Request.Has_Version_ID
+                 or else Object_Read_Request.Has_Part_Number
+                 or else Object_Read_Request.Has_Response_Overrides
+               then
+                  Send_Error
+                    (X, 501, "NotImplemented",
+                     "The requested HeadObject query controls are not " &
+                     "implemented", Target_Text);
                else
-                  Send_Backend_Error (X, Result, False, Target_Text);
+                  Store.Head_Object
+                    (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
+                     Info, Result);
+                  if Result = Success then
+                     Apps.Set_Header
+                       (X, "ETag",
+                        '"' & US.To_String (Info.Entity_Tag) & '"');
+                     Apps.Set_Header (X, "Accept-Ranges", "bytes");
+                     Apps.Set_Header
+                       (X, "Last-Modified",
+                        HTTP_Last_Modified (Info.Modified));
+                     if US.Length (Info.Version) > 0 then
+                        Apps.Set_Header
+                          (X, "x-amz-version-id",
+                           US.To_String (Info.Version));
+                     end if;
+                     Apps.Begin_Stream
+                       (X, 200, US.To_String (Info.Content_Type),
+                        Flyology.HTTP.Body_Size (Info.Size));
+                     Apps.End_Stream (X);
+                  else
+                     Send_Backend_Error (X, Result, False, Target_Text);
+                  end if;
                end if;
 
             when Get_Object =>

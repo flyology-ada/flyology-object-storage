@@ -2,7 +2,7 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest post-ListBuckets-hardening forced six-unit manifest-wide level-0
+The latest post-HeadObject-query-hardening forced six-unit manifest-wide level-0
 proof completed with 405/405 checks proved, warnings as errors, zero justified
 checks, and zero Assume statements.
 
@@ -117,3 +117,6 @@ checks, and zero Assume statements.
 - [x] Re-ran the forced six-unit manifest after ListBuckets presence and token
       bounds, high-level pagination, and response-fidelity hardening; all
       405/405 checks remain proved with no assumptions or justified checks.
+- [x] Re-ran the forced six-unit manifest after strict authenticated
+      HeadObject query routing; all 405/405 checks remain proved with no
+      assumptions or justified checks.

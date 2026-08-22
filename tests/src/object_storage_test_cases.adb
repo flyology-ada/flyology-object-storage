@@ -26,6 +26,7 @@ with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
+with Flyology.Object_Storage.S3.Object_Reads;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.SigV4;
@@ -7470,6 +7471,49 @@ package body Object_Storage_Test_Cases is
             when Low_Level.Invalid_Response => Raised := True;
          end;
          Assert (Raised, "HeadBucket accepted a response body");
+      end;
+
+      declare
+         package Object_Reads renames
+           Flyology.Object_Storage.S3.Object_Reads;
+         Request : constant Object_Reads.Object_Read_Request :=
+           Object_Reads.Parse_Query
+             ("partNumber=7&response-content-type=text%2Fplain&" &
+              "versionId=v%2B1&x-id=HeadObject",
+              Object_Reads.Head_Object);
+
+         procedure Rejects (Query : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Object_Reads.Object_Read_Request :=
+                    Object_Reads.Parse_Query
+                      (Query, Object_Reads.Head_Object);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Object_Reads.Malformed_Object_Read_Request =>
+                  Raised := True;
+            end;
+            Assert (Raised, "malformed HeadObject query was accepted");
+         end Rejects;
+      begin
+         Assert
+           (Request.Has_Part_Number and then Request.Part_Number = 7
+            and then Request.Has_Version_ID
+            and then US.To_String (Request.Version_ID) = "v+1"
+            and then Request.Has_Response_Overrides,
+            "strict HeadObject query projection");
+         Rejects ("partNumber=0");
+         Rejects ("partNumber=10001");
+         Rejects ("versionId=");
+         Rejects ("versionId=a&versionId=b");
+         Rejects ("response-content-type=%0DInjected");
+         Rejects ("x-id=GetObject");
+         Rejects ("unknown=value");
       end;
 
       declare
