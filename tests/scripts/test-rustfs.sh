@@ -70,6 +70,8 @@ FLYOLOGY_HEAD_OBJECT_ORACLE_MODE=\
 rustfs-rc3-ignores-overrides-parts-and-range \
 FLYOLOGY_LIST_OBJECTS_V1_ORACLE_MODE=\
 rustfs-rc3-next-marker-without-delimiter \
+FLYOLOGY_MULTIPART_CHECKSUM_ORACLE_MODE=\
+rustfs-rc3-omits-listparts-checksums \
 "$SCRIPT_DIR/run-s3-implementation.sh" \
   "http://127.0.0.1:$PORT" \
   "http://host.docker.internal:$PORT" \
@@ -83,6 +85,12 @@ echo "RustFS HeadObject part oracle: pinned release ignores partNumber and" \
 echo "RustFS HeadObject range oracle: pinned release ignores Range"
 echo "RustFS ListObjects v1 pagination oracle: pinned release emits" \
   "NextMarker without delimiter, contrary to AWS v1 response semantics"
+echo "RustFS ListParts checksum oracle: pinned release omits upload" \
+  "algorithm/type and per-part checksum metadata"
+echo "RustFS GetObjectAttributes checksum oracle: pinned release repeats" \
+  "the whole composite base64-2 value for each individual part; checksum" \
+  "is verified separately and ObjectParts must hit the strict decoder's" \
+  "Invalid_Response path"
 
 if [ -n "${FLYOLOGY_S3T_BIN:-}" ]; then
   FLYOLOGY_S3_IMPLEMENTATION=rustfs \

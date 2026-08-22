@@ -2284,12 +2284,16 @@ package body Object_Storage_Test_Cases is
             Expected : constant US.Unbounded_String := US.To_Unbounded_String
               (Engine.Multipart_Object_Value
                  (Checksum_SHA256, Composite_Checksum, Values));
+            Expected_Text : constant String := US.To_String (Expected);
+            Expected_Raw : constant US.Unbounded_String :=
+              US.To_Unbounded_String
+                (Expected_Text
+                   (Expected_Text'First .. Expected_Text'Last - 2));
             Complete_Options : Complete_Multipart_Options :=
               Default_Complete_Multipart_Options;
          begin
             Complete_Options.Expected_Checksum := Configured.Checksum;
-            Complete_Options.Expected_Checksum.Value :=
-              US.To_Unbounded_String (US.To_String (Wrong) & "-1");
+            Complete_Options.Expected_Checksum.Value := Wrong;
             Store.Complete_Multipart_Upload
               ("multipart-bucket", "checksummed", US.To_String (Checksum_ID),
                Completion, Complete_Options, null, Ada.Real_Time.Time_Last,
@@ -2304,6 +2308,15 @@ package body Object_Storage_Test_Cases is
               (Result = Success and then Page.Parts.Length = 1,
                "failed checksum completion retired the upload");
             Complete_Options.Expected_Checksum.Value := Expected;
+            Store.Complete_Multipart_Upload
+              ("multipart-bucket", "checksummed", US.To_String (Checksum_ID),
+               Completion, Complete_Options, null, Ada.Real_Time.Time_Last,
+               Info, Result);
+            Assert
+              (Result = Bad_Digest,
+               "stored composite checksum form was accepted as a " &
+               "completion assertion");
+            Complete_Options.Expected_Checksum.Value := Expected_Raw;
             Store.Complete_Multipart_Upload
               ("multipart-bucket", "checksummed", US.To_String (Checksum_ID),
                Completion, Complete_Options, null, Ada.Real_Time.Time_Last,
@@ -3095,7 +3108,7 @@ package body Object_Storage_Test_Cases is
             Complete_Options.Expected_Checksum := Page.Checksum;
             Complete_Options.Expected_Checksum.Value :=
               US.To_Unbounded_String
-                ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-1");
+                ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
             Store.Complete_Multipart_Upload
               ("file-bucket", "checksummed",
                US.To_String (Checksum_Upload_ID), Completion,
@@ -3104,6 +3117,22 @@ package body Object_Storage_Test_Cases is
             Assert (Result = Bad_Digest,
                     "files accepted a bad completed checksum");
             Complete_Options.Expected_Checksum.Value := Expected;
+            Store.Complete_Multipart_Upload
+              ("file-bucket", "checksummed",
+               US.To_String (Checksum_Upload_ID), Completion,
+               Complete_Options, null, Ada.Real_Time.Time_Last,
+               Checksum_Info, Result);
+            Assert
+              (Result = Bad_Digest,
+               "files accepted stored composite form as completion " &
+               "assertion");
+            declare
+               Stored : constant String := US.To_String (Expected);
+            begin
+               Complete_Options.Expected_Checksum.Value :=
+                 US.To_Unbounded_String
+                   (Stored (Stored'First .. Stored'Last - 2));
+            end;
             Store.Complete_Multipart_Upload
               ("file-bucket", "checksummed",
                US.To_String (Checksum_Upload_ID), Completion,
@@ -6373,23 +6402,16 @@ package body Object_Storage_Test_Cases is
          Document : constant String :=
            "<GetObjectAttributesResponse xmlns=""http://s3.amazonaws.com/" &
            "doc/2006-03-01/""><ETag>etag&amp;opaque</ETag>" &
-           "<Checksum><ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
-           "<ChecksumCRC32C>AAAAAA==</ChecksumCRC32C>" &
-           "<ChecksumCRC64NVME>AAAAAAAAAAA=</ChecksumCRC64NVME>" &
-           "<ChecksumSHA1>AAAAAAAAAAAAAAAAAAAAAAAAAAA=</ChecksumSHA1>" &
-           "<ChecksumSHA256>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
-           "</ChecksumSHA256><ChecksumSHA512>" &
-           String'(1 .. 86 => 'A') & "==</ChecksumSHA512>" &
-           "<ChecksumMD5>AAAAAAAAAAAAAAAAAAAAAA==</ChecksumMD5>" &
-           "<ChecksumXXHASH64>AAAAAAAAAAA=</ChecksumXXHASH64>" &
-           "<ChecksumXXHASH3>AAAAAAAAAAA=</ChecksumXXHASH3>" &
-           "<ChecksumXXHASH128>AAAAAAAAAAAAAAAAAAAAAA==" &
-           "</ChecksumXXHASH128><ChecksumType>COMPOSITE</ChecksumType>" &
+           "<Checksum><ChecksumSHA256>" &
+           "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-2" &
+           "</ChecksumSHA256><ChecksumType>COMPOSITE</ChecksumType>" &
            "</Checksum><ObjectParts><PartsCount>2</PartsCount>" &
            "<PartNumberMarker>1</PartNumberMarker>" &
            "<NextPartNumberMarker>2</NextPartNumberMarker>" &
            "<MaxParts>1</MaxParts><IsTruncated>true</IsTruncated>" &
-           "<Part><ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+           "<Part><ChecksumSHA256>" &
+           "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+           "</ChecksumSHA256>" &
            "<PartNumber>2</PartNumber><Size>9223372036854775807</Size>" &
            "</Part></ObjectParts><StorageClass>STANDARD_IA</StorageClass>" &
            "<ObjectSize>9223372036854775807</ObjectSize>" &
@@ -6418,8 +6440,8 @@ package body Object_Storage_Test_Cases is
            (Round_Trip.Object_Parts.Has_Is_Truncated
             and then Round_Trip.Object_Parts.Is_Truncated
             and then Round_Trip.Object_Parts.Next_Part_Number_Marker.Value = 2
-            and then US.To_String (Round_Trip.Checksum.SHA512) =
-              String'(1 .. 86 => 'A') & "==",
+            and then US.To_String (Round_Trip.Checksum.SHA256) =
+              "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-2",
             "GetObjectAttributes serialization round trip");
       end;
 
@@ -6450,6 +6472,134 @@ package body Object_Storage_Test_Cases is
         (Root ("<Checksum><ChecksumCRC32>abc</ChecksumCRC32>" &
                "</Checksum>"),
          "malformed attributes checksum accepted");
+      declare
+         Composite : constant Attributes.Get_Object_Attributes_Result :=
+           Attributes.Parse_Result
+             (Root
+                ("<Checksum><ChecksumSHA256>" &
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-2" &
+                 "</ChecksumSHA256><ChecksumType>COMPOSITE" &
+                 "</ChecksumType></Checksum>"));
+         Round_Trip : constant Attributes.Get_Object_Attributes_Result :=
+           Attributes.Parse_Result
+             (Attributes.Serialize_Result (Composite));
+      begin
+         Assert
+           (US.To_String (Round_Trip.Checksum.SHA256) =
+              "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-2",
+            "composite object-attributes checksum suffix was not retained");
+      end;
+      declare
+         Inferred_Composite : constant
+           Attributes.Get_Object_Attributes_Result :=
+             Attributes.Parse_Result
+               (Root
+                  ("<Checksum><ChecksumSHA256>" &
+                   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-2" &
+                   "</ChecksumSHA256></Checksum>"));
+         Inferred_Full : constant Attributes.Get_Object_Attributes_Result :=
+           Attributes.Parse_Result
+             (Root
+                ("<Checksum><ChecksumSHA256>" &
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+                 "</ChecksumSHA256>" &
+                 "</Checksum>"));
+         Typed_Full : constant Attributes.Get_Object_Attributes_Result :=
+           Attributes.Parse_Result
+             (Root
+                ("<Checksum><ChecksumSHA256>" &
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+                 "</ChecksumSHA256><ChecksumType>FULL_OBJECT" &
+                 "</ChecksumType></Checksum>"));
+      begin
+         Assert
+           (US.To_String (Inferred_Composite.Checksum.Kind) = "COMPOSITE"
+            and then US.To_String (Inferred_Full.Checksum.Kind) =
+              "FULL_OBJECT"
+            and then US.To_String (Typed_Full.Checksum.Kind) =
+              "FULL_OBJECT",
+            "untyped attributes checksum method was not inferred");
+      end;
+      Result_Must_Reject
+        (Root
+           ("<Checksum><ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-02" &
+            "</ChecksumSHA256><ChecksumType>COMPOSITE" &
+            "</ChecksumType></Checksum>"),
+         "noncanonical attributes composite part count was accepted");
+      Result_Must_Reject
+        (Root
+           ("<Checksum><ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+            "</ChecksumSHA256><ChecksumType>COMPOSITE" &
+            "</ChecksumType></Checksum>"),
+         "raw explicit-composite attributes checksum was accepted");
+      Result_Must_Reject
+        (Root
+           ("<Checksum><ChecksumCRC32>AAAAAA==-2</ChecksumCRC32>" &
+            "<ChecksumType>FULL_OBJECT</ChecksumType></Checksum>"),
+         "suffixed full-object attributes checksum was accepted");
+      Result_Must_Reject
+        (Root
+           ("<Checksum><ChecksumType>FULL_OBJECT</ChecksumType>" &
+            "</Checksum>"),
+         "type-only attributes checksum was accepted");
+      Result_Must_Reject
+        (Root
+           ("<Checksum><ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+            "<ChecksumCRC32C>AAAAAA==</ChecksumCRC32C>" &
+            "<ChecksumType>FULL_OBJECT</ChecksumType></Checksum>"),
+         "multiple attributes checksum algorithms were accepted");
+      Result_Must_Reject
+        (Root
+           ("<Checksum><ChecksumCRC64NVME>AAAAAAAAAAA=-2" &
+            "</ChecksumCRC64NVME><ChecksumType>COMPOSITE" &
+            "</ChecksumType></Checksum>"),
+         "composite CRC64NVME attributes checksum was accepted");
+      Result_Must_Reject
+        (Root
+           ("<Checksum><ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+            "</ChecksumSHA256><ChecksumType>FULL_OBJECT" &
+            "</ChecksumType></Checksum><ObjectParts><PartsCount>1" &
+            "</PartsCount></ObjectParts>"),
+         "multipart full-object SHA256 attributes checksum was accepted");
+      Result_Must_Reject
+        (Root
+           ("<Checksum><ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-2" &
+            "</ChecksumSHA256><ChecksumType>COMPOSITE" &
+            "</ChecksumType></Checksum><ObjectParts><PartsCount>3" &
+            "</PartsCount></ObjectParts>"),
+         "attributes checksum suffix/count mismatch was accepted");
+      Result_Must_Reject
+        (Root
+           ("<ObjectParts><Part><ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-1" &
+            "</ChecksumSHA256><PartNumber>1</PartNumber><Size>1</Size>" &
+            "</Part></ObjectParts>"),
+         "composite suffix was accepted on an attributes part checksum");
+      Result_Must_Reject
+        (Root
+           ("<Checksum><ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-1" &
+            "</ChecksumSHA256><ChecksumType>COMPOSITE" &
+            "</ChecksumType></Checksum><ObjectParts><PartsCount>1" &
+            "</PartsCount><Part><ChecksumCRC32>AAAAAA==" &
+            "</ChecksumCRC32><PartNumber>1</PartNumber><Size>1</Size>" &
+            "</Part></ObjectParts>"),
+         "mismatched attributes part checksum algorithm was accepted");
+      Result_Must_Reject
+        (Root
+           ("<ObjectParts><PartsCount>2</PartsCount>" &
+            "<Part><ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+            "</ChecksumSHA256><PartNumber>1</PartNumber><Size>1</Size>" &
+            "</Part><Part><ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+            "<PartNumber>2</PartNumber><Size>1</Size></Part>" &
+            "</ObjectParts>"),
+         "mixed attributes part algorithms without object checksum " &
+         "were accepted");
       Result_Must_Reject
         (Root ("<ObjectParts><MaxParts>1001</MaxParts>" &
                "</ObjectParts>"),
@@ -9400,6 +9550,27 @@ package body Object_Storage_Test_Cases is
          Headers : Low_Level.Copy_Object_Result;
          Outcome : constant Low_Level.Copy_Object_Outcome :=
            Low_Level.Decode_Copy_Object_Response
+             (200,
+              "<CopyObjectResult>" &
+              "<LastModified>2026-08-21T17:00:00.000Z</LastModified>" &
+              "<ETag>&quot;composite-copy&quot;</ETag>" &
+              "<ChecksumType>COMPOSITE</ChecksumType>" &
+              "<ChecksumSHA256>" &
+              "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-2" &
+              "</ChecksumSHA256></CopyObjectResult>", Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Object_Copied
+            and then US.To_String
+              (Outcome.Result.Copy_Result.Checksum_SHA256) =
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-2",
+            "composite CopyObject checksum suffix was rejected");
+      end;
+
+      declare
+         Headers : Low_Level.Copy_Object_Result;
+         Outcome : constant Low_Level.Copy_Object_Outcome :=
+           Low_Level.Decode_Copy_Object_Response
              (200, "<Error><Code>InternalError</Code>" &
               "<Message>late copy failure</Message></Error>", Headers,
               "request-header");
@@ -9435,6 +9606,53 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "invalid CopyObject checksum type accepted");
+      end;
+
+      declare
+         Headers : Low_Level.Copy_Object_Result;
+
+         procedure Must_Reject (Fields, Message : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Copy_Object_Outcome :=
+                    Low_Level.Decode_Copy_Object_Response
+                      (200, "<CopyObjectResult>" &
+                       "<LastModified>2026-08-21T17:00:00Z" &
+                       "</LastModified><ETag>etag</ETag>" & Fields &
+                       "</CopyObjectResult>", Headers);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response => Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Must_Reject;
+      begin
+         Must_Reject
+           ("<ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-02" &
+            "</ChecksumSHA256><ChecksumType>COMPOSITE</ChecksumType>",
+            "noncanonical CopyObject composite part count accepted");
+         Must_Reject
+           ("<ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+            "<ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+            "</ChecksumSHA256>",
+            "multiple CopyObject checksum values accepted");
+         Must_Reject
+           ("<ChecksumCRC64NVME>AAAAAAAAAAA=-1</ChecksumCRC64NVME>" &
+            "<ChecksumType>COMPOSITE</ChecksumType>",
+            "composite CRC64NVME CopyObject result accepted");
+         Must_Reject
+           ("<ChecksumCRC64NVME>AAAAAAAAAAA=-1</ChecksumCRC64NVME>",
+            "untyped composite CRC64NVME CopyObject result accepted");
+         Must_Reject
+           ("<ChecksumType>FULL_OBJECT</ChecksumType>",
+            "CopyObject checksum type without value accepted");
       end;
    end Check_Low_Level_Copy_Object;
 

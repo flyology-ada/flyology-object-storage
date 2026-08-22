@@ -207,6 +207,14 @@ XXHASH128. These numbers show no pathological scalar path in the initial
 implementation; they are explicitly not a portable baseline or qualification
 claim.
 
+The multipart backend-path smoke benchmark on the same class of unqualified
+development host processed 64 MiB at 256.78 MiB/s with an explicit
+no-checksum upload and 91.70 MiB/s with CRC64NVME enabled. This is a regression
+diagnostic, not a portable target: the important invariant is that the
+no-checksum backend path does not instantiate or update a checksum context.
+The endpoint matrix below remains the apples-to-apples server comparison for
+memory, files, SQLite, RustFS, and SeaweedFS.
+
 ## Development smoke evidence
 
 The retained `20260821Tmultipart-final` campaign is a correctness-checked,

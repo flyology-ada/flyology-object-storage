@@ -65,6 +65,37 @@ package body Flyology.Object_Storage.Checksum_Engine is
         (Value, Algorithm_Value (Algorithm), To_S3 (Method),
          Part_Count).Valid);
 
+   function Matches_Stored_Object_Digest
+     (Expected_Raw : String;
+      Stored       : String;
+      Algorithm    : Checksum_Algorithm;
+      Method       : Checksum_Method;
+      Part_Count   : Positive) return Boolean
+   is
+   begin
+      if Algorithm = No_Checksum
+        or else Method = No_Checksum_Method
+        or else not Policy.Supported
+          (Algorithm_Value (Algorithm), To_S3 (Method))
+      then
+         return False;
+      end if;
+      declare
+         Expected : constant S3_Checksums.Decode_Result :=
+           S3_Checksums.Decode_Base64
+             (Expected_Raw, Algorithm_Value (Algorithm));
+         Actual : constant S3_Checksums.Decode_Result :=
+           S3_Checksums.Decode_Object
+             (Stored, Algorithm_Value (Algorithm), To_S3 (Method),
+              Part_Count);
+      begin
+         return Expected.Valid
+           and then Actual.Valid
+           and then S3_Checksums.Equivalent
+             (Expected.Value, Actual.Value);
+      end;
+   end Matches_Stored_Object_Digest;
+
    procedure Update
      (Item : in out Context; Data : Ada.Streams.Stream_Element_Array) is
    begin

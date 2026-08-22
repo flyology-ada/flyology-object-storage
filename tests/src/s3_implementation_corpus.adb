@@ -17,6 +17,7 @@ with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Objects;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.S3.Attributes;
+with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Multipart;
@@ -29,6 +30,9 @@ procedure S3_Implementation_Corpus is
    package Client_Buckets renames Flyology.Object_Storage.Client.Buckets;
    package Client_Objects renames Flyology.Object_Storage.Client.Objects;
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
+   package Attributes renames Flyology.Object_Storage.S3.Attributes;
+   package Checksums renames Flyology.Object_Storage.S3.Checksums;
+   package Checksum_Policy renames Checksums.Policy;
    package S3_Core renames Flyology.Object_Storage.S3.Core;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
@@ -98,6 +102,55 @@ procedure S3_Implementation_Corpus is
       end if;
       return Ada.Directories.Compose (Root, Name);
    end Temporary_Path;
+
+   function Repeated_Digest
+     (Algorithm : Checksum_Policy.Algorithm;
+      Length    : Natural) return Checksums.Digest_Value
+   is
+      Context : Checksums.Context (Algorithm);
+      Buffer : constant Stream_Element_Array (1 .. 64 * 1_024) :=
+        (others => Stream_Element (Character'Pos ('m')));
+      Remaining : Natural := Length;
+   begin
+      while Remaining > 0 loop
+         declare
+            Count : constant Natural :=
+              Natural'Min (Remaining, Natural (Buffer'Length));
+         begin
+            Checksums.Update
+              (Context,
+               Buffer
+                 (Buffer'First ..
+                    Buffer'First + Stream_Element_Offset (Count - 1)));
+            Remaining := Remaining - Count;
+         end;
+      end loop;
+      return Checksums.Finish (Context);
+   end Repeated_Digest;
+
+   First_Part_Length : constant Natural := 5 * 1_024 * 1_024;
+   Second_Part_Length : constant Natural := Payload'Length - First_Part_Length;
+   First_SHA256_Digest : constant Checksums.Digest_Value :=
+     Repeated_Digest (Checksum_Policy.Core.SHA256, First_Part_Length);
+   Second_SHA256_Digest : constant Checksums.Digest_Value :=
+     Repeated_Digest (Checksum_Policy.Core.SHA256, Second_Part_Length);
+   First_SHA256 : constant String :=
+     Checksums.Encode_Base64 (First_SHA256_Digest);
+   Second_SHA256 : constant String :=
+     Checksums.Encode_Base64 (Second_SHA256_Digest);
+   Composite_SHA256_Digest : constant Checksums.Digest_Value :=
+     Checksums.Composite
+       (Checksum_Policy.Core.SHA256,
+        Checksums.Digest_Array'
+          (1 => First_SHA256_Digest, 2 => Second_SHA256_Digest));
+   Composite_SHA256_Raw : constant String :=
+     Checksums.Encode_Base64 (Composite_SHA256_Digest);
+   Composite_SHA256_Object : constant String :=
+     Checksums.Encode_Object
+       (Composite_SHA256_Digest, Checksum_Policy.Composite, 2);
+   Full_CRC32 : constant String :=
+     Checksums.Encode_Base64
+       (Repeated_Digest (Checksum_Policy.Core.CRC32, Payload'Length));
 
    function Check_List_Multipart_Uploads return Boolean is
       Name : constant String :=
@@ -203,6 +256,37 @@ procedure S3_Implementation_Corpus is
    function Check_Head_Object_Overrides return Boolean is
      (Head_Object_Oracle_Mode /= RustFS_RC3_Incomplete_Head_Object);
 
+   type Multipart_Checksum_Oracle_Mode_Kind is
+     (Complete_Multipart_Checksums,
+      RustFS_RC3_Multipart_Checksum_Divergence,
+      SeaweedFS_443_Multipart_Checksum_Divergence);
+
+   function Read_Multipart_Checksum_Oracle_Mode
+      return Multipart_Checksum_Oracle_Mode_Kind
+   is
+      Name : constant String :=
+        "FLYOLOGY_MULTIPART_CHECKSUM_ORACLE_MODE";
+   begin
+      if not Ada.Environment_Variables.Exists (Name) then
+         return Complete_Multipart_Checksums;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "rustfs-rc3-omits-listparts-checksums"
+      then
+         return RustFS_RC3_Multipart_Checksum_Divergence;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "seaweedfs-4.43-omits-multipart-checksum-metadata"
+      then
+         return SeaweedFS_443_Multipart_Checksum_Divergence;
+      else
+         raise Program_Error with
+           "unknown multipart checksum oracle mode";
+      end if;
+   end Read_Multipart_Checksum_Oracle_Mode;
+
+   Multipart_Checksum_Oracle_Mode : constant
+     Multipart_Checksum_Oracle_Mode_Kind :=
+       Read_Multipart_Checksum_Oracle_Mode;
+
    type Upload_Source
      (Value : not null access constant String) is
      new HTTP_Client.Request_Body_Source with record
@@ -256,6 +340,30 @@ procedure S3_Implementation_Corpus is
       HTTP     : aliased HTTP_Client.Client (Capacity => 1);
       Identity : constant Low_Level.Credentials :=
         Low_Level.Make_Credentials (Access_Key, Secret_Key);
+
+      function Composite_Create_Parameters
+        return Low_Level.Create_Multipart_Parameters
+      is
+         Result : Low_Level.Create_Multipart_Parameters;
+      begin
+         Result.Checksum_Algorithm := US.To_Unbounded_String ("SHA256");
+         Result.Checksum_Type := US.To_Unbounded_String ("COMPOSITE");
+         return Result;
+      end Composite_Create_Parameters;
+
+      function Composite_Complete_Parameters
+        return Low_Level.Complete_Multipart_Parameters
+      is
+         Result : Low_Level.Complete_Multipart_Parameters;
+      begin
+         Result.Checksum_SHA256 :=
+           US.To_Unbounded_String (Composite_SHA256_Raw);
+         Result.Checksum_Type := US.To_Unbounded_String ("COMPOSITE");
+         Result.Mpu_Object_Size :=
+           (Is_Set => True,
+            Value => Flyology.Object_Storage.Byte_Count (Payload'Length));
+         return Result;
+      end Composite_Complete_Parameters;
 
       procedure Check_Bucket_Tags is
          Value : Tags.Tag_Set;
@@ -398,7 +506,15 @@ procedure S3_Implementation_Corpus is
                  Identity, Content_Type => "application/octet-stream",
                  Timeout => 60.0,
                  Multipart_Threshold => 5 * 1_024 * 1_024,
-                 Multipart_Part_Size => 5 * 1_024 * 1_024);
+                 Multipart_Part_Size => 5 * 1_024 * 1_024,
+                 Checksum =>
+                   (if Multipart_Checksum_Oracle_Mode /=
+                         SeaweedFS_443_Multipart_Checksum_Divergence
+                    then
+                      (Enabled => True,
+                       Algorithm => Checksum_Policy.Core.CRC32,
+                       Kind => Checksum_Policy.Full_Object)
+                    else (Enabled => False, others => <>)));
          begin
             if Result.Kind = Transfers.Upload_Rejected then
                raise Program_Error with
@@ -409,6 +525,13 @@ procedure S3_Implementation_Corpus is
             elsif Result.Bytes /=
               Flyology.Object_Storage.Byte_Count (Payload'Length)
               or else US.Length (Result.Entity_Tag) = 0
+              or else
+                (Multipart_Checksum_Oracle_Mode /=
+                   SeaweedFS_443_Multipart_Checksum_Divergence
+                 and then
+                   (US.To_String (Result.Checksum) /= Full_CRC32
+                    or else US.To_String (Result.Checksum_Type) /=
+                      "FULL_OBJECT"))
             then
                raise Program_Error with
                  "S3 implementation returned invalid high-level upload "
@@ -751,6 +874,12 @@ procedure S3_Implementation_Corpus is
             begin
                if Outcome.Kind /= Low_Level.Object_Found
                  or else Outcome.Status /= 200
+                 or else US.To_String (Outcome.Result.Checksum_SHA256) /=
+                   Composite_SHA256_Object
+                 or else
+                   (US.Length (Outcome.Result.Checksum_Type) > 0
+                    and then US.To_String
+                      (Outcome.Result.Checksum_Type) /= "COMPOSITE")
                then
                   raise Program_Error with
                     "S3 implementation HeadObject version/payer/checksum " &
@@ -1179,13 +1308,29 @@ procedure S3_Implementation_Corpus is
 
       procedure Require_Get_Object_Attributes is
          Parameters : Low_Level.Get_Object_Attributes_Parameters;
+
+         function Checksum_Count
+           (Value : Attributes.Checksum_Values) return Natural is
+           (Boolean'Pos (US.Length (Value.CRC32) > 0) +
+            Boolean'Pos (US.Length (Value.CRC32C) > 0) +
+            Boolean'Pos (US.Length (Value.CRC64NVME) > 0) +
+            Boolean'Pos (US.Length (Value.SHA1) > 0) +
+            Boolean'Pos (US.Length (Value.SHA256) > 0) +
+            Boolean'Pos (US.Length (Value.SHA512) > 0) +
+            Boolean'Pos (US.Length (Value.MD5) > 0) +
+            Boolean'Pos (US.Length (Value.XXHASH64) > 0) +
+            Boolean'Pos (US.Length (Value.XXHASH3) > 0) +
+            Boolean'Pos (US.Length (Value.XXHASH128) > 0));
       begin
          Parameters.Has_Max_Parts := True;
          Parameters.Max_Parts := 1;
          Parameters.Has_Part_Number_Marker := True;
          Parameters.Part_Number_Marker := 0;
          Parameters.Attributes :=
-           (Entity_Tag => True, Checksum => True, Object_Parts => True,
+           (Entity_Tag => True,
+            Checksum => True,
+            Object_Parts => Multipart_Checksum_Oracle_Mode /=
+              RustFS_RC3_Multipart_Checksum_Divergence,
             Storage_Class => True, Object_Size => True);
          declare
             Prepared : constant Low_Level.Prepared_Request :=
@@ -1211,29 +1356,100 @@ procedure S3_Implementation_Corpus is
             then
                raise Program_Error with
                  "S3 implementation returned invalid object attributes";
-            elsif Outcome.Result.Attributes.Has_Object_Parts
-              and then
-                ((Outcome.Result.Attributes.Object_Parts.
-                    Total_Parts_Count.Is_Set
-                  and then Outcome.Result.Attributes.Object_Parts.
-                    Total_Parts_Count.Value /= 2)
-                 or else Outcome.Result.Attributes.Object_Parts.Parts.Length >
-                   1
-                 or else
-                   (not Outcome.Result.Attributes.Object_Parts.Parts.Is_Empty
-                    and then
-                      (Outcome.Result.Attributes.Object_Parts.Parts.
-                         First_Element.Number.Value /= 1
-                       or else Outcome.Result.Attributes.Object_Parts.Parts.
-                         First_Element.Size.Value /=
-                           Flyology.Object_Storage.Byte_Count
-                             (5 * 1_024 * 1_024))))
+            end if;
+
+            case Multipart_Checksum_Oracle_Mode is
+               when Complete_Multipart_Checksums |
+                    RustFS_RC3_Multipart_Checksum_Divergence =>
+                  if not Outcome.Result.Attributes.Has_Checksum
+                    or else Checksum_Count
+                      (Outcome.Result.Attributes.Checksum) /= 1
+                    or else US.To_String
+                      (Outcome.Result.Attributes.Checksum.SHA256) /=
+                        Composite_SHA256_Object
+                    or else US.To_String
+                      (Outcome.Result.Attributes.Checksum.Kind) /=
+                        "COMPOSITE"
+                  then
+                     raise Program_Error with
+                       "S3 implementation returned invalid object " &
+                       "attributes checksum";
+                  end if;
+               when SeaweedFS_443_Multipart_Checksum_Divergence =>
+                  if Outcome.Result.Attributes.Has_Checksum then
+                     raise Program_Error with
+                       "SeaweedFS checksum omission changed";
+                  end if;
+            end case;
+
+            if Multipart_Checksum_Oracle_Mode /=
+                RustFS_RC3_Multipart_Checksum_Divergence
             then
-               raise Program_Error with
-                 "S3 implementation returned invalid completed-part " &
-                 "attributes";
+               if not Outcome.Result.Attributes.Has_Object_Parts
+                 or else not Outcome.Result.Attributes.Object_Parts.
+                   Total_Parts_Count.Is_Set
+                 or else Outcome.Result.Attributes.Object_Parts.
+                   Total_Parts_Count.Value /= 2
+                 or else Outcome.Result.Attributes.Object_Parts.Parts.Length /=
+                   1
+                 or else Outcome.Result.Attributes.Object_Parts.Parts.
+                   First_Element.Number.Value /= 1
+                 or else Outcome.Result.Attributes.Object_Parts.Parts.
+                   First_Element.Size.Value /=
+                     Flyology.Object_Storage.Byte_Count (5 * 1_024 * 1_024)
+                 or else
+                   (case Multipart_Checksum_Oracle_Mode is
+                      when Complete_Multipart_Checksums =>
+                        Checksum_Count
+                          (Outcome.Result.Attributes.Object_Parts.Parts.
+                             First_Element.Checksums) /= 1
+                        or else US.To_String
+                          (Outcome.Result.Attributes.Object_Parts.Parts.
+                             First_Element.Checksums.SHA256) /= First_SHA256,
+                      when SeaweedFS_443_Multipart_Checksum_Divergence =>
+                        Checksum_Count
+                          (Outcome.Result.Attributes.Object_Parts.Parts.
+                             First_Element.Checksums) /= 0,
+                      when RustFS_RC3_Multipart_Checksum_Divergence => False)
+               then
+                  raise Program_Error with
+                    "S3 implementation returned invalid completed-part " &
+                    "attributes";
+               end if;
             end if;
          end;
+
+         if Multipart_Checksum_Oracle_Mode =
+           RustFS_RC3_Multipart_Checksum_Divergence
+         then
+            Parameters.Attributes :=
+              (Object_Parts => True, others => False);
+            declare
+               Rejected : Boolean := False;
+            begin
+               begin
+                  declare
+                     Prepared : constant Low_Level.Prepared_Request :=
+                       Low_Level.Prepare_Get_Object_Attributes
+                         (Origin, Low_Level.Path_Style, Bucket, Key,
+                          Parameters, Identity, "us-east-1", Timestamp);
+                     Ignored : constant
+                       Low_Level.Get_Object_Attributes_Outcome :=
+                         Low_Level.Execute_Get_Object_Attributes
+                           (HTTP, Prepared, Timeout => 30.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response => Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "RustFS malformed part checksum response changed";
+               end if;
+            end;
+         end if;
 
          declare
             Selection : constant
@@ -1280,7 +1496,8 @@ procedure S3_Implementation_Corpus is
 
       procedure Require_Listed_Part
         (Object_Key, Upload_ID, Entity_Tag : String;
-         Size : Flyology.Object_Storage.Byte_Count)
+         Size : Flyology.Object_Storage.Byte_Count;
+         Expected_SHA256 : String := "")
       is
          Parameters : Low_Level.List_Parts_Parameters;
 
@@ -1290,6 +1507,19 @@ procedure S3_Implementation_Corpus is
               and then Value (Value'Last) = '"'
             then Value (Value'First + 1 .. Value'Last - 1)
             else Value);
+
+         function Checksum_Count
+           (Value : Multipart.Listed_Part) return Natural is
+           (Boolean'Pos (US.Length (Value.Checksum_CRC32) > 0) +
+            Boolean'Pos (US.Length (Value.Checksum_CRC32C) > 0) +
+            Boolean'Pos (US.Length (Value.Checksum_CRC64NVME) > 0) +
+            Boolean'Pos (US.Length (Value.Checksum_SHA1) > 0) +
+            Boolean'Pos (US.Length (Value.Checksum_SHA256) > 0) +
+            Boolean'Pos (US.Length (Value.Checksum_SHA512) > 0) +
+            Boolean'Pos (US.Length (Value.Checksum_MD5) > 0) +
+            Boolean'Pos (US.Length (Value.Checksum_XXHASH64) > 0) +
+            Boolean'Pos (US.Length (Value.Checksum_XXHASH3) > 0) +
+            Boolean'Pos (US.Length (Value.Checksum_XXHASH128) > 0));
       begin
          Parameters.Max_Parts := 1;
          Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
@@ -1329,6 +1559,38 @@ procedure S3_Implementation_Corpus is
                    (Outcome.Result.Listing.Parts.First_Element.Entity_Tag) &
                  " expected_etag=" & Entity_Tag & " truncated=" &
                  Outcome.Result.Listing.Is_Truncated'Image;
+            elsif Expected_SHA256'Length > 0
+              and then
+                (case Multipart_Checksum_Oracle_Mode is
+                   when Complete_Multipart_Checksums =>
+                     US.To_String
+                       (Outcome.Result.Listing.Checksum_Algorithm) /=
+                         "SHA256"
+                     or else US.To_String
+                       (Outcome.Result.Listing.Checksum_Type) /= "COMPOSITE"
+                     or else Checksum_Count
+                       (Outcome.Result.Listing.Parts.First_Element) /= 1
+                     or else US.To_String
+                       (Outcome.Result.Listing.Parts.First_Element.
+                          Checksum_SHA256) /= Expected_SHA256,
+                   when RustFS_RC3_Multipart_Checksum_Divergence |
+                        SeaweedFS_443_Multipart_Checksum_Divergence =>
+                     US.Length
+                       (Outcome.Result.Listing.Checksum_Algorithm) /= 0
+                     or else US.Length
+                       (Outcome.Result.Listing.Checksum_Type) /= 0
+                     or else Checksum_Count
+                       (Outcome.Result.Listing.Parts.First_Element) /= 0)
+            then
+               raise Program_Error with
+                 "S3 implementation ListParts checksum mismatch: algorithm=" &
+                 US.To_String
+                   (Outcome.Result.Listing.Checksum_Algorithm) &
+                 " type=" &
+                 US.To_String (Outcome.Result.Listing.Checksum_Type) &
+                 " checksum=" & US.To_String
+                   (Outcome.Result.Listing.Parts.First_Element.
+                      Checksum_SHA256);
             end if;
          end;
       end Require_Listed_Part;
@@ -1729,8 +1991,8 @@ procedure S3_Implementation_Corpus is
       declare
          Prepared_Create : constant Low_Level.Prepared_Request :=
            Low_Level.Prepare_Create_Multipart_Upload
-             (Origin, Low_Level.Path_Style, Bucket, Key, Identity,
-              "us-east-1", Timestamp);
+             (Origin, Low_Level.Path_Style, Bucket, Key,
+              Composite_Create_Parameters, Identity, "us-east-1", Timestamp);
          Created : constant Low_Level.Create_Multipart_Outcome :=
            Low_Level.Execute_Create_Multipart_Upload
              (HTTP, Prepared_Create, Timeout => 30.0);
@@ -1760,6 +2022,10 @@ procedure S3_Implementation_Corpus is
                Source.Length := Length;
                Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
                Parameters.Part_Number := Number;
+               Parameters.Checksum_Algorithm :=
+                 US.To_Unbounded_String ("SHA256");
+               Parameters.Checksum_SHA256 := US.To_Unbounded_String
+                 (if Number = 1 then First_SHA256 else Second_SHA256);
                Parameters.Payload_SHA256 := US.To_Unbounded_String
                  (SigV4.SHA256_Hex
                     (Payload (First .. First + Length - 1)));
@@ -1776,6 +2042,12 @@ procedure S3_Implementation_Corpus is
                      raise Program_Error with
                        "S3 implementation rejected UploadPart" &
                        Number'Image;
+                  elsif US.To_String (Uploaded.Result.Checksum_SHA256) /=
+                    (if Number = 1 then First_SHA256 else Second_SHA256)
+                  then
+                     raise Program_Error with
+                       "S3 implementation UploadPart checksum mismatch" &
+                       Number'Image;
                   end if;
                   return Uploaded.Result.Entity_Tag;
                end;
@@ -1790,7 +2062,8 @@ procedure S3_Implementation_Corpus is
             begin
                Require_Listed_Part
                  (Key, Upload_ID, US.To_String (First_ETag),
-                  Flyology.Object_Storage.Byte_Count (First_Length));
+                  Flyology.Object_Storage.Byte_Count (First_Length),
+                  First_SHA256);
                declare
                   Second_ETag : constant US.Unbounded_String :=
                     Upload (2, Second_First, Second_Length);
@@ -1800,18 +2073,23 @@ procedure S3_Implementation_Corpus is
                     (Multipart.Completed_Part'
                        (Number     => 1,
                         Entity_Tag => First_ETag,
+                        Checksum_SHA256 =>
+                          US.To_Unbounded_String (First_SHA256),
                         others     => <>));
                   Completion.Parts.Append
                     (Multipart.Completed_Part'
                        (Number     => 2,
                         Entity_Tag => Second_ETag,
+                        Checksum_SHA256 =>
+                          US.To_Unbounded_String (Second_SHA256),
                         others     => <>));
                   declare
                      Prepared_Complete : constant Low_Level.Prepared_Request :=
                        Low_Level.Prepare_Complete_Multipart_Upload
                          (Origin, Low_Level.Path_Style, Bucket, Key,
-                          Upload_ID, Completion, Identity, "us-east-1",
-                          Timestamp);
+                          Upload_ID, Completion,
+                          Composite_Complete_Parameters, Identity,
+                          "us-east-1", Timestamp);
                      Completed : constant
                        Low_Level.Complete_Multipart_Outcome :=
                          Low_Level.Execute_Complete_Multipart_Upload
@@ -1819,9 +2097,39 @@ procedure S3_Implementation_Corpus is
                   begin
                      if Completed.Kind /= Low_Level.Completed
                        or else US.To_String (Completed.Result.Key) /= Key
+                       or else
+                         (case Multipart_Checksum_Oracle_Mode is
+                            when Complete_Multipart_Checksums |
+                                 RustFS_RC3_Multipart_Checksum_Divergence =>
+                              US.To_String
+                                (Completed.Result.Checksum_SHA256) /=
+                                  Composite_SHA256_Object
+                              or else
+                                (US.Length
+                                   (Completed.Result.Checksum_Type) > 0
+                                 and then US.To_String
+                                   (Completed.Result.Checksum_Type) /=
+                                     "COMPOSITE"),
+                            when
+                              SeaweedFS_443_Multipart_Checksum_Divergence =>
+                                US.Length
+                                  (Completed.Result.Checksum_SHA256) /= 0
+                                or else US.Length
+                                  (Completed.Result.Checksum_Type) /= 0)
                      then
                         raise Program_Error with
-                          "S3 implementation rejected CompleteMultipartUpload";
+                          "S3 implementation CompleteMultipartUpload " &
+                          "checksum mismatch: kind=" & Completed.Kind'Image &
+                          " status=" & Completed.Status'Image &
+                          (if Completed.Kind = Low_Level.Completed
+                           then " key=" & US.To_String (Completed.Result.Key) &
+                             " checksum=" & US.To_String
+                               (Completed.Result.Checksum_SHA256) &
+                             " type=" & US.To_String
+                               (Completed.Result.Checksum_Type)
+                           else " code=" & US.To_String
+                             (Completed.Error.Code) & " message=" &
+                             US.To_String (Completed.Error.Message));
                      end if;
                      if Check_List_Multipart_Uploads then
                         Require_Listed_Upload (Key, Upload_ID, False);

@@ -24,6 +24,15 @@ package Flyology.Object_Storage.Checksum_Engine is
       Method     : Checksum_Method;
       Part_Count : Positive) return Boolean;
 
+   --  Compare an AWS completion-header raw Base64 digest with the canonical
+   --  stored object form. Stored composites include their part-count suffix.
+   function Matches_Stored_Object_Digest
+     (Expected_Raw : String;
+      Stored       : String;
+      Algorithm    : Checksum_Algorithm;
+      Method       : Checksum_Method;
+      Part_Count   : Positive) return Boolean;
+
    --  Convert the storage-domain algorithm to the checksum implementation.
    function Algorithm_Value
      (Value : Checksum_Algorithm)

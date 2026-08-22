@@ -2199,13 +2199,17 @@ begin
               US.To_Unbounded_String
                 (Engine.Multipart_Object_Value
                    (Checksum_SHA256, Composite_Checksum, Values));
+            Expected_Text : constant String := US.To_String (Expected);
+            Expected_Raw : constant US.Unbounded_String :=
+              US.To_Unbounded_String
+                (Expected_Text
+                   (Expected_Text'First .. Expected_Text'Last - 2));
             Complete_Options : Complete_Multipart_Options :=
               Default_Complete_Multipart_Options;
             Old_Body : Buffer_Sink;
          begin
             Complete_Options.Expected_Checksum := Upload_Options.Checksum;
-            Complete_Options.Expected_Checksum.Value :=
-              US.To_Unbounded_String (US.To_String (Wrong) & "-1");
+            Complete_Options.Expected_Checksum.Value := Wrong;
             Store.Complete_Multipart_Upload
               ("sqlite-bucket", "checksummed", US.To_String (Upload_ID),
                Completion, Complete_Options, null,
@@ -2229,6 +2233,15 @@ begin
               (Result = Success and then Page.Parts.Length = 1,
                "failed SQLite checksum completion retired upload");
             Complete_Options.Expected_Checksum.Value := Expected;
+            Store.Complete_Multipart_Upload
+              ("sqlite-bucket", "checksummed", US.To_String (Upload_ID),
+               Completion, Complete_Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Bad_Digest,
+               "SQLite accepted stored composite form as completion " &
+               "assertion");
+            Complete_Options.Expected_Checksum.Value := Expected_Raw;
             Store.Complete_Multipart_Upload
               ("sqlite-bucket", "checksummed", US.To_String (Upload_ID),
                Completion, Complete_Options, null,

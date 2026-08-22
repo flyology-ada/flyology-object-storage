@@ -2,12 +2,19 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest conditional-Put qualification forced eight-unit manifest-wide
-level-0 proof completed with 625/625 checks proved (157 flow and 468 prover),
-warnings as errors, zero justified checks, and zero Assume statements. Its
-exact scoped evaluator run proved 3/3 target-attributed flow checks (two
-initialization and one termination) with no separate level-0 prover VC. Exact
-scoped level-0 runs also proved `Listing_Matches_Prefix` and
+The latest uncontended, serialized multipart-checksum final-base qualification
+forced eight-unit manifest-wide level-0 proof completed with 625/625 checks
+proved (157 flow and 468 prover), warnings as errors, zero justified or
+unproved checks, and zero Assume statements. Final-base scoped level-0 runs
+proved the impacted root SPARK unit with 196 target-attributed checks
+(220 aggregate),
+`Checksum_Policy` with 9/9 checks, and `Checksum_CRC` with 43
+target-attributed checks (52 aggregate). Exact subprogram scopes attributed 4
+checks to `Matrix_Times` (13 aggregate) and 15 to `Combine` (24 aggregate),
+with no warnings, justified or unproved checks, or Assume statements. The
+earlier conditional-Put evaluator run proved 3/3 target-attributed flow checks
+(two initialization and one termination) with no separate level-0 prover VC.
+Exact scoped level-0 runs also proved `Listing_Matches_Prefix` and
 `Listing_Follows_Cursor` with one termination check each. Earlier exact scoped
 runs proved
 `Valid_Object_Delete_ETag_Condition` with 5/5 checks and
@@ -56,10 +63,12 @@ statements.
   - [x] COMPOSITE and FULL_OBJECT support matrix
   - [x] digest lengths and default checksum types
 - [x] Flyology.Object_Storage.S3.Checksum_CRC
-      (scoped level 0, 43/43 checks)
+      (scoped level 0, 43 target-attributed and 52 aggregate checks)
   - [x] streaming update and finish operations
-  - [x] Matrix_Times increasing-index termination (4/4 focused checks)
-  - [x] Combine decreasing-byte-count termination (15/15 focused checks)
+  - [x] Matrix_Times increasing-index termination
+        (4 target-attributed, 13 aggregate checks)
+  - [x] Combine decreasing-byte-count termination
+        (15 target-attributed, 24 aggregate checks)
 - [x] Flyology.Object_Storage.S3.Model (level 0, all; generated descriptor)
   - [x] 116 operation identities and REST traits
   - [x] 718 shape identities and scalar/container traits
@@ -209,3 +218,16 @@ statements.
       `Write_Conditions` backend value: 3/3 exact scoped flow checks, then
       625/625 checks across the clean forced eight-unit manifest, with zero
       warnings, justified or unproved checks and zero Assume statements.
+- [x] Re-proved the multipart-checksum final base with exact scoped level-0
+      runs for `Checksum_Policy` (9/9), `Checksum_CRC`
+      (43 target-attributed; 52 aggregate), `Matrix_Times`
+      (4 target-attributed; 13 aggregate), `Combine`
+      (15 target-attributed; 24 aggregate), and the impacted root unit
+      (196 target-attributed; 220 aggregate). One clean forced eight-unit
+      manifest run then proved 625/625 checks (157 flow and 468 prover), with
+      warnings as errors, zero justified or unproved checks, zero Assume
+      statements, and invocation-attributed logs retained under
+      `obj/proof/logs/multipart-final-serial/`. An earlier campaign that
+      overlapped an external proof lane is quarantined under
+      `obj/proof/logs/invalid-concurrent-20260822/` and is explicitly excluded
+      from qualification evidence.

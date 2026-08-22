@@ -1,3 +1,6 @@
+with Ada.Strings;
+with Ada.Strings.Fixed;
+with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Wire_Core;
 
 package body Flyology.Object_Storage.S3.Copies is
@@ -163,40 +166,94 @@ package body Flyology.Object_Storage.S3.Copies is
    end End_Element;
 
    procedure Validate_Checksum
-     (Value : US.Unbounded_String; Decoded_Bytes : Positive) is
+     (Value         : US.Unbounded_String;
+      Decoded_Bytes : Positive;
+      Kind          : String)
+   is
+      Text : constant String := US.To_String (Value);
    begin
-      if US.Length (Value) > 0
-        and then not Wire_Core.Valid_Base64
-          (US.To_String (Value), Decoded_Bytes)
+      if Text'Length = 0 then
+         return;
+      elsif Kind = "FULL_OBJECT"
+        or else
+          (Kind'Length = 0
+           and then Wire_Core.Valid_Base64 (Text, Decoded_Bytes))
       then
-         raise Malformed_Copy with "invalid CopyObject checksum";
+         if not Wire_Core.Valid_Base64 (Text, Decoded_Bytes) then
+            raise Malformed_Copy with "invalid CopyObject checksum";
+         end if;
+         return;
       end if;
+      declare
+         Dash : constant Natural := Ada.Strings.Fixed.Index
+           (Text, "-", Going => Ada.Strings.Backward);
+      begin
+         if Dash = 0 or else Dash = Text'First or else Dash = Text'Last then
+            raise Malformed_Copy with
+              "invalid composite CopyObject checksum";
+         end if;
+         declare
+            Count : constant Wire_Core.Natural_Result :=
+              Wire_Core.Parse_Natural (Text (Dash + 1 .. Text'Last));
+         begin
+            if not Count.Valid
+              or else Count.Value not in Core.Part_Number'Range
+              or else Text (Dash + 1) = '0'
+              or else not Wire_Core.Valid_Base64
+                (Text (Text'First .. Dash - 1), Decoded_Bytes)
+            then
+               raise Malformed_Copy with
+                 "invalid composite CopyObject checksum";
+            end if;
+         end;
+      end;
    end Validate_Checksum;
 
    procedure Validate (Value : Copy_Object_Result) is
       Kind : constant String := US.To_String (Value.Checksum_Type);
+      Count : constant Natural :=
+        Boolean'Pos (US.Length (Value.Checksum_CRC32) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_CRC32C) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_CRC64NVME) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_SHA1) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_SHA256) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_SHA512) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_MD5) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_XXHASH64) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_XXHASH3) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_XXHASH128) > 0);
    begin
       if US.Length (Value.Entity_Tag) = 0
         or else US.Length (Value.Last_Modified) = 0
       then
          raise Malformed_Copy with "incomplete CopyObject result";
-      end if;
-      Validate_Checksum (Value.Checksum_CRC32, 4);
-      Validate_Checksum (Value.Checksum_CRC32C, 4);
-      Validate_Checksum (Value.Checksum_CRC64NVME, 8);
-      Validate_Checksum (Value.Checksum_SHA1, 20);
-      Validate_Checksum (Value.Checksum_SHA256, 32);
-      Validate_Checksum (Value.Checksum_SHA512, 64);
-      Validate_Checksum (Value.Checksum_MD5, 16);
-      Validate_Checksum (Value.Checksum_XXHASH64, 8);
-      Validate_Checksum (Value.Checksum_XXHASH3, 8);
-      Validate_Checksum (Value.Checksum_XXHASH128, 16);
-      if Kind'Length > 0
-        and then Kind /= "COMPOSITE"
-        and then Kind /= "FULL_OBJECT"
-      then
+      elsif Kind not in "" | "COMPOSITE" | "FULL_OBJECT" then
          raise Malformed_Copy with "invalid CopyObject checksum type";
+      elsif Count > 1 then
+         raise Malformed_Copy with "multiple CopyObject checksums";
+      elsif Count = 0 and then Kind'Length > 0 then
+         raise Malformed_Copy with "CopyObject checksum type without value";
+      elsif (Kind = "COMPOSITE"
+             or else
+               (Kind'Length = 0
+                and then US.Length (Value.Checksum_CRC64NVME) > 0
+                and then not Wire_Core.Valid_Base64
+                  (US.To_String (Value.Checksum_CRC64NVME), 8)))
+        and then US.Length (Value.Checksum_CRC64NVME) > 0
+      then
+         raise Malformed_Copy with
+           "unsupported CopyObject checksum algorithm and type";
       end if;
+      Validate_Checksum (Value.Checksum_CRC32, 4, Kind);
+      Validate_Checksum (Value.Checksum_CRC32C, 4, Kind);
+      Validate_Checksum (Value.Checksum_CRC64NVME, 8, Kind);
+      Validate_Checksum (Value.Checksum_SHA1, 20, Kind);
+      Validate_Checksum (Value.Checksum_SHA256, 32, Kind);
+      Validate_Checksum (Value.Checksum_SHA512, 64, Kind);
+      Validate_Checksum (Value.Checksum_MD5, 16, Kind);
+      Validate_Checksum (Value.Checksum_XXHASH64, 8, Kind);
+      Validate_Checksum (Value.Checksum_XXHASH3, 8, Kind);
+      Validate_Checksum (Value.Checksum_XXHASH128, 16, Kind);
    end Validate;
 
    function Parse_Copy_Object_Result

@@ -144,7 +144,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    end Set_Checksum_Headers;
 
    function Attribute_Checksum
-     (Value : Checksum_Information) return Attributes.Checksum_Values
+     (Value        : Checksum_Information;
+      Include_Kind : Boolean := True) return Attributes.Checksum_Values
    is
       Result : Attributes.Checksum_Values;
    begin
@@ -161,7 +162,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          when Checksum_XXHASH3 => Result.XXHASH3 := Value.Value;
          when Checksum_XXHASH128 => Result.XXHASH128 := Value.Value;
       end case;
-      Result.Kind := US.To_Unbounded_String (Wire_Method (Value.Method));
+      if Include_Kind then
+         Result.Kind := US.To_Unbounded_String (Wire_Method (Value.Method));
+      end if;
       return Result;
    end Attribute_Checksum;
 
@@ -4072,7 +4075,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                  Size =>
                                    (Is_Set => True, Value => Part.Size),
                                  Checksums =>
-                                   Attribute_Checksum (Part.Checksum)));
+                                   Attribute_Checksum
+                                     (Part.Checksum,
+                                      Include_Kind => False)));
                         end loop;
                      end if;
                      Apps.Set_Header

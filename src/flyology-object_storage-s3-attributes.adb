@@ -1,6 +1,7 @@
 with Ada.Containers;
 with Ada.Strings;
 with Ada.Strings.Fixed;
+with Flyology.Object_Storage.S3.Checksum_Policy;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Wire_Core;
 
@@ -8,7 +9,9 @@ package body Flyology.Object_Storage.S3.Attributes is
 
    package US renames Ada.Strings.Unbounded;
    package Wire_Core renames Flyology.Object_Storage.S3.Wire_Core;
+   package Policy renames Flyology.Object_Storage.S3.Checksum_Policy;
    use type Ada.Containers.Count_Type;
+   use type Policy.Algorithm;
 
    Maximum_Query_Length : constant := 8 * 1_024;
 
@@ -633,26 +636,122 @@ package body Flyology.Object_Storage.S3.Attributes is
       Item.Depth := Item.Depth - 1;
    end End_Element;
 
-   function Valid_Checksum
-     (Value : US.Unbounded_String; Bytes : Positive) return Boolean is
-     (US.Length (Value) = 0
-      or else Wire_Core.Valid_Base64 (US.To_String (Value), Bytes));
+   function Checksum_Count (Value : Checksum_Values) return Natural is
+     (Boolean'Pos (US.Length (Value.CRC32) > 0) +
+      Boolean'Pos (US.Length (Value.CRC32C) > 0) +
+      Boolean'Pos (US.Length (Value.CRC64NVME) > 0) +
+      Boolean'Pos (US.Length (Value.SHA1) > 0) +
+      Boolean'Pos (US.Length (Value.SHA256) > 0) +
+      Boolean'Pos (US.Length (Value.SHA512) > 0) +
+      Boolean'Pos (US.Length (Value.MD5) > 0) +
+      Boolean'Pos (US.Length (Value.XXHASH64) > 0) +
+      Boolean'Pos (US.Length (Value.XXHASH3) > 0) +
+      Boolean'Pos (US.Length (Value.XXHASH128) > 0));
 
-   function Valid_Checksums (Value : Checksum_Values) return Boolean is
+   function Checksum_Algorithm
+     (Value : Checksum_Values) return Policy.Algorithm is
+     (if US.Length (Value.CRC32) > 0 then Core.CRC32
+      elsif US.Length (Value.CRC32C) > 0 then Core.CRC32C
+      elsif US.Length (Value.CRC64NVME) > 0 then Core.CRC64NVME
+      elsif US.Length (Value.SHA1) > 0 then Core.SHA1
+      elsif US.Length (Value.SHA256) > 0 then Core.SHA256
+      elsif US.Length (Value.SHA512) > 0 then Core.SHA512
+      elsif US.Length (Value.MD5) > 0 then Core.MD5
+      elsif US.Length (Value.XXHASH64) > 0 then Core.XXHASH64
+      elsif US.Length (Value.XXHASH3) > 0 then Core.XXHASH3
+      else Core.XXHASH128)
+   with Pre => Checksum_Count (Value) = 1;
+
+   function Checksum_Text (Value : Checksum_Values) return String is
+     (if US.Length (Value.CRC32) > 0 then US.To_String (Value.CRC32)
+      elsif US.Length (Value.CRC32C) > 0 then US.To_String (Value.CRC32C)
+      elsif US.Length (Value.CRC64NVME) > 0
+      then US.To_String (Value.CRC64NVME)
+      elsif US.Length (Value.SHA1) > 0 then US.To_String (Value.SHA1)
+      elsif US.Length (Value.SHA256) > 0 then US.To_String (Value.SHA256)
+      elsif US.Length (Value.SHA512) > 0 then US.To_String (Value.SHA512)
+      elsif US.Length (Value.MD5) > 0 then US.To_String (Value.MD5)
+      elsif US.Length (Value.XXHASH64) > 0
+      then US.To_String (Value.XXHASH64)
+      elsif US.Length (Value.XXHASH3) > 0
+      then US.To_String (Value.XXHASH3)
+      else US.To_String (Value.XXHASH128))
+   with Pre => Checksum_Count (Value) = 1;
+
+   function Composite_Count
+     (Text : String; Algorithm : Policy.Algorithm) return Natural
+   is
+      Dash : constant Natural :=
+        Ada.Strings.Fixed.Index (Text, "-", Ada.Strings.Backward);
+   begin
+      if Dash = 0 or else Dash = Text'First or else Dash = Text'Last then
+         return 0;
+      end if;
+      declare
+         Count : constant Wire_Core.Natural_Result :=
+           Wire_Core.Parse_Natural (Text (Dash + 1 .. Text'Last));
+      begin
+         if not Count.Valid
+           or else Count.Value not in Core.Part_Number'Range
+           or else Text (Dash + 1) = '0'
+           or else not Wire_Core.Valid_Base64
+             (Text (Text'First .. Dash - 1), Policy.Digest_Length (Algorithm))
+         then
+            return 0;
+         else
+            return Count.Value;
+         end if;
+      end;
+   end Composite_Count;
+
+   procedure Validate_Object_Checksum
+     (Value        : Checksum_Values;
+      Is_Multipart : Boolean)
+   is
       Kind : constant String := US.To_String (Value.Kind);
    begin
-      return Valid_Checksum (Value.CRC32, 4)
-        and then Valid_Checksum (Value.CRC32C, 4)
-        and then Valid_Checksum (Value.CRC64NVME, 8)
-        and then Valid_Checksum (Value.SHA1, 20)
-        and then Valid_Checksum (Value.SHA256, 32)
-        and then Valid_Checksum (Value.SHA512, 64)
-        and then Valid_Checksum (Value.MD5, 16)
-        and then Valid_Checksum (Value.XXHASH64, 8)
-        and then Valid_Checksum (Value.XXHASH3, 8)
-        and then Valid_Checksum (Value.XXHASH128, 16)
-        and then (Kind'Length = 0 or else Kind in "COMPOSITE" | "FULL_OBJECT");
-   end Valid_Checksums;
+      if Checksum_Count (Value) /= 1
+        or else Kind not in "" | "COMPOSITE" | "FULL_OBJECT"
+      then
+         raise Malformed_Attributes with "invalid object checksum shape";
+      end if;
+      declare
+         Algorithm : constant Policy.Algorithm := Checksum_Algorithm (Value);
+         Text : constant String := Checksum_Text (Value);
+         Raw : constant Boolean := Wire_Core.Valid_Base64
+           (Text, Policy.Digest_Length (Algorithm));
+         Parts : constant Natural := Composite_Count (Text, Algorithm);
+      begin
+         if Kind = "COMPOSITE"
+           and then
+             (not Policy.Supported (Algorithm, Policy.Composite)
+              or else Parts = 0)
+         then
+            raise Malformed_Attributes with "invalid composite checksum";
+         elsif Kind = "FULL_OBJECT"
+           and then
+             ((Is_Multipart
+               and then not Policy.Supported
+                 (Algorithm, Policy.Full_Object))
+              or else not Raw)
+         then
+            raise Malformed_Attributes with "invalid full-object checksum";
+         elsif Kind'Length = 0
+           and then
+             ((not Raw
+               and then
+                 (Parts = 0
+                  or else not Policy.Supported
+                    (Algorithm, Policy.Composite)))
+              or else
+                (Raw and then Is_Multipart
+                 and then not Policy.Supported
+                   (Algorithm, Policy.Full_Object)))
+         then
+            raise Malformed_Attributes with "invalid untyped checksum";
+         end if;
+      end;
+   end Validate_Object_Checksum;
 
    function Valid_Storage_Class (Value : String) return Boolean is
      (Value in "STANDARD" | "REDUCED_REDUNDANCY" | "STANDARD_IA" |
@@ -662,14 +761,18 @@ package body Flyology.Object_Storage.S3.Attributes is
 
    procedure Validate (Value : Get_Object_Attributes_Result) is
       Previous : Natural := 0;
+      Has_Part_Algorithm : Boolean := False;
+      Part_Algorithm : Policy.Algorithm := Core.CRC32;
    begin
       if Value.Has_Entity_Tag and then US.Length (Value.Entity_Tag) = 0
       then
          raise Malformed_Attributes with "empty object-attributes ETag";
-      elsif Value.Has_Checksum and then not Valid_Checksums (Value.Checksum)
-      then
-         raise Malformed_Attributes with "invalid object checksum";
-      elsif Value.Has_Storage_Class
+      end if;
+      if Value.Has_Checksum then
+         Validate_Object_Checksum
+           (Value.Checksum, Is_Multipart => Value.Has_Object_Parts);
+      end if;
+      if Value.Has_Storage_Class
         and then not Valid_Storage_Class (US.To_String (Value.Storage_Class))
       then
          raise Malformed_Attributes with "invalid storage class";
@@ -690,10 +793,36 @@ package body Flyology.Object_Storage.S3.Attributes is
             if not Part.Number.Is_Set
               or else Part.Number.Value not in Core.Part_Number'Range
               or else not Part.Size.Is_Set
-              or else not Valid_Checksums (Part.Checksums)
+              or else Checksum_Count (Part.Checksums) > 1
+              or else US.Length (Part.Checksums.Kind) > 0
               or else Part.Number.Value <= Previous
             then
                raise Malformed_Attributes with "invalid object part";
+            end if;
+            if Checksum_Count (Part.Checksums) = 1 then
+               declare
+                  Algorithm : constant Policy.Algorithm :=
+                    Checksum_Algorithm (Part.Checksums);
+               begin
+                  if not Wire_Core.Valid_Base64
+                    (Checksum_Text (Part.Checksums),
+                     Policy.Digest_Length (Algorithm))
+                    or else
+                      (Value.Has_Checksum
+                       and then Algorithm /=
+                         Checksum_Algorithm (Value.Checksum))
+                    or else
+                      (Has_Part_Algorithm
+                       and then Algorithm /= Part_Algorithm)
+                  then
+                     raise Malformed_Attributes with
+                       "invalid object part checksum";
+                  end if;
+                  if not Has_Part_Algorithm then
+                     Part_Algorithm := Algorithm;
+                     Has_Part_Algorithm := True;
+                  end if;
+               end;
             end if;
             Previous := Part.Number.Value;
          end loop;
@@ -703,6 +832,16 @@ package body Flyology.Object_Storage.S3.Attributes is
          then
             raise Malformed_Attributes with
               "object parts exceed total part count";
+         elsif Value.Has_Checksum
+           and then US.To_String (Value.Checksum.Kind) = "COMPOSITE"
+           and then Value.Object_Parts.Total_Parts_Count.Is_Set
+           and then Composite_Count
+             (Checksum_Text (Value.Checksum),
+              Checksum_Algorithm (Value.Checksum)) /=
+                Value.Object_Parts.Total_Parts_Count.Value
+         then
+            raise Malformed_Attributes with
+              "object checksum part count mismatch";
          end if;
       end if;
    end Validate;
@@ -715,6 +854,28 @@ package body Flyology.Object_Storage.S3.Attributes is
       Handler : aliased Result_Handler;
    begin
       XML.Parse (Document, Handler, Limits);
+      if Handler.Value.Has_Checksum
+        and then US.Length (Handler.Value.Checksum.Kind) = 0
+        and then Checksum_Count (Handler.Value.Checksum) = 1
+      then
+         declare
+            Algorithm : constant Policy.Algorithm :=
+              Checksum_Algorithm (Handler.Value.Checksum);
+            Text : constant String := Checksum_Text (Handler.Value.Checksum);
+         begin
+            if Composite_Count (Text, Algorithm) > 0
+              and then Policy.Supported (Algorithm, Policy.Composite)
+            then
+               Handler.Value.Checksum.Kind :=
+                 US.To_Unbounded_String ("COMPOSITE");
+            elsif Wire_Core.Valid_Base64
+              (Text, Policy.Digest_Length (Algorithm))
+            then
+               Handler.Value.Checksum.Kind :=
+                 US.To_Unbounded_String ("FULL_OBJECT");
+            end if;
+         end;
+      end if;
       Validate (Handler.Value);
       return Handler.Value;
    exception

@@ -1841,16 +1841,11 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Invalid_Request;
          return;
       elsif Options.Expected_Checksum.Algorithm /= No_Checksum
-        and then not Checksum_Engine.Valid_Object_Digest
+        and then not Checksum_Engine.Matches_Stored_Object_Digest
           (US.To_String (Options.Expected_Checksum.Value),
+           US.To_String (Completed_Checksum.Value),
            Options.Expected_Checksum.Algorithm,
            Options.Expected_Checksum.Method, Positive (Parts.Length))
-      then
-         Result := Invalid_Request;
-         return;
-      elsif Options.Expected_Checksum.Algorithm /= No_Checksum
-        and then US.To_String (Options.Expected_Checksum.Value) /=
-          US.To_String (Completed_Checksum.Value)
       then
          Result := Bad_Digest;
          return;

@@ -75,6 +75,8 @@ FLYOLOGY_HEAD_OBJECT_ORACLE_MODE=\
 seaweedfs-4.43-returns-whole-size-for-parts-and-range \
 FLYOLOGY_LIST_OBJECTS_V1_ORACLE_MODE=\
 seaweedfs-4.43-next-marker-without-delimiter \
+FLYOLOGY_MULTIPART_CHECKSUM_ORACLE_MODE=\
+seaweedfs-4.43-omits-multipart-checksum-metadata \
 "$SCRIPT_DIR/run-s3-implementation.sh" \
   "http://127.0.0.1:$PORT" \
   "http://host.docker.internal:$PORT" \
@@ -87,6 +89,10 @@ echo "SeaweedFS HeadObject part oracle: pinned release returns whole-object" \
 echo "SeaweedFS HeadObject range oracle: pinned release ignores Range"
 echo "SeaweedFS ListObjects v1 pagination oracle: pinned release emits" \
   "NextMarker without delimiter, contrary to AWS v1 response semantics"
+echo "SeaweedFS multipart checksum oracle: pinned release omits ListParts" \
+  "algorithm/type/per-part metadata and the CompleteMultipartUpload" \
+  "checksum/type response members; GetObjectAttributes must return exact" \
+  "empty checksum fields and high-level checksum verification is excluded"
 
 if [ -n "${FLYOLOGY_S3T_BIN:-}" ]; then
   FLYOLOGY_S3_IMPLEMENTATION=seaweedfs \

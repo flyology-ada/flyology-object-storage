@@ -1226,18 +1226,13 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Invalid_Request;
             return;
          elsif Options.Expected_Checksum.Algorithm /= No_Checksum
-           and then not Checksum_Engine.Valid_Object_Digest
+           and then not Checksum_Engine.Matches_Stored_Object_Digest
              (Ada.Strings.Unbounded.To_String
                 (Options.Expected_Checksum.Value),
+              Ada.Strings.Unbounded.To_String (Completed_Checksum.Value),
               Options.Expected_Checksum.Algorithm,
               Options.Expected_Checksum.Method,
               Positive (Completion.Length))
-         then
-            Result := Invalid_Request;
-            return;
-         elsif Options.Expected_Checksum.Algorithm /= No_Checksum
-           and then Options.Expected_Checksum.Value /=
-             Completed_Checksum.Value
          then
             Result := Bad_Digest;
             return;
