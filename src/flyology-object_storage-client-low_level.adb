@@ -897,7 +897,10 @@ package body Flyology.Object_Storage.Client.Low_Level is
          end if;
       end Add_Optional;
    begin
-      if Request_Payer'Length > 0 and then Request_Payer /= "requester" then
+      if not Valid_Bucket_Name (Bucket)
+        or else (Request_Payer'Length > 0
+                 and then Request_Payer /= "requester")
+      then
          raise Invalid_Request with "invalid ListObjects parameters";
       end if;
       Add ("Bucket", Bucket);
@@ -1017,114 +1020,84 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Region      : String;
       Timestamp   : String) return Prepared_Request
    is
-      Host : constant String := Authority (Origin);
-      Origin_Host : constant String := Flyology.HTTP.Host (Origin);
-      Virtual_Prefix : constant String := Bucket & ".";
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Has_Continuation : constant Boolean :=
+        Parameters.Has_Continuation_Token
+        or else US.Length (Parameters.Continuation_Token) > 0;
+      Has_Fetch_Owner : constant Boolean :=
+        Parameters.Has_Fetch_Owner or else Parameters.Fetch_Owner;
       Optional_Count : constant Natural :=
         Boolean'Pos (US.Length (Parameters.Prefix) > 0) +
         Boolean'Pos (US.Length (Parameters.Delimiter) > 0) +
-        Boolean'Pos (US.Length (Parameters.Continuation_Token) > 0) +
+        Boolean'Pos (Has_Continuation) +
         Boolean'Pos (US.Length (Parameters.Start_After) > 0) +
-        Boolean'Pos (Parameters.Fetch_Owner) +
-        Boolean'Pos (Parameters.URL_Encoding);
-      Query : SigV4.Name_Value_Array (1 .. 2 + Optional_Count);
-      Last  : Positive := Query'First;
-      Path  : constant String :=
-        (if Style = Path_Style
-         then "/" & Encoding.URI_Encode (Bucket, Encode_Slash => True)
-         else "/");
+        Boolean'Pos (Has_Fetch_Owner) +
+        Boolean'Pos (Parameters.URL_Encoding) +
+        Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
+        Boolean'Pos (Parameters.Include_Restore_Status);
+      Values : Model_Value_Array (1 .. 2 + Optional_Count);
+      Last : Natural := 0;
 
-      procedure Add_Query (Name, Value : String) is
+      procedure Add (Name, Value : String) is
       begin
-         Query (Last) := SigV4.Pair (Name, Value);
-         if Last < Query'Last then
-            Last := Last + 1;
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+
+      procedure Add_Optional
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Add (Name, US.To_String (Value));
          end if;
-      end Add_Query;
+      end Add_Optional;
    begin
       if not Valid_Bucket_Name (Bucket)
-        or else (Style = Virtual_Hosted_Style
-                 and then not Starts_With (Origin_Host, Virtual_Prefix))
-        or else US.Length (Parameters.Prefix) > 8_192
-        or else US.Length (Parameters.Delimiter) > 8_192
-        or else US.Length (Parameters.Continuation_Token) > 8_192
-        or else US.Length (Parameters.Start_After) > 8_192
+        or else (Request_Payer'Length > 0
+                 and then Request_Payer /= "requester")
       then
-         raise Invalid_Request with
-           "bucket does not match S3 addressing style";
+         raise Invalid_Request with "invalid ListObjectsV2 parameters";
       end if;
-      Add_Query ("list-type", "2");
-      Add_Query
-        ("max-keys",
+      Add ("Bucket", Bucket);
+      Add
+        ("MaxKeys",
          Ada.Strings.Fixed.Trim
            (S3.Core.Page_Size'Image (Parameters.Max_Keys), Ada.Strings.Both));
-      if US.Length (Parameters.Prefix) > 0 then
-         Add_Query ("prefix", US.To_String (Parameters.Prefix));
+      Add_Optional ("Prefix", Parameters.Prefix);
+      Add_Optional ("Delimiter", Parameters.Delimiter);
+      if Has_Continuation then
+         Add ("ContinuationToken", US.To_String
+           (Parameters.Continuation_Token));
       end if;
-      if US.Length (Parameters.Delimiter) > 0 then
-         Add_Query ("delimiter", US.To_String (Parameters.Delimiter));
-      end if;
-      if US.Length (Parameters.Continuation_Token) > 0 then
-         Add_Query
-           ("continuation-token",
-            US.To_String (Parameters.Continuation_Token));
-      end if;
-      if US.Length (Parameters.Start_After) > 0 then
-         Add_Query ("start-after", US.To_String (Parameters.Start_After));
-      end if;
-      if Parameters.Fetch_Owner then
-         Add_Query ("fetch-owner", "true");
+      Add_Optional ("StartAfter", Parameters.Start_After);
+      if Has_Fetch_Owner then
+         Add
+           ("FetchOwner",
+            (if Parameters.Fetch_Owner then "true" else "false"));
       end if;
       if Parameters.URL_Encoding then
-         Add_Query ("encoding-type", "url");
+         Add ("EncodingType", "url");
       end if;
-      declare
-         Query_Text : constant String := SigV4.Canonical_Query (Query);
-         Target     : constant String := Path & "?" & Query_Text;
-         Token      : constant String := Session_Token (Identity);
-         Headers    : SigV4.Name_Value_Array
-           (1 .. (if Token'Length = 0 then 3 else 4));
-         Signing    : SigV4.Signing_Result;
-         Message    : Flyology.HTTP.Client.Request;
-      begin
-         if Query_Text'Length > 8_192 - Path'Length - 1 then
-            raise Invalid_Request with "ListObjectsV2 target exceeds 8 KiB";
-         end if;
-         Headers (1) := SigV4.Pair ("host", Host);
-         Headers (2) := SigV4.Pair
-           ("x-amz-content-sha256", SigV4.Empty_Payload_Hash);
-         Headers (3) := SigV4.Pair ("x-amz-date", Timestamp);
-         if Token'Length > 0 then
-            Headers (4) := SigV4.Pair ("x-amz-security-token", Token);
-         end if;
-         Signing := SigV4.Sign
-           ("GET", Path, Query, Headers, SigV4.Empty_Payload_Hash,
-            Access_Key (Identity), Secret_Key (Identity), Region, Timestamp);
-         Flyology.HTTP.Client.Set_Method
-           (Message, Flyology.HTTP.To_Method ("GET"));
-         Flyology.HTTP.Client.Set_Target (Message, Target);
-         Flyology.HTTP.Client.Add_Header
-           (Message, "x-amz-content-sha256", SigV4.Empty_Payload_Hash);
-         Flyology.HTTP.Client.Add_Header (Message, "x-amz-date", Timestamp);
-         if Token'Length > 0 then
-            Flyology.HTTP.Client.Add_Header
-              (Message, "x-amz-security-token", Token);
-         end if;
-         Flyology.HTTP.Client.Add_Header
-           (Message, "authorization", US.To_String (Signing.Authorization));
-         return
-           (Operation       => List_Objects_V2_Operation,
-            Modeled_Operation => Model.Operation_Id'First,
-            Message         => Message,
-            Target_Value    => US.To_Unbounded_String (Target),
-            Authority_Value => US.To_Unbounded_String (Host),
-            Signing   => Signing);
-      exception
-         when SigV4.Invalid_Signing_Input |
-              Flyology.HTTP.Headers.Headers_Too_Large |
-              Constraint_Error =>
-            raise Invalid_Request with "invalid ListObjectsV2 request";
-      end;
+      Add_Optional ("RequestPayer", Parameters.Request_Payer);
+      Add_Optional
+        ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      if Parameters.Include_Restore_Status then
+         Add ("OptionalObjectAttributes", "RestoreStatus");
+      end if;
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.List_Objects_V2_Operation, Origin, Style, Values, "", False,
+         SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := List_Objects_V2_Operation;
+      end return;
+   exception
+      when Constraint_Error =>
+         raise Invalid_Request with "invalid ListObjectsV2 parameters";
    end Prepare_List_Objects_V2;
 
    function Decode_List_Objects_V2_Response
@@ -1132,15 +1105,23 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Payload    : String;
       Request_ID : String := "";
       Host_ID    : String := "";
+      Request_Charged : String := "";
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Objects_V2_Outcome
    is
    begin
       if Status = 200 then
+         if Request_Charged'Length > 0
+           and then Request_Charged /= "requester"
+         then
+            raise Invalid_Response with
+              "invalid ListObjectsV2 response headers";
+         end if;
          return
            (Kind    => Listed,
             Status  => Status,
-            Listing => S3.Listings.Parse_List_Objects_V2 (Payload, Limits));
+            Listing => S3.Listings.Parse_List_Objects_V2 (Payload, Limits),
+            Request_Charged => US.To_Unbounded_String (Request_Charged));
       else
          declare
             Value : S3.Errors.Error_Response :=
@@ -1182,6 +1163,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
          Host_ID : constant String :=
            Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         Request_Charged : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-charged");
       begin
          declare
             Payload : constant Flyology.Bytes.Unbounded_Bytes :=
@@ -1190,7 +1173,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          begin
             return Decode_List_Objects_V2_Response
               (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
-               Host_ID, Limits);
+               Host_ID, Request_Charged, Limits);
          end;
       end;
    exception

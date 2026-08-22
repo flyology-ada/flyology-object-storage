@@ -549,18 +549,29 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Bucket_Owner => "123456789012",
             Expected_Object_Attributes => "RestoreStatus");
          Serve
-           (HTTP_Response ("200 OK", Success_XML), "GET",
+           (HTTP_Response
+              ("200 OK", Success_XML,
+               "x-amz-request-charged: requester" & CRLF), "GET",
             "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus",
             Fragmented => True);
          Serve
            (HTTP_Response
               ("403 Forbidden", Error_XML,
                "x-amz-request-id: socket-request" & CRLF &
                "x-amz-id-2: socket-host" & CRLF),
-            "GET", "/example-bucket?list-type=2&max-keys=2");
+            "GET", "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
          Serve
            (HTTP_Response ("200 OK", String'(1 .. 256 => 'x')), "GET",
-            "/example-bucket?list-type=2&max-keys=2");
+            "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
          Serve
            (HTTP_Response
               ("200 OK", "", Omit_Content_Length => True),
@@ -766,6 +777,10 @@ procedure S3_HTTP_Socket_Corpus is
    begin
       State.Wait_Ready (Port);
       Parameters.Max_Keys := 2;
+      Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+      Parameters.Expected_Bucket_Owner :=
+        US.To_Unbounded_String ("123456789012");
+      Parameters.Include_Restore_Status := True;
       declare
          Origin : constant Flyology.HTTP.Origin := Flyology.HTTP.Parse_Origin
            ("http://127.0.0.1:" & Decimal (Natural (Port)));
@@ -836,6 +851,7 @@ procedure S3_HTTP_Socket_Corpus is
          begin
             if Result.Kind /= Low_Level.Listed
               or else Result.Listing.Key_Count /= 0
+              or else US.To_String (Result.Request_Charged) /= "requester"
             then
                raise Program_Error with "socket success result mismatch";
             end if;

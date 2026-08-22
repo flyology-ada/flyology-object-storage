@@ -3502,6 +3502,10 @@ package body Object_Storage_Test_Cases is
          Parameters.Max_Keys := 2;
          Parameters.Fetch_Owner := True;
          Parameters.URL_Encoding := True;
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         Parameters.Include_Restore_Status := True;
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_List_Objects_V2
@@ -3526,8 +3530,30 @@ package body Object_Storage_Test_Cases is
                   Expected_Query & LF) = 1
                and then Low_Level.Signed_Headers (Prepared) =
                  "host;x-amz-content-sha256;x-amz-date;" &
+                 "x-amz-expected-bucket-owner;" &
+                 "x-amz-optional-object-attributes;x-amz-request-payer;" &
                  "x-amz-security-token",
                "ListObjectsV2 request signing matches exact wire target");
+         end;
+      end;
+
+      declare
+         Parameters : Low_Level.List_Objects_V2_Parameters;
+      begin
+         Parameters.Has_Continuation_Token := True;
+         Parameters.Has_Fetch_Owner := True;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_List_Objects_V2
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket?continuation-token&fetch-owner=false&" &
+                 "list-type=2&max-keys=1000",
+               "present empty ListObjectsV2 inputs were not preserved");
          end;
       end;
 
@@ -3592,16 +3618,63 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         Raised : Boolean := False;
+         Parameters : Low_Level.List_Objects_V2_Parameters;
+      begin
+         Parameters.Request_Payer := US.To_Unbounded_String ("owner");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Objects_V2
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", Parameters,
+                    Identity, "us-east-1", "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "invalid ListObjectsV2 requester payer was accepted");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Objects_V2
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "Invalid_Bucket", (others => <>),
+                    Identity, "us-east-1", "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "invalid ListObjectsV2 bucket was accepted");
+      end;
+
+      declare
          Outcome : constant Low_Level.List_Objects_V2_Outcome :=
            Low_Level.Decode_List_Objects_V2_Response
              (200,
               "<ListBucketResult><Name>example-bucket</Name>" &
               "<KeyCount>0</KeyCount><MaxKeys>1000</MaxKeys>" &
-              "<IsTruncated>false</IsTruncated></ListBucketResult>");
+              "<IsTruncated>false</IsTruncated></ListBucketResult>",
+              Request_Charged => "requester");
       begin
          Assert
            (Outcome.Kind = Low_Level.Listed
-            and then Outcome.Listing.Key_Count = 0,
+            and then Outcome.Listing.Key_Count = 0
+            and then US.To_String (Outcome.Request_Charged) = "requester",
             "successful ListObjectsV2 response decoding");
       end;
 
@@ -3619,6 +3692,31 @@ package body Object_Storage_Test_Cases is
               "request-header"
             and then US.To_String (Outcome.Error.Host_ID) = "host-header",
             "typed ListObjectsV2 S3 error decoding and header fallback");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.List_Objects_V2_Outcome :=
+                 Low_Level.Decode_List_Objects_V2_Response
+                   (200,
+                    "<ListBucketResult><Name>example-bucket</Name>" &
+                    "<KeyCount>0</KeyCount><MaxKeys>1</MaxKeys>" &
+                    "<IsTruncated>false</IsTruncated>" &
+                    "</ListBucketResult>",
+                    Request_Charged => "invalid");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "invalid ListObjectsV2 response header was accepted");
       end;
 
       declare

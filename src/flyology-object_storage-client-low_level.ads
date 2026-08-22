@@ -46,10 +46,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Prefix             : Ada.Strings.Unbounded.Unbounded_String;
       Delimiter          : Ada.Strings.Unbounded.Unbounded_String;
       Continuation_Token : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Continuation_Token : Boolean := False;
       Start_After        : Ada.Strings.Unbounded.Unbounded_String;
       Max_Keys           : S3.Core.Page_Size := 1_000;
       Fetch_Owner        : Boolean := False;
+      Has_Fetch_Owner    : Boolean := False;
       URL_Encoding       : Boolean := False;
+      Request_Payer      : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+      Include_Restore_Status : Boolean := False;
    end record;
 
    type Prepared_Request is private;
@@ -237,6 +242,7 @@ package Flyology.Object_Storage.Client.Low_Level is
       case Kind is
          when Listed =>
             Listing : S3.Listings.List_Objects_V2_Result;
+            Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
          when Rejected =>
             Error : S3.Errors.Error_Response;
       end case;
@@ -247,6 +253,7 @@ package Flyology.Object_Storage.Client.Low_Level is
       Payload    : String;
       Request_ID : String := "";
       Host_ID    : String := "";
+      Request_Charged : String := "";
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Objects_V2_Outcome;
 
