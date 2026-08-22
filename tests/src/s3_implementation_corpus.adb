@@ -43,6 +43,7 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Upload_Part_Copy_Outcome_Kind;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Copy_Outcome_Kind;
+   use type Transfers.Head_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
 
    Access_Key : constant String := "FLYOLOGYS3ORACLE";
@@ -252,6 +253,38 @@ procedure S3_Implementation_Corpus is
             end if;
          end;
       end Require_Listed_Object;
+
+      procedure Require_Head_Object is
+      begin
+         declare
+            Outcome : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Transfers.Object_Found
+              or else Outcome.Bytes /=
+                Flyology.Object_Storage.Byte_Count (Payload'Length)
+              or else US.Length (Outcome.Entity_Tag) = 0
+              or else US.Length (Outcome.Last_Modified) = 0
+            then
+               raise Program_Error with
+                 "S3 implementation returned invalid HeadObject metadata";
+            end if;
+         end;
+         declare
+            Outcome : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, Bucket, Key & "-missing", Identity,
+                 Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Transfers.Head_Rejected
+              or else Outcome.Status /= 404
+            then
+               raise Program_Error with
+                 "S3 implementation HeadObject missing-key mismatch";
+            end if;
+         end;
+      end Require_Head_Object;
 
       procedure Copy_With_Multipart is
          Copy_Key : constant String := Key & "-copy-part";
@@ -501,6 +534,7 @@ procedure S3_Implementation_Corpus is
          end;
       end;
       Require_Listed_Object;
+      Require_Head_Object;
       Copy_With_Multipart;
       Upload_High_Level_File;
       Copy_Whole_Object;

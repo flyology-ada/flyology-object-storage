@@ -52,7 +52,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
    function Last_Modified (Value : Unix_Time) return String is
       Epoch : constant Ada.Calendar.Time :=
-        Ada.Calendar.Time_Of (1970, 1, 1);
+        Ada.Calendar.Formatting.Time_Of
+          (1970, 1, 1, 0, 0, 0, Time_Zone => 0);
       Image : constant String := Ada.Calendar.Formatting.Image
         (Epoch + Duration (Value), Include_Time_Fraction => False,
          Time_Zone => 0);
@@ -60,6 +61,31 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       return Image (Image'First .. Image'First + 9) & "T" &
         Image (Image'First + 11 .. Image'First + 18) & ".000Z";
    end Last_Modified;
+
+   function HTTP_Last_Modified (Value : Unix_Time) return String is
+      type Short_Name is new String (1 .. 3);
+      Weekdays : constant array (Natural range 0 .. 6) of Short_Name :=
+        ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun");
+      Months : constant array (Ada.Calendar.Month_Number) of Short_Name :=
+        (1 => "Jan", 2 => "Feb", 3 => "Mar", 4 => "Apr",
+         5 => "May", 6 => "Jun", 7 => "Jul", 8 => "Aug",
+         9 => "Sep", 10 => "Oct", 11 => "Nov", 12 => "Dec");
+      Epoch : constant Ada.Calendar.Time :=
+        Ada.Calendar.Formatting.Time_Of
+          (1970, 1, 1, 0, 0, 0, Time_Zone => 0);
+      Date : constant Ada.Calendar.Time := Epoch + Duration (Value);
+      Image : constant String := Ada.Calendar.Formatting.Image
+        (Date, Include_Time_Fraction => False, Time_Zone => 0);
+      Month : constant Ada.Calendar.Month_Number :=
+        Ada.Calendar.Formatting.Month (Date, Time_Zone => 0);
+   begin
+      return String
+        (Weekdays (Natural ((Value / 86_400 + 3) mod 7))) & ", " &
+        Image (Image'First + 8 .. Image'First + 9) & " " &
+        String (Months (Month)) & " " &
+        Image (Image'First .. Image'First + 3) & " " &
+        Image (Image'First + 11 .. Image'First + 18) & " GMT";
+   end HTTP_Last_Modified;
 
    procedure Send_Error
      (X        : in out Apps.Exchange;
@@ -429,6 +455,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Apps.Set_Header (X, "Accept-Ranges", "bytes");
             if Entity_Tag'Length > 0 then
                Apps.Set_Header (X, "ETag", '"' & Entity_Tag & '"');
+            end if;
+            Apps.Set_Header
+              (X, "Last-Modified", HTTP_Last_Modified (Info.Modified));
+            if US.Length (Info.Version) > 0 then
+               Apps.Set_Header
+                 (X, "x-amz-version-id", US.To_String (Info.Version));
             end if;
             if Partial then
                Apps.Set_Header
@@ -1441,6 +1473,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Apps.Set_Header
                     (X, "ETag", '"' & US.To_String (Info.Entity_Tag) & '"');
                   Apps.Set_Header (X, "Accept-Ranges", "bytes");
+                  Apps.Set_Header
+                    (X, "Last-Modified", HTTP_Last_Modified (Info.Modified));
+                  if US.Length (Info.Version) > 0 then
+                     Apps.Set_Header
+                       (X, "x-amz-version-id", US.To_String (Info.Version));
+                  end if;
                   Apps.Begin_Stream
                     (X, 200, US.To_String (Info.Content_Type),
                      Flyology.HTTP.Body_Size (Info.Size));

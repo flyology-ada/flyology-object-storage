@@ -136,6 +136,48 @@ package Flyology.Object_Storage.Client.Transfers is
       Token              : access Flyology.Cancellation.Token := null)
       return Copy_Outcome;
 
+   type Head_Outcome_Kind is (Object_Found, Head_Rejected);
+
+   type Head_Outcome
+     (Kind : Head_Outcome_Kind := Head_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Found =>
+            Bytes          : Byte_Count := 0;
+            Entity_Tag     : Ada.Strings.Unbounded.Unbounded_String;
+            Last_Modified  : Ada.Strings.Unbounded.Unbounded_String;
+            Content_Type   : Ada.Strings.Unbounded.Unbounded_String;
+            Version_ID     : Ada.Strings.Unbounded.Unbounded_String;
+            Checksum_CRC32 : Ada.Strings.Unbounded.Unbounded_String;
+            Checksum_CRC32C : Ada.Strings.Unbounded.Unbounded_String;
+            Checksum_SHA1  : Ada.Strings.Unbounded.Unbounded_String;
+            Checksum_SHA256 : Ada.Strings.Unbounded.Unbounded_String;
+            Checksum_Type  : Ada.Strings.Unbounded.Unbounded_String;
+         when Head_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Retrieve compact object metadata without a response body. This is the
+   --  convenience reconciliation primitive for ambiguous multipart or copy
+   --  outcomes. Checksum_Mode requests S3 checksum response fields when the
+   --  implementation supports them. Bodyless HEAD errors are returned as a
+   --  synthetic HTTP-status S3 error while preserving request identifiers.
+   function Head_Object
+     (Client        : aliased in out Flyology.HTTP.Client.Client;
+      Origin        : Flyology.HTTP.Origin;
+      Bucket        : String;
+      Key           : String;
+      Identity      : Low_Level.Credentials;
+      Region        : String := "us-east-1";
+      Style         : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Version_ID    : String := "";
+      If_Match      : String := "";
+      Checksum_Mode : Boolean := False;
+      Timeout       : Duration := 30.0;
+      Token         : access Flyology.Cancellation.Token := null)
+      return Head_Outcome;
+
    type Download_Outcome_Kind is (File_Downloaded, Download_Rejected);
 
    type Download_Outcome

@@ -784,6 +784,10 @@ begin
         (Has (Response, "Content-Length: 11" & CRLF),
          "HeadObject did not declare the stored object length");
       Require
+        (Has (Response, "Last-Modified: ")
+         and then Has (Response, " GMT" & CRLF),
+         "HeadObject did not emit an HTTP Last-Modified value");
+      Require
         (not Has (Response, "Transfer-Encoding:"),
          "HeadObject used streaming transfer coding");
       Require (not Has (Response, "hello world"),

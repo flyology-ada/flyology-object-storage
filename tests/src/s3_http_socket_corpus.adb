@@ -37,6 +37,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
    use type Transfers.Copy_Outcome_Kind;
+   use type Transfers.Head_Outcome_Kind;
    use type Sockets.Selector_Status;
 
    CRLF : constant String := Character'Val (13) & Character'Val (10);
@@ -318,6 +319,8 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Content_Type : String := "";
          Expected_Copy_Source : String := "";
          Expected_Copy_If_Match : String := "";
+         Expected_If_Match : String := "";
+         Expected_Checksum_Mode : String := "";
          Fragmented         : Boolean := False)
       is
          Buffer : Stream_Element_Array (1 .. 4_096);
@@ -379,6 +382,20 @@ procedure S3_HTTP_Socket_Corpus is
                        "x-amz-copy-source" &
                        (if Expected_Copy_If_Match'Length = 0 then ";"
                         else ";x-amz-copy-source-if-match;") &
+                       "x-amz-date") = 0
+                 elsif Expected_If_Match'Length > 0
+                   or else Expected_Checksum_Mode'Length > 0
+                 then
+                    Header_Value (Lower, "if-match") /=
+                      Ada.Characters.Handling.To_Lower (Expected_If_Match)
+                    or else Header_Value
+                      (Lower, "x-amz-checksum-mode") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Checksum_Mode)
+                    or else Ada.Strings.Fixed.Index
+                      (Lower,
+                       "signedheaders=host;if-match;" &
+                       "x-amz-checksum-mode;x-amz-content-sha256;" &
                        "x-amz-date") = 0
                  elsif Expected_Content_Type'Length = 0 then
                     Ada.Strings.Fixed.Index
@@ -542,6 +559,36 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response ("412 Precondition Failed", Error_XML),
             "PUT", "/example-bucket/copy-rejected",
             Expected_Copy_Source => "source-bucket/source-key");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "Content-Length: 42" & CRLF &
+               "ETag: ""head-etag""" & CRLF &
+               "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+               "Content-Type: application/test" & CRLF &
+               "x-amz-version-id: head-version" & CRLF &
+               "x-amz-checksum-sha256: " &
+               "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" & CRLF &
+               "x-amz-checksum-type: FULL_OBJECT" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/head%20object%2B%2525?" &
+              "versionId=version%20one",
+            Expected_If_Match => """expected-etag""",
+            Expected_Checksum_Mode => "ENABLED");
+         Serve
+           (HTTP_Response
+              ("404 Not Found", "",
+               "x-amz-request-id: head-request" & CRLF &
+               "x-amz-id-2: head-host" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/head-missing");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "Content-Length: 1" & CRLF &
+               "x-amz-checksum-sha256: not-base64" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/head-invalid-checksum");
          Serve
            (HTTP_Response ("200 OK", Create_XML), "POST",
             "/example-bucket/object%20key?uploads", Fragmented => True);
@@ -1043,6 +1090,69 @@ procedure S3_HTTP_Socket_Corpus is
             if not Raised then
                raise Program_Error with
                  "ambiguous high-level CopyObject source was accepted";
+            end if;
+         end;
+         declare
+            Result : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, "example-bucket", "head object+%25",
+                 Identity, Version_ID => "version one",
+                 If_Match => """expected-etag""", Checksum_Mode => True,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Transfers.Object_Found
+              or else Result.Status /= 200
+              or else Result.Bytes /= 42
+              or else US.To_String (Result.Entity_Tag) /= """head-etag"""
+              or else US.To_String (Result.Last_Modified) /=
+                "Fri, 21 Aug 2026 17:00:00 GMT"
+              or else US.To_String (Result.Content_Type) /=
+                "application/test"
+              or else US.To_String (Result.Version_ID) /= "head-version"
+              or else US.To_String (Result.Checksum_SHA256) /=
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+              or else US.To_String (Result.Checksum_Type) /= "FULL_OBJECT"
+            then
+               raise Program_Error with "high-level HeadObject mismatch";
+            end if;
+         end;
+         declare
+            Result : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, "example-bucket", "head-missing", Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Transfers.Head_Rejected
+              or else Result.Status /= 404
+              or else US.To_String (Result.Error.Code) /= "HTTP404"
+              or else US.To_String (Result.Error.Request_ID) /=
+                "head-request"
+              or else US.To_String (Result.Error.Host_ID) /= "head-host"
+            then
+               raise Program_Error with
+                 "bodyless high-level HeadObject rejection mismatch";
+            end if;
+         end;
+         declare
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Transfers.Head_Outcome :=
+                    Transfers.Head_Object
+                      (HTTP, Origin, "example-bucket",
+                       "head-invalid-checksum", Identity, Timeout => 5.0);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            if not Raised then
+               raise Program_Error with
+                 "invalid HeadObject checksum was accepted";
             end if;
          end;
          declare

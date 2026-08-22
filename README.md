@@ -168,6 +168,8 @@ Downloaded := Transfers.Download_File
 Copied := Transfers.Copy_Object
   (Client, Origin, "source-bucket", "source key", "bucket", "copy key",
    Identity);
+Head := Transfers.Head_Object
+  (Client, Origin, "bucket", "key", Identity);
 Transfers.Transfer_Many
   (Client, Origin, Items, Results, Identity, Options => Options);
 ```
@@ -176,7 +178,10 @@ Transfers.Transfer_Many
 from one open descriptor, and exposes both thresholds as trailing policy
 parameters. `Copy_Object` owns copy-source URI encoding and signing, including
 special-character keys, and returns compact copy metadata or the structured
-S3 error. Multipart parts for one file are deliberately sequential; batch
+S3 error. `Head_Object` is the bodyless reconciliation primitive: it returns
+64-bit size, entity tag, modification/content/version metadata, and validated
+checksum headers, or a structured rejection that preserves request IDs even
+when the HEAD response has no XML body. Multipart parts for one file are deliberately sequential; batch
 parallelism is across independent subjects. `Transfer_Many` remains a
 synchronous structured scope and bounds concurrent objects, HTTP requests and
 in-flight bytes independently. Flyology's runtime owns multiplexing,

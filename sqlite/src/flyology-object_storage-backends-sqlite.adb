@@ -1,4 +1,5 @@
 with Ada.Calendar;
+with Ada.Calendar.Formatting;
 with Ada.Directories;
 with Ada.IO_Exceptions;
 with Ada.Strings;
@@ -30,7 +31,9 @@ package body Flyology.Object_Storage.Backends.SQLite is
    package SIO renames Ada.Streams.Stream_IO;
    package US renames Ada.Strings.Unbounded;
 
-   Epoch : constant Ada.Calendar.Time := Ada.Calendar.Time_Of (1970, 1, 1);
+   Epoch : constant Ada.Calendar.Time :=
+     Ada.Calendar.Formatting.Time_Of
+       (1970, 1, 1, 0, 0, 0, Time_Zone => 0);
    Empty_Info : constant Object_Information := (others => <>);
    Maximum_Metadata_Length : constant Natural := 8 * 1_024;
 

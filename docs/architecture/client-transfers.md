@@ -41,6 +41,22 @@ before the transport failed. Abort is not rollback. Applications needing an
 unambiguous workflow must reconcile the expected key, size and metadata with
 HeadObject or publish through an application-level manifest/version pointer.
 
+## HeadObject reconciliation
+
+`Head_Object` performs that reconciliation without retaining a response body.
+It projects raw bucket/key strings through the generated S3 model and returns
+the 64-bit content length, entity tag, last-modified value, content type,
+version ID, and the common CRC32, CRC32C, SHA-1, and SHA-256 checksum headers.
+Nonempty checksum headers are validated for their exact decoded width, and a
+checksum type must be `COMPOSITE` or `FULL_OBJECT`.
+
+Optional version, entity-tag precondition, and checksum-mode inputs remain
+explicit. A bodyless unsuccessful HEAD response becomes a compact synthetic
+`HTTP<status>` S3 error while retaining `x-amz-request-id` and `x-amz-id-2`.
+This avoids inventing an XML error document that S3 does not send. The generic
+model boundary remains available when callers need the full modeled HeadObject
+header surface rather than this intentionally compact convenience result.
+
 ## Multi-subject transfers
 
 `Transfer_Many` accepts one ordered array containing uploads and downloads and

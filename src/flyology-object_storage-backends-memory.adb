@@ -1,4 +1,5 @@
 with Ada.Calendar;
+with Ada.Calendar.Formatting;
 with Ada.Strings;
 with Ada.Strings.Fixed;
 with Ada.Unchecked_Deallocation;
@@ -15,7 +16,9 @@ package body Flyology.Object_Storage.Backends.Memory is
    use type Ada.Strings.Unbounded.Unbounded_String;
 
    Empty_Info : constant Object_Information := (others => <>);
-   Epoch : constant Ada.Calendar.Time := Ada.Calendar.Time_Of (1970, 1, 1);
+   Epoch : constant Ada.Calendar.Time :=
+     Ada.Calendar.Formatting.Time_Of
+       (1970, 1, 1, 0, 0, 0, Time_Zone => 0);
 
    procedure Free is new Ada.Unchecked_Deallocation
      (Ada.Streams.Stream_Element_Array, Byte_Array_Access);
