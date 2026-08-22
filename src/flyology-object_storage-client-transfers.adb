@@ -5,11 +5,9 @@ with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Real_Time;
 with Ada.Streams;
-with Flyology.Bytes;
 with Flyology.IO;
 with Flyology.IO.Files;
 with Flyology.HTTP.Client.Request_Bodies.Files;
-with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
@@ -23,7 +21,6 @@ package body Flyology.Object_Storage.Client.Transfers is
    package HTTP_Client renames Flyology.HTTP.Client;
    package Files renames Flyology.IO.Files;
    package File_Bodies renames Flyology.HTTP.Client.Request_Bodies.Files;
-   package Model renames Flyology.Object_Storage.S3.Model;
    package Core renames Flyology.Object_Storage.S3.Core;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package Requests renames Flyology.Object_Storage.S3.Requests;
@@ -45,12 +42,11 @@ package body Flyology.Object_Storage.Client.Transfers is
    use type Low_Level.Copy_Object_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.Get_Object_Head_Outcome_Kind;
+   use type Low_Level.Put_Object_Outcome_Kind;
    use type Requests.Target_Kind;
    use type Requests.Target_Status;
 
    Hash_Buffer_Size : constant := 64 * 1_024;
-   Maximum_Error_Body : constant := 1_024 * 1_024;
-   Maximum_Put_Response_Body : constant := 64 * 1_024;
    Transfer_Buffer_Size : constant := 64 * 1_024;
 
    type Client_Access is access all HTTP_Client.Client;
@@ -85,12 +81,6 @@ package body Flyology.Object_Storage.Client.Transfers is
          Value := Temporary_Sequence.Value;
       end Next;
    end Temporary_Sequence;
-
-   function Model_Value
-     (Name, Value : String) return Low_Level.Model_Value is
-     (Member_Name => US.To_Unbounded_String (Name),
-      Map_Key     => US.Null_Unbounded_String,
-      Value       => US.To_Unbounded_String (Value));
 
    function Current_Timestamp return String is
       Image : constant String := Ada.Calendar.Formatting.Image
@@ -376,21 +366,6 @@ package body Flyology.Object_Storage.Client.Transfers is
       Digest := GNAT.SHA256.Digest (Context);
    end Hash_File;
 
-   function Decode_Error
-     (Response : in out HTTP_Client.Response;
-      Token    : access Flyology.Cancellation.Token)
-      return Flyology.Object_Storage.S3.Errors.Error_Response
-   is
-      Payload_Data : constant Flyology.Bytes.Unbounded_Bytes :=
-        HTTP_Client.Read_All (Response, Maximum_Error_Body, Token);
-   begin
-      return Flyology.Object_Storage.S3.Errors.Parse
-        (Flyology.Bytes.To_Byte_String (Payload_Data));
-   exception
-      when Flyology.Object_Storage.S3.Errors.Malformed_Error =>
-         raise Low_Level.Invalid_Response with "malformed S3 error response";
-   end Decode_Error;
-
    function Upload_Multipart_File
      (Client       : aliased in out Flyology.HTTP.Client.Client;
       Origin       : Flyology.HTTP.Origin;
@@ -581,58 +556,33 @@ package body Flyology.Object_Storage.Client.Transfers is
          end;
       end if;
       declare
-         Value_Count : constant Positive :=
-           (if Content_Type'Length = 0 then 2 else 3);
-         Values : Low_Level.Model_Value_Array (1 .. Value_Count);
+         Parameters : Low_Level.Put_Object_Parameters;
       begin
-         Values (1) := Model_Value ("Bucket", Bucket);
-         Values (2) := Model_Value ("Key", Key);
-         if Content_Type'Length > 0 then
-            Values (3) := Model_Value ("ContentType", Content_Type);
-         end if;
+         Parameters.Content_Type := US.To_Unbounded_String (Content_Type);
          declare
             Prepared : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_Model_Streaming_Request
-                (Model.Put_Object_Operation, Origin, Style, Values,
-                 String (Digest), Identity, Region, Current_Timestamp);
+              Low_Level.Prepare_Put_Object
+                (Origin, Style, Bucket, Key, Parameters, String (Digest),
+                 Identity, Region, Current_Timestamp);
             Source : File_Bodies.Range_Source
               (File'Access, 0, Flyology.HTTP.Body_Size (Size));
-            Response : HTTP_Client.Response :=
-              Low_Level.Execute_Model_Request
+            Outcome : constant Low_Level.Put_Object_Outcome :=
+              Low_Level.Execute_Put_Object
                 (Client, Prepared, Source, Remaining (Deadline), Token);
-            Status : constant Flyology.HTTP.Status_Code :=
-              HTTP_Client.Status (Response);
          begin
-            if Status = 200 then
-               declare
-                  Payload_Data : constant Flyology.Bytes.Unbounded_Bytes :=
-                    HTTP_Client.Read_All
-                      (Response, Maximum_Put_Response_Body, Token);
-               begin
-                  if Flyology.Bytes.Length (Payload_Data) /= 0 then
-                     raise Low_Level.Invalid_Response with
-                       "PutObject success contained an unexpected body";
-                  end if;
-               end;
+            if Outcome.Kind = Low_Level.Object_Put then
                Files.Close (File);
                return
                  (Kind       => File_Uploaded,
-                  Status     => Status,
+                  Status     => Outcome.Status,
                   Bytes      => Size,
-                  Entity_Tag => US.To_Unbounded_String
-                    (HTTP_Client.Header (Response, "etag")));
+                  Entity_Tag => Outcome.Result.Entity_Tag);
             else
-               declare
-                  Error : constant
-                    Flyology.Object_Storage.S3.Errors.Error_Response :=
-                      Decode_Error (Response, Token);
-               begin
-                  Files.Close (File);
-                  return
-                    (Kind   => Upload_Rejected,
-                     Status => Status,
-                     Error  => Error);
-               end;
+               Files.Close (File);
+               return
+                 (Kind   => Upload_Rejected,
+                  Status => Outcome.Status,
+                  Error  => Outcome.Error);
             end if;
          end;
       end;

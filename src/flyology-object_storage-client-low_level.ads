@@ -586,6 +586,63 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region         : String;
       Timestamp      : String) return Prepared_Request;
 
+   --  Every member in the pinned PutObject output shape.
+   type Put_Object_Result is record
+      Expiration                 : Ada.Strings.Unbounded.Unbounded_String;
+      Entity_Tag                 : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_CRC32             : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_CRC32C            : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_CRC64NVME         : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA1              : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA256            : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA512            : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_MD5               : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH64          : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH3           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH128         : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Type              : Ada.Strings.Unbounded.Unbounded_String;
+      Server_Side_Encryption     : Ada.Strings.Unbounded.Unbounded_String;
+      Version_ID                 : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Algorithm     : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5       : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID             : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Encryption_Context : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled         : Optional_Boolean;
+      Size                       : Optional_Byte_Count;
+      Request_Charged            : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Put_Object_Outcome_Kind is (Object_Put, Put_Object_Rejected);
+
+   type Put_Object_Outcome
+     (Kind : Put_Object_Outcome_Kind := Put_Object_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Put =>
+            Result : Put_Object_Result;
+         when Put_Object_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Put_Object_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Put_Object_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Outcome;
+
+   function Execute_Put_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Source   : in out Flyology.HTTP.Client.Request_Body_Source'Class;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Outcome;
+
    --  Modeled DeleteBucket request headers.
    type Delete_Bucket_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;

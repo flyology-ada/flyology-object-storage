@@ -41,8 +41,8 @@ The core crate includes:
 - AWS-vector-tested SigV4 header signing and bounded, entity-safe REST/XML;
 - strict ListObjects v1 server query/response, typed ListObjectsV2, and
   multipart initiation/completion REST/XML codecs;
-- signed, bounded CreateBucket, HeadBucket, GetObject, HeadObject, PutObject
-  preparation, ListObjectsV2, DeleteBucket,
+- signed, bounded CreateBucket, HeadBucket, GetObject, HeadObject, PutObject,
+  ListObjectsV2, DeleteBucket,
   DeleteObject, DeleteObjects REST/XML, and multipart
   initiate/upload/complete/abort low-level
   operations over caller-owned `flyology_http` clients, with UploadPart

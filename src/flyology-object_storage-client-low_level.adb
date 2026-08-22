@@ -1968,7 +1968,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       begin
          if not Parsed.Valid then
             raise Invalid_Response with
-              "invalid GetObject Content-Length header";
+              "invalid S3 byte-count response header";
          end if;
          return (Is_Set => True, Value => Parsed.Value);
       end;
@@ -2431,6 +2431,157 @@ package body Flyology.Object_Storage.Client.Low_Level is
       when Constraint_Error =>
          raise Invalid_Request with "invalid PutObject parameters";
    end Prepare_Put_Object;
+
+   function Valid_Put_Object_Enum
+     (Value : US.Unbounded_String; Member : Positive) return Boolean
+   is
+      Text : constant String := US.To_String (Value);
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.Put_Object_Operation));
+      Shape : constant Model.Shape_Index :=
+        Model.Member_Shape (Output, Member);
+   begin
+      if Text'Length = 0 then
+         return True;
+      end if;
+      for Index in 1 .. Model.Enumeration_Count (Shape) loop
+         if Text = Model.Enumeration_Value (Shape, Index) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Valid_Put_Object_Enum;
+
+   procedure Validate_Put_Object_Headers (Value : Put_Object_Result) is
+   begin
+      if US.Length (Value.Entity_Tag) = 0
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC32C, 4)
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC64NVME, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA1, 20)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA256, 32)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA512, 64)
+        or else not Valid_Optional_Checksum (Value.Checksum_MD5, 16)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH64, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH3, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH128, 16)
+        or else not Valid_Put_Object_Enum (Value.Checksum_Type, 13)
+        or else not Valid_Put_Object_Enum
+          (Value.Server_Side_Encryption, 14)
+        or else (US.Length (Value.SSE_Customer_Algorithm) > 0
+                 and then US.To_String (Value.SSE_Customer_Algorithm) /=
+                   "AES256")
+        or else (US.Length (Value.SSE_Customer_Key_MD5) > 0
+                 and then not Wire_Core.Valid_Base64
+                   (US.To_String (Value.SSE_Customer_Key_MD5), 16))
+        or else not Valid_Put_Object_Enum (Value.Request_Charged, 22)
+      then
+         raise Invalid_Response with "invalid PutObject response headers";
+      end if;
+   end Validate_Put_Object_Headers;
+
+   function Decode_Put_Object_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Put_Object_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Outcome
+   is
+   begin
+      if Status = 200 then
+         if not Whitespace_Only (Payload) then
+            raise Invalid_Response with
+              "PutObject success contains a response body";
+         end if;
+         Validate_Put_Object_Headers (Headers);
+         return (Kind => Object_Put, Status => Status, Result => Headers);
+      else
+         return
+           (Kind   => Put_Object_Rejected,
+            Status => Status,
+            Error  => Error_Response
+              (Payload, Request_ID, Host_ID, Limits));
+      end if;
+   exception
+      when S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed PutObject error response";
+   end Decode_Put_Object_Response;
+
+   function Execute_Put_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Source   : in out Flyology.HTTP.Client.Request_Body_Source'Class;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Outcome
+   is
+   begin
+      if Prepared.Operation /= Put_Object_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Source, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Request_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+         Host_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+
+         function H (Name : String) return US.Unbounded_String is
+           (US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header (Response, Name)));
+
+         Headers : constant Put_Object_Result :=
+           (Expiration => H ("x-amz-expiration"),
+            Entity_Tag => H ("etag"),
+            Checksum_CRC32 => H ("x-amz-checksum-crc32"),
+            Checksum_CRC32C => H ("x-amz-checksum-crc32c"),
+            Checksum_CRC64NVME => H ("x-amz-checksum-crc64nvme"),
+            Checksum_SHA1 => H ("x-amz-checksum-sha1"),
+            Checksum_SHA256 => H ("x-amz-checksum-sha256"),
+            Checksum_SHA512 => H ("x-amz-checksum-sha512"),
+            Checksum_MD5 => H ("x-amz-checksum-md5"),
+            Checksum_XXHASH64 => H ("x-amz-checksum-xxhash64"),
+            Checksum_XXHASH3 => H ("x-amz-checksum-xxhash3"),
+            Checksum_XXHASH128 => H ("x-amz-checksum-xxhash128"),
+            Checksum_Type => H ("x-amz-checksum-type"),
+            Server_Side_Encryption =>
+              H ("x-amz-server-side-encryption"),
+            Version_ID => H ("x-amz-version-id"),
+            SSE_Customer_Algorithm =>
+              H ("x-amz-server-side-encryption-customer-algorithm"),
+            SSE_Customer_Key_MD5 =>
+              H ("x-amz-server-side-encryption-customer-key-md5"),
+            SSE_KMS_Key_ID =>
+              H ("x-amz-server-side-encryption-aws-kms-key-id"),
+            SSE_KMS_Encryption_Context =>
+              H ("x-amz-server-side-encryption-context"),
+            Bucket_Key_Enabled => Optional_Boolean_Header
+              (Flyology.HTTP.Client.Header
+                 (Response,
+                  "x-amz-server-side-encryption-bucket-key-enabled")),
+            Size => Optional_Byte_Count_Header
+              (Flyology.HTTP.Client.Header (Response, "x-amz-object-size")),
+            Request_Charged => H ("x-amz-request-charged"));
+         Maximum : constant Natural :=
+           (if Status = 200 then 1 else Limits.Maximum_Document_Bytes);
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All (Response, Maximum, Token);
+      begin
+         return Decode_Put_Object_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
+            Request_ID, Host_ID, Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with "PutObject response body exceeds limit";
+   end Execute_Put_Object;
 
    function Prepare_Delete_Bucket
      (Origin     : Flyology.HTTP.Origin;

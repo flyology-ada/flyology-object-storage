@@ -3351,6 +3351,7 @@ package body Object_Storage_Test_Cases is
       use type Low_Level.Abort_Multipart_Outcome_Kind;
       use type Low_Level.Upload_Part_Outcome_Kind;
       use type Low_Level.Upload_Part_Copy_Outcome_Kind;
+      use type Low_Level.Put_Object_Outcome_Kind;
       LF : constant Character := Character'Val (10);
       Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
         ("AKIAIOSFODNN7EXAMPLE",
@@ -3736,6 +3737,94 @@ package body Object_Storage_Test_Cases is
            US.To_Unbounded_String ("GOVERNANCE");
          Require_Rejected
            ("PutObject accepted Object Lock without an integrity header");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result;
+      begin
+         Headers.Expiration := US.To_Unbounded_String ("expiry=soon");
+         Headers.Entity_Tag := US.To_Unbounded_String ("""put-etag""");
+         Headers.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
+         Headers.Checksum_CRC32C := US.To_Unbounded_String ("AAAAAA==");
+         Headers.Checksum_CRC64NVME :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Headers.Checksum_SHA1 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Headers.Checksum_SHA256 := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Headers.Checksum_SHA512 := US.To_Unbounded_String
+           (String'(1 .. 86 => 'A') & "==");
+         Headers.Checksum_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Headers.Checksum_XXHASH64 :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Headers.Checksum_XXHASH3 :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Headers.Checksum_XXHASH128 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Headers.Checksum_Type := US.To_Unbounded_String ("FULL_OBJECT");
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:backup");
+         Headers.Version_ID := US.To_Unbounded_String ("version");
+         Headers.SSE_Customer_Algorithm := US.To_Unbounded_String ("AES256");
+         Headers.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Headers.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Headers.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String ("context");
+         Headers.Bucket_Key_Enabled := (Is_Set => True, Value => True);
+         Headers.Size := (Is_Set => True, Value => 42);
+         Headers.Request_Charged := US.To_Unbounded_String ("requester");
+         declare
+            Outcome : constant Low_Level.Put_Object_Outcome :=
+              Low_Level.Decode_Put_Object_Response (200, "", Headers);
+         begin
+            Assert
+              (Outcome.Kind = Low_Level.Object_Put
+               and then Outcome.Result.Size.Is_Set
+               and then Outcome.Result.Size.Value = 42
+               and then US.To_String (Outcome.Result.Entity_Tag) =
+                 """put-etag"""
+               and then US.To_String
+                 (Outcome.Result.Server_Side_Encryption) = "aws:backup",
+               "typed PutObject complete response headers");
+         end;
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result;
+         Raised : Boolean := False;
+      begin
+         Headers.Entity_Tag := US.To_Unbounded_String ("""etag""");
+         Headers.Checksum_SHA256 := US.To_Unbounded_String ("not-base64");
+         begin
+            declare
+               Ignored : constant Low_Level.Put_Object_Outcome :=
+                 Low_Level.Decode_Put_Object_Response (200, "", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert (Raised, "PutObject accepted an invalid response checksum");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result;
+         Outcome : constant Low_Level.Put_Object_Outcome :=
+           Low_Level.Decode_Put_Object_Response
+             (403, "<Error><Code>AccessDenied</Code>" &
+              "<Message>denied</Message></Error>", Headers,
+              "put-request", "put-host");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Put_Object_Rejected
+            and then US.To_String (Outcome.Error.Code) = "AccessDenied"
+            and then US.To_String (Outcome.Error.Request_ID) = "put-request",
+            "typed PutObject error response");
       end;
 
       declare

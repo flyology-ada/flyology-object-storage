@@ -34,6 +34,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Complete_Multipart_Outcome_Kind;
    use type Low_Level.Abort_Multipart_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
+   use type Low_Level.Put_Object_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Transfers.Download_Outcome_Kind;
@@ -519,6 +520,18 @@ procedure S3_HTTP_Socket_Corpus is
             "PUT", "/example-bucket/model-stream", "u");
          Serve
            (HTTP_Response
+              ("200 OK", "",
+               "ETag: ""typed-put""" & CRLF &
+               "x-amz-checksum-crc32: AAAAAA==" & CRLF &
+               "x-amz-checksum-type: FULL_OBJECT" & CRLF &
+               "x-amz-server-side-encryption: aws:backup" & CRLF &
+               "x-amz-version-id: put-version" & CRLF &
+               "x-amz-server-side-encryption-bucket-key-enabled: true" &
+               CRLF & "x-amz-object-size: 1" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT", "/example-bucket/typed-put", "u");
+         Serve
+           (HTTP_Response
               ("200 OK", "", "ETag: ""high-level""" & CRLF),
             "PUT", "/example-bucket/high%20level%2Bfile%2525",
             "high-level file payload", "application/test");
@@ -808,6 +821,33 @@ procedure S3_HTTP_Socket_Corpus is
             then
                raise Program_Error with
                  "generic streaming model execution result mismatch";
+            end if;
+         end;
+         declare
+            Parameters : Low_Level.Put_Object_Parameters;
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Object
+                (Origin, Low_Level.Path_Style, "example-bucket", "typed-put",
+                 Parameters, SigV4.SHA256_Hex (Upload_Payload), Identity,
+                 "us-east-1", "20130524T000000Z");
+            Source : Upload_Source (Upload_Payload'Access);
+            Result : constant Low_Level.Put_Object_Outcome :=
+              Low_Level.Execute_Put_Object
+                (HTTP, Prepared, Source, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Object_Put
+              or else US.To_String (Result.Result.Entity_Tag) /=
+                """typed-put"""
+              or else US.To_String (Result.Result.Checksum_Type) /=
+                "FULL_OBJECT"
+              or else US.To_String
+                (Result.Result.Server_Side_Encryption) /= "aws:backup"
+              or else not Result.Result.Bucket_Key_Enabled.Is_Set
+              or else not Result.Result.Bucket_Key_Enabled.Value
+              or else not Result.Result.Size.Is_Set
+              or else Result.Result.Size.Value /= 1
+            then
+               raise Program_Error with "typed PutObject result mismatch";
             end if;
          end;
          declare
