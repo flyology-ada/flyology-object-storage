@@ -16,6 +16,7 @@ procedure Files_Crash_Probe is
    use type Ada.Streams.Stream_Element_Offset;
    use type Flyology.Object_Storage.Status;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
+   use type Flyology.Object_Storage.Checksum_Algorithm;
    package US renames Ada.Strings.Unbounded;
    package Storage renames Flyology.Object_Storage;
    package Backends renames Flyology.Object_Storage.Backends;
@@ -126,9 +127,15 @@ procedure Files_Crash_Probe is
      (Store : in out Files.Store; Upload_ID : out US.Unbounded_String)
    is
       Result : Storage.Status;
+      Options : Backends.Multipart_Options :=
+        Backends.Default_Multipart_Options;
    begin
+      Options.Checksum :=
+        (Algorithm => Storage.Checksum_CRC32C,
+         Method    => Storage.Full_Object_Checksum,
+         Value     => US.Null_Unbounded_String);
       Store.Create_Multipart_Upload
-        (Bucket, Key, Backends.Default_Multipart_Options,
+        (Bucket, Key, Options,
          null, Ada.Real_Time.Time_Last, Upload_ID, Result);
       Require (Result = Storage.Success, "could not create test upload");
    end Create_Upload;
@@ -274,9 +281,8 @@ procedure Files_Crash_Probe is
          Set_Object_Tag (Store, "new");
          Result := Storage.Success;
       elsif Scenario = "initiate" then
-         Store.Create_Multipart_Upload
-           (Bucket, Key, Backends.Default_Multipart_Options,
-            null, Ada.Real_Time.Time_Last, Upload_ID, Result);
+         Create_Upload (Store, Upload_ID);
+         Result := Storage.Success;
       elsif Scenario = "part" then
          Put_Part (Store, Only_Upload (Store), "new-part");
          Result := Storage.Success;
@@ -412,7 +418,10 @@ procedure Files_Crash_Probe is
             Require
               (Result = Storage.Success
                and then Page.Parts.Length = 1
-               and then Page.Parts.First_Element.Info.Size in 3 | 8,
+               and then Page.Parts.First_Element.Info.Size in 3 | 8
+               and then Page.Checksum.Algorithm = Storage.Checksum_CRC32C
+               and then Page.Parts.First_Element.Info.Checksum.Algorithm =
+                 Storage.Checksum_CRC32C,
                "crash exposed a partial part replacement");
          end;
       elsif Scenario = "complete" then
@@ -427,7 +436,10 @@ procedure Files_Crash_Probe is
                and then (Result = Storage.Success or else Count = 1),
                "crash lost both completed object and active upload");
             if Result = Storage.Success then
-               Require (Info.Size = 3, "completed object has wrong size");
+               Require
+                 (Info.Size = 3
+                  and then Info.Checksum.Algorithm = Storage.Checksum_CRC32C,
+                  "completed object has wrong checksum metadata");
             end if;
          end;
       elsif Scenario = "versioning" then
