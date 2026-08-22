@@ -1,0 +1,372 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ALIRE_VERSION: 2.1.1
+  GNAT_VERSION: 16.1.0
+  GPRBUILD_VERSION: 26.0.0
+  S3T_REVISION: 51506ac904f6e35424b3ec9d38716985023beba6
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 5
+
+jobs:
+  quality:
+    name: Coverage and documentation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Set up pinned Ada toolchain
+        uses: alire-project/setup-alire@fc4c8ce471aa30b3af0d39ce15add1ee9eaf28f2 # v6.0.0
+        with:
+          version: ${{ env.ALIRE_VERSION }}
+          toolchain: >-
+            gnat_native=${{ env.GNAT_VERSION }}
+            gprbuild=${{ env.GPRBUILD_VERSION }}
+          cache: true
+      - name: Restore Alire dependency builds
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cache/alire/releases
+            ~/.cache/alire/builds
+            ~/.local/share/alire/builds
+          key: alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-${{ hashFiles('**/alire.toml') }}
+          restore-keys: |
+            alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-
+      - name: Verify coverage and corpus locks
+        run: ./tools/verify-coverage.sh
+      - name: Validate repository shell programs
+        run: |
+          find tools tests/scripts sqlite/tests/scripts server/tests/scripts \
+            -type f \( -name '*.sh' -o -perm -u+x \) -print0 |
+            xargs -0 bash -n
+      - name: Validate GitHub Actions workflow
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsSLo /tmp/actionlint.tar.gz \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz' |
+            sha256sum --check --strict
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          /tmp/actionlint .github/workflows/*.yml
+      - name: Install pinned GNATdoc
+        run: |
+          alr -n install gnatdoc_bin=26.0.0
+          echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
+      - name: Verify documentation
+        run: ./tools/verify-docs.sh
+      - name: Retain documentation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: documentation-${{ github.run_id }}
+          path: |
+            gnatdoc-run.txt
+            obj/gnatdoc/html
+          if-no-files-found: warn
+          retention-days: 14
+
+  core:
+    name: Core, files, socket, and transfer corpora
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Set up pinned Ada toolchain
+        uses: alire-project/setup-alire@fc4c8ce471aa30b3af0d39ce15add1ee9eaf28f2 # v6.0.0
+        with:
+          version: ${{ env.ALIRE_VERSION }}
+          toolchain: >-
+            gnat_native=${{ env.GNAT_VERSION }}
+            gprbuild=${{ env.GPRBUILD_VERSION }}
+          cache: true
+      - name: Restore Alire dependency builds
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cache/alire/releases
+            ~/.cache/alire/builds
+            ~/.local/share/alire/builds
+          key: alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-${{ hashFiles('**/alire.toml') }}
+          restore-keys: |
+            alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-
+      - name: Run packaged core corpus
+        run: |
+          mkdir -p obj/ci
+          (cd tests && alr -n update)
+          ./tests/scripts/test.sh 2>&1 | tee obj/ci/core.log
+      - name: Retain core evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: core-${{ github.run_id }}
+          path: obj/ci/core.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  sqlite:
+    name: SQLite binding and backend corpus
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Set up pinned Ada toolchain
+        uses: alire-project/setup-alire@fc4c8ce471aa30b3af0d39ce15add1ee9eaf28f2 # v6.0.0
+        with:
+          version: ${{ env.ALIRE_VERSION }}
+          toolchain: >-
+            gnat_native=${{ env.GNAT_VERSION }}
+            gprbuild=${{ env.GPRBUILD_VERSION }}
+          cache: true
+      - name: Restore Alire dependency builds
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cache/alire/releases
+            ~/.cache/alire/builds
+            ~/.local/share/alire/builds
+          key: alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-${{ hashFiles('**/alire.toml') }}
+          restore-keys: |
+            alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-
+      - name: Run packaged SQLite corpus
+        run: |
+          mkdir -p obj/ci
+          (cd sqlite/tests && alr -n update)
+          ./sqlite/tests/scripts/test.sh 2>&1 | tee obj/ci/sqlite.log
+      - name: Retain SQLite evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sqlite-${{ github.run_id }}
+          path: obj/ci/sqlite.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  production-server:
+    name: Packaged production server corpus
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Set up pinned Ada toolchain
+        uses: alire-project/setup-alire@fc4c8ce471aa30b3af0d39ce15add1ee9eaf28f2 # v6.0.0
+        with:
+          version: ${{ env.ALIRE_VERSION }}
+          toolchain: >-
+            gnat_native=${{ env.GNAT_VERSION }}
+            gprbuild=${{ env.GPRBUILD_VERSION }}
+          cache: true
+      - name: Restore Alire dependency builds
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cache/alire/releases
+            ~/.cache/alire/builds
+            ~/.local/share/alire/builds
+          key: alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-${{ hashFiles('**/alire.toml') }}
+          restore-keys: |
+            alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-
+      - name: Run packaged server corpus
+        run: |
+          mkdir -p obj/ci
+          cd server
+          alr -n update
+          alr -n test 2>&1 | tee ../obj/ci/server.log
+      - name: Retain server evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: production-server-${{ github.run_id }}
+          path: obj/ci/server.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  spark:
+    name: Serialized SPARK proof manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    concurrency:
+      group: flyology-object-storage-gnatprove
+      cancel-in-progress: false
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Set up pinned Ada toolchain
+        uses: alire-project/setup-alire@fc4c8ce471aa30b3af0d39ce15add1ee9eaf28f2 # v6.0.0
+        with:
+          version: ${{ env.ALIRE_VERSION }}
+          toolchain: >-
+            gnat_native=${{ env.GNAT_VERSION }}
+            gprbuild=${{ env.GPRBUILD_VERSION }}
+          cache: true
+      - name: Restore Alire dependency builds
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cache/alire/releases
+            ~/.cache/alire/builds
+            ~/.local/share/alire/builds
+          key: alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-${{ hashFiles('**/alire.toml') }}
+          restore-keys: |
+            alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-
+      - name: Install pinned GNATprove
+        run: |
+          alr -n install gnatprove=${{ env.GNAT_VERSION }}
+          echo "$HOME/.alire/bin" >> "$GITHUB_PATH"
+      - name: Prove forced manifest with invocation header
+        run: |
+          alr -n update
+          ./tools/prove.sh
+      - name: Retain SPARK evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: spark-${{ github.run_id }}
+          path: |
+            gnatprove-run.txt
+            obj/proof/gnatprove/gnatprove.out
+          if-no-files-found: warn
+          retention-days: 30
+
+  s3t:
+    name: Build pinned s3t corpus runner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Verify corpus revision and license lock
+        run: ./tools/verify-corpora-lock.sh
+      - name: Fetch exact s3t revision
+        run: |
+          mkdir -p obj/s3t-source
+          git -C obj/s3t-source init
+          git -C obj/s3t-source remote add origin https://github.com/go-faster/s3t.git
+          git -C obj/s3t-source fetch --depth=1 origin "$S3T_REVISION"
+          git -C obj/s3t-source checkout --detach FETCH_HEAD
+          test "$(git -C obj/s3t-source rev-parse HEAD)" = "$S3T_REVISION"
+      - name: Set up s3t Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.0
+          cache: true
+          cache-dependency-path: obj/s3t-source/go.sum
+      - name: Build and verify s3t
+        run: |
+          mkdir -p obj/tools
+          cd obj/s3t-source
+          CGO_ENABLED=0 go build -trimpath -buildvcs=true \
+            -ldflags='-s -w' -o ../tools/s3t ./cmd/s3t
+          test "$(../tools/s3t version | sed -n 's/^revision //p')" = \
+            "$S3T_REVISION"
+      - name: Retain pinned s3t binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: s3t-${{ env.S3T_REVISION }}
+          path: obj/tools/s3t
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+  oracle:
+    name: Pinned ${{ matrix.name }} oracle (${{ matrix.license }})
+    needs: s3t
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - name: RustFS
+            script: test-rustfs.sh
+            license: Apache-2.0
+          - name: SeaweedFS
+            script: test-seaweedfs.sh
+            license: Apache-2.0
+          - name: MinIO
+            script: test-minio.sh
+            license: AGPL-3.0-only
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Restore pinned s3t corpus runner
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: s3t-${{ env.S3T_REVISION }}
+          path: obj/tools
+      - name: Verify s3t artifact provenance
+        run: |
+          chmod 0755 obj/tools/s3t
+          test "$(obj/tools/s3t version | sed -n 's/^revision //p')" = \
+            "$S3T_REVISION"
+      - name: Set up pinned Ada toolchain
+        uses: alire-project/setup-alire@fc4c8ce471aa30b3af0d39ce15add1ee9eaf28f2 # v6.0.0
+        with:
+          version: ${{ env.ALIRE_VERSION }}
+          toolchain: >-
+            gnat_native=${{ env.GNAT_VERSION }}
+            gprbuild=${{ env.GPRBUILD_VERSION }}
+          cache: true
+      - name: Restore Alire dependency builds
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cache/alire/releases
+            ~/.cache/alire/builds
+            ~/.local/share/alire/builds
+          key: alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-${{ hashFiles('**/alire.toml') }}
+          restore-keys: |
+            alire-builds-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ env.GNAT_VERSION }}-
+      - name: Verify immutable image and license lock
+        run: ./tools/verify-corpora-lock.sh
+      - name: Run independent oracle corpus
+        env:
+          ORACLE_LOG: obj/ci/oracle-${{ matrix.script }}.log
+          FLYOLOGY_S3T_BIN: ${{ github.workspace }}/obj/tools/s3t
+          FLYOLOGY_S3T_REPORT_DIR: ${{ github.workspace }}/obj/s3t
+          FLYOLOGY_S3T_REPORT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir -p obj/ci
+          (cd tests && alr -n update)
+          ./tests/scripts/${{ matrix.script }} 2>&1 | tee "$ORACLE_LOG"
+      - name: Retain oracle evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: oracle-${{ matrix.name }}-${{ github.run_id }}
+          #  Keep the machine-readable allowlist report beside the command log.
+          #  The glob is empty only when the corpus fails before report setup.
+          path: |
+            obj/ci/oracle-${{ matrix.script }}.log
+            obj/s3t/*.jsonl
+          if-no-files-found: warn
+          retention-days: 21
