@@ -1769,6 +1769,91 @@ begin
    end;
 
    declare
+      First_ETag : constant String :=
+        """8b04d5e3775d298e78455efc5ca404d5""";
+      Second_ETag : constant String :=
+        """a9f0e61a137d86aa9db53465e0801612""";
+      Created : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/conditional-put", "first",
+            Extra_Headers => "If-None-Match: *" & CRLF));
+      Collision : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/conditional-put", "collision",
+            Extra_Headers => "If-None-Match: *" & CRLF));
+      Replaced : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/conditional-put", "second",
+            Extra_Headers => "If-Match: " & First_ETag & CRLF));
+      Stale : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/conditional-put", "stale",
+            Extra_Headers => "If-Match: " & First_ETag & CRLF));
+      Missing : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/conditional-missing", "missing",
+            Extra_Headers => "If-Match: " & Second_ETag & CRLF));
+      Malformed : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/conditional-put", "malformed",
+            Extra_Headers => "If-Match: ""unterminated" & CRLF));
+      Empty : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/conditional-put", "empty",
+            Extra_Headers => "If-Match:" & CRLF));
+      Duplicate_Match : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/conditional-put", "duplicate",
+            Extra_Headers =>
+              "If-Match: " & Second_ETag & CRLF &
+              "If-Match: " & Second_ETag & CRLF));
+      Duplicate_None : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/conditional-put", "duplicate",
+            Extra_Headers =>
+              "If-None-Match: ""other""" & CRLF &
+              "If-None-Match: ""other""" & CRLF));
+      Combined : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/conditional-put", "third",
+            Extra_Headers =>
+              "If-Match: " & Second_ETag & CRLF &
+              "If-None-Match: ""other""" & CRLF));
+      Observed : constant String := Run
+        (Signed_Request ("GET", "/test-bucket/conditional-put", ""));
+      Cleanup : constant String := Run
+        (Signed_Request ("DELETE", "/test-bucket/conditional-put", ""));
+   begin
+      Require
+        (Has (Created, "200 OK") and then Has (Created, First_ETag),
+         "signed create-if-absent PutObject failed");
+      Require
+        (Has (Collision, "HTTP/1.1 412 ")
+         and then Has (Collision, "<Code>PreconditionFailed</Code>"),
+         "signed If-None-Match collision was not PreconditionFailed");
+      Require
+        (Has (Replaced, "200 OK") and then Has (Replaced, Second_ETag),
+         "signed matching If-Match PutObject failed");
+      Require
+        (Has (Stale, "HTTP/1.1 412 ")
+         and then Has (Missing, "HTTP/1.1 412 "),
+         "signed stale or missing If-Match was accepted");
+      Require
+        (Has (Malformed, "400 Bad Request")
+         and then Has (Empty, "400 Bad Request")
+         and then Has (Duplicate_Match, "400 Bad Request")
+         and then Has (Duplicate_None, "400 Bad Request"),
+         "strict PutObject condition header validation failed");
+      Require
+        (Has (Combined, "200 OK")
+         and then Has (Observed, "200 OK")
+         and then Response_Body (Observed) = "third",
+         "combined PutObject predicates did not publish exact final body");
+      Require (Has (Cleanup, "204 No Content"),
+               "conditional PutObject corpus cleanup failed");
+   end;
+
+   declare
       Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("location", ""),
          SigV4.Pair ("x-id", "GetBucketLocation"));

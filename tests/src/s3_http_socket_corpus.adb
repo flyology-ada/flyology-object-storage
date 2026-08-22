@@ -74,6 +74,11 @@ procedure S3_HTTP_Socket_Corpus is
      String'(1 .. 120 * 1_024 => 'u');
    Download_Payload : constant String :=
      String'(1 .. 120 * 1_024 => 'd');
+   Conditional_First : aliased constant String := "conditional-first";
+   Conditional_Collision : aliased constant String :=
+     "conditional-collision";
+   Conditional_Second : aliased constant String := "conditional-second";
+   Conditional_Stale : aliased constant String := "conditional-stale";
 
    type Upload_Source
      (Value : not null access constant String) is
@@ -761,6 +766,9 @@ procedure S3_HTTP_Socket_Corpus is
         "</ListBucketResult>";
       Error_XML : constant String :=
         "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>";
+      Precondition_XML : constant String :=
+        "<Error><Code>PreconditionFailed</Code>" &
+        "<Message>condition failed</Message></Error>";
       Create_XML : constant String :=
         "<InitiateMultipartUploadResult>" &
         "<Bucket>example-bucket</Bucket><Key>object key</Key>" &
@@ -974,6 +982,42 @@ procedure S3_HTTP_Socket_Corpus is
                CRLF & "x-amz-object-size: 1" & CRLF &
                "x-amz-request-charged: requester" & CRLF),
             "PUT", "/example-bucket/typed-put", "u");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""conditional-first""" & CRLF),
+            "PUT", "/example-bucket/conditional-put", "conditional-first",
+            Expected_If_None_Match => "*");
+         Serve
+           (HTTP_Response ("412 Precondition Failed", Precondition_XML),
+            "PUT", "/example-bucket/conditional-put",
+            "conditional-collision", Expected_If_None_Match => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "Content-Length: 17" & CRLF &
+               "ETag: ""conditional-first""" & CRLF &
+               "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/conditional-put");
+         Serve
+           (HTTP_Response
+              ("200 OK", "conditional-first",
+               "ETag: ""conditional-first""" & CRLF),
+            "GET", "/example-bucket/conditional-put");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""conditional-second""" & CRLF),
+            "PUT", "/example-bucket/conditional-put", "conditional-second",
+            Expected_If_Match => """conditional-first""");
+         Serve
+           (HTTP_Response ("412 Precondition Failed", Precondition_XML),
+            "PUT", "/example-bucket/conditional-put", "conditional-stale",
+            Expected_If_Match => """conditional-first""");
+         Serve
+           (HTTP_Response
+              ("200 OK", "conditional-second",
+               "ETag: ""conditional-second""" & CRLF),
+            "GET", "/example-bucket/conditional-put");
          Serve
            (HTTP_Response
               ("200 OK", "", "x-amz-version-id: tag-put-version" & CRLF),
@@ -1340,6 +1384,143 @@ procedure S3_HTTP_Socket_Corpus is
            Low_Level.Prepare_List_Objects_V2
              (Origin, Low_Level.Path_Style, "example-bucket", Parameters,
               Identity, "us-east-1", "20130524T000000Z");
+
+         function Conditional_Put
+           (Value         : not null access constant String;
+            If_Match      : String := "";
+            If_None_Match : String := "")
+            return Low_Level.Put_Object_Outcome
+         is
+            Parameters : Low_Level.Put_Object_Parameters;
+            Source     : Upload_Source (Value);
+         begin
+            Parameters.If_Match := US.To_Unbounded_String (If_Match);
+            Parameters.If_None_Match :=
+              US.To_Unbounded_String (If_None_Match);
+            declare
+               Request : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Object
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "conditional-put", Parameters,
+                    SigV4.SHA256_Hex (Value.all), Identity,
+                    "us-east-1", "20130524T000000Z");
+            begin
+               return Low_Level.Execute_Put_Object
+                 (HTTP, Request, Source, Timeout => 5.0);
+            end;
+         end Conditional_Put;
+
+         procedure Require_Conditional_Get
+           (Expected_Body, Expected_ETag : String)
+         is
+            Parameters : Low_Level.Get_Object_Parameters;
+            Request : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 "conditional-put", Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Response : HTTP_Client.Response :=
+              Low_Level.Execute_Get_Object (HTTP, Request, Timeout => 5.0);
+            Result : constant Low_Level.Get_Object_Head_Outcome :=
+              Low_Level.Decode_Get_Object_Response_Head (Response);
+            Received : US.Unbounded_String;
+            Buffer : Stream_Element_Array (1 .. 8);
+            Last : Stream_Element_Offset;
+            Finished : Boolean := False;
+         begin
+            if Result.Kind /= Low_Level.Object_Opened
+              or else Result.Status /= 200
+              or else not Result.Result.Content_Length.Is_Set
+              or else Result.Result.Content_Length.Value /=
+                Expected_Body'Length
+              or else US.To_String (Result.Result.Entity_Tag) /=
+                Expected_ETag
+            then
+               raise Program_Error with
+                 "conditional PutObject GetObject head mismatch";
+            end if;
+            while not Finished loop
+               HTTP_Client.Read_Body (Response, Buffer, Last, Finished);
+               for Index in Buffer'First .. Last loop
+                  US.Append (Received, Character'Val (Buffer (Index)));
+               end loop;
+            end loop;
+            if US.To_String (Received) /= Expected_Body then
+               raise Program_Error with
+                 "conditional PutObject GetObject body mismatch";
+            end if;
+         end Require_Conditional_Get;
+
+         procedure Run_Conditional_Put_Lifecycle is
+            Created : constant Low_Level.Put_Object_Outcome :=
+              Conditional_Put
+                (Conditional_First'Access, If_None_Match => "*");
+            Collision : constant Low_Level.Put_Object_Outcome :=
+              Conditional_Put
+                (Conditional_Collision'Access, If_None_Match => "*");
+         begin
+            if Created.Kind /= Low_Level.Object_Put
+              or else Created.Status /= 200
+              or else US.To_String (Created.Result.Entity_Tag) /=
+                """conditional-first"""
+              or else Collision.Kind /= Low_Level.Put_Object_Rejected
+              or else Collision.Status /= 412
+              or else US.To_String (Collision.Error.Code) /=
+                "PreconditionFailed"
+            then
+               raise Program_Error with
+                 "conditional create/collision socket mismatch";
+            end if;
+            declare
+               Parameters : Low_Level.Head_Object_Parameters;
+               Request : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Head_Object
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "conditional-put", Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Result : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Execute_Head_Object
+                   (HTTP, Request, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Object_Found
+                 or else Result.Status /= 200
+                 or else Result.Result.Content_Length /=
+                   Conditional_First'Length
+                 or else US.To_String (Result.Result.Entity_Tag) /=
+                   """conditional-first"""
+               then
+                  raise Program_Error with
+                    "conditional collision changed HeadObject state";
+               end if;
+            end;
+            Require_Conditional_Get
+              (Conditional_First, """conditional-first""");
+            declare
+               Replaced : constant Low_Level.Put_Object_Outcome :=
+                 Conditional_Put
+                   (Conditional_Second'Access,
+                    If_Match => """conditional-first""");
+               Stale : constant Low_Level.Put_Object_Outcome :=
+                 Conditional_Put
+                   (Conditional_Stale'Access,
+                    If_Match => """conditional-first""");
+            begin
+               if Replaced.Kind /= Low_Level.Object_Put
+                 or else Replaced.Status /= 200
+                 or else US.To_String (Replaced.Result.Entity_Tag) /=
+                   """conditional-second"""
+                 or else Stale.Kind /= Low_Level.Put_Object_Rejected
+                 or else Stale.Status /= 412
+                 or else US.To_String (Stale.Error.Code) /=
+                   "PreconditionFailed"
+               then
+                  raise Program_Error with
+                    "conditional replace/stale socket mismatch";
+               end if;
+            end;
+            Require_Conditional_Get
+              (Conditional_Second, """conditional-second""");
+         end Run_Conditional_Put_Lifecycle;
       begin
          HTTP_Client.Configure (HTTP, Origin);
          declare
@@ -1930,6 +2111,7 @@ procedure S3_HTTP_Socket_Corpus is
                raise Program_Error with "typed PutObject result mismatch";
             end if;
          end;
+         Run_Conditional_Put_Lifecycle;
          declare
             Tags : Flyology.Object_Storage.Object_Tag_Set;
             Put_Parameters : Low_Level.Put_Object_Tagging_Parameters;

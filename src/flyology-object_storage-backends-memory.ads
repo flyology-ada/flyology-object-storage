@@ -89,7 +89,8 @@ package Flyology.Object_Storage.Backends.Memory is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
-      Result   : out Status);
+      Result   : out Status;
+      Conditions : Write_Conditions := Default_Write_Conditions);
 
    overriding procedure Copy_Object
      (Item               : in out Store;
@@ -359,6 +360,7 @@ private
          Key    : String;
          Data   : in out Owned_Bytes;
          Info   : Object_Information;
+         Conditions : Write_Conditions;
          Stored : out Object_Information;
          Result : out Status);
       procedure Fetch

@@ -65,12 +65,9 @@ package Flyology.Object_Storage.Backends is
       Next_After   : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
-   --  Source validators evaluated against the same immutable snapshot that
-   --  is copied. Values use the HTTP entity-tag list syntax.
-   type Copy_Conditions is record
-      If_Match      : Ada.Strings.Unbounded.Unbounded_String;
-      If_None_Match : Ada.Strings.Unbounded.Unbounded_String;
-   end record;
+   --  Compatibility name for source validators evaluated against the same
+   --  immutable snapshot that is copied.
+   subtype Copy_Conditions is Write_Conditions;
 
    type Copy_Metadata_Directive is (Copy_Metadata, Replace_Metadata);
 
@@ -91,7 +88,7 @@ package Flyology.Object_Storage.Backends is
    --  syntactically valid If-None-Match. Failures are Precondition_Failed;
    --  malformed entity-tag lists are Invalid_Request.
    function Evaluate_Write_Conditions
-     (Conditions : Copy_Conditions;
+     (Conditions : Write_Conditions;
       Exists     : Boolean;
       Entity_Tag : String) return Status;
 
@@ -434,10 +431,13 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
-      Result   : out Status) is abstract;
+      Result   : out Status;
+      Conditions : Write_Conditions := Default_Write_Conditions) is abstract;
    --  A successful implementation consumes Source through Finished, validates
    --  its declared length, and publishes the object only after all source
-   --  validation succeeds. A failed call does not expose a partial object.
+   --  validation succeeds. Conditions are evaluated atomically against the
+   --  destination generation at publication. A failed call does not expose a
+   --  partial object or alter the prior object.
 
    --  Copy one immutable source snapshot to the destination. Source absence
    --  is Source_Not_Found; destination-bucket absence remains Not_Found.

@@ -2935,14 +2935,39 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Maximum   => Byte_Count'Last,
                      Completed => False);
                   Options : Put_Options := Default_Put_Options;
+                  Conditions : Write_Conditions := Default_Write_Conditions;
+                  Match_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "if-match");
+                  None_Match_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "if-none-match");
                begin
                   if Apps.Request_Header_Count (X, "content-type") = 1 then
                      Options.Content_Type := US.To_Unbounded_String
                        (Apps.Request_Header (X, "content-type"));
                   end if;
-                  Store.Put_Object
-                    (Bucket, Key, Source, Options, Apps.Cancellation (X),
-                     Apps.Deadline (X), Info, Result);
+                  if Match_Count > 1 or else None_Match_Count > 1
+                    or else
+                      (Match_Count = 1
+                       and then Apps.Request_Header (X, "if-match") = "")
+                    or else
+                      (None_Match_Count = 1
+                       and then
+                         Apps.Request_Header (X, "if-none-match") = "")
+                  then
+                     Result := Invalid_Request;
+                  else
+                     if Match_Count = 1 then
+                        Conditions.If_Match := US.To_Unbounded_String
+                          (Apps.Request_Header (X, "if-match"));
+                     end if;
+                     if None_Match_Count = 1 then
+                        Conditions.If_None_Match := US.To_Unbounded_String
+                          (Apps.Request_Header (X, "if-none-match"));
+                     end if;
+                     Store.Put_Object
+                       (Bucket, Key, Source, Options, Apps.Cancellation (X),
+                        Apps.Deadline (X), Info, Result, Conditions);
+                  end if;
                   if Result = Success and then not Source.Completed then
                      raise Program_Error with
                        "backend committed before validating the whole body";

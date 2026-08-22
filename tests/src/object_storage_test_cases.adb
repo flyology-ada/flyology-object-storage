@@ -9,6 +9,7 @@ with Ada.Strings.Unbounded;
 with AUnit.Assertions;
 with AUnit.Test_Caller;
 with AUnit.Test_Fixtures;
+with Conditional_Put_Conformance;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP;
@@ -224,6 +225,7 @@ package body Object_Storage_Test_Cases is
         (Invalid_Request, 0,
          "mixed wildcard entity-tag list was accepted");
    end Exercise_Conditional_Read;
+
    procedure Exercise_Bucket_Tags
      (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
       Bucket : String)
@@ -3702,6 +3704,76 @@ package body Object_Storage_Test_Cases is
          Clean;
          raise;
    end Check_Backend_Delete_Objects;
+
+   procedure Check_Backend_Conditional_Put (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      package Memory renames Flyology.Object_Storage.Backends.Memory;
+      package Files renames Flyology.Object_Storage.Backends.Files;
+      package US renames Ada.Strings.Unbounded;
+      Root : constant String :=
+        Ada.Directories.Compose
+          (Ada.Directories.Compose
+             (Ada.Directories.Current_Directory, "obj"),
+           "fs-conditional-put-conformance");
+
+      procedure Clean is
+      begin
+         if Ada.Directories.Exists (Root) then
+            Ada.Directories.Delete_Tree (Root);
+         end if;
+      end Clean;
+   begin
+      declare
+         Store : Memory.Store (2, 64, 256);
+      begin
+         Conditional_Put_Conformance.Exercise
+           (Store, "memory-conditional-bucket");
+      end;
+
+      Clean;
+      declare
+         Store : Files.Store :=
+           Files.Open
+             (Root, Maximum_Object_Size => 64,
+              Commit => Files.Power_Loss_Durable);
+      begin
+         Conditional_Put_Conformance.Exercise
+           (Store, "files-conditional-bucket");
+      end;
+      declare
+         Store : Files.Store :=
+           Files.Open
+             (Root, Maximum_Object_Size => 64,
+              Commit => Files.Power_Loss_Durable);
+         Info   : Object_Information;
+         Result : Status;
+         Sink   : Buffer_Sink;
+      begin
+         Store.Get_Object
+           ("files-conditional-bucket", "conditional-object",
+            Whole_Object, Sink, null, Ada.Real_Time.Time_Last, Info, Result);
+         Assert
+           (Result = Success
+            and then Flyology.Bytes.To_Byte_String (Sink.Data) = "third"
+            and then US.To_String (Info.Entity_Tag) = "generation-3"
+            and then US.To_String (Info.Content_Type) = "application/test",
+            "conditional files result did not survive durable reopen");
+         Store.Head_Object
+           ("files-conditional-bucket", "conditional-race-32", null,
+            Ada.Real_Time.Time_Last, Info, Result);
+         Assert
+           (Result = Success and then Info.Size = 1
+            and then US.To_String (Info.Entity_Tag) in "race- 1" | "race- 2",
+            "conditional files race winner did not survive durable reopen");
+      end;
+      Clean;
+   exception
+      when others =>
+         Clean;
+         raise;
+   end Check_Backend_Conditional_Put;
 
    procedure Check_S3_Core_Rules (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
@@ -12211,6 +12283,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("backends.delete-objects-conformance",
             Check_Backend_Delete_Objects'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("backends.conditional-put-conformance",
+            Check_Backend_Conditional_Put'Access));
       Result.Add_Test
         (Caller.Create
            ("backends.object-tagging-conformance",

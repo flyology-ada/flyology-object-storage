@@ -77,7 +77,7 @@ package body Flyology.Object_Storage.Backends is
    end Copy_Conditions_Accept;
 
    function Evaluate_Write_Conditions
-     (Conditions : Copy_Conditions;
+     (Conditions : Write_Conditions;
       Exists     : Boolean;
       Entity_Tag : String) return Status
    is

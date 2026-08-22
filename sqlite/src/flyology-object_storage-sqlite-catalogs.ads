@@ -65,7 +65,8 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Payload          : String;
       Info             : Object_Information;
       Previous_Payload : out Ada.Strings.Unbounded.Unbounded_String;
-      Result           : out Status);
+      Result           : out Status;
+      Conditions       : Write_Conditions := Default_Write_Conditions);
 
    procedure Find_Object
      (Item    : in out Catalog;

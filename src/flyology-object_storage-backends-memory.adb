@@ -415,6 +415,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Key    : String;
          Data   : in out Owned_Bytes;
          Info   : Object_Information;
+         Conditions : Write_Conditions;
          Stored : out Object_Information;
          Result : out Status)
       is
@@ -429,6 +430,16 @@ package body Flyology.Object_Storage.Backends.Memory is
          Stored := Empty_Info;
          if Bucket_Index (Bucket) = 0 then
             Result := Not_Found;
+            return;
+         end if;
+         Result := Evaluate_Write_Conditions
+           (Conditions,
+            Exists     => Index /= 0,
+            Entity_Tag =>
+              (if Index = 0 then ""
+               else Ada.Strings.Unbounded.To_String
+                 (Objects (Index).Info.Entity_Tag)));
+         if Result /= Success then
             return;
          end if;
          if Index /= 0 then
@@ -1429,7 +1440,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
-      Result   : out Status)
+      Result   : out Status;
+      Conditions : Write_Conditions := Default_Write_Conditions)
    is
       Buffer   : Ada.Streams.Stream_Element_Array (1 .. 16 * 1_024);
       Last     : Ada.Streams.Stream_Element_Offset;
@@ -1443,6 +1455,11 @@ package body Flyology.Object_Storage.Backends.Memory is
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+      then
+         Result := Invalid_Request;
+         return;
+      elsif Evaluate_Write_Conditions
+        (Conditions, Exists => False, Entity_Tag => "") = Invalid_Request
       then
          Result := Invalid_Request;
          return;
@@ -1536,6 +1553,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Key    => Key,
          Data   => Data,
          Info   => Stored,
+         Conditions => Conditions,
          Stored => Info,
          Result => Result);
       Release_Buffer (Item.State, Data);

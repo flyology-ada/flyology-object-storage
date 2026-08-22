@@ -66,6 +66,10 @@ The core crate includes:
 - a bounded ordered DeleteObjects backend batch, with process-atomic memory,
   transactional SQLite, and explicitly scoped per-file durability semantics
   (see [DeleteObjects qualification](docs/qualification/delete-objects.md));
+- atomic conditional complete-object publication for memory, files, and
+  SQLite, with `If-None-Match: *` create-if-absent and opaque `If-Match`
+  compare-and-swap semantics (see
+  [conditional PutObject qualification](docs/qualification/conditional-put.md));
 - exhaustive request projection and a raw streaming-response execution
   boundary for all 116 pinned operations, while operation-specific typed
   codecs and interoperability gates remain tracked as incomplete;
@@ -107,7 +111,7 @@ policy on qualified POSIX hosts. It synchronizes staged records before rename,
 both namespace sides of publication, deletions, and multipart lifecycle
 changes. A separately labeled `Process_Crash_Atomic` policy omits persistence
 barriers for controlled comparisons. Barrier-by-barrier device-error injection
-and 54 actual abrupt-process terminations immediately before and after each
+and 86 actual abrupt-process terminations immediately before and after each
 barrier require every reopened namespace to be an intact old-or-new state.
 Windows directory-metadata durability and cross-process root sharing remain
 unsupported.

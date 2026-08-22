@@ -1481,7 +1481,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
-      Result   : out Status)
+      Result   : out Status;
+      Conditions : Write_Conditions := Default_Write_Conditions)
    is
       Buffer   : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
       Last     : Ada.Streams.Stream_Element_Offset;
@@ -1505,6 +1506,11 @@ package body Flyology.Object_Storage.Backends.Files is
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
         or else not Valid_Options (Options)
+      then
+         Result := Invalid_Request;
+         return;
+      elsif Evaluate_Write_Conditions
+        (Conditions, Exists => False, Entity_Tag => "") = Invalid_Request
       then
          Result := Invalid_Request;
          return;
@@ -1616,11 +1622,50 @@ package body Flyology.Object_Storage.Backends.Files is
       Sync_File (Item, US.To_String (Temp));
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
+      Check_Context (Token, Deadline);
       if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
          Item.Publication.Release;
          Locked := False;
          Ada.Directories.Delete_File (US.To_String (Temp));
          Result := Not_Found;
+         return;
+      end if;
+      declare
+         Existing_Info : Object_Information := Empty_Info;
+         Existing_File : SIO.File_Type;
+         Body_At       : SIO.Positive_Count;
+         Is_Link       : constant Boolean :=
+           GNAT.OS_Lib.Is_Symbolic_Link (Target);
+         Exists        : constant Boolean := Ada.Directories.Exists (Target);
+      begin
+         if Is_Link
+           or else
+             (Exists
+              and then Ada.Directories.Kind (Target) /=
+                Ada.Directories.Ordinary_File)
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         if Exists then
+            SIO.Open (Existing_File, SIO.In_File, Target);
+            Read_Header (Existing_File, Key, Existing_Info, Body_At);
+            SIO.Close (Existing_File);
+         end if;
+         Result := Evaluate_Write_Conditions
+           (Conditions, Exists,
+            (if Exists then US.To_String (Existing_Info.Entity_Tag)
+             else ""));
+      exception
+         when others =>
+            if SIO.Is_Open (Existing_File) then
+               SIO.Close (Existing_File);
+            end if;
+            raise;
+      end;
+      if Result /= Success then
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
          return;
       end if;
       Ensure_Directory

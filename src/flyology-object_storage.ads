@@ -206,6 +206,17 @@ is
    --  replace S3's stricter Unicode repertoire validation.
    function Valid_Object_Tag_Set (Tags : Object_Tag_Set) return Boolean;
 
+   --  Destination validators evaluated against the same publication boundary
+   --  that makes a complete object visible. Values use HTTP entity-tag list
+   --  syntax; the storage contract remains independent of HTTP request types.
+   type Write_Conditions is record
+      If_Match      : Ada.Strings.Unbounded.Unbounded_String;
+      If_None_Match : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  No destination predicates.
+   Default_Write_Conditions : constant Write_Conditions;
+
    --  Metadata supplied when committing an object. An empty Entity_Tag asks
    --  the backend to generate the ordinary single-part S3 MD5 entity tag.
    --  This identifier is not a collision-resistant integrity checksum.
@@ -241,6 +252,7 @@ is
 
 private
    Empty_Object_Tags : constant Object_Tag_Set := (others => <>);
+   Default_Write_Conditions : constant Write_Conditions := (others => <>);
    Default_Put_Options : constant Put_Options :=
      (Entity_Tag   => Ada.Strings.Unbounded.Null_Unbounded_String,
       Content_Type =>

@@ -8,7 +8,8 @@ project Flyology_Object_Storage_Tests is
    for Create_Missing_Dirs use "True";
    for Exec_Dir use "bin";
    for Main use
-      ("flyology_object_storage_tests.adb",
+     ("flyology_object_storage_tests.adb",
+      "files_conditional_symlink_probe.adb",
       "files_crash_probe.adb",
       "files_open_probe.adb",
       "s3_checksum_benchmark.adb",

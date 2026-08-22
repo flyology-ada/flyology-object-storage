@@ -178,7 +178,8 @@ procedure Files_Crash_Probe is
          null;
       else
          Create_Bucket (Store);
-         if Scenario in "put" | "delete" | "delete-objects" |
+         if Scenario in "put" | "conditional-put" | "delete" |
+           "delete-objects" |
            "object-tags"
          then
             Put (Store, "old");
@@ -224,6 +225,24 @@ procedure Files_Crash_Probe is
       elsif Scenario = "put" then
          Put (Store, "replacement");
          Result := Storage.Success;
+      elsif Scenario = "conditional-put" then
+         Store.Head_Object
+           (Bucket, Key, null, Ada.Real_Time.Time_Last, Info, Result);
+         Require (Result = Storage.Success,
+                  "could not read conditional replacement generation");
+         declare
+            Source : Buffer_Source :=
+              (Data => Flyology.Bytes.From_Byte_String ("replacement"),
+               Position => 0);
+            Conditions : Storage.Write_Conditions :=
+              Storage.Default_Write_Conditions;
+         begin
+            Conditions.If_Match := US.To_Unbounded_String
+              ('"' & US.To_String (Info.Entity_Tag) & '"');
+            Store.Put_Object
+              (Bucket, Key, Source, Storage.Default_Put_Options,
+               null, Ada.Real_Time.Time_Last, Info, Result, Conditions);
+         end;
       elsif Scenario = "bucket-tags" then
          Put_Bucket_Tags (Store, "replacement");
          Result := Storage.Success;
@@ -312,10 +331,10 @@ procedure Files_Crash_Probe is
          Require
            (Result in Storage.Success | Storage.Not_Found,
             "crash exposed malformed bucket namespace");
-      elsif Scenario in "put" | "delete" then
+      elsif Scenario in "put" | "conditional-put" | "delete" then
          Store.Head_Object
            (Bucket, Key, null, Ada.Real_Time.Time_Last, Info, Result);
-         if Scenario = "put" then
+         if Scenario in "put" | "conditional-put" then
             Require
               (Result = Storage.Success and then Info.Size in 3 | 11,
                "crash exposed a partial object replacement");

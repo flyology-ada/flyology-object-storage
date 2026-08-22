@@ -48,11 +48,13 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
+   use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
    use type Low_Level.List_Parts_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Upload_Part_Copy_Outcome_Kind;
+   use type Low_Level.Put_Object_Outcome_Kind;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Copy_Outcome_Kind;
    use type Transfers.Head_Outcome_Kind;
@@ -1488,6 +1490,127 @@ procedure S3_Implementation_Corpus is
             end if;
          end;
       end Delete_Many;
+
+      procedure Require_Conditional_Put is
+         First_Value : aliased constant String := "conditional-first";
+         Collision_Value : aliased constant String :=
+           "conditional-collision";
+         Second_Value : aliased constant String := "conditional-second";
+         Stale_Value : aliased constant String := "conditional-stale";
+         Object_Key : constant String := Key & "-conditional-put";
+
+         function Put
+           (Value         : not null access constant String;
+            If_Match      : String := "";
+            If_None_Match : String := "")
+            return Low_Level.Put_Object_Outcome
+         is
+            Parameters : Low_Level.Put_Object_Parameters;
+            Source     : Upload_Source (Value);
+         begin
+            Parameters.If_Match := US.To_Unbounded_String (If_Match);
+            Parameters.If_None_Match :=
+              US.To_Unbounded_String (If_None_Match);
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Object
+                   (Origin, Low_Level.Path_Style, Bucket, Object_Key,
+                    Parameters, SigV4.SHA256_Hex (Value.all), Identity,
+                    "us-east-1", Timestamp);
+            begin
+               return Low_Level.Execute_Put_Object
+                 (HTTP, Prepared, Source, Timeout => 30.0);
+            end;
+         end Put;
+
+         procedure Require_Body
+           (Expected_Body, Expected_ETag : String)
+         is
+            Parameters : Low_Level.Get_Object_Parameters;
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object
+                (Origin, Low_Level.Path_Style, Bucket, Object_Key,
+                 Parameters, Identity, "us-east-1", Timestamp);
+            Response : HTTP_Client.Response :=
+              Low_Level.Execute_Get_Object
+                (HTTP, Prepared, Timeout => 30.0);
+            Result : constant Low_Level.Get_Object_Head_Outcome :=
+              Low_Level.Decode_Get_Object_Response_Head (Response);
+            Received : US.Unbounded_String;
+            Buffer : Stream_Element_Array (1 .. 8);
+            Last : Stream_Element_Offset;
+            Finished : Boolean := False;
+         begin
+            if Result.Kind /= Low_Level.Object_Opened
+              or else Result.Status /= 200
+              or else US.To_String (Result.Result.Entity_Tag) /= Expected_ETag
+            then
+               raise Program_Error with
+                 "conditional PutObject returned the wrong generation";
+            end if;
+            while not Finished loop
+               HTTP_Client.Read_Body (Response, Buffer, Last, Finished);
+               for Index in Buffer'First .. Last loop
+                  US.Append (Received, Character'Val (Buffer (Index)));
+               end loop;
+            end loop;
+            if US.To_String (Received) /= Expected_Body then
+               raise Program_Error with
+                 "conditional PutObject changed the committed bytes";
+            end if;
+         end Require_Body;
+
+         Created : constant Low_Level.Put_Object_Outcome :=
+           Put (First_Value'Access, If_None_Match => "*");
+      begin
+         if Created.Kind /= Low_Level.Object_Put
+           or else Created.Status /= 200
+           or else US.Length (Created.Result.Entity_Tag) = 0
+         then
+            raise Program_Error with
+              "S3 implementation rejected create-if-absent PutObject";
+         end if;
+         declare
+            First_ETag : constant String :=
+              US.To_String (Created.Result.Entity_Tag);
+            Collision : constant Low_Level.Put_Object_Outcome :=
+              Put (Collision_Value'Access, If_None_Match => "*");
+         begin
+            if Collision.Kind /= Low_Level.Put_Object_Rejected
+              or else Collision.Status /= 412
+            then
+               raise Program_Error with
+                 "S3 implementation accepted an If-None-Match collision";
+            end if;
+            Require_Body (First_Value, First_ETag);
+            declare
+               Replaced : constant Low_Level.Put_Object_Outcome :=
+                 Put (Second_Value'Access, If_Match => First_ETag);
+            begin
+               if Replaced.Kind /= Low_Level.Object_Put
+                 or else Replaced.Status /= 200
+                 or else US.Length (Replaced.Result.Entity_Tag) = 0
+               then
+                  raise Program_Error with
+                    "S3 implementation rejected matching If-Match";
+               end if;
+               declare
+                  Second_ETag : constant String :=
+                    US.To_String (Replaced.Result.Entity_Tag);
+                  Stale : constant Low_Level.Put_Object_Outcome :=
+                    Put (Stale_Value'Access, If_Match => First_ETag);
+               begin
+                  if Stale.Kind /= Low_Level.Put_Object_Rejected
+                    or else Stale.Status /= 412
+                  then
+                     raise Program_Error with
+                       "S3 implementation accepted stale If-Match";
+                  end if;
+                  Require_Body (Second_Value, Second_ETag);
+               end;
+            end;
+         end;
+      end Require_Conditional_Put;
    begin
       HTTP_Client.Configure (HTTP, Origin);
       Check_Bucket_Tags;
@@ -1650,6 +1773,7 @@ procedure S3_Implementation_Corpus is
       Copy_Whole_Object;
       Require_High_Level_List_Pagination;
       Delete_Many;
+      Require_Conditional_Put;
       declare
          Abort_Key : constant String := Key & "-aborted";
          Prepared_Create : constant Low_Level.Prepared_Request :=
@@ -2085,6 +2209,8 @@ begin
            (Origin, Bucket, "native-object-copy-convenience", Timestamp);
          Delete_One
            (Origin, Bucket, "native-object-high level+%25", Timestamp);
+         Delete_One
+           (Origin, Bucket, "native-object-conditional-put", Timestamp);
          declare
             task Lightweight_Client is
                pragma Task_Info (Flyology.Lightweight_Task);
@@ -2105,6 +2231,9 @@ begin
                Delete_One
                  (Origin, Bucket,
                   "lightweight-object-high level+%25", Timestamp);
+               Delete_One
+                 (Origin, Bucket,
+                  "lightweight-object-conditional-put", Timestamp);
                Lightweight_Result.Report (True);
             exception
                when Occurrence : others =>

@@ -23,9 +23,9 @@ PROOF_UNITS=(
 )
 PROOF_PROJECT="tools/flyology_object_storage_proof.gpr"
 PROOF_LOG_DIR="$PROJECT_DIR/obj/proof/logs"
-mkdir -p "$PROOF_LOG_DIR"
 cd "$PROJECT_DIR"
 alr -n exec -- "$PROVE" -P "$PROOF_PROJECT" --clean
+mkdir -p "$PROOF_LOG_DIR"
 alr -n exec -- "$PROVE" -P "$PROOF_PROJECT" -j0 --level=0 \
   --output=oneline --output-header --warnings=error "$@" \
   -u "${PROOF_UNITS[@]}" 2>&1 \

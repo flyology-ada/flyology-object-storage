@@ -6,6 +6,7 @@ with Ada.Streams;
 with Ada.Streams.Stream_IO;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with Conditional_Put_Conformance;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.IO;
@@ -41,6 +42,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
 
    Database_Path : constant String := "obj/database-wrapper.sqlite";
    Backend_Root : constant String := "obj/sqlite-backend";
+   Conditional_Root : constant String := "obj/sqlite-conditional-backend";
    SQLite_Upload_ID : US.Unbounded_String;
    SQLite_Part_ETag : US.Unbounded_String;
    SQLite_Abort_ID  : US.Unbounded_String;
@@ -65,6 +67,26 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          Ada.Directories.Delete_File (Database_Path & "-shm");
       end if;
    end Delete_Database;
+
+   function Regular_File_Count (Directory : String) return Natural is
+      Search : Ada.Directories.Search_Type;
+      Item   : Ada.Directories.Directory_Entry_Type;
+      Count  : Natural := 0;
+   begin
+      Ada.Directories.Start_Search
+        (Search, Directory, "*",
+         (Ada.Directories.Ordinary_File => True, others => False));
+      while Ada.Directories.More_Entries (Search) loop
+         Ada.Directories.Get_Next_Entry (Search, Item);
+         Count := Count + 1;
+      end loop;
+      Ada.Directories.End_Search (Search);
+      return Count;
+   exception
+      when others =>
+         Ada.Directories.End_Search (Search);
+         raise;
+   end Regular_File_Count;
 
    procedure Create_V2_Database is
       Legacy : Databases.Database;
@@ -1470,6 +1492,46 @@ begin
    Databases.Close (Database);
    Delete_Database;
 
+   if Ada.Directories.Exists (Conditional_Root) then
+      Ada.Directories.Delete_Tree (Conditional_Root);
+   end if;
+   declare
+      package Backend renames Flyology.Object_Storage.Backends.SQLite;
+      Store : Backend.Store :=
+        Backend.Open (Conditional_Root, Maximum_Object_Size => 64);
+   begin
+      Conditional_Put_Conformance.Exercise
+        (Store, "sqlite-conditional-bucket");
+   end;
+   Assert
+     (Regular_File_Count (Conditional_Root & "/objects") = 33,
+      "SQLite conditional failures leaked or retired live payloads");
+   declare
+      package Backend renames Flyology.Object_Storage.Backends.SQLite;
+      use Flyology.Object_Storage;
+      Store : Backend.Store := Backend.Open (Conditional_Root, 64);
+      Info   : Object_Information;
+      Result : Status;
+      Sink   : Buffer_Sink;
+   begin
+      Store.Get_Object
+        ("sqlite-conditional-bucket", "conditional-object", Whole_Object,
+         Sink, null, Ada.Real_Time.Time_Last, Info, Result);
+      Assert
+        (Result = Success
+         and then Flyology.Bytes.To_Byte_String (Sink.Data) = "third"
+         and then US.To_String (Info.Entity_Tag) = "generation-3"
+         and then US.To_String (Info.Content_Type) = "application/test",
+         "SQLite conditional publication did not survive reopen");
+      Store.Head_Object
+        ("sqlite-conditional-bucket", "conditional-race-32", null,
+         Ada.Real_Time.Time_Last, Info, Result);
+      Assert
+        (Result = Success and then Info.Size = 1,
+         "SQLite concurrent conditional winner did not survive reopen");
+   end;
+   Ada.Directories.Delete_Tree (Conditional_Root);
+
    if Ada.Directories.Exists (Backend_Root) then
       Ada.Directories.Delete_Tree (Backend_Root);
    end if;
@@ -2452,6 +2514,9 @@ exception
       Delete_Database;
       if Ada.Directories.Exists (Backend_Root) then
          Ada.Directories.Delete_Tree (Backend_Root);
+      end if;
+      if Ada.Directories.Exists (Conditional_Root) then
+         Ada.Directories.Delete_Tree (Conditional_Root);
       end if;
       Ada.Text_IO.Put_Line
         (Ada.Text_IO.Standard_Error,

@@ -22,6 +22,14 @@ rm -rf "$SYMLINK_ROOT"
 trap - EXIT INT TERM
 echo "files staging symlink rejection: OK"
 
+CONDITIONAL_LINK_ROOT=$(mktemp -d /tmp/flyology-files-conditional-link.XXXXXX)
+trap 'case "$CONDITIONAL_LINK_ROOT" in /tmp/flyology-files-conditional-link.*) rm -rf "$CONDITIONAL_LINK_ROOT" ;; esac' EXIT INT TERM
+./bin/files_conditional_symlink_probe "$CONDITIONAL_LINK_ROOT/live" live
+./bin/files_conditional_symlink_probe "$CONDITIONAL_LINK_ROOT/dangling" dangling
+rm -rf "$CONDITIONAL_LINK_ROOT"
+trap - EXIT INT TERM
+echo "files conditional object-path symlink rejection: live/dangling OK"
+
 CRASH_ROOT=$(mktemp -d /tmp/flyology-files-crash.XXXXXX)
 trap 'case "$CRASH_ROOT" in /tmp/flyology-files-crash.*) rm -rf "$CRASH_ROOT" ;; esac' EXIT INT TERM
 run_crash_cases() {
@@ -51,6 +59,7 @@ run_crash_cases() {
 }
 run_crash_cases bucket 10
 run_crash_cases put 3
+run_crash_cases conditional-put 3
 run_crash_cases object-tags 3
 run_crash_cases bucket-tags 3
 run_crash_cases delete 1
@@ -63,7 +72,7 @@ run_crash_cases complete 4
 run_crash_cases versioning 3
 rm -rf "$CRASH_ROOT"
 trap - EXIT INT TERM
-echo "files abrupt-crash matrix: 80 pre/post-barrier cases OK"
+echo "files abrupt-crash matrix: 86 pre/post-barrier cases OK"
 
 ./bin/flyology_object_storage_tests
 ./bin/s3_checksum_corpus

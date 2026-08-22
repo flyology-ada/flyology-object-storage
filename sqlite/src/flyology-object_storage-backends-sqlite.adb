@@ -498,7 +498,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
-      Result   : out Status)
+      Result   : out Status;
+      Conditions : Write_Conditions := Default_Write_Conditions)
    is
       Buffer    : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
       Last      : Ada.Streams.Stream_Element_Offset;
@@ -520,6 +521,11 @@ package body Flyology.Object_Storage.Backends.SQLite is
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
         or else not Valid_Options (Options)
+      then
+         Result := Invalid_Request;
+         return;
+      elsif Evaluate_Write_Conditions
+        (Conditions, Exists => False, Entity_Tag => "") = Invalid_Request
       then
          Result := Invalid_Request;
          return;
@@ -616,12 +622,25 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Sync_Path (Objects_Path (Item), Directory => True);
       Catalogs.Put_Object
         (Item.Catalog, Bucket, Key, US.To_String (Payload), Info,
-         Previous, Result);
+         Previous, Result, Conditions);
       if Result /= Success then
          Ada.Directories.Delete_File
            (Join (Objects_Path (Item), US.To_String (Payload)));
          Sync_Path (Objects_Path (Item), Directory => True);
          Published := False;
+         return;
+      end if;
+      Published := False;
+      if US.Length (Previous) > 0 then
+         begin
+            Delete_Payload_If_Present (Item, US.To_String (Previous));
+            Sync_Path (Objects_Path (Item), Directory => True);
+         exception
+            when others =>
+               --  The catalog transaction already published the new object.
+               --  Startup garbage collection safely retires any residue.
+               null;
+         end;
       end if;
    exception
       when Flyology.Cancellation.Operation_Cancelled

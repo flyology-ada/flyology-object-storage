@@ -1027,7 +1027,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Payload          : String;
       Info             : Object_Information;
       Previous_Payload : out US.Unbounded_String;
-      Result           : out Status)
+      Result           : out Status;
+      Conditions       : Write_Conditions := Default_Write_Conditions)
    is
       In_Transaction : Boolean := False;
       Bucket_Query : DB.Statement;
@@ -1057,6 +1058,26 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       end if;
       Find_Object_Internal
         (Item, Bucket, Key, Previous_Payload, Existing, Result);
+      if Result not in Success | Not_Found then
+         raise Catalog_Error with "object lookup returned unexpected status";
+      end if;
+      declare
+         Exists : constant Boolean := Result = Success;
+         Current_Entity_Tag : constant String :=
+           (if Exists then US.To_String (Existing.Entity_Tag) else "");
+      begin
+         Result := Backends.Evaluate_Write_Conditions
+           (Conditions,
+            Exists     => Exists,
+            Entity_Tag => Current_Entity_Tag);
+      end;
+      if Result /= Success then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
       DB.Prepare
         (Upsert, Item.Database,
          "INSERT INTO objects(" &
