@@ -103,13 +103,6 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       "=" => Ada.Strings.Unbounded."=");
    subtype Payloads is Payload_Vectors.Vector;
 
-   procedure Delete_Object
-     (Item    : in out Catalog;
-      Bucket  : String;
-      Key     : String;
-      Payload : out Ada.Strings.Unbounded.Unbounded_String;
-      Result  : out Status);
-
    --  Delete one ordered batch in a single SQLite transaction. Retired
    --  payload names become unreferenced only after the transaction commits.
    procedure Delete_Objects

@@ -794,6 +794,56 @@ package body Object_Storage_Test_Cases is
       Time_Info    : Object_Information;
       Result       : Status;
 
+      protected type Delete_Race_Control is
+         procedure Ready;
+         procedure Release;
+         entry Start;
+         procedure Record_Result (Delete_Worker : Boolean; Value : Status);
+         entry Wait_Complete;
+         function Outcome (Delete_Worker : Boolean) return Status;
+      private
+         Ready_Count    : Natural range 0 .. 2 := 0;
+         Complete_Count : Natural range 0 .. 2 := 0;
+         Released       : Boolean := False;
+         Delete_Outcome : Status := Backend_Unavailable;
+         Other_Outcome  : Status := Backend_Unavailable;
+      end Delete_Race_Control;
+
+      protected body Delete_Race_Control is
+         procedure Ready is
+         begin
+            Ready_Count := Ready_Count + 1;
+         end Ready;
+
+         procedure Release is
+         begin
+            Released := True;
+         end Release;
+
+         entry Start when Ready_Count = 2 and then Released is
+         begin
+            null;
+         end Start;
+
+         procedure Record_Result (Delete_Worker : Boolean; Value : Status) is
+         begin
+            if Delete_Worker then
+               Delete_Outcome := Value;
+            else
+               Other_Outcome := Value;
+            end if;
+            Complete_Count := Complete_Count + 1;
+         end Record_Result;
+
+         entry Wait_Complete when Complete_Count = 2 is
+         begin
+            null;
+         end Wait_Complete;
+
+         function Outcome (Delete_Worker : Boolean) return Status is
+           (if Delete_Worker then Delete_Outcome else Other_Outcome);
+      end Delete_Race_Control;
+
       procedure Put
         (Key, Payload : String;
          Info         : out Object_Information;
@@ -830,6 +880,264 @@ package body Object_Storage_Test_Cases is
         (Bucket, null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "DeleteObjects conformance bucket create");
 
+      --  The single-object primitive must preserve all batch-engine
+      --  predicates and publication guarantees; it is not a weaker legacy
+      --  path beside DeleteObjects.
+      Put ("single-match", "original", Match_Info);
+      Store.Delete_Object
+        (Bucket, "single-match", null, Ada.Real_Time.Time_Last, Result,
+         (Has_ETag => True,
+          ETag => US.To_Unbounded_String ("different"),
+          others => <>));
+      Assert
+        (Result = Precondition_Failed,
+         "DeleteObject mismatched ETag was not rejected");
+      Store.Head_Object
+        (Bucket, "single-match", null, Ada.Real_Time.Time_Last,
+         Size_Info, Result);
+      Assert
+        (Result = Success
+         and then US.To_String (Size_Info.Entity_Tag) =
+           US.To_String (Match_Info.Entity_Tag),
+         "DeleteObject mismatched ETag mutated the object");
+      Store.Delete_Object
+        (Bucket, "single-match", null, Ada.Real_Time.Time_Last, Result,
+         (Has_ETag => True,
+          ETag => US.To_Unbounded_String
+            ('"' & US.To_String (Match_Info.Entity_Tag) & '"'),
+          others => <>));
+      Assert (Result = Success, "DeleteObject quoted ETag did not match");
+      Store.Delete_Object
+        (Bucket, "single-match", null, Ada.Real_Time.Time_Last, Result,
+         (Has_ETag => True,
+          ETag => US.To_Unbounded_String ("*"),
+          others => <>));
+      Assert
+        (Result = Not_Found,
+         "DeleteObject conditioned missing key was not NotFound");
+      Store.Delete_Object
+        (Bucket, "single-match", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "DeleteObject unconditioned missing key was not idempotent");
+
+      Put ("single-invalid", "preserve", Match_Info);
+      Store.Delete_Object
+        (Bucket, "single-invalid", null, Ada.Real_Time.Time_Last, Result,
+         (Has_ETag => True,
+          ETag => US.To_Unbounded_String ("bad,etag"),
+          others => <>));
+      Assert
+        (Result = Invalid_Request,
+         "DeleteObject malformed ETag was not InvalidRequest");
+      Store.Head_Object
+        (Bucket, "single-invalid", null, Ada.Real_Time.Time_Last,
+         Size_Info, Result);
+      Assert
+        (Result = Success,
+         "DeleteObject malformed condition mutated the object");
+
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.Delete_Object
+              (Bucket, "single-invalid", Cancel'Access,
+               Ada.Real_Time.Time_Last, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "DeleteObject ignored pre-cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Delete_Object
+              (Bucket, "single-invalid", null, Ada.Real_Time.Time_First,
+               Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "DeleteObject ignored expired deadline");
+      end;
+
+      --  Conditional replacement and conditional deletion share one exact
+      --  generation. Exactly one can publish; the loser observes the changed
+      --  or absent generation without partially mutating it.
+      for Round in 1 .. 16 loop
+         declare
+            Race_Key : constant String :=
+              "single-cas-race-" &
+              Ada.Strings.Fixed.Trim
+                (Positive'Image (Round), Ada.Strings.Both);
+            Original : Object_Information;
+         begin
+            Put (Race_Key, "original", Original);
+            declare
+               Control  : Delete_Race_Control;
+               task type Worker (Delete_Worker : Boolean);
+
+               task body Worker is
+                  Worker_Result : Status := Backend_Unavailable;
+                  Replacement_Info : Object_Information;
+                  Source : Buffer_Source :=
+                    (Data =>
+                       Flyology.Bytes.From_Byte_String ("replacement"),
+                     Position => 0,
+                     Length => (Kind => Known, Bytes => 11),
+                     Bad_Last => False);
+               begin
+                  Control.Ready;
+                  Control.Start;
+                  if Delete_Worker then
+                     Store.Delete_Object
+                       (Bucket, Race_Key, null, Ada.Real_Time.Time_Last,
+                        Worker_Result,
+                        (Has_ETag => True,
+                         ETag => Original.Entity_Tag,
+                         others => <>));
+                  else
+                     Store.Put_Object
+                       (Bucket, Race_Key, Source, Default_Put_Options, null,
+                        Ada.Real_Time.Time_Last, Replacement_Info,
+                        Worker_Result,
+                        (If_Match => US.To_Unbounded_String
+                           ('"' & US.To_String (Original.Entity_Tag) & '"'),
+                         If_None_Match => US.Null_Unbounded_String));
+                  end if;
+                  Control.Record_Result (Delete_Worker, Worker_Result);
+               exception
+                  when others =>
+                     Control.Record_Result
+                       (Delete_Worker, Backend_Unavailable);
+               end Worker;
+
+               Delete_Task : Worker (True);
+               Put_Task    : Worker (False);
+            begin
+               Control.Release;
+               Control.Wait_Complete;
+               Assert
+                 ((Control.Outcome (True) = Success
+                   and then Control.Outcome (False) = Precondition_Failed)
+                  or else
+                  (Control.Outcome (True) = Precondition_Failed
+                   and then Control.Outcome (False) = Success),
+                  "DeleteObject conditional publication race was not" &
+                  " one-winner" & Positive'Image (Round) & " delete=" &
+                  Status'Image (Control.Outcome (True)) & " put=" &
+                  Status'Image (Control.Outcome (False)));
+               Store.Head_Object
+                 (Bucket, Race_Key, null, Ada.Real_Time.Time_Last,
+                  Size_Info, Result);
+               if Control.Outcome (True) = Success then
+                  Assert
+                    (Result = Not_Found,
+                     "DeleteObject race winner left an object");
+               else
+                  Assert
+                    (Result = Success and then Size_Info.Size = 11,
+                     "conditional Put race winner was not exact");
+                  Store.Delete_Object
+                    (Bucket, Race_Key, null, Ada.Real_Time.Time_Last,
+                     Result);
+               end if;
+            end;
+         end;
+      end loop;
+      Store.Delete_Object
+        (Bucket, "single-invalid", null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "DeleteObject single-test cleanup failed");
+
+      --  Bucket versioning and current-object deletion are decided at the
+      --  same backend boundary. A delete that linearizes before enablement is
+      --  allowed; one that observes enablement must fail without mutation.
+      for Round in 1 .. 16 loop
+         declare
+            Race_Bucket : constant String :=
+              "single-version-race-" &
+              Ada.Strings.Fixed.Trim
+                (Positive'Image (Round), Ada.Strings.Both);
+            Original : Object_Information;
+         begin
+            Store.Create_Bucket
+              (Race_Bucket, null, Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "DeleteObject version race bucket setup failed");
+            Put ("current", "preserve-or-delete", Original, Race_Bucket);
+            declare
+               Control : Delete_Race_Control;
+               task type Worker (Delete_Worker : Boolean);
+
+               task body Worker is
+                  Worker_Result : Status := Backend_Unavailable;
+               begin
+                  Control.Ready;
+                  Control.Start;
+                  if Delete_Worker then
+                     Store.Delete_Object
+                       (Race_Bucket, "current", null,
+                        Ada.Real_Time.Time_Last, Worker_Result,
+                        Conditions =>
+                          (Has_ETag => True,
+                           ETag => Original.Entity_Tag,
+                           others => <>),
+                        Requirements => (Require_Unversioned => True));
+                  else
+                     Store.Put_Bucket_Versioning
+                       (Race_Bucket,
+                        (Status => Versioning_Enabled,
+                         MFA_Delete => MFA_Delete_Unconfigured),
+                        null, Ada.Real_Time.Time_Last, Worker_Result);
+                  end if;
+                  Control.Record_Result (Delete_Worker, Worker_Result);
+               exception
+                  when others =>
+                     Control.Record_Result
+                       (Delete_Worker, Backend_Unavailable);
+               end Worker;
+
+               Delete_Task  : Worker (True);
+               Version_Task : Worker (False);
+            begin
+               Control.Release;
+               Control.Wait_Complete;
+               Assert
+                 (Control.Outcome (False) = Success
+                  and then Control.Outcome (True) in
+                    Success | Not_Implemented,
+                  "DeleteObject/versioning race returned an illegal status" &
+                  Positive'Image (Round));
+               Store.Head_Object
+                 (Race_Bucket, "current", null, Ada.Real_Time.Time_Last,
+                  Size_Info, Result);
+               if Control.Outcome (True) = Success then
+                  Assert
+                    (Result = Not_Found,
+                     "successful raced DeleteObject left current data");
+               else
+                  Assert
+                    (Result = Success
+                     and then US.To_String (Size_Info.Entity_Tag) =
+                       US.To_String (Original.Entity_Tag),
+                     "refused raced DeleteObject changed current data");
+                  Store.Delete_Object
+                    (Race_Bucket, "current", null,
+                     Ada.Real_Time.Time_Last, Result);
+               end if;
+            end;
+            Store.Delete_Bucket
+              (Race_Bucket, null, Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "DeleteObject version race cleanup failed");
+         end;
+      end loop;
+
       declare
          Race_Bucket : constant String := "delete-objects-version-race";
          Configuration : Bucket_Versioning_Configuration;
@@ -861,6 +1169,12 @@ package body Object_Storage_Test_Cases is
          Assert
            (Result = Not_Implemented and then Outcomes.Is_Empty,
             "DeleteObjects raced past an atomic versioning precondition");
+         Store.Delete_Object
+           (Race_Bucket, "race-object", null, Ada.Real_Time.Time_Last,
+            Result, Requirements => (Require_Unversioned => True));
+         Assert
+           (Result = Not_Implemented,
+            "DeleteObject raced past an atomic versioning precondition");
          Store.Head_Object
            (Race_Bucket, "race-object", null, Ada.Real_Time.Time_Last,
             Match_Info, Result);

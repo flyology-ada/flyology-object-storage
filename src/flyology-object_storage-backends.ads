@@ -538,7 +538,17 @@ package Flyology.Object_Storage.Backends is
       Key    : String;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result : out Status) is abstract;
+      Result : out Status;
+      Conditions : Delete_Object_Conditions :=
+        No_Delete_Object_Conditions;
+      Requirements : Delete_Objects_Requirements := (others => <>))
+      is abstract;
+   --  Conditions and Requirements are evaluated against the same object and
+   --  bucket-versioning snapshot used to publish the deletion. An
+   --  unconditioned missing key is an idempotent success; a missing key with
+   --  an ETag condition is Not_Found. Require_Unversioned returns
+   --  Not_Implemented without mutation once versioning is configured or MFA
+   --  Delete is enabled.
 
    --  Evaluate and publish a bounded ordered batch under one backend batch
    --  boundary. Outcomes align one-for-one with Entries when Result is

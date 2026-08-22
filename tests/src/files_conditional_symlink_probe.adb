@@ -132,6 +132,21 @@ begin
    Require
      (GNAT.OS_Lib.Is_Symbolic_Link (Link_Path),
       "failed conditional Put_Object replaced the symlink");
+   Store.Delete_Object
+     ("symlink-bucket", "link", null, Ada.Real_Time.Time_Last, Result,
+      (Has_ETag => True,
+       ETag => US.To_Unbounded_String ("*"),
+       others => <>),
+      (Require_Unversioned => True));
+   Require
+     (Result =
+        (if Mode = "live"
+         then Storage.Backend_Unavailable else Storage.Not_Found),
+      "conditional Delete_Object followed an object-path symlink: " &
+      Storage.Status'Image (Result));
+   Require
+     (GNAT.OS_Lib.Is_Symbolic_Link (Link_Path),
+      "failed conditional Delete_Object removed the symlink");
    if Mode = "live" then
       declare
          File : Ada.Text_IO.File_Type;

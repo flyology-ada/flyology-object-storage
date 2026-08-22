@@ -4,6 +4,7 @@ with Ada.Exceptions;
 with Ada.Real_Time;
 with Ada.Streams;
 with Ada.Streams.Stream_IO;
+with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Conditional_Put_Conformance;
@@ -596,6 +597,304 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
         (Invalid_Request, 0,
          "SQLite accepted a mixed wildcard entity-tag list");
    end Exercise_Conditional_Read;
+
+   procedure Exercise_Delete_Object
+     (Store : in out Flyology.Object_Storage.Backends.Backend'Class)
+   is
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      Bucket : constant String := "sqlite-single-delete";
+      Result : Status;
+      Info   : Object_Information;
+      Check  : Object_Information;
+
+      protected type Race_Control is
+         procedure Ready;
+         procedure Release;
+         entry Start;
+         procedure Record_Result (Delete_Worker : Boolean; Value : Status);
+         entry Wait_Complete;
+         function Outcome (Delete_Worker : Boolean) return Status;
+      private
+         Ready_Count    : Natural range 0 .. 2 := 0;
+         Complete_Count : Natural range 0 .. 2 := 0;
+         Released       : Boolean := False;
+         Delete_Outcome : Status := Backend_Unavailable;
+         Other_Outcome  : Status := Backend_Unavailable;
+      end Race_Control;
+
+      protected body Race_Control is
+         procedure Ready is
+         begin
+            Ready_Count := Ready_Count + 1;
+         end Ready;
+
+         procedure Release is
+         begin
+            Released := True;
+         end Release;
+
+         entry Start when Ready_Count = 2 and then Released is
+         begin
+            null;
+         end Start;
+
+         procedure Record_Result (Delete_Worker : Boolean; Value : Status) is
+         begin
+            if Delete_Worker then
+               Delete_Outcome := Value;
+            else
+               Other_Outcome := Value;
+            end if;
+            Complete_Count := Complete_Count + 1;
+         end Record_Result;
+
+         entry Wait_Complete when Complete_Count = 2 is
+         begin
+            null;
+         end Wait_Complete;
+
+         function Outcome (Delete_Worker : Boolean) return Status is
+           (if Delete_Worker then Delete_Outcome else Other_Outcome);
+      end Race_Control;
+
+      procedure Put
+        (Target_Bucket, Key, Payload : String;
+         Value : out Object_Information)
+      is
+         Source : Buffer_Source :=
+           (Data => Flyology.Bytes.From_Byte_String (Payload),
+            Position => 0,
+            Length => (Kind => Known, Bytes => Byte_Count (Payload'Length)));
+      begin
+         Store.Put_Object
+           (Target_Bucket, Key, Source, Default_Put_Options, null,
+            Ada.Real_Time.Time_Last, Value, Result);
+         Assert (Result = Success, "SQLite DeleteObject race put failed");
+      end Put;
+   begin
+      Store.Create_Bucket
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "SQLite DeleteObject bucket create failed");
+
+      Put (Bucket, "conditional", "preserve", Info);
+      Store.Delete_Object
+        (Bucket, "conditional", null, Ada.Real_Time.Time_Last, Result,
+         (Has_ETag => True,
+          ETag => US.To_Unbounded_String ("different"),
+          others => <>));
+      Assert
+        (Result = Precondition_Failed,
+         "SQLite DeleteObject mismatched ETag was not rejected");
+      Store.Head_Object
+        (Bucket, "conditional", null, Ada.Real_Time.Time_Last,
+         Check, Result);
+      Assert
+        (Result = Success and then Check.Entity_Tag = Info.Entity_Tag,
+         "SQLite DeleteObject mismatch mutated the row");
+      Store.Delete_Object
+        (Bucket, "conditional", null, Ada.Real_Time.Time_Last, Result,
+         (Has_ETag => True,
+          ETag => US.To_Unbounded_String
+            ('"' & US.To_String (Info.Entity_Tag) & '"'),
+          others => <>));
+      Assert
+        (Result = Success,
+         "SQLite DeleteObject exact quoted ETag did not match");
+      Store.Delete_Object
+        (Bucket, "conditional", null, Ada.Real_Time.Time_Last, Result,
+         (Has_ETag => True,
+          ETag => US.To_Unbounded_String ("*"),
+          others => <>));
+      Assert
+        (Result = Not_Found,
+         "SQLite conditioned missing DeleteObject was not NotFound");
+      Store.Delete_Object
+        (Bucket, "conditional", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "SQLite unconditioned missing DeleteObject was not idempotent");
+
+      Put (Bucket, "invalid", "preserve", Info);
+      Store.Delete_Object
+        (Bucket, "invalid", null, Ada.Real_Time.Time_Last, Result,
+         (Has_ETag => True,
+          ETag => US.To_Unbounded_String ("bad,etag"),
+          others => <>));
+      Assert
+        (Result = Invalid_Request,
+         "SQLite malformed DeleteObject condition was not rejected");
+      Store.Head_Object
+        (Bucket, "invalid", null, Ada.Real_Time.Time_Last, Check, Result);
+      Assert
+        (Result = Success,
+         "SQLite malformed DeleteObject condition mutated the row");
+      Store.Delete_Object
+        (Bucket, "invalid", null, Ada.Real_Time.Time_Last, Result);
+
+      for Round in 1 .. 16 loop
+         declare
+            Key : constant String :=
+              "cas-" & Ada.Strings.Fixed.Trim
+                (Positive'Image (Round), Ada.Strings.Both);
+            Original : Object_Information;
+         begin
+            Put (Bucket, Key, "original", Original);
+            declare
+               Control : Race_Control;
+               task type Worker (Delete_Worker : Boolean);
+
+               task body Worker is
+                  Worker_Result : Status := Backend_Unavailable;
+                  Replacement_Info : Object_Information;
+                  Source : Buffer_Source :=
+                    (Data =>
+                       Flyology.Bytes.From_Byte_String ("replacement"),
+                     Position => 0,
+                     Length => (Kind => Known, Bytes => 11));
+               begin
+                  Control.Ready;
+                  Control.Start;
+                  if Delete_Worker then
+                     Store.Delete_Object
+                       (Bucket, Key, null, Ada.Real_Time.Time_Last,
+                        Worker_Result,
+                        (Has_ETag => True,
+                         ETag => Original.Entity_Tag,
+                         others => <>));
+                  else
+                     Store.Put_Object
+                       (Bucket, Key, Source, Default_Put_Options, null,
+                        Ada.Real_Time.Time_Last, Replacement_Info,
+                        Worker_Result,
+                        (If_Match => US.To_Unbounded_String
+                           ('"' & US.To_String (Original.Entity_Tag) & '"'),
+                         If_None_Match => US.Null_Unbounded_String));
+                  end if;
+                  Control.Record_Result (Delete_Worker, Worker_Result);
+               exception
+                  when others =>
+                     Control.Record_Result
+                       (Delete_Worker, Backend_Unavailable);
+               end Worker;
+
+               Delete_Task : Worker (True);
+               Put_Task    : Worker (False);
+            begin
+               Control.Release;
+               Control.Wait_Complete;
+               Assert
+                 ((Control.Outcome (True) = Success
+                   and then Control.Outcome (False) = Precondition_Failed)
+                  or else
+                  (Control.Outcome (True) = Precondition_Failed
+                   and then Control.Outcome (False) = Success),
+                  "SQLite conditional DeleteObject race was not one-winner");
+               Store.Head_Object
+                 (Bucket, Key, null, Ada.Real_Time.Time_Last, Check, Result);
+               if Control.Outcome (True) = Success then
+                  Assert
+                    (Result = Not_Found,
+                     "SQLite DeleteObject race winner left a row");
+               else
+                  Assert
+                    (Result = Success and then Check.Size = 11,
+                     "SQLite conditional Put race winner was not exact");
+                  Store.Delete_Object
+                    (Bucket, Key, null, Ada.Real_Time.Time_Last, Result);
+               end if;
+            end;
+         end;
+      end loop;
+
+      for Round in 1 .. 16 loop
+         declare
+            Race_Bucket : constant String :=
+              "sqlite-delete-version-" & Ada.Strings.Fixed.Trim
+                (Positive'Image (Round), Ada.Strings.Both);
+            Original : Object_Information;
+         begin
+            Store.Create_Bucket
+              (Race_Bucket, null, Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "SQLite version/DeleteObject race bucket setup failed");
+            Put (Race_Bucket, "current", "preserve", Original);
+            declare
+               Control : Race_Control;
+               task type Worker (Delete_Worker : Boolean);
+
+               task body Worker is
+                  Worker_Result : Status := Backend_Unavailable;
+               begin
+                  Control.Ready;
+                  Control.Start;
+                  if Delete_Worker then
+                     Store.Delete_Object
+                       (Race_Bucket, "current", null,
+                        Ada.Real_Time.Time_Last, Worker_Result,
+                        Conditions =>
+                          (Has_ETag => True,
+                           ETag => Original.Entity_Tag,
+                           others => <>),
+                        Requirements => (Require_Unversioned => True));
+                  else
+                     Store.Put_Bucket_Versioning
+                       (Race_Bucket,
+                        (Status => Versioning_Enabled,
+                         MFA_Delete => MFA_Delete_Unconfigured),
+                        null, Ada.Real_Time.Time_Last, Worker_Result);
+                  end if;
+                  Control.Record_Result (Delete_Worker, Worker_Result);
+               exception
+                  when others =>
+                     Control.Record_Result
+                       (Delete_Worker, Backend_Unavailable);
+               end Worker;
+
+               Delete_Task  : Worker (True);
+               Version_Task : Worker (False);
+            begin
+               Control.Release;
+               Control.Wait_Complete;
+               Assert
+                 (Control.Outcome (False) = Success
+                  and then Control.Outcome (True) in
+                    Success | Not_Implemented,
+                  "SQLite version/DeleteObject race status was illegal");
+               Store.Head_Object
+                 (Race_Bucket, "current", null, Ada.Real_Time.Time_Last,
+                  Check, Result);
+               if Control.Outcome (True) = Success then
+                  Assert
+                    (Result = Not_Found,
+                     "SQLite raced DeleteObject left current data");
+               else
+                  Assert
+                    (Result = Success
+                     and then Check.Entity_Tag = Original.Entity_Tag,
+                     "SQLite refused raced DeleteObject changed data");
+                  Store.Delete_Object
+                    (Race_Bucket, "current", null,
+                     Ada.Real_Time.Time_Last, Result);
+               end if;
+            end;
+            Store.Delete_Bucket
+              (Race_Bucket, null, Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "SQLite version/DeleteObject race cleanup failed");
+         end;
+      end loop;
+
+      Put (Bucket, "persisted-delete", "gone", Info);
+      Store.Delete_Object
+        (Bucket, "persisted-delete", null, Ada.Real_Time.Time_Last, Result,
+         (Has_ETag => True, ETag => Info.Entity_Tag, others => <>));
+      Assert
+        (Result = Success,
+         "SQLite persisted DeleteObject publication failed");
+   end Exercise_Delete_Object;
 
    overriding procedure Write
      (Item     : in out Buffer_Sink;
@@ -2899,6 +3198,7 @@ begin
             "ordinary SQLite object exposed multipart attributes");
       end;
       Exercise_Conditional_Read (Store, "sqlite-bucket", Key);
+      Exercise_Delete_Object (Store);
       Wanted.Length := 2;
       Wanted.Items (1) :=
         (Key => US.To_Unbounded_String ("environment"),
@@ -3301,6 +3601,22 @@ begin
       Assert
         (Result = Not_Found,
          "SQLite DeleteObjects row survived crash-recovery reopen");
+      Store.Head_Bucket
+        ("sqlite-single-delete", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "SQLite DeleteObject evidence bucket did not survive reopen");
+      Store.Head_Object
+        ("sqlite-single-delete", "persisted-delete", null,
+         Ada.Real_Time.Time_Last, Info, Result);
+      Assert
+        (Result = Not_Found,
+         "SQLite committed DeleteObject row reappeared after reopen");
+      Store.Delete_Bucket
+        ("sqlite-single-delete", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "SQLite DeleteObject evidence bucket cleanup failed");
       Store.Delete_Bucket
         ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "SQLite backend bucket delete failed");

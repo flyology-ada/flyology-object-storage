@@ -2330,44 +2330,26 @@ package body Flyology.Object_Storage.Backends.Files is
       Key      : String;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result   : out Status)
+      Result   : out Status;
+      Conditions : Delete_Object_Conditions :=
+        No_Delete_Object_Conditions;
+      Requirements : Delete_Objects_Requirements := (others => <>))
    is
-      Path : constant String := Object_Path (Item, Bucket, Key);
-      Locked : Boolean := False;
+      Entries  : Delete_Object_Entries;
+      Outcomes : Delete_Object_Outcomes;
    begin
-      Check_Context (Token, Deadline);
-      if not Valid_Bucket_Name (Bucket)
-        or else not Valid_Object_Key (Key)
-      then
-         Result := Invalid_Request;
-         return;
-      end if;
-      Acquire_Publication (Item, Token, Deadline);
-      Locked := True;
-      if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
-         Result := Bucket_Not_Found;
-      elsif not Ada.Directories.Exists (Path) then
-         Result := Not_Found;
-      else
-         Ada.Directories.Delete_File (Path);
-         Sync_Directory
-           (Item, Ada.Directories.Containing_Directory (Path));
-         Result := Success;
-      end if;
-      Item.Publication.Release;
-      Locked := False;
-   exception
-      when Flyology.Cancellation.Operation_Cancelled
-         | Flyology.IO.Timeout_Error =>
-         if Locked then
-            Item.Publication.Release;
+      Entries.Append
+        (Delete_Object_Entry'
+           (Key => US.To_Unbounded_String (Key), Conditions => Conditions));
+      Item.Delete_Objects
+        (Bucket, Entries, Requirements, Token, Deadline, Outcomes, Result);
+      if Result = Success then
+         if Outcomes.Length /= 1 then
+            raise Program_Error with
+              "single delete returned an invalid outcome count";
          end if;
-         raise;
-      when others =>
-         if Locked then
-            Item.Publication.Release;
-         end if;
-         Result := Backend_Unavailable;
+         Result := Outcomes.First_Element.Result;
+      end if;
    end Delete_Object;
 
    overriding procedure Delete_Objects

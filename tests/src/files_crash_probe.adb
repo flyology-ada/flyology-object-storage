@@ -259,8 +259,15 @@ procedure Files_Crash_Probe is
          Store.Delete_Bucket_Tags
            (Bucket, null, Ada.Real_Time.Time_Last, Result);
       elsif Scenario = "delete" then
+         Store.Head_Object
+           (Bucket, Key, null, Ada.Real_Time.Time_Last, Info, Result);
+         Require
+           (Result = Storage.Success,
+            "could not read conditional deletion generation");
          Store.Delete_Object
-           (Bucket, Key, null, Ada.Real_Time.Time_Last, Result);
+           (Bucket, Key, null, Ada.Real_Time.Time_Last, Result,
+            (Has_ETag => True, ETag => Info.Entity_Tag, others => <>),
+            (Require_Unversioned => True));
       elsif Scenario = "delete-objects" then
          declare
             Entries  : Backends.Delete_Object_Entries;

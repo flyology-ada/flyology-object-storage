@@ -1039,22 +1039,26 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Key      : String;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result   : out Status)
+      Result   : out Status;
+      Conditions : Delete_Object_Conditions :=
+        No_Delete_Object_Conditions;
+      Requirements : Delete_Objects_Requirements := (others => <>))
    is
-      Payload : US.Unbounded_String;
+      Entries  : Delete_Object_Entries;
+      Outcomes : Delete_Object_Outcomes;
    begin
-      Check_Context (Token, Deadline);
-      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key) then
-         Result := Invalid_Request;
-      else
-         Catalogs.Delete_Object (Item.Catalog, Bucket, Key, Payload, Result);
+      Entries.Append
+        (Delete_Object_Entry'
+           (Key => US.To_Unbounded_String (Key), Conditions => Conditions));
+      Item.Delete_Objects
+        (Bucket, Entries, Requirements, Token, Deadline, Outcomes, Result);
+      if Result = Success then
+         if Outcomes.Length /= 1 then
+            raise Program_Error with
+              "single delete returned an invalid outcome count";
+         end if;
+         Result := Outcomes.First_Element.Result;
       end if;
-   exception
-      when Flyology.Cancellation.Operation_Cancelled
-         | Flyology.IO.Timeout_Error =>
-         raise;
-      when others =>
-         Result := Backend_Unavailable;
    end Delete_Object;
 
    overriding procedure Delete_Objects

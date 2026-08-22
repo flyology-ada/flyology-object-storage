@@ -680,29 +680,6 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result := Success;
       end Attributes;
 
-      procedure Delete
-        (Bucket : String;
-         Key    : String;
-         Result : out Status)
-      is
-         Index : constant Natural := Object_Index (Bucket, Key);
-      begin
-         if Bucket_Index (Bucket) = 0 then
-            Result := Bucket_Not_Found;
-         elsif Index = 0 then
-            Result := Not_Found;
-         else
-            Bytes := Bytes - Byte_Count (Objects (Index).Data.Capacity);
-            Objects (Index) := (others => <>);
-            while Highest_Object > 0
-              and then not Objects (Highest_Object).Used
-            loop
-               Highest_Object := Highest_Object - 1;
-            end loop;
-            Result := Success;
-         end if;
-      end Delete;
-
       procedure Delete_Many
         (Bucket   : String;
          Entries  : Delete_Object_Entries;
@@ -2006,16 +1983,26 @@ package body Flyology.Object_Storage.Backends.Memory is
       Key      : String;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result   : out Status)
+      Result   : out Status;
+      Conditions : Delete_Object_Conditions :=
+        No_Delete_Object_Conditions;
+      Requirements : Delete_Objects_Requirements := (others => <>))
    is
+      Entries  : Delete_Object_Entries;
+      Outcomes : Delete_Object_Outcomes;
    begin
-      Check_Context (Token, Deadline);
-      if not Valid_Bucket_Name (Bucket)
-        or else not Valid_Object_Key (Key)
-      then
-         Result := Invalid_Request;
-      else
-         Item.State.Delete (Bucket, Key, Result);
+      Entries.Append
+        (Delete_Object_Entry'
+           (Key => Ada.Strings.Unbounded.To_Unbounded_String (Key),
+            Conditions => Conditions));
+      Item.Delete_Objects
+        (Bucket, Entries, Requirements, Token, Deadline, Outcomes, Result);
+      if Result = Success then
+         if Outcomes.Length /= 1 then
+            raise Program_Error with
+              "single delete returned an invalid outcome count";
+         end if;
+         Result := Outcomes.First_Element.Result;
       end if;
    end Delete_Object;
 

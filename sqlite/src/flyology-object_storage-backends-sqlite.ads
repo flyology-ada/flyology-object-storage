@@ -150,7 +150,10 @@ package Flyology.Object_Storage.Backends.SQLite is
       Key      : String;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result   : out Status);
+      Result   : out Status;
+      Conditions : Delete_Object_Conditions :=
+        No_Delete_Object_Conditions;
+      Requirements : Delete_Objects_Requirements := (others => <>));
 
    overriding procedure Delete_Objects
      (Item     : in out Store;
