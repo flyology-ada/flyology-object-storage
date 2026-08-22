@@ -4,6 +4,14 @@ set -euo pipefail
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 OUTPUT_DIR=${GNATDOC_OUTPUT_DIR:-"$PROJECT_DIR/obj/gnatdoc/html"}
 LOG=${GNATDOC_LOG:-"$PROJECT_DIR/gnatdoc-run.txt"}
+WARNING_LIMIT=${GNATDOC_WARNING_LIMIT:-2938}
+
+case "$WARNING_LIMIT" in
+  ''|*[!0-9]*)
+    echo "GNATDOC_WARNING_LIMIT must be a nonnegative integer" >&2
+    exit 2
+    ;;
+esac
 
 command -v gnatdoc >/dev/null
 command -v python3 >/dev/null
@@ -75,5 +83,11 @@ if grep -Eiq '(^|[^[:alpha:]])error:' "$LOG"; then
   echo "GNATdoc reported an error" >&2
   exit 1
 fi
+WARNING_COUNT=$(grep -Ec ': warning:' "$LOG" || true)
+if [ "$WARNING_COUNT" -gt "$WARNING_LIMIT" ]; then
+  echo "GNATdoc warning count grew: $WARNING_COUNT > $WARNING_LIMIT" >&2
+  exit 1
+fi
 
+echo "GNATdoc warnings: $WARNING_COUNT/$WARNING_LIMIT baseline"
 echo "GNATdoc public HTML: $OUTPUT_DIR/index.html"
