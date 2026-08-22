@@ -44,6 +44,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Object_Tagging_Outcome_Kind;
    use type Objects.Tagging_Outcome_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
+   use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
    use type Transfers.Copy_Outcome_Kind;
@@ -337,6 +338,9 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Request_Payer : String := "";
          Expected_Bucket_Owner : String := "";
          Expected_Object_Attributes : String := "";
+         Expected_Get_Object_Attributes : String := "";
+         Expected_Max_Parts : String := "";
+         Expected_Part_Marker : String := "";
          Fragmented         : Boolean := False)
       is
          Buffer : Stream_Element_Array (1 .. 4_096);
@@ -384,7 +388,27 @@ procedure S3_HTTP_Socket_Corpus is
               or else Ada.Strings.Fixed.Index
                 (Lower, "authorization: aws4-hmac-sha256 credential=") = 0
               or else
-                (if Expected_Copy_Source'Length > 0 then
+                (if Expected_Get_Object_Attributes'Length > 0 then
+                    Header_Value (Lower, "x-amz-object-attributes") /=
+                      Ada.Characters.Handling.To_Lower
+                        (Expected_Get_Object_Attributes)
+                    or else Header_Value (Lower, "x-amz-max-parts") /=
+                      Ada.Characters.Handling.To_Lower (Expected_Max_Parts)
+                    or else Header_Value
+                      (Lower, "x-amz-part-number-marker") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Part_Marker)
+                    or else Header_Value
+                      (Lower, "x-amz-request-payer") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Request_Payer)
+                    or else Header_Value
+                      (Lower, "x-amz-expected-bucket-owner") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Bucket_Owner)
+                    or else Ada.Strings.Fixed.Index
+                      (Lower, ";x-amz-object-attributes") = 0
+                 elsif Expected_Copy_Source'Length > 0 then
                     Header_Value (Lower, "x-amz-copy-source") /=
                       Ada.Characters.Handling.To_Lower
                         (Expected_Copy_Source)
@@ -584,6 +608,16 @@ procedure S3_HTTP_Socket_Corpus is
         "<LastModified>2026-08-21T17:00:00.000Z</LastModified>" &
         "<ETag>&quot;high-level-copy&quot;</ETag>" &
         "</CopyObjectResult>";
+      Attributes_XML : constant String :=
+        "<GetObjectAttributesResponse>" &
+        "<ETag>&quot;socket-attributes&quot;</ETag>" &
+        "<ObjectParts><PartsCount>2</PartsCount>" &
+        "<PartNumberMarker>1</PartNumberMarker>" &
+        "<MaxParts>1</MaxParts><IsTruncated>true</IsTruncated>" &
+        "<NextPartNumberMarker>2</NextPartNumberMarker>" &
+        "<Part><PartNumber>2</PartNumber><Size>7</Size></Part>" &
+        "</ObjectParts><ObjectSize>14</ObjectSize>" &
+        "</GetObjectAttributesResponse>";
    begin
       Sockets.Create_Socket (Listener);
       Sockets.Bind_Socket
@@ -725,6 +759,33 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("204 No Content", "", Omit_Content_Length => True),
             "DELETE", "/example-bucket/convenient-tagged?tagging");
+         Serve
+           (HTTP_Response
+              ("200 OK", Attributes_XML,
+               "x-amz-delete-marker: false" & CRLF &
+               "Last-Modified: Fri, 24 May 2013 00:00:00 GMT" & CRLF &
+               "x-amz-version-id: socket-version" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket/object%20key?attributes&" &
+              "versionId=socket%20version",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Get_Object_Attributes =>
+              "ETag,ObjectParts,ObjectSize",
+            Expected_Max_Parts => "1", Expected_Part_Marker => "1",
+            Fragmented => True);
+         Serve
+           (HTTP_Response ("200 OK", Attributes_XML),
+            "GET", "/example-bucket/convenience-attributes?attributes",
+            Expected_Get_Object_Attributes =>
+              "ETag,Checksum,ObjectParts,StorageClass,ObjectSize");
+         Serve
+           (HTTP_Response
+              ("404 Not Found", Error_XML,
+               "x-amz-request-id: attributes-request" & CRLF &
+               "x-amz-id-2: attributes-host" & CRLF),
+            "GET", "/example-bucket/missing-attributes?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
          Serve
            (HTTP_Response
               ("200 OK", "", "ETag: ""high-level""" & CRLF),
@@ -1344,6 +1405,91 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "convenient object tagging socket flow mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Get_Object_Attributes_Parameters;
+         begin
+            Parameters.Version_ID :=
+              US.To_Unbounded_String ("socket version");
+            Parameters.Has_Max_Parts := True;
+            Parameters.Max_Parts := 1;
+            Parameters.Has_Part_Number_Marker := True;
+            Parameters.Part_Number_Marker := 1;
+            Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+            Parameters.Expected_Bucket_Owner :=
+              US.To_Unbounded_String ("123456789012");
+            Parameters.Attributes :=
+              (Entity_Tag => True, Checksum => False,
+               Object_Parts => True, Storage_Class => False,
+               Object_Size => True);
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object_Attributes
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "object key", Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Result : constant Low_Level.Get_Object_Attributes_Outcome :=
+                 Low_Level.Execute_Get_Object_Attributes
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Object_Attributes_Found
+                 or else not Result.Result.Delete_Marker.Is_Set
+                 or else Result.Result.Delete_Marker.Value
+                 or else US.To_String (Result.Result.Version_ID) /=
+                   "socket-version"
+                 or else US.To_String (Result.Result.Request_Charged) /=
+                   "requester"
+                 or else not Result.Result.Attributes.Has_Object_Parts
+                 or else Natural
+                   (Result.Result.Attributes.Object_Parts.Parts.Length) /= 1
+                 or else Result.Result.Attributes.Object_Size.Value /= 14
+               then
+                  raise Program_Error with
+                    "typed GetObjectAttributes result mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Result : constant Objects.Get_Attributes_Outcome :=
+              Objects.Get_Attributes
+                (HTTP, Origin, "example-bucket", "convenience-attributes",
+                 Identity, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Object_Attributes_Found
+              or else US.To_String (Result.Result.Attributes.Entity_Tag) /=
+                """socket-attributes"""
+              or else Result.Result.Attributes.Object_Size.Value /= 14
+            then
+               raise Program_Error with
+                 "convenience GetObjectAttributes result mismatch";
+            end if;
+         end;
+         declare
+            Parameters : Low_Level.Get_Object_Attributes_Parameters;
+         begin
+            Parameters.Attributes.Object_Size := True;
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object_Attributes
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "missing-attributes", Parameters, Identity,
+                    "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.Get_Object_Attributes_Outcome :=
+                 Low_Level.Execute_Get_Object_Attributes
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                 Low_Level.Get_Object_Attributes_Rejected
+                 or else US.To_String (Result.Error.Code) /= "AccessDenied"
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "attributes-request"
+                 or else US.To_String (Result.Error.Host_ID) /=
+                   "attributes-host"
+               then
+                  raise Program_Error with
+                    "GetObjectAttributes socket rejection mismatch";
                end if;
             end;
          end;

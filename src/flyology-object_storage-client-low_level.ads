@@ -697,6 +697,8 @@ package Flyology.Object_Storage.Client.Low_Level is
       Attributes               : S3.Attributes.Attribute_Selection;
    end record;
 
+   --  Validate and sign one typed GetObjectAttributes request. Optional
+   --  numeric members are emitted only when their presence flag is true.
    function Prepare_Get_Object_Attributes
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -733,6 +735,8 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode a bounded REST/XML success or structured S3 error document.
+   --  Optional output headers retain their modeled omission semantics.
    function Decode_Get_Object_Attributes_Response
      (Status          : Flyology.HTTP.Status_Code;
       Payload         : String;
@@ -745,6 +749,8 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Attributes_Outcome;
 
+   --  Execute a matching typed request, bound the complete response body,
+   --  and decode every modeled output member.
    function Execute_Get_Object_Attributes
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;

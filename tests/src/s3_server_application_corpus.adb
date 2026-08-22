@@ -14,6 +14,7 @@ with Flyology.IO.Sockets;
 with Flyology.Object_Storage;
 with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.Memory;
+with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Listings;
@@ -30,6 +31,7 @@ procedure S3_Server_Application_Corpus is
    package Sockets renames Flyology.IO.Sockets;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
    package Buckets renames Flyology.Object_Storage.S3.Buckets;
+   package Attributes renames Flyology.Object_Storage.S3.Attributes;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Listings renames Flyology.Object_Storage.S3.Listings;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
@@ -973,6 +975,38 @@ procedure S3_Server_Application_Corpus is
       end;
 
       declare
+         Query : constant SigV4.Name_Value_Array :=
+           (1 => SigV4.Pair ("attributes", ""));
+         Response : constant String := Run
+           (Signed_Query_Body_Request
+              ("GET", "/test-bucket/multipart-object", Query, "",
+               "x-amz-object-attributes: ETag,ObjectParts,ObjectSize" &
+               CRLF & "x-amz-max-parts: 1" & CRLF &
+               "x-amz-part-number-marker: 0" & CRLF));
+         Parsed : constant Attributes.Get_Object_Attributes_Result :=
+           Attributes.Parse_Result (Response_Body (Response));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Parsed.Has_Entity_Tag
+            and then Ada.Strings.Fixed.Index
+              (US.To_String (Parsed.Entity_Tag), "-1") > 0
+            and then Parsed.Object_Size.Is_Set
+            and then Parsed.Object_Size.Value = 14
+            and then Parsed.Has_Object_Parts
+            and then Parsed.Object_Parts.Total_Parts_Count.Value = 1
+            and then Parsed.Object_Parts.Max_Parts.Value = 1
+            and then Parsed.Object_Parts.Part_Number_Marker.Value = 0
+            and then Parsed.Object_Parts.Has_Is_Truncated
+            and then not Parsed.Object_Parts.Is_Truncated
+            and then Parsed.Object_Parts.Parts.Length = 1
+            and then Parsed.Object_Parts.Parts.First_Element.Number.Value = 1
+            and then Parsed.Object_Parts.Parts.First_Element.Size.Value = 14,
+            "GetObjectAttributes lost completed multipart metadata: " &
+            Response);
+      end;
+
+      declare
          Copy_Create : constant String := Run
            (Signed_Query_Body_Request
               ("POST", "/test-bucket/multipart-copy", Create_Query, "",
@@ -1227,6 +1261,18 @@ begin
         (Has (Response, "403 Forbidden")
          and then not Has (Response, "InvalidArgument"),
          "malformed HeadObject query bypassed authentication");
+   end;
+
+   declare
+      Response : constant String := Run
+        ("GET /test-bucket/object?attributes&attributes HTTP/1.1" & CRLF &
+         "Host: " & Host & CRLF & "Content-Length: 0" & CRLF &
+         "Connection: close" & CRLF & CRLF);
+   begin
+      Require
+        (Has (Response, "403 Forbidden")
+         and then not Has (Response, "InvalidArgument"),
+         "malformed GetObjectAttributes query bypassed authentication");
    end;
 
    declare
@@ -1715,6 +1761,205 @@ begin
       Require
         (Has (Response, "ETag: ""5eb63bbbe01eeed093cb22bb8f5acdc3"""),
          "PutObject ETag mismatch");
+   end;
+
+   declare
+      Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("attributes", ""),
+         SigV4.Pair ("x-id", "GetObjectAttributes"));
+      Response : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/object", Query,
+            "x-amz-object-attributes",
+            "ETag,Checksum,ObjectParts,StorageClass,ObjectSize"));
+      Parsed : constant Attributes.Get_Object_Attributes_Result :=
+        Attributes.Parse_Result (Response_Body (Response));
+   begin
+      Require
+        (Has (Response, "200 OK")
+         and then Has (Response, "Content-Type: application/xml")
+         and then Has (Response, "Last-Modified:")
+         and then Parsed.Has_Entity_Tag
+         and then US.To_String (Parsed.Entity_Tag) =
+           "5eb63bbbe01eeed093cb22bb8f5acdc3"
+         and then Parsed.Object_Size.Is_Set
+         and then Parsed.Object_Size.Value = 11
+         and then not Parsed.Has_Checksum
+         and then not Parsed.Has_Object_Parts
+         and then not Parsed.Has_Storage_Class,
+         "GetObjectAttributes ordinary object response mismatch: " &
+         Response);
+
+      declare
+         Checksum_Only : constant String := Run
+           (Signed_Query_Request
+              ("GET", "/test-bucket/object",
+               (1 => SigV4.Pair ("attributes", "")),
+               "x-amz-object-attributes", "Checksum"));
+         Empty : constant Attributes.Get_Object_Attributes_Result :=
+           Attributes.Parse_Result (Response_Body (Checksum_Only));
+      begin
+         Require
+           (Has (Checksum_Only, "200 OK")
+            and then not Empty.Has_Entity_Tag
+            and then not Empty.Has_Checksum
+            and then not Empty.Has_Object_Parts
+            and then not Empty.Has_Storage_Class
+            and then not Empty.Object_Size.Is_Set,
+            "GetObjectAttributes invented an unavailable checksum");
+      end;
+
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/missing",
+                  (1 => SigV4.Pair ("attributes", "")),
+                  "x-amz-object-attributes", "ObjectSize")),
+            "NoSuchKey"),
+         "GetObjectAttributes did not report an absent object");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object",
+                  (SigV4.Pair ("attributes", ""),
+                   SigV4.Pair ("versionId", "null")),
+                  "x-amz-object-attributes", "ObjectSize")),
+            "200 OK"),
+         "GetObjectAttributes rejected the null version");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object",
+                  (SigV4.Pair ("attributes", ""),
+                   SigV4.Pair ("versionId", "version-1")),
+                  "x-amz-object-attributes", "ObjectSize")),
+            "501 Not Implemented"),
+         "GetObjectAttributes silently ignored a concrete version");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")))),
+            "400 Bad Request"),
+         "GetObjectAttributes accepted a missing selection header");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")),
+                  "x-amz-object-attributes", "ETag,ETag")),
+            "400 Bad Request"),
+         "GetObjectAttributes accepted a duplicate selection value");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")), "",
+                  "x-amz-object-attributes: ETag" & CRLF &
+                  "x-amz-object-attributes: ObjectSize" & CRLF)),
+            "400 Bad Request"),
+         "GetObjectAttributes accepted a duplicate selection header");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")), "",
+                  "x-amz-object-attributes: ObjectParts" & CRLF &
+                  "x-amz-max-parts: 1001" & CRLF)),
+            "400 Bad Request"),
+         "GetObjectAttributes accepted an oversized part page");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")), "",
+                  "x-amz-object-attributes: ObjectParts" & CRLF &
+                  "x-amz-part-number-marker: 10001" & CRLF)),
+            "400 Bad Request"),
+         "GetObjectAttributes accepted an oversized part marker");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")), "",
+                  "x-amz-object-attributes: ObjectSize" & CRLF &
+                  "x-amz-expected-bucket-owner: test-principal" & CRLF)),
+            "200 OK"),
+         "GetObjectAttributes rejected the authenticated owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")), "",
+                  "x-amz-object-attributes: ObjectSize" & CRLF &
+                  "x-amz-expected-bucket-owner: different-owner" & CRLF)),
+            "403 Forbidden"),
+         "GetObjectAttributes ignored the expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")), "",
+                  "x-amz-object-attributes: ObjectSize" & CRLF &
+                  "x-amz-request-payer: owner" & CRLF)),
+            "400 Bad Request"),
+         "GetObjectAttributes accepted an invalid request payer");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")), "",
+                  "x-amz-object-attributes: ObjectSize" & CRLF &
+                  "x-amz-request-payer: requester" & CRLF)),
+            "501 Not Implemented"),
+         "GetObjectAttributes silently ignored requester-pays");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")), "",
+                  "x-amz-object-attributes: ObjectSize" & CRLF &
+                  "x-amz-server-side-encryption-customer-algorithm: " &
+                  "AES256" & CRLF)),
+            "400 Bad Request"),
+         "GetObjectAttributes accepted an incomplete SSE-C group");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")), "",
+                  "x-amz-object-attributes: ObjectSize" & CRLF &
+                  "x-amz-server-side-encryption-customer-algorithm: " &
+                  "AES256" & CRLF &
+                  "x-amz-server-side-encryption-customer-key: " &
+                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" & CRLF &
+                  "x-amz-server-side-encryption-customer-key-md5: " &
+                  "AAAAAAAAAAAAAAAAAAAAAA==" & CRLF)),
+            "501 Not Implemented"),
+         "GetObjectAttributes silently ignored a valid SSE-C group");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/object",
+                  (1 => SigV4.Pair ("attributes", "")), "unexpected",
+                  "x-amz-object-attributes: ObjectSize" & CRLF)),
+            "400 Bad Request"),
+         "GetObjectAttributes accepted a request body");
    end;
 
    declare

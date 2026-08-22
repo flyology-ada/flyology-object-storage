@@ -123,7 +123,12 @@ package Flyology.Object_Storage.Client.Objects is
    --  @param Attributes Requested root-level result groups
    --  @param Version_ID Optional exact object version
    --  @param Max_Parts Object-parts page size when Has_Max_Parts is true
+   --  @param Has_Max_Parts Whether to send Max_Parts
    --  @param Part_Number_Marker Exclusive completed-part marker
+   --  @param Has_Part_Number_Marker Whether to send Part_Number_Marker
+   --  @param SSE_Customer_Algorithm Optional SSE-C algorithm
+   --  @param SSE_Customer_Key Optional base64 SSE-C key; HTTPS only
+   --  @param SSE_Customer_Key_MD5 Optional base64 SSE-C key digest
    --  @param Expected_Bucket_Owner Optional owner precondition
    --  @param Request_Payer Empty or requester for Requester Pays buckets
    --  @param Timeout Whole-operation budget

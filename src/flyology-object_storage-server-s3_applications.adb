@@ -10,6 +10,7 @@ with GNAT.SHA256;
 with Flyology.Cancellation;
 with Flyology.IO;
 with Flyology.Object_Storage.S3.Buckets;
+with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
@@ -29,6 +30,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package US renames Ada.Strings.Unbounded;
    package Requests renames S3.Requests;
    package Buckets renames S3.Buckets;
+   package Attributes renames S3.Attributes;
    package Encoding renames S3.SigV4_Encoding;
    package Deletions renames S3.Deletions;
    package Listings renames S3.Listings;
@@ -290,6 +292,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Create_Bucket, Get_Bucket_Location, Head_Bucket, Delete_Bucket,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
          Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
+         Get_Object_Attributes,
          Delete_Objects,
          List_Objects, List_Objects_V2, List_Multipart_Uploads,
          Create_Multipart, Put_Multipart_Part, Copy_Multipart_Part,
@@ -377,6 +380,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Ada.Strings.Fixed.Index (Padded_Query, "&uploads=&") /= 0
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=ListMultipartUploads&") /= 0;
+      Is_Get_Object_Attributes_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&attributes&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&attributes=&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetObjectAttributes&") /= 0;
       Operation   : Operation_Kind := Unsupported;
       Multipart_Query_Invalid : Boolean := False;
       Delete_Object_Query_Invalid : Boolean := False;
@@ -385,6 +393,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Object_Read_Request : Object_Reads.Object_Read_Request;
       Tagging_Query_Invalid : Boolean := False;
       Tagging_Request : Tagging.Tagging_Query;
+      Attributes_Query_Invalid : Boolean := False;
+      Attributes_Request : Attributes.Attributes_Query;
       Has_Copy_Source : constant Boolean :=
         Apps.Request_Header_Count (X, "x-amz-copy-source") > 0;
 
@@ -854,6 +864,15 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Object_Read_Query_Invalid := True;
                   Operation := Head_Object;
             end;
+         elsif Method = "GET" and then Is_Get_Object_Attributes_Query then
+            begin
+               Attributes_Request := Attributes.Parse_Query (Query_Text);
+               Operation := Get_Object_Attributes;
+            exception
+               when Attributes.Malformed_Attributes =>
+                  Attributes_Query_Invalid := True;
+                  Operation := Get_Object_Attributes;
+            end;
          elsif Method = "GET" and then not Has_Upload_ID_Query then
             begin
                Object_Read_Request := Object_Reads.Parse_Query
@@ -956,7 +975,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Apps.Set_Principal (X, US.To_String (Auth.Principal));
 
       if Has_Encryption_Header
-        and then Operation not in Head_Object | Get_Object
+        and then Operation not in Head_Object | Get_Object |
+          Get_Object_Attributes
       then
          Send_Error
            (X, 501, "NotImplemented",
@@ -983,6 +1003,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Send_Error
            (X, 400, "InvalidArgument",
             "The object tagging request query is invalid", Target_Text);
+         return;
+      elsif Attributes_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The GetObjectAttributes request query is invalid", Target_Text);
          return;
       end if;
 
@@ -2579,6 +2604,232 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Send_Backend_Error (X, Result, False, Target_Text);
                      end if;
                   end if;
+               end;
+
+            when Get_Object_Attributes =>
+               declare
+                  Selection_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-object-attributes");
+                  Max_Parts_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-max-parts");
+                  Marker_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-part-number-marker");
+                  SSE_Algorithm_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-" &
+                       "algorithm");
+                  SSE_Key_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-key");
+                  SSE_MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-key-md5");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_OK : Boolean := False;
+                  Options : Backends.Object_Attribute_Options :=
+                    (After => 0, Maximum => Backends.List_Limit'Last);
+                  Snapshot : Backends.Object_Attribute_Snapshot;
+                  Selection : Attributes.Attribute_Selection;
+                  Valid_Request : Boolean := True;
+               begin
+                  if Selection_Count /= 1
+                    or else Max_Parts_Count > 1
+                    or else Marker_Count > 1
+                    or else SSE_Algorithm_Count > 1
+                    or else SSE_Key_Count > 1
+                    or else SSE_MD5_Count > 1
+                    or else Payer_Count > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A GetObjectAttributes request header is missing or " &
+                        "duplicated", Target_Text);
+                     return;
+                  end if;
+
+                  begin
+                     Selection := Attributes.Parse_Selection
+                       (Apps.Request_Header
+                          (X, "x-amz-object-attributes"));
+                  exception
+                     when Attributes.Malformed_Attributes =>
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The requested object attributes are invalid",
+                           Target_Text);
+                        Valid_Request := False;
+                  end;
+                  if not Valid_Request then
+                     return;
+                  end if;
+
+                  if Max_Parts_Count = 1 then
+                     declare
+                        Parsed_Max : constant S3.Wire_Core.Natural_Result :=
+                          S3.Wire_Core.Parse_Natural
+                            (Apps.Request_Header (X, "x-amz-max-parts"));
+                     begin
+                        if not Parsed_Max.Valid
+                          or else Parsed_Max.Value >
+                            Backends.List_Limit'Last
+                        then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The maximum part count is invalid",
+                              Target_Text);
+                           return;
+                        end if;
+                        Options.Maximum :=
+                          Backends.List_Limit (Parsed_Max.Value);
+                     end;
+                  end if;
+                  if Marker_Count = 1 then
+                     declare
+                        Parsed_Marker : constant
+                          S3.Wire_Core.Natural_Result :=
+                            S3.Wire_Core.Parse_Natural
+                              (Apps.Request_Header
+                                 (X, "x-amz-part-number-marker"));
+                     begin
+                        if not Parsed_Marker.Valid
+                          or else Parsed_Marker.Value >
+                            Backends.Multipart_Part_Marker'Last
+                        then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The part number marker is invalid",
+                              Target_Text);
+                           return;
+                        end if;
+                        Options.After := Backends.Multipart_Part_Marker
+                          (Parsed_Marker.Value);
+                     end;
+                  end if;
+
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  elsif Attributes_Request.Has_Version_ID
+                    and then US.To_String (Attributes_Request.Version_ID) /=
+                      "null"
+                  then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Object versioning is not implemented", Target_Text);
+                     return;
+                  elsif Payer_Count = 1 then
+                     if Apps.Request_Header
+                       (X, "x-amz-request-payer") /= "requester"
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The request payer header is invalid", Target_Text);
+                     else
+                        Send_Error
+                          (X, 501, "NotImplemented",
+                           "Requester-pays GetObjectAttributes is not " &
+                           "implemented", Target_Text);
+                     end if;
+                     return;
+                  elsif SSE_Algorithm_Count = 1
+                    or else SSE_Key_Count = 1
+                    or else SSE_MD5_Count = 1
+                  then
+                     if SSE_Algorithm_Count /= 1
+                       or else SSE_Key_Count /= 1
+                       or else SSE_MD5_Count /= 1
+                       or else Apps.Request_Header
+                         (X, "x-amz-server-side-encryption-customer-" &
+                          "algorithm") /= "AES256"
+                       or else not S3.Wire_Core.Valid_Base64
+                         (Apps.Request_Header
+                            (X, "x-amz-server-side-encryption-customer-key"),
+                          32)
+                       or else not S3.Wire_Core.Valid_Base64
+                         (Apps.Request_Header
+                            (X, "x-amz-server-side-encryption-customer-" &
+                             "key-md5"), 16)
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The SSE-C header group is invalid", Target_Text);
+                     else
+                        Send_Error
+                          (X, 501, "NotImplemented",
+                           "SSE-C GetObjectAttributes is not implemented",
+                           Target_Text);
+                     end if;
+                     return;
+                  elsif Has_Encryption_Header then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "The GetObjectAttributes encryption header is not " &
+                        "implemented", Target_Text);
+                     return;
+                  end if;
+
+                  Store.Get_Object_Attributes
+                    (Bucket, Key, Options, Apps.Cancellation (X),
+                     Apps.Deadline (X), Snapshot, Result);
+                  if Result /= Success then
+                     Send_Backend_Error (X, Result, False, Target_Text);
+                     return;
+                  end if;
+                  declare
+                     Response : Attributes.Get_Object_Attributes_Result;
+                  begin
+                     if Selection.Entity_Tag then
+                        Response.Has_Entity_Tag := True;
+                        Response.Entity_Tag := Snapshot.Info.Entity_Tag;
+                     end if;
+                     if Selection.Object_Size then
+                        Response.Object_Size :=
+                          (Is_Set => True, Value => Snapshot.Info.Size);
+                     end if;
+                     if Selection.Object_Parts and then Snapshot.Is_Multipart
+                     then
+                        Response.Has_Object_Parts := True;
+                        Response.Object_Parts.Total_Parts_Count :=
+                          (Is_Set => True, Value => Snapshot.Total_Parts);
+                        Response.Object_Parts.Part_Number_Marker :=
+                          (Is_Set => True, Value => Natural (Options.After));
+                        Response.Object_Parts.Max_Parts :=
+                          (Is_Set => True, Value => Natural (Options.Maximum));
+                        Response.Object_Parts.Has_Is_Truncated := True;
+                        Response.Object_Parts.Is_Truncated :=
+                          Snapshot.Is_Truncated;
+                        if Snapshot.Is_Truncated then
+                           Response.Object_Parts.Next_Part_Number_Marker :=
+                             (Is_Set => True,
+                              Value => Natural (Snapshot.Next_After));
+                        end if;
+                        for Part of Snapshot.Parts loop
+                           Response.Object_Parts.Parts.Append
+                             (Attributes.Object_Part'
+                                (Number =>
+                                   (Is_Set => True,
+                                    Value => Natural (Part.Number)),
+                                 Size =>
+                                   (Is_Set => True, Value => Part.Size),
+                                 Checksums => <>));
+                        end loop;
+                     end if;
+                     Apps.Set_Header
+                       (X, "Last-Modified",
+                        HTTP_Last_Modified (Snapshot.Info.Modified));
+                     if US.Length (Snapshot.Info.Version) > 0 then
+                        Apps.Set_Header
+                          (X, "x-amz-version-id",
+                           US.To_String (Snapshot.Info.Version));
+                     end if;
+                     Apps.Respond
+                       (X, 200, "application/xml",
+                        Attributes.Serialize_Result (Response));
+                  end;
                end;
 
             when Head_Object =>
