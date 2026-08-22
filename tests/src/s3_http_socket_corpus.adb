@@ -1129,9 +1129,15 @@ procedure S3_HTTP_Socket_Corpus is
          Serve
            (HTTP_Response
               ("204 No Content", "",
-               "x-amz-version-id: tag-delete-version" & CRLF,
+               "x-amz-version-id: null" & CRLF,
                Omit_Content_Length => True),
-            "DELETE", "/example-bucket/typed-tagged?tagging");
+            "DELETE", "/example-bucket/typed-tagged?tagging&versionId=null");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "DELETE", "/example-bucket/typed-tagged-error?tagging");
+         Serve
+           (HTTP_Response ("204 No Content", "x"),
+            "DELETE", "/example-bucket/typed-tagged-malformed?tagging");
          Serve
            (HTTP_Response ("200 OK", ""),
             "PUT", "/example-bucket/convenient-tagged?tagging", "<Tagging",
@@ -2428,6 +2434,7 @@ procedure S3_HTTP_Socket_Corpus is
                     "typed GetObjectTagging socket result mismatch";
                end if;
             end;
+            Delete_Parameters.Version_ID := US.To_Unbounded_String ("null");
             declare
                Prepared_Delete : constant Low_Level.Prepared_Request :=
                  Low_Level.Prepare_Delete_Object_Tagging
@@ -2440,10 +2447,57 @@ procedure S3_HTTP_Socket_Corpus is
             begin
                if Result.Kind /= Low_Level.Object_Tags_Deleted
                  or else US.To_String (Result.Result.Version_ID) /=
-                   "tag-delete-version"
+                   "null"
                then
                   raise Program_Error with
                     "typed DeleteObjectTagging socket result mismatch";
+               end if;
+            end;
+            declare
+               Prepared_Delete : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Object_Tagging
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "typed-tagged-error",
+                    Low_Level.Delete_Object_Tagging_Parameters'(others => <>),
+                    Identity, "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.Delete_Object_Tagging_Outcome :=
+                 Low_Level.Execute_Delete_Object_Tagging
+                   (HTTP, Prepared_Delete, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Delete_Object_Tagging_Rejected
+                 or else US.To_String (Result.Error.Code) /= "AccessDenied"
+               then
+                  raise Program_Error with
+                    "typed DeleteObjectTagging socket error mismatch";
+               end if;
+            end;
+            declare
+               Prepared_Delete : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Object_Tagging
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "typed-tagged-malformed",
+                    Low_Level.Delete_Object_Tagging_Parameters'(others => <>),
+                    Identity, "us-east-1", "20130524T000000Z");
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant
+                       Low_Level.Delete_Object_Tagging_Outcome :=
+                         Low_Level.Execute_Delete_Object_Tagging
+                           (HTTP, Prepared_Delete, Timeout => 5.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response |
+                       Flyology.HTTP.Protocol_Error =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with
+                    "typed DeleteObjectTagging accepted a response body";
                end if;
             end;
             declare
@@ -2467,6 +2521,46 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "convenient object tagging socket flow mismatch";
+               end if;
+            end;
+            declare
+               Stop      : aliased Flyology.Cancellation.Token;
+               Cancelled : Boolean := False;
+               Timed_Out : Boolean := False;
+            begin
+               Stop.Request;
+               begin
+                  declare
+                     Ignored : constant Objects.Tagging_Outcome :=
+                       Objects.Delete_Tags
+                         (HTTP, Origin, "example-bucket",
+                          "convenient-tagged", Identity, Timeout => 5.0,
+                          Token => Stop'Access);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled =>
+                     Cancelled := True;
+               end;
+               begin
+                  declare
+                     Ignored : constant Objects.Tagging_Outcome :=
+                       Objects.Delete_Tags
+                         (HTTP, Origin, "example-bucket",
+                          "convenient-tagged", Identity, Timeout => 0.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.IO.Timeout_Error =>
+                     Timed_Out := True;
+               end;
+               if not Cancelled or else not Timed_Out then
+                  raise Program_Error with
+                    "DeleteObjectTagging ignored cancellation/deadline";
                end if;
             end;
          end;

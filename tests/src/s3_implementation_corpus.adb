@@ -49,6 +49,7 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Copy_Object_Outcome_Kind;
    use type Low_Level.Create_Multipart_Outcome_Kind;
    use type Low_Level.Delete_Objects_Outcome_Kind;
+   use type Low_Level.Delete_Object_Tagging_Outcome_Kind;
    use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
@@ -1302,6 +1303,72 @@ procedure S3_Implementation_Corpus is
             then
                raise Program_Error with
                  "S3 implementation retained deleted object tags";
+            end if;
+         end;
+         declare
+            Outcome : constant Client_Objects.Tagging_Outcome :=
+              Client_Objects.Delete_Tags
+                (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Client_Objects.Tags_Cleared then
+               raise Program_Error with
+                 "S3 implementation did not make DeleteObjectTagging " &
+                 "idempotent";
+            end if;
+         end;
+         declare
+            Outcome : constant Client_Objects.Tagging_Outcome :=
+              Client_Objects.Put_Tags
+                (HTTP, Origin, Bucket, Key, Wanted, Identity,
+                 Timeout => 30.0);
+            Parameters : Low_Level.Delete_Object_Tagging_Parameters;
+         begin
+            if Outcome.Kind /= Client_Objects.Tags_Replaced then
+               raise Program_Error with
+                 "S3 implementation could not restore object tags";
+            end if;
+            Parameters.Version_ID := US.To_Unbounded_String ("null");
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Object_Tagging
+                   (Origin, Low_Level.Path_Style, Bucket, Key, Parameters,
+                    Identity, "us-east-1", Timestamp);
+               Deleted : constant
+                 Low_Level.Delete_Object_Tagging_Outcome :=
+                   Low_Level.Execute_Delete_Object_Tagging
+                     (HTTP, Prepared, Timeout => 30.0);
+            begin
+               if Deleted.Kind /= Low_Level.Object_Tags_Deleted then
+                  raise Program_Error with
+                    "S3 implementation rejected null-version " &
+                    "DeleteObjectTagging";
+               end if;
+            end;
+         end;
+         declare
+            Outcome : constant Client_Objects.Tagging_Outcome :=
+              Client_Objects.Get_Tags
+                (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Client_Objects.Tags_Read
+              or else Outcome.Result.Tags.Length /= 0
+            then
+               raise Program_Error with
+                 "null-version DeleteObjectTagging retained object tags";
+            end if;
+         end;
+         declare
+            Outcome : constant Client_Objects.Tagging_Outcome :=
+              Client_Objects.Delete_Tags
+                (HTTP, Origin, Bucket, Key & "-missing-tag-target",
+                 Identity, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Client_Objects.Tagging_Rejected
+              or else US.To_String (Outcome.Error.Code) /= "NoSuchKey"
+            then
+               raise Program_Error with
+                 "S3 implementation did not reject missing-object " &
+                 "DeleteObjectTagging as NoSuchKey";
             end if;
          end;
       end Require_Object_Tagging;
