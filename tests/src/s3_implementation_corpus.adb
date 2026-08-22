@@ -40,6 +40,7 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
+   use type Low_Level.List_Buckets_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
    use type Low_Level.List_Parts_Outcome_Kind;
@@ -825,6 +826,52 @@ procedure S3_Implementation_Corpus is
          raise;
    end Require_Head_Bucket;
 
+   procedure Require_Listed_Bucket
+     (Origin    : Flyology.HTTP.Origin;
+      Bucket    : String;
+      Timestamp : String)
+   is
+      HTTP       : aliased HTTP_Client.Client (Capacity => 1);
+      Identity   : constant Low_Level.Credentials :=
+        Low_Level.Make_Credentials (Access_Key, Secret_Key);
+      Parameters : Low_Level.List_Buckets_Parameters;
+      Prepared   : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_List_Buckets
+          (Origin, Low_Level.Path_Style, Parameters, Identity,
+           "us-east-1", Timestamp);
+      Found      : Boolean := False;
+   begin
+      HTTP_Client.Configure (HTTP, Origin);
+      declare
+         Outcome : constant Low_Level.List_Buckets_Outcome :=
+           Low_Level.Execute_List_Buckets
+             (HTTP, Prepared, Timeout => 30.0);
+      begin
+         if Outcome.Kind /= Low_Level.Buckets_Listed then
+            raise Program_Error with
+              "S3 implementation rejected ListBuckets: " &
+              Outcome.Status'Image & " " &
+              US.To_String (Outcome.Error.Code) & " " &
+              US.To_String (Outcome.Error.Message);
+         end if;
+         for Value of Outcome.Result.Buckets loop
+            if US.To_String (Value.Name) = Bucket then
+               Found := True;
+               exit;
+            end if;
+         end loop;
+         if not Found then
+            raise Program_Error with
+              "S3 implementation did not list the created bucket";
+         end if;
+      end;
+      HTTP_Client.Shutdown (HTTP);
+   exception
+      when others =>
+         HTTP_Client.Shutdown (HTTP);
+         raise;
+   end Require_Listed_Bucket;
+
    procedure Create_Bucket
      (Origin    : Flyology.HTTP.Origin;
       Bucket    : String;
@@ -998,6 +1045,7 @@ begin
             task body Lightweight_Client is
             begin
                Require_Head_Bucket (Origin, Bucket, Timestamp);
+               Require_Listed_Bucket (Origin, Bucket, Timestamp);
                Lightweight_Result.Report (True);
             exception
                when Occurrence : others =>
@@ -1012,8 +1060,9 @@ begin
             raise Program_Error with US.To_String (Detail);
          end if;
          Require_Head_Bucket (Origin, Bucket, Timestamp);
+         Require_Listed_Bucket (Origin, Bucket, Timestamp);
          Ada.Text_IO.Put_Line
-           ("S3 implementation setup: bucket created and headed");
+           ("S3 implementation setup: bucket created, headed, and listed");
       elsif Ada.Command_Line.Argument (4) = "cleanup" then
          Delete_One (Origin, Bucket, "native-object", Timestamp);
          Delete_One
