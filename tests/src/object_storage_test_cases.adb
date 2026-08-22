@@ -3635,6 +3635,25 @@ package body Object_Storage_Test_Cases is
          end;
          Assert
            (Raised, "UploadPart allowed an SSE-C key over plaintext HTTP");
+         Raised := False;
+         Parameters.SSE_Customer_Key := US.To_Unbounded_String ("AAAA");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Upload_Part
+                   (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "UploadPart accepted a non-256-bit SSE-C key");
       end;
 
       declare
@@ -3779,6 +3798,27 @@ package body Object_Storage_Test_Cases is
          Assert
            (Raised,
             "UploadPartCopy allowed an SSE-C key over plaintext HTTP");
+         Raised := False;
+         Parameters.Copy_Source_SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES512");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Upload_Part_Copy
+                   (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "UploadPartCopy accepted a non-AES256 SSE-C algorithm");
       end;
 
       declare
@@ -4216,8 +4256,23 @@ package body Object_Storage_Test_Cases is
                  "x-amz-expected-bucket-owner;x-amz-request-payer;" &
                  "x-amz-server-side-encryption-customer-algorithm;" &
                  "x-amz-server-side-encryption-customer-key;" &
-                 "x-amz-server-side-encryption-customer-key-md5",
+               "x-amz-server-side-encryption-customer-key-md5",
                "HeadObject every modeled request header is signed");
+            declare
+               Get_Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object
+                   (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "photos/a b+%",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+            begin
+               Assert
+                 (Low_Level.Target (Get_Prepared) =
+                    Low_Level.Target (Prepared)
+                  and then Low_Level.Signed_Headers (Get_Prepared) =
+                    Low_Level.Signed_Headers (Prepared),
+                  "GetObject projects all 21 modeled request members");
+            end;
          end;
       end;
 
@@ -4250,6 +4305,26 @@ package body Object_Storage_Test_Cases is
          end;
          Assert
            (Raised, "HeadObject allowed an SSE-C key over plaintext HTTP");
+         Raised := False;
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES512");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object
+                   (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "GetObject accepted a non-AES256 SSE-C algorithm");
       end;
 
       declare

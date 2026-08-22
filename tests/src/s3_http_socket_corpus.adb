@@ -35,6 +35,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Abort_Multipart_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
+   use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
    use type Transfers.Copy_Outcome_Kind;
@@ -549,6 +550,12 @@ procedure S3_HTTP_Socket_Corpus is
             "GET", "/example-bucket/download-truncated");
          Serve
            (HTTP_Response
+              ("206 Partial Content", "partial",
+               "Content-Range: bytes 0-6/42" & CRLF &
+               "ETag: ""download-partial""" & CRLF),
+            "GET", "/example-bucket/download-unexpected-range");
+         Serve
+           (HTTP_Response
               ("200 OK", Copy_XML,
                "x-amz-version-id: destination-version" & CRLF &
                "x-amz-copy-source-version-id: source-version" & CRLF),
@@ -614,6 +621,41 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-object-lock-legal-hold: OFF" & CRLF,
                Omit_Content_Length => True),
             "HEAD", "/example-bucket/typed-head");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "getdata",
+               "Accept-Ranges: bytes" & CRLF &
+               "Content-Range: bytes 1-7/9" & CRLF &
+               "ETag: ""typed-get""" & CRLF &
+               "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+               "x-amz-checksum-crc32: AAAAAA==" & CRLF &
+               "x-amz-checksum-sha256: " &
+               "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" & CRLF &
+               "x-amz-checksum-type: COMPOSITE" & CRLF &
+               "x-amz-meta-project: flyology" & CRLF &
+               "x-amz-meta-stage: get" & CRLF &
+               "x-amz-server-side-encryption: aws:backup" & CRLF &
+               "x-amz-storage-class: AWS_BACKUP_WARM" & CRLF &
+               "x-amz-replication-status: COMPLETED" & CRLF &
+               "x-amz-mp-parts-count: 3" & CRLF &
+               "x-amz-tagging-count: 2" & CRLF &
+               "x-amz-object-lock-mode: COMPLIANCE" & CRLF &
+               "x-amz-object-lock-legal-hold: OFF" & CRLF),
+            "GET", "/example-bucket/typed-get?versionId=version%20one",
+            Expected_If_Match => """expected-etag""",
+            Expected_Checksum_Mode => "ENABLED");
+         Serve
+           (HTTP_Response
+              ("304 Not Modified", "",
+               "x-amz-request-id: get-request" & CRLF &
+               "x-amz-id-2: get-host" & CRLF,
+               Omit_Content_Length => True),
+            "GET", "/example-bucket/typed-get-missing");
+         Serve
+           (HTTP_Response
+              ("200 OK", "x",
+               "x-amz-checksum-sha256: not-base64" & CRLF),
+            "GET", "/example-bucket/typed-get-invalid");
          Serve
            (HTTP_Response ("200 OK", Create_XML), "POST",
             "/example-bucket/object%20key?uploads", Fragmented => True);
@@ -885,6 +927,7 @@ procedure S3_HTTP_Socket_Corpus is
             Empty_Path : constant String := Download_Path & ".empty";
             Rejected_Path : constant String := Download_Path & ".rejected";
             Truncated_Path : constant String := Download_Path & ".truncated";
+            Partial_Path : constant String := Download_Path & ".partial";
 
             procedure Cleanup is
             begin
@@ -892,12 +935,14 @@ procedure S3_HTTP_Socket_Corpus is
                Delete_If_Present (Empty_Path);
                Delete_If_Present (Rejected_Path);
                Delete_If_Present (Truncated_Path);
+               Delete_If_Present (Partial_Path);
             end Cleanup;
 
             procedure Check_High_Level_Downloads is
                Cancelled : Boolean := False;
                Timed_Out : Boolean := False;
                Truncated : Boolean := False;
+               Partial   : Boolean := False;
                Stop : aliased Flyology.Cancellation.Token;
             begin
                Write_File (Download_Path, "preserved-before-start");
@@ -1022,6 +1067,30 @@ procedure S3_HTTP_Socket_Corpus is
                     "truncated download replaced the destination";
                end if;
                Require_No_Download_Temporary (Truncated_Path);
+
+               Write_File (Partial_Path, "preserve-partial");
+               begin
+                  declare
+                     Ignored : constant Transfers.Download_Outcome :=
+                       Transfers.Download_File
+                         (HTTP, Origin, "example-bucket",
+                          "download-unexpected-range", Partial_Path,
+                          Identity, Timeout => 5.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response =>
+                     Partial := True;
+               end;
+               if not Partial
+                 or else Read_File (Partial_Path) /= "preserve-partial"
+               then
+                  raise Program_Error with
+                    "partial download replaced the whole-file destination";
+               end if;
+               Require_No_Download_Temporary (Partial_Path);
             end Check_High_Level_Downloads;
          begin
             begin
@@ -1207,6 +1276,116 @@ procedure S3_HTTP_Socket_Corpus is
                 "AWS_BACKUP_WARM"
             then
                raise Program_Error with "typed HeadObject result mismatch";
+            end if;
+         end;
+         declare
+            Parameters : Low_Level.Get_Object_Parameters;
+         begin
+            Parameters.If_Match :=
+              US.To_Unbounded_String ("""expected-etag""");
+            Parameters.Version_ID :=
+              US.To_Unbounded_String ("version one");
+            Parameters.Checksum_Mode := True;
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "typed-get", Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Response : HTTP_Client.Response :=
+                 Low_Level.Execute_Get_Object
+                   (HTTP, Prepared, Timeout => 5.0);
+               Result : constant Low_Level.Get_Object_Head_Outcome :=
+                 Low_Level.Decode_Get_Object_Response_Head (Response);
+               Received : US.Unbounded_String;
+               Buffer : Stream_Element_Array (1 .. 3);
+               Last : Stream_Element_Offset;
+               Finished : Boolean := False;
+            begin
+               if Result.Kind /= Low_Level.Object_Opened
+                 or else Result.Status /= 206
+                 or else not Result.Result.Content_Length.Is_Set
+                 or else Result.Result.Content_Length.Value /= 7
+                 or else US.To_String (Result.Result.Entity_Tag) /=
+                   """typed-get"""
+                 or else US.To_String (Result.Result.Content_Range) /=
+                   "bytes 1-7/9"
+                 or else Natural (Result.Result.Metadata.Length) /= 2
+                 or else US.To_String
+                   (Result.Result.Metadata.First_Element.Name) /= "project"
+                 or else US.To_String (Result.Result.Checksum_Type) /=
+                   "COMPOSITE"
+                 or else US.To_String
+                   (Result.Result.Server_Side_Encryption) /= "aws:backup"
+                 or else US.To_String (Result.Result.Storage_Class) /=
+                   "AWS_BACKUP_WARM"
+               then
+                  raise Program_Error with "typed GetObject head mismatch";
+               end if;
+               while not Finished loop
+                  HTTP_Client.Read_Body
+                    (Response, Buffer, Last, Finished);
+                  for Index in Buffer'First .. Last loop
+                     US.Append (Received, Character'Val (Buffer (Index)));
+                  end loop;
+               end loop;
+               if US.To_String (Received) /= "getdata" then
+                  raise Program_Error with "typed GetObject body mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Get_Object_Parameters;
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 "typed-get-missing", Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Response : HTTP_Client.Response :=
+              Low_Level.Execute_Get_Object
+                (HTTP, Prepared, Timeout => 5.0);
+            Result : constant Low_Level.Get_Object_Head_Outcome :=
+              Low_Level.Decode_Get_Object_Response_Head (Response);
+         begin
+            if Result.Kind /= Low_Level.Get_Object_Rejected
+              or else Result.Status /= 304
+              or else US.To_String (Result.Error.Code) /= "HTTP304"
+              or else US.To_String (Result.Error.Request_ID) /=
+                "get-request"
+              or else US.To_String (Result.Error.Host_ID) /= "get-host"
+              or else not HTTP_Client.Body_Complete (Response)
+            then
+               raise Program_Error with
+                 "typed GetObject bodyless rejection mismatch";
+            end if;
+         end;
+         declare
+            Parameters : Low_Level.Get_Object_Parameters;
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 "typed-get-invalid", Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Response : HTTP_Client.Response :=
+              Low_Level.Execute_Get_Object
+                (HTTP, Prepared, Timeout => 5.0);
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Get_Object_Head_Outcome :=
+                    Low_Level.Decode_Get_Object_Response_Head (Response);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            if not Raised then
+               raise Program_Error with
+                 "typed GetObject accepted an invalid checksum";
             end if;
          end;
          declare

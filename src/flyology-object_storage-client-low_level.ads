@@ -429,6 +429,101 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null)
       return Head_Object_Outcome;
 
+   --  GetObject has the same 21 modeled request members as HeadObject.
+   subtype Get_Object_Parameters is Head_Object_Parameters;
+
+   function Prepare_Get_Object
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Get_Object_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   --  Every modeled GetObject response-head member. Body is represented by
+   --  the limited streaming HTTP response returned from Execute_Get_Object.
+   type Get_Object_Result is record
+      Delete_Marker             : Optional_Boolean;
+      Accept_Ranges             : Ada.Strings.Unbounded.Unbounded_String;
+      Expiration                : Ada.Strings.Unbounded.Unbounded_String;
+      Restore                   : Ada.Strings.Unbounded.Unbounded_String;
+      Last_Modified             : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Length            : Optional_Byte_Count;
+      Entity_Tag                : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_CRC32            : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_CRC32C           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_CRC64NVME        : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA1             : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA256           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA512           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_MD5              : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH64         : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH3          : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH128        : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Type             : Ada.Strings.Unbounded.Unbounded_String;
+      Missing_Meta              : Optional_Natural;
+      Version_ID                : Ada.Strings.Unbounded.Unbounded_String;
+      Cache_Control             : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Disposition       : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Encoding          : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Language          : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Range             : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Type              : Ada.Strings.Unbounded.Unbounded_String;
+      Expires                   : Ada.Strings.Unbounded.Unbounded_String;
+      Website_Redirect_Location : Ada.Strings.Unbounded.Unbounded_String;
+      Server_Side_Encryption    : Ada.Strings.Unbounded.Unbounded_String;
+      Metadata                  : Metadata_Entry_Vectors.Vector;
+      SSE_Customer_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5      : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID            : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled        : Optional_Boolean;
+      Storage_Class             : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Charged           : Ada.Strings.Unbounded.Unbounded_String;
+      Replication_Status        : Ada.Strings.Unbounded.Unbounded_String;
+      Parts_Count               : Optional_Natural;
+      Tag_Count                 : Optional_Natural;
+      Object_Lock_Mode          : Ada.Strings.Unbounded.Unbounded_String;
+      Object_Lock_Retain_Until_Date :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Object_Lock_Legal_Hold_Status :
+        Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Get_Object_Head_Outcome_Kind is
+     (Object_Opened, Get_Object_Rejected);
+
+   type Get_Object_Head_Outcome
+     (Kind : Get_Object_Head_Outcome_Kind := Get_Object_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Opened =>
+            Result : Get_Object_Result;
+         when Get_Object_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Execute a typed GetObject request and return its unconsumed limited
+   --  response. The caller must decode the head and then consume or finalize
+   --  the body before reusing the associated exchange lease.
+   function Execute_Get_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Flyology.HTTP.Client.Response;
+
+   --  Validate all modeled response-head fields. Successful response bodies
+   --  remain unread. Rejected responses are consumed within Limits and
+   --  decoded as S3 errors; bodyless conditional errors retain request IDs.
+   function Decode_Get_Object_Response_Head
+     (Response : in out Flyology.HTTP.Client.Response;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Head_Outcome;
+
    --  Modeled DeleteBucket request headers.
    type Delete_Bucket_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
@@ -976,6 +1071,7 @@ private
       Create_Bucket_Operation,
       Head_Bucket_Operation,
       Head_Object_Operation,
+      Get_Object_Operation,
       Delete_Bucket_Operation,
       Delete_Object_Operation,
       Delete_Objects_Operation,

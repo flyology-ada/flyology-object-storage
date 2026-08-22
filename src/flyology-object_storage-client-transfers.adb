@@ -44,6 +44,7 @@ package body Flyology.Object_Storage.Client.Transfers is
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Copy_Object_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
+   use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Requests.Target_Kind;
    use type Requests.Target_Status;
 
@@ -806,24 +807,27 @@ package body Flyology.Object_Storage.Client.Transfers is
          raise Constraint_Error with "local download path is empty";
       end if;
       declare
-         Values : constant Low_Level.Model_Value_Array :=
-           (Model_Value ("Bucket", Bucket), Model_Value ("Key", Key));
+         Parameters : constant Low_Level.Get_Object_Parameters :=
+           (others => <>);
          Prepared : constant Low_Level.Prepared_Request :=
-           Low_Level.Prepare_Model_Request
-             (Model.Get_Object_Operation, Origin, Style, Values, "", False,
-              "", Identity, Region, Current_Timestamp);
+           Low_Level.Prepare_Get_Object
+             (Origin, Style, Bucket, Key, Parameters, Identity, Region,
+              Current_Timestamp);
          Response : HTTP_Client.Response :=
-           Low_Level.Execute_Model_Request
+           Low_Level.Execute_Get_Object
              (Client, Prepared, Remaining (Deadline), Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           HTTP_Client.Status (Response);
-         Entity_Tag : constant String := HTTP_Client.Header (Response, "etag");
+         Head : constant Low_Level.Get_Object_Head_Outcome :=
+           Low_Level.Decode_Get_Object_Response_Head
+             (Response, Token);
       begin
-         if Status /= 200 then
+         if Head.Kind = Low_Level.Get_Object_Rejected then
             return
               (Kind   => Download_Rejected,
-               Status => Status,
-               Error  => Decode_Error (Response, Token));
+               Status => Head.Status,
+               Error  => Head.Error);
+         elsif Head.Status /= 200 then
+            raise Low_Level.Invalid_Response with
+              "whole-file GetObject returned a partial response";
          end if;
 
          Temp := US.To_Unbounded_String (New_Temporary_Path (Local_Path));
@@ -903,9 +907,9 @@ package body Flyology.Object_Storage.Client.Transfers is
             Published := True;
             return
               (Kind       => File_Downloaded,
-               Status     => Status,
+               Status     => Head.Status,
                Bytes      => Total,
-               Entity_Tag => US.To_Unbounded_String (Entity_Tag));
+               Entity_Tag => Head.Result.Entity_Tag);
          end;
       end;
    exception

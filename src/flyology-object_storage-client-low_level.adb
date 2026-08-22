@@ -1561,15 +1561,27 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "HeadBucket response contains a body";
    end Execute_Head_Bucket;
 
-   function Prepare_Head_Object
-     (Origin     : Flyology.HTTP.Origin;
-      Style      : Addressing_Style;
-      Bucket     : String;
-      Key        : String;
-      Parameters : Head_Object_Parameters;
-      Identity   : Credentials;
-      Region     : String;
-      Timestamp  : String) return Prepared_Request
+   function Valid_SSE_C_Group
+     (Algorithm, Key, Key_MD5 : String) return Boolean is
+     ((Algorithm'Length = 0 and then Key'Length = 0
+       and then Key_MD5'Length = 0)
+      or else
+        (Algorithm = "AES256"
+         and then Wire_Core.Valid_Base64 (Key, 32)
+         and then Wire_Core.Valid_Base64 (Key_MD5, 16)));
+
+   function Prepare_Object_Read
+     (Modeled_Operation : Model.Operation_Id;
+      Typed_Operation   : Operation_Kind;
+      Operation_Name    : String;
+      Origin            : Flyology.HTTP.Origin;
+      Style             : Addressing_Style;
+      Bucket            : String;
+      Key               : String;
+      Parameters        : Head_Object_Parameters;
+      Identity          : Credentials;
+      Region            : String;
+      Timestamp         : String) return Prepared_Request
    is
       SSE_Algorithm : constant String :=
         US.To_String (Parameters.SSE_Customer_Algorithm);
@@ -1626,19 +1638,14 @@ package body Flyology.Object_Storage.Client.Low_Level is
                      S3.Core.Range_Parsed)
         or else (Request_Payer'Length > 0
                  and then Request_Payer /= "requester")
-        or else ((SSE_Algorithm'Length > 0
-                  or else SSE_Key'Length > 0
-                  or else SSE_Key_MD5'Length > 0)
-                 and then (SSE_Algorithm'Length = 0
-                           or else SSE_Key'Length = 0
-                           or else SSE_Key_MD5'Length = 0))
-        or else (SSE_Key_MD5'Length > 0
-                 and then not Wire_Core.Valid_Base64 (SSE_Key_MD5, 16))
+        or else not Valid_SSE_C_Group
+          (SSE_Algorithm, SSE_Key, SSE_Key_MD5)
         or else (SSE_Key'Length > 0
                  and then Flyology.HTTP.Scheme (Origin) /=
                    Flyology.HTTP.Secure_HTTPS)
       then
-         raise Invalid_Request with "invalid HeadObject parameters";
+         raise Invalid_Request with
+           "invalid " & Operation_Name & " parameters";
       end if;
       Add ("Bucket", Bucket);
       Add ("Key", Key);
@@ -1678,12 +1685,40 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Add ("ChecksumMode", "ENABLED");
       end if;
       return Result : Prepared_Request := Prepare_Model_Request
-        (Model.Head_Object_Operation, Origin, Style, Values, "", False,
+        (Modeled_Operation, Origin, Style, Values, "", False,
          SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
       do
-         Result.Operation := Head_Object_Operation;
+         Result.Operation := Typed_Operation;
       end return;
-   end Prepare_Head_Object;
+   end Prepare_Object_Read;
+
+   function Prepare_Head_Object
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Head_Object_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request is
+     (Prepare_Object_Read
+        (Model.Head_Object_Operation, Head_Object_Operation, "HeadObject",
+         Origin, Style, Bucket, Key, Parameters, Identity, Region,
+         Timestamp));
+
+   function Prepare_Get_Object
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Get_Object_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request is
+     (Prepare_Object_Read
+        (Model.Get_Object_Operation, Get_Object_Operation, "GetObject",
+         Origin, Style, Bucket, Key, Parameters, Identity, Region,
+         Timestamp));
 
    function Optional_Natural_Header
      (Value : String) return Optional_Natural is
@@ -1919,6 +1954,234 @@ package body Flyology.Object_Storage.Client.Low_Level is
       when Flyology.HTTP.Client.Response_Too_Large =>
          raise Invalid_Response with "HeadObject response contains a body";
    end Execute_Head_Object;
+
+   function Optional_Byte_Count_Header
+     (Value : String) return Optional_Byte_Count is
+   begin
+      if Value'Length = 0 then
+         return (Is_Set => False, Value => 0);
+      end if;
+      declare
+         Parsed : constant Wire_Core.Byte_Count_Result :=
+           Wire_Core.Parse_Byte_Count (Value);
+      begin
+         if not Parsed.Valid then
+            raise Invalid_Response with
+              "invalid GetObject Content-Length header";
+         end if;
+         return (Is_Set => True, Value => Parsed.Value);
+      end;
+   end Optional_Byte_Count_Header;
+
+   function Valid_Get_Object_Enum
+     (Value : US.Unbounded_String; Member : Positive) return Boolean
+   is
+      Text : constant String := US.To_String (Value);
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.Get_Object_Operation));
+      Shape : constant Model.Shape_Index :=
+        Model.Member_Shape (Output, Member);
+   begin
+      if Text'Length = 0 then
+         return True;
+      end if;
+      for Index in 1 .. Model.Enumeration_Count (Shape) loop
+         if Text = Model.Enumeration_Value (Shape, Index) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Valid_Get_Object_Enum;
+
+   procedure Validate_Get_Object_Headers (Value : Get_Object_Result) is
+   begin
+      if not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC32C, 4)
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC64NVME, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA1, 20)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA256, 32)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA512, 64)
+        or else not Valid_Optional_Checksum (Value.Checksum_MD5, 16)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH64, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH3, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH128, 16)
+        or else not Valid_Get_Object_Enum (Value.Checksum_Type, 19)
+        or else (US.Length (Value.SSE_Customer_Key_MD5) > 0
+                 and then not Wire_Core.Valid_Base64
+                   (US.To_String (Value.SSE_Customer_Key_MD5), 16))
+        or else not Valid_Get_Object_Enum
+          (Value.Server_Side_Encryption, 30)
+        or else (US.Length (Value.SSE_Customer_Algorithm) > 0
+                 and then US.To_String (Value.SSE_Customer_Algorithm) /=
+                   "AES256")
+        or else not Valid_Get_Object_Enum (Value.Storage_Class, 36)
+        or else not Valid_Get_Object_Enum (Value.Request_Charged, 37)
+        or else not Valid_Get_Object_Enum (Value.Replication_Status, 38)
+        or else not Valid_Get_Object_Enum (Value.Object_Lock_Mode, 41)
+        or else not Valid_Get_Object_Enum
+          (Value.Object_Lock_Legal_Hold_Status, 43)
+        or else (Value.Parts_Count.Is_Set
+                 and then Value.Parts_Count.Value not in 1 .. 10_000)
+        or else (Value.Tag_Count.Is_Set and then Value.Tag_Count.Value > 10)
+      then
+         raise Invalid_Response with "invalid GetObject response headers";
+      end if;
+   end Validate_Get_Object_Headers;
+
+   function Execute_Get_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Flyology.HTTP.Client.Response
+   is
+   begin
+      if Prepared.Operation /= Get_Object_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      return Flyology.HTTP.Client.Execute
+        (Client, Prepared.Message, Timeout, Token);
+   end Execute_Get_Object;
+
+   function Decode_Get_Object_Response_Head
+     (Response : in out Flyology.HTTP.Client.Response;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Head_Outcome
+   is
+      Status : constant Flyology.HTTP.Status_Code :=
+        Flyology.HTTP.Client.Status (Response);
+      Request_ID : constant String :=
+        Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+      Host_ID : constant String :=
+        Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+
+      function H (Name : String) return US.Unbounded_String is
+        (US.To_Unbounded_String
+           (Flyology.HTTP.Client.Header (Response, Name)));
+   begin
+      if Status not in 200 | 206 then
+         declare
+            Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+              Flyology.HTTP.Client.Read_All
+                (Response, Limits.Maximum_Document_Bytes, Token);
+            Text : constant String :=
+              Flyology.Bytes.To_Byte_String (Payload);
+         begin
+            if Whitespace_Only (Text) then
+               return
+                 (Kind   => Get_Object_Rejected,
+                  Status => Status,
+                  Error  => Head_Error
+                    ("GetObject", Status, Request_ID, Host_ID));
+            end if;
+            return
+              (Kind   => Get_Object_Rejected,
+               Status => Status,
+               Error  => Error_Response
+                 (Text, Request_ID, Host_ID, Limits));
+         end;
+      end if;
+
+      declare
+         Metadata : Metadata_Entry_Vectors.Vector;
+      begin
+         for Index in 1 .. Flyology.HTTP.Client.Header_Count (Response) loop
+            declare
+               Name : constant String := Ada.Characters.Handling.To_Lower
+                 (Flyology.HTTP.Client.Header_Name (Response, Index));
+               Prefix : constant String := "x-amz-meta-";
+            begin
+               if Name'Length > Prefix'Length
+                 and then Name (Name'First .. Name'First + Prefix'Length - 1)
+                   = Prefix
+               then
+                  Metadata.Append
+                    (Metadata_Entry'
+                       (Name => US.To_Unbounded_String
+                          (Name
+                             (Name'First + Prefix'Length .. Name'Last)),
+                        Value => US.To_Unbounded_String
+                          (Flyology.HTTP.Client.Header_Value
+                             (Response, Index))));
+               end if;
+            end;
+         end loop;
+
+         declare
+            Result : constant Get_Object_Result :=
+              (Delete_Marker => Optional_Boolean_Header
+                 (Flyology.HTTP.Client.Header
+                    (Response, "x-amz-delete-marker")),
+               Accept_Ranges => H ("accept-ranges"),
+               Expiration => H ("x-amz-expiration"),
+               Restore => H ("x-amz-restore"),
+               Last_Modified => H ("last-modified"),
+               Content_Length => Optional_Byte_Count_Header
+                 (Flyology.HTTP.Client.Header (Response, "content-length")),
+               Entity_Tag => H ("etag"),
+               Checksum_CRC32 => H ("x-amz-checksum-crc32"),
+               Checksum_CRC32C => H ("x-amz-checksum-crc32c"),
+               Checksum_CRC64NVME => H ("x-amz-checksum-crc64nvme"),
+               Checksum_SHA1 => H ("x-amz-checksum-sha1"),
+               Checksum_SHA256 => H ("x-amz-checksum-sha256"),
+               Checksum_SHA512 => H ("x-amz-checksum-sha512"),
+               Checksum_MD5 => H ("x-amz-checksum-md5"),
+               Checksum_XXHASH64 => H ("x-amz-checksum-xxhash64"),
+               Checksum_XXHASH3 => H ("x-amz-checksum-xxhash3"),
+               Checksum_XXHASH128 => H ("x-amz-checksum-xxhash128"),
+               Checksum_Type => H ("x-amz-checksum-type"),
+               Missing_Meta => Optional_Natural_Header
+                 (Flyology.HTTP.Client.Header
+                    (Response, "x-amz-missing-meta")),
+               Version_ID => H ("x-amz-version-id"),
+               Cache_Control => H ("cache-control"),
+               Content_Disposition => H ("content-disposition"),
+               Content_Encoding => H ("content-encoding"),
+               Content_Language => H ("content-language"),
+               Content_Range => H ("content-range"),
+               Content_Type => H ("content-type"),
+               Expires => H ("expires"),
+               Website_Redirect_Location =>
+                 H ("x-amz-website-redirect-location"),
+               Server_Side_Encryption =>
+                 H ("x-amz-server-side-encryption"),
+               Metadata => Metadata,
+               SSE_Customer_Algorithm => H
+                 ("x-amz-server-side-encryption-customer-algorithm"),
+               SSE_Customer_Key_MD5 => H
+                 ("x-amz-server-side-encryption-customer-key-md5"),
+               SSE_KMS_Key_ID => H
+                 ("x-amz-server-side-encryption-aws-kms-key-id"),
+               Bucket_Key_Enabled => Optional_Boolean_Header
+                 (Flyology.HTTP.Client.Header
+                    (Response,
+                     "x-amz-server-side-encryption-bucket-key-enabled")),
+               Storage_Class => H ("x-amz-storage-class"),
+               Request_Charged => H ("x-amz-request-charged"),
+               Replication_Status => H ("x-amz-replication-status"),
+               Parts_Count => Optional_Natural_Header
+                 (Flyology.HTTP.Client.Header
+                    (Response, "x-amz-mp-parts-count")),
+               Tag_Count => Optional_Natural_Header
+                 (Flyology.HTTP.Client.Header
+                    (Response, "x-amz-tagging-count")),
+               Object_Lock_Mode => H ("x-amz-object-lock-mode"),
+               Object_Lock_Retain_Until_Date =>
+                 H ("x-amz-object-lock-retain-until-date"),
+               Object_Lock_Legal_Hold_Status =>
+                 H ("x-amz-object-lock-legal-hold"));
+         begin
+            Validate_Get_Object_Headers (Result);
+            return (Kind => Object_Opened, Status => Status, Result => Result);
+         end;
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with "GetObject error exceeds XML limit";
+      when S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed GetObject error response";
+   end Decode_Get_Object_Response_Head;
 
    function Prepare_Delete_Bucket
      (Origin     : Flyology.HTTP.Origin;
@@ -2505,14 +2768,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
           (Parameters.Checksum_XXHASH128, 16)
         or else (Request_Payer'Length > 0
                  and then Request_Payer /= "requester")
-        or else ((SSE_Algorithm'Length > 0
-                  or else SSE_Key'Length > 0
-                  or else SSE_Key_MD5'Length > 0)
-                 and then (SSE_Algorithm'Length = 0
-                           or else SSE_Key'Length = 0
-                           or else SSE_Key_MD5'Length = 0))
-        or else (SSE_Key_MD5'Length > 0
-                 and then not Wire_Core.Valid_Base64 (SSE_Key_MD5, 16))
+        or else not Valid_SSE_C_Group
+          (SSE_Algorithm, SSE_Key, SSE_Key_MD5)
         or else (SSE_Key'Length > 0
                  and then Flyology.HTTP.Scheme (Origin) /=
                    Flyology.HTTP.Secure_HTTPS)
@@ -2758,17 +3015,18 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else Copy_Source'Length not in 1 .. 8_192
         or else Destination_SSE_Count not in 0 | 3
         or else Source_SSE_Count not in 0 | 3
+        or else not Valid_SSE_C_Group
+          (US.To_String (Parameters.SSE_Customer_Algorithm),
+           US.To_String (Parameters.SSE_Customer_Key),
+           US.To_String (Parameters.SSE_Customer_Key_MD5))
+        or else not Valid_SSE_C_Group
+          (US.To_String
+             (Parameters.Copy_Source_SSE_Customer_Algorithm),
+           US.To_String (Parameters.Copy_Source_SSE_Customer_Key),
+           US.To_String (Parameters.Copy_Source_SSE_Customer_Key_MD5))
         or else ((Destination_SSE_Count > 0 or else Source_SSE_Count > 0)
                  and then Flyology.HTTP.Scheme (Origin) /=
                    Flyology.HTTP.Secure_HTTPS)
-        or else (US.Length (Parameters.SSE_Customer_Key_MD5) > 0
-                 and then not Wire_Core.Valid_Base64
-                   (US.To_String (Parameters.SSE_Customer_Key_MD5), 16))
-        or else (US.Length
-                   (Parameters.Copy_Source_SSE_Customer_Key_MD5) > 0
-                 and then not Wire_Core.Valid_Base64
-                   (US.To_String
-                      (Parameters.Copy_Source_SSE_Customer_Key_MD5), 16))
         or else (Request_Payer'Length > 0
                  and then Request_Payer /= "requester")
         or else (Parameters.Source_Range.Is_Set
