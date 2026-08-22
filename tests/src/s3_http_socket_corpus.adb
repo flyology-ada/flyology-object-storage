@@ -903,9 +903,8 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Copy_Source => "source-bucket/source-key");
          Serve
            (HTTP_Response
-              ("206 Partial Content", "",
+              ("200 OK", "",
                "Content-Length: 4" & CRLF &
-               "Content-Range: bytes 1-4/42" & CRLF &
                "ETag: ""head-etag""" & CRLF &
                "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
                "Content-Type: application/test" & CRLF &
@@ -974,9 +973,8 @@ procedure S3_HTTP_Socket_Corpus is
             "HEAD", "/example-bucket/head-transfer-encoding");
          Serve
            (HTTP_Response
-              ("206 Partial Content", "",
+              ("200 OK", "",
                "Content-Length: 7" & CRLF &
-               "Content-Range: bytes 1-7/9" & CRLF &
                "x-amz-delete-marker: false" & CRLF &
                "x-amz-archive-status: ARCHIVE_ACCESS" & CRLF &
                "x-amz-checksum-crc32: AAAAAA==" & CRLF &
@@ -2082,7 +2080,7 @@ procedure S3_HTTP_Socket_Corpus is
                  Part_Number => (Is_Set => True, Value => 3));
          begin
             if Result.Kind /= Transfers.Object_Found
-              or else Result.Status /= 206
+              or else Result.Status /= 200
               or else Result.Bytes /= 4
               or else US.To_String (Result.Entity_Tag) /= """head-etag"""
               or else US.To_String (Result.Last_Modified) /=
@@ -2095,8 +2093,7 @@ procedure S3_HTTP_Socket_Corpus is
               or else US.To_String (Result.Checksum_Type) /= "FULL_OBJECT"
               or else US.To_String (Result.Details.Checksum_MD5) /=
                 "AAAAAAAAAAAAAAAAAAAAAA=="
-              or else US.To_String (Result.Details.Content_Range) /=
-                "bytes 1-4/42"
+              or else US.Length (Result.Details.Content_Range) /= 0
             then
                raise Program_Error with "high-level HeadObject mismatch";
             end if;
@@ -2195,7 +2192,7 @@ procedure S3_HTTP_Socket_Corpus is
                 (HTTP, Prepared, Timeout => 5.0);
          begin
             if Result.Kind /= Low_Level.Object_Found
-              or else Result.Status /= 206
+              or else Result.Status /= 200
               or else Result.Result.Content_Length /= 7
               or else US.To_String (Result.Result.Entity_Tag) /=
                 """typed-head"""

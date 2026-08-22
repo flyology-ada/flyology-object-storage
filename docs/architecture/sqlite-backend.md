@@ -44,6 +44,10 @@ same transaction. GetObjectAttributes selects object metadata, total count,
 and one bounded part page while holding the catalog operation gate. The
 multipart objects completed by an older development schema have no
 reconstructable per-part rows.
+HeadObject uses that same gated snapshot and evaluates its HTTP conditions
+before releasing the gate. Part selection is resolved from the returned
+`object_parts` page, so its size, total count, ETag, and modification time
+cannot mix object generations.
 
 Bounded bucket tags use binary unique keys, stable
 ordinals, and a cascading bucket foreign key. Put deletes the prior rows and

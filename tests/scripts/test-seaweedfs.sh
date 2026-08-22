@@ -71,12 +71,18 @@ fi
 
 FLYOLOGY_LIST_MULTIPART_UPLOADS_ORACLE_MODE=\
 seaweedfs-4.43-invalid-pagination \
+FLYOLOGY_HEAD_OBJECT_ORACLE_MODE=\
+seaweedfs-4.43-returns-whole-size-for-parts-and-range \
 "$SCRIPT_DIR/run-s3-implementation.sh" \
   "http://127.0.0.1:$PORT" \
   "http://host.docker.internal:$PORT" \
   "$BUCKET" "$ACCESS_KEY" "$SECRET_KEY" yes
 echo "SeaweedFS ListMultipartUploads oracle: skipped, pinned response has" \
   "invalid truncation markers and omits initiation metadata"
+echo "SeaweedFS HeadObject part oracle: pinned release returns whole-object" \
+  "Content-Length for valid partNumber requests and HTTP 400 for an absent" \
+  "part"
+echo "SeaweedFS HeadObject range oracle: pinned release ignores Range"
 
 if [ -n "${FLYOLOGY_S3T_BIN:-}" ]; then
   FLYOLOGY_S3_IMPLEMENTATION=seaweedfs \

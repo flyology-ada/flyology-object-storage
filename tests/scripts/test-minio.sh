@@ -62,12 +62,15 @@ fi
   "$BUCKET-slice" "$ACCESS_KEY" "$SECRET_KEY"
 
 FLYOLOGY_GET_OBJECT_ATTRIBUTES_ORACLE_MODE=minio-2025-lowercase-root \
+FLYOLOGY_HEAD_OBJECT_ORACLE_MODE=minio-2025-uses-206-for-part-and-range \
 "$SCRIPT_DIR/run-s3-implementation.sh" \
   "http://127.0.0.1:$PORT" \
   "http://host.docker.internal:$PORT" \
   "$BUCKET" "$ACCESS_KEY" "$SECRET_KEY" yes
 echo "MinIO GetObjectAttributes oracle: skipped, pinned response uses" \
   "a non-AWS lowercase root element"
+echo "MinIO HeadObject range/part oracle: pinned release returns HTTP 206" \
+  "and Content-Range instead of the AWS HTTP 200 response"
 
 if [ -n "${FLYOLOGY_S3T_BIN:-}" ]; then
   FLYOLOGY_S3_IMPLEMENTATION=minio \

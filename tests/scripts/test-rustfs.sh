@@ -66,12 +66,19 @@ fi
 
 FLYOLOGY_GET_OBJECT_ATTRIBUTES_ORACLE_MODE=\
 rustfs-rc3-missing-error-message \
+FLYOLOGY_HEAD_OBJECT_ORACLE_MODE=\
+rustfs-rc3-ignores-overrides-parts-and-range \
 "$SCRIPT_DIR/run-s3-implementation.sh" \
   "http://127.0.0.1:$PORT" \
   "http://host.docker.internal:$PORT" \
   "$BUCKET" "$ACCESS_KEY" "$SECRET_KEY" yes
 echo "RustFS GetObjectAttributes missing-key oracle: skipped, pinned" \
   "response omits the required Error Message member"
+echo "RustFS HeadObject response-override oracle: pinned release ignores" \
+  "the six override query controls"
+echo "RustFS HeadObject part oracle: pinned release ignores partNumber and" \
+  "does not return x-amz-mp-parts-count; an absent part returns HTTP 500"
+echo "RustFS HeadObject range oracle: pinned release ignores Range"
 
 if [ -n "${FLYOLOGY_S3T_BIN:-}" ]; then
   FLYOLOGY_S3_IMPLEMENTATION=rustfs \

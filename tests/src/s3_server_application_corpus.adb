@@ -1047,9 +1047,8 @@ procedure S3_Server_Application_Corpus is
             "HeadObject completed-part selection mismatch: " &
             Part_Response);
          Require
-           (Has (Ranged_Response, "HTTP/1.1 206 ")
-            and then Has
-              (Ranged_Response, "Content-Range: bytes 2-5/14" & CRLF)
+           (Has (Ranged_Response, "HTTP/1.1 200 ")
+            and then not Has (Ranged_Response, "Content-Range:")
             and then Has (Ranged_Response, "Content-Length: 4" & CRLF)
             and then Has
               (Ranged_Response, "x-amz-mp-parts-count: 1" & CRLF),
@@ -2626,8 +2625,8 @@ begin
             "400 Bad Request"),
          "HeadObject accepted duplicate conditional headers");
       Require
-        (Has (Range_Response, "HTTP/1.1 206 ")
-         and then Has (Range_Response, "Content-Range: bytes 1-4/11")
+        (Has (Range_Response, "HTTP/1.1 200 ")
+         and then not Has (Range_Response, "Content-Range:")
          and then Has (Range_Response, "Content-Length: 4" & CRLF)
          and then not Has (Range_Response, "hello world"),
          "HeadObject range response mismatch: " & Range_Response);

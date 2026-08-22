@@ -129,6 +129,37 @@ procedure S3_Implementation_Corpus is
       end if;
    end Check_Get_Object_Attributes;
 
+   type Head_Object_Oracle_Mode_Kind is
+     (Complete_Head_Object,
+      RustFS_RC3_Incomplete_Head_Object,
+      SeaweedFS_443_Whole_Size_Parts_And_Range,
+      MinIO_2025_Uses_206_For_Part_And_Range);
+
+   function Head_Object_Oracle_Mode return Head_Object_Oracle_Mode_Kind is
+      Name : constant String := "FLYOLOGY_HEAD_OBJECT_ORACLE_MODE";
+   begin
+      if not Ada.Environment_Variables.Exists (Name) then
+         return Complete_Head_Object;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "rustfs-rc3-ignores-overrides-parts-and-range"
+      then
+         return RustFS_RC3_Incomplete_Head_Object;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "seaweedfs-4.43-returns-whole-size-for-parts-and-range"
+      then
+         return SeaweedFS_443_Whole_Size_Parts_And_Range;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "minio-2025-uses-206-for-part-and-range"
+      then
+         return MinIO_2025_Uses_206_For_Part_And_Range;
+      else
+         raise Program_Error with "unknown HeadObject oracle mode";
+      end if;
+   end Head_Object_Oracle_Mode;
+
+   function Check_Head_Object_Overrides return Boolean is
+     (Head_Object_Oracle_Mode /= RustFS_RC3_Incomplete_Head_Object);
+
    type Upload_Source
      (Value : not null access constant String) is
      new HTTP_Client.Request_Body_Source with record
@@ -414,8 +445,6 @@ procedure S3_Implementation_Corpus is
             Parameters : Low_Level.Head_Object_Parameters;
          begin
             Parameters.If_Match := Baseline.Entity_Tag;
-            Parameters.Byte_Range_Header :=
-              US.To_Unbounded_String ("bytes=0-15");
             Parameters.Response_Cache_Control :=
               US.To_Unbounded_String ("no-store");
             Parameters.Response_Content_Disposition :=
@@ -428,9 +457,70 @@ procedure S3_Implementation_Corpus is
               US.To_Unbounded_String ("application/octet-stream");
             Parameters.Response_Expires := US.To_Unbounded_String
               ("Fri, 01 Jan 2099 00:00:00 GMT");
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Head_Object
+                   (Origin, Low_Level.Path_Style, Bucket, Key, Parameters,
+                    Identity, "us-east-1", Timestamp);
+               Outcome : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Execute_Head_Object
+                   (HTTP, Prepared, Timeout => 30.0);
+            begin
+               if Outcome.Kind /= Low_Level.Object_Found then
+                  raise Program_Error with
+                    "S3 implementation rejected HeadObject full surface: " &
+                    Outcome.Status'Image & " " &
+                    US.To_String (Outcome.Error.Code) & " " &
+                    US.To_String (Outcome.Error.Message);
+               elsif Outcome.Status /= 200
+                 or else Outcome.Result.Content_Length /=
+                   Flyology.Object_Storage.Byte_Count (Payload'Length)
+                 or else US.Length (Outcome.Result.Content_Range) /= 0
+                 or else
+                   (Check_Head_Object_Overrides
+                    and then
+                      (US.To_String (Outcome.Result.Cache_Control) /=
+                         "no-store"
+                       or else US.To_String
+                         (Outcome.Result.Content_Disposition) /= "attachment"
+                       or else US.To_String
+                         (Outcome.Result.Content_Encoding) /= "identity"
+                       or else US.To_String
+                         (Outcome.Result.Content_Language) /= "en-CA"
+                       or else US.To_String (Outcome.Result.Content_Type) /=
+                         "application/octet-stream"
+                       or else US.To_String (Outcome.Result.Expires) /=
+                         "Fri, 01 Jan 2099 00:00:00 GMT"))
+               then
+                  raise Program_Error with
+                    "S3 implementation HeadObject full request/result " &
+                    "surface mismatch: status=" & Outcome.Status'Image &
+                    " length=" & Outcome.Result.Content_Length'Image &
+                    " range=" &
+                    US.To_String (Outcome.Result.Content_Range) &
+                    " parts_set=" &
+                    Outcome.Result.Parts_Count.Is_Set'Image &
+                    " parts=" &
+                    (if Outcome.Result.Parts_Count.Is_Set
+                     then Outcome.Result.Parts_Count.Value'Image else "-") &
+                    " cache=" &
+                    US.To_String (Outcome.Result.Cache_Control) &
+                    " disposition=" & US.To_String
+                      (Outcome.Result.Content_Disposition) &
+                    " encoding=" &
+                    US.To_String (Outcome.Result.Content_Encoding) &
+                    " language=" &
+                    US.To_String (Outcome.Result.Content_Language) &
+                    " type=" & US.To_String (Outcome.Result.Content_Type) &
+                    " expires=" & US.To_String (Outcome.Result.Expires);
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Head_Object_Parameters;
+         begin
             Parameters.Version_ID := US.To_Unbounded_String ("null");
             Parameters.Request_Payer := US.To_Unbounded_String ("requester");
-            Parameters.Part_Number := (Is_Set => True, Value => 1);
             Parameters.Checksum_Mode := True;
             declare
                Prepared : constant Low_Level.Prepared_Request :=
@@ -442,28 +532,123 @@ procedure S3_Implementation_Corpus is
                    (HTTP, Prepared, Timeout => 30.0);
             begin
                if Outcome.Kind /= Low_Level.Object_Found
-                 or else Outcome.Status /= 206
-                 or else Outcome.Result.Content_Length /= 16
-                 or else US.To_String (Outcome.Result.Content_Range) /=
-                   "bytes 0-15/5242880"
-                 or else not Outcome.Result.Parts_Count.Is_Set
-                 or else Outcome.Result.Parts_Count.Value /= 2
-                 or else US.To_String (Outcome.Result.Cache_Control) /=
-                   "no-store"
-                 or else US.To_String
-                   (Outcome.Result.Content_Disposition) /= "attachment"
-                 or else US.To_String (Outcome.Result.Content_Encoding) /=
-                   "identity"
-                 or else US.To_String (Outcome.Result.Content_Language) /=
-                   "en-CA"
-                 or else US.To_String (Outcome.Result.Content_Type) /=
-                   "application/octet-stream"
-                 or else US.To_String (Outcome.Result.Expires) /=
-                   "Fri, 01 Jan 2099 00:00:00 GMT"
+                 or else Outcome.Status /= 200
                then
                   raise Program_Error with
-                    "S3 implementation HeadObject full request/result " &
-                    "surface mismatch";
+                    "S3 implementation HeadObject version/payer/checksum " &
+                    "policy mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Head_Object_Parameters;
+         begin
+            Parameters.Part_Number := (Is_Set => True, Value => 1);
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Head_Object
+                   (Origin, Low_Level.Path_Style, Bucket, Key, Parameters,
+                    Identity, "us-east-1", Timestamp);
+               Outcome : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Execute_Head_Object
+                   (HTTP, Prepared, Timeout => 30.0);
+            begin
+               if Outcome.Kind /= Low_Level.Object_Found then
+                  raise Program_Error with
+                    "S3 implementation HeadObject part one mismatch: " &
+                    "kind=" & Outcome.Kind'Image &
+                    " status=" & Outcome.Status'Image &
+                    " code=" & US.To_String (Outcome.Error.Code) &
+                    " message=" & US.To_String (Outcome.Error.Message);
+               elsif Outcome.Status /=
+                 (if Head_Object_Oracle_Mode =
+                      MinIO_2025_Uses_206_For_Part_And_Range
+                  then 206 else 200)
+                 or else
+                   (case Head_Object_Oracle_Mode is
+                      when Complete_Head_Object =>
+                        Outcome.Result.Content_Length /= 5 * 1_024 * 1_024
+                        or else not Outcome.Result.Parts_Count.Is_Set
+                        or else Outcome.Result.Parts_Count.Value /= 2
+                        or else US.Length
+                          (Outcome.Result.Content_Range) /= 0,
+                      when RustFS_RC3_Incomplete_Head_Object =>
+                        Outcome.Result.Content_Length /= Payload'Length
+                        or else Outcome.Result.Parts_Count.Is_Set
+                        or else US.Length
+                          (Outcome.Result.Content_Range) /= 0,
+                      when SeaweedFS_443_Whole_Size_Parts_And_Range =>
+                        Outcome.Result.Content_Length /= Payload'Length
+                        or else not Outcome.Result.Parts_Count.Is_Set
+                        or else Outcome.Result.Parts_Count.Value /= 2
+                        or else US.Length
+                          (Outcome.Result.Content_Range) /= 0,
+                      when MinIO_2025_Uses_206_For_Part_And_Range =>
+                        Outcome.Result.Content_Length /= 5 * 1_024 * 1_024
+                        or else not Outcome.Result.Parts_Count.Is_Set
+                        or else Outcome.Result.Parts_Count.Value /= 2
+                        or else US.To_String
+                          (Outcome.Result.Content_Range) /=
+                            "bytes 0-5242879/6291456")
+               then
+                  raise Program_Error with
+                    "S3 implementation HeadObject part one mismatch: " &
+                    "kind=" & Outcome.Kind'Image &
+                    " status=" & Outcome.Status'Image &
+                    " length=" & Outcome.Result.Content_Length'Image &
+                    " parts_set=" &
+                    Outcome.Result.Parts_Count.Is_Set'Image &
+                    " parts=" &
+                    (if Outcome.Result.Parts_Count.Is_Set
+                     then Outcome.Result.Parts_Count.Value'Image else "-");
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Head_Object_Parameters;
+         begin
+            Parameters.Byte_Range_Header :=
+              US.To_Unbounded_String ("bytes=0-15");
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Head_Object
+                   (Origin, Low_Level.Path_Style, Bucket, Key, Parameters,
+                    Identity, "us-east-1", Timestamp);
+               Outcome : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Execute_Head_Object
+                   (HTTP, Prepared, Timeout => 30.0);
+            begin
+               if Outcome.Kind /= Low_Level.Object_Found then
+                  raise Program_Error with
+                    "S3 implementation HeadObject range mismatch: " &
+                    "kind=" & Outcome.Kind'Image &
+                    " status=" & Outcome.Status'Image &
+                    " code=" & US.To_String (Outcome.Error.Code) &
+                    " message=" & US.To_String (Outcome.Error.Message);
+               elsif
+                 (case Head_Object_Oracle_Mode is
+                    when Complete_Head_Object =>
+                      Outcome.Status /= 200
+                      or else Outcome.Result.Content_Length /= 16
+                      or else US.Length (Outcome.Result.Content_Range) /= 0,
+                    when RustFS_RC3_Incomplete_Head_Object |
+                         SeaweedFS_443_Whole_Size_Parts_And_Range =>
+                      Outcome.Status /= 200
+                      or else Outcome.Result.Content_Length /= Payload'Length
+                      or else US.Length (Outcome.Result.Content_Range) /= 0,
+                    when MinIO_2025_Uses_206_For_Part_And_Range =>
+                      Outcome.Status /= 206
+                      or else Outcome.Result.Content_Length /= 16
+                      or else US.To_String (Outcome.Result.Content_Range) /=
+                        "bytes 0-15/6291456")
+               then
+                  raise Program_Error with
+                    "S3 implementation HeadObject range mismatch: " &
+                    "kind=" & Outcome.Kind'Image &
+                    " status=" & Outcome.Status'Image &
+                    " length=" & Outcome.Result.Content_Length'Image &
+                    " range=" &
+                    US.To_String (Outcome.Result.Content_Range);
                end if;
             end;
          end;
@@ -486,21 +671,37 @@ procedure S3_Implementation_Corpus is
             Outcome : constant Transfers.Head_Outcome :=
               Transfers.Head_Object
                 (HTTP, Origin, Bucket, Key, Identity,
-                 Version_ID => "null",
-                 If_Match => US.To_String (Baseline.Entity_Tag),
-                 Checksum_Mode => True,
-                 Byte_Range_Header => "bytes=0-15",
-                 Request_Payer => "requester",
                  Part_Number => (Is_Set => True, Value => 2),
                  Timeout => 30.0);
          begin
             if Outcome.Kind /= Transfers.Object_Found
-              or else Outcome.Status /= 206
-              or else Outcome.Bytes /= 16
-              or else US.To_String (Outcome.Details.Content_Range) /=
-                "bytes 0-15/1048576"
-              or else not Outcome.Details.Parts_Count.Is_Set
-              or else Outcome.Details.Parts_Count.Value /= 2
+              or else Outcome.Status /=
+                (if Head_Object_Oracle_Mode =
+                     MinIO_2025_Uses_206_For_Part_And_Range
+                 then 206 else 200)
+              or else
+                (case Head_Object_Oracle_Mode is
+                   when Complete_Head_Object =>
+                     Outcome.Bytes /= 1_024 * 1_024
+                     or else not Outcome.Details.Parts_Count.Is_Set
+                     or else Outcome.Details.Parts_Count.Value /= 2
+                     or else US.Length (Outcome.Details.Content_Range) /= 0,
+                   when RustFS_RC3_Incomplete_Head_Object =>
+                     Outcome.Bytes /= Payload'Length
+                     or else Outcome.Details.Parts_Count.Is_Set
+                     or else US.Length (Outcome.Details.Content_Range) /= 0,
+                   when SeaweedFS_443_Whole_Size_Parts_And_Range =>
+                     Outcome.Bytes /= Payload'Length
+                     or else not Outcome.Details.Parts_Count.Is_Set
+                     or else Outcome.Details.Parts_Count.Value /= 2
+                     or else US.Length (Outcome.Details.Content_Range) /= 0,
+                   when MinIO_2025_Uses_206_For_Part_And_Range =>
+                     Outcome.Bytes /= 1_024 * 1_024
+                     or else not Outcome.Details.Parts_Count.Is_Set
+                     or else Outcome.Details.Parts_Count.Value /= 2
+                     or else US.To_String
+                       (Outcome.Details.Content_Range) /=
+                         "bytes 5242880-6291455/6291456")
             then
                raise Program_Error with
                  "S3 implementation convenience HeadObject part two " &
@@ -545,10 +746,18 @@ procedure S3_Implementation_Corpus is
                  Timeout => 30.0);
          begin
             if Outcome.Kind /= Transfers.Head_Rejected
-              or else Outcome.Status /= 416
+              or else
+                Outcome.Status /=
+                  (case Head_Object_Oracle_Mode is
+                     when Complete_Head_Object => 416,
+                     when RustFS_RC3_Incomplete_Head_Object => 500,
+                     when SeaweedFS_443_Whole_Size_Parts_And_Range => 400,
+                     when MinIO_2025_Uses_206_For_Part_And_Range => 416)
             then
                raise Program_Error with
-                 "S3 implementation HeadObject absent part mismatch";
+                 "S3 implementation HeadObject absent part mismatch: " &
+                 "kind=" & Outcome.Kind'Image &
+                 " status=" & Outcome.Status'Image;
             end if;
          end;
          declare

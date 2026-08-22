@@ -202,7 +202,8 @@ package Flyology.Object_Storage.Client.Transfers is
    --  @param If_Modified_Since Optional HTTP-date precondition
    --  @param If_None_Match Optional weak entity-tag precondition
    --  @param If_Unmodified_Since Optional HTTP-date precondition
-   --  @param Byte_Range_Header Optional single bytes range
+   --  @param Byte_Range_Header Optional single bytes range; AWS returns 200
+   --  with the selected Content-Length and no Content-Range
    --  @param Response_Cache_Control Optional response header override
    --  @param Response_Content_Disposition Optional response header override
    --  @param Response_Content_Encoding Optional response header override

@@ -3460,13 +3460,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                    (X, Invalid_Range, False, Target_Text);
                                  return;
                               end if;
-                              Apps.Set_Header
-                                (X, "Content-Range",
-                                 "bytes " & Decimal (Resolved.First) & "-" &
-                                 Decimal (Resolved.Last) & "/" &
-                                 Decimal (Info.Size));
                               Apps.Begin_Stream
-                                (X, 206,
+                                (X, 200,
                                  (if Object_Read_Request
                                        .Has_Response_Content_Type
                                   then US.To_String

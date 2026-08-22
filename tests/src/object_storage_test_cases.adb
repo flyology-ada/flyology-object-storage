@@ -9417,7 +9417,6 @@ package body Object_Storage_Test_Cases is
          Headers.Last_Modified :=
            US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
          Headers.Content_Length := 9;
-         Headers.Content_Range := US.To_Unbounded_String ("bytes 0-8/9");
          Headers.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
          Headers.Checksum_CRC32C := US.To_Unbounded_String ("AAAAAA==");
          Headers.Checksum_CRC64NVME :=
@@ -9475,12 +9474,22 @@ package body Object_Storage_Test_Cases is
            US.To_Unbounded_String ("ON");
          declare
             Outcome : constant Low_Level.Head_Object_Outcome :=
-              Low_Level.Decode_Head_Object_Response (206, "", Headers);
+              Low_Level.Decode_Head_Object_Response (200, "", Headers);
          begin
             Assert
               (Outcome.Kind = Low_Level.Object_Found
                and then Outcome.Result = Headers,
                "typed HeadObject complete response headers");
+         end;
+         Headers.Content_Range := US.To_Unbounded_String ("bytes 0-8/9");
+         declare
+            Outcome : constant Low_Level.Head_Object_Outcome :=
+              Low_Level.Decode_Head_Object_Response (206, "", Headers);
+         begin
+            Assert
+              (Outcome.Kind = Low_Level.Object_Found
+               and then Outcome.Result = Headers,
+               "typed HeadObject reference 206 compatibility");
          end;
       end;
 

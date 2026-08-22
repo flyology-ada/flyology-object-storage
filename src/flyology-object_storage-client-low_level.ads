@@ -692,6 +692,10 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  AWS returns 200 for successful Range and partNumber HEAD requests; only
+   --  Content_Length is narrowed and Content_Range remains absent. The decoder
+   --  also accepts a coherent 206 plus Content_Range from pinned compatible
+   --  implementations whose wire behavior diverges from AWS.
    function Decode_Head_Object_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;

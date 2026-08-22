@@ -95,6 +95,14 @@ modeled enums, entity tags, dates, Accept-Ranges, and ranged response framing
 are validated before success is returned. SSE-C request keys are rejected on
 plaintext HTTP, and any response-body octet is a protocol failure for HEAD.
 
+On the Flyology server, HeadObject reuses the atomic
+`Object_Attribute_Snapshot` owned by GetObjectAttributes. Conditions, object
+metadata, total completed-part count, and the selected part boundary therefore
+come from one generation. Ordinary objects expose implicit part one; completed
+multipart objects expose their exact persisted part sizes and count. The
+unversioned selectors absent and `null` are supported, while real version IDs
+and encrypted SSE-C storage remain explicit cross-cutting exclusions.
+
 ## Multi-subject transfers
 
 `Transfer_Many` accepts one ordered array containing uploads and downloads and
