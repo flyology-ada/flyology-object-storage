@@ -36,6 +36,7 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
+   use type Low_Level.Upload_Part_Copy_Outcome_Kind;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
 
@@ -246,6 +247,72 @@ procedure S3_Implementation_Corpus is
             end if;
          end;
       end Require_Listed_Object;
+
+      procedure Copy_With_Multipart is
+         Copy_Key : constant String := Key & "-copy-part";
+         Prepared_Create : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_Create_Multipart_Upload
+             (Origin, Low_Level.Path_Style, Bucket, Copy_Key, Identity,
+              "us-east-1", Timestamp);
+         Created : constant Low_Level.Create_Multipart_Outcome :=
+           Low_Level.Execute_Create_Multipart_Upload
+             (HTTP, Prepared_Create, Timeout => 30.0);
+      begin
+         if Created.Kind /= Low_Level.Created then
+            raise Program_Error with
+              "S3 implementation rejected copy-part initiation";
+         end if;
+         declare
+            Upload_ID : constant String :=
+              US.To_String (Created.Result.Upload_ID);
+            Parameters : Low_Level.Upload_Part_Copy_Parameters;
+         begin
+            Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
+            Parameters.Copy_Source :=
+              US.To_Unbounded_String (Bucket & "/" & Key);
+            declare
+               Prepared_Copy : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Upload_Part_Copy
+                   (Origin, Low_Level.Path_Style, Bucket, Copy_Key,
+                    Parameters, Identity, "us-east-1", Timestamp);
+               Copied : constant Low_Level.Upload_Part_Copy_Outcome :=
+                 Low_Level.Execute_Upload_Part_Copy
+                   (HTTP, Prepared_Copy, Timeout => 60.0);
+            begin
+               if Copied.Kind /= Low_Level.Part_Copied then
+                  raise Program_Error with
+                    "S3 implementation rejected UploadPartCopy";
+               end if;
+               declare
+                  Completion : Multipart.Complete_Multipart_Upload_Request;
+               begin
+                  Completion.Parts.Append
+                    (Multipart.Completed_Part'
+                       (Number     => 1,
+                        Entity_Tag => Copied.Result.Copy_Part.Entity_Tag,
+                        others     => <>));
+                  declare
+                     Prepared_Complete : constant Low_Level.Prepared_Request :=
+                       Low_Level.Prepare_Complete_Multipart_Upload
+                         (Origin, Low_Level.Path_Style, Bucket, Copy_Key,
+                          Upload_ID, Completion, Identity, "us-east-1",
+                          Timestamp);
+                     Completed : constant
+                       Low_Level.Complete_Multipart_Outcome :=
+                         Low_Level.Execute_Complete_Multipart_Upload
+                           (HTTP, Prepared_Complete, Timeout => 30.0);
+                  begin
+                     if Completed.Kind /= Low_Level.Completed
+                       or else US.To_String (Completed.Result.Key) /= Copy_Key
+                     then
+                        raise Program_Error with
+                          "S3 implementation rejected copied-part completion";
+                     end if;
+                  end;
+               end;
+            end;
+         end;
+      end Copy_With_Multipart;
    begin
       HTTP_Client.Configure (HTTP, Origin);
       declare
@@ -335,6 +402,7 @@ procedure S3_Implementation_Corpus is
          end;
       end;
       Require_Listed_Object;
+      Copy_With_Multipart;
       Upload_High_Level_File;
       declare
          Abort_Key : constant String := Key & "-aborted";
@@ -596,6 +664,8 @@ begin
       elsif Ada.Command_Line.Argument (4) = "cleanup" then
          Delete_One (Origin, Bucket, "native-object", Timestamp);
          Delete_One
+           (Origin, Bucket, "native-object-copy-part", Timestamp);
+         Delete_One
            (Origin, Bucket, "native-object-high level+%25", Timestamp);
          declare
             task Lightweight_Client is
@@ -606,6 +676,8 @@ begin
             begin
                Delete_One
                  (Origin, Bucket, "lightweight-object", Timestamp);
+               Delete_One
+                 (Origin, Bucket, "lightweight-object-copy-part", Timestamp);
                Delete_One
                  (Origin, Bucket,
                   "lightweight-object-high level+%25", Timestamp);

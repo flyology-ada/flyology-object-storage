@@ -604,6 +604,91 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Upload_Part_Outcome;
 
+   type Optional_Copy_Source_Range is record
+      Is_Set : Boolean := False;
+      First  : Byte_Count := 0;
+      Last   : Byte_Count := 0;
+   end record;
+
+   --  Every modeled UploadPartCopy request member. Copy_Source is the exact
+   --  x-amz-copy-source value, including any caller-selected version query.
+   type Upload_Part_Copy_Parameters is record
+      Part_Number       : S3.Core.Part_Number := S3.Core.Part_Number'First;
+      Upload_ID         : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source       : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_If_Match : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_If_Modified_Since : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_If_None_Match : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_If_Unmodified_Since :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Source_Range      : Optional_Copy_Source_Range;
+      SSE_Customer_Algorithm : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key       : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5   : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_SSE_Customer_Algorithm :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_SSE_Customer_Key :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_SSE_Customer_Key_MD5 :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Source_Bucket_Owner :
+        Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_Upload_Part_Copy
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Upload_Part_Copy_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type Upload_Part_Copy_Result is record
+      Copy_Source_Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Part              : S3.Multipart.Copy_Part_Result;
+      Server_Side_Encryption : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Algorithm : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5   : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID         : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled     : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Charged        : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Upload_Part_Copy_Outcome_Kind is
+     (Part_Copied, Copy_Part_Rejected);
+
+   type Upload_Part_Copy_Outcome
+     (Kind : Upload_Part_Copy_Outcome_Kind := Copy_Part_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Part_Copied =>
+            Result : Upload_Part_Copy_Result;
+         when Copy_Part_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Upload_Part_Copy_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Upload_Part_Copy_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Upload_Part_Copy_Outcome;
+
+   function Execute_Upload_Part_Copy
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Upload_Part_Copy_Outcome;
+
 private
    Maximum_Credential_Bytes : constant := 1_024;
    Maximum_Session_Token_Bytes : constant := 8_192;
@@ -633,7 +718,8 @@ private
       Create_Multipart_Operation,
       Complete_Multipart_Operation,
       Abort_Multipart_Operation,
-      Upload_Part_Operation);
+      Upload_Part_Operation,
+      Upload_Part_Copy_Operation);
 
    type Prepared_Request is record
       Operation : Operation_Kind := List_Objects_V2_Operation;

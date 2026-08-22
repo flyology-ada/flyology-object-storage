@@ -3214,6 +3214,7 @@ package body Object_Storage_Test_Cases is
       use type Low_Level.Complete_Multipart_Outcome_Kind;
       use type Low_Level.Abort_Multipart_Outcome_Kind;
       use type Low_Level.Upload_Part_Outcome_Kind;
+      use type Low_Level.Upload_Part_Copy_Outcome_Kind;
       LF : constant Character := Character'Val (10);
       Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
         ("AKIAIOSFODNN7EXAMPLE",
@@ -3504,6 +3505,140 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "invalid UploadPart boolean header was accepted");
+      end;
+
+      declare
+         Parameters : Low_Level.Upload_Part_Copy_Parameters;
+      begin
+         Parameters.Part_Number := 9;
+         Parameters.Upload_ID := US.To_Unbounded_String ("upload+/=");
+         Parameters.Copy_Source :=
+           US.To_Unbounded_String ("source-bucket/source-key");
+         Parameters.Copy_Source_If_Match :=
+           US.To_Unbounded_String ("""source-etag""");
+         Parameters.Source_Range :=
+           (Is_Set => True, First => 5, Last => 9);
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Upload_Part_Copy
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "photos/a b+%",
+                 Parameters, Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket/photos/a%20b%2B%25?partNumber=9&" &
+                 "uploadId=upload%2B%2F%3D",
+               "UploadPartCopy exact wire target");
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Low_Level.Canonical_Request (Prepared),
+                  "x-amz-copy-source:source-bucket/source-key") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Canonical_Request (Prepared),
+                  "x-amz-copy-source-range:bytes=5-9") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Signed_Headers (Prepared),
+                  "x-amz-copy-source-if-match") > 0,
+               "UploadPartCopy modeled headers are signed");
+         end;
+      end;
+
+      declare
+         Parameters : Low_Level.Upload_Part_Copy_Parameters;
+         Raised : Boolean := False;
+      begin
+         Parameters.Upload_ID := US.To_Unbounded_String ("upload");
+         Parameters.Copy_Source :=
+           US.To_Unbounded_String ("source-bucket/source-key");
+         Parameters.Source_Range :=
+           (Is_Set => True,
+            First  => 0,
+            Last   =>
+              Flyology.Object_Storage.S3.Core.Maximum_Part_Size);
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Upload_Part_Copy
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "UploadPartCopy accepted a 5 GiB+1 range");
+      end;
+
+      declare
+         Headers : Low_Level.Upload_Part_Copy_Result;
+      begin
+         Headers.Copy_Source_Version_ID := US.To_Unbounded_String ("v1");
+         Headers.Bucket_Key_Enabled := US.To_Unbounded_String ("true");
+         Headers.Request_Charged := US.To_Unbounded_String ("requester");
+         declare
+            Outcome : constant Low_Level.Upload_Part_Copy_Outcome :=
+              Low_Level.Decode_Upload_Part_Copy_Response
+                (200,
+                 "<CopyPartResult>" &
+                 "<LastModified>2026-08-21T17:00:00.000Z</LastModified>" &
+                 "<ETag>&quot;copied&quot;</ETag>" &
+                 "<ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+                 "</CopyPartResult>", Headers);
+         begin
+            Assert
+              (Outcome.Kind = Low_Level.Part_Copied
+               and then US.To_String
+                 (Outcome.Result.Copy_Part.Entity_Tag) = """copied"""
+               and then US.To_String
+                 (Outcome.Result.Copy_Source_Version_ID) = "v1",
+               "typed UploadPartCopy success response");
+         end;
+      end;
+
+      declare
+         Headers : Low_Level.Upload_Part_Copy_Result;
+         Outcome : constant Low_Level.Upload_Part_Copy_Outcome :=
+           Low_Level.Decode_Upload_Part_Copy_Response
+             (200, "<Error><Code>InternalError</Code>" &
+              "<Message>late copy failure</Message></Error>", Headers,
+              "request-header");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Copy_Part_Rejected
+            and then Outcome.Status = 200
+            and then US.To_String (Outcome.Error.Code) = "InternalError"
+            and then US.To_String (Outcome.Error.Request_ID) =
+              "request-header",
+            "embedded HTTP-200 UploadPartCopy error response");
+      end;
+
+      declare
+         Headers : Low_Level.Upload_Part_Copy_Result;
+         Raised  : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Upload_Part_Copy_Outcome :=
+                 Low_Level.Decode_Upload_Part_Copy_Response
+                   (200, "<CopyPartResult><ETag>missing-date</ETag>" &
+                    "</CopyPartResult>", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "incomplete UploadPartCopy success was accepted");
       end;
 
       declare

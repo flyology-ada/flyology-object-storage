@@ -567,7 +567,8 @@ package body Flyology.Object_Storage.S3.Multipart is
       return US.To_String (Result);
    end Serialize_Complete_Request;
 
-   type Result_Kind is (Create_Result_Kind, Complete_Result_Kind);
+   type Result_Kind is
+     (Create_Result_Kind, Complete_Result_Kind, Copy_Part_Result_Kind);
 
    type Result_Field is
      (No_Result_Field,
@@ -576,6 +577,7 @@ package body Flyology.Object_Storage.S3.Multipart is
       Key_Result_Field,
       Upload_ID_Result_Field,
       Entity_Tag_Result_Field,
+      Last_Modified_Result_Field,
       CRC32_Result_Field,
       CRC32C_Result_Field,
       CRC64NVME_Result_Field,
@@ -594,6 +596,7 @@ package body Flyology.Object_Storage.S3.Multipart is
      new XML.Event_Handler with record
       Create_Value   : Create_Multipart_Upload_Result;
       Complete_Value : Complete_Multipart_Upload_Result;
+      Copy_Part_Value : Copy_Part_Result;
       Text_Value     : US.Unbounded_String;
       Depth          : Natural := 0;
       Ignore_Depth   : Natural := 0;
@@ -637,6 +640,17 @@ package body Flyology.Object_Storage.S3.Multipart is
       elsif Local_Name = "ChecksumType" then Checksum_Type_Result_Field
       else No_Result_Field);
 
+   function Copy_Part_Field (Local_Name : String) return Result_Field is
+     (if Local_Name = "LastModified" then Last_Modified_Result_Field
+      elsif Complete_Field (Local_Name) in
+        Entity_Tag_Result_Field | CRC32_Result_Field |
+        CRC32C_Result_Field | CRC64NVME_Result_Field |
+        SHA1_Result_Field | SHA256_Result_Field | SHA512_Result_Field |
+        MD5_Result_Field | XXHASH64_Result_Field | XXHASH3_Result_Field |
+        XXHASH128_Result_Field
+      then Complete_Field (Local_Name)
+      else No_Result_Field);
+
    overriding procedure Start_Element
      (Item : in out Result_Handler; Local_Name : String)
    is
@@ -653,19 +667,24 @@ package body Flyology.Object_Storage.S3.Multipart is
              and then Local_Name /= "InitiateMultipartUploadResult")
            or else (Item.Kind = Complete_Result_Kind
                     and then Local_Name /= "CompleteMultipartUploadResult")
+           or else (Item.Kind = Copy_Part_Result_Kind
+                    and then Local_Name /= "CopyPartResult")
          then
             raise Malformed_Multipart with "wrong multipart result root";
          end if;
       elsif Item.Depth = 2 then
-         if Item.Kind = Create_Result_Kind then
-            Selected :=
-              (if Local_Name = "Bucket" then Bucket_Result_Field
-               elsif Local_Name = "Key" then Key_Result_Field
-               elsif Local_Name = "UploadId" then Upload_ID_Result_Field
-               else No_Result_Field);
-         else
-            Selected := Complete_Field (Local_Name);
-         end if;
+         case Item.Kind is
+            when Create_Result_Kind =>
+               Selected :=
+                 (if Local_Name = "Bucket" then Bucket_Result_Field
+                  elsif Local_Name = "Key" then Key_Result_Field
+                  elsif Local_Name = "UploadId" then Upload_ID_Result_Field
+                  else No_Result_Field);
+            when Complete_Result_Kind =>
+               Selected := Complete_Field (Local_Name);
+            when Copy_Part_Result_Kind =>
+               Selected := Copy_Part_Field (Local_Name);
+         end case;
          if Selected = No_Result_Field then
             Item.Ignore_Depth := Item.Depth;
          else
@@ -708,27 +727,73 @@ package body Flyology.Object_Storage.S3.Multipart is
          when Location_Result_Field =>
             Item.Complete_Value.Location := Item.Text_Value;
          when Entity_Tag_Result_Field =>
-            Item.Complete_Value.Entity_Tag := Item.Text_Value;
+            if Item.Kind = Complete_Result_Kind then
+               Item.Complete_Value.Entity_Tag := Item.Text_Value;
+            else
+               Item.Copy_Part_Value.Entity_Tag := Item.Text_Value;
+            end if;
+         when Last_Modified_Result_Field =>
+            Item.Copy_Part_Value.Last_Modified := Item.Text_Value;
          when CRC32_Result_Field =>
-            Item.Complete_Value.Checksum_CRC32 := Item.Text_Value;
+            if Item.Kind = Complete_Result_Kind then
+               Item.Complete_Value.Checksum_CRC32 := Item.Text_Value;
+            else
+               Item.Copy_Part_Value.Checksum_CRC32 := Item.Text_Value;
+            end if;
          when CRC32C_Result_Field =>
-            Item.Complete_Value.Checksum_CRC32C := Item.Text_Value;
+            if Item.Kind = Complete_Result_Kind then
+               Item.Complete_Value.Checksum_CRC32C := Item.Text_Value;
+            else
+               Item.Copy_Part_Value.Checksum_CRC32C := Item.Text_Value;
+            end if;
          when CRC64NVME_Result_Field =>
-            Item.Complete_Value.Checksum_CRC64NVME := Item.Text_Value;
+            if Item.Kind = Complete_Result_Kind then
+               Item.Complete_Value.Checksum_CRC64NVME := Item.Text_Value;
+            else
+               Item.Copy_Part_Value.Checksum_CRC64NVME := Item.Text_Value;
+            end if;
          when SHA1_Result_Field =>
-            Item.Complete_Value.Checksum_SHA1 := Item.Text_Value;
+            if Item.Kind = Complete_Result_Kind then
+               Item.Complete_Value.Checksum_SHA1 := Item.Text_Value;
+            else
+               Item.Copy_Part_Value.Checksum_SHA1 := Item.Text_Value;
+            end if;
          when SHA256_Result_Field =>
-            Item.Complete_Value.Checksum_SHA256 := Item.Text_Value;
+            if Item.Kind = Complete_Result_Kind then
+               Item.Complete_Value.Checksum_SHA256 := Item.Text_Value;
+            else
+               Item.Copy_Part_Value.Checksum_SHA256 := Item.Text_Value;
+            end if;
          when SHA512_Result_Field =>
-            Item.Complete_Value.Checksum_SHA512 := Item.Text_Value;
+            if Item.Kind = Complete_Result_Kind then
+               Item.Complete_Value.Checksum_SHA512 := Item.Text_Value;
+            else
+               Item.Copy_Part_Value.Checksum_SHA512 := Item.Text_Value;
+            end if;
          when MD5_Result_Field =>
-            Item.Complete_Value.Checksum_MD5 := Item.Text_Value;
+            if Item.Kind = Complete_Result_Kind then
+               Item.Complete_Value.Checksum_MD5 := Item.Text_Value;
+            else
+               Item.Copy_Part_Value.Checksum_MD5 := Item.Text_Value;
+            end if;
          when XXHASH64_Result_Field =>
-            Item.Complete_Value.Checksum_XXHASH64 := Item.Text_Value;
+            if Item.Kind = Complete_Result_Kind then
+               Item.Complete_Value.Checksum_XXHASH64 := Item.Text_Value;
+            else
+               Item.Copy_Part_Value.Checksum_XXHASH64 := Item.Text_Value;
+            end if;
          when XXHASH3_Result_Field =>
-            Item.Complete_Value.Checksum_XXHASH3 := Item.Text_Value;
+            if Item.Kind = Complete_Result_Kind then
+               Item.Complete_Value.Checksum_XXHASH3 := Item.Text_Value;
+            else
+               Item.Copy_Part_Value.Checksum_XXHASH3 := Item.Text_Value;
+            end if;
          when XXHASH128_Result_Field =>
-            Item.Complete_Value.Checksum_XXHASH128 := Item.Text_Value;
+            if Item.Kind = Complete_Result_Kind then
+               Item.Complete_Value.Checksum_XXHASH128 := Item.Text_Value;
+            else
+               Item.Copy_Part_Value.Checksum_XXHASH128 := Item.Text_Value;
+            end if;
          when Checksum_Type_Result_Field =>
             Item.Complete_Value.Checksum_Type := Item.Text_Value;
          when No_Result_Field =>
@@ -787,6 +852,25 @@ package body Flyology.Object_Storage.S3.Multipart is
       end if;
    end Validate;
 
+   procedure Validate (Value : Copy_Part_Result) is
+   begin
+      if US.Length (Value.Entity_Tag) = 0
+        or else US.Length (Value.Last_Modified) = 0
+      then
+         raise Malformed_Multipart with "incomplete copy part result";
+      end if;
+      Validate_Checksum (Value.Checksum_CRC32, 4);
+      Validate_Checksum (Value.Checksum_CRC32C, 4);
+      Validate_Checksum (Value.Checksum_CRC64NVME, 8);
+      Validate_Checksum (Value.Checksum_SHA1, 20);
+      Validate_Checksum (Value.Checksum_SHA256, 32);
+      Validate_Checksum (Value.Checksum_SHA512, 64);
+      Validate_Checksum (Value.Checksum_MD5, 16);
+      Validate_Checksum (Value.Checksum_XXHASH64, 8);
+      Validate_Checksum (Value.Checksum_XXHASH3, 8);
+      Validate_Checksum (Value.Checksum_XXHASH128, 16);
+   end Validate;
+
    function Parse_Create_Result
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
@@ -829,6 +913,21 @@ package body Flyology.Object_Storage.S3.Multipart is
       when XML.XML_Error =>
          raise Malformed_Multipart with "malformed complete multipart result";
    end Parse_Complete_Result;
+
+   function Parse_Copy_Part_Result
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Copy_Part_Result
+   is
+      Handler : aliased Result_Handler (Copy_Part_Result_Kind);
+   begin
+      XML.Parse (Document, Handler, Limits);
+      Validate (Handler.Copy_Part_Value);
+      return Handler.Copy_Part_Value;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Multipart with "malformed copy part result";
+   end Parse_Copy_Part_Result;
 
    function Result_Document (Root, Content : String) return String is
      ("<?xml version=""1.0"" encoding=""UTF-8""?>" &
@@ -898,5 +997,40 @@ package body Flyology.Object_Storage.S3.Multipart is
       return Result_Document
         ("CompleteMultipartUploadResult", US.To_String (Content));
    end Serialize_Complete_Result;
+
+   function Serialize_Copy_Part_Result
+     (Value : Copy_Part_Result) return String
+   is
+      Content : US.Unbounded_String;
+   begin
+      Validate (Value);
+      Append_Optional
+        (Content, "LastModified", US.To_String (Value.Last_Modified));
+      Append_Optional (Content, "ETag", US.To_String (Value.Entity_Tag));
+      Append_Optional
+        (Content, "ChecksumCRC32", US.To_String (Value.Checksum_CRC32));
+      Append_Optional
+        (Content, "ChecksumCRC32C", US.To_String (Value.Checksum_CRC32C));
+      Append_Optional
+        (Content, "ChecksumCRC64NVME",
+         US.To_String (Value.Checksum_CRC64NVME));
+      Append_Optional
+        (Content, "ChecksumSHA1", US.To_String (Value.Checksum_SHA1));
+      Append_Optional
+        (Content, "ChecksumSHA256", US.To_String (Value.Checksum_SHA256));
+      Append_Optional
+        (Content, "ChecksumSHA512", US.To_String (Value.Checksum_SHA512));
+      Append_Optional
+        (Content, "ChecksumMD5", US.To_String (Value.Checksum_MD5));
+      Append_Optional
+        (Content, "ChecksumXXHASH64",
+         US.To_String (Value.Checksum_XXHASH64));
+      Append_Optional
+        (Content, "ChecksumXXHASH3", US.To_String (Value.Checksum_XXHASH3));
+      Append_Optional
+        (Content, "ChecksumXXHASH128",
+         US.To_String (Value.Checksum_XXHASH128));
+      return Result_Document ("CopyPartResult", US.To_String (Content));
+   end Serialize_Copy_Part_Result;
 
 end Flyology.Object_Storage.S3.Multipart;
