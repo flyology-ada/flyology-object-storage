@@ -2443,7 +2443,8 @@ package body Object_Storage_Test_Cases is
                  ("2026-08-21T00:00:00.000Z"),
                Entity_Tag     => US.To_Unbounded_String ("&quot;etag&quot;"),
                Size           => 9,
-               Storage_Class  => US.To_Unbounded_String ("STANDARD")));
+               Storage_Class  => US.To_Unbounded_String ("STANDARD"),
+               others         => <>));
          Value.Common_Prefixes.Append
            (US.To_Unbounded_String ("a&b/"));
          declare
@@ -2491,18 +2492,51 @@ package body Object_Storage_Test_Cases is
              ("<ListBucketResult><Name>bucket</Name><Prefix>logs/</Prefix>" &
               "<Marker>before</Marker><MaxKeys>2</MaxKeys>" &
               "<IsTruncated>false</IsTruncated>" &
-              "<Contents><Key>logs/a</Key><Size>9223372036854775807" &
-              "</Size><Owner><ID>ignored</ID></Owner></Contents>" &
+              "<Contents><Key>logs/a</Key>" &
+              "<ChecksumAlgorithm>CRC32</ChecksumAlgorithm>" &
+              "<ChecksumAlgorithm>SHA256</ChecksumAlgorithm>" &
+              "<ChecksumType>FULL_OBJECT</ChecksumType>" &
+              "<Size>9223372036854775807</Size>" &
+              "<StorageClass>STANDARD</StorageClass>" &
+              "<Owner><DisplayName>owner</DisplayName><ID>owner-id</ID>" &
+              "</Owner><RestoreStatus><IsRestoreInProgress>false" &
+              "</IsRestoreInProgress><RestoreExpiryDate>" &
+              "Fri, 21 Aug 2026 17:00:00 GMT</RestoreExpiryDate>" &
+              "</RestoreStatus></Contents>" &
               "<Future><Nested>ignored</Nested></Future>" &
               "</ListBucketResult>");
+         Round_Trip : constant Listings.List_Objects_Result :=
+           Listings.Parse_List_Objects
+             (Listings.Serialize_List_Objects (Parsed));
       begin
          Assert
            (not Parsed.Is_Truncated
             and then US.Length (Parsed.Next_Marker) = 0
             and then Parsed.Contents.Length = 1
             and then Parsed.Contents.First_Element.Size =
-              Flyology.Object_Storage.Byte_Count'Last,
-            "ListObjects final page and extension parsing");
+              Flyology.Object_Storage.Byte_Count'Last
+            and then Parsed.Contents.First_Element.
+              Checksum_Algorithms.Length = 2
+            and then US.To_String
+              (Parsed.Contents.First_Element.Checksum_Type) = "FULL_OBJECT"
+            and then Parsed.Contents.First_Element.Has_Owner
+            and then US.To_String
+              (Parsed.Contents.First_Element.Owner.ID) = "owner-id"
+            and then Parsed.Contents.First_Element.Has_Restore_Status
+            and then Parsed.Contents.First_Element.Restore_Status.
+              Has_Is_Restore_In_Progress
+            and then not Parsed.Contents.First_Element.Restore_Status.
+              Is_Restore_In_Progress,
+            "ListObjects complete nested object parsing");
+         Assert
+           (Round_Trip.Contents.First_Element.Checksum_Algorithms.Length = 2
+            and then Round_Trip.Contents.First_Element.Has_Owner
+            and then Round_Trip.Contents.First_Element.Has_Restore_Status
+            and then US.To_String
+              (Round_Trip.Contents.First_Element.Restore_Status.
+                 Restore_Expiry_Date) =
+              "Fri, 21 Aug 2026 17:00:00 GMT",
+            "ListObjects complete nested object round trip");
       end;
 
       Must_Reject_Document
@@ -2552,6 +2586,29 @@ package body Object_Storage_Test_Cases is
          "<Contents><Key>x</Key><Size>1</Size><Size>2</Size>" &
          "</Contents></ListBucketResult>",
          "ListObjects duplicate object field was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult><Name>bucket</Name><MaxKeys>1</MaxKeys>" &
+         "<IsTruncated>false</IsTruncated><Contents><Key>x</Key>" &
+         "<ChecksumAlgorithm>INVALID</ChecksumAlgorithm><Size>1</Size>" &
+         "</Contents></ListBucketResult>",
+         "ListObjects invalid checksum algorithm was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult><Name>bucket</Name><MaxKeys>1</MaxKeys>" &
+         "<IsTruncated>false</IsTruncated><Contents><Key>x</Key>" &
+         "<Size>1</Size><StorageClass>INVALID</StorageClass>" &
+         "</Contents></ListBucketResult>",
+         "ListObjects invalid storage class was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult><Name>bucket</Name><MaxKeys>1</MaxKeys>" &
+         "<IsTruncated>false</IsTruncated><Contents><Key>x" &
+         "<Nested/></Key><Size>1</Size></Contents></ListBucketResult>",
+         "ListObjects nested object scalar was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult><Name>bucket</Name><MaxKeys>1</MaxKeys>" &
+         "<IsTruncated>false</IsTruncated><Contents><Key>x</Key>" &
+         "<Size>1</Size><Owner><ID>one</ID></Owner>" &
+         "<Owner><ID>two</ID></Owner></Contents></ListBucketResult>",
+         "ListObjects duplicate owner was accepted");
       Must_Reject_Document
         (Empty_Listing ("<Name><Nested/></Name>"),
          "ListObjects nested scalar was accepted");
@@ -3304,6 +3361,137 @@ package body Object_Storage_Test_Cases is
          begin
             null;
          end;
+      end;
+
+      declare
+         Parameters : Low_Level.List_Objects_Parameters;
+      begin
+         Parameters.Prefix := US.To_Unbounded_String ("photos/Jan &");
+         Parameters.Delimiter := US.To_Unbounded_String ("/");
+         Parameters.Marker := US.To_Unbounded_String ("a+b");
+         Parameters.Max_Keys := 2;
+         Parameters.URL_Encoding := True;
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         Parameters.Include_Restore_Status := True;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_List_Objects
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+            Expected_Query : constant String :=
+              "delimiter=%2F&encoding-type=url&marker=a%2Bb&max-keys=2&" &
+              "prefix=photos%2FJan%20%26";
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket?" & Expected_Query
+               and then Low_Level.Authority (Prepared) = "localhost:9000",
+               "path-style ListObjects target and authority");
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Low_Level.Canonical_Request (Prepared),
+                  "GET" & LF & "/example-bucket" & LF &
+                  Expected_Query & LF) = 1
+               and then Low_Level.Signed_Headers (Prepared) =
+                 "host;x-amz-content-sha256;x-amz-date;" &
+                 "x-amz-expected-bucket-owner;" &
+                 "x-amz-optional-object-attributes;x-amz-request-payer;" &
+                 "x-amz-security-token",
+               "complete ListObjects request signing");
+         end;
+      end;
+
+      declare
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_List_Objects
+             (Flyology.HTTP.Parse_Origin
+                ("https://example-bucket.s3.us-west-2.amazonaws.com"),
+              Low_Level.Virtual_Hosted_Style, "example-bucket",
+              (others => <>), Identity, "us-west-2", "20130524T000000Z");
+      begin
+         Assert
+           (Low_Level.Target (Prepared) = "/?max-keys=1000",
+            "virtual-hosted ListObjects target");
+      end;
+
+      declare
+         Raised : Boolean := False;
+         Parameters : Low_Level.List_Objects_Parameters;
+      begin
+         Parameters.Request_Payer := US.To_Unbounded_String ("owner");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Objects
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", Parameters,
+                    Identity, "us-east-1", "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "invalid ListObjects requester payer was accepted");
+      end;
+
+      declare
+         Outcome : constant Low_Level.List_Objects_Outcome :=
+           Low_Level.Decode_List_Objects_Response
+             (200,
+              "<ListBucketResult><Name>example-bucket</Name>" &
+              "<Marker></Marker><MaxKeys>1000</MaxKeys>" &
+              "<IsTruncated>false</IsTruncated></ListBucketResult>",
+              Request_Charged => "requester");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Listed
+            and then Outcome.Result.Listing.Max_Keys = 1_000
+            and then US.To_String (Outcome.Result.Request_Charged) =
+              "requester",
+            "successful complete ListObjects response decoding");
+      end;
+
+      declare
+         Outcome : constant Low_Level.List_Objects_Outcome :=
+           Low_Level.Decode_List_Objects_Response
+             (403, "<Error><Code>AccessDenied</Code>" &
+              "<Message>denied</Message></Error>", Request_ID => "v1-request",
+              Host_ID => "v1-host");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Rejected
+            and then US.To_String (Outcome.Error.Code) = "AccessDenied"
+            and then US.To_String (Outcome.Error.Request_ID) = "v1-request"
+            and then US.To_String (Outcome.Error.Host_ID) = "v1-host",
+            "typed ListObjects S3 error decoding and header fallback");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.List_Objects_Outcome :=
+                 Low_Level.Decode_List_Objects_Response
+                   (200,
+                    "<ListBucketResult><Name>example-bucket</Name>" &
+                    "<MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated>" &
+                    "</ListBucketResult>", Request_Charged => "invalid");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert (Raised, "invalid ListObjects response header was accepted");
       end;
 
       declare

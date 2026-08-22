@@ -1,6 +1,7 @@
 with Ada.Containers;
 with Ada.Strings;
 with Ada.Strings.Fixed;
+with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.Wire_Core;
 with GNAT.SHA256;
@@ -8,8 +9,10 @@ with GNAT.SHA256;
 package body Flyology.Object_Storage.S3.Listings is
 
    package US renames Ada.Strings.Unbounded;
+   package Model renames Flyology.Object_Storage.S3.Model;
    package Wire_Core renames Flyology.Object_Storage.S3.Wire_Core;
    use type Ada.Containers.Count_Type;
+   use type Model.Shape_Kind;
 
    Maximum_Query_Length : constant := 8 * 1_024;
    Token_Prefix : constant String := "fos1.";
@@ -378,11 +381,19 @@ package body Flyology.Object_Storage.S3.Listings is
       Object_Key_Field,
       Object_Last_Modified_Field,
       Object_Entity_Tag_Field,
+      Object_Checksum_Algorithm_Field,
+      Object_Checksum_Type_Field,
       Object_Size_Field,
       Object_Storage_Class_Field,
+      Owner_Display_Name_Field,
+      Owner_ID_Field,
+      Restore_In_Progress_Field,
+      Restore_Expiry_Date_Field,
       Common_Prefix_Field);
 
    type Parse_Context is (Root_Context, Object_Context, Prefix_Context);
+   type Object_Subcontext is
+     (No_Object_Subcontext, Owner_Subcontext, Restore_Subcontext);
    type Listing_Version is (Version_1, Version_2);
 
    type Listing_Handler (Version : Listing_Version) is
@@ -395,6 +406,8 @@ package body Flyology.Object_Storage.S3.Listings is
       Depth                       : Natural := 0;
       Ignore_Depth                : Natural := 0;
       Context                     : Parse_Context := Root_Context;
+      Object_Context_State        : Object_Subcontext :=
+        No_Object_Subcontext;
       Field                       : Field_Kind := No_Field;
       Seen_Name                   : Boolean := False;
       Seen_Prefix                 : Boolean := False;
@@ -411,8 +424,13 @@ package body Flyology.Object_Storage.S3.Listings is
       Seen_Object_Key             : Boolean := False;
       Seen_Object_Last_Modified   : Boolean := False;
       Seen_Object_Entity_Tag      : Boolean := False;
+      Seen_Object_Checksum_Type   : Boolean := False;
       Seen_Object_Size            : Boolean := False;
       Seen_Object_Storage_Class   : Boolean := False;
+      Seen_Owner_Display_Name     : Boolean := False;
+      Seen_Owner_ID               : Boolean := False;
+      Seen_Restore_In_Progress    : Boolean := False;
+      Seen_Restore_Expiry_Date    : Boolean := False;
       Seen_Common_Prefix          : Boolean := False;
    end record;
 
@@ -450,6 +468,13 @@ package body Flyology.Object_Storage.S3.Listings is
       US.Set_Unbounded_String (Item.Text_Value, "");
    end Select_Field;
 
+   procedure Select_Repeated_Field
+     (Item : in out Listing_Handler; Field : Field_Kind) is
+   begin
+      Item.Field := Field;
+      US.Set_Unbounded_String (Item.Text_Value, "");
+   end Select_Repeated_Field;
+
    function Parse_Natural (Value : String) return Natural is
       Result : constant Wire_Core.Natural_Result :=
         Wire_Core.Parse_Natural (Value);
@@ -479,6 +504,51 @@ package body Flyology.Object_Storage.S3.Listings is
       end if;
       return Result.Value;
    end Parse_Boolean;
+
+   function Object_Member_Shape (Member : Positive)
+      return Model.Shape_Index
+   is
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.List_Objects_Operation));
+      Contents : constant Model.Shape_Index :=
+        Model.Member_Shape (Output, 4);
+      Object_Shape : constant Model.Shape_Index := Model.Shape_Index
+        (Model.List_Member_Shape (Contents));
+   begin
+      return Model.Member_Shape (Object_Shape, Member);
+   end Object_Member_Shape;
+
+   function Valid_Object_Enumeration
+     (Value : String; Member : Positive) return Boolean
+   is
+      Member_Shape : constant Model.Shape_Index :=
+        Object_Member_Shape (Member);
+      Shape : constant Model.Shape_Index :=
+        (if Model.Kind (Member_Shape) = Model.List_Shape
+         then Model.Shape_Index (Model.List_Member_Shape (Member_Shape))
+         else Member_Shape);
+   begin
+      if Model.Enumeration_Count (Shape) = 0 then
+         return False;
+      end if;
+      for Index in 1 .. Model.Enumeration_Count (Shape) loop
+         if Model.Enumeration_Value (Shape, Index) = Value then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Valid_Object_Enumeration;
+
+   function Has_Checksum_Algorithm
+     (Item : Object_Entry; Value : String) return Boolean is
+   begin
+      for Algorithm of Item.Checksum_Algorithms loop
+         if US.To_String (Algorithm) = Value then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Has_Checksum_Algorithm;
 
    procedure Finish_Field (Item : in out Listing_Handler) is
       Value : constant String := US.To_String (Item.Text_Value);
@@ -539,10 +609,40 @@ package body Flyology.Object_Storage.S3.Listings is
             Item.Current_Object.Last_Modified := Item.Text_Value;
          when Object_Entity_Tag_Field =>
             Item.Current_Object.Entity_Tag := Item.Text_Value;
+         when Object_Checksum_Algorithm_Field =>
+            if not Valid_Object_Enumeration (Value, 4)
+              or else Has_Checksum_Algorithm (Item.Current_Object, Value)
+            then
+               raise Malformed_Listing with
+                 "invalid S3 object checksum algorithm";
+            end if;
+            Item.Current_Object.Checksum_Algorithms.Append
+              (Item.Text_Value);
+         when Object_Checksum_Type_Field =>
+            if not Valid_Object_Enumeration (Value, 5) then
+               raise Malformed_Listing with "invalid S3 object checksum type";
+            end if;
+            Item.Current_Object.Checksum_Type := Item.Text_Value;
          when Object_Size_Field =>
             Item.Current_Object.Size := Parse_Byte_Count (Value);
          when Object_Storage_Class_Field =>
+            if not Valid_Object_Enumeration (Value, 7) then
+               raise Malformed_Listing with
+                 "invalid S3 object storage class";
+            end if;
             Item.Current_Object.Storage_Class := Item.Text_Value;
+         when Owner_Display_Name_Field =>
+            Item.Current_Object.Owner.Display_Name := Item.Text_Value;
+         when Owner_ID_Field =>
+            Item.Current_Object.Owner.ID := Item.Text_Value;
+         when Restore_In_Progress_Field =>
+            Item.Current_Object.Restore_Status.
+              Has_Is_Restore_In_Progress := True;
+            Item.Current_Object.Restore_Status.Is_Restore_In_Progress :=
+              Parse_Boolean (Value);
+         when Restore_Expiry_Date_Field =>
+            Item.Current_Object.Restore_Status.Restore_Expiry_Date :=
+              Item.Text_Value;
          when Common_Prefix_Field =>
             Item.Current_Prefix := Item.Text_Value;
          when No_Field =>
@@ -562,6 +662,8 @@ package body Flyology.Object_Storage.S3.Listings is
       Item.Depth := Item.Depth + 1;
       if Item.Ignore_Depth /= 0 then
          return;
+      elsif Item.Field /= No_Field then
+         raise Malformed_Listing with "nested S3 listing scalar";
       end if;
 
       if Item.Depth = 1 then
@@ -570,16 +672,20 @@ package body Flyology.Object_Storage.S3.Listings is
               "S3 listing root is not ListBucketResult";
          end if;
       elsif Item.Depth = 2 then
-         if Item.Field /= No_Field then
-            raise Malformed_Listing with "nested S3 listing scalar";
-         elsif Local_Name = "Contents" then
+         if Local_Name = "Contents" then
             Item.Context := Object_Context;
             Item.Current_Object := (others => <>);
             Item.Seen_Object_Key := False;
             Item.Seen_Object_Last_Modified := False;
             Item.Seen_Object_Entity_Tag := False;
+            Item.Seen_Object_Checksum_Type := False;
             Item.Seen_Object_Size := False;
             Item.Seen_Object_Storage_Class := False;
+            Item.Object_Context_State := No_Object_Subcontext;
+            Item.Seen_Owner_Display_Name := False;
+            Item.Seen_Owner_ID := False;
+            Item.Seen_Restore_In_Progress := False;
+            Item.Seen_Restore_Expiry_Date := False;
          elsif Local_Name = "CommonPrefixes" then
             Item.Context := Prefix_Context;
             US.Set_Unbounded_String (Item.Current_Prefix, "");
@@ -629,12 +735,37 @@ package body Flyology.Object_Storage.S3.Listings is
          elsif Local_Name = "ETag" then
             Select_Field
               (Item, Item.Seen_Object_Entity_Tag, Object_Entity_Tag_Field);
+         elsif Local_Name = "ChecksumAlgorithm" then
+            Select_Repeated_Field
+              (Item, Object_Checksum_Algorithm_Field);
+         elsif Local_Name = "ChecksumType" then
+            Select_Field
+              (Item, Item.Seen_Object_Checksum_Type,
+               Object_Checksum_Type_Field);
          elsif Local_Name = "Size" then
             Select_Field (Item, Item.Seen_Object_Size, Object_Size_Field);
          elsif Local_Name = "StorageClass" then
             Select_Field
               (Item, Item.Seen_Object_Storage_Class,
                Object_Storage_Class_Field);
+         elsif Local_Name = "Owner" then
+            if Item.Current_Object.Has_Owner then
+               raise Malformed_Listing with "duplicate S3 listing field";
+            end if;
+            Item.Object_Context_State := Owner_Subcontext;
+            Item.Current_Object.Has_Owner := True;
+            Item.Current_Object.Owner := (others => <>);
+            Item.Seen_Owner_Display_Name := False;
+            Item.Seen_Owner_ID := False;
+         elsif Local_Name = "RestoreStatus" then
+            if Item.Current_Object.Has_Restore_Status then
+               raise Malformed_Listing with "duplicate S3 listing field";
+            end if;
+            Item.Object_Context_State := Restore_Subcontext;
+            Item.Current_Object.Has_Restore_Status := True;
+            Item.Current_Object.Restore_Status := (others => <>);
+            Item.Seen_Restore_In_Progress := False;
+            Item.Seen_Restore_Expiry_Date := False;
          else
             Item.Ignore_Depth := Item.Depth;
          end if;
@@ -642,6 +773,34 @@ package body Flyology.Object_Storage.S3.Listings is
          if Local_Name = "Prefix" then
             Select_Field
               (Item, Item.Seen_Common_Prefix, Common_Prefix_Field);
+         else
+            Item.Ignore_Depth := Item.Depth;
+         end if;
+      elsif Item.Depth = 4
+        and then Item.Context = Object_Context
+        and then Item.Object_Context_State = Owner_Subcontext
+      then
+         if Local_Name = "DisplayName" then
+            Select_Field
+              (Item, Item.Seen_Owner_Display_Name,
+               Owner_Display_Name_Field);
+         elsif Local_Name = "ID" then
+            Select_Field (Item, Item.Seen_Owner_ID, Owner_ID_Field);
+         else
+            Item.Ignore_Depth := Item.Depth;
+         end if;
+      elsif Item.Depth = 4
+        and then Item.Context = Object_Context
+        and then Item.Object_Context_State = Restore_Subcontext
+      then
+         if Local_Name = "IsRestoreInProgress" then
+            Select_Field
+              (Item, Item.Seen_Restore_In_Progress,
+               Restore_In_Progress_Field);
+         elsif Local_Name = "RestoreExpiryDate" then
+            Select_Field
+              (Item, Item.Seen_Restore_Expiry_Date,
+               Restore_Expiry_Date_Field);
          else
             Item.Ignore_Depth := Item.Depth;
          end if;
@@ -675,6 +834,11 @@ package body Flyology.Object_Storage.S3.Listings is
          end if;
       elsif Item.Field /= No_Field then
          Finish_Field (Item);
+      elsif Item.Depth = 3
+        and then Item.Context = Object_Context
+        and then Item.Object_Context_State /= No_Object_Subcontext
+      then
+         Item.Object_Context_State := No_Object_Subcontext;
       elsif Item.Depth = 2 and then Item.Context = Object_Context then
          if not Item.Seen_Object_Key
            or else not Item.Seen_Object_Size
@@ -704,6 +868,57 @@ package body Flyology.Object_Storage.S3.Listings is
       Item.Depth := Item.Depth - 1;
    end End_Element;
 
+   procedure Validate_Object (Value : Object_Entry) is
+      Seen : Checksum_Algorithm_List;
+   begin
+      if US.Length (Value.Key) = 0 then
+         raise Malformed_Listing with "empty S3 object key";
+      elsif US.Length (Value.Checksum_Type) > 0
+        and then
+          (Value.Checksum_Algorithms.Is_Empty
+           or else not Valid_Object_Enumeration
+             (US.To_String (Value.Checksum_Type), 5))
+      then
+         raise Malformed_Listing with "invalid S3 object checksum type";
+      elsif US.Length (Value.Storage_Class) > 0
+        and then not Valid_Object_Enumeration
+          (US.To_String (Value.Storage_Class), 7)
+      then
+         raise Malformed_Listing with "invalid S3 object storage class";
+      elsif not Value.Has_Owner
+        and then
+          (US.Length (Value.Owner.Display_Name) > 0
+           or else US.Length (Value.Owner.ID) > 0)
+      then
+         raise Malformed_Listing with "S3 object owner lacks presence state";
+      elsif not Value.Has_Restore_Status
+        and then
+          (Value.Restore_Status.Has_Is_Restore_In_Progress
+           or else Value.Restore_Status.Is_Restore_In_Progress
+           or else US.Length (Value.Restore_Status.Restore_Expiry_Date) > 0)
+      then
+         raise Malformed_Listing with
+           "S3 object restore status lacks presence state";
+      end if;
+      for Algorithm of Value.Checksum_Algorithms loop
+         declare
+            Text : constant String := US.To_String (Algorithm);
+         begin
+            if not Valid_Object_Enumeration (Text, 4) then
+               raise Malformed_Listing with
+                 "invalid S3 object checksum algorithm";
+            end if;
+            for Previous of Seen loop
+               if US."=" (Previous, Algorithm) then
+                  raise Malformed_Listing with
+                    "duplicate S3 object checksum algorithm";
+               end if;
+            end loop;
+            Seen.Append (Algorithm);
+         end;
+      end loop;
+   end Validate_Object;
+
    procedure Validate (Value : List_Objects_V2_Result) is
       Contents_Length : constant Ada.Containers.Count_Type :=
         Value.Contents.Length;
@@ -729,9 +944,7 @@ package body Flyology.Object_Storage.S3.Listings is
          raise Malformed_Listing with "inconsistent S3 continuation token";
       end if;
       for Object_Value of Value.Contents loop
-         if US.Length (Object_Value.Key) = 0 then
-            raise Malformed_Listing with "empty S3 object key";
-         end if;
+         Validate_Object (Object_Value);
       end loop;
       for Prefix of Value.Common_Prefixes loop
          if US.Length (Prefix) = 0 then
@@ -779,6 +992,49 @@ package body Flyology.Object_Storage.S3.Listings is
       end if;
    end Append_Optional;
 
+   procedure Append_Object
+     (Target : in out US.Unbounded_String; Value : Object_Entry) is
+   begin
+      US.Append
+        (Target, "<Contents>" & Element ("Key", US.To_String (Value.Key)));
+      Append_Optional
+        (Target, "LastModified", US.To_String (Value.Last_Modified));
+      Append_Optional (Target, "ETag", US.To_String (Value.Entity_Tag));
+      for Algorithm of Value.Checksum_Algorithms loop
+         US.Append
+           (Target,
+            Element ("ChecksumAlgorithm", US.To_String (Algorithm)));
+      end loop;
+      Append_Optional
+        (Target, "ChecksumType", US.To_String (Value.Checksum_Type));
+      US.Append (Target, Element ("Size", Image (Value.Size)));
+      Append_Optional
+        (Target, "StorageClass", US.To_String (Value.Storage_Class));
+      if Value.Has_Owner then
+         US.Append (Target, "<Owner>");
+         Append_Optional
+           (Target, "DisplayName", US.To_String (Value.Owner.Display_Name));
+         Append_Optional (Target, "ID", US.To_String (Value.Owner.ID));
+         US.Append (Target, "</Owner>");
+      end if;
+      if Value.Has_Restore_Status then
+         US.Append (Target, "<RestoreStatus>");
+         if Value.Restore_Status.Has_Is_Restore_In_Progress then
+            US.Append
+              (Target,
+               Element
+                 ("IsRestoreInProgress",
+                  (if Value.Restore_Status.Is_Restore_In_Progress
+                   then "true" else "false")));
+         end if;
+         Append_Optional
+           (Target, "RestoreExpiryDate",
+            US.To_String (Value.Restore_Status.Restore_Expiry_Date));
+         US.Append (Target, "</RestoreStatus>");
+      end if;
+      US.Append (Target, "</Contents>");
+   end Append_Object;
+
    procedure Validate (Value : List_Objects_Result) is
       Contents_Length : constant Ada.Containers.Count_Type :=
         Value.Contents.Length;
@@ -808,9 +1064,7 @@ package body Flyology.Object_Storage.S3.Listings is
          raise Malformed_Listing with "invalid S3 listing encoding type";
       end if;
       for Object_Value of Value.Contents loop
-         if US.Length (Object_Value.Key) = 0 then
-            raise Malformed_Listing with "empty S3 object key";
-         end if;
+         Validate_Object (Object_Value);
       end loop;
       for Prefix of Value.Common_Prefixes loop
          if US.Length (Prefix) = 0 then
@@ -867,17 +1121,7 @@ package body Flyology.Object_Storage.S3.Listings is
            ("IsTruncated",
             (if Value.Is_Truncated then "true" else "false")));
       for Object_Value of Value.Contents loop
-         US.Append
-           (Result, "<Contents>" &
-            Element ("Key", US.To_String (Object_Value.Key)));
-         Append_Optional
-           (Result, "LastModified", US.To_String (Object_Value.Last_Modified));
-         Append_Optional
-           (Result, "ETag", US.To_String (Object_Value.Entity_Tag));
-         US.Append (Result, Element ("Size", Image (Object_Value.Size)));
-         Append_Optional
-           (Result, "StorageClass", US.To_String (Object_Value.Storage_Class));
-         US.Append (Result, "</Contents>");
+         Append_Object (Result, Object_Value);
       end loop;
       for Prefix of Value.Common_Prefixes loop
          US.Append
@@ -926,16 +1170,7 @@ package body Flyology.Object_Storage.S3.Listings is
       Append_Optional
         (Result, "StartAfter", US.To_String (Value.Start_After));
       for Object_Value of Value.Contents loop
-         US.Append (Result, "<Contents>" & Element
-           ("Key", US.To_String (Object_Value.Key)));
-         Append_Optional
-           (Result, "LastModified", US.To_String (Object_Value.Last_Modified));
-         Append_Optional
-           (Result, "ETag", US.To_String (Object_Value.Entity_Tag));
-         US.Append (Result, Element ("Size", Image (Object_Value.Size)));
-         Append_Optional
-           (Result, "StorageClass", US.To_String (Object_Value.Storage_Class));
-         US.Append (Result, "</Contents>");
+         Append_Object (Result, Object_Value);
       end loop;
       for Prefix of Value.Common_Prefixes loop
          US.Append

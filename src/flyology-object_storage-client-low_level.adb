@@ -858,6 +858,156 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "invalid signed S3 object request";
    end Prepare_Object_Request;
 
+   function Prepare_List_Objects
+     (Origin      : Flyology.HTTP.Origin;
+      Style       : Addressing_Style;
+      Bucket      : String;
+      Parameters  : List_Objects_Parameters;
+      Identity    : Credentials;
+      Region      : String;
+      Timestamp   : String) return Prepared_Request
+   is
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Optional_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.Prefix) > 0) +
+        Boolean'Pos (US.Length (Parameters.Delimiter) > 0) +
+        Boolean'Pos (US.Length (Parameters.Marker) > 0) +
+        Boolean'Pos (Parameters.URL_Encoding) +
+        Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
+        Boolean'Pos (Parameters.Include_Restore_Status);
+      Values : Model_Value_Array (1 .. 2 + Optional_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+
+      procedure Add_Optional
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Add (Name, US.To_String (Value));
+         end if;
+      end Add_Optional;
+   begin
+      if Request_Payer'Length > 0 and then Request_Payer /= "requester" then
+         raise Invalid_Request with "invalid ListObjects parameters";
+      end if;
+      Add ("Bucket", Bucket);
+      Add
+        ("MaxKeys",
+         Ada.Strings.Fixed.Trim
+           (S3.Core.Page_Size'Image (Parameters.Max_Keys), Ada.Strings.Both));
+      Add_Optional ("Prefix", Parameters.Prefix);
+      Add_Optional ("Delimiter", Parameters.Delimiter);
+      Add_Optional ("Marker", Parameters.Marker);
+      if Parameters.URL_Encoding then
+         Add ("EncodingType", "url");
+      end if;
+      Add_Optional ("RequestPayer", Parameters.Request_Payer);
+      Add_Optional
+        ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      if Parameters.Include_Restore_Status then
+         Add ("OptionalObjectAttributes", "RestoreStatus");
+      end if;
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.List_Objects_Operation, Origin, Style, Values, "", False,
+         SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := List_Objects_Operation;
+      end return;
+   exception
+      when Constraint_Error =>
+         raise Invalid_Request with "invalid ListObjects parameters";
+   end Prepare_List_Objects;
+
+   function Decode_List_Objects_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Objects_Outcome
+   is
+   begin
+      if Status = 200 then
+         if Request_Charged'Length > 0
+           and then Request_Charged /= "requester"
+         then
+            raise Invalid_Response with
+              "invalid ListObjects response headers";
+         end if;
+         return
+           (Kind   => Listed,
+            Status => Status,
+            Result =>
+              (Listing => S3.Listings.Parse_List_Objects (Payload, Limits),
+               Request_Charged =>
+                 US.To_Unbounded_String (Request_Charged)));
+      else
+         declare
+            Value : S3.Errors.Error_Response :=
+              S3.Errors.Parse (Payload, Limits);
+         begin
+            if US.Length (Value.Request_ID) = 0 then
+               Value.Request_ID := US.To_Unbounded_String (Request_ID);
+            end if;
+            if US.Length (Value.Host_ID) = 0 then
+               Value.Host_ID := US.To_Unbounded_String (Host_ID);
+            end if;
+            return (Kind => Rejected, Status => Status, Error => Value);
+         end;
+      end if;
+   exception
+      when S3.Listings.Malformed_Listing | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed ListObjects response";
+   end Decode_List_Objects_Response;
+
+   function Execute_List_Objects
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Objects_Outcome
+   is
+   begin
+      if Prepared.Operation /= List_Objects_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Request_Charged : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-charged");
+         Request_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+         Host_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_List_Objects_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Request_Charged,
+            Request_ID, Host_ID, Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with "ListObjects response exceeds XML limit";
+   end Execute_List_Objects;
+
    function Prepare_List_Objects_V2
      (Origin      : Flyology.HTTP.Origin;
       Style       : Addressing_Style;

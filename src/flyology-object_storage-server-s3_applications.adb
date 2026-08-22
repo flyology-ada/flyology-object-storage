@@ -858,7 +858,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                    (Object_Value.Info.Entity_Tag) & '"'),
                                Size          => Object_Value.Info.Size,
                                Storage_Class =>
-                                 US.To_Unbounded_String ("STANDARD")));
+                                 US.To_Unbounded_String ("STANDARD"),
+                               others        => <>));
                         end loop;
                         for Prefix_Value of Page.Common_Prefixes loop
                            Response.Common_Prefixes.Append
@@ -973,7 +974,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                    (Object_Value.Info.Entity_Tag) & '"'),
                                Size          => Object_Value.Info.Size,
                                Storage_Class =>
-                                 US.To_Unbounded_String ("STANDARD")));
+                                 US.To_Unbounded_String ("STANDARD"),
+                               others        => <>));
                         end loop;
                         for Prefix_Value of Page.Common_Prefixes loop
                            Response.Common_Prefixes.Append

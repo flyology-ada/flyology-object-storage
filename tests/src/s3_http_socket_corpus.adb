@@ -324,6 +324,9 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Copy_If_Match : String := "";
          Expected_If_Match : String := "";
          Expected_Checksum_Mode : String := "";
+         Expected_Request_Payer : String := "";
+         Expected_Bucket_Owner : String := "";
+         Expected_Object_Attributes : String := "";
          Fragmented         : Boolean := False)
       is
          Buffer : Stream_Element_Array (1 .. 4_096);
@@ -386,6 +389,27 @@ procedure S3_HTTP_Socket_Corpus is
                        (if Expected_Copy_If_Match'Length = 0 then ";"
                         else ";x-amz-copy-source-if-match;") &
                        "x-amz-date") = 0
+                 elsif Expected_Request_Payer'Length > 0
+                   or else Expected_Bucket_Owner'Length > 0
+                   or else Expected_Object_Attributes'Length > 0
+                 then
+                    Header_Value (Lower, "x-amz-request-payer") /=
+                      Ada.Characters.Handling.To_Lower
+                        (Expected_Request_Payer)
+                    or else Header_Value
+                      (Lower, "x-amz-expected-bucket-owner") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Bucket_Owner)
+                    or else Header_Value
+                      (Lower, "x-amz-optional-object-attributes") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Object_Attributes)
+                    or else Ada.Strings.Fixed.Index
+                      (Lower,
+                       "signedheaders=host;x-amz-content-sha256;" &
+                       "x-amz-date;x-amz-expected-bucket-owner;" &
+                       "x-amz-optional-object-attributes;" &
+                       "x-amz-request-payer") = 0
                  elsif Expected_If_Match'Length > 0
                    or else Expected_Checksum_Mode'Length > 0
                  then
@@ -467,6 +491,13 @@ procedure S3_HTTP_Socket_Corpus is
         "<Name>example-bucket</Name><KeyCount>0</KeyCount>" &
         "<MaxKeys>2</MaxKeys><IsTruncated>false</IsTruncated>" &
         "</ListBucketResult>";
+      V1_Success_XML : constant String :=
+        "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Name>example-bucket</Name>" &
+        "<Prefix>socket/</Prefix><Marker>before</Marker>" &
+        "<Delimiter>/</Delimiter><MaxKeys>2</MaxKeys>" &
+        "<EncodingType>url</EncodingType>" &
+        "<IsTruncated>false</IsTruncated></ListBucketResult>";
       Error_XML : constant String :=
         "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>";
       Create_XML : constant String :=
@@ -497,6 +528,26 @@ procedure S3_HTTP_Socket_Corpus is
       Port := Sockets.Get_Socket_Name (Listener).Port;
       State.Publish (Port);
       for Round in 1 .. 2 loop
+         Serve
+           (HTTP_Response
+              ("200 OK", V1_Success_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: v1-socket-request" & CRLF &
+               "x-amz-id-2: v1-socket-host" & CRLF),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
          Serve
            (HTTP_Response ("200 OK", Success_XML), "GET",
             "/example-bucket?list-type=2&max-keys=2",
@@ -724,6 +775,60 @@ procedure S3_HTTP_Socket_Corpus is
               Identity, "us-east-1", "20130524T000000Z");
       begin
          HTTP_Client.Configure (HTTP, Origin);
+         declare
+            V1_Parameters : Low_Level.List_Objects_Parameters;
+         begin
+            V1_Parameters.Prefix := US.To_Unbounded_String ("socket/");
+            V1_Parameters.Delimiter := US.To_Unbounded_String ("/");
+            V1_Parameters.Marker := US.To_Unbounded_String ("before");
+            V1_Parameters.Max_Keys := 2;
+            V1_Parameters.URL_Encoding := True;
+            V1_Parameters.Request_Payer :=
+              US.To_Unbounded_String ("requester");
+            V1_Parameters.Expected_Bucket_Owner :=
+              US.To_Unbounded_String ("123456789012");
+            V1_Parameters.Include_Restore_Status := True;
+            declare
+               V1_Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Objects
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    V1_Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Result : constant Low_Level.List_Objects_Outcome :=
+                 Low_Level.Execute_List_Objects
+                   (HTTP, V1_Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Listed
+                 or else US.To_String (Result.Result.Listing.Prefix) /=
+                   "socket/"
+                 or else US.To_String (Result.Result.Request_Charged) /=
+                   "requester"
+               then
+                  raise Program_Error with
+                    "typed ListObjects socket success mismatch";
+               end if;
+            end;
+            declare
+               V1_Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Objects
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    V1_Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Result : constant Low_Level.List_Objects_Outcome :=
+                 Low_Level.Execute_List_Objects
+                   (HTTP, V1_Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Rejected
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "v1-socket-request"
+                 or else US.To_String (Result.Error.Host_ID) /=
+                   "v1-socket-host"
+               then
+                  raise Program_Error with
+                    "typed ListObjects socket error mismatch";
+               end if;
+            end;
+         end;
          declare
             Result : constant Low_Level.List_Objects_V2_Outcome :=
               Low_Level.Execute_List_Objects_V2

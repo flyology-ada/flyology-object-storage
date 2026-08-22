@@ -28,6 +28,20 @@ package Flyology.Object_Storage.Client.Low_Level is
      (Access_Key, Secret_Key : String;
       Session_Token         : String := "") return Credentials;
 
+   --  Every non-bucket member in the pinned ListObjects v1 input shape.
+   --  Include_Restore_Status represents the model's sole
+   --  OptionalObjectAttributes list value, RestoreStatus.
+   type List_Objects_Parameters is record
+      Prefix                  : Ada.Strings.Unbounded.Unbounded_String;
+      Delimiter               : Ada.Strings.Unbounded.Unbounded_String;
+      Marker                  : Ada.Strings.Unbounded.Unbounded_String;
+      Max_Keys                : S3.Core.Page_Size := 1_000;
+      URL_Encoding            : Boolean := False;
+      Request_Payer           : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner   : Ada.Strings.Unbounded.Unbounded_String;
+      Include_Restore_Status  : Boolean := False;
+   end record;
+
    type List_Objects_V2_Parameters is record
       Prefix             : Ada.Strings.Unbounded.Unbounded_String;
       Delimiter          : Ada.Strings.Unbounded.Unbounded_String;
@@ -160,6 +174,54 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null)
       return Flyology.HTTP.Client.Response;
 
+   function Prepare_List_Objects
+     (Origin      : Flyology.HTTP.Origin;
+      Style       : Addressing_Style;
+      Bucket      : String;
+      Parameters  : List_Objects_Parameters;
+      Identity    : Credentials;
+      Region      : String;
+      Timestamp   : String) return Prepared_Request;
+
+   Invalid_Response : exception;
+
+   type List_Outcome_Kind is (Listed, Rejected);
+
+   --  Every member in the pinned ListObjects v1 output shape. The XML
+   --  members are grouped in Listing; RequestCharged is an HTTP header.
+   type List_Objects_Result is record
+      Listing         : S3.Listings.List_Objects_Result;
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type List_Objects_Outcome
+     (Kind : List_Outcome_Kind := Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Listed =>
+            Result : List_Objects_Result;
+         when Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_List_Objects_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Objects_Outcome;
+
+   function Execute_List_Objects
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Objects_Outcome;
+
    function Prepare_List_Objects_V2
      (Origin      : Flyology.HTTP.Origin;
       Style       : Addressing_Style;
@@ -168,10 +230,6 @@ package Flyology.Object_Storage.Client.Low_Level is
       Identity    : Credentials;
       Region      : String;
       Timestamp   : String) return Prepared_Request;
-
-   Invalid_Response : exception;
-
-   type List_Outcome_Kind is (Listed, Rejected);
 
    type List_Objects_V2_Outcome
      (Kind : List_Outcome_Kind := Rejected) is record
@@ -1186,6 +1244,7 @@ private
 
    type Operation_Kind is
      (List_Objects_V2_Operation,
+      List_Objects_Operation,
       Model_Driven_Operation,
       Create_Bucket_Operation,
       Head_Bucket_Operation,

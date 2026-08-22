@@ -55,12 +55,39 @@ package Flyology.Object_Storage.S3.Listings is
      (Token, Bucket, Prefix, Delimiter : String)
       return Continuation_Result;
 
+   package Checksum_Algorithm_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive,
+      Element_Type => Ada.Strings.Unbounded.Unbounded_String,
+      "=" => Ada.Strings.Unbounded."=");
+
+   subtype Checksum_Algorithm_List is Checksum_Algorithm_Vectors.Vector;
+
+   type Object_Owner is record
+      Display_Name : Ada.Strings.Unbounded.Unbounded_String;
+      ID           : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Object_Restore_Status is record
+      Has_Is_Restore_In_Progress : Boolean := False;
+      Is_Restore_In_Progress : Boolean := False;
+      Restore_Expiry_Date    : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Every member in the pinned S3 model's Object structure used by both
+   --  ListObjects response versions. Presence flags preserve absent nested
+   --  structures independently from their optional members.
    type Object_Entry is record
-      Key            : Ada.Strings.Unbounded.Unbounded_String;
-      Last_Modified  : Ada.Strings.Unbounded.Unbounded_String;
-      Entity_Tag     : Ada.Strings.Unbounded.Unbounded_String;
-      Size           : Byte_Count := 0;
-      Storage_Class  : Ada.Strings.Unbounded.Unbounded_String;
+      Key                 : Ada.Strings.Unbounded.Unbounded_String;
+      Last_Modified       : Ada.Strings.Unbounded.Unbounded_String;
+      Entity_Tag          : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithms : Checksum_Algorithm_List;
+      Checksum_Type       : Ada.Strings.Unbounded.Unbounded_String;
+      Size                : Byte_Count := 0;
+      Storage_Class       : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Owner           : Boolean := False;
+      Owner               : Object_Owner;
+      Has_Restore_Status  : Boolean := False;
+      Restore_Status      : Object_Restore_Status;
    end record;
 
    package Object_Vectors is new Ada.Containers.Vectors

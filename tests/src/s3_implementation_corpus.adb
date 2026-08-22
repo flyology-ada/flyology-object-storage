@@ -234,6 +234,32 @@ procedure S3_Implementation_Corpus is
       begin
          Parameters.Prefix := US.To_Unbounded_String (Key);
          declare
+            V1_Parameters : Low_Level.List_Objects_Parameters;
+         begin
+            V1_Parameters.Prefix := US.To_Unbounded_String (Key);
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Objects
+                   (Origin, Low_Level.Path_Style, Bucket, V1_Parameters,
+                    Identity, "us-east-1", Timestamp);
+               Outcome : constant Low_Level.List_Objects_Outcome :=
+                 Low_Level.Execute_List_Objects
+                   (HTTP, Prepared, Timeout => 30.0);
+            begin
+               if Outcome.Kind /= Low_Level.Listed
+                 or else Outcome.Result.Listing.Contents.Length /= 1
+                 or else US.To_String
+                   (Outcome.Result.Listing.Contents.First_Element.Key) /= Key
+                 or else
+                   Outcome.Result.Listing.Contents.First_Element.Size /=
+                     Flyology.Object_Storage.Byte_Count (Payload'Length)
+               then
+                  raise Program_Error with
+                    "S3 implementation failed typed ListObjects v1";
+               end if;
+            end;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_List_Objects_V2
                 (Origin, Low_Level.Path_Style, Bucket, Parameters,
@@ -469,6 +495,27 @@ procedure S3_Implementation_Corpus is
       end Delete_Many;
    begin
       HTTP_Client.Configure (HTTP, Origin);
+      declare
+         Parameters : Low_Level.List_Objects_Parameters;
+         Prepared : Low_Level.Prepared_Request;
+      begin
+         Parameters.Prefix := US.To_Unbounded_String (Key);
+         Prepared := Low_Level.Prepare_List_Objects
+           (Origin, Low_Level.Path_Style, Bucket, Parameters,
+            Identity, "us-east-1", Timestamp);
+         declare
+            Outcome : constant Low_Level.List_Objects_Outcome :=
+              Low_Level.Execute_List_Objects
+                (HTTP, Prepared, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Low_Level.Listed
+              or else not Outcome.Result.Listing.Contents.Is_Empty
+            then
+               raise Program_Error with
+                 "S3 implementation preflight v1 list result mismatch";
+            end if;
+         end;
+      end;
       declare
          Parameters : Low_Level.List_Objects_V2_Parameters;
          Prepared : Low_Level.Prepared_Request;
