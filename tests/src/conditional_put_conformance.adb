@@ -1,3 +1,4 @@
+with Ada.Containers;
 with Ada.Real_Time;
 with Ada.Streams;
 with Ada.Strings;
@@ -12,7 +13,9 @@ package body Conditional_Put_Conformance is
 
    use Flyology.Object_Storage;
    use Flyology.Object_Storage.Backends;
+   use type Ada.Containers.Count_Type;
    use type Ada.Streams.Stream_Element_Offset;
+   use type Ada.Real_Time.Time;
    use type Status;
    package US renames Ada.Strings.Unbounded;
    use type US.Unbounded_String;
@@ -154,14 +157,12 @@ package body Conditional_Put_Conformance is
       end if;
    end Read;
 
-   type Interrupt_Mode is (Cancel_After_Chunk, Expire_After_Chunk);
-   type Interrupting_Source (Mode : Interrupt_Mode) is new Byte_Source
-     with record
-        Calls : Natural := 0;
-     end record;
+   type Cancelling_Source is new Byte_Source with record
+      Calls : Natural := 0;
+   end record;
 
    overriding procedure Read
-     (Item     : in out Interrupting_Source;
+     (Item     : in out Cancelling_Source;
       Data     : out Ada.Streams.Stream_Element_Array;
       Last     : out Ada.Streams.Stream_Element_Offset;
       Finished : out Boolean;
@@ -169,11 +170,11 @@ package body Conditional_Put_Conformance is
       Deadline : Ada.Real_Time.Time);
 
    overriding function Declared_Length
-     (Item : Interrupting_Source) return Source_Length is
+     (Item : Cancelling_Source) return Source_Length is
      (Kind => Known, Bytes => 8);
 
    overriding procedure Read
-     (Item     : in out Interrupting_Source;
+     (Item     : in out Cancelling_Source;
       Data     : out Ada.Streams.Stream_Element_Array;
       Last     : out Ada.Streams.Stream_Element_Offset;
       Finished : out Boolean;
@@ -192,14 +193,166 @@ package body Conditional_Put_Conformance is
          Character'Pos ('r'), Character'Pos ('t'));
       Last := Data'First + 3;
       Finished := False;
-      if Item.Mode = Cancel_After_Chunk then
-         if Token = null then
-            raise Program_Error with "missing cancellation token";
-         end if;
-         Token.Request;
-      else
-         delay 0.020;
+      if Token = null then
+         raise Program_Error with "missing cancellation token";
       end if;
+      Token.Request;
+   end Read;
+
+   protected type Deadline_Gate is
+      procedure Publish_Deadline (Value : Ada.Real_Time.Time);
+      procedure Arrive_At_Final_Read;
+      entry Wait_For_Final_Read (Value : out Ada.Real_Time.Time);
+      entry Wait_For_Release;
+      procedure Release;
+   private
+      Deadline  : Ada.Real_Time.Time := Ada.Real_Time.Time_First;
+      Published : Boolean := False;
+      Arrived   : Boolean := False;
+      Released  : Boolean := False;
+   end Deadline_Gate;
+
+   protected body Deadline_Gate is
+      procedure Publish_Deadline (Value : Ada.Real_Time.Time) is
+      begin
+         Deadline := Value;
+         Published := True;
+      end Publish_Deadline;
+
+      procedure Arrive_At_Final_Read is
+      begin
+         Arrived := True;
+      end Arrive_At_Final_Read;
+
+      entry Wait_For_Final_Read (Value : out Ada.Real_Time.Time)
+        when Published and Arrived
+      is
+      begin
+         Value := Deadline;
+      end Wait_For_Final_Read;
+
+      entry Wait_For_Release when Released is
+      begin
+         null;
+      end Wait_For_Release;
+
+      procedure Release is
+      begin
+         Released := True;
+      end Release;
+   end Deadline_Gate;
+
+   type Deadline_Gate_Access is access all Deadline_Gate;
+
+   type Deadline_Source is new Byte_Source with record
+      Gate     : Deadline_Gate_Access;
+      Calls    : Natural := 0;
+      Returned : Boolean := False;
+   end record;
+
+   overriding procedure Read
+     (Item     : in out Deadline_Source;
+      Data     : out Ada.Streams.Stream_Element_Array;
+      Last     : out Ada.Streams.Stream_Element_Offset;
+      Finished : out Boolean;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time);
+
+   overriding function Declared_Length
+     (Item : Deadline_Source) return Source_Length is
+     (Kind => Known, Bytes => 8);
+
+   overriding procedure Read
+     (Item     : in out Deadline_Source;
+      Data     : out Ada.Streams.Stream_Element_Array;
+      Last     : out Ada.Streams.Stream_Element_Offset;
+      Finished : out Boolean;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time)
+   is
+      pragma Unreferenced (Token);
+   begin
+      if Item.Calls = 0 then
+         Item.Calls := 1;
+         Data (Data'First .. Data'First + 3) :=
+           (Character'Pos ('p'), Character'Pos ('a'),
+            Character'Pos ('r'), Character'Pos ('t'));
+         Last := Data'First + 3;
+         Finished := False;
+      elsif Item.Calls = 1 then
+         Item.Calls := 2;
+         Item.Gate.Arrive_At_Final_Read;
+         Item.Gate.Wait_For_Release;
+         if Ada.Real_Time.Clock < Deadline then
+            raise Program_Error with "deadline gate released too early";
+         end if;
+         Data (Data'First .. Data'First + 3) :=
+           (Character'Pos ('t'), Character'Pos ('a'),
+            Character'Pos ('i'), Character'Pos ('l'));
+         Last := Data'First + 3;
+         Finished := True;
+         Item.Returned := True;
+      else
+         raise Program_Error with
+           "deadline was not observed after the final source callback";
+      end if;
+   end Read;
+
+   protected type Length_Observations is
+      procedure Observe;
+      function Count return Natural;
+   private
+      Total : Natural := 0;
+   end Length_Observations;
+
+   protected body Length_Observations is
+      procedure Observe is
+      begin
+         Total := Total + 1;
+      end Observe;
+
+      function Count return Natural is (Total);
+   end Length_Observations;
+
+   type Length_Observations_Access is access all Length_Observations;
+
+   type Raising_Length_Source is new Byte_Source with record
+      Observations : Length_Observations_Access;
+   end record;
+
+   overriding function Declared_Length
+     (Item : Raising_Length_Source) return Source_Length;
+
+   overriding procedure Read
+     (Item     : in out Raising_Length_Source;
+      Data     : out Ada.Streams.Stream_Element_Array;
+      Last     : out Ada.Streams.Stream_Element_Offset;
+      Finished : out Boolean;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time);
+
+   overriding function Declared_Length
+     (Item : Raising_Length_Source) return Source_Length
+   is
+   begin
+      Item.Observations.Observe;
+      return
+        (raise Program_Error with
+           "malformed request consumed declared length");
+   end Declared_Length;
+
+   overriding procedure Read
+     (Item     : in out Raising_Length_Source;
+      Data     : out Ada.Streams.Stream_Element_Array;
+      Last     : out Ada.Streams.Stream_Element_Offset;
+      Finished : out Boolean;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time)
+   is
+      pragma Unreferenced
+        (Item, Data, Last, Finished, Token, Deadline);
+   begin
+      raise Program_Error with "malformed request consumed source bytes";
    end Read;
 
    protected type Publication_Race_Gate is
@@ -404,10 +557,91 @@ package body Conditional_Put_Conformance is
       First      : Object_Information;
       Current    : Object_Information;
       Conditions : Write_Conditions := Default_Write_Conditions;
+
+      procedure Expect_Post_Callback_Deadline
+        (Upload_ID : String := "")
+      is
+         Gate       : aliased Deadline_Gate;
+         Raised     : Boolean := False;
+         Calls      : Natural := 0;
+         Returned   : Boolean := False;
+         Unexpected : Boolean := False;
+      begin
+         declare
+            task Writer;
+
+            task body Writer is
+               Deadline : constant Ada.Real_Time.Time :=
+                 Ada.Real_Time."+"
+                   (Ada.Real_Time.Clock, Ada.Real_Time.Seconds (1));
+               Source : Deadline_Source :=
+                 (Gate => Gate'Unchecked_Access,
+                  Calls => 0,
+                  Returned => False);
+               Local_Info   : Object_Information;
+               Local_Result : Status;
+            begin
+               Gate.Publish_Deadline (Deadline);
+               begin
+                  if Upload_ID'Length = 0 then
+                     Store.Put_Object
+                       (Bucket, Key, Source, Default_Put_Options, null,
+                        Deadline, Local_Info, Local_Result, Conditions);
+                  else
+                     Store.Put_Multipart_Part
+                       (Bucket, "conditional-multipart", Upload_ID, 1,
+                        Source, Default_Multipart_Part_Options, null,
+                        Deadline, Local_Info, Local_Result);
+                  end if;
+               exception
+                  when Flyology.IO.Timeout_Error => Raised := True;
+                  when others => Unexpected := True;
+               end;
+               Calls := Source.Calls;
+               Returned := Source.Returned;
+            end Writer;
+            Observed_Deadline : Ada.Real_Time.Time;
+         begin
+            select
+               Gate.Wait_For_Final_Read (Observed_Deadline);
+            or
+               delay 3.0;
+               Gate.Release;
+               raise Program_Error with
+                 "conditional write did not reach final source callback";
+            end select;
+            delay until Observed_Deadline;
+            Gate.Release;
+         end;
+         Require
+           (Raised and then not Unexpected
+            and then Calls = 2 and then Returned,
+            "post-callback deadline did not stop conditional write");
+      end Expect_Post_Callback_Deadline;
    begin
       Store.Create_Bucket
         (Bucket, null, Ada.Real_Time.Time_Last, Result);
       Require (Result = Success, "conditional put bucket setup");
+
+      declare
+         Observations : aliased Length_Observations;
+         Source : Raising_Length_Source :=
+           (Observations => Observations'Unchecked_Access);
+      begin
+         Store.Put_Object
+           (Bucket, "", Source, Default_Put_Options, null,
+            Ada.Real_Time.Time_Last, Info, Result);
+         Require
+           (Result = Invalid_Request and then Observations.Count = 0,
+            "malformed put invoked Declared_Length");
+         Store.Put_Multipart_Part
+           (Bucket, "", "missing-upload", 1, Source,
+            Default_Multipart_Part_Options, null,
+            Ada.Real_Time.Time_Last, Info, Result);
+         Require
+           (Result = Invalid_Request and then Observations.Count = 0,
+            "malformed multipart put invoked Declared_Length");
+      end;
 
       Conditions.If_None_Match := US.To_Unbounded_String ("*");
       Put (Key, "first", "generation-1", Conditions, First, Result);
@@ -486,7 +720,7 @@ package body Conditional_Put_Conformance is
 
       declare
          Cancel : aliased Flyology.Cancellation.Token;
-         Source : Interrupting_Source (Cancel_After_Chunk);
+         Source : Cancelling_Source;
          Raised : Boolean := False;
       begin
          begin
@@ -503,25 +737,43 @@ package body Conditional_Put_Conformance is
       Require_State
         (Key, "third", Current, "mid-stream cancellation rollback");
 
-      declare
-         Source : Interrupting_Source (Expire_After_Chunk);
-         Raised : Boolean := False;
-         Deadline : constant Ada.Real_Time.Time :=
-           Ada.Real_Time."+"
-             (Ada.Real_Time.Clock, Ada.Real_Time.Milliseconds (5));
-      begin
-         begin
-            Store.Put_Object
-              (Bucket, Key, Source, Default_Put_Options, null,
-               Deadline, Info, Result, Conditions);
-         exception
-            when Flyology.IO.Timeout_Error => Raised := True;
-         end;
-         Require
-           (Raised and then Source.Calls = 1,
-            "mid-stream deadline did not stop conditional put");
-      end;
+      Expect_Post_Callback_Deadline;
       Require_State (Key, "third", Current, "mid-stream deadline rollback");
+
+      declare
+         Upload_ID  : US.Unbounded_String;
+         Prior      : Object_Information;
+         Page       : Multipart_Part_Page;
+         Source     : Buffer_Source :=
+           (Data => Flyology.Bytes.From_Byte_String ("prior"),
+            Position => 0);
+      begin
+         Store.Create_Multipart_Upload
+           (Bucket, "conditional-multipart", Default_Multipart_Options,
+            null, Ada.Real_Time.Time_Last, Upload_ID, Result);
+         Require (Result = Success, "deadline multipart setup");
+         Store.Put_Multipart_Part
+           (Bucket, "conditional-multipart", US.To_String (Upload_ID), 1,
+            Source, Default_Multipart_Part_Options, null,
+            Ada.Real_Time.Time_Last, Prior, Result);
+         Require (Result = Success, "deadline multipart prior part");
+         Expect_Post_Callback_Deadline (US.To_String (Upload_ID));
+         Store.List_Multipart_Parts
+           (Bucket, "conditional-multipart", US.To_String (Upload_ID),
+            (others => <>), null, Ada.Real_Time.Time_Last, Page, Result);
+         Require
+           (Result = Success and then Page.Parts.Length = 1
+            and then Page.Parts.First_Element.Number = 1
+            and then Page.Parts.First_Element.Info.Size = Prior.Size
+            and then Page.Parts.First_Element.Info.Entity_Tag =
+              Prior.Entity_Tag,
+            "deadline multipart failure replaced the prior part");
+         Store.Abort_Multipart_Upload
+           (Bucket, "conditional-multipart", US.To_String (Upload_ID),
+            No_Abort_Multipart_Conditions, null,
+            Ada.Real_Time.Time_Last, Result);
+         Require (Result = Success, "deadline multipart cleanup");
+      end;
 
       declare
          Cancel : aliased Flyology.Cancellation.Token;

@@ -1616,7 +1616,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       Last     : Ada.Streams.Stream_Element_Offset;
       Finished : Boolean := False;
       Data     : Owned_Bytes;
-      Declared : constant Source_Length := Source.Declared_Length;
+      Declared : Source_Length := (Kind => Unknown);
       Stored   : Object_Information;
       Hash     : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
    begin
@@ -1633,6 +1633,9 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result := Invalid_Request;
          return;
       end if;
+      Check_Context (Token, Deadline);
+      Declared := Source.Declared_Length;
+      Check_Context (Token, Deadline);
       if Declared.Kind = Known
         and then (Declared.Bytes > Item.Byte_Capacity
                   or else Declared.Bytes > Byte_Count (Natural'Last))
@@ -1651,6 +1654,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       while not Finished loop
          Check_Context (Token, Deadline);
          Source.Read (Buffer, Last, Finished, Token, Deadline);
+         Check_Context (Token, Deadline);
          if Last < Buffer'First - 1 or else Last > Buffer'Last then
             Result := Invalid_Request;
             Release_Buffer (Item.State, Data);
@@ -2208,7 +2212,9 @@ package body Flyology.Object_Storage.Backends.Memory is
            (Checksum_Engine.Algorithm_Value (Effective_Algorithm));
          Actual_Checksum : Ada.Strings.Unbounded.Unbounded_String;
       begin
+         Check_Context (Token, Deadline);
          Declared := Source.Declared_Length;
+         Check_Context (Token, Deadline);
          if Declared.Kind = Known
            and then Declared.Bytes > Maximum_Multipart_Part_Size
          then
@@ -2231,6 +2237,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          while not Finished loop
             Check_Context (Token, Deadline);
             Source.Read (Buffer, Last, Finished, Token, Deadline);
+            Check_Context (Token, Deadline);
             if Last < Buffer'First - 1 or else Last > Buffer'Last then
                Result := Invalid_Request;
                Release_Buffer (Item.State, Data);

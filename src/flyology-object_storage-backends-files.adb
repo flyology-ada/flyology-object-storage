@@ -1715,9 +1715,11 @@ package body Flyology.Object_Storage.Backends.Files is
          Result := Not_Found;
          return;
       end if;
+      Check_Context (Token, Deadline);
       In_Callback := True;
       Declared := Source.Declared_Length;
       In_Callback := False;
+      Check_Context (Token, Deadline);
       if Declared.Kind = Known
         and then Declared.Bytes > Maximum_Multipart_Part_Size
       then
@@ -1758,6 +1760,7 @@ package body Flyology.Object_Storage.Backends.Files is
          In_Callback := True;
          Source.Read (Buffer, Last, Finished, Token, Deadline);
          In_Callback := False;
+         Check_Context (Token, Deadline);
          if Last < Buffer'First - 1 or else Last > Buffer'Last then
             Result := Invalid_Request;
             SIO.Close (File);
@@ -3029,9 +3032,11 @@ package body Flyology.Object_Storage.Backends.Files is
          Actual_Checksum : US.Unbounded_String;
       begin
 
+         Check_Context (Token, Deadline);
          In_Callback := True;
          Declared := Source.Declared_Length;
          In_Callback := False;
+         Check_Context (Token, Deadline);
          if Declared.Kind = Known
            and then Declared.Bytes > Item.Maximum_Object_Size
          then
@@ -3070,6 +3075,7 @@ package body Flyology.Object_Storage.Backends.Files is
             In_Callback := True;
             Source.Read (Buffer, Last, Finished, Token, Deadline);
             In_Callback := False;
+            Check_Context (Token, Deadline);
             if Last < Buffer'First - 1 or else Last > Buffer'Last then
                Result := Invalid_Request;
                SIO.Close (File);

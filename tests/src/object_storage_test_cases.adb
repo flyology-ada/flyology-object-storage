@@ -4262,6 +4262,26 @@ package body Object_Storage_Test_Cases is
              (Ada.Directories.Current_Directory, "obj"),
            "fs-conditional-put-conformance");
 
+      function Ordinary_File_Count (Directory : String) return Natural is
+         Search : Ada.Directories.Search_Type;
+         Found  : Ada.Directories.Directory_Entry_Type;
+         Count  : Natural := 0;
+      begin
+         Ada.Directories.Start_Search
+           (Search, Directory, "*",
+            (Ada.Directories.Ordinary_File => True, others => False));
+         while Ada.Directories.More_Entries (Search) loop
+            Ada.Directories.Get_Next_Entry (Search, Found);
+            Count := Count + 1;
+         end loop;
+         Ada.Directories.End_Search (Search);
+         return Count;
+      exception
+         when others =>
+            Ada.Directories.End_Search (Search);
+            raise;
+      end Ordinary_File_Count;
+
       procedure Clean is
       begin
          if Ada.Directories.Exists (Root) then
@@ -4286,6 +4306,10 @@ package body Object_Storage_Test_Cases is
          Conditional_Put_Conformance.Exercise
            (Store, "files-conditional-bucket");
       end;
+      Assert
+        (Ordinary_File_Count
+           (Ada.Directories.Compose (Root, "tmp")) = 0,
+         "conditional deadline failures leaked files staging payloads");
       declare
          Store : Files.Store :=
            Files.Open
