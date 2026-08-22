@@ -2,8 +2,9 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest checksum and strict UTF-8 tag-validation forced eight-unit
-manifest-wide level-0 proof completed with 588/588 checks proved, warnings as
+The latest HeadObject conditional-read, checksum, and strict UTF-8
+tag-validation forced eight-unit manifest-wide level-0 proof completed with
+593/593 checks proved, warnings as
 errors, zero justified checks, and zero Assume statements.
 
 ## Proved and Finalized
@@ -20,6 +21,10 @@ errors, zero justified checks, and zero Assume statements.
   - [x] Valid_Tag_Text (45 checks after manifest widening)
   - [x] Evaluate_Object_Write_Conditions
   - [x] Read_Entity_Tag_List and bounded helper loops (53 checks)
+  - [x] Valid_Object_Read_Entity_Tag_Condition (0 target-attributed checks;
+        414/414 aggregate checks in the scoped report)
+  - [x] Evaluate_Object_Read_Conditions (1 target-attributed check;
+        417/417 aggregate checks in the scoped report)
   - [x] Resolve_Range (23 attributed prover checks)
 - [x] Flyology.Object_Storage.S3.Core (level 0, all)
   - [x] Can_Transition
@@ -76,6 +81,9 @@ errors, zero justified checks, and zero Assume statements.
 <!-- New or discovered proof-bearing subprograms belong here. -->
 
 ## Discovered Obligations
+
+- [x] Re-widen the forced eight-unit manifest after moving HeadObject and
+      GetObject read-condition evaluation into the SPARK root.
 
 - [x] Widen the forced manifest to Checksum_Policy and Checksum_CRC after
       scoped termination review.
@@ -160,3 +168,7 @@ errors, zero justified checks, and zero Assume statements.
       strict UTF-8 tag validator's helper precondition, and widened the forced
       eight-unit manifest to 588/588 checks with warnings as errors, zero
       justified checks, and zero Assume statements.
+- [x] Moved conditional-read entity-tag validation and S3 ETag/date precedence
+      into the SPARK root, proved both entry points in scoped level-0 runs, and
+      widened the forced eight-unit manifest to 593/593 checks with warnings
+      as errors, zero justified checks, and zero Assume statements.

@@ -192,6 +192,60 @@ is
       return Success;
    end Evaluate_Object_Write_Conditions;
 
+   function Valid_Object_Read_Entity_Tag_Condition
+     (Value : String) return Boolean is
+     (Value'Length > 0
+      and then Evaluate_Object_Read_Conditions
+        (If_Match => Value,
+         If_None_Match => "",
+         Has_If_Modified_Since => False,
+         If_Modified_Since => 0,
+         Has_If_Unmodified_Since => False,
+         If_Unmodified_Since => 0,
+         Entity_Tag => "",
+         Modified => 0) /= Invalid_Request);
+
+   function Evaluate_Object_Read_Conditions
+     (If_Match, If_None_Match : String;
+      Has_If_Modified_Since   : Boolean;
+      If_Modified_Since       : Long_Long_Integer;
+      Has_If_Unmodified_Since : Boolean;
+      If_Unmodified_Since     : Long_Long_Integer;
+      Entity_Tag              : String;
+      Modified                : Unix_Time) return Status
+   is
+      Valid, Matches : Boolean;
+   begin
+      if If_Match'Length > 0 then
+         Read_Entity_Tag_List
+           (If_Match, Entity_Tag, False, Valid, Matches);
+         if not Valid then
+            return Invalid_Request;
+         elsif not Matches then
+            return Precondition_Failed;
+         end if;
+      elsif Has_If_Unmodified_Since
+        and then Long_Long_Integer (Modified) > If_Unmodified_Since
+      then
+         return Precondition_Failed;
+      end if;
+
+      if If_None_Match'Length > 0 then
+         Read_Entity_Tag_List
+           (If_None_Match, Entity_Tag, True, Valid, Matches);
+         if not Valid then
+            return Invalid_Request;
+         elsif Matches then
+            return Not_Modified;
+         end if;
+      elsif Has_If_Modified_Since
+        and then Long_Long_Integer (Modified) <= If_Modified_Since
+      then
+         return Not_Modified;
+      end if;
+      return Success;
+   end Evaluate_Object_Read_Conditions;
+
    function Starts_With (Value, Prefix : String) return Boolean is
      (Value'Length >= Prefix'Length
       and then Value

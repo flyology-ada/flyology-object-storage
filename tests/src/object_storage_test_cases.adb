@@ -980,6 +980,20 @@ package body Object_Storage_Test_Cases is
       use AUnit.Assertions;
       use Flyology.Object_Storage;
       Nul_Key : constant String := "a" & Character'Val (0) & "b";
+
+      function Read_Result
+        (If_Match                 : String := "";
+         If_None_Match            : String := "";
+         Has_If_Modified_Since    : Boolean := False;
+         If_Modified_Since        : Long_Long_Integer := 0;
+         Has_If_Unmodified_Since  : Boolean := False;
+         If_Unmodified_Since      : Long_Long_Integer := 0)
+         return Status is
+        (Evaluate_Object_Read_Conditions
+           (If_Match, If_None_Match,
+            Has_If_Modified_Since, If_Modified_Since,
+            Has_If_Unmodified_Since, If_Unmodified_Since,
+            "etag", 100));
    begin
       Assert (Valid_Bucket_Name ("abc"), "minimum bucket name");
       Assert (Valid_Bucket_Name ("logs.example-1"), "ordinary bucket name");
@@ -1050,6 +1064,53 @@ package body Object_Storage_Test_Cases is
         (Evaluate_Object_Write_Conditions
            ((1 .. 16_385 => 'x'), "", True, "etag") = Invalid_Request,
          "oversized condition field was accepted");
+      Assert
+        (Valid_Object_Read_Entity_Tag_Condition
+           (ASCII.HT & """other""," & ASCII.HT & "W/""etag"""),
+         "valid read entity-tag list was rejected");
+      Assert
+        (not Valid_Object_Read_Entity_Tag_Condition (""),
+         "empty read entity-tag condition was accepted");
+      Assert
+        (not Valid_Object_Read_Entity_Tag_Condition ("*, ""etag"""),
+         "mixed-wildcard read entity-tag list was accepted");
+      Assert
+        (not Valid_Object_Read_Entity_Tag_Condition ((1 .. 16_385 => 'x')),
+         "oversized read entity-tag condition was accepted");
+      Assert
+        (Read_Result (If_Match => """etag""") = Success,
+         "strong read If-Match did not match");
+      Assert
+        (Read_Result (If_Match => "W/""etag""") = Precondition_Failed,
+         "weak read If-Match incorrectly matched");
+      Assert
+        (Read_Result
+           (If_Match => """etag""",
+            Has_If_Unmodified_Since => True,
+            If_Unmodified_Since => 99) = Success,
+         "read If-Match did not override If-Unmodified-Since");
+      Assert
+        (Read_Result
+           (Has_If_Unmodified_Since => True,
+            If_Unmodified_Since => 99) = Precondition_Failed,
+         "failed read If-Unmodified-Since was accepted");
+      Assert
+        (Read_Result (If_None_Match => "W/""etag""") = Not_Modified,
+         "weak read If-None-Match did not match");
+      Assert
+        (Read_Result
+           (If_None_Match => """other""",
+            Has_If_Modified_Since => True,
+            If_Modified_Since => Long_Long_Integer'Last) = Success,
+         "read If-None-Match did not override If-Modified-Since");
+      Assert
+        (Read_Result
+           (Has_If_Modified_Since => True,
+            If_Modified_Since => 100) = Not_Modified,
+         "equal read If-Modified-Since was accepted");
+      Assert
+        (Read_Result (If_None_Match => "*, ""etag""") = Invalid_Request,
+         "malformed read If-None-Match was accepted");
    end Check_Validators;
 
    procedure Check_Memory_Lifecycle (Unused : in out Fixture) is

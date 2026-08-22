@@ -40,6 +40,27 @@ is
       Exists                  : Boolean;
       Entity_Tag              : String) return Status;
 
+   --  Validate one If-Match or If-None-Match field for an object read.
+   --  Weak entity tags are valid syntax; comparison semantics are selected by
+   --  Evaluate_Object_Read_Conditions. Oversized fields are rejected.
+   function Valid_Object_Read_Entity_Tag_Condition
+     (Value : String) return Boolean;
+
+   --  Evaluate S3 conditional-read precedence against one immutable metadata
+   --  snapshot. Entity_Tag is the stored unquoted opaque tag. The two Boolean
+   --  arguments distinguish an absent date condition from every signed HTTP
+   --  date value, including dates before the Unix epoch.
+   function Evaluate_Object_Read_Conditions
+     (If_Match, If_None_Match : String;
+      Has_If_Modified_Since   : Boolean;
+      If_Modified_Since       : Long_Long_Integer;
+      Has_If_Unmodified_Since : Boolean;
+      If_Unmodified_Since     : Long_Long_Integer;
+      Entity_Tag              : String;
+      Modified                : Unix_Time) return Status
+   with Post => Evaluate_Object_Read_Conditions'Result in
+     Success | Precondition_Failed | Not_Modified | Invalid_Request;
+
    --  Requested object byte interval. Backends resolve this request against
    --  the same immutable object snapshot that they stream, including suffix
    --  requests, so callers never need a racy Head_Object/Get_Object pair.
