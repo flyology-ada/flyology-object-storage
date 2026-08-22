@@ -3079,232 +3079,349 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                end;
 
             when Head_Object =>
-               if Object_Read_Request.Has_Version_ID
-                 or else Object_Read_Request.Has_Part_Number
-                 or else Object_Read_Request.Has_Response_Overrides
-               then
-                  Send_Error
-                    (X, 501, "NotImplemented",
-                     "The requested HeadObject query controls are not " &
-                     "implemented", Target_Text);
-               else
-                  declare
-                     If_Match_Count : constant Natural :=
-                       Apps.Request_Header_Count (X, "if-match");
-                     If_Modified_Count : constant Natural :=
-                       Apps.Request_Header_Count (X, "if-modified-since");
-                     If_None_Match_Count : constant Natural :=
-                       Apps.Request_Header_Count (X, "if-none-match");
-                     If_Unmodified_Count : constant Natural :=
-                       Apps.Request_Header_Count (X, "if-unmodified-since");
-                     Range_Count : constant Natural :=
-                       Apps.Request_Header_Count (X, "range");
-                     SSE_Algorithm_Count : constant Natural :=
-                       Apps.Request_Header_Count
-                         (X, "x-amz-server-side-encryption-customer-" &
-                          "algorithm");
-                     SSE_Key_Count : constant Natural :=
-                       Apps.Request_Header_Count
-                         (X, "x-amz-server-side-encryption-customer-key");
-                     SSE_MD5_Count : constant Natural :=
-                       Apps.Request_Header_Count
-                         (X, "x-amz-server-side-encryption-customer-" &
-                          "key-md5");
-                     Server_Encryption_Count : constant Natural :=
-                       Apps.Request_Header_Count
-                         (X, "x-amz-server-side-encryption");
-                     Payer_Count : constant Natural :=
-                       Apps.Request_Header_Count (X, "x-amz-request-payer");
-                     Checksum_Count : constant Natural :=
-                       Apps.Request_Header_Count (X, "x-amz-checksum-mode");
-                     Requested : Byte_Range := Whole_Object;
-                     Has_Range : Boolean := False;
-                     Owner_OK : Boolean := False;
+               declare
+                  If_Match_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "if-match");
+                  If_Modified_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "if-modified-since");
+                  If_None_Match_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "if-none-match");
+                  If_Unmodified_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "if-unmodified-since");
+                  Range_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "range");
+                  SSE_Algorithm_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-algorithm");
+                  SSE_Key_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-key");
+                  SSE_MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-key-md5");
+                  Server_Encryption_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Checksum_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-mode");
+                  Modified_Date : constant
+                    Object_Reads.Conditional_Date_Result :=
+                      (if If_Modified_Count = 1
+                       then Object_Reads.Parse_Conditional_Date
+                         (Apps.Request_Header (X, "if-modified-since"), Clock)
+                       else (Valid => False));
+                  Unmodified_Date : constant
+                    Object_Reads.Conditional_Date_Result :=
+                      (if If_Unmodified_Count = 1
+                       then Object_Reads.Parse_Conditional_Date
+                         (Apps.Request_Header (X, "if-unmodified-since"),
+                          Clock)
+                       else (Valid => False));
+                  Conditions : Backends.Read_Conditions :=
+                    Backends.Default_Read_Conditions;
+                  Requested : Byte_Range := Whole_Object;
+                  Has_Range : Boolean := False;
+                  Valid_SSE_C : Boolean := False;
+                  Owner_OK : Boolean := False;
+                  Selected_Part : constant Backends.Multipart_Part_Marker :=
+                    (if Object_Read_Request.Has_Part_Number
+                     then Backends.Multipart_Part_Marker
+                       (Object_Read_Request.Part_Number)
+                     else 0);
+
+                  function Valid_Response_Field
+                    (Present : Boolean;
+                     Value   : US.Unbounded_String) return Boolean
+                  is
                   begin
-                     if If_Match_Count > 1
-                       or else If_Modified_Count > 1
-                       or else If_None_Match_Count > 1
-                       or else If_Unmodified_Count > 1
-                       or else Range_Count > 1
-                       or else SSE_Algorithm_Count > 1
-                       or else SSE_Key_Count > 1
-                       or else SSE_MD5_Count > 1
-                       or else Server_Encryption_Count > 1
-                       or else Payer_Count > 1
-                       or else Checksum_Count > 1
-                     then
-                        Send_Error
-                          (X, 400, "InvalidRequest",
-                           "A HeadObject request header is duplicated",
-                           Target_Text);
-                        return;
-                     elsif (If_Match_Count = 1
-                            and then Apps.Request_Header
-                              (X, "if-match")'Length = 0)
-                       or else (If_Modified_Count = 1
-                                and then Apps.Request_Header
-                                  (X, "if-modified-since")'Length = 0)
-                       or else (If_None_Match_Count = 1
-                                and then Apps.Request_Header
-                                  (X, "if-none-match")'Length = 0)
-                       or else (If_Unmodified_Count = 1
-                                and then Apps.Request_Header
-                                  (X, "if-unmodified-since")'Length = 0)
-                       or else (Range_Count = 1
-                                and then Apps.Request_Header
-                                  (X, "range")'Length = 0)
-                     then
-                        Send_Error
-                          (X, 400, "InvalidRequest",
-                           "A HeadObject request header is empty",
-                           Target_Text);
-                        return;
+                     if not Present then
+                        return True;
                      end if;
+                     for Item of US.To_String (Value) loop
+                        if Character'Pos (Item) < 32
+                          or else Character'Pos (Item) = 127
+                        then
+                           return False;
+                        end if;
+                     end loop;
+                     return True;
+                  end Valid_Response_Field;
 
-                     Check_Expected_Bucket_Owner
-                       (US.To_String (Auth.Principal), Owner_OK);
-                     if not Owner_OK then
-                        return;
-                     elsif Server_Encryption_Count = 1 then
-                        Send_Error
-                          (X, 400, "InvalidRequest",
-                           "HeadObject cannot specify the server-side " &
-                           "encryption method", Target_Text);
-                        return;
-                     elsif SSE_Algorithm_Count = 1
-                       or else SSE_Key_Count = 1
-                       or else SSE_MD5_Count = 1
-                     then
-                        if SSE_Algorithm_Count /= 1
-                          or else SSE_Key_Count /= 1
-                          or else SSE_MD5_Count /= 1
-                          or else Apps.Request_Header
+                  function Valid_Response_Overrides return Boolean is
+                    (Valid_Response_Field
+                       (Object_Read_Request.Has_Response_Cache_Control,
+                        Object_Read_Request.Response_Cache_Control)
+                     and then Valid_Response_Field
+                       (Object_Read_Request.Has_Response_Content_Disposition,
+                        Object_Read_Request.Response_Content_Disposition)
+                     and then Valid_Response_Field
+                       (Object_Read_Request.Has_Response_Content_Encoding,
+                        Object_Read_Request.Response_Content_Encoding)
+                     and then Valid_Response_Field
+                       (Object_Read_Request.Has_Response_Content_Language,
+                        Object_Read_Request.Response_Content_Language)
+                     and then Valid_Response_Field
+                       (Object_Read_Request.Has_Response_Content_Type,
+                        Object_Read_Request.Response_Content_Type)
+                     and then Valid_Response_Field
+                       (Object_Read_Request.Has_Response_Expires,
+                        Object_Read_Request.Response_Expires));
+
+                  procedure Set_Common_Headers is
+                  begin
+                     Apps.Set_Header (X, "Accept-Ranges", "bytes");
+                     Apps.Set_Header
+                       (X, "ETag",
+                        '"' & US.To_String (Info.Entity_Tag) & '"');
+                     Apps.Set_Header
+                       (X, "Last-Modified",
+                        HTTP_Last_Modified (Info.Modified));
+                     Apps.Set_Header
+                       (X, "x-amz-version-id",
+                        (if US.Length (Info.Version) > 0
+                         then US.To_String (Info.Version) else "null"));
+                  end Set_Common_Headers;
+
+                  procedure Set_Response_Overrides is
+                     procedure Set_One
+                       (Name : String;
+                        Present : Boolean;
+                        Value : US.Unbounded_String) is
+                     begin
+                        if Present then
+                           Apps.Set_Header (X, Name, US.To_String (Value));
+                        end if;
+                     end Set_One;
+                  begin
+                     Set_One
+                       ("Cache-Control",
+                        Object_Read_Request.Has_Response_Cache_Control,
+                        Object_Read_Request.Response_Cache_Control);
+                     Set_One
+                       ("Content-Disposition",
+                        Object_Read_Request.Has_Response_Content_Disposition,
+                        Object_Read_Request.Response_Content_Disposition);
+                     Set_One
+                       ("Content-Encoding",
+                        Object_Read_Request.Has_Response_Content_Encoding,
+                        Object_Read_Request.Response_Content_Encoding);
+                     Set_One
+                       ("Content-Language",
+                        Object_Read_Request.Has_Response_Content_Language,
+                        Object_Read_Request.Response_Content_Language);
+                     Set_One
+                       ("Expires", Object_Read_Request.Has_Response_Expires,
+                        Object_Read_Request.Response_Expires);
+                  end Set_Response_Overrides;
+               begin
+                  if If_Match_Count > 1
+                    or else If_Modified_Count > 1
+                    or else If_None_Match_Count > 1
+                    or else If_Unmodified_Count > 1
+                    or else Range_Count > 1
+                    or else SSE_Algorithm_Count > 1
+                    or else SSE_Key_Count > 1
+                    or else SSE_MD5_Count > 1
+                    or else Server_Encryption_Count > 1
+                    or else Payer_Count > 1
+                    or else Checksum_Count > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A HeadObject request header is duplicated",
+                        Target_Text);
+                     return;
+                  elsif (If_Match_Count = 1
+                         and then Apps.Request_Header
+                           (X, "if-match")'Length = 0)
+                    or else (If_Modified_Count = 1
+                             and then Apps.Request_Header
+                               (X, "if-modified-since")'Length = 0)
+                    or else (If_None_Match_Count = 1
+                             and then Apps.Request_Header
+                               (X, "if-none-match")'Length = 0)
+                    or else (If_Unmodified_Count = 1
+                             and then Apps.Request_Header
+                               (X, "if-unmodified-since")'Length = 0)
+                    or else (Range_Count = 1
+                             and then Apps.Request_Header
+                               (X, "range")'Length = 0)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A HeadObject request header is empty", Target_Text);
+                     return;
+                  elsif (If_Match_Count = 1
+                         and then not
+                           Backends.Valid_Read_Entity_Tag_Condition
+                             (Apps.Request_Header (X, "if-match")))
+                    or else (If_None_Match_Count = 1
+                             and then not
+                               Backends.Valid_Read_Entity_Tag_Condition
+                                 (Apps.Request_Header (X, "if-none-match")))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "A HeadObject entity-tag condition is malformed",
+                        Target_Text);
+                     return;
+                  elsif (If_Modified_Count = 1
+                         and then not Modified_Date.Valid)
+                    or else (If_Unmodified_Count = 1
+                             and then not Unmodified_Date.Valid)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "A HeadObject date condition is malformed",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  elsif not Valid_Response_Overrides then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "A HeadObject response override contains an " &
+                        "invalid field value", Target_Text);
+                     return;
+                  elsif Object_Read_Request.Has_Version_ID
+                    and then US.To_String
+                      (Object_Read_Request.Version_ID) /= "null"
+                  then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Object versioning is not implemented", Target_Text);
+                     return;
+                  elsif Server_Encryption_Count = 1 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "HeadObject cannot specify the server-side " &
+                        "encryption method", Target_Text);
+                     return;
+                  elsif SSE_Algorithm_Count > 0 or else SSE_Key_Count > 0
+                    or else SSE_MD5_Count > 0
+                  then
+                     if SSE_Algorithm_Count /= 1
+                       or else SSE_Key_Count /= 1
+                       or else SSE_MD5_Count /= 1
+                       or else Apps.Request_Header
+                         (X, "x-amz-server-side-encryption-customer-" &
+                          "algorithm") /= "AES256"
+                       or else not S3.Wire_Core.Valid_Base64
+                         (Apps.Request_Header
+                            (X, "x-amz-server-side-encryption-customer-key"),
+                          32)
+                       or else not S3.Wire_Core.Valid_Base64
+                         (Apps.Request_Header
                             (X, "x-amz-server-side-encryption-customer-" &
-                             "algorithm") /= "AES256"
-                          or else not S3.Wire_Core.Valid_Base64
-                            (Apps.Request_Header
-                               (X, "x-amz-server-side-encryption-customer-" &
-                                "key"), 32)
-                          or else not S3.Wire_Core.Valid_Base64
-                            (Apps.Request_Header
-                               (X, "x-amz-server-side-encryption-customer-" &
-                                "key-md5"), 16)
-                        then
-                           Send_Error
-                             (X, 400, "InvalidRequest",
-                              "The SSE-C header group is invalid",
-                              Target_Text);
-                        else
-                           Send_Error
-                             (X, 501, "NotImplemented",
-                              "SSE-C HeadObject requests are not " &
-                              "implemented", Target_Text);
-                        end if;
-                        return;
-                     elsif Has_Encryption_Header then
-                        Send_Error
-                          (X, 501, "NotImplemented",
-                           "The HeadObject encryption header is not " &
-                           "implemented", Target_Text);
-                        return;
-                     elsif Payer_Count = 1 then
-                        if Apps.Request_Header
-                          (X, "x-amz-request-payer") /= "requester"
-                        then
-                           Send_Error
-                             (X, 400, "InvalidRequest",
-                              "The request payer header is invalid",
-                              Target_Text);
-                        else
-                           Send_Error
-                             (X, 501, "NotImplemented",
-                              "Requester-pays HeadObject is not implemented",
-                              Target_Text);
-                        end if;
-                        return;
-                     elsif Checksum_Count = 1 then
-                        if Apps.Request_Header
-                          (X, "x-amz-checksum-mode") /= "ENABLED"
-                        then
-                           Send_Error
-                             (X, 400, "InvalidRequest",
-                              "The checksum mode header is invalid",
-                              Target_Text);
-                        else
-                           Send_Error
-                             (X, 501, "NotImplemented",
-                              "HeadObject checksum mode is not implemented",
-                              Target_Text);
-                        end if;
-                        return;
-                     elsif If_Modified_Count = 1
-                       or else If_Unmodified_Count = 1
+                             "key-md5"), 16)
                      then
                         Send_Error
-                          (X, 501, "NotImplemented",
-                           "Date-based HeadObject conditions are not " &
-                           "implemented", Target_Text);
+                          (X, 400, "InvalidRequest",
+                           "The SSE-C header group is invalid", Target_Text);
                         return;
                      end if;
+                     Valid_SSE_C := True;
+                  elsif Has_Encryption_Header then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "HeadObject contains an unsupported encryption " &
+                        "request header", Target_Text);
+                     return;
+                  end if;
 
-                     if Range_Count = 1 then
-                        declare
-                           Parsed_Range : constant
-                             S3.Core.Range_Parse_Result :=
-                               S3.Core.Parse_Range_Header
-                                 (Apps.Request_Header (X, "range"));
-                        begin
-                           if Parsed_Range.Status /= S3.Core.Range_Parsed then
-                              Send_Error
-                                (X, 400, "InvalidRequest",
-                                 "The Range header is malformed",
-                                 Target_Text);
-                              return;
-                           end if;
-                           Requested := Parsed_Range.Request;
-                           Has_Range := True;
-                        end;
-                     end if;
+                  if Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The request payer header is invalid", Target_Text);
+                     return;
+                  elsif Checksum_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-checksum-mode") /= "ENABLED"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The checksum mode header is invalid", Target_Text);
+                     return;
+                  end if;
 
-                     Store.Head_Object
-                       (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
-                        Info, Result);
-                     if Result = Success then
-                        Apps.Set_Header
-                          (X, "ETag",
-                           '"' & US.To_String (Info.Entity_Tag) & '"');
-                        Apps.Set_Header (X, "Accept-Ranges", "bytes");
-                        Apps.Set_Header
-                          (X, "Last-Modified",
-                           HTTP_Last_Modified (Info.Modified));
-                        if US.Length (Info.Version) > 0 then
-                           Apps.Set_Header
-                             (X, "x-amz-version-id",
-                              US.To_String (Info.Version));
-                        end if;
+                  if If_Match_Count = 1 then
+                     Conditions.If_Match := US.To_Unbounded_String
+                       (Apps.Request_Header (X, "if-match"));
+                  end if;
+                  if If_None_Match_Count = 1 then
+                     Conditions.If_None_Match := US.To_Unbounded_String
+                       (Apps.Request_Header (X, "if-none-match"));
+                  end if;
+                  if Modified_Date.Valid then
+                     Conditions.If_Modified_Since :=
+                       (Is_Set => True,
+                        Value => Modified_Date.Seconds_Since_Epoch);
+                  end if;
+                  if Unmodified_Date.Valid then
+                     Conditions.If_Unmodified_Since :=
+                       (Is_Set => True,
+                        Value => Unmodified_Date.Seconds_Since_Epoch);
+                  end if;
 
-                        if If_Match_Count = 1
-                          and then not Backends.Copy_Conditions_Accept
-                            ((If_Match => US.To_Unbounded_String
-                                (Apps.Request_Header (X, "if-match")),
-                              If_None_Match => US.Null_Unbounded_String),
-                             US.To_String (Info.Entity_Tag))
-                        then
+                  if Range_Count = 1 then
+                     declare
+                        Parsed_Range : constant S3.Core.Range_Parse_Result :=
+                          S3.Core.Parse_Range_Header
+                            (Apps.Request_Header (X, "range"));
+                     begin
+                        if Parsed_Range.Status /= S3.Core.Range_Parsed then
                            Send_Error
-                             (X, 412, "PreconditionFailed",
-                              "The If-Match condition failed", Target_Text);
-                           return;
-                        elsif If_None_Match_Count = 1
-                          and then not Backends.Copy_Conditions_Accept
-                            ((If_Match => US.Null_Unbounded_String,
-                              If_None_Match => US.To_Unbounded_String
-                                (Apps.Request_Header (X, "if-none-match"))),
-                             US.To_String (Info.Entity_Tag))
-                        then
-                           Apps.Respond (X, 304, "", "");
+                             (X, 400, "InvalidRequest",
+                              "The Range header is malformed", Target_Text);
                            return;
                         end if;
+                        Requested := Parsed_Range.Request;
+                        Has_Range := True;
+                     end;
+                  end if;
 
+                  Store.Head_Object
+                    (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
+                     Info, Result,
+                     Conditions =>
+                       (if Valid_SSE_C
+                        then Backends.Default_Read_Conditions
+                        else Conditions),
+                     Part_Number =>
+                       (if Valid_SSE_C then 0 else Selected_Part));
+                  if Result = Success and then Valid_SSE_C then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The object is not encrypted with SSE-C", Target_Text);
+                  elsif Result in Success | Not_Modified |
+                    Precondition_Failed
+                  then
+                     Set_Common_Headers;
+                     if Result = Not_Modified then
+                        Apps.Respond (X, 304, "", "");
+                     elsif Result = Precondition_Failed then
+                        Send_Backend_Error (X, Result, False, Target_Text);
+                     else
+                        if Object_Read_Request.Has_Part_Number
+                          and then Info.Multipart_Parts > 0
+                        then
+                           Apps.Set_Header
+                             (X, "x-amz-mp-parts-count",
+                              Ada.Strings.Fixed.Trim
+                                (Multipart_Part_Count'Image
+                                   (Info.Multipart_Parts),
+                                 Ada.Strings.Both));
+                        end if;
+                        Set_Response_Overrides;
                         if Has_Range then
                            declare
                               Resolved : constant Range_Resolution :=
@@ -3324,20 +3441,36 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                  Decimal (Resolved.Last) & "/" &
                                  Decimal (Info.Size));
                               Apps.Begin_Stream
-                                (X, 206, US.To_String (Info.Content_Type),
+                                (X, 206,
+                                 (if Object_Read_Request
+                                       .Has_Response_Content_Type
+                                  then US.To_String
+                                    (Object_Read_Request
+                                       .Response_Content_Type)
+                                  else US.To_String (Info.Content_Type)),
                                  Flyology.HTTP.Body_Size (Resolved.Length));
                            end;
                         else
                            Apps.Begin_Stream
-                             (X, 200, US.To_String (Info.Content_Type),
+                             (X, 200,
+                              (if Object_Read_Request
+                                    .Has_Response_Content_Type
+                               then US.To_String
+                                 (Object_Read_Request.Response_Content_Type)
+                               else US.To_String (Info.Content_Type)),
                               Flyology.HTTP.Body_Size (Info.Size));
                         end if;
                         Apps.End_Stream (X);
-                     else
-                        Send_Backend_Error (X, Result, False, Target_Text);
                      end if;
-                  end;
-               end if;
+                  elsif Result = Invalid_Part then
+                     Apps.Set_Header
+                       (X, "Content-Range", "bytes */" & Decimal (Info.Size));
+                     Send_Backend_Error
+                       (X, Invalid_Range, False, Target_Text);
+                  else
+                     Send_Backend_Error (X, Result, False, Target_Text);
+                  end if;
+               end;
 
             when Get_Object =>
                declare

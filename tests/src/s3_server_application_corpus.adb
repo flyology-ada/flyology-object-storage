@@ -1022,6 +1022,46 @@ procedure S3_Server_Application_Corpus is
             and then Has (Response, Payload),
             "completed multipart object was not published exactly");
       end;
+      declare
+         Part_One : constant SigV4.Name_Value_Array :=
+           (1 => SigV4.Pair ("partNumber", "1"));
+         Part_Two : constant SigV4.Name_Value_Array :=
+           (1 => SigV4.Pair ("partNumber", "2"));
+         Part_Response : constant String := Run
+           (Signed_Query_Request
+              ("HEAD", "/test-bucket/multipart-object", Part_One));
+         Ranged_Response : constant String := Run
+           (Signed_Query_Request
+              ("HEAD", "/test-bucket/multipart-object", Part_One,
+               "Range", "bytes=2-5"));
+         Missing_Response : constant String := Run
+           (Signed_Query_Request
+              ("HEAD", "/test-bucket/multipart-object", Part_Two));
+      begin
+         Require
+           (Has (Part_Response, "200 OK")
+            and then Has (Part_Response, "Content-Length: 14" & CRLF)
+            and then Has
+              (Part_Response, "x-amz-mp-parts-count: 1" & CRLF)
+            and then not Has (Part_Response, Payload),
+            "HeadObject completed-part selection mismatch: " &
+            Part_Response);
+         Require
+           (Has (Ranged_Response, "HTTP/1.1 206 ")
+            and then Has
+              (Ranged_Response, "Content-Range: bytes 2-5/14" & CRLF)
+            and then Has (Ranged_Response, "Content-Length: 4" & CRLF)
+            and then Has
+              (Ranged_Response, "x-amz-mp-parts-count: 1" & CRLF),
+            "HeadObject completed-part range mismatch: " &
+            Ranged_Response);
+         Require
+           (Has (Missing_Response, "HTTP/1.1 416 ")
+            and then Has
+              (Missing_Response, "Content-Range: bytes */14" & CRLF),
+            "HeadObject missing completed part mismatch: " &
+            Missing_Response);
+      end;
 
       declare
          Query : constant SigV4.Name_Value_Array :=
@@ -2464,6 +2504,12 @@ begin
         (Signed_Request
            ("HEAD", "/test-bucket/object", "",
             Extra_Headers => "If-Match: ""different""" & CRLF));
+
+      function Head_With (Headers : String) return String is
+        (Run
+           (Signed_Request
+              ("HEAD", "/test-bucket/object", "",
+               Extra_Headers => Headers)));
    begin
       Require
         (Has
@@ -2494,6 +2540,91 @@ begin
                     "If-None-Match: ""different""" & CRLF)),
             "200 OK"),
          "HeadObject rejected a nonmatching If-None-Match");
+      Require
+        (Has
+           (Head_With
+              ("If-None-Match: W/" & Matching_ETag & CRLF),
+            "HTTP/1.1 304 "),
+         "HeadObject did not use weak comparison for If-None-Match");
+      Require
+        (Has (Head_With ("If-None-Match: *" & CRLF), "HTTP/1.1 304 "),
+         "HeadObject rejected wildcard If-None-Match");
+      Require
+        (Has
+           (Head_With
+              ("If-Match: " & Matching_ETag & CRLF &
+               "If-Unmodified-Since: Thu, 01 Jan 1970 00:00:00 GMT" &
+               CRLF),
+            "200 OK"),
+         "HeadObject If-Match did not override If-Unmodified-Since");
+      Require
+        (Has
+           (Head_With
+              ("If-None-Match: ""different""" & CRLF &
+               "If-Modified-Since: Fri, 01 Jan 2099 00:00:00 GMT" &
+               CRLF),
+            "200 OK"),
+         "HeadObject If-None-Match did not override If-Modified-Since");
+      Require
+        (Has
+           (Head_With
+              ("If-Modified-Since: Fri, 01 Jan 2099 00:00:00 GMT" &
+               CRLF),
+            "HTTP/1.1 304 "),
+         "HeadObject ignored a future If-Modified-Since");
+      Require
+        (Has
+           (Head_With
+              ("If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT" &
+               CRLF),
+            "200 OK"),
+         "HeadObject rejected a past If-Modified-Since");
+      Require
+        (Has
+           (Head_With
+              ("If-Unmodified-Since: Thu, 01 Jan 1970 00:00:00 GMT" &
+               CRLF),
+            "HTTP/1.1 412 "),
+         "HeadObject ignored a failed If-Unmodified-Since");
+      Require
+        (Has
+           (Head_With
+              ("If-Unmodified-Since: Fri, 01 Jan 2099 00:00:00 GMT" &
+               CRLF),
+            "200 OK"),
+         "HeadObject rejected a future If-Unmodified-Since");
+      Require
+        (Has
+           (Head_With
+              ("If-Unmodified-Since: Thursday, 01-Jan-14 00:00:00 GMT" &
+               CRLF),
+            "HTTP/1.1 412 "),
+         "HeadObject rejected an RFC 850 conditional date");
+      Require
+        (Has
+           (Head_With
+              ("If-Modified-Since: Fri Jan  1 00:00:00 2099" & CRLF),
+            "HTTP/1.1 304 "),
+         "HeadObject rejected an asctime conditional date");
+      Require
+        (Has
+           (Head_With
+              ("If-Modified-Since: Sun, 31 Feb 1994 08:49:37 GMT" &
+               CRLF),
+            "400 Bad Request"),
+         "HeadObject accepted an impossible conditional date");
+      Require
+        (Has
+           (Head_With ("If-Match: *, ""different""" & CRLF),
+            "400 Bad Request"),
+         "HeadObject accepted a mixed wildcard entity-tag list");
+      Require
+        (Has
+           (Head_With
+              ("If-Match: " & Matching_ETag & CRLF &
+               "If-Match: " & Matching_ETag & CRLF),
+            "400 Bad Request"),
+         "HeadObject accepted duplicate conditional headers");
       Require
         (Has (Range_Response, "HTTP/1.1 206 ")
          and then Has (Range_Response, "Content-Range: bytes 1-4/11")
@@ -2556,8 +2687,8 @@ begin
               (Signed_Query_Request
                  ("HEAD", "/test-bucket/object", X_ID,
                   "x-amz-checksum-mode", "ENABLED")),
-            "501 Not Implemented"),
-         "HeadObject silently ignored checksum mode");
+            "200 OK"),
+         "HeadObject rejected enabled checksum mode");
       Require
         (Has
            (Run
@@ -2572,8 +2703,8 @@ begin
               (Signed_Query_Request
                  ("HEAD", "/test-bucket/object", X_ID,
                   "x-amz-request-payer", "requester")),
-            "501 Not Implemented"),
-         "HeadObject silently ignored requester-pays");
+            "200 OK"),
+         "HeadObject rejected requester-pays acknowledgement");
       Require
         (Has
            (Run
@@ -2606,27 +2737,40 @@ begin
                  ("AES256",
                   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
                   "AAAAAAAAAAAAAAAAAAAAAA==")),
-            "501 Not Implemented"),
-         "HeadObject silently ignored a valid SSE-C group");
+            "400 Bad Request"),
+         "HeadObject accepted SSE-C headers for an unencrypted object");
       Require
         (Has
            (Run
               (Signed_Request
-                 ("HEAD", "/test-bucket/object", "",
-                  Extra_Headers =>
-                    "If-Modified-Since: Fri, 24 May 2013 00:00:00 GMT" &
+                  ("HEAD", "/test-bucket/object", "",
+                   Extra_Headers =>
+                    "If-Modified-Since: Fri, 01 Jan 2099 00:00:00 GMT" &
                     CRLF)),
-            "501 Not Implemented"),
-         "HeadObject silently ignored a date condition");
+            "HTTP/1.1 304 "),
+         "HeadObject ignored a future If-Modified-Since date");
    end;
 
    declare
       Version : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("versionId", "version-one"));
+      Null_Version : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("versionId", "null"));
       Part : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("partNumber", "1"));
+      Missing_Part : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("partNumber", "2"));
       Override : constant SigV4.Name_Value_Array :=
-        (1 => SigV4.Pair ("response-content-type", "text/plain"));
+        (SigV4.Pair ("response-cache-control", "no-store"),
+         SigV4.Pair ("response-content-disposition", "attachment"),
+         SigV4.Pair ("response-content-encoding", "identity"),
+         SigV4.Pair ("response-content-language", "en-CA"),
+         SigV4.Pair ("response-content-type", "application/octet-stream"),
+         SigV4.Pair ("response-expires", "Fri, 24 May 2013 01:00:00 GMT"));
+      Invalid_Override : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair
+           ("response-content-disposition",
+            "attachment" & Character'Val (1) & "unsafe"));
       Duplicate : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("partNumber", "1"),
          SigV4.Pair ("partNumber", "2"));
@@ -2638,19 +2782,58 @@ begin
            (Run (Signed_Query_Request
               ("HEAD", "/test-bucket/object", Version)),
             "501 Not Implemented"),
-         "HeadObject silently ignored versionId");
+         "HeadObject accepted a real versionId without versioning");
+      declare
+         Response : constant String := Run
+           (Signed_Query_Request
+              ("HEAD", "/test-bucket/object", Null_Version));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "x-amz-version-id: null" & CRLF),
+            "HeadObject rejected the null unversioned selector");
+      end;
+      declare
+         Response : constant String := Run
+           (Signed_Query_Request ("HEAD", "/test-bucket/object", Part));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "Content-Length: 11" & CRLF)
+            and then not Has (Response, "x-amz-mp-parts-count:"),
+            "HeadObject implicit ordinary-object part 1 mismatch");
+      end;
       Require
         (Has
            (Run (Signed_Query_Request
-              ("HEAD", "/test-bucket/object", Part)),
-            "501 Not Implemented"),
-         "HeadObject silently ignored partNumber");
+              ("HEAD", "/test-bucket/object", Missing_Part)),
+            "HTTP/1.1 416 "),
+         "HeadObject accepted an absent ordinary-object part");
+      declare
+         Response : constant String := Run
+           (Signed_Query_Request
+              ("HEAD", "/test-bucket/object", Override));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "Cache-Control: no-store" & CRLF)
+            and then Has (Response, "Content-Disposition: attachment" & CRLF)
+            and then Has (Response, "Content-Encoding: identity" & CRLF)
+            and then Has (Response, "Content-Language: en-CA" & CRLF)
+            and then Has
+              (Response, "Content-Type: application/octet-stream" & CRLF)
+            and then Has
+              (Response,
+               "Expires: Fri, 24 May 2013 01:00:00 GMT" & CRLF),
+            "HeadObject response overrides were not emitted exactly");
+      end;
       Require
         (Has
-           (Run (Signed_Query_Request
-              ("HEAD", "/test-bucket/object", Override)),
-            "501 Not Implemented"),
-         "HeadObject silently ignored a response override");
+           (Run
+              (Signed_Query_Request
+                 ("HEAD", "/test-bucket/object", Invalid_Override)),
+            "400 Bad Request"),
+         "HeadObject accepted a control byte in a response override");
       Require
         (Has
            (Run (Signed_Query_Request
