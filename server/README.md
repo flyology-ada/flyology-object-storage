@@ -17,8 +17,10 @@ in with the bootstrapped `admin` identity and reports the actual S3 address and
 port, region, selected backend, authenticated session, and supervised service
 relationship. It also presents a read-only, name-ordered bucket inventory from
 an atomic backend snapshot, bounded to 256 visible entries with an explicit
-truncation state. Storage mutation remains on the signed S3 endpoint rather
-than being implied by an incomplete browser control surface.
+truncation state. Administrators can create a validated bucket inline; the
+request requires an exact loopback Origin and uses the backend's atomic create
+primitive. Object mutation and destructive bucket operations remain on the
+signed S3 endpoint rather than being implied by incomplete browser controls.
 
 The generated 192-bit administrator password is printed once to standard
 error. Only a random 256-bit salt and PBKDF2-HMAC-SHA256 verifier are persisted
@@ -76,4 +78,5 @@ after bucket creation. It also verifies invalid configuration, asset tamper
 rejection, bootstrap and persisted login, same-origin and Host enforcement,
 session cookie shape and revocation, byte-exact asset delivery, actual endpoint
 status, authenticated empty and populated bucket inventories, and supervised
-SIGTERM shutdown.
+SIGTERM shutdown. Bucket creation tests cover missing/wrong Origin, invalid
+names, success, duplicate conflict, and visibility through the inventory API.

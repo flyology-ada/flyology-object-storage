@@ -333,6 +333,16 @@ procedure Flyology_Object_Storage_Server_Runtime is
              "http://" & Local_Authority (State)));
       end Same_Origin;
 
+      function Strict_Same_Origin
+        (State : Application_Context; X : Apps.Exchange) return Boolean
+      is
+      begin
+         return Local_Request (State, X)
+           and then X.Request_Header_Count ("Origin") = 1
+           and then X.Request_Header ("Origin") =
+             "http://" & Local_Authority (State);
+      end Strict_Same_Origin;
+
       function JSON_Escape (Value : String) return String is
          Result : US.Unbounded_String;
       begin
@@ -516,6 +526,57 @@ procedure Flyology_Object_Storage_Server_Runtime is
          X.JSON (200, US.To_String (Document));
       end Bucket_Inventory;
 
+      procedure Create_Bucket
+        (State : in out Application_Context; X : in out Apps.Exchange)
+      is
+         Prefix : constant String := "name=";
+         Form   : constant String := X.Content;
+         Outcome : Flyology.Object_Storage.Status;
+      begin
+         No_Store (X);
+         if not Strict_Same_Origin (State, X)
+           or else not Authenticated (State, X)
+         then
+            X.JSON (401, "{""authenticated"":false}");
+            return;
+         elsif X.Request_Header_Count ("Content-Type") /= 1
+           or else X.Request_Header ("Content-Type") /=
+             "application/x-www-form-urlencoded"
+           or else Form'Length <= Prefix'Length
+           or else Form'Length > Prefix'Length + 63
+           or else Form (Form'First .. Form'First + Prefix'Length - 1) /=
+             Prefix
+         then
+            X.JSON (400, "{""error"":""invalid_bucket_name""}");
+            return;
+         end if;
+         declare
+            Name : constant String :=
+              Form (Form'First + Prefix'Length .. Form'Last);
+         begin
+            if not Flyology.Object_Storage.Valid_Bucket_Name (Name) then
+               X.JSON (400, "{""error"":""invalid_bucket_name""}");
+               return;
+            end if;
+            Store.Create_Bucket
+              (Name, X.Cancellation, X.Deadline, Outcome);
+            case Outcome is
+               when Flyology.Object_Storage.Success =>
+                  X.JSON
+                    (201, "{""created"":true,""name"":""" &
+                     JSON_Escape (Name) & """}");
+               when Flyology.Object_Storage.Already_Exists =>
+                  X.JSON (409, "{""error"":""bucket_exists""}");
+               when Flyology.Object_Storage.Capacity_Exceeded =>
+                  X.JSON (507, "{""error"":""capacity_exceeded""}");
+               when Flyology.Object_Storage.Backend_Unavailable =>
+                  X.JSON (503, "{""error"":""storage_unavailable""}");
+               when others =>
+                  X.JSON (500, "{""error"":""storage_failure""}");
+            end case;
+         end;
+      end Create_Bucket;
+
       procedure Logout
         (State : in out Application_Context; X : in out Apps.Exchange)
       is
@@ -544,7 +605,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
       type Service_Context is limited record
          Application : aliased Application_Context;
          Routes : aliased Routing.Router
-           (Capacity => 7, Slashes => Routing.Strict_Slashes);
+           (Capacity => 8, Slashes => Routing.Strict_Slashes);
          Budget : aliased HTTP.Ingress_Budget (Limit => 4 * 1_024);
       end record;
 
@@ -606,6 +667,13 @@ procedure Flyology_Object_Storage_Server_Runtime is
          Policy =>
            (Routing.Default_Route_Policy with delta
               Concurrency => 2, Rate_Per_Second => 4));
+      State.Routes.Post
+        ("/api/buckets", Create_Bucket'Access,
+         Name => "admin.buckets.create",
+         Policy =>
+           (Routing.Default_Route_Policy with delta
+              Body_Handling => Apps.Buffer_Body, Max_Body => 68,
+              Concurrency => 1, Rate_Per_Second => 2));
       State.Routes.Post
         ("/api/logout", Logout'Access, Name => "admin.logout",
          Policy =>

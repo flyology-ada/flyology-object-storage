@@ -81,6 +81,10 @@ exercise_admin_api() {
   code=$(admin_request GET "$base/api/buckets" "$body" "$headers")
   test "$code" = 401
   test "$(tr -d '\r\n' <"$body")" = '{"authenticated":false}'
+  code=$(admin_request POST "$base/api/buckets" "$body" "$headers" \
+    --data-binary 'name=unauthorized-bucket')
+  test "$code" = 401
+  test "$(tr -d '\r\n' <"$body")" = '{"authenticated":false}'
 
   code=$(admin_request POST "$base/api/login" "$body" "$headers" \
     -H "Origin: $base" \
@@ -118,6 +122,53 @@ exercise_admin_api() {
   test "$code" = 200
   test "$(tr -d '\r\n' <"$body")" = \
     '{"buckets":[],"truncated":false,"limit":256}'
+
+  code=$(admin_request POST "$base/api/buckets" "$body" "$headers" \
+    -b "$cookies" --data-binary 'name=missing-origin-bucket')
+  test "$code" = 401
+  sleep 1
+  code=$(admin_request POST "$base/api/buckets" "$body" "$headers" \
+    -H 'Origin: https://attacker.invalid' -b "$cookies" \
+    --data-binary 'name=wrong-origin-bucket')
+  test "$code" = 401
+  sleep 1
+  code=$(admin_request POST "$base/api/buckets" "$body" "$headers" \
+    -H "Origin: $base" -H 'Content-Type: text/plain' -b "$cookies" \
+    --data-binary 'name=wrong-media-bucket')
+  test "$code" = 400
+  test "$(tr -d '\r\n' <"$body")" = \
+    '{"error":"invalid_bucket_name"}'
+  sleep 1
+  local long_bucket
+  long_bucket=$(printf '%064d' 0 | tr '0' 'a')
+  code=$(admin_request POST "$base/api/buckets" "$body" "$headers" \
+    -H "Origin: $base" -b "$cookies" \
+    --data-binary "name=$long_bucket")
+  test "$code" = 413
+  sleep 1
+  code=$(admin_request POST "$base/api/buckets" "$body" "$headers" \
+    -H "Origin: $base" -b "$cookies" --data-binary 'name=Bad_Name')
+  test "$code" = 400
+  test "$(tr -d '\r\n' <"$body")" = \
+    '{"error":"invalid_bucket_name"}'
+  sleep 1
+  local managed_bucket="management-$backend-bucket"
+  code=$(admin_request POST "$base/api/buckets" "$body" "$headers" \
+    -H "Origin: $base" -b "$cookies" \
+    --data-binary "name=$managed_bucket")
+  test "$code" = 201
+  test "$(tr -d '\r\n' <"$body")" = \
+    "{\"created\":true,\"name\":\"$managed_bucket\"}"
+  sleep 1
+  code=$(admin_request POST "$base/api/buckets" "$body" "$headers" \
+    -H "Origin: $base" -b "$cookies" \
+    --data-binary "name=$managed_bucket")
+  test "$code" = 409
+  test "$(tr -d '\r\n' <"$body")" = '{"error":"bucket_exists"}'
+  code=$(admin_request GET "$base/api/buckets" "$body" "$headers" \
+    -b "$cookies")
+  test "$code" = 200
+  grep -q "\"name\":\"$managed_bucket\"" "$body"
 
   code=$(admin_request GET "$base/api/status" "$body" "$headers" \
     -H "Cookie: notflyology_admin=$token")

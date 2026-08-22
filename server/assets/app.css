@@ -214,6 +214,11 @@ input:read-only { color: var(--ink-soft); }
 .inventory-count { align-items: baseline; display: flex; gap: .55rem; }
 .inventory-count strong { font-family: var(--mono); font-size: 1.25rem; }
 .inventory-count span { color: var(--ink-soft); font-family: var(--mono); font-size: .62rem; text-transform: uppercase; }
+.bucket-create { align-items: end; display: grid; gap: .35rem; grid-template-columns: minmax(18rem, 32rem) 1fr; margin-top: 1.35rem; }
+.bucket-create > label { color: var(--ink-soft); font-family: var(--mono); font-size: .62rem; grid-column: 1; text-transform: uppercase; }
+.bucket-create-controls { display: grid; gap: .5rem; grid-template-columns: 1fr auto; }
+.bucket-create-controls input { min-height: 2.55rem; }
+.bucket-create .form-message { align-self: center; margin: 0 0 .1rem .65rem; min-height: 0; }
 .inventory-columns, .bucket-list li {
   display: grid;
   gap: 1rem;
@@ -224,7 +229,7 @@ input:read-only { color: var(--ink-soft); }
   color: var(--ink-soft);
   font-family: var(--mono);
   font-size: .61rem;
-  margin-top: 1.35rem;
+  margin-top: 1rem;
   padding: 0 .5rem .55rem;
   text-transform: uppercase;
 }
@@ -256,6 +261,9 @@ input:read-only { color: var(--ink-soft); }
   .runtime-facts div:nth-child(odd) { margin-right: 0; }
   .workbench-footer { align-items: start; flex-direction: column; gap: .5rem; }
   .inventory-heading { gap: 1rem; }
+  .bucket-create { display: block; }
+  .bucket-create-controls { margin-top: .4rem; }
+  .bucket-create .form-message { margin: .55rem 0 0; min-height: 1.2rem; }
   .inventory-columns { display: none; }
   .bucket-list li { gap: .3rem; grid-template-columns: 1fr; padding: .85rem .5rem; }
   .bucket-list time, .bucket-list span { display: block; }

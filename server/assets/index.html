@@ -144,6 +144,18 @@
               <strong id="bucket-count">0</strong><span>visible buckets</span>
             </div>
           </div>
+          <form class="bucket-create" id="bucket-create-form">
+            <label for="bucket-name">Create bucket</label>
+            <div class="bucket-create-controls">
+              <input id="bucket-name" name="name" autocomplete="off"
+                minlength="3" maxlength="63"
+                pattern="[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]"
+                placeholder="project-artifacts" required>
+              <button class="button primary" type="submit">Create</button>
+            </div>
+            <p class="form-message" id="bucket-create-message"
+              role="status" aria-live="polite"></p>
+          </form>
           <div class="inventory-columns" aria-hidden="true">
             <span>Bucket</span><span>Created</span><span>Region</span>
           </div>

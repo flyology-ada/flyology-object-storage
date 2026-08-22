@@ -10,6 +10,8 @@
   const logoutButton = document.querySelector("#logout");
   const copyEndpoint = document.querySelector("#copy-endpoint");
   const bucketList = document.querySelector("#bucket-list");
+  const bucketCreateForm = document.querySelector("#bucket-create-form");
+  const bucketCreateMessage = document.querySelector("#bucket-create-message");
   const inventoryState = document.querySelector("#inventory-state");
   const inventoryNote = document.querySelector("#inventory-note");
   const toast = document.querySelector("#toast");
@@ -188,6 +190,46 @@
   });
 
   refreshButton.addEventListener("click", () => refreshStatus());
+
+  bucketCreateForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = bucketCreateForm.querySelector("button[type=submit]");
+    const name = bucketCreateForm.elements.name.value;
+    bucketCreateMessage.textContent = "";
+    button.disabled = true;
+    button.textContent = "Creating…";
+    try {
+      const response = await fetch("/api/buckets", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `name=${name}`
+      });
+      if (response.status === 401) {
+        showLogin("Your session ended. Sign in again.");
+        return;
+      }
+      if (response.status === 409) {
+        bucketCreateMessage.textContent = "That bucket already exists.";
+        return;
+      }
+      if (response.status === 400) {
+        bucketCreateMessage.textContent =
+          "Use 3–63 lowercase letters, digits, dots, or hyphens.";
+        return;
+      }
+      if (!response.ok) throw new Error(`create bucket ${response.status}`);
+      bucketCreateForm.reset();
+      showToast(`Bucket ${name} created`);
+      await refreshBuckets();
+    } catch (_error) {
+      bucketCreateMessage.textContent =
+        "The bucket could not be created. Check backend capacity and retry.";
+    } finally {
+      button.disabled = false;
+      button.textContent = "Create";
+    }
+  });
 
   logoutButton.addEventListener("click", async () => {
     logoutButton.disabled = true;
