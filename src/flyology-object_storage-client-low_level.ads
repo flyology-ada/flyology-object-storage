@@ -37,9 +37,13 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  OptionalObjectAttributes list value, RestoreStatus.
    type List_Objects_Parameters is record
       Prefix                  : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Prefix              : Boolean := False;
       Delimiter               : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Delimiter           : Boolean := False;
       Marker                  : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Marker              : Boolean := False;
       Max_Keys                : S3.Core.Page_Size := 1_000;
+      Has_Max_Keys            : Boolean := True;
       URL_Encoding            : Boolean := False;
       Request_Payer           : Ada.Strings.Unbounded.Unbounded_String;
       Expected_Bucket_Owner   : Ada.Strings.Unbounded.Unbounded_String;

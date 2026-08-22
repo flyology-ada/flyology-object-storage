@@ -53,6 +53,15 @@ package body Flyology.Object_Storage.S3.Listings is
       return Result (1 .. Output);
    end Decode_Component;
 
+   function Decode_URL_Value (Value : String) return String is
+   begin
+      return Decode_Component (Value);
+   exception
+      when Malformed_List_Request =>
+         raise Malformed_Listing with
+           "invalid encoding-type=url listing value";
+   end Decode_URL_Value;
+
    function Parse_List_Objects_Query
      (Query : String) return List_Objects_Request
    is
@@ -108,6 +117,7 @@ package body Flyology.Object_Storage.S3.Listings is
                           "invalid ListObjects max-keys";
                      end if;
                      Seen_Max_Keys := True;
+                     Result.Has_Max_Keys := True;
                      Result.Max_Keys := Core.Page_Size (Number.Value);
                   elsif Name = "prefix" then
                      if Seen_Prefix then
@@ -115,6 +125,7 @@ package body Flyology.Object_Storage.S3.Listings is
                           "duplicate ListObjects prefix";
                      end if;
                      Seen_Prefix := True;
+                     Result.Has_Prefix := True;
                      Result.Prefix := US.To_Unbounded_String (Value);
                   elsif Name = "delimiter" then
                      if Seen_Delimiter then
@@ -122,6 +133,7 @@ package body Flyology.Object_Storage.S3.Listings is
                           "duplicate ListObjects delimiter";
                      end if;
                      Seen_Delimiter := True;
+                     Result.Has_Delimiter := True;
                      Result.Delimiter := US.To_Unbounded_String (Value);
                   elsif Name = "marker" then
                      if Seen_Marker then
@@ -129,6 +141,7 @@ package body Flyology.Object_Storage.S3.Listings is
                           "duplicate ListObjects marker";
                      end if;
                      Seen_Marker := True;
+                     Result.Has_Marker := True;
                      Result.Marker := US.To_Unbounded_String (Value);
                   elsif Name = "encoding-type" then
                      if Seen_Encoding or else Value /= "url" then
@@ -561,12 +574,14 @@ package body Flyology.Object_Storage.S3.Listings is
          when Prefix_Field =>
             if Item.Version = Version_1 then
                Item.V1_Value.Prefix := Item.Text_Value;
+               Item.V1_Value.Has_Prefix := True;
             else
                Item.V2_Value.Prefix := Item.Text_Value;
             end if;
          when Delimiter_Field =>
             if Item.Version = Version_1 then
                Item.V1_Value.Delimiter := Item.Text_Value;
+               Item.V1_Value.Has_Delimiter := True;
             else
                Item.V2_Value.Delimiter := Item.Text_Value;
                Item.V2_Value.Has_Delimiter := True;
@@ -574,14 +589,17 @@ package body Flyology.Object_Storage.S3.Listings is
          when Encoding_Type_Field =>
             if Item.Version = Version_1 then
                Item.V1_Value.Encoding_Type := Item.Text_Value;
+               Item.V1_Value.Has_Encoding_Type := True;
             else
                Item.V2_Value.Encoding_Type := Item.Text_Value;
                Item.V2_Value.Has_Encoding_Type := True;
             end if;
          when Marker_Field =>
             Item.V1_Value.Marker := Item.Text_Value;
+            Item.V1_Value.Has_Marker := True;
          when Next_Marker_Field =>
             Item.V1_Value.Next_Marker := Item.Text_Value;
+            Item.V1_Value.Has_Next_Marker := True;
          when Continuation_Token_Field =>
             Item.V2_Value.Continuation_Token := Item.Text_Value;
             Item.V2_Value.Has_Continuation_Token := True;
@@ -1072,8 +1090,8 @@ package body Flyology.Object_Storage.S3.Listings is
       Prefixes_Length : constant Ada.Containers.Count_Type :=
         Value.Common_Prefixes.Length;
       Returned : Natural;
-      Has_Delimiter : constant Boolean := US.Length (Value.Delimiter) > 0;
-      Has_Next : constant Boolean := US.Length (Value.Next_Marker) > 0;
+      Effective_Delimiter : constant Boolean :=
+        Value.Has_Delimiter and then US.Length (Value.Delimiter) > 0;
    begin
       if US.Length (Value.Name) = 0 then
          raise Malformed_Listing with "S3 listing lacks bucket name";
@@ -1087,12 +1105,31 @@ package body Flyology.Object_Storage.S3.Listings is
          raise Malformed_Listing with "inconsistent S3 listing counts";
       elsif Value.Max_Keys = 0 and then Value.Is_Truncated then
          raise Malformed_Listing with "zero-sized S3 listing is truncated";
-      elsif Has_Next /= (Value.Is_Truncated and then Has_Delimiter) then
+      elsif Value.Has_Next_Marker /=
+        (Value.Is_Truncated and then Effective_Delimiter)
+        or else
+          (Value.Has_Next_Marker and then US.Length (Value.Next_Marker) = 0)
+        or else
+          (not Value.Has_Next_Marker
+           and then US.Length (Value.Next_Marker) > 0)
+      then
          raise Malformed_Listing with "inconsistent S3 next marker";
-      elsif US.Length (Value.Encoding_Type) > 0
-        and then US.To_String (Value.Encoding_Type) /= "url"
+      elsif
+        (Value.Has_Encoding_Type
+         and then US.To_String (Value.Encoding_Type) /= "url")
+        or else
+          (not Value.Has_Encoding_Type
+           and then US.Length (Value.Encoding_Type) > 0)
       then
          raise Malformed_Listing with "invalid S3 listing encoding type";
+      elsif not Value.Has_Prefix and then US.Length (Value.Prefix) > 0 then
+         raise Malformed_Listing with "S3 prefix lacks presence state";
+      elsif not Value.Has_Delimiter
+        and then US.Length (Value.Delimiter) > 0
+      then
+         raise Malformed_Listing with "S3 delimiter lacks presence state";
+      elsif not Value.Has_Marker and then US.Length (Value.Marker) > 0 then
+         raise Malformed_Listing with "S3 marker lacks presence state";
       end if;
       for Object_Value of Value.Contents loop
          Validate_Object (Object_Value);
@@ -1136,16 +1173,27 @@ package body Flyology.Object_Storage.S3.Listings is
          "<?xml version=""1.0"" encoding=""UTF-8""?>" &
          "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
          "2006-03-01/"">" &
-         Element ("Name", US.To_String (Value.Name)) &
-         Element ("Prefix", US.To_String (Value.Prefix)) &
-         Element ("Marker", US.To_String (Value.Marker)));
-      Append_Optional
-        (Result, "NextMarker", US.To_String (Value.Next_Marker));
+         Element ("Name", US.To_String (Value.Name)));
+      if Value.Has_Prefix then
+         US.Append (Result, Element ("Prefix", US.To_String (Value.Prefix)));
+      end if;
+      if Value.Has_Marker then
+         US.Append (Result, Element ("Marker", US.To_String (Value.Marker)));
+      end if;
+      if Value.Has_Next_Marker then
+         US.Append
+           (Result, Element ("NextMarker", US.To_String (Value.Next_Marker)));
+      end if;
       US.Append (Result, Element ("MaxKeys", Image (Value.Max_Keys)));
-      Append_Optional
-        (Result, "Delimiter", US.To_String (Value.Delimiter));
-      Append_Optional
-        (Result, "EncodingType", US.To_String (Value.Encoding_Type));
+      if Value.Has_Delimiter then
+         US.Append
+           (Result, Element ("Delimiter", US.To_String (Value.Delimiter)));
+      end if;
+      if Value.Has_Encoding_Type then
+         US.Append
+           (Result,
+            Element ("EncodingType", US.To_String (Value.Encoding_Type)));
+      end if;
       US.Append
         (Result,
          Element

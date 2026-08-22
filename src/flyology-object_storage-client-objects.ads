@@ -26,6 +26,46 @@ package Flyology.Object_Storage.Client.Objects is
       end case;
    end record;
 
+   type List_V1_Outcome
+     (Kind : List_Outcome_Kind := List_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Page_Available =>
+            Page : S3.Listings.List_Objects_Result;
+            --  Exclusive marker for the next page. For delimiter listings it
+            --  is the modeled NextMarker; otherwise it is the last object
+            --  key, as required by ListObjects v1.
+            Next_Marker : Ada.Strings.Unbounded.Unbounded_String;
+            Has_Next_Marker : Boolean := False;
+            Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+         when List_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  List one bounded page with the backward-compatible S3 ListObjects v1
+   --  operation. When Has_Next_Marker is true, pass Next_Marker as Marker to
+   --  continue. The helper derives the marker from the final object when an
+   --  S3 response is truncated without delimiter grouping.
+   function List_V1_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Prefix   : String := "";
+      Delimiter : String := "";
+      Maximum  : S3.Core.Page_Size := 1_000;
+      Marker   : String := "";
+      URL_Encoding : Boolean := False;
+      Include_Restore_Status : Boolean := False;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_V1_Outcome;
+
    --  List one bounded page of current objects with S3 ListObjectsV2.
    --  Pass Page.Next_Continuation_Token from a truncated result to continue
    --  the same prefix/delimiter scope. Continuation tokens remain opaque;

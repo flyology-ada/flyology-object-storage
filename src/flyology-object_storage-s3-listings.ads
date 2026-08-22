@@ -11,9 +11,13 @@ package Flyology.Object_Storage.S3.Listings is
 
    type List_Objects_Request is record
       Prefix       : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Prefix   : Boolean := False;
       Delimiter    : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Delimiter : Boolean := False;
       Marker       : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Marker   : Boolean := False;
       Max_Keys     : Core.Page_Size := Core.Page_Size'Last;
+      Has_Max_Keys : Boolean := False;
       URL_Encoding : Boolean := False;
    end record;
 
@@ -23,6 +27,10 @@ package Flyology.Object_Storage.S3.Listings is
    --  x-id must identify ListObjects.
    function Parse_List_Objects_Query
      (Query : String) return List_Objects_Request;
+
+   --  Decode one encoding-type=url response value. Escapes are strict and
+   --  '+' is a literal byte, matching S3 query and listing rules.
+   function Decode_URL_Value (Value : String) return String;
 
    type List_Objects_V2_Request is record
       Prefix             : Ada.Strings.Unbounded.Unbounded_String;
@@ -108,10 +116,15 @@ package Flyology.Object_Storage.S3.Listings is
    type List_Objects_Result is record
       Name            : Ada.Strings.Unbounded.Unbounded_String;
       Prefix          : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Prefix      : Boolean := False;
       Delimiter       : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Delimiter   : Boolean := False;
       Encoding_Type   : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Encoding_Type : Boolean := False;
       Marker          : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Marker      : Boolean := False;
       Next_Marker     : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Next_Marker : Boolean := False;
       Max_Keys        : Natural := 0;
       Is_Truncated    : Boolean := False;
       Contents        : Object_List;

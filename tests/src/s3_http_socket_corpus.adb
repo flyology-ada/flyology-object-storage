@@ -716,6 +716,49 @@ procedure S3_HTTP_Socket_Corpus is
         "<Delimiter>/</Delimiter><MaxKeys>2</MaxKeys>" &
         "<EncodingType>url</EncodingType>" &
         "<IsTruncated>false</IsTruncated></ListBucketResult>";
+      V1_First_Page_XML : constant String :=
+        "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Name>example-bucket</Name>" &
+        "<Prefix>socket-v1/</Prefix><Marker></Marker>" &
+        "<EncodingType>url</EncodingType>" &
+        "<MaxKeys>1</MaxKeys><IsTruncated>true</IsTruncated>" &
+        "<Contents><Key>socket-v1/a%20/%25%C3%A9</Key>" &
+        "<Size>1</Size></Contents>" &
+        "</ListBucketResult>";
+      V1_Second_Page_XML : constant String :=
+        "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Name>example-bucket</Name>" &
+        "<Prefix>socket-v1/</Prefix>" &
+        "<Marker>socket-v1/a%20/%25%C3%A9</Marker>" &
+        "<EncodingType>url</EncodingType>" &
+        "<MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated>" &
+        "<Contents><Key>socket-v1/b</Key><Size>1</Size></Contents>" &
+        "</ListBucketResult>";
+      V1_Delimiter_First_XML : constant String :=
+        "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Name>example-bucket</Name>" &
+        "<Prefix>socket-v1/</Prefix><Marker></Marker>" &
+        "<NextMarker>socket-v1/group%20%25/%C3%A9</NextMarker>" &
+        "<MaxKeys>1</MaxKeys><Delimiter>/</Delimiter>" &
+        "<EncodingType>url</EncodingType>" &
+        "<IsTruncated>true</IsTruncated>" &
+        "<CommonPrefixes><Prefix>socket-v1/group%20%25/%C3%A9/" &
+        "</Prefix></CommonPrefixes></ListBucketResult>";
+      V1_Delimiter_Second_XML : constant String :=
+        "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Name>example-bucket</Name>" &
+        "<Prefix>socket-v1/</Prefix>" &
+        "<Marker>socket-v1/group%20%25/%C3%A9</Marker>" &
+        "<MaxKeys>1</MaxKeys><Delimiter>/</Delimiter>" &
+        "<EncodingType>url</EncodingType>" &
+        "<IsTruncated>false</IsTruncated></ListBucketResult>";
+      V1_Malformed_Encoding_XML : constant String :=
+        "<ListBucketResult><Name>example-bucket</Name>" &
+        "<Prefix>socket-v1/</Prefix><Marker></Marker>" &
+        "<EncodingType>url</EncodingType><MaxKeys>1</MaxKeys>" &
+        "<IsTruncated>true</IsTruncated>" &
+        "<Contents><Key>socket-v1/%GG</Key><Size>1</Size></Contents>" &
+        "</ListBucketResult>";
       Error_XML : constant String :=
         "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>";
       Create_XML : constant String :=
@@ -809,6 +852,29 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Request_Payer => "requester",
             Expected_Bucket_Owner => "123456789012",
             Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response ("200 OK", V1_First_Page_XML), "GET",
+            "/example-bucket?encoding-type=url&max-keys=1&" &
+              "prefix=socket-v1%2F",
+            Fragmented => True);
+         Serve
+           (HTTP_Response ("200 OK", V1_Second_Page_XML), "GET",
+            "/example-bucket?encoding-type=url&" &
+              "marker=socket-v1%2Fa%20%2F%25%C3%A9&max-keys=1&" &
+              "prefix=socket-v1%2F");
+         Serve
+           (HTTP_Response ("200 OK", V1_Delimiter_First_XML), "GET",
+            "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "max-keys=1&prefix=socket-v1%2F");
+         Serve
+           (HTTP_Response ("200 OK", V1_Delimiter_Second_XML), "GET",
+            "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=socket-v1%2Fgroup%20%25%2F%C3%A9&max-keys=1&" &
+              "prefix=socket-v1%2F");
+         Serve
+           (HTTP_Response ("200 OK", V1_Malformed_Encoding_XML), "GET",
+            "/example-bucket?encoding-type=url&max-keys=1&" &
+              "prefix=socket-v1%2F");
          Serve
            (HTTP_Response
               ("200 OK", Success_XML,
@@ -1388,6 +1454,148 @@ procedure S3_HTTP_Socket_Corpus is
                     "typed ListObjects socket error mismatch";
                end if;
             end;
+         end;
+         declare
+            Stop      : aliased Flyology.Cancellation.Token;
+            Cancelled : Boolean := False;
+            Timed_Out : Boolean := False;
+         begin
+            Stop.Request;
+            begin
+               declare
+                  Ignored : constant Objects.List_V1_Outcome :=
+                    Objects.List_V1_Page
+                      (HTTP, Origin, "example-bucket", Identity,
+                       Prefix => "socket-v1/", Maximum => 1,
+                       Timeout => 5.0, Token => Stop'Access);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Cancelled := True;
+            end;
+            begin
+               declare
+                  Ignored : constant Objects.List_V1_Outcome :=
+                    Objects.List_V1_Page
+                      (HTTP, Origin, "example-bucket", Identity,
+                       Prefix => "socket-v1/", Maximum => 1,
+                       Timeout => 0.0);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Flyology.IO.Timeout_Error =>
+                  Timed_Out := True;
+            end;
+            if not Cancelled or else not Timed_Out then
+               raise Program_Error with
+                 "high-level ListObjects v1 ignored cancellation/deadline";
+            end if;
+         end;
+         declare
+            Special_Key : constant String :=
+              "socket-v1/a /%" & Character'Val (16#C3#) &
+              Character'Val (16#A9#);
+            First : constant Objects.List_V1_Outcome :=
+              Objects.List_V1_Page
+                (HTTP, Origin, "example-bucket", Identity,
+                 Prefix => "socket-v1/", Maximum => 1,
+                 URL_Encoding => True, Timeout => 5.0);
+         begin
+            if First.Kind /= Objects.Page_Available
+              or else Natural (First.Page.Contents.Length) /= 1
+              or else not First.Page.Is_Truncated
+              or else First.Page.Has_Next_Marker
+              or else not First.Has_Next_Marker
+              or else US.To_String (First.Next_Marker) /= Special_Key
+            then
+               raise Program_Error with
+                 "high-level ListObjects v1 lost derived marker";
+            end if;
+            declare
+               Next : constant Objects.List_V1_Outcome :=
+                 Objects.List_V1_Page
+                   (HTTP, Origin, "example-bucket", Identity,
+                    Prefix => "socket-v1/", Maximum => 1,
+                    Marker => US.To_String (First.Next_Marker),
+                    URL_Encoding => True,
+                    Timeout => 5.0);
+            begin
+               if Next.Kind /= Objects.Page_Available
+                 or else Natural (Next.Page.Contents.Length) /= 1
+                 or else US.To_String
+                   (Next.Page.Contents.First_Element.Key) /= "socket-v1/b"
+                 or else Next.Page.Is_Truncated
+                 or else Next.Has_Next_Marker
+               then
+                  raise Program_Error with
+                    "high-level ListObjects v1 continuation mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Delimiter_Marker : constant String :=
+              "socket-v1/group %/" & Character'Val (16#C3#) &
+              Character'Val (16#A9#);
+            First : constant Objects.List_V1_Outcome :=
+              Objects.List_V1_Page
+                (HTTP, Origin, "example-bucket", Identity,
+                 Prefix => "socket-v1/", Delimiter => "/", Maximum => 1,
+                 URL_Encoding => True, Timeout => 5.0);
+         begin
+            if First.Kind /= Objects.Page_Available
+              or else Natural (First.Page.Common_Prefixes.Length) /= 1
+              or else not First.Page.Has_Next_Marker
+              or else not First.Has_Next_Marker
+              or else US.To_String (First.Next_Marker) /= Delimiter_Marker
+            then
+               raise Program_Error with
+                 "high-level ListObjects v1 lost decoded NextMarker";
+            end if;
+            declare
+               Next : constant Objects.List_V1_Outcome :=
+                 Objects.List_V1_Page
+                   (HTTP, Origin, "example-bucket", Identity,
+                    Prefix => "socket-v1/", Delimiter => "/", Maximum => 1,
+                    Marker => US.To_String (First.Next_Marker),
+                    URL_Encoding => True, Timeout => 5.0);
+            begin
+               if Next.Kind /= Objects.Page_Available
+                 or else Next.Page.Is_Truncated
+                 or else Next.Has_Next_Marker
+               then
+                  raise Program_Error with
+                    "high-level ListObjects v1 delimiter " &
+                    "continuation mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Rejected : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Objects.List_V1_Outcome :=
+                    Objects.List_V1_Page
+                      (HTTP, Origin, "example-bucket", Identity,
+                       Prefix => "socket-v1/", Maximum => 1,
+                       URL_Encoding => True, Timeout => 5.0);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "high-level ListObjects v1 accepted malformed URL marker";
+            end if;
          end;
          declare
             Result : constant Low_Level.List_Objects_V2_Outcome :=

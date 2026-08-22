@@ -80,6 +80,91 @@ package body Flyology.Object_Storage.Client.Objects is
       end;
    end List_Page;
 
+   function List_V1_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Prefix   : String := "";
+      Delimiter : String := "";
+      Maximum  : S3.Core.Page_Size := 1_000;
+      Marker   : String := "";
+      URL_Encoding : Boolean := False;
+      Include_Restore_Status : Boolean := False;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_V1_Outcome
+   is
+      Parameters : Low_Level.List_Objects_Parameters;
+   begin
+      Parameters.Prefix := US.To_Unbounded_String (Prefix);
+      Parameters.Delimiter := US.To_Unbounded_String (Delimiter);
+      Parameters.Marker := US.To_Unbounded_String (Marker);
+      Parameters.Max_Keys := Maximum;
+      Parameters.URL_Encoding := URL_Encoding;
+      Parameters.Request_Payer := US.To_Unbounded_String (Request_Payer);
+      Parameters.Expected_Bucket_Owner :=
+        US.To_Unbounded_String (Expected_Bucket_Owner);
+      Parameters.Include_Restore_Status := Include_Restore_Status;
+      declare
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_List_Objects
+             (Origin, Style, Bucket, Parameters, Identity, Region,
+              Timestamp);
+         Outcome : constant Low_Level.List_Objects_Outcome :=
+           Low_Level.Execute_List_Objects
+             (Client, Prepared, Timeout, Token);
+      begin
+         if Outcome.Kind = Low_Level.Rejected then
+            return
+              (Kind => List_Rejected, Status => Outcome.Status,
+               Error => Outcome.Error);
+         end if;
+         declare
+            Page : S3.Listings.List_Objects_Result renames
+              Outcome.Result.Listing;
+            Next : US.Unbounded_String;
+
+            function Logical_Marker (Value : String) return String is
+            begin
+               if Page.Has_Encoding_Type then
+                  return S3.Listings.Decode_URL_Value (Value);
+               end if;
+               return Value;
+            exception
+               when S3.Listings.Malformed_Listing =>
+                  raise Low_Level.Invalid_Response with
+                    "malformed encoded ListObjects marker";
+            end Logical_Marker;
+         begin
+            if Page.Is_Truncated then
+               if Page.Has_Next_Marker then
+                  Next := US.To_Unbounded_String
+                    (Logical_Marker (US.To_String (Page.Next_Marker)));
+               elsif not Page.Contents.Is_Empty then
+                  Next := US.To_Unbounded_String
+                    (Logical_Marker
+                       (US.To_String (Page.Contents.Last_Element.Key)));
+               else
+                  raise Low_Level.Invalid_Response with
+                    "truncated ListObjects page lacks a continuation marker";
+               end if;
+            end if;
+            return
+              (Kind            => Page_Available,
+               Status          => Outcome.Status,
+               Page            => Page,
+               Next_Marker     => Next,
+               Has_Next_Marker => Page.Is_Truncated,
+               Request_Charged => Outcome.Result.Request_Charged);
+         end;
+      end;
+   end List_V1_Page;
+
    function Delete
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;

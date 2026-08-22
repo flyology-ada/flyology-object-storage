@@ -4501,18 +4501,35 @@ package body Object_Storage_Test_Cases is
            Listings.Parse_List_Objects_Query
              ("delimiter=%2F&encoding-type=url&marker=a+b&max-keys=7&" &
               "prefix=logs%2F%2B&x-id=ListObjects");
+         Explicit_Empty : constant Listings.List_Objects_Request :=
+           Listings.Parse_List_Objects_Query
+             ("prefix=&delimiter=&marker=&max-keys=0");
       begin
          Assert
            (Empty.Max_Keys = Flyology.Object_Storage.S3.Core.Page_Size'Last
-            and then US.Length (Empty.Prefix) = 0,
+            and then not Empty.Has_Max_Keys
+            and then not Empty.Has_Prefix
+            and then not Empty.Has_Delimiter
+            and then not Empty.Has_Marker,
             "empty ListObjects query defaults");
          Assert
            (US.To_String (Request.Prefix) = "logs/+"
             and then US.To_String (Request.Delimiter) = "/"
             and then US.To_String (Request.Marker) = "a+b"
             and then Request.Max_Keys = 7
+            and then Request.Has_Max_Keys
+            and then Request.Has_Prefix
+            and then Request.Has_Delimiter
+            and then Request.Has_Marker
             and then Request.URL_Encoding,
             "ListObjects query decoding");
+         Assert
+           (Explicit_Empty.Has_Prefix
+            and then Explicit_Empty.Has_Delimiter
+            and then Explicit_Empty.Has_Marker
+            and then Explicit_Empty.Has_Max_Keys
+            and then Explicit_Empty.Max_Keys = 0,
+            "ListObjects explicit-empty query presence");
       end;
 
       Must_Reject_Query
@@ -4527,13 +4544,36 @@ package body Object_Storage_Test_Cases is
         ("x-id=ListObjectsV2", "mismatched v1 operation ID was accepted");
 
       declare
+         Present_Empty : constant Listings.List_Objects_Result :=
+           Listings.Parse_List_Objects (Empty_Listing);
+         Round_Trip : constant String :=
+           Listings.Serialize_List_Objects (Present_Empty);
+      begin
+         Assert
+           (Present_Empty.Has_Prefix
+            and then Present_Empty.Has_Marker
+            and then not Present_Empty.Has_Delimiter
+            and then not Present_Empty.Has_Next_Marker
+            and then Ada.Strings.Fixed.Index
+              (Round_Trip, "<Prefix></Prefix>") /= 0
+            and then Ada.Strings.Fixed.Index
+              (Round_Trip, "<Marker></Marker>") /= 0,
+            "ListObjects response empty-field presence round trip");
+      end;
+
+      declare
          Value : Listings.List_Objects_Result :=
            (Name            => US.To_Unbounded_String ("bucket"),
             Prefix          => US.Null_Unbounded_String,
+            Has_Prefix      => True,
             Delimiter       => US.To_Unbounded_String ("/"),
+            Has_Delimiter   => True,
             Encoding_Type   => US.Null_Unbounded_String,
+            Has_Encoding_Type => False,
             Marker          => US.To_Unbounded_String ("before"),
+            Has_Marker      => True,
             Next_Marker     => US.To_Unbounded_String ("a&b/"),
+            Has_Next_Marker => True,
             Max_Keys        => 2,
             Is_Truncated    => True,
             Contents        => <>,
@@ -4570,6 +4610,10 @@ package body Object_Storage_Test_Cases is
               (US.To_String (Parsed.Name) = "bucket"
                and then US.To_String (Parsed.Marker) = "before"
                and then US.To_String (Parsed.Next_Marker) = "a&b/"
+               and then Parsed.Has_Prefix
+               and then Parsed.Has_Delimiter
+               and then Parsed.Has_Marker
+               and then Parsed.Has_Next_Marker
                and then Parsed.Max_Keys = 2
                and then Parsed.Is_Truncated
                and then Parsed.Contents.Length = 1
@@ -4584,6 +4628,7 @@ package body Object_Storage_Test_Cases is
          Must_Reject_Result
            (Value, "v1 next marker without delimiter was serialized");
          Value.Next_Marker := US.Null_Unbounded_String;
+         Value.Has_Next_Marker := False;
          Value.Max_Keys := 0;
          Must_Reject_Result
            (Value, "truncated zero-sized v1 page was serialized");
@@ -6563,6 +6608,28 @@ package body Object_Storage_Test_Cases is
          Assert
            (Low_Level.Target (Prepared) = "/?max-keys=1000",
             "virtual-hosted ListObjects target");
+      end;
+
+      declare
+         Parameters : Low_Level.List_Objects_Parameters;
+      begin
+         Parameters.Has_Prefix := True;
+         Parameters.Has_Delimiter := True;
+         Parameters.Has_Marker := True;
+         Parameters.Has_Max_Keys := False;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_List_Objects
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket?delimiter&marker&prefix",
+               "ListObjects explicit-empty and omitted max-keys target: " &
+               Low_Level.Target (Prepared));
+         end;
       end;
 
       declare

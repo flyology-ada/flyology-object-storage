@@ -4124,15 +4124,24 @@ begin
    declare
       Response : constant String :=
         Run (Signed_Request ("GET", "/test-bucket", ""));
+      Listing : constant Listings.List_Objects_Result :=
+        Listings.Parse_List_Objects (Response_Body (Response));
    begin
       Require
         (Has (Response, "200 OK")
          and then Has (Response, "<Marker></Marker>")
          and then Has (Response, "<Key>list/a</Key>")
          and then Has (Response, "<Key>list/sub/c</Key>")
+         and then Has (Response, "<Owner><ID>test-principal</ID></Owner>")
          and then not Has (Response, "<KeyCount>")
          and then not Has (Response, "ContinuationToken"),
          "ListObjects v1 default response mismatch");
+      Require
+        (not Listing.Contents.Is_Empty
+         and then Listing.Contents.First_Element.Has_Owner
+         and then US.To_String
+           (Listing.Contents.First_Element.Owner.ID) = "test-principal",
+         "ListObjects v1 owner projection mismatch");
    end;
 
    declare
@@ -4207,6 +4216,86 @@ begin
               (Signed_Query_Request ("GET", "/missing-bucket", Zero)),
             "NoSuchBucket"),
          "ListObjects v1 absent bucket mismatch");
+   end;
+
+   declare
+      Empty_Values : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("delimiter", ""),
+         SigV4.Pair ("marker", ""),
+         SigV4.Pair ("max-keys", "0"),
+         SigV4.Pair ("prefix", ""));
+      Response : constant String := Run
+        (Signed_Query_Request ("GET", "/test-bucket", Empty_Values));
+      Listing : constant Listings.List_Objects_Result :=
+        Listings.Parse_List_Objects (Response_Body (Response));
+   begin
+      Require
+        (Has (Response, "200 OK")
+         and then Listing.Has_Prefix
+         and then Listing.Has_Delimiter
+         and then Listing.Has_Marker
+         and then US.Length (Listing.Delimiter) = 0
+         and then Listing.Max_Keys = 0,
+         "ListObjects v1 explicit-empty presence mismatch");
+   end;
+
+   declare
+      Zero : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("max-keys", "0"));
+
+      function Header_Response
+        (Name, Value : String; Second : String := "") return String is
+        (Run
+           (Signed_Query_Request
+              ("GET", "/test-bucket", Zero, Name, Value, Second)));
+   begin
+      declare
+         Response : constant String := Header_Response
+           ("x-amz-request-payer", "requester");
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then not Has (Response, "x-amz-request-charged"),
+            "ListObjects v1 owner requester-payer behavior mismatch");
+      end;
+      Require
+        (Has
+           (Header_Response ("x-amz-request-payer", "owner"),
+            "InvalidArgument"),
+         "ListObjects v1 invalid requester payer was accepted");
+      Require
+        (Has
+           (Header_Response
+              ("x-amz-expected-bucket-owner", "test-principal"),
+            "200 OK"),
+         "ListObjects v1 matching expected owner was rejected");
+      Require
+        (Has
+           (Header_Response
+              ("x-amz-expected-bucket-owner", "different-owner"),
+            "403 Forbidden"),
+         "ListObjects v1 mismatched expected owner was accepted");
+      declare
+         Response : constant String := Header_Response
+           ("x-amz-optional-object-attributes", "RestoreStatus");
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then not Has (Response, "<RestoreStatus>"),
+            "ListObjects v1 nonarchival RestoreStatus behavior mismatch");
+      end;
+      Require
+        (Has
+           (Header_Response
+              ("x-amz-optional-object-attributes", "Invalid"),
+            "InvalidArgument"),
+         "ListObjects v1 invalid optional attributes were accepted");
+      Require
+        (Has
+           (Header_Response
+              ("x-amz-request-payer", "requester", "requester"),
+            "InvalidRequest"),
+         "ListObjects v1 duplicate modeled header was accepted");
    end;
 
    declare

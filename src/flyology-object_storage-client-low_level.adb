@@ -1155,15 +1155,22 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Request_Payer : constant String :=
         US.To_String (Parameters.Request_Payer);
+      Has_Prefix : constant Boolean :=
+        Parameters.Has_Prefix or else US.Length (Parameters.Prefix) > 0;
+      Has_Delimiter : constant Boolean :=
+        Parameters.Has_Delimiter or else US.Length (Parameters.Delimiter) > 0;
+      Has_Marker : constant Boolean :=
+        Parameters.Has_Marker or else US.Length (Parameters.Marker) > 0;
       Optional_Count : constant Natural :=
-        Boolean'Pos (US.Length (Parameters.Prefix) > 0) +
-        Boolean'Pos (US.Length (Parameters.Delimiter) > 0) +
-        Boolean'Pos (US.Length (Parameters.Marker) > 0) +
+        Boolean'Pos (Has_Prefix) +
+        Boolean'Pos (Has_Delimiter) +
+        Boolean'Pos (Has_Marker) +
+        Boolean'Pos (Parameters.Has_Max_Keys) +
         Boolean'Pos (Parameters.URL_Encoding) +
         Boolean'Pos (Request_Payer'Length > 0) +
         Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
         Boolean'Pos (Parameters.Include_Restore_Status);
-      Values : Model_Value_Array (1 .. 2 + Optional_Count);
+      Values : Model_Value_Array (1 .. 1 + Optional_Count);
       Last : Natural := 0;
 
       procedure Add (Name, Value : String) is
@@ -1190,13 +1197,22 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "invalid ListObjects parameters";
       end if;
       Add ("Bucket", Bucket);
-      Add
-        ("MaxKeys",
-         Ada.Strings.Fixed.Trim
-           (S3.Core.Page_Size'Image (Parameters.Max_Keys), Ada.Strings.Both));
-      Add_Optional ("Prefix", Parameters.Prefix);
-      Add_Optional ("Delimiter", Parameters.Delimiter);
-      Add_Optional ("Marker", Parameters.Marker);
+      if Parameters.Has_Max_Keys then
+         Add
+           ("MaxKeys",
+            Ada.Strings.Fixed.Trim
+              (S3.Core.Page_Size'Image (Parameters.Max_Keys),
+               Ada.Strings.Both));
+      end if;
+      if Has_Prefix then
+         Add ("Prefix", US.To_String (Parameters.Prefix));
+      end if;
+      if Has_Delimiter then
+         Add ("Delimiter", US.To_String (Parameters.Delimiter));
+      end if;
+      if Has_Marker then
+         Add ("Marker", US.To_String (Parameters.Marker));
+      end if;
       if Parameters.URL_Encoding then
          Add ("EncodingType", "url");
       end if;
