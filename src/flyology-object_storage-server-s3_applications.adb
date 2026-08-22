@@ -1724,6 +1724,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Checksum_Count : constant Natural :=
                     Apps.Request_Header_Count
                       (X, "x-amz-sdk-checksum-algorithm");
+                  Checksum_Value_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-crc32") +
+                    Apps.Request_Header_Count (X, "x-amz-checksum-crc32c") +
+                    Apps.Request_Header_Count
+                      (X, "x-amz-checksum-crc64nvme") +
+                    Apps.Request_Header_Count (X, "x-amz-checksum-sha1") +
+                    Apps.Request_Header_Count (X, "x-amz-checksum-sha256");
                   Owner_Accepted : Boolean;
                begin
                   Configuration := Versioning.Parse (Document);
@@ -1739,7 +1746,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 400, "BadDigest",
                         "The Content-MD5 you specified did not match",
                         Target_Text);
-                  elsif MFA_Count > 1 or else Checksum_Count > 1 then
+                  elsif MFA_Count > 1
+                    or else Checksum_Count > 1
+                    or else Checksum_Value_Count > 1
+                  then
                      Send_Error
                        (X, 400, "InvalidRequest",
                         "A PutBucketVersioning control header is duplicated",
@@ -1753,7 +1763,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 501, "NotImplemented",
                         "MFA-delete policy enforcement is not implemented",
                         Target_Text);
-                  elsif Checksum_Count = 1 then
+                  elsif Checksum_Count = 1
+                    or else Checksum_Value_Count = 1
+                  then
                      Send_Error
                        (X, 501, "NotImplemented",
                         "SDK checksum negotiation is not implemented",

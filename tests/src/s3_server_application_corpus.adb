@@ -664,6 +664,7 @@ procedure S3_Server_Application_Corpus is
       MD5          : String;
       MFA          : String := "";
       Checksum     : String := "";
+      Checksum_Value : String := "";
       Owner        : String := "";
       Duplicate_MD5 : String := "") return String
    is
@@ -671,6 +672,7 @@ procedure S3_Server_Application_Corpus is
       Header_Count : constant Positive :=
         4 + Boolean'Pos (MFA'Length > 0)
           + Boolean'Pos (Checksum'Length > 0)
+          + Boolean'Pos (Checksum_Value'Length > 0)
           + Boolean'Pos (Owner'Length > 0)
           + Boolean'Pos (Duplicate_MD5'Length > 0);
       Headers : SigV4.Name_Value_Array (1 .. Header_Count);
@@ -696,6 +698,11 @@ procedure S3_Server_Application_Corpus is
          Headers (Last) :=
            SigV4.Pair ("x-amz-sdk-checksum-algorithm", Checksum);
       end if;
+      if Checksum_Value'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) :=
+           SigV4.Pair ("x-amz-checksum-crc32", Checksum_Value);
+      end if;
       if Owner'Length > 0 then
          Last := Last + 1;
          Headers (Last) :=
@@ -715,6 +722,8 @@ procedure S3_Server_Application_Corpus is
          else "x-amz-mfa: " & MFA & CRLF) &
         (if Checksum'Length = 0 then ""
          else "x-amz-sdk-checksum-algorithm: " & Checksum & CRLF) &
+        (if Checksum_Value'Length = 0 then ""
+         else "x-amz-checksum-crc32: " & Checksum_Value & CRLF) &
         (if Owner'Length = 0 then ""
          else "x-amz-expected-bucket-owner: " & Owner & CRLF) &
         "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
@@ -2062,6 +2071,14 @@ begin
                   Checksum => "CRC32")),
             "<Code>NotImplemented</Code>"),
          "PutBucketVersioning silently ignored checksum negotiation");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Enabled_Document, Content_MD5 (Enabled_Document),
+                  Checksum_Value => "AAAAAA==")),
+            "<Code>NotImplemented</Code>"),
+         "PutBucketVersioning silently ignored a checksum value");
       Require
         (Has
            (Run
