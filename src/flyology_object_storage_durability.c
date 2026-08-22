@@ -3,6 +3,10 @@
 #ifdef _WIN32
 #include <windows.h>
 
+void flyology_object_storage_core_crash_process(void) {
+    (void)TerminateProcess(GetCurrentProcess(), 137);
+}
+
 static int sync_path(const char *path, int directory) {
     DWORD flags = directory ? FILE_FLAG_BACKUP_SEMANTICS : 0;
     HANDLE handle = CreateFileA(path, GENERIC_WRITE,
@@ -23,7 +27,12 @@ static int sync_path(const char *path, int directory) {
 }
 #else
 #include <fcntl.h>
+#include <signal.h>
 #include <unistd.h>
+
+void flyology_object_storage_core_crash_process(void) {
+    (void)kill(getpid(), SIGKILL);
+}
 
 static int sync_path(const char *path, int directory) {
     int flags = O_RDONLY;

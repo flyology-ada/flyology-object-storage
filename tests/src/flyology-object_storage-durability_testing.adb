@@ -18,6 +18,16 @@ package body Flyology.Object_Storage.Durability_Testing is
         (Successful_Barriers);
    end Fail_Next_Barrier_After;
 
+   procedure Crash_At_Barrier
+     (Barrier : Natural; After_Sync : Boolean)
+   is
+      use Flyology.Object_Storage.Durability;
+   begin
+      Set_Test_Crash
+        (Barrier,
+         (if After_Sync then After_Barrier else Before_Barrier));
+   end Crash_At_Barrier;
+
    procedure Clear_Failure is
    begin
       Flyology.Object_Storage.Durability.Clear_Test_Failure;

@@ -87,8 +87,9 @@ policy on qualified POSIX hosts. It synchronizes staged records before rename,
 both namespace sides of publication, deletions, and multipart lifecycle
 changes. A separately labeled `Process_Crash_Atomic` policy omits persistence
 barriers for controlled comparisons. Barrier-by-barrier device-error injection
-requires every reopened namespace to be an intact old-or-new state. Windows
-directory-metadata durability and cross-process root sharing remain
+and 54 actual abrupt-process terminations immediately before and after each
+barrier require every reopened namespace to be an intact old-or-new state.
+Windows directory-metadata durability and cross-process root sharing remain
 unsupported.
 
 The server application remains `partial`, but it now consumes indexed

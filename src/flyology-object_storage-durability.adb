@@ -7,38 +7,64 @@ package body Flyology.Object_Storage.Durability is
    use type Interfaces.C.int;
    use type Interfaces.C.Strings.chars_ptr;
 
+   type Fault_Mode is (Disabled, Raise_Device_Error, Crash_Process);
+
    protected Faults is
-      procedure Configure (After : Natural);
+      procedure Configure_Failure (After : Natural);
+      procedure Configure_Crash
+        (After : Natural; Moment : Barrier_Moment);
       procedure Clear;
-      procedure Before_Barrier;
+      procedure Event
+        (Moment : Barrier_Moment;
+         Raise_Failure : out Boolean;
+         Crash : out Boolean);
    private
-      Enabled   : Boolean := False;
+      Mode      : Fault_Mode := Disabled;
+      At_Moment : Barrier_Moment := Before_Barrier;
       Remaining : Natural := 0;
    end Faults;
 
    protected body Faults is
-      procedure Configure (After : Natural) is
+      procedure Configure_Failure (After : Natural) is
       begin
-         Enabled := True;
+         Mode := Raise_Device_Error;
+         At_Moment := Before_Barrier;
          Remaining := After;
-      end Configure;
+      end Configure_Failure;
+
+      procedure Configure_Crash
+        (After : Natural; Moment : Barrier_Moment)
+      is
+      begin
+         Mode := Crash_Process;
+         At_Moment := Moment;
+         Remaining := After;
+      end Configure_Crash;
 
       procedure Clear is
       begin
-         Enabled := False;
+         Mode := Disabled;
          Remaining := 0;
       end Clear;
 
-      procedure Before_Barrier is
+      procedure Event
+        (Moment : Barrier_Moment;
+         Raise_Failure : out Boolean;
+         Crash : out Boolean)
+      is
       begin
-         if Enabled and then Remaining = 0 then
-            Enabled := False;
-            raise Ada.IO_Exceptions.Device_Error with
-              "injected durability barrier failure";
-         elsif Enabled then
+         Raise_Failure := False;
+         Crash := False;
+         if Mode /= Disabled and then Moment = At_Moment
+           and then Remaining = 0
+         then
+            Raise_Failure := Mode = Raise_Device_Error;
+            Crash := Mode = Crash_Process;
+            Mode := Disabled;
+         elsif Mode /= Disabled and then Moment = At_Moment then
             Remaining := Remaining - 1;
          end if;
-      end Before_Barrier;
+      end Event;
    end Faults;
 
    function Sync_File_C
@@ -51,6 +77,24 @@ package body Flyology.Object_Storage.Durability is
    with Import, Convention => C,
         External_Name => "flyology_object_storage_core_sync_directory";
 
+   procedure Crash_Process_C
+   with Import, Convention => C,
+        External_Name => "flyology_object_storage_core_crash_process";
+
+   procedure Test_Event (Moment : Barrier_Moment) is
+      Raise_Failure : Boolean;
+      Crash         : Boolean;
+   begin
+      Faults.Event (Moment, Raise_Failure, Crash);
+      if Raise_Failure then
+         raise Ada.IO_Exceptions.Device_Error with
+           "injected durability barrier failure";
+      elsif Crash then
+         Crash_Process_C;
+         raise Program_Error with "crash-process hook returned";
+      end if;
+   end Test_Event;
+
    procedure Sync
      (Path : String; Directory : Boolean)
    is
@@ -58,10 +102,13 @@ package body Flyology.Object_Storage.Durability is
       Value : CS.chars_ptr := CS.New_String (Path);
       Code  : Interfaces.C.int;
    begin
-      Faults.Before_Barrier;
+      Test_Event (Before_Barrier);
       Code :=
         (if Directory then Sync_Directory_C (Value)
          else Sync_File_C (Value));
+      if Code = 0 then
+         Test_Event (After_Barrier);
+      end if;
       CS.Free (Value);
       if Code /= 0 then
          raise Ada.IO_Exceptions.Device_Error with
@@ -87,8 +134,15 @@ package body Flyology.Object_Storage.Durability is
 
    procedure Set_Test_Failure (After : Natural) is
    begin
-      Faults.Configure (After);
+      Faults.Configure_Failure (After);
    end Set_Test_Failure;
+
+   procedure Set_Test_Crash
+     (After : Natural; Moment : Barrier_Moment)
+   is
+   begin
+      Faults.Configure_Crash (After, Moment);
+   end Set_Test_Crash;
 
    procedure Clear_Test_Failure is
    begin

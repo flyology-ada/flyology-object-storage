@@ -1,5 +1,7 @@
 private package Flyology.Object_Storage.Durability is
 
+   type Barrier_Moment is (Before_Barrier, After_Barrier);
+
    --  Make prior writes to one ordinary file stable according to the host
    --  filesystem. Device_Error is raised when the host cannot guarantee it.
    procedure Sync_File (Path : String);
@@ -12,6 +14,8 @@ private package Flyology.Object_Storage.Durability is
    --  After successful barriers have passed, the next barrier raises
    --  Device_Error. Clear_Test_Failure disables injection.
    procedure Set_Test_Failure (After : Natural);
+   procedure Set_Test_Crash
+     (After : Natural; Moment : Barrier_Moment);
    procedure Clear_Test_Failure;
 
 end Flyology.Object_Storage.Durability;

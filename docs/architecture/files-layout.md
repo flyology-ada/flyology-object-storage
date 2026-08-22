@@ -29,10 +29,13 @@ contract; it is not the production default. The deterministic fault corpus
 injects a device error at every file/directory barrier across bucket create
 and delete, object replacement and delete, multipart initiation, part
 replacement, completion, and abort, then reopens the root and requires a
-well-formed old-or-new state. The adapter uses `F_FULLFSYNC` where available
-and falls back to `fsync` on POSIX. Windows remains unqualified until its
-directory-metadata persistence path has an independent crash corpus.
-Cross-process writers remain unsupported.
+well-formed old-or-new state. A separate process corpus terminates workers
+without Ada finalization immediately before and after all 27 barriers in those
+same mutation paths (54 cases), then independently reopens and verifies each
+store. The adapter uses `F_FULLFSYNC` where available and falls back to `fsync`
+on POSIX. Windows remains unqualified until its directory-metadata persistence
+path has an independent host-level crash corpus. Cross-process writers remain
+unsupported.
 
 Bucket enumeration holds the backend publication gate used by create and
 delete, so each result is one process-local atomic namespace snapshot. Pages
