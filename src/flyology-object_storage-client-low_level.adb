@@ -2404,4 +2404,210 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "UploadPartCopy response exceeds XML limit";
    end Execute_Upload_Part_Copy;
 
+   function Prepare_Copy_Object
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Copy_Object_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Copy_Source : constant String := US.To_String (Parameters.Copy_Source);
+      Directive : constant String :=
+        US.To_String (Parameters.Metadata_Directive);
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Optional_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.Content_Type) > 0) +
+        Boolean'Pos (US.Length (Parameters.Copy_Source_If_Match) > 0) +
+        Boolean'Pos
+          (US.Length (Parameters.Copy_Source_If_Modified_Since) > 0) +
+        Boolean'Pos (US.Length (Parameters.Copy_Source_If_None_Match) > 0) +
+        Boolean'Pos
+          (US.Length (Parameters.Copy_Source_If_Unmodified_Since) > 0) +
+        Boolean'Pos (Directive'Length > 0) +
+        Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
+        Boolean'Pos
+          (US.Length (Parameters.Expected_Source_Bucket_Owner) > 0);
+      Values : Model_Value_Array (1 .. 3 + Optional_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+
+      procedure Add_Optional
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Add (Name, US.To_String (Value));
+         end if;
+      end Add_Optional;
+   begin
+      if Copy_Source'Length not in 1 .. 8_192
+        or else (Directive'Length > 0
+                 and then Directive not in "COPY" | "REPLACE")
+        or else (Request_Payer'Length > 0
+                 and then Request_Payer /= "requester")
+      then
+         raise Invalid_Request with "invalid CopyObject parameters";
+      end if;
+      Add ("Bucket", Bucket);
+      Add ("CopySource", Copy_Source);
+      Add ("Key", Key);
+      Add_Optional ("ContentType", Parameters.Content_Type);
+      Add_Optional ("CopySourceIfMatch", Parameters.Copy_Source_If_Match);
+      Add_Optional
+        ("CopySourceIfModifiedSince",
+         Parameters.Copy_Source_If_Modified_Since);
+      Add_Optional
+        ("CopySourceIfNoneMatch", Parameters.Copy_Source_If_None_Match);
+      Add_Optional
+        ("CopySourceIfUnmodifiedSince",
+         Parameters.Copy_Source_If_Unmodified_Since);
+      Add_Optional ("MetadataDirective", Parameters.Metadata_Directive);
+      Add_Optional ("RequestPayer", Parameters.Request_Payer);
+      Add_Optional
+        ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      Add_Optional
+        ("ExpectedSourceBucketOwner",
+         Parameters.Expected_Source_Bucket_Owner);
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Copy_Object_Operation, Origin, Style, Values, "", False,
+         SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := Copy_Object_Operation;
+      end return;
+   end Prepare_Copy_Object;
+
+   procedure Validate_Copy_Object_Headers (Value : Copy_Object_Result) is
+      Bucket_Key : constant String := US.To_String (Value.Bucket_Key_Enabled);
+      Charged : constant String := US.To_String (Value.Request_Charged);
+   begin
+      if (Bucket_Key'Length > 0
+          and then not Wire_Core.Parse_Boolean (Bucket_Key).Valid)
+        or else (Charged'Length > 0 and then Charged /= "requester")
+      then
+         raise Invalid_Response with "invalid CopyObject response headers";
+      end if;
+   end Validate_Copy_Object_Headers;
+
+   function Decode_Copy_Object_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Copy_Object_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Copy_Object_Outcome
+   is
+   begin
+      if Status = 200 then
+         begin
+            return
+              (Kind   => Copy_Object_Rejected,
+               Status => Status,
+               Error  => Error_Response
+                 (Payload, Request_ID, Host_ID, Limits));
+         exception
+            when S3.Errors.Malformed_Error =>
+               declare
+                  Result : Copy_Object_Result := Headers;
+               begin
+                  Validate_Copy_Object_Headers (Result);
+                  Result.Copy_Result :=
+                    S3.Copies.Parse_Copy_Object_Result (Payload, Limits);
+                  return
+                    (Kind => Object_Copied,
+                     Status => Status,
+                     Result => Result);
+               end;
+         end;
+      else
+         return
+           (Kind   => Copy_Object_Rejected,
+            Status => Status,
+            Error  => Error_Response
+              (Payload, Request_ID, Host_ID, Limits));
+      end if;
+   exception
+      when S3.Copies.Malformed_Copy | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed CopyObject response";
+   end Decode_Copy_Object_Response;
+
+   function Execute_Copy_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Copy_Object_Outcome
+   is
+   begin
+      if Prepared.Operation /= Copy_Object_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Request_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+         Host_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         Headers : constant Copy_Object_Result :=
+           (Copy_Result => (others => <>),
+            Expiration => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header (Response, "x-amz-expiration")),
+            Copy_Source_Version_ID => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-copy-source-version-id")),
+            Version_ID => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header (Response, "x-amz-version-id")),
+            Server_Side_Encryption => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-server-side-encryption")),
+            SSE_Customer_Algorithm => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response,
+                  "x-amz-server-side-encryption-customer-algorithm")),
+            SSE_Customer_Key_MD5 => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-server-side-encryption-customer-key-md5")),
+            SSE_KMS_Key_ID => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-server-side-encryption-aws-kms-key-id")),
+            SSE_KMS_Encryption_Context => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-server-side-encryption-context")),
+            Bucket_Key_Enabled => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response,
+                  "x-amz-server-side-encryption-bucket-key-enabled")),
+            Request_Charged => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-request-charged")));
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Copy_Object_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
+            Request_ID, Host_ID, Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with "CopyObject response exceeds XML limit";
+   end Execute_Copy_Object;
+
 end Flyology.Object_Storage.Client.Low_Level;

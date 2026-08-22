@@ -5,6 +5,7 @@ with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Core;
+with Flyology.Object_Storage.S3.Copies;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
@@ -689,6 +690,79 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Upload_Part_Copy_Outcome;
 
+   --  Typed core CopyObject parameters. Advanced ACL, tagging, encryption,
+   --  lock, and user-metadata members remain available through the exhaustive
+   --  generated-model request boundary until their policies are qualified.
+   type Copy_Object_Parameters is record
+      Copy_Source : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Type : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_If_Match : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_If_Modified_Since : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_If_None_Match : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_If_Unmodified_Since :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Metadata_Directive : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Source_Bucket_Owner :
+        Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_Copy_Object
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Copy_Object_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   --  Every modeled CopyObject output member.
+   type Copy_Object_Result is record
+      Copy_Result : S3.Copies.Copy_Object_Result;
+      Expiration : Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Server_Side_Encryption : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Algorithm : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5 : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Encryption_Context : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Copy_Object_Outcome_Kind is (Object_Copied, Copy_Object_Rejected);
+
+   type Copy_Object_Outcome
+     (Kind : Copy_Object_Outcome_Kind := Copy_Object_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Copied =>
+            Result : Copy_Object_Result;
+         when Copy_Object_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Copy_Object_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Copy_Object_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Copy_Object_Outcome;
+
+   function Execute_Copy_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Copy_Object_Outcome;
+
 private
    Maximum_Credential_Bytes : constant := 1_024;
    Maximum_Session_Token_Bytes : constant := 8_192;
@@ -719,7 +793,8 @@ private
       Complete_Multipart_Operation,
       Abort_Multipart_Operation,
       Upload_Part_Operation,
-      Upload_Part_Copy_Operation);
+      Upload_Part_Copy_Operation,
+      Copy_Object_Operation);
 
    type Prepared_Request is record
       Operation : Operation_Kind := List_Objects_V2_Operation;

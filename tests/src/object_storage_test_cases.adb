@@ -3667,6 +3667,147 @@ package body Object_Storage_Test_Cases is
       end;
    end Check_Low_Level_Multipart_Request;
 
+   procedure Check_Low_Level_Copy_Object (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+      package US renames Ada.Strings.Unbounded;
+      use type Low_Level.Copy_Object_Outcome_Kind;
+      Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
+        ("AKIAIOSFODNN7EXAMPLE",
+         "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+   begin
+      declare
+         Parameters : Low_Level.Copy_Object_Parameters;
+      begin
+         Parameters.Copy_Source :=
+           US.To_Unbounded_String ("source-bucket/source-key");
+         Parameters.Content_Type := US.To_Unbounded_String ("text/plain");
+         Parameters.Copy_Source_If_Match :=
+           US.To_Unbounded_String ("""source-etag""");
+         Parameters.Metadata_Directive := US.To_Unbounded_String ("COPY");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Copy_Object
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "photos/a b+%",
+                 Parameters, Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket/photos/a%20b%2B%25",
+               "CopyObject exact wire target");
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Low_Level.Canonical_Request (Prepared),
+                  "x-amz-copy-source:source-bucket/source-key") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Canonical_Request (Prepared),
+                  "x-amz-metadata-directive:COPY") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Signed_Headers (Prepared),
+                  "x-amz-copy-source-if-match") > 0,
+               "CopyObject core headers are signed");
+         end;
+      end;
+
+      declare
+         Parameters : Low_Level.Copy_Object_Parameters;
+         Raised : Boolean := False;
+      begin
+         Parameters.Copy_Source :=
+           US.To_Unbounded_String ("source-bucket/source-key");
+         Parameters.Metadata_Directive :=
+           US.To_Unbounded_String ("MERGE");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Copy_Object
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "invalid CopyObject metadata directive accepted");
+      end;
+
+      declare
+         Headers : Low_Level.Copy_Object_Result;
+      begin
+         Headers.Copy_Source_Version_ID := US.To_Unbounded_String ("v1");
+         Headers.Bucket_Key_Enabled := US.To_Unbounded_String ("true");
+         Headers.Request_Charged := US.To_Unbounded_String ("requester");
+         declare
+            Outcome : constant Low_Level.Copy_Object_Outcome :=
+              Low_Level.Decode_Copy_Object_Response
+                (200,
+                 "<CopyObjectResult>" &
+                 "<LastModified>2026-08-21T17:00:00.000Z</LastModified>" &
+                 "<ETag>&quot;copied-object&quot;</ETag>" &
+                 "<ChecksumType>FULL_OBJECT</ChecksumType>" &
+                 "<ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+                 "</CopyObjectResult>", Headers);
+         begin
+            Assert
+              (Outcome.Kind = Low_Level.Object_Copied
+               and then US.To_String
+                 (Outcome.Result.Copy_Result.Entity_Tag) =
+                   """copied-object"""
+               and then US.To_String
+                 (Outcome.Result.Copy_Source_Version_ID) = "v1",
+               "typed CopyObject success response");
+         end;
+      end;
+
+      declare
+         Headers : Low_Level.Copy_Object_Result;
+         Outcome : constant Low_Level.Copy_Object_Outcome :=
+           Low_Level.Decode_Copy_Object_Response
+             (200, "<Error><Code>InternalError</Code>" &
+              "<Message>late copy failure</Message></Error>", Headers,
+              "request-header");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Copy_Object_Rejected
+            and then Outcome.Status = 200
+            and then US.To_String (Outcome.Error.Code) = "InternalError"
+            and then US.To_String (Outcome.Error.Request_ID) =
+              "request-header",
+            "embedded HTTP-200 CopyObject error response");
+      end;
+
+      declare
+         Headers : Low_Level.Copy_Object_Result;
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Copy_Object_Outcome :=
+                 Low_Level.Decode_Copy_Object_Response
+                   (200, "<CopyObjectResult>" &
+                    "<LastModified>2026-08-21T17:00:00Z</LastModified>" &
+                    "<ETag>etag</ETag>" &
+                    "<ChecksumType>UNKNOWN</ChecksumType>" &
+                    "</CopyObjectResult>", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert (Raised, "invalid CopyObject checksum type accepted");
+      end;
+   end Check_Low_Level_Copy_Object;
+
    procedure Check_Low_Level_Bucket_Lifecycle (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
@@ -4721,6 +4862,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.low-level-multipart-request",
             Check_Low_Level_Multipart_Request'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.low-level-copy-object",
+            Check_Low_Level_Copy_Object'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.low-level-bucket-lifecycle",

@@ -52,8 +52,10 @@ TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
 for KEY in \
   native-object \
   native-object-copy-part \
+  native-object-copy-object \
   lightweight-object \
   lightweight-object-copy-part \
+  lightweight-object-copy-object \
   "native-object-high level+%25" \
   "lightweight-object-high level+%25"
 do
