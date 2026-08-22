@@ -490,9 +490,12 @@ package body Conditional_Put_Conformance is
          Message    : String)
       is
          Sink      : Buffer_Sink;
+         Bound_Sink : Buffer_Sink;
          Head_Info : Object_Information;
          Read_Info : Object_Information;
+         Bound_Info : Object_Information;
          Observed  : Status;
+         Read_Conditions_Value : Read_Conditions;
       begin
          Store.Head_Object
            (Bucket, Object_Key, null, Ada.Real_Time.Time_Last,
@@ -517,7 +520,41 @@ package body Conditional_Put_Conformance is
             and then Read_Info.Content_Type = Head_Info.Content_Type
             and then Read_Info.Version = Head_Info.Version,
             Message & " body/info");
+         Read_Conditions_Value.If_Match := US.To_Unbounded_String
+           ("""" & US.To_String (Read_Info.Entity_Tag) & """");
+         Store.Get_Object
+           (Bucket, Object_Key, Whole_Object, Bound_Sink, null,
+            Ada.Real_Time.Time_Last, Bound_Info, Observed,
+            Read_Conditions_Value);
+         Require
+           (Observed = Success
+            and then Flyology.Bytes.To_Byte_String (Bound_Sink.Data) =
+              Payload
+            and then Bound_Info.Size = Read_Info.Size
+            and then Bound_Info.Modified = Read_Info.Modified
+            and then Bound_Info.Entity_Tag = Read_Info.Entity_Tag
+            and then Bound_Info.Content_Type = Read_Info.Content_Type
+            and then Bound_Info.Version = Read_Info.Version,
+            Message & " generation-bound body/info");
       end Require_State;
+
+      procedure Require_Stale_Read
+        (Object_Key, Entity_Tag, Message : String)
+      is
+         Sink : Buffer_Sink;
+         Read_Info : Object_Information;
+         Observed : Status;
+         Conditions : Read_Conditions;
+      begin
+         Conditions.If_Match := US.To_Unbounded_String (Entity_Tag);
+         Store.Get_Object
+           (Bucket, Object_Key, Whole_Object, Sink, null,
+            Ada.Real_Time.Time_Last, Read_Info, Observed, Conditions);
+         Require
+           (Observed = Precondition_Failed
+            and then Flyology.Bytes.Length (Sink.Data) = 0,
+            Message);
+      end Require_Stale_Read;
 
       task type Writer
         (Index     : Positive;
@@ -539,7 +576,9 @@ package body Conditional_Put_Conformance is
                Gate  => Gate);
             Options : constant Put_Options :=
               (Entity_Tag   => US.To_Unbounded_String
-                 ("race-" & Positive'Image (Index)),
+                 ("race-" &
+                  Ada.Strings.Fixed.Trim
+                    (Positive'Image (Index), Ada.Strings.Both)),
                Content_Type => US.To_Unbounded_String ("application/race"));
          begin
             Target.Put_Object
@@ -664,6 +703,9 @@ package body Conditional_Put_Conformance is
       Require (Result = Precondition_Failed,
                "stale generation replacement succeeded");
       Require_State (Key, "second", Current, "stale If-Match");
+      Require_Stale_Read
+        (Key, """generation-1""",
+         "stale generation-bound whole Get succeeded");
 
       Put ("missing", "missing", "missing", Conditions, Info, Result);
       Require (Result = Precondition_Failed,

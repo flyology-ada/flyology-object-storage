@@ -144,6 +144,35 @@ The Flyology.DB recovery sequence enabled by these operations is:
 The sequence never retries automatically and never infers commit state from a
 listing.
 
+## Interim synchronous integration
+
+Before the scoped HTTP prerequisite is released,
+`Client.Objects.Put_If_Absent` and `Put_If_Matches` expose the conditional
+publication algorithm through the synchronous S3 client. The latter accepts
+the exact quoted ETag returned by the prior response. Both return the complete
+modeled `Put_Object_Outcome`, including ETag and version ID, but do not expose
+transport admission certainty. A caller therefore treats every exception as
+an unknown publication outcome and reconciles before choosing any later retry.
+
+A conditional synchronous Put must use a one-shot type derived directly from
+`Flyology.HTTP.Client.Request_Body_Source`. The stock array, string, bytes,
+file, and unique-buffer adapters implement `Rewindable_Request_Body_Source`;
+the conditional helpers reject them before request preparation. Using one
+would opt an idempotent PUT into HTTP's guarded stale-transport replay. A
+replayed request can observe the first successful conditional publication as
+a later 412, so it is not an acceptable mutation source. The
+native/lightweight socket corpus and the six-server implementation corpus use
+a direct non-rewindable source for this reason.
+
+`Client.Objects.Get_Whole` performs reconciliation with `If_Match` equal to
+the exact quoted ETag and no range, decodes the successful head, and consumes a
+caller-bounded body from that same response. Its result retains the ETag and
+version ID as separate opaque generation fields. The response retains the
+original HTTP execution deadline while its body is consumed; a parent with a
+broader absolute budget computes the remaining synchronous timeout after
+signing. Head remains useful for existence and size checks, but it is not
+substituted for this same-response whole Get in recovery.
+
 ## HTTP prerequisite
 
 The HTTP client slice must provide completion-set operations for request

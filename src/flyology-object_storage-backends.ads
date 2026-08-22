@@ -463,8 +463,13 @@ package Flyology.Object_Storage.Backends is
    --  A successful implementation consumes Source through Finished, validates
    --  its declared length, and publishes the object only after all source
    --  validation succeeds. Conditions are evaluated atomically against the
-   --  destination generation at publication. A failed call does not expose a
-   --  partial object or alter the prior object.
+   --  destination generation at publication. No outcome exposes a partial
+   --  object. Invalid input, failed predicates, source failure, cancellation,
+   --  timeout, and capacity failure before publication leave the prior object
+   --  unchanged. Backend_Unavailable is not a publication-certainty signal:
+   --  a backend can publish atomically and then fail while confirming durable
+   --  metadata. Callers that lose this result must reconcile with one atomic
+   --  Get_Object body-and-information snapshot before any conditional retry.
 
    --  Copy one immutable source snapshot to the destination. Source absence
    --  is Source_Not_Found; destination-bucket absence remains Not_Found.

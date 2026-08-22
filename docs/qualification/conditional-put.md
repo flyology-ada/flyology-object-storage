@@ -23,6 +23,20 @@ failed candidate payloads and retires the previous immutable payload only
 after the catalog commit. The files backend rejects live and dangling
 object-path symlinks without following them.
 
+`Backend_Unavailable` is deliberately not a definite non-publication result.
+For the files backend, atomic rename is the publication point. If the following
+object-directory or temporary-directory durability barrier fails, the complete
+replacement is already visible even though the call returns
+`Backend_Unavailable`; a crash may retain either complete generation until the
+directory entry is confirmed stable. The deterministic fault lane injects
+failures at all three Put barriers: failure before rename retains the old body,
+while either post-rename failure exposes the complete replacement. It then
+reads body and `Object_Information` from one snapshot and repeats the whole Get
+with that exact opaque ETag as `If_Match`. No lane permits partial bytes or
+mixed metadata. A caller must therefore reconcile an unavailable/lost result
+through a whole body-and-generation Get before considering a conditional
+retry.
+
 ## Deterministic gates
 
 `Conditional_Put_Conformance.Exercise` runs the same semantic oracle against
@@ -49,8 +63,12 @@ The full pinned six-server implementation matrix ran three repetitions on
 2026-08-22: RustFS 1.0.0-rc.3, SeaweedFS 4.43, MinIO
 RELEASE.2025-09-07T16-13-09Z, and Flyology memory, files, and SQLite. Every
 native and lightweight client lane passed the same conditional lifecycle with
-exact final bytes and entity tags. No condition-specific reference divergence
-or exclusion was observed.
+exact final bytes and entity tags. SeaweedFS, MinIO, and all three Flyology
+backends returned modeled `PreconditionFailed` for a stale generation-bound
+Get. The pinned RustFS release returned the correct HTTP 412 without an S3
+error document, so its client error code is the bounded fallback `HTTP412`;
+the matrix permits only that exact external response shape. Conditional Put
+behavior itself had no reference divergence or exclusion.
 
 The authorized SPARK gate proved the exact
 `Evaluate_Object_Write_Conditions` target with 3/3 flow checks, then completed

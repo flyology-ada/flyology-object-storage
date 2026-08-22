@@ -287,6 +287,32 @@ procedure S3_Implementation_Corpus is
      Multipart_Checksum_Oracle_Mode_Kind :=
        Read_Multipart_Checksum_Oracle_Mode;
 
+   type Conditional_Get_Oracle_Mode_Kind is
+     (Complete_Conditional_Get,
+      RustFS_RC3_Bodyless_Stale_Get_412);
+
+   function Read_Conditional_Get_Oracle_Mode
+      return Conditional_Get_Oracle_Mode_Kind
+   is
+      Name : constant String :=
+        "FLYOLOGY_CONDITIONAL_GET_ORACLE_MODE";
+   begin
+      if not Ada.Environment_Variables.Exists (Name) then
+         return Complete_Conditional_Get;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "rustfs-rc3-bodyless-stale-if-match-412"
+      then
+         return RustFS_RC3_Bodyless_Stale_Get_412;
+      else
+         raise Program_Error with
+           "unknown conditional GetObject oracle mode";
+      end if;
+   end Read_Conditional_Get_Oracle_Mode;
+
+   Conditional_Get_Oracle_Mode : constant
+     Conditional_Get_Oracle_Mode_Kind :=
+       Read_Conditional_Get_Oracle_Mode;
+
    type Upload_Source
      (Value : not null access constant String) is
      new HTTP_Client.Request_Body_Source with record
@@ -1858,7 +1884,9 @@ procedure S3_Implementation_Corpus is
          procedure Require_Body
            (Expected_Body, Expected_ETag : String)
          is
-            Parameters : Low_Level.Get_Object_Parameters;
+            Parameters : constant Low_Level.Get_Object_Parameters :=
+              (If_Match => US.To_Unbounded_String (Expected_ETag),
+               others   => <>);
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Get_Object
                 (Origin, Low_Level.Path_Style, Bucket, Object_Key,
@@ -1891,6 +1919,44 @@ procedure S3_Implementation_Corpus is
                  "conditional PutObject changed the committed bytes";
             end if;
          end Require_Body;
+
+         procedure Require_Stale_Get_Rejected
+           (Expected_ETag : String)
+         is
+            Parameters : constant Low_Level.Get_Object_Parameters :=
+              (If_Match => US.To_Unbounded_String (Expected_ETag),
+               others   => <>);
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object
+                (Origin, Low_Level.Path_Style, Bucket, Object_Key,
+                 Parameters, Identity, "us-east-1", Timestamp);
+            Response : HTTP_Client.Response :=
+              Low_Level.Execute_Get_Object
+                (HTTP, Prepared, Timeout => 30.0);
+            Result : constant Low_Level.Get_Object_Head_Outcome :=
+              Low_Level.Decode_Get_Object_Response_Head (Response);
+         begin
+            case Conditional_Get_Oracle_Mode is
+               when Complete_Conditional_Get =>
+                  if Result.Kind /= Low_Level.Get_Object_Rejected
+                    or else Result.Status /= 412
+                    or else US.To_String (Result.Error.Code) /=
+                      "PreconditionFailed"
+                  then
+                     raise Program_Error with
+                       "S3 implementation accepted stale " &
+                       "generation-bound Get";
+                  end if;
+               when RustFS_RC3_Bodyless_Stale_Get_412 =>
+                  if Result.Kind /= Low_Level.Get_Object_Rejected
+                    or else Result.Status /= 412
+                    or else US.To_String (Result.Error.Code) /= "HTTP412"
+                  then
+                     raise Program_Error with
+                       "pinned RustFS bodyless stale If-Match 412 changed";
+                  end if;
+            end case;
+         end Require_Stale_Get_Rejected;
 
          Created : constant Low_Level.Put_Object_Outcome :=
            Put (First_Value'Access, If_None_Match => "*");
@@ -1938,6 +2004,7 @@ procedure S3_Implementation_Corpus is
                      raise Program_Error with
                        "S3 implementation accepted stale If-Match";
                   end if;
+                  Require_Stale_Get_Rejected (First_ETag);
                   Require_Body (Second_Value, Second_ETag);
                end;
             end;

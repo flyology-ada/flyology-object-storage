@@ -7,6 +7,7 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Flyology;
+with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
@@ -61,6 +62,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
    use type Objects.Tagging_Outcome_Kind;
+   use type Objects.Whole_Get_Outcome_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Buckets.Put_Tags_Outcome_Kind;
@@ -125,6 +127,47 @@ procedure S3_HTTP_Socket_Corpus is
       end if;
       Finished := Item.Position = Item.Value'Length;
    end Read;
+
+   type Rewindable_Probe is
+     new HTTP_Client.Rewindable_Request_Body_Source with null record;
+
+   overriding function Declared_Length
+     (Item : Rewindable_Probe) return HTTP_Client.Body_Length;
+
+   overriding procedure Read
+     (Item     : in out Rewindable_Probe;
+      Data     : out Stream_Element_Array;
+      Last     : out Stream_Element_Offset;
+      Finished : out Boolean;
+      Timeout  : Duration;
+      Token    : access Flyology.Cancellation.Token);
+
+   overriding procedure Rewind (Item : in out Rewindable_Probe);
+
+   overriding function Declared_Length
+     (Item : Rewindable_Probe) return HTTP_Client.Body_Length is
+     (HTTP_Client.Known_Length (0));
+
+   overriding procedure Read
+     (Item     : in out Rewindable_Probe;
+      Data     : out Stream_Element_Array;
+      Last     : out Stream_Element_Offset;
+      Finished : out Boolean;
+      Timeout  : Duration;
+      Token    : access Flyology.Cancellation.Token)
+   is
+      pragma Unreferenced (Item, Timeout, Token);
+   begin
+      Data := (others => 0);
+      Last := Data'First - 1;
+      Finished := True;
+   end Read;
+
+   overriding procedure Rewind (Item : in out Rewindable_Probe) is
+      pragma Unreferenced (Item);
+   begin
+      null;
+   end Rewind;
 
    function Bytes (Value : String) return Stream_Element_Array is
       Result : Stream_Element_Array
@@ -1096,7 +1139,8 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("200 OK", "conditional-first",
                "ETag: ""conditional-first""" & CRLF),
-            "GET", "/example-bucket/conditional-put");
+            "GET", "/example-bucket/conditional-put",
+            Expected_If_Match => """conditional-first""");
          Serve
            (HTTP_Response
               ("200 OK", "", "ETag: ""conditional-second""" & CRLF),
@@ -1107,10 +1151,24 @@ procedure S3_HTTP_Socket_Corpus is
             "PUT", "/example-bucket/conditional-put", "conditional-stale",
             Expected_If_Match => """conditional-first""");
          Serve
+           (HTTP_Response ("412 Precondition Failed", Precondition_XML),
+            "GET", "/example-bucket/conditional-put",
+            Expected_If_Match => """conditional-first""");
+         Serve
            (HTTP_Response
               ("200 OK", "conditional-second",
                "ETag: ""conditional-second""" & CRLF),
-            "GET", "/example-bucket/conditional-put");
+            "GET", "/example-bucket/conditional-put",
+            Expected_If_Match => """conditional-second""");
+         Serve
+           (HTTP_Response ("200 OK", "", "ETag: *" & CRLF),
+            "PUT", "/example-bucket/conditional-put", "conditional-stale",
+            Expected_If_Match => """conditional-second""");
+         Serve
+           (HTTP_Response
+              ("200 OK", "conditional-second", "ETag: *" & CRLF),
+            "GET", "/example-bucket/conditional-put",
+            Expected_If_Match => """conditional-second""");
          Serve
            (HTTP_Response
               ("200 OK", "", "x-amz-version-id: tag-put-version" & CRLF),
@@ -1655,44 +1713,34 @@ procedure S3_HTTP_Socket_Corpus is
             If_None_Match : String := "")
             return Low_Level.Put_Object_Outcome
          is
-            Parameters : Low_Level.Put_Object_Parameters;
-            Source     : Upload_Source (Value);
+            Source : Upload_Source (Value);
          begin
-            Parameters.If_Match := US.To_Unbounded_String (If_Match);
-            Parameters.If_None_Match :=
-              US.To_Unbounded_String (If_None_Match);
-            declare
-               Request : constant Low_Level.Prepared_Request :=
-                 Low_Level.Prepare_Put_Object
-                   (Origin, Low_Level.Path_Style, "example-bucket",
-                    "conditional-put", Parameters,
-                    SigV4.SHA256_Hex (Value.all), Identity,
-                    "us-east-1", "20130524T000000Z");
-            begin
-               return Low_Level.Execute_Put_Object
-                 (HTTP, Request, Source, Timeout => 5.0);
-            end;
+            if If_None_Match = "*" and then If_Match'Length = 0 then
+               return Objects.Put_If_Absent
+                 (HTTP, Origin, "example-bucket", "conditional-put",
+                  Source, SigV4.SHA256_Hex (Value.all), Identity,
+                  Timeout => 5.0);
+            elsif If_Match'Length > 0
+              and then If_None_Match'Length = 0
+            then
+               return Objects.Put_If_Matches
+                 (HTTP, Origin, "example-bucket", "conditional-put",
+                  If_Match, Source, SigV4.SHA256_Hex (Value.all), Identity,
+                  Timeout => 5.0);
+            end if;
+            raise Program_Error with "invalid conditional PutObject test";
          end Conditional_Put;
 
          procedure Require_Conditional_Get
            (Expected_Body, Expected_ETag : String)
          is
-            Parameters : Low_Level.Get_Object_Parameters;
-            Request : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_Get_Object
-                (Origin, Low_Level.Path_Style, "example-bucket",
-                 "conditional-put", Parameters, Identity, "us-east-1",
-                 "20130524T000000Z");
-            Response : HTTP_Client.Response :=
-              Low_Level.Execute_Get_Object (HTTP, Request, Timeout => 5.0);
-            Result : constant Low_Level.Get_Object_Head_Outcome :=
-              Low_Level.Decode_Get_Object_Response_Head (Response);
-            Received : US.Unbounded_String;
-            Buffer : Stream_Element_Array (1 .. 8);
-            Last : Stream_Element_Offset;
-            Finished : Boolean := False;
+            Result : constant Objects.Whole_Get_Outcome :=
+              Objects.Get_Whole
+                (HTTP, Origin, "example-bucket", "conditional-put",
+                 Expected_Body'Length, Identity,
+                 Expected_Entity_Tag => Expected_ETag, Timeout => 5.0);
          begin
-            if Result.Kind /= Low_Level.Object_Opened
+            if Result.Kind /= Objects.Whole_Object_Read
               or else Result.Status /= 200
               or else not Result.Result.Content_Length.Is_Set
               or else Result.Result.Content_Length.Value /=
@@ -1703,17 +1751,127 @@ procedure S3_HTTP_Socket_Corpus is
                raise Program_Error with
                  "conditional PutObject GetObject head mismatch";
             end if;
-            while not Finished loop
-               HTTP_Client.Read_Body (Response, Buffer, Last, Finished);
-               for Index in Buffer'First .. Last loop
-                  US.Append (Received, Character'Val (Buffer (Index)));
-               end loop;
-            end loop;
-            if US.To_String (Received) /= Expected_Body then
+            if Flyology.Bytes.To_Byte_String (Result.Object_Bytes) /=
+              Expected_Body
+            then
                raise Program_Error with
                  "conditional PutObject GetObject body mismatch";
             end if;
          end Require_Conditional_Get;
+
+         procedure Require_Stale_Get_Rejected (Expected_ETag : String) is
+            Result : constant Objects.Whole_Get_Outcome :=
+              Objects.Get_Whole
+                (HTTP, Origin, "example-bucket", "conditional-put", 64,
+                 Identity, Expected_Entity_Tag => Expected_ETag,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Objects.Whole_Get_Rejected
+              or else Result.Status /= 412
+              or else US.To_String (Result.Error.Code) /=
+                "PreconditionFailed"
+            then
+               raise Program_Error with
+                 "stale generation-bound GetObject was not rejected";
+            end if;
+         end Require_Stale_Get_Rejected;
+
+         procedure Require_Rewindable_Put_Rejected is
+            Source : Rewindable_Probe;
+            Outcome : Low_Level.Put_Object_Outcome;
+         begin
+            begin
+               Outcome := Objects.Put_If_Absent
+                 (HTTP, Origin, "example-bucket", "conditional-put",
+                  Source, SigV4.SHA256_Hex (""), Identity,
+                  Timeout => 5.0);
+               raise Program_Error with
+                 "rewindable conditional PutObject source was accepted";
+            exception
+               when Low_Level.Invalid_Request =>
+                  null;
+            end;
+            if Outcome.Status /= 500 then
+               raise Program_Error with
+                 "rejected conditional PutObject changed its outcome";
+            end if;
+         end Require_Rewindable_Put_Rejected;
+
+         procedure Require_Invalid_Condition_Rejected is
+            function Is_Rejected (Entity_Tag : String) return Boolean is
+               Source : Upload_Source (Conditional_Stale'Access);
+            begin
+               declare
+                  Unexpected : constant Low_Level.Put_Object_Outcome :=
+                    Objects.Put_If_Matches
+                      (HTTP, Origin, "example-bucket", "conditional-put",
+                       Entity_Tag, Source,
+                       SigV4.SHA256_Hex (Conditional_Stale), Identity,
+                       Timeout => 5.0);
+               begin
+                  raise Program_Error with
+                    "invalid conditional PutObject entity tag returned" &
+                    Unexpected.Status'Image;
+               end;
+            exception
+               when Low_Level.Invalid_Request =>
+                  return True;
+            end Is_Rejected;
+         begin
+            if not Is_Rejected ("*")
+              or else not Is_Rejected ("W/""weak""")
+              or else not Is_Rejected
+                ('"' & Character'Val (16#7F#) & '"')
+            then
+               raise Program_Error with
+                 "invalid conditional PutObject entity tag was admitted";
+            end if;
+         end Require_Invalid_Condition_Rejected;
+
+         procedure Require_Invalid_Generation_Rejected is
+            Put_Rejected : Boolean := False;
+            Get_Rejected : Boolean := False;
+         begin
+            begin
+               declare
+                  Source : Upload_Source (Conditional_Stale'Access);
+                  Unexpected : constant Low_Level.Put_Object_Outcome :=
+                    Objects.Put_If_Matches
+                      (HTTP, Origin, "example-bucket", "conditional-put",
+                       """conditional-second""", Source,
+                       SigV4.SHA256_Hex (Conditional_Stale), Identity,
+                       Timeout => 5.0);
+               begin
+                  raise Program_Error with
+                    "malformed PutObject generation was accepted" &
+                    Unexpected.Status'Image;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Put_Rejected := True;
+            end;
+            begin
+               declare
+                  Unexpected : constant Objects.Whole_Get_Outcome :=
+                    Objects.Get_Whole
+                      (HTTP, Origin, "example-bucket", "conditional-put", 64,
+                       Identity,
+                       Expected_Entity_Tag => """conditional-second""",
+                       Timeout => 5.0);
+               begin
+                  raise Program_Error with
+                    "malformed GetObject generation was accepted" &
+                    Unexpected.Status'Image;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Get_Rejected := True;
+            end;
+            if not Put_Rejected or else not Get_Rejected then
+               raise Program_Error with
+                 "malformed synchronous generation response was accepted";
+            end if;
+         end Require_Invalid_Generation_Rejected;
 
          procedure Run_Conditional_Put_Lifecycle is
             Created : constant Low_Level.Put_Object_Outcome :=
@@ -1782,8 +1940,10 @@ procedure S3_HTTP_Socket_Corpus is
                     "conditional replace/stale socket mismatch";
                end if;
             end;
+            Require_Stale_Get_Rejected ("""conditional-first""");
             Require_Conditional_Get
               (Conditional_Second, """conditional-second""");
+            Require_Invalid_Generation_Rejected;
          end Run_Conditional_Put_Lifecycle;
       begin
          HTTP_Client.Configure (HTTP, Origin);
@@ -2379,6 +2539,8 @@ procedure S3_HTTP_Socket_Corpus is
                raise Program_Error with "typed PutObject result mismatch";
             end if;
          end;
+         Require_Rewindable_Put_Rejected;
+         Require_Invalid_Condition_Rejected;
          Run_Conditional_Put_Lifecycle;
          declare
             Tags : Flyology.Object_Storage.Object_Tag_Set;

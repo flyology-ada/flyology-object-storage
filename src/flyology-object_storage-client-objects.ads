@@ -1,4 +1,5 @@
 with Ada.Strings.Unbounded;
+with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
@@ -109,6 +110,108 @@ package Flyology.Object_Storage.Client.Objects is
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
       return List_Outcome;
+
+   subtype Conditional_Put_Outcome is Low_Level.Put_Object_Outcome;
+
+   --  Publish a complete object only when no current object exists. Source
+   --  must be a one-shot Request_Body_Source, not a rewindable source; this
+   --  prevents the blocking HTTP client from replaying an ambiguous
+   --  conditional mutation. Expected rejections, including HTTP 412, are
+   --  returned in the typed low-level outcome. Once execution begins, any
+   --  propagated exception must conservatively be treated as an unknown
+   --  publication outcome and reconciled with Get_Whole; this function does
+   --  not classify admission certainty.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination object key
+   --  @param Source One-shot complete request body, borrowed for this call
+   --  @param Payload_SHA256 Exact lowercase body digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Content_Type Optional object content type
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Blocking HTTP exchange budget
+   --  @param Token Optional cancellation source
+   --  @return Complete PutObject result or structured S3 rejection
+   --  @exception Low_Level.Invalid_Request Source is rewindable or invalid
+   function Put_If_Absent
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Source   : in out Flyology.HTTP.Client.Request_Body_Source'Class;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Content_Type : String := "";
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Conditional_Put_Outcome;
+
+   --  Replace a complete current object only when its opaque HTTP entity tag
+   --  exactly matches Expected_Entity_Tag. Pass the quoted ETag returned by
+   --  Put_If_Absent, Put_If_Matches, Get_Whole, or HeadObject unchanged.
+   --  Source and exception certainty follow Put_If_Absent.
+   function Put_If_Matches
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Expected_Entity_Tag : String;
+      Source   : in out Flyology.HTTP.Client.Request_Body_Source'Class;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Content_Type : String := "";
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Conditional_Put_Outcome;
+
+   type Whole_Get_Outcome_Kind is (Whole_Object_Read, Whole_Get_Rejected);
+
+   --  A complete GetObject body and its response metadata from one HTTP
+   --  exchange. Result.Entity_Tag and Result.Version_ID remain separate,
+   --  opaque provider generation values.
+   type Whole_Get_Outcome
+     (Kind : Whole_Get_Outcome_Kind := Whole_Get_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Whole_Object_Read =>
+            Result : Low_Level.Get_Object_Result;
+            Object_Bytes : Flyology.Bytes.Unbounded_Bytes;
+         when Whole_Get_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Read one complete object and its exact metadata from the same immutable
+   --  S3 response. Expected_Entity_Tag binds reconciliation to an opaque ETag;
+   --  Version_ID independently selects a provider version when supported.
+   --  Maximum bounds retained bytes. A larger or malformed successful body
+   --  raises Response_Too_Large or Low_Level.Invalid_Response respectively.
+   function Get_Whole
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Maximum  : Natural;
+      Identity : Low_Level.Credentials;
+      Expected_Entity_Tag : String := "";
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Whole_Get_Outcome;
 
    type Delete_Outcome_Kind is (Object_Removed, Delete_Rejected);
 

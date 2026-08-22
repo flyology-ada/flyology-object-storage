@@ -3704,16 +3704,38 @@ package body Object_Storage_Test_Cases is
                declare
                   Payload : constant String :=
                     Flyology.Bytes.To_Byte_String (Sink.Data);
+                  Expected : constant String :=
+                    (if Point = 0 then "old" else "replacement");
                begin
                   Assert
-                    (Observed = Success
-                     and then
-                       (Payload = "old" or else Payload = "replacement"),
-                     "put sync fault exposed partial object");
+                    (Observed = Success and then Payload = Expected,
+                     "put sync fault crossed the wrong publication point");
                   if Result = Success then
                      Assert (Payload = "replacement",
                              "successful durable put retained old body");
                   end if;
+                  declare
+                     Bound_Sink : Buffer_Sink;
+                     Bound_Info : Object_Information;
+                     Bound_Result : Status;
+                     Conditions : Read_Conditions;
+                  begin
+                     Conditions.If_Match := US.To_Unbounded_String
+                       ("""" & US.To_String (Info.Entity_Tag) & """");
+                     Store.Get_Object
+                       ("durability-bucket", "object", Whole_Object,
+                        Bound_Sink, null, Ada.Real_Time.Time_Last,
+                        Bound_Info, Bound_Result, Conditions);
+                     Assert
+                       (Bound_Result = Success
+                        and then Flyology.Bytes.To_Byte_String
+                          (Bound_Sink.Data) = Expected
+                        and then Bound_Info.Size = Info.Size
+                        and then US.To_String (Bound_Info.Entity_Tag) =
+                          US.To_String (Info.Entity_Tag),
+                        "generation-bound whole Get did not reconcile " &
+                        "the durability result");
+                  end;
                end;
             end;
             Clean (Root);
@@ -4333,7 +4355,7 @@ package body Object_Storage_Test_Cases is
             Ada.Real_Time.Time_Last, Info, Result);
          Assert
            (Result = Success and then Info.Size = 1
-            and then US.To_String (Info.Entity_Tag) in "race- 1" | "race- 2",
+            and then US.To_String (Info.Entity_Tag) in "race-1" | "race-2",
             "conditional files race winner did not survive durable reopen");
       end;
       Clean;
