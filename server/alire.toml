@@ -1,0 +1,40 @@
+name = "flyology_object_storage_server"
+description = "Supervised S3 server and management console for Flyology Object Storage"
+version = "0.1.0-dev"
+
+authors = ["Yurii Rashkovskii"]
+maintainers = ["Yurii Rashkovskii <yrashk@gmail.com>"]
+maintainers-logins = ["yrashk"]
+licenses = "MIT OR Apache-2.0"
+website = "https://github.com/flyology-ada/flyology-object-storage"
+tags = ["ada", "s3", "server", "object-storage", "web"]
+executables = ["flyology_object_storage_server"]
+
+[[depends-on]]
+flyology = "=0.1.0"
+
+[[depends-on]]
+flyology_http = "=0.1.2"
+
+[[depends-on]]
+flyology_object_storage = "*"
+
+[[pins]]
+flyology_object_storage = { path = ".." }
+
+[[depends-on]]
+flyology_object_storage_sqlite = "*"
+
+[[pins]]
+flyology_object_storage_sqlite = { path = "../sqlite" }
+
+[build-switches]
+"*".ada_version = "Ada2022"
+development.optimization = "Debug"
+development.compile_checks = "Errors"
+release.optimization = "Performance"
+release.compile_checks = "Warnings"
+
+[[actions]]
+type = "test"
+command = ["./tests/scripts/test.sh"]

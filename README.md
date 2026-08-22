@@ -66,6 +66,14 @@ publication order flushes the payload and containing directory before the
 `synchronous=FULL` catalog commit, and startup reconciles interrupted writes.
 One process owns a configured SQLite root, enforced with a system-wide lock.
 
+The separate [`flyology_object_storage_server`](server/README.md) executable
+crate selects memory, files, or SQLite at startup and runs the S3 application
+under Flyology supervision. Its first slice includes bounded connection
+handling, conservative loopback binding, graceful SIGTERM drain, and the same
+independent s5cmd qualification on all three backends. The authenticated
+management API and psqlbench-inspired browser workbench are being added in
+subsequent reviewed slices.
+
 The files backend is persistent, but it is not yet advertised as
 power-loss-durable: an fsync-backed durability mode remains required before
 that qualification. Sharing one root between processes is unsupported.
