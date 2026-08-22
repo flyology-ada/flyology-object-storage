@@ -5551,6 +5551,48 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         Parameters : Low_Level.Abort_Multipart_Parameters;
+      begin
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         Parameters.If_Match_Initiated_Time :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Abort_Multipart_Upload
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "photos/a b+%",
+                 "upload+/=", Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Headers : constant Low_Level.Abort_Multipart_Result :=
+              (Request_Charged => US.To_Unbounded_String ("requester"));
+            Outcome : constant Low_Level.Abort_Multipart_Outcome :=
+              Low_Level.Decode_Abort_Multipart_Response (204, "", Headers);
+            Canonical : constant String :=
+              Low_Level.Canonical_Request (Prepared);
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket/photos/a%20b%2B%25?" &
+                 "uploadId=upload%2B%2F%3D"
+               and then Outcome.Kind = Low_Level.Aborted
+               and then US.To_String (Outcome.Result.Request_Charged) =
+                 "requester"
+               and then Ada.Strings.Fixed.Index
+                 (Canonical,
+                  "x-amz-expected-bucket-owner:123456789012" & LF) > 0
+               and then Ada.Strings.Fixed.Index
+                 (Canonical,
+                  "x-amz-if-match-initiated-time:" &
+                  "Fri, 24 May 2013 00:00:00 GMT" & LF) > 0
+               and then Ada.Strings.Fixed.Index
+                 (Canonical, "x-amz-request-payer:requester" & LF) > 0,
+               "AbortMultipartUpload complete modeled request/result");
+         end;
+      end;
+
+      declare
          Prepared : constant Low_Level.Prepared_Request :=
            Low_Level.Prepare_Abort_Multipart_Upload
              (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
@@ -5599,6 +5641,57 @@ package body Object_Storage_Test_Cases is
          end;
          Assert (Raised, "AbortMultipartUpload accepted a 204 body");
       end;
+
+      for Invalid_Kind in 1 .. 3 loop
+         declare
+            Parameters : Low_Level.Abort_Multipart_Parameters;
+            Raised : Boolean := False;
+         begin
+            if Invalid_Kind = 1 then
+               Parameters.Request_Payer := US.To_Unbounded_String ("owner");
+            elsif Invalid_Kind = 2 then
+               Parameters.If_Match_Initiated_Time :=
+                 US.To_Unbounded_String ("not-a-date");
+            else
+               null;
+            end if;
+            begin
+               if Invalid_Kind < 3 then
+                  declare
+                     Ignored : constant Low_Level.Prepared_Request :=
+                       Low_Level.Prepare_Abort_Multipart_Upload
+                         (Flyology.HTTP.Parse_Origin
+                            ("http://localhost:9000"),
+                          Low_Level.Path_Style, "example-bucket", "key",
+                          "upload", Parameters, Identity, "us-east-1",
+                          "20130524T000000Z");
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               else
+                  declare
+                     Headers : constant Low_Level.Abort_Multipart_Result :=
+                       (Request_Charged => US.To_Unbounded_String ("owner"));
+                     Ignored : constant Low_Level.Abort_Multipart_Outcome :=
+                       Low_Level.Decode_Abort_Multipart_Response
+                         (204, "", Headers);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               end if;
+            exception
+               when Low_Level.Invalid_Request |
+                    Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            Assert
+              (Raised,
+               "AbortMultipartUpload accepted invalid modeled member" &
+               Integer'Image (Invalid_Kind));
+         end;
+      end loop;
 
       declare
          Parameters : Low_Level.List_Parts_Parameters;

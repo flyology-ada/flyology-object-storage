@@ -17,6 +17,25 @@ package Flyology.Object_Storage.Client.Transfers is
    Default_Multipart_Threshold : constant Byte_Count := 64 * 1_024 * 1_024;
    Default_Multipart_Part_Size : constant Byte_Count := 16 * 1_024 * 1_024;
 
+   --  Abort one active multipart upload without constructing a modeled
+   --  request record. Optional advanced members map directly to the pinned
+   --  S3 input shape; If_Match_Initiated_Time is an RFC 822 HTTP date.
+   function Abort_Multipart_Upload
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Upload_ID    : String;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Request_Payer : String := "";
+      Expected_Bucket_Owner : String := "";
+      If_Match_Initiated_Time : String := "";
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Low_Level.Abort_Multipart_Outcome;
+
    type Upload_Outcome_Kind is (File_Uploaded, Upload_Rejected);
 
    type Upload_Outcome

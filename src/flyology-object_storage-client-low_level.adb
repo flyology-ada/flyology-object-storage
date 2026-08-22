@@ -6,6 +6,7 @@ with Ada.Strings.Fixed;
 with Flyology.Bytes;
 with Flyology.HTTP.Headers;
 with Flyology.Object_Storage.Secrets;
+with Flyology.Object_Storage.S3.Object_Reads;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Wire_Core;
@@ -1395,15 +1396,64 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Region    : String;
       Timestamp : String) return Prepared_Request
    is
+      Parameters : constant Abort_Multipart_Parameters := (others => <>);
+   begin
+      return Prepare_Abort_Multipart_Upload
+        (Origin, Style, Bucket, Key, Upload_ID, Parameters, Identity,
+         Region, Timestamp);
+   end Prepare_Abort_Multipart_Upload;
+
+   function Prepare_Abort_Multipart_Upload
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Upload_ID  : String;
+      Parameters : Abort_Multipart_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
       Query : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("uploadId", Upload_ID));
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Initiated : constant String :=
+        US.To_String (Parameters.If_Match_Initiated_Time);
+      Header_Count : constant Natural :=
+        Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
+        Boolean'Pos (Initiated'Length > 0);
+      Headers : SigV4.Name_Value_Array (1 .. Header_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         if Value'Length > 0 then
+            Last := Last + 1;
+            Headers (Last) := SigV4.Pair (Name, Value);
+         end if;
+      end Add;
    begin
       if Upload_ID'Length = 0 or else Upload_ID'Length > 8_192 then
          raise Invalid_Request with "invalid multipart upload identifier";
+      elsif Request_Payer'Length > 0 and then Request_Payer /= "requester"
+      then
+         raise Invalid_Request with "invalid AbortMultipartUpload payer";
+      elsif Initiated'Length > 0
+        and then not S3.Object_Reads.Parse_Conditional_Date (Initiated).Valid
+      then
+         raise Invalid_Request with
+           "invalid AbortMultipartUpload initiation time";
       end if;
+      Add ("x-amz-request-payer", Request_Payer);
+      Add
+        ("x-amz-expected-bucket-owner",
+         US.To_String (Parameters.Expected_Bucket_Owner));
+      Add ("x-amz-if-match-initiated-time", Initiated);
       return Prepare_Object_Request
         (Abort_Multipart_Operation, "DELETE", Origin, Style, Bucket, Key,
-         Query, No_Headers, "", "", Identity, Region, Timestamp);
+         Query, Headers, "", "", Identity, Region, Timestamp);
    end Prepare_Abort_Multipart_Upload;
 
    function Prepare_List_Buckets
@@ -3679,13 +3729,32 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Abort_Multipart_Outcome
    is
+      Headers : constant Abort_Multipart_Result := (others => <>);
+   begin
+      return Decode_Abort_Multipart_Response
+        (Status, Payload, Headers, Request_ID, Host_ID, Limits);
+   end Decode_Abort_Multipart_Response;
+
+   function Decode_Abort_Multipart_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Abort_Multipart_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Abort_Multipart_Outcome
+   is
+      Charged : constant String := US.To_String (Headers.Request_Charged);
    begin
       if Status = 204 then
          if not Whitespace_Only (Payload) then
             raise Invalid_Response with
               "AbortMultipartUpload success contains a response body";
+         elsif Charged'Length > 0 and then Charged /= "requester" then
+            raise Invalid_Response with
+              "invalid AbortMultipartUpload request-charged header";
          end if;
-         return (Kind => Aborted, Status => Status);
+         return (Kind => Aborted, Status => Status, Result => Headers);
       else
          return
            (Kind   => Abort_Rejected,
@@ -3723,10 +3792,14 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
+         Headers : constant Abort_Multipart_Result :=
+           (Request_Charged => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-request-charged")));
       begin
          return Decode_Abort_Multipart_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
-            Host_ID, Limits);
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
+            Request_ID, Host_ID, Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

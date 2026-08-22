@@ -1136,6 +1136,30 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region    : String;
       Timestamp : String) return Prepared_Request;
 
+   --  Every non-resource member in the pinned AbortMultipartUpload input
+   --  shape. If_Match_Initiated_Time is an RFC 822 HTTP date.
+   type Abort_Multipart_Parameters is record
+      Request_Payer           : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner   : Ada.Strings.Unbounded.Unbounded_String;
+      If_Match_Initiated_Time : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_Abort_Multipart_Upload
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Upload_ID  : String;
+      Parameters : Abort_Multipart_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   --  The sole member in the pinned AbortMultipartUpload output shape.
+   type Abort_Multipart_Result is record
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    type Abort_Multipart_Outcome_Kind is (Aborted, Abort_Rejected);
 
    type Abort_Multipart_Outcome
@@ -1143,7 +1167,7 @@ package Flyology.Object_Storage.Client.Low_Level is
       Status : Flyology.HTTP.Status_Code := 500;
       case Kind is
          when Aborted =>
-            null;
+            Result : Abort_Multipart_Result;
          when Abort_Rejected =>
             Error : S3.Errors.Error_Response;
       end case;
@@ -1152,6 +1176,15 @@ package Flyology.Object_Storage.Client.Low_Level is
    function Decode_Abort_Multipart_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Abort_Multipart_Outcome;
+
+   function Decode_Abort_Multipart_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Abort_Multipart_Result;
       Request_ID : String := "";
       Host_ID    : String := "";
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)

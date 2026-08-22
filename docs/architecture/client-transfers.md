@@ -54,6 +54,13 @@ before the transport failed. Abort is not rollback. Applications needing an
 unambiguous workflow must reconcile the expected key, size and metadata with
 HeadObject or publish through an application-level manifest/version pointer.
 
+Callers can also retire an upload explicitly with `Abort_Multipart_Upload`.
+The convenience call accepts bucket, key, and upload ID directly and retains
+the typed S3 outcome. Requester Pays, expected-owner, and RFC 822
+initiation-time preconditions remain optional named arguments; the low-level
+builder signs the complete six-member pinned request shape and validates the
+sole `x-amz-request-charged` success member.
+
 ## HeadObject reconciliation
 
 `Head_Object` performs that reconciliation without retaining a response body.

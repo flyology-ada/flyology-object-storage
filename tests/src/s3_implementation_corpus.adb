@@ -967,14 +967,11 @@ procedure S3_Implementation_Corpus is
               "S3 implementation rejected abort-corpus initiation";
          end if;
          declare
-            Prepared_Abort : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_Abort_Multipart_Upload
-                (Origin, Low_Level.Path_Style, Bucket, Abort_Key,
-                 US.To_String (Created.Result.Upload_ID), Identity,
-                 "us-east-1", Timestamp);
             Aborted : constant Low_Level.Abort_Multipart_Outcome :=
-              Low_Level.Execute_Abort_Multipart_Upload
-                (HTTP, Prepared_Abort, Timeout => 30.0);
+              Transfers.Abort_Multipart_Upload
+                (HTTP, Origin, Bucket, Abort_Key,
+                 US.To_String (Created.Result.Upload_ID), Identity,
+                 Timeout => 30.0);
          begin
             if Aborted.Kind /= Low_Level.Aborted then
                raise Program_Error with
