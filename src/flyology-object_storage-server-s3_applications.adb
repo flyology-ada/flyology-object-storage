@@ -777,7 +777,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       end if;
       Apps.Set_Principal (X, US.To_String (Auth.Principal));
 
-      if Has_Encryption_Header then
+      if Has_Encryption_Header and then Operation /= Head_Object then
          Send_Error
            (X, 501, "NotImplemented",
             "Server-side encryption is not implemented", Target_Text);
@@ -2106,29 +2106,255 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      "The requested HeadObject query controls are not " &
                      "implemented", Target_Text);
                else
-                  Store.Head_Object
-                    (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
-                     Info, Result);
-                  if Result = Success then
-                     Apps.Set_Header
-                       (X, "ETag",
-                        '"' & US.To_String (Info.Entity_Tag) & '"');
-                     Apps.Set_Header (X, "Accept-Ranges", "bytes");
-                     Apps.Set_Header
-                       (X, "Last-Modified",
-                        HTTP_Last_Modified (Info.Modified));
-                     if US.Length (Info.Version) > 0 then
-                        Apps.Set_Header
-                          (X, "x-amz-version-id",
-                           US.To_String (Info.Version));
+                  declare
+                     If_Match_Count : constant Natural :=
+                       Apps.Request_Header_Count (X, "if-match");
+                     If_Modified_Count : constant Natural :=
+                       Apps.Request_Header_Count (X, "if-modified-since");
+                     If_None_Match_Count : constant Natural :=
+                       Apps.Request_Header_Count (X, "if-none-match");
+                     If_Unmodified_Count : constant Natural :=
+                       Apps.Request_Header_Count (X, "if-unmodified-since");
+                     Range_Count : constant Natural :=
+                       Apps.Request_Header_Count (X, "range");
+                     SSE_Algorithm_Count : constant Natural :=
+                       Apps.Request_Header_Count
+                         (X, "x-amz-server-side-encryption-customer-" &
+                          "algorithm");
+                     SSE_Key_Count : constant Natural :=
+                       Apps.Request_Header_Count
+                         (X, "x-amz-server-side-encryption-customer-key");
+                     SSE_MD5_Count : constant Natural :=
+                       Apps.Request_Header_Count
+                         (X, "x-amz-server-side-encryption-customer-" &
+                          "key-md5");
+                     Server_Encryption_Count : constant Natural :=
+                       Apps.Request_Header_Count
+                         (X, "x-amz-server-side-encryption");
+                     Payer_Count : constant Natural :=
+                       Apps.Request_Header_Count (X, "x-amz-request-payer");
+                     Checksum_Count : constant Natural :=
+                       Apps.Request_Header_Count (X, "x-amz-checksum-mode");
+                     Requested : Byte_Range := Whole_Object;
+                     Has_Range : Boolean := False;
+                     Owner_OK : Boolean := False;
+                  begin
+                     if If_Match_Count > 1
+                       or else If_Modified_Count > 1
+                       or else If_None_Match_Count > 1
+                       or else If_Unmodified_Count > 1
+                       or else Range_Count > 1
+                       or else SSE_Algorithm_Count > 1
+                       or else SSE_Key_Count > 1
+                       or else SSE_MD5_Count > 1
+                       or else Server_Encryption_Count > 1
+                       or else Payer_Count > 1
+                       or else Checksum_Count > 1
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "A HeadObject request header is duplicated",
+                           Target_Text);
+                        return;
+                     elsif (If_Match_Count = 1
+                            and then Apps.Request_Header
+                              (X, "if-match")'Length = 0)
+                       or else (If_Modified_Count = 1
+                                and then Apps.Request_Header
+                                  (X, "if-modified-since")'Length = 0)
+                       or else (If_None_Match_Count = 1
+                                and then Apps.Request_Header
+                                  (X, "if-none-match")'Length = 0)
+                       or else (If_Unmodified_Count = 1
+                                and then Apps.Request_Header
+                                  (X, "if-unmodified-since")'Length = 0)
+                       or else (Range_Count = 1
+                                and then Apps.Request_Header
+                                  (X, "range")'Length = 0)
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "A HeadObject request header is empty",
+                           Target_Text);
+                        return;
                      end if;
-                     Apps.Begin_Stream
-                       (X, 200, US.To_String (Info.Content_Type),
-                        Flyology.HTTP.Body_Size (Info.Size));
-                     Apps.End_Stream (X);
-                  else
-                     Send_Backend_Error (X, Result, False, Target_Text);
-                  end if;
+
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_OK);
+                     if not Owner_OK then
+                        return;
+                     elsif Server_Encryption_Count = 1 then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "HeadObject cannot specify the server-side " &
+                           "encryption method", Target_Text);
+                        return;
+                     elsif SSE_Algorithm_Count = 1
+                       or else SSE_Key_Count = 1
+                       or else SSE_MD5_Count = 1
+                     then
+                        if SSE_Algorithm_Count /= 1
+                          or else SSE_Key_Count /= 1
+                          or else SSE_MD5_Count /= 1
+                          or else Apps.Request_Header
+                            (X, "x-amz-server-side-encryption-customer-" &
+                             "algorithm") /= "AES256"
+                          or else not S3.Wire_Core.Valid_Base64
+                            (Apps.Request_Header
+                               (X, "x-amz-server-side-encryption-customer-" &
+                                "key"), 32)
+                          or else not S3.Wire_Core.Valid_Base64
+                            (Apps.Request_Header
+                               (X, "x-amz-server-side-encryption-customer-" &
+                                "key-md5"), 16)
+                        then
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "The SSE-C header group is invalid",
+                              Target_Text);
+                        else
+                           Send_Error
+                             (X, 501, "NotImplemented",
+                              "SSE-C HeadObject requests are not " &
+                              "implemented", Target_Text);
+                        end if;
+                        return;
+                     elsif Has_Encryption_Header then
+                        Send_Error
+                          (X, 501, "NotImplemented",
+                           "The HeadObject encryption header is not " &
+                           "implemented", Target_Text);
+                        return;
+                     elsif Payer_Count = 1 then
+                        if Apps.Request_Header
+                          (X, "x-amz-request-payer") /= "requester"
+                        then
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "The request payer header is invalid",
+                              Target_Text);
+                        else
+                           Send_Error
+                             (X, 501, "NotImplemented",
+                              "Requester-pays HeadObject is not implemented",
+                              Target_Text);
+                        end if;
+                        return;
+                     elsif Checksum_Count = 1 then
+                        if Apps.Request_Header
+                          (X, "x-amz-checksum-mode") /= "ENABLED"
+                        then
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "The checksum mode header is invalid",
+                              Target_Text);
+                        else
+                           Send_Error
+                             (X, 501, "NotImplemented",
+                              "HeadObject checksum mode is not implemented",
+                              Target_Text);
+                        end if;
+                        return;
+                     elsif If_Modified_Count = 1
+                       or else If_Unmodified_Count = 1
+                     then
+                        Send_Error
+                          (X, 501, "NotImplemented",
+                           "Date-based HeadObject conditions are not " &
+                           "implemented", Target_Text);
+                        return;
+                     end if;
+
+                     if Range_Count = 1 then
+                        declare
+                           Parsed_Range : constant
+                             S3.Core.Range_Parse_Result :=
+                               S3.Core.Parse_Range_Header
+                                 (Apps.Request_Header (X, "range"));
+                        begin
+                           if Parsed_Range.Status /= S3.Core.Range_Parsed then
+                              Send_Error
+                                (X, 400, "InvalidRequest",
+                                 "The Range header is malformed",
+                                 Target_Text);
+                              return;
+                           end if;
+                           Requested := Parsed_Range.Request;
+                           Has_Range := True;
+                        end;
+                     end if;
+
+                     Store.Head_Object
+                       (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
+                        Info, Result);
+                     if Result = Success then
+                        Apps.Set_Header
+                          (X, "ETag",
+                           '"' & US.To_String (Info.Entity_Tag) & '"');
+                        Apps.Set_Header (X, "Accept-Ranges", "bytes");
+                        Apps.Set_Header
+                          (X, "Last-Modified",
+                           HTTP_Last_Modified (Info.Modified));
+                        if US.Length (Info.Version) > 0 then
+                           Apps.Set_Header
+                             (X, "x-amz-version-id",
+                              US.To_String (Info.Version));
+                        end if;
+
+                        if If_Match_Count = 1
+                          and then not Backends.Copy_Conditions_Accept
+                            ((If_Match => US.To_Unbounded_String
+                                (Apps.Request_Header (X, "if-match")),
+                              If_None_Match => US.Null_Unbounded_String),
+                             US.To_String (Info.Entity_Tag))
+                        then
+                           Send_Error
+                             (X, 412, "PreconditionFailed",
+                              "The If-Match condition failed", Target_Text);
+                           return;
+                        elsif If_None_Match_Count = 1
+                          and then not Backends.Copy_Conditions_Accept
+                            ((If_Match => US.Null_Unbounded_String,
+                              If_None_Match => US.To_Unbounded_String
+                                (Apps.Request_Header (X, "if-none-match"))),
+                             US.To_String (Info.Entity_Tag))
+                        then
+                           Apps.Respond (X, 304, "", "");
+                           return;
+                        end if;
+
+                        if Has_Range then
+                           declare
+                              Resolved : constant Range_Resolution :=
+                                Resolve_Range (Info.Size, Requested);
+                           begin
+                              if Resolved.Kind /= Satisfied_Range then
+                                 Apps.Set_Header
+                                   (X, "Content-Range",
+                                    "bytes */" & Decimal (Info.Size));
+                                 Send_Backend_Error
+                                   (X, Invalid_Range, False, Target_Text);
+                                 return;
+                              end if;
+                              Apps.Set_Header
+                                (X, "Content-Range",
+                                 "bytes " & Decimal (Resolved.First) & "-" &
+                                 Decimal (Resolved.Last) & "/" &
+                                 Decimal (Info.Size));
+                              Apps.Begin_Stream
+                                (X, 206, US.To_String (Info.Content_Type),
+                                 Flyology.HTTP.Body_Size (Resolved.Length));
+                           end;
+                        else
+                           Apps.Begin_Stream
+                             (X, 200, US.To_String (Info.Content_Type),
+                              Flyology.HTTP.Body_Size (Info.Size));
+                        end if;
+                        Apps.End_Stream (X);
+                     else
+                        Send_Backend_Error (X, Result, False, Target_Text);
+                     end if;
+                  end;
                end if;
 
             when Get_Object =>

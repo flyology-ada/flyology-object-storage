@@ -328,6 +328,36 @@ procedure S3_Server_Application_Corpus is
         "Content-Length: 0" & CRLF & "Connection: close" & CRLF & CRLF;
    end Signed_Bucket_Request;
 
+   function Signed_Head_SSE_C_Request
+     (Algorithm : String; Key : String; Key_MD5 : String) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex ("");
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-customer-algorithm", Algorithm),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-customer-key", Key),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-customer-key-md5", Key_MD5),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("HEAD", "/test-bucket/object", No_Query, Headers, Payload_Hash,
+         Access_Key, Secret_Key, Region, Timestamp);
+   begin
+      return "HEAD /test-bucket/object HTTP/1.1" & CRLF &
+        "Host: " & Host & CRLF & "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "x-amz-server-side-encryption-customer-algorithm: " &
+        Algorithm & CRLF &
+        "x-amz-server-side-encryption-customer-key: " & Key & CRLF &
+        "x-amz-server-side-encryption-customer-key-md5: " & Key_MD5 &
+        CRLF & "Authorization: " & US.To_String (Signing.Authorization) &
+        CRLF & "Content-Length: 0" & CRLF & "Connection: close" & CRLF &
+        CRLF;
+   end Signed_Head_SSE_C_Request;
+
    function Signed_Copy_Request
      (Target       : String;
       Copy_Source  : String;
@@ -1635,6 +1665,177 @@ begin
          "HeadObject used streaming transfer coding");
       Require (not Has (Response, "hello world"),
                "HeadObject emitted an object body");
+   end;
+
+   declare
+      Matching_ETag : constant String :=
+        """5eb63bbbe01eeed093cb22bb8f5acdc3""";
+      Range_Response : constant String := Run
+        (Signed_Request
+           ("HEAD", "/test-bucket/object", "",
+            Extra_Headers => "Range: bytes=1-4" & CRLF));
+      Unsatisfied_Response : constant String := Run
+        (Signed_Request
+           ("HEAD", "/test-bucket/object", "",
+            Extra_Headers => "Range: bytes=99-100" & CRLF));
+      Failed_Match_Response : constant String := Run
+        (Signed_Request
+           ("HEAD", "/test-bucket/object", "",
+            Extra_Headers => "If-Match: ""different""" & CRLF));
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("HEAD", "/test-bucket/object", "",
+                  Extra_Headers => "If-Match: " & Matching_ETag & CRLF)),
+            "200 OK"),
+         "HeadObject rejected a matching If-Match");
+      Require
+        (Has (Failed_Match_Response, "HTTP/1.1 412 "),
+         "HeadObject ignored a failing If-Match: " & Failed_Match_Response);
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("HEAD", "/test-bucket/object", "",
+                  Extra_Headers =>
+                    "If-None-Match: " & Matching_ETag & CRLF)),
+            "HTTP/1.1 304 "),
+         "HeadObject ignored a matching If-None-Match");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("HEAD", "/test-bucket/object", "",
+                  Extra_Headers =>
+                    "If-None-Match: ""different""" & CRLF)),
+            "200 OK"),
+         "HeadObject rejected a nonmatching If-None-Match");
+      Require
+        (Has (Range_Response, "HTTP/1.1 206 ")
+         and then Has (Range_Response, "Content-Range: bytes 1-4/11")
+         and then Has (Range_Response, "Content-Length: 4" & CRLF)
+         and then not Has (Range_Response, "hello world"),
+         "HeadObject range response mismatch: " & Range_Response);
+      Require
+        (Has (Unsatisfied_Response, "HTTP/1.1 416 ")
+         and then Has (Unsatisfied_Response, "Content-Range: bytes */11"),
+         "HeadObject unsatisfied range response mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("HEAD", "/test-bucket/object", "",
+                  Extra_Headers => "Range: units=1-4" & CRLF)),
+            "400 Bad Request"),
+         "HeadObject accepted a malformed Range");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("HEAD", "/test-bucket/object", "",
+                  Extra_Headers =>
+                    "Range: bytes=0-1" & CRLF &
+                    "Range: bytes=2-3" & CRLF)),
+            "400 Bad Request"),
+         "HeadObject accepted a duplicate Range");
+   end;
+
+   declare
+      X_ID : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("x-id", "HeadObject"));
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Bucket_Request
+                 ("HEAD", "/test-bucket/object", "test-principal")),
+            "200 OK"),
+         "HeadObject rejected the expected bucket owner");
+      Require
+        (Has
+           (Run
+              (Signed_Bucket_Request
+                 ("HEAD", "/test-bucket/object", "another-principal")),
+            "403 Forbidden"),
+         "HeadObject ignored an expected-owner mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Bucket_Request
+                 ("HEAD", "/test-bucket/object", "test-principal",
+                  "test-principal")),
+            "400 Bad Request"),
+         "HeadObject accepted duplicate expected-owner headers");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("HEAD", "/test-bucket/object", X_ID,
+                  "x-amz-checksum-mode", "ENABLED")),
+            "501 Not Implemented"),
+         "HeadObject silently ignored checksum mode");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("HEAD", "/test-bucket/object", X_ID,
+                  "x-amz-checksum-mode", "DISABLED")),
+            "400 Bad Request"),
+         "HeadObject accepted invalid checksum mode");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("HEAD", "/test-bucket/object", X_ID,
+                  "x-amz-request-payer", "requester")),
+            "501 Not Implemented"),
+         "HeadObject silently ignored requester-pays");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("HEAD", "/test-bucket/object", X_ID,
+                  "x-amz-request-payer", "invalid")),
+            "400 Bad Request"),
+         "HeadObject accepted invalid request-payer policy");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("HEAD", "/test-bucket/object", X_ID,
+                  "x-amz-server-side-encryption", "AES256")),
+            "400 Bad Request"),
+         "HeadObject accepted a write-only encryption method header");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("HEAD", "/test-bucket/object", X_ID,
+                  "x-amz-server-side-encryption-customer-algorithm",
+                  "AES256")),
+            "400 Bad Request"),
+         "HeadObject accepted an incomplete SSE-C group");
+      Require
+        (Has
+           (Run
+              (Signed_Head_SSE_C_Request
+                 ("AES256",
+                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                  "AAAAAAAAAAAAAAAAAAAAAA==")),
+            "501 Not Implemented"),
+         "HeadObject silently ignored a valid SSE-C group");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("HEAD", "/test-bucket/object", "",
+                  Extra_Headers =>
+                    "If-Modified-Since: Fri, 24 May 2013 00:00:00 GMT" &
+                    CRLF)),
+            "501 Not Implemented"),
+         "HeadObject silently ignored a date condition");
    end;
 
    declare
