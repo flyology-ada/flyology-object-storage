@@ -3808,11 +3808,18 @@ begin
       Versioned : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("tagging", ""),
          SigV4.Pair ("versionId", "unsupported"));
+      Null_Version : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("tagging", ""),
+         SigV4.Pair ("versionId", "null"),
+         SigV4.Pair ("x-id", "DeleteObjectTagging"));
       Unknown : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("tagging", ""),
          SigV4.Pair ("unknown", "value"));
       Duplicate : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("tagging", ""), SigV4.Pair ("tagging", ""));
+      Wrong_X_ID : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("tagging", ""),
+         SigV4.Pair ("x-id", "GetObjectTagging"));
       Document : constant String :=
         "<Tagging><TagSet><Tag><Key>team</Key><Value>storage</Value>" &
         "</Tag></TagSet></Tagging>";
@@ -3929,13 +3936,119 @@ begin
               ("GET", "/missing-bucket/object", Query)),
             "<Code>NoSuchBucket</Code>"),
          "GetObjectTagging misreported a missing bucket");
+
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("DELETE", "/test-bucket/object", "",
+                  Query_Name => "tagging", Query_Value => "invalid",
+                  Corrupt_Signature => True)),
+            "403 Forbidden"),
+         "DeleteObjectTagging validated its query before authentication");
       Require
         (Has
            (Run
               (Signed_Query_Request
-                 ("DELETE", "/test-bucket/object", Query)),
-            "204 No Content"),
-         "DeleteObjectTagging failed");
+                 ("DELETE", "/test-bucket/object", Unknown)),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObjectTagging accepted an unknown query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Duplicate)),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObjectTagging accepted duplicate tagging controls");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Wrong_X_ID)),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObjectTagging accepted a mismatched SDK operation id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Versioned)),
+            "501 Not Implemented"),
+         "DeleteObjectTagging silently accepted a real version id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "DeleteObjectTagging ignored the expected bucket owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Query,
+                  "x-amz-expected-bucket-owner", "test-principal",
+                  Second_Header_Value => "test-principal")),
+            "<Code>InvalidRequest</Code>"),
+         "DeleteObjectTagging accepted duplicate expected-owner headers");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Query,
+                  "x-amz-request-payer", "owner")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObjectTagging accepted an invalid requester-pays value");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Query,
+                  "x-amz-request-payer", "requester")),
+            "501 Not Implemented"),
+         "DeleteObjectTagging silently accepted requester-pays policy");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Query,
+                  "content-md5", "AAAAAAAAAAAAAAAAAAAAAA==")),
+            "<Code>InvalidRequest</Code>"),
+         "DeleteObjectTagging accepted an unmodeled Content-MD5 header");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Query,
+                  "content-type", "application/xml")),
+            "<Code>InvalidRequest</Code>"),
+         "DeleteObjectTagging accepted an unmodeled Content-Type header");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Query,
+                  "x-amz-sdk-checksum-algorithm", "CRC32")),
+            "501 Not Implemented"),
+         "DeleteObjectTagging silently accepted an SDK checksum control");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("GET", "/test-bucket/object", Query)),
+            "<Key>team</Key>"),
+         "rejected DeleteObjectTagging controls changed existing tags");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("DELETE", "/test-bucket/object", Null_Version,
+                 "x-amz-expected-bucket-owner", "test-principal"));
+      begin
+         Require
+           (Has (Response, "204 No Content")
+            and then Has (Response, "x-amz-version-id: null" & CRLF),
+            "DeleteObjectTagging rejected the null unversioned selector");
+      end;
       declare
          Response : constant String :=
            Run (Signed_Query_Request ("GET", "/test-bucket/object", Query));
@@ -3946,6 +4059,27 @@ begin
             and then not Has (Response, "<Key>"),
             "DeleteObjectTagging did not atomically clear the tag set");
       end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Query)),
+            "204 No Content"),
+         "DeleteObjectTagging was not idempotent for an empty tag set");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/missing-tagged", Query)),
+            "<Code>NoSuchKey</Code>"),
+         "DeleteObjectTagging misreported a missing key");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/missing-bucket/object", Query)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteObjectTagging misreported a missing bucket");
       Require
         (Has
            (Run

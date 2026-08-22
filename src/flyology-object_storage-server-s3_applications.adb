@@ -3979,7 +3979,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     (US.To_String (Auth.Principal), Owner_OK);
                   if not Owner_OK then
                      return;
-                  elsif Tagging_Request.Has_Version_ID then
+                  elsif Tagging_Request.Has_Version_ID
+                    and then
+                      (Operation /= Delete_Object_Tagging
+                       or else US.To_String (Tagging_Request.Version_ID) /=
+                         "null")
+                  then
                      Send_Error
                        (X, 501, "NotImplemented",
                         "Object versioning is not implemented", Target_Text);
@@ -4002,6 +4007,14 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 501, "NotImplemented",
                         "Object tagging SDK checksums are not implemented",
                         Target_Text);
+                     return;
+                  elsif Operation = Delete_Object_Tagging
+                    and then (MD5_Count = 1 or else Kind_Count = 1)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "DeleteObjectTagging does not accept content " &
+                        "headers", Target_Text);
                      return;
                   end if;
 
@@ -4095,6 +4108,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
                         Result);
                      if Result = Success then
+                        if Tagging_Request.Has_Version_ID then
+                           Apps.Set_Header (X, "x-amz-version-id", "null");
+                        end if;
                         Apps.Respond (X, 204, "", "");
                      else
                         Send_Backend_Error (X, Result, False, Target_Text);
