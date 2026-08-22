@@ -24,9 +24,9 @@ a proof fix.
 The current forced manifest covers domain validation, the exhaustive pinned
 116-operation/718-shape S3 model descriptor, S3 range/multipart rules, SigV4
 byte canonicalization, bounded decimal/size/boolean wire scalars, and
-canonical fixed-length base64 checksums. Its authoritative level-0 report is
-`obj/proof/gnatprove/gnatprove.out`: 405/405 checks proved, zero justified,
-zero unproved, and zero `Assume` statements. XML/Ada SAX orchestration remains
+canonical fixed-length base64 checksums. The latest manifest-wide result is
+recorded in `proof-status.md`; the bucket-versioning scoped result below is
+retained as targeted evidence. XML/Ada SAX orchestration remains
 outside SPARK; attacker-controlled scalar decisions are delegated to the
 proved wire core. The manifest also includes the bounded request-target
 classifier, semantic SigV4 timestamp validation, RFC byte-range parser, and
@@ -38,8 +38,10 @@ bound.
 Bucket-versioning independent-field merge is implemented in the SPARK-enabled
 domain unit and reused by the memory and files backends. Its postcondition
 states the exact preservation rule for each Unconfigured update field; the
-unit corpus also exhausts all 81 current/update enum combinations. SQLite uses
+unit corpus also exhausts all 81 current/update enum combinations. The
+authorized post-change scoped report in `obj/proof/gnatprove/gnatprove.out`
+proves 46/46 domain-unit checks, including the merge postcondition, with
+warnings as errors and no justified, unproved, or assumed checks. SQLite uses
 an equivalent single-statement `CASE` update under its serialized catalog gate
-and is checked through merge, reopen, and migration tests. The recorded proof
-count above remains the last completed authoritative run until the coordinated
-post-change proof gate publishes its replacement.
+and is checked through merge, reopen, and migration tests. A manifest-wide
+post-change proof remains a separate coordinated release gate.

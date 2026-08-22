@@ -18,6 +18,24 @@ Evidence is reproducible with these exact repository gates:
 ./sqlite/tests/scripts/test.sh
 ```
 
+The authorized scoped proof command was:
+
+```text
+alr -n exec -- "$PROVE" \
+  -P tools/flyology_object_storage_proof.gpr -j0 --level=0 \
+  --output=oneline --output-header --warnings=error \
+  -u flyology-object_storage.adb
+```
+
+Here `PROVE` is resolved exactly as in `tools/prove.sh` from the active Alire
+installation.
+
+It proved 46/46 checks in all eight domain-unit subprograms, including the
+`Merge_Bucket_Versioning` postcondition, with zero justified or unproved
+checks, zero warnings, and zero `Assume` statements. This scoped result is
+retained alongside the later manifest-wide qualification in
+`proof-status.md`.
+
 The core gate includes the strict XML adversarial corpus; atomic memory and
 files backend conformance; files reopen, bucket-recreation, symlink, and
 76-case abrupt-crash checks; signed application requests; and typed plus

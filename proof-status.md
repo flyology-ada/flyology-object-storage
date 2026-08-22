@@ -6,6 +6,10 @@ The latest HeadObject conditional-read, checksum, and strict UTF-8
 tag-validation forced eight-unit manifest-wide level-0 proof completed with
 593/593 checks proved, warnings as
 errors, zero justified checks, and zero Assume statements.
+The bucket-versioning domain change also completed an authorized scoped
+level-0 proof of `Flyology.Object_Storage` with 46/46 checks proved, warnings
+as errors, zero justified checks, and zero Assume statements. That scoped
+campaign did not replace the later manifest-wide qualification.
 
 ## Proved and Finalized
 <!-- Before marking an item complete here, follow the Widen Scope step
@@ -26,6 +30,7 @@ errors, zero justified checks, and zero Assume statements.
   - [x] Evaluate_Object_Read_Conditions (1 target-attributed check;
         417/417 aggregate checks in the scoped report)
   - [x] Resolve_Range (23 attributed prover checks)
+  - [x] Merge_Bucket_Versioning (exact independent-field preservation)
 - [x] Flyology.Object_Storage.S3.Core (level 0, all)
   - [x] Can_Transition
   - [x] Valid_Part_Size
@@ -164,6 +169,12 @@ errors, zero justified checks, and zero Assume statements.
       domain, proved bounded parsing, matching, loop termination, and all
       run-time checks, then widened the forced manifest to 478/478 checks with
       zero justified checks and zero Assume statements.
+- [x] Proved the post-change Flyology.Object_Storage unit in an authorized
+      scoped level-0 run: 46/46 checks, including the exact
+      Merge_Bucket_Versioning postcondition, warnings as errors, no justified
+      or unproved checks, and no Assume statements. This slice did not run a
+      concurrent manifest-wide proof; the later widening below supersedes its
+      then-current wider baseline.
 - [x] Proved checksum policy and CRC streaming/combination helpers, closed the
       strict UTF-8 tag validator's helper precondition, and widened the forced
       eight-unit manifest to 588/588 checks with warnings as errors, zero
