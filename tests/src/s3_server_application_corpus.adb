@@ -206,8 +206,9 @@ procedure S3_Server_Application_Corpus is
         "Connection: close" & CRLF & CRLF & Wire_Body;
    end Signed_Request;
 
-   function Signed_Head_Bucket_Request
-     (Target         : String;
+   function Signed_Bucket_Request
+     (Method         : String;
+      Target         : String;
       Expected_Owner : String := "";
       Second_Owner   : String := "") return String
    is
@@ -231,10 +232,10 @@ procedure S3_Server_Application_Corpus is
               ("x-amz-expected-bucket-owner",
                Expected_Owner & ", " & Second_Owner)));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
-        ("HEAD", Target, No_Query, Headers, Payload_Hash, Access_Key,
+        (Method, Target, No_Query, Headers, Payload_Hash, Access_Key,
          Secret_Key, Region, Timestamp);
    begin
-      return "HEAD " & Target & " HTTP/1.1" & CRLF &
+      return Method & " " & Target & " HTTP/1.1" & CRLF &
         "Host: " & Host & CRLF &
         "x-amz-date: " & Timestamp & CRLF &
         "x-amz-content-sha256: " & Payload_Hash & CRLF &
@@ -244,7 +245,7 @@ procedure S3_Server_Application_Corpus is
          else "x-amz-expected-bucket-owner: " & Second_Owner & CRLF) &
         "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
         "Content-Length: 0" & CRLF & "Connection: close" & CRLF & CRLF;
-   end Signed_Head_Bucket_Request;
+   end Signed_Bucket_Request;
 
    function Signed_Copy_Request
      (Target       : String;
@@ -929,7 +930,7 @@ begin
       "signed choppy CreateBucket failed");
    declare
       Response : constant String :=
-        Run (Signed_Head_Bucket_Request ("/test-bucket"));
+        Run (Signed_Bucket_Request ("HEAD", "/test-bucket"));
    begin
       Require
         (Has (Response, "200 OK")
@@ -939,15 +940,15 @@ begin
       Require
         (Has
            (Run
-              (Signed_Head_Bucket_Request
-                 ("/test-bucket", "test-principal")),
+              (Signed_Bucket_Request
+                 ("HEAD", "/test-bucket", "test-principal")),
             "200 OK"),
          "HeadBucket rejected the authenticated owner");
       declare
          Rejected : constant String :=
            Run
-             (Signed_Head_Bucket_Request
-                ("/test-bucket", "different-owner"));
+             (Signed_Bucket_Request
+                ("HEAD", "/test-bucket", "different-owner"));
       begin
          Require
            (Has (Rejected, "403 Forbidden")
@@ -958,7 +959,7 @@ begin
       end;
       declare
          Missing : constant String :=
-           Run (Signed_Head_Bucket_Request ("/absent-bucket"));
+           Run (Signed_Bucket_Request ("HEAD", "/absent-bucket"));
       begin
          Require
            (Has (Missing, "404 Not Found")
@@ -969,8 +970,9 @@ begin
       declare
          Duplicate : constant String :=
            Run
-             (Signed_Head_Bucket_Request
-                ("/test-bucket", "test-principal", "test-principal"));
+             (Signed_Bucket_Request
+                ("HEAD", "/test-bucket", "test-principal",
+                 "test-principal"));
       begin
          Require
            (Has (Duplicate, "400 Bad Request")
@@ -1705,6 +1707,21 @@ begin
       "corrupt signature was not rejected");
 
    declare
+      Response : constant String :=
+        Run (Signed_Bucket_Request ("DELETE", "/test-bucket"));
+   begin
+      Require
+        (Has (Response, "409 Conflict")
+         and then Has (Response, "<Code>BucketNotEmpty</Code>"),
+         "DeleteBucket removed a nonempty bucket");
+   end;
+   Require
+     (Has
+        (Run (Signed_Request ("DELETE", "/test-bucket", "unexpected")),
+         "400 Bad Request"),
+      "DeleteBucket accepted a request body");
+
+   declare
       Response : constant String := Run
         (Signed_Request
            ("GET", "/test-bucket/object", "",
@@ -1772,9 +1789,36 @@ begin
          "ListBuckets setup cleanup failed");
    end loop;
    Require
-     (Has (Run (Signed_Request ("DELETE", "/test-bucket", "")),
-           "204 No Content"),
-      "DeleteBucket failed");
+     (Has
+        (Run
+           (Signed_Bucket_Request
+              ("DELETE", "/test-bucket", "different-owner")),
+         "403 Forbidden"),
+      "DeleteBucket ignored the expected owner precondition");
+   Require
+     (Has
+        (Run
+           (Signed_Bucket_Request
+              ("DELETE", "/test-bucket", "test-principal",
+               "test-principal")),
+         "400 Bad Request"),
+      "DeleteBucket accepted a duplicate expected owner header");
+   declare
+      Response : constant String :=
+        Run
+          (Signed_Bucket_Request
+             ("DELETE", "/test-bucket", "test-principal"));
+   begin
+      Require
+        (Has (Response, "204 No Content")
+         and then Response_Body (Response) = "",
+         "DeleteBucket success mismatch");
+   end;
+   Require
+     (Has
+        (Run (Signed_Bucket_Request ("DELETE", "/test-bucket")),
+         "404 Not Found"),
+      "DeleteBucket absent-bucket mismatch");
 
    Ada.Text_IO.Put_Line ("S3 server application corpus: OK");
 end S3_Server_Application_Corpus;

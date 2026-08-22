@@ -7660,6 +7660,34 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         Outcome : constant Low_Level.Delete_Bucket_Outcome :=
+           Low_Level.Decode_Delete_Bucket_Response
+             (204, " " & Character'Val (10));
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Bucket_Deleted,
+            "typed DeleteBucket success response");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Delete_Bucket_Outcome :=
+                 Low_Level.Decode_Delete_Bucket_Response
+                   (204, "unexpected");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "DeleteBucket accepted a success response body");
+      end;
+
+      declare
          Headers : Low_Level.Delete_Object_Result;
          Raised  : Boolean := False;
       begin

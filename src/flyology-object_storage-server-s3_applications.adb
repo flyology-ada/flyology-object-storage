@@ -329,6 +329,29 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return False;
       end Has_Encryption_Header;
 
+      procedure Check_Expected_Bucket_Owner
+        (Principal : String; Accepted : out Boolean)
+      is
+         Count : constant Natural := Apps.Request_Header_Count
+           (X, "x-amz-expected-bucket-owner");
+      begin
+         Accepted := False;
+         if Count > 1 then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               "The expected bucket owner header is duplicated",
+               Target_Text);
+         elsif Count = 1
+           and then Apps.Request_Header
+             (X, "x-amz-expected-bucket-owner") /= Principal
+         then
+            Send_Error
+              (X, 403, "AccessDenied", "Access Denied", Target_Text);
+         else
+            Accepted := True;
+         end if;
+      end Check_Expected_Bucket_Owner;
+
       function Copy_Result_XML
         (Root : String; Value : Object_Information) return String is
         ("<" & Root &
@@ -927,6 +950,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Region : constant String :=
                     (if Configured'Length = 0
                      then "us-east-1" else Configured);
+                  Owner_Accepted : Boolean;
                begin
                   if Region /= "us-east-1"
                     and then not Buckets.Valid_Location_Constraint (Region)
@@ -936,23 +960,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         "The configured S3 region is invalid", Target_Text);
                   else
                      Apps.Set_Header (X, "x-amz-bucket-region", Region);
-                     if Apps.Request_Header_Count
-                       (X, "x-amz-expected-bucket-owner") > 1
-                     then
-                        Send_Error
-                          (X, 400, "InvalidRequest",
-                           "The expected bucket owner header is duplicated",
-                           Target_Text);
-                     elsif Apps.Request_Header_Count
-                       (X, "x-amz-expected-bucket-owner") = 1
-                       and then Apps.Request_Header
-                         (X, "x-amz-expected-bucket-owner") /=
-                           US.To_String (Auth.Principal)
-                     then
-                        Send_Error
-                          (X, 403, "AccessDenied", "Access Denied",
-                           Target_Text);
-                     else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
                         Store.Head_Bucket
                           (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
                            Result);
@@ -967,59 +977,61 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                end;
 
             when Get_Bucket_Location =>
-               if Apps.Request_Header_Count
-                 (X, "x-amz-expected-bucket-owner") > 1
-               then
-                  Send_Error
-                    (X, 400, "InvalidRequest",
-                     "The expected bucket owner header is duplicated",
-                     Target_Text);
-               elsif Apps.Request_Header_Count
-                 (X, "x-amz-expected-bucket-owner") = 1
-                 and then Apps.Request_Header
-                   (X, "x-amz-expected-bucket-owner") /=
-                     US.To_String (Auth.Principal)
-               then
-                  Send_Error
-                    (X, 403, "AccessDenied", "Access Denied", Target_Text);
-               else
-                  Store.Head_Bucket
-                    (Bucket, Apps.Cancellation (X), Apps.Deadline (X), Result);
-                  if Result = Success then
-                     declare
-                        Configured : constant String :=
-                          US.To_String (Rules.Expected_Region);
-                        Region : constant String :=
-                          (if Configured'Length = 0
-                           then "us-east-1" else Configured);
-                     begin
-                        if Region /= "us-east-1"
-                          and then not
-                            Buckets.Valid_Location_Constraint (Region)
-                        then
-                           Send_Error
-                             (X, 500, "InternalError",
-                              "The configured S3 region is invalid",
-                              Target_Text);
-                        else
-                           Apps.Respond
-                             (X, 200, "application/xml",
-                              Buckets.Serialize_Location_Constraint (Region));
-                        end if;
-                     end;
-                  else
-                     Send_Backend_Error (X, Result, True, Target_Text);
+               declare
+                  Owner_Accepted : Boolean;
+               begin
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_Accepted);
+                  if Owner_Accepted then
+                     Store.Head_Bucket
+                       (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                        Result);
+                     if Result = Success then
+                        declare
+                           Configured : constant String :=
+                             US.To_String (Rules.Expected_Region);
+                           Region : constant String :=
+                             (if Configured'Length = 0
+                              then "us-east-1" else Configured);
+                        begin
+                           if Region /= "us-east-1"
+                             and then not
+                               Buckets.Valid_Location_Constraint (Region)
+                           then
+                              Send_Error
+                                (X, 500, "InternalError",
+                                 "The configured S3 region is invalid",
+                                 Target_Text);
+                           else
+                              Apps.Respond
+                                (X, 200, "application/xml",
+                                 Buckets.Serialize_Location_Constraint
+                                   (Region));
+                           end if;
+                        end;
+                     else
+                        Send_Backend_Error (X, Result, True, Target_Text);
+                     end if;
                   end if;
-               end if;
+               end;
 
             when Delete_Bucket =>
-               Store.Delete_Bucket
-                 (Bucket, Apps.Cancellation (X), Apps.Deadline (X), Result);
-               if Result = Success then
-                  Apps.Respond (X, 204, "", "");
-               else
-                  Send_Backend_Error (X, Result, True, Target_Text);
-               end if;
+               declare
+                  Owner_Accepted : Boolean;
+               begin
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_Accepted);
+                  if Owner_Accepted then
+                     Store.Delete_Bucket
+                       (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                        Result);
+                     if Result = Success then
+                        Apps.Respond (X, 204, "", "");
+                     else
+                        Send_Backend_Error (X, Result, True, Target_Text);
+                     end if;
+                  end if;
+               end;
 
             when List_Objects =>
                begin

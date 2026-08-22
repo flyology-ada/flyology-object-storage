@@ -8,6 +8,43 @@ with Flyology.Object_Storage.S3.Errors;
 --  High-level bucket operations over a configured Flyology HTTP client.
 package Flyology.Object_Storage.Client.Buckets is
 
+   type Delete_Outcome_Kind is (Deletion_Completed, Delete_Rejected);
+
+   type Delete_Outcome
+     (Kind : Delete_Outcome_Kind := Delete_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Deletion_Completed =>
+            null;
+         when Delete_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Delete one empty bucket. S3 rejects buckets that still contain objects
+   --  or active multipart state; callers receive that rejection unchanged.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Empty bucket to delete
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region Region used to sign the DeleteBucket request
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Completed deletion or structured S3 rejection
+   function Delete
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
    type Head_Outcome_Kind is (Bucket_Available, Head_Rejected);
 
    type Head_Outcome

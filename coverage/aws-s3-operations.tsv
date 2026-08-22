@@ -7,7 +7,7 @@ CreateBucketMetadataConfiguration	extended	missing	partial	missing	missing
 CreateBucketMetadataTableConfiguration	extended	missing	partial	missing	missing
 CreateMultipartUpload	core	covered	partial	partial	covered
 CreateSession	extended	missing	partial	missing	missing
-DeleteBucket	core	partial	partial	partial	partial
+DeleteBucket	core	covered	covered	covered	covered
 DeleteBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
 DeleteBucketCors	extended	missing	partial	missing	missing
 DeleteBucketEncryption	extended	missing	partial	missing	missing
