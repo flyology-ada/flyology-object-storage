@@ -31,6 +31,10 @@ package body Flyology.Object_Storage.Client.Low_Level is
    function Valid_Optional_Checksum
      (Value : US.Unbounded_String; Bytes : Positive) return Boolean;
    function Valid_Checksum_Algorithm (Value : String) return Boolean;
+   function Valid_SSE_C_Group
+     (Algorithm, Key, Key_MD5 : String) return Boolean;
+   function Optional_Boolean_Header
+     (Value : String) return Optional_Boolean;
 
    No_Headers : constant SigV4.Name_Value_Array (1 .. 0) :=
      (others => <>);
@@ -1297,25 +1301,190 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Region    : String;
       Timestamp : String) return Prepared_Request
    is
-      Query : constant SigV4.Name_Value_Array :=
-        (1 => SigV4.Pair ("uploadId", Upload_ID));
+      Parameters : constant Complete_Multipart_Parameters := (others => <>);
    begin
-      if Upload_ID'Length = 0 or else Upload_ID'Length > 8_192 then
-         raise Invalid_Request with "invalid multipart upload identifier";
+      return Prepare_Complete_Multipart_Upload
+        (Origin, Style, Bucket, Key, Upload_ID, Completion, Parameters,
+         Identity, Region, Timestamp);
+   end Prepare_Complete_Multipart_Upload;
+
+   function Prepare_Complete_Multipart_Upload
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Upload_ID  : String;
+      Completion : S3.Multipart.Complete_Multipart_Upload_Request;
+      Parameters : Complete_Multipart_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      SSE_Algorithm : constant String :=
+        US.To_String (Parameters.SSE_Customer_Algorithm);
+      SSE_Key : constant String := US.To_String (Parameters.SSE_Customer_Key);
+      SSE_Key_MD5 : constant String :=
+        US.To_String (Parameters.SSE_Customer_Key_MD5);
+      Optional_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.Checksum_CRC32) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_CRC32C) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_CRC64NVME) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_SHA1) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_SHA256) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_SHA512) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_MD5) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_XXHASH64) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_XXHASH3) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_XXHASH128) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_Type) > 0) +
+        Boolean'Pos (Parameters.Mpu_Object_Size.Is_Set) +
+        Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
+        Boolean'Pos (US.Length (Parameters.If_Match) > 0) +
+        Boolean'Pos (US.Length (Parameters.If_None_Match) > 0) +
+        Boolean'Pos (SSE_Algorithm'Length > 0) +
+        Boolean'Pos (SSE_Key'Length > 0) +
+        Boolean'Pos (SSE_Key_MD5'Length > 0);
+      Values : Model_Value_Array (1 .. 3 + Optional_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+
+      procedure Add_Optional
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Add (Name, US.To_String (Value));
+         end if;
+      end Add_Optional;
+   begin
+      if Upload_ID'Length not in 1 .. 8_192
+        or else not Valid_Optional_Checksum (Parameters.Checksum_CRC32, 4)
+        or else not Valid_Optional_Checksum (Parameters.Checksum_CRC32C, 4)
+        or else not Valid_Optional_Checksum
+          (Parameters.Checksum_CRC64NVME, 8)
+        or else not Valid_Optional_Checksum (Parameters.Checksum_SHA1, 20)
+        or else not Valid_Optional_Checksum (Parameters.Checksum_SHA256, 32)
+        or else not Valid_Optional_Checksum (Parameters.Checksum_SHA512, 64)
+        or else not Valid_Optional_Checksum (Parameters.Checksum_MD5, 16)
+        or else not Valid_Optional_Checksum
+          (Parameters.Checksum_XXHASH64, 8)
+        or else not Valid_Optional_Checksum
+          (Parameters.Checksum_XXHASH3, 8)
+        or else not Valid_Optional_Checksum
+          (Parameters.Checksum_XXHASH128, 16)
+        or else (Request_Payer'Length > 0
+                 and then Request_Payer /= "requester")
+        or else not Valid_SSE_C_Group
+          (SSE_Algorithm, SSE_Key, SSE_Key_MD5)
+        or else (SSE_Key'Length > 0
+                 and then Flyology.HTTP.Scheme (Origin) /=
+                   Flyology.HTTP.Secure_HTTPS)
+      then
+         raise Invalid_Request with
+           "invalid CompleteMultipartUpload parameters";
       end if;
-      return Prepare_Object_Request
-        (Complete_Multipart_Operation, "POST", Origin, Style, Bucket, Key,
-         Query, No_Headers,
-         S3.Multipart.Serialize_Complete_Request (Completion), "", Identity,
-         Region, Timestamp);
+
+      Add ("Bucket", Bucket);
+      Add ("Key", Key);
+      Add ("UploadId", Upload_ID);
+      Add_Optional ("ChecksumCRC32", Parameters.Checksum_CRC32);
+      Add_Optional ("ChecksumCRC32C", Parameters.Checksum_CRC32C);
+      Add_Optional ("ChecksumCRC64NVME", Parameters.Checksum_CRC64NVME);
+      Add_Optional ("ChecksumSHA1", Parameters.Checksum_SHA1);
+      Add_Optional ("ChecksumSHA256", Parameters.Checksum_SHA256);
+      Add_Optional ("ChecksumSHA512", Parameters.Checksum_SHA512);
+      Add_Optional ("ChecksumMD5", Parameters.Checksum_MD5);
+      Add_Optional ("ChecksumXXHASH64", Parameters.Checksum_XXHASH64);
+      Add_Optional ("ChecksumXXHASH3", Parameters.Checksum_XXHASH3);
+      Add_Optional ("ChecksumXXHASH128", Parameters.Checksum_XXHASH128);
+      Add_Optional ("ChecksumType", Parameters.Checksum_Type);
+      if Parameters.Mpu_Object_Size.Is_Set then
+         Add
+           ("MpuObjectSize",
+            Ada.Strings.Fixed.Trim
+              (Byte_Count'Image (Parameters.Mpu_Object_Size.Value),
+               Ada.Strings.Both));
+      end if;
+      Add_Optional ("RequestPayer", Parameters.Request_Payer);
+      Add_Optional
+        ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      Add_Optional ("IfMatch", Parameters.If_Match);
+      Add_Optional ("IfNoneMatch", Parameters.If_None_Match);
+      Add_Optional
+        ("SSECustomerAlgorithm", Parameters.SSE_Customer_Algorithm);
+      Add_Optional ("SSECustomerKey", Parameters.SSE_Customer_Key);
+      Add_Optional ("SSECustomerKeyMD5", Parameters.SSE_Customer_Key_MD5);
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Complete_Multipart_Upload_Operation, Origin, Style, Values,
+         S3.Multipart.Serialize_Complete_Request (Completion), True, "",
+         Identity, Region, Timestamp)
+      do
+         Result.Operation := Complete_Multipart_Operation;
+      end return;
    exception
       when S3.Multipart.Malformed_Multipart =>
          raise Invalid_Request with "invalid multipart completion body";
    end Prepare_Complete_Multipart_Upload;
 
+   procedure Validate_Complete_Multipart_Result
+     (Value : Complete_Multipart_Result) is
+      Encryption : constant String :=
+        US.To_String (Value.Server_Side_Encryption);
+      Checksum_Type : constant String := US.To_String (Value.Checksum_Type);
+      Charged : constant String := US.To_String (Value.Request_Charged);
+   begin
+      if US.Length (Value.Entity_Tag) = 0
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC32C, 4)
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC64NVME, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA1, 20)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA256, 32)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA512, 64)
+        or else not Valid_Optional_Checksum (Value.Checksum_MD5, 16)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH64, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH3, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH128, 16)
+        or else (Checksum_Type'Length > 0
+                 and then Checksum_Type not in "COMPOSITE" | "FULL_OBJECT")
+        or else (Encryption'Length > 0
+                 and then Encryption not in
+                   "AES256" | "aws:fsx" | "aws:kms" | "aws:kms:dsse")
+        or else (Charged'Length > 0 and then Charged /= "requester")
+      then
+         raise Invalid_Response with
+           "invalid CompleteMultipartUpload response";
+      end if;
+   end Validate_Complete_Multipart_Result;
+
    function Decode_Complete_Multipart_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Complete_Multipart_Outcome
+   is
+      Headers : constant Complete_Multipart_Response_Headers :=
+        (others => <>);
+   begin
+      return Decode_Complete_Multipart_Response
+        (Status, Payload, Headers, Request_ID, Host_ID, Limits);
+   end Decode_Complete_Multipart_Response;
+
+   function Decode_Complete_Multipart_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Complete_Multipart_Response_Headers;
       Request_ID : String := "";
       Host_ID    : String := "";
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
@@ -1331,11 +1500,38 @@ package body Flyology.Object_Storage.Client.Low_Level is
                  (Payload, Request_ID, Host_ID, Limits));
          exception
             when S3.Errors.Malformed_Error =>
-               return
-                 (Kind   => Completed,
-                  Status => Status,
-                  Result => S3.Multipart.Parse_Complete_Result
-                    (Payload, Limits));
+               declare
+                  Parsed : constant
+                    S3.Multipart.Complete_Multipart_Upload_Result :=
+                    S3.Multipart.Parse_Complete_Result (Payload, Limits);
+                  Result : constant Complete_Multipart_Result :=
+                    (Location => Parsed.Location,
+                     Bucket => Parsed.Bucket,
+                     Key => Parsed.Key,
+                     Expiration => Headers.Expiration,
+                     Entity_Tag => Parsed.Entity_Tag,
+                     Checksum_CRC32 => Parsed.Checksum_CRC32,
+                     Checksum_CRC32C => Parsed.Checksum_CRC32C,
+                     Checksum_CRC64NVME => Parsed.Checksum_CRC64NVME,
+                     Checksum_SHA1 => Parsed.Checksum_SHA1,
+                     Checksum_SHA256 => Parsed.Checksum_SHA256,
+                     Checksum_SHA512 => Parsed.Checksum_SHA512,
+                     Checksum_MD5 => Parsed.Checksum_MD5,
+                     Checksum_XXHASH64 => Parsed.Checksum_XXHASH64,
+                     Checksum_XXHASH3 => Parsed.Checksum_XXHASH3,
+                     Checksum_XXHASH128 => Parsed.Checksum_XXHASH128,
+                     Checksum_Type => Parsed.Checksum_Type,
+                     Server_Side_Encryption =>
+                       Headers.Server_Side_Encryption,
+                     Version_ID => Headers.Version_ID,
+                     SSE_KMS_Key_ID => Headers.SSE_KMS_Key_ID,
+                     Bucket_Key_Enabled => Headers.Bucket_Key_Enabled,
+                     Request_Charged => Headers.Request_Charged);
+               begin
+                  Validate_Complete_Multipart_Result (Result);
+                  return
+                    (Kind => Completed, Status => Status, Result => Result);
+               end;
          end;
       else
          return
@@ -1372,13 +1568,31 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
          Host_ID : constant String :=
            Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         Headers : constant Complete_Multipart_Response_Headers :=
+           (Expiration => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header (Response, "x-amz-expiration")),
+            Server_Side_Encryption => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-server-side-encryption")),
+            Version_ID => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header (Response, "x-amz-version-id")),
+            SSE_KMS_Key_ID => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-server-side-encryption-aws-kms-key-id")),
+            Bucket_Key_Enabled => Optional_Boolean_Header
+              (Flyology.HTTP.Client.Header
+                 (Response,
+                  "x-amz-server-side-encryption-bucket-key-enabled")),
+            Request_Charged => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-request-charged")));
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
          return Decode_Complete_Multipart_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
-            Host_ID, Limits);
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
+            Request_ID, Host_ID, Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
@@ -1596,8 +1810,6 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end loop;
       return True;
    end Whitespace_Only;
-
-   function Optional_Boolean_Header (Value : String) return Optional_Boolean;
 
    function Valid_Create_ACL (Value : String) return Boolean is
      (Value'Length = 0

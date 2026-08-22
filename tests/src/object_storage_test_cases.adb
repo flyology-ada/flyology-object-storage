@@ -5527,6 +5527,105 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         Parameters : Low_Level.Complete_Multipart_Parameters;
+      begin
+         Parameters.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
+         Parameters.Checksum_CRC32C := US.To_Unbounded_String ("AAAAAA==");
+         Parameters.Checksum_CRC64NVME :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Parameters.Checksum_SHA1 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.Checksum_SHA256 := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.Checksum_SHA512 := US.To_Unbounded_String
+           (String'(1 .. 86 => 'A') & "==");
+         Parameters.Checksum_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Parameters.Checksum_XXHASH64 :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Parameters.Checksum_XXHASH3 :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Parameters.Checksum_XXHASH128 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Parameters.Checksum_Type := US.To_Unbounded_String ("COMPOSITE");
+         Parameters.Mpu_Object_Size := (Is_Set => True, Value => 5);
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         Parameters.If_Match := US.To_Unbounded_String ("""old""");
+         Parameters.If_None_Match := US.To_Unbounded_String ("""other""");
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Complete_Multipart_Upload
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "key", "upload",
+                 Completion, Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Signed : constant String :=
+              ";" & Low_Level.Signed_Headers (Prepared) & ";";
+
+            function Has (Name : String) return Boolean is
+              (Ada.Strings.Fixed.Index (Signed, ";" & Name & ";") > 0);
+         begin
+            Assert
+              (Has ("x-amz-checksum-crc32")
+               and then Has ("x-amz-checksum-crc32c")
+               and then Has ("x-amz-checksum-crc64nvme")
+               and then Has ("x-amz-checksum-sha1")
+               and then Has ("x-amz-checksum-sha256")
+               and then Has ("x-amz-checksum-sha512")
+               and then Has ("x-amz-checksum-md5")
+               and then Has ("x-amz-checksum-xxhash64")
+               and then Has ("x-amz-checksum-xxhash3")
+               and then Has ("x-amz-checksum-xxhash128")
+               and then Has ("x-amz-checksum-type")
+               and then Has ("x-amz-mp-object-size")
+               and then Has ("x-amz-request-payer")
+               and then Has ("x-amz-expected-bucket-owner")
+               and then Has ("if-match")
+               and then Has ("if-none-match")
+               and then Has
+                 ("x-amz-server-side-encryption-customer-algorithm")
+               and then Has
+                 ("x-amz-server-side-encryption-customer-key")
+               and then Has
+                 ("x-amz-server-side-encryption-customer-key-md5"),
+               "CompleteMultipartUpload signs every modeled request header");
+         end;
+      end;
+
+      declare
+         Parameters : Low_Level.Complete_Multipart_Parameters;
+         Raised : Boolean := False;
+      begin
+         Parameters.Checksum_CRC32 := US.To_Unbounded_String ("invalid");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Complete_Multipart_Upload
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key", "upload",
+                    Completion, Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "invalid CompleteMultipartUpload checksum was accepted");
+      end;
+
+      declare
          Raised : Boolean := False;
       begin
          begin
@@ -5575,6 +5674,63 @@ package body Object_Storage_Test_Cases is
             and then US.To_String (Outcome.Result.Entity_Tag) =
               """whole""",
             "typed CompleteMultipartUpload success response");
+      end;
+
+      declare
+         Headers : constant Low_Level.Complete_Multipart_Response_Headers :=
+           (Expiration => US.To_Unbounded_String ("expiry=soon"),
+            Server_Side_Encryption => US.To_Unbounded_String ("aws:kms"),
+            Version_ID => US.To_Unbounded_String ("version-1"),
+            SSE_KMS_Key_ID => US.To_Unbounded_String ("kms-key"),
+            Bucket_Key_Enabled => (Is_Set => True, Value => True),
+            Request_Charged => US.To_Unbounded_String ("requester"));
+         Outcome : constant Low_Level.Complete_Multipart_Outcome :=
+           Low_Level.Decode_Complete_Multipart_Response
+             (200, "<CompleteMultipartUploadResult>" &
+              "<Bucket>example-bucket</Bucket><Key>key</Key>" &
+              "<ETag>&quot;whole&quot;</ETag>" &
+              "<ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+              "<ChecksumType>COMPOSITE</ChecksumType>" &
+              "</CompleteMultipartUploadResult>", Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Completed
+            and then US.To_String (Outcome.Result.Checksum_CRC32) =
+              "AAAAAA=="
+            and then US.To_String
+              (Outcome.Result.Server_Side_Encryption) = "aws:kms"
+            and then US.To_String (Outcome.Result.Version_ID) = "version-1"
+            and then Outcome.Result.Bucket_Key_Enabled.Is_Set
+            and then Outcome.Result.Bucket_Key_Enabled.Value
+            and then US.To_String (Outcome.Result.Request_Charged) =
+              "requester",
+            "typed CompleteMultipartUpload complete output shape");
+      end;
+
+      declare
+         Headers : Low_Level.Complete_Multipart_Response_Headers;
+         Raised : Boolean := False;
+      begin
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("unknown");
+         begin
+            declare
+               Ignored : constant Low_Level.Complete_Multipart_Outcome :=
+                 Low_Level.Decode_Complete_Multipart_Response
+                   (200, "<CompleteMultipartUploadResult>" &
+                    "<ETag>&quot;whole&quot;</ETag>" &
+                    "</CompleteMultipartUploadResult>", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert
+           (Raised,
+            "invalid CompleteMultipartUpload response enum was accepted");
       end;
 
       declare
