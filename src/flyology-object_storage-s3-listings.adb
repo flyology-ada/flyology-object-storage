@@ -231,6 +231,7 @@ package body Flyology.Object_Storage.S3.Listings is
                           "duplicate ListObjectsV2 delimiter";
                      end if;
                      Seen_Delimiter := True;
+                     Result.Has_Delimiter := True;
                      Result.Delimiter := US.To_Unbounded_String (Value);
                   elsif Name = "continuation-token" then
                      if Seen_Token then
@@ -247,6 +248,7 @@ package body Flyology.Object_Storage.S3.Listings is
                           "duplicate ListObjectsV2 start-after";
                      end if;
                      Seen_Start := True;
+                     Result.Has_Start_After := True;
                      Result.Start_After := US.To_Unbounded_String (Value);
                   elsif Name = "fetch-owner" then
                      Truth := Wire_Core.Parse_Boolean (Value);
@@ -255,6 +257,7 @@ package body Flyology.Object_Storage.S3.Listings is
                           "invalid ListObjectsV2 fetch-owner";
                      end if;
                      Seen_Fetch := True;
+                     Result.Has_Fetch_Owner := True;
                      Result.Fetch_Owner := Truth.Value;
                   elsif Name = "encoding-type" then
                      if Seen_Encoding or else Value /= "url" then
@@ -571,12 +574,14 @@ package body Flyology.Object_Storage.S3.Listings is
                Item.V1_Value.Delimiter := Item.Text_Value;
             else
                Item.V2_Value.Delimiter := Item.Text_Value;
+               Item.V2_Value.Has_Delimiter := True;
             end if;
          when Encoding_Type_Field =>
             if Item.Version = Version_1 then
                Item.V1_Value.Encoding_Type := Item.Text_Value;
             else
                Item.V2_Value.Encoding_Type := Item.Text_Value;
+               Item.V2_Value.Has_Encoding_Type := True;
             end if;
          when Marker_Field =>
             Item.V1_Value.Marker := Item.Text_Value;
@@ -587,8 +592,10 @@ package body Flyology.Object_Storage.S3.Listings is
             Item.V2_Value.Has_Continuation_Token := True;
          when Next_Continuation_Token_Field =>
             Item.V2_Value.Next_Continuation_Token := Item.Text_Value;
+            Item.V2_Value.Has_Next_Continuation_Token := True;
          when Start_After_Field =>
             Item.V2_Value.Start_After := Item.Text_Value;
+            Item.V2_Value.Has_Start_After := True;
          when Key_Count_Field =>
             Item.V2_Value.Key_Count := Parse_Natural (Value);
          when Max_Keys_Field =>
@@ -934,14 +941,41 @@ package body Flyology.Object_Storage.S3.Listings is
          raise Malformed_Listing with "S3 listing count overflow";
       end if;
       Returned := Natural (Contents_Length + Prefixes_Length);
-      if Value.Key_Count /= Returned
+      if Value.Max_Keys > Natural (Core.Page_Size'Last)
+        or else Value.Key_Count /= Returned
         or else Value.Key_Count > Value.Max_Keys
       then
          raise Malformed_Listing with "inconsistent S3 listing counts";
-      elsif Value.Is_Truncated /=
-        (US.Length (Value.Next_Continuation_Token) > 0)
+      elsif Value.Is_Truncated /= Value.Has_Next_Continuation_Token
+        or else
+          (Value.Has_Next_Continuation_Token
+           and then US.Length (Value.Next_Continuation_Token) = 0)
+        or else
+          (not Value.Has_Next_Continuation_Token
+           and then US.Length (Value.Next_Continuation_Token) > 0)
       then
          raise Malformed_Listing with "inconsistent S3 continuation token";
+      elsif
+        (Value.Has_Encoding_Type
+         and then US.To_String (Value.Encoding_Type) /= "url")
+        or else
+          (not Value.Has_Encoding_Type
+           and then US.Length (Value.Encoding_Type) > 0)
+      then
+         raise Malformed_Listing with "invalid S3 listing encoding type";
+      elsif not Value.Has_Continuation_Token
+        and then US.Length (Value.Continuation_Token) > 0
+      then
+         raise Malformed_Listing with
+           "S3 continuation token lacks presence state";
+      elsif not Value.Has_Delimiter and then US.Length (Value.Delimiter) > 0
+      then
+         raise Malformed_Listing with
+           "S3 delimiter lacks presence state";
+      elsif not Value.Has_Start_After and then US.Length (Value.Start_After) > 0
+      then
+         raise Malformed_Listing with
+           "S3 start-after lacks presence state";
       end if;
       for Object_Value of Value.Contents loop
          Validate_Object (Object_Value);
@@ -1150,10 +1184,15 @@ package body Flyology.Object_Storage.S3.Listings is
          Element ("MaxKeys", Image (Value.Max_Keys)) &
          Element
            ("IsTruncated", (if Value.Is_Truncated then "true" else "false")));
-      Append_Optional
-        (Result, "Delimiter", US.To_String (Value.Delimiter));
-      Append_Optional
-        (Result, "EncodingType", US.To_String (Value.Encoding_Type));
+      if Value.Has_Delimiter then
+         US.Append
+           (Result, Element ("Delimiter", US.To_String (Value.Delimiter)));
+      end if;
+      if Value.Has_Encoding_Type then
+         US.Append
+           (Result,
+            Element ("EncodingType", US.To_String (Value.Encoding_Type)));
+      end if;
       if Value.Has_Continuation_Token then
          US.Append
            (Result,
@@ -1164,11 +1203,17 @@ package body Flyology.Object_Storage.S3.Listings is
          raise Malformed_Listing with
            "S3 continuation token lacks presence state";
       end if;
-      Append_Optional
-        (Result, "NextContinuationToken",
-         US.To_String (Value.Next_Continuation_Token));
-      Append_Optional
-        (Result, "StartAfter", US.To_String (Value.Start_After));
+      if Value.Has_Next_Continuation_Token then
+         US.Append
+           (Result,
+            Element
+              ("NextContinuationToken",
+               US.To_String (Value.Next_Continuation_Token)));
+      end if;
+      if Value.Has_Start_After then
+         US.Append
+           (Result, Element ("StartAfter", US.To_String (Value.Start_After)));
+      end if;
       for Object_Value of Value.Contents loop
          Append_Object (Result, Object_Value);
       end loop;

@@ -27,11 +27,14 @@ package Flyology.Object_Storage.S3.Listings is
    type List_Objects_V2_Request is record
       Prefix             : Ada.Strings.Unbounded.Unbounded_String;
       Delimiter          : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Delimiter      : Boolean := False;
       Continuation_Token : Ada.Strings.Unbounded.Unbounded_String;
       Has_Continuation_Token : Boolean := False;
       Start_After        : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Start_After    : Boolean := False;
       Max_Keys           : Core.Page_Size := Core.Page_Size'Last;
       Fetch_Owner        : Boolean := False;
+      Has_Fetch_Owner    : Boolean := False;
       URL_Encoding       : Boolean := False;
    end record;
 
@@ -130,11 +133,15 @@ package Flyology.Object_Storage.S3.Listings is
       Name                    : Ada.Strings.Unbounded.Unbounded_String;
       Prefix                  : Ada.Strings.Unbounded.Unbounded_String;
       Delimiter               : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Delimiter           : Boolean := False;
       Encoding_Type           : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Encoding_Type       : Boolean := False;
       Continuation_Token      : Ada.Strings.Unbounded.Unbounded_String;
       Has_Continuation_Token  : Boolean := False;
       Next_Continuation_Token : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Next_Continuation_Token : Boolean := False;
       Start_After             : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Start_After         : Boolean := False;
       Key_Count               : Natural := 0;
       Max_Keys                : Natural := 0;
       Is_Truncated            : Boolean := False;

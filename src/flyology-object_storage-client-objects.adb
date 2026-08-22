@@ -5,6 +5,7 @@ package body Flyology.Object_Storage.Client.Objects is
 
    package US renames Ada.Strings.Unbounded;
    use type Low_Level.Delete_Object_Outcome_Kind;
+   use type Low_Level.List_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
 
    function Timestamp return String is
@@ -19,6 +20,65 @@ package body Flyology.Object_Storage.Client.Objects is
         Image (Image'First + 14 .. Image'First + 15) &
         Image (Image'First + 17 .. Image'First + 18) & "Z";
    end Timestamp;
+
+   function List_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Prefix   : String := "";
+      Delimiter : String := "";
+      Maximum  : S3.Core.Page_Size := 1_000;
+      Continuation_Token : String := "";
+      Start_After : String := "";
+      Fetch_Owner : Boolean := False;
+      URL_Encoding : Boolean := False;
+      Include_Restore_Status : Boolean := False;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Outcome
+   is
+      Parameters : Low_Level.List_Objects_V2_Parameters;
+   begin
+      Parameters.Prefix := US.To_Unbounded_String (Prefix);
+      Parameters.Delimiter := US.To_Unbounded_String (Delimiter);
+      Parameters.Continuation_Token :=
+        US.To_Unbounded_String (Continuation_Token);
+      Parameters.Has_Continuation_Token := Continuation_Token'Length > 0;
+      Parameters.Start_After := US.To_Unbounded_String (Start_After);
+      Parameters.Max_Keys := Maximum;
+      Parameters.Fetch_Owner := Fetch_Owner;
+      Parameters.Has_Fetch_Owner := Fetch_Owner;
+      Parameters.URL_Encoding := URL_Encoding;
+      Parameters.Request_Payer := US.To_Unbounded_String (Request_Payer);
+      Parameters.Expected_Bucket_Owner :=
+        US.To_Unbounded_String (Expected_Bucket_Owner);
+      Parameters.Include_Restore_Status := Include_Restore_Status;
+      declare
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_List_Objects_V2
+             (Origin, Style, Bucket, Parameters, Identity, Region,
+              Timestamp);
+         Outcome : constant Low_Level.List_Objects_V2_Outcome :=
+           Low_Level.Execute_List_Objects_V2
+             (Client, Prepared, Timeout, Token);
+      begin
+         if Outcome.Kind = Low_Level.Rejected then
+            return
+              (Kind => List_Rejected, Status => Outcome.Status,
+               Error => Outcome.Error);
+         end if;
+         return
+           (Kind            => Page_Available,
+            Status          => Outcome.Status,
+            Page            => Outcome.Listing,
+            Request_Charged => Outcome.Request_Charged);
+      end;
+   end List_Page;
 
    function Delete
      (Client   : aliased in out Flyology.HTTP.Client.Client;

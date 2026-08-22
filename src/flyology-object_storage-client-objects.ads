@@ -6,9 +6,69 @@ with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Core;
+with Flyology.Object_Storage.S3.Listings;
 
---  High-level single-object operations over a configured Flyology HTTP client.
+--  High-level object and object-listing operations over a configured Flyology
+--  HTTP client.
 package Flyology.Object_Storage.Client.Objects is
+
+   type List_Outcome_Kind is (Page_Available, List_Rejected);
+
+   type List_Outcome
+     (Kind : List_Outcome_Kind := List_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Page_Available =>
+            Page : S3.Listings.List_Objects_V2_Result;
+            Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+         when List_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  List one bounded page of current objects with S3 ListObjectsV2.
+   --  Pass Page.Next_Continuation_Token from a truncated result to continue
+   --  the same prefix/delimiter scope. Continuation tokens remain opaque;
+   --  Start_After is an exclusive key used to select an initial page.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose current objects are listed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Prefix Optional byte prefix filter
+   --  @param Delimiter Optional byte delimiter for CommonPrefixes grouping
+   --  @param Maximum Maximum combined objects and prefixes in this page
+   --  @param Continuation_Token Opaque token returned by the prior page
+   --  @param Start_After Exclusive initial key; ignored by S3 when continuing
+   --  @param Fetch_Owner Request an Owner structure for every object
+   --  @param URL_Encoding Percent-encode returned keys, prefixes and delimiter
+   --  @param Include_Restore_Status Request RestoreStatus where it exists
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return One typed page or a structured S3 rejection
+   function List_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Prefix   : String := "";
+      Delimiter : String := "";
+      Maximum  : S3.Core.Page_Size := 1_000;
+      Continuation_Token : String := "";
+      Start_After : String := "";
+      Fetch_Owner : Boolean := False;
+      URL_Encoding : Boolean := False;
+      Include_Restore_Status : Boolean := False;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Outcome;
 
    type Delete_Outcome_Kind is (Object_Removed, Delete_Rejected);
 

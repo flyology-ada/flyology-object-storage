@@ -4353,6 +4353,10 @@ package body Object_Storage_Test_Cases is
             and then Parsed.Key_Count = 3
             and then Parsed.Max_Keys = 3
             and then Parsed.Is_Truncated
+            and then Parsed.Has_Delimiter
+            and then Parsed.Has_Continuation_Token
+            and then Parsed.Has_Next_Continuation_Token
+            and then Parsed.Has_Start_After
             and then US.To_String (Parsed.Next_Continuation_Token) =
               "next-token"
             and then Parsed.Contents.Length = 2
@@ -4385,6 +4389,11 @@ package body Object_Storage_Test_Cases is
          "</ListBucketResult>",
          "ListObjectsV2 invalid boolean was accepted");
       Must_Reject
+        ("<ListBucketResult><Name>bucket</Name><KeyCount>0</KeyCount>" &
+         "<MaxKeys>1001</MaxKeys><IsTruncated>false</IsTruncated>" &
+         "</ListBucketResult>",
+         "ListObjectsV2 oversized response page was accepted");
+      Must_Reject
         ("<ListBucketResult><Name>bucket</Name>" &
          "<KeyCount>999999999999999999999999</KeyCount>" &
          "<MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated>" &
@@ -4410,6 +4419,16 @@ package body Object_Storage_Test_Cases is
         (Empty_Listing
            ("<NextContinuationToken>unexpected</NextContinuationToken>"),
          "ListObjectsV2 token on final page was accepted");
+      Must_Reject
+        (Empty_Listing
+           ("<NextContinuationToken></NextContinuationToken>"),
+         "ListObjectsV2 empty token on final page was accepted");
+      Must_Reject
+        (Empty_Listing ("<EncodingType></EncodingType>"),
+         "ListObjectsV2 empty encoding type was accepted");
+      Must_Reject
+        (Empty_Listing ("<EncodingType>xml</EncodingType>"),
+         "ListObjectsV2 invalid encoding type was accepted");
       Must_Reject
         ("<ListBucketResult><Name>bucket</Name><KeyCount>1</KeyCount>" &
          "<MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated>" &
@@ -4443,8 +4462,39 @@ package body Object_Storage_Test_Cases is
             and then US.To_String (Request.Start_After) = "a+b"
             and then Request.Max_Keys = 7
             and then not Request.Fetch_Owner
+            and then Request.Has_Delimiter
+            and then Request.Has_Start_After
+            and then Request.Has_Fetch_Owner
             and then Request.URL_Encoding,
             "ListObjectsV2 query decoding");
+      end;
+
+      declare
+         Request : constant Listings.List_Objects_V2_Request :=
+           Listings.Parse_List_Objects_V2_Query
+             ("delimiter=&fetch-owner=false&list-type=2&start-after=");
+         Value : Listings.List_Objects_V2_Result;
+         Round_Trip : Listings.List_Objects_V2_Result;
+      begin
+         Assert
+           (Request.Has_Delimiter
+            and then US.Length (Request.Delimiter) = 0
+            and then Request.Has_Fetch_Owner
+            and then not Request.Fetch_Owner
+            and then Request.Has_Start_After
+            and then US.Length (Request.Start_After) = 0,
+            "present empty ListObjectsV2 query members were collapsed");
+         Value.Name := US.To_Unbounded_String ("bucket");
+         Value.Has_Delimiter := True;
+         Value.Has_Start_After := True;
+         Round_Trip := Listings.Parse_List_Objects_V2
+           (Listings.Serialize_List_Objects_V2 (Value));
+         Assert
+           (Round_Trip.Has_Delimiter
+            and then US.Length (Round_Trip.Delimiter) = 0
+            and then Round_Trip.Has_Start_After
+            and then US.Length (Round_Trip.Start_After) = 0,
+            "present empty ListObjectsV2 response members were collapsed");
       end;
 
       Must_Reject_Query

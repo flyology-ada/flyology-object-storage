@@ -535,7 +535,8 @@ procedure S3_Server_Application_Corpus is
       Target : String;
       Query  : SigV4.Name_Value_Array;
       Extra_Header_Name  : String := "";
-      Extra_Header_Value : String := "") return String
+      Extra_Header_Value : String := "";
+      Second_Header_Value : String := "") return String
    is
       Payload_Hash : constant String := SigV4.SHA256_Hex ("");
       Headers : constant SigV4.Name_Value_Array :=
@@ -545,7 +546,11 @@ procedure S3_Server_Application_Corpus is
             SigV4.Pair ("x-amz-date", Timestamp))
          else
            (SigV4.Pair ("host", Host),
-            SigV4.Pair (Extra_Header_Name, Extra_Header_Value),
+            SigV4.Pair
+              (Extra_Header_Name,
+               Extra_Header_Value &
+                 (if Second_Header_Value'Length = 0
+                  then "" else ", " & Second_Header_Value)),
             SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
             SigV4.Pair ("x-amz-date", Timestamp)));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
@@ -560,6 +565,8 @@ procedure S3_Server_Application_Corpus is
         "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
         (if Extra_Header_Name'Length = 0 then ""
          else Extra_Header_Name & ": " & Extra_Header_Value & CRLF) &
+        (if Second_Header_Value'Length = 0 then ""
+         else Extra_Header_Name & ": " & Second_Header_Value & CRLF) &
         "Content-Length: 0" & CRLF & "Connection: close" & CRLF & CRLF;
    end Signed_Query_Request;
 
@@ -3750,6 +3757,25 @@ begin
 
    declare
       Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("delimiter", ""),
+         SigV4.Pair ("list-type", "2"),
+         SigV4.Pair ("start-after", ""));
+      Listing : constant Listings.List_Objects_V2_Result :=
+        Listings.Parse_List_Objects_V2
+          (Response_Body
+             (Run
+                (Signed_Query_Request ("GET", "/test-bucket", Query))));
+   begin
+      Require
+        (Listing.Has_Delimiter
+         and then US.Length (Listing.Delimiter) = 0
+         and then Listing.Has_Start_After
+         and then US.Length (Listing.Start_After) = 0,
+         "ListObjectsV2 present empty delimiter/start-after mismatch");
+   end;
+
+   declare
+      Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("list-type", "2"),
          SigV4.Pair ("prefix", "list/"),
          SigV4.Pair ("start-after", "list/a"));
@@ -3806,11 +3832,85 @@ begin
               (Signed_Query_Request ("GET", "/test-bucket", Duplicate)),
             "InvalidArgument"),
          "duplicate ListObjectsV2 parameter was accepted");
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket", Owner));
+         Listing : constant Listings.List_Objects_V2_Result :=
+           Listings.Parse_List_Objects_V2 (Response_Body (Response));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then not Listing.Contents.Is_Empty
+            and then Listing.Contents.First_Element.Has_Owner
+            and then US.To_String
+              (Listing.Contents.First_Element.Owner.ID) = "test-principal"
+            and then US.Length
+              (Listing.Contents.First_Element.Owner.Display_Name) = 0,
+            "ListObjectsV2 FetchOwner projection mismatch");
+      end;
       Require
         (Has
-           (Run (Signed_Query_Request ("GET", "/test-bucket", Owner)),
-            "501 Not Implemented"),
-         "unsupported ListObjectsV2 owner projection was hidden");
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Basic,
+                  "x-amz-expected-bucket-owner", "test-principal")),
+            "200 OK"),
+         "ListObjectsV2 matching expected owner was rejected");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Basic,
+                  "x-amz-expected-bucket-owner", "other-principal")),
+            "403 Forbidden"),
+         "ListObjectsV2 mismatched expected owner was accepted");
+      declare
+         Response : constant String := Run
+           (Signed_Query_Request
+              ("GET", "/test-bucket", Basic,
+               "x-amz-request-payer", "requester"));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then not Has (Response, "x-amz-request-charged:"),
+            "owner ListObjectsV2 requester acknowledgement mismatch");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Basic,
+                  "x-amz-request-payer", "owner")),
+            "InvalidArgument"),
+         "invalid ListObjectsV2 request payer was accepted");
+      declare
+         Response : constant String := Run
+           (Signed_Query_Request
+              ("GET", "/test-bucket", Basic,
+               "x-amz-optional-object-attributes", "RestoreStatus"));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then not Has (Response, "<RestoreStatus>"),
+            "non-archival ListObjectsV2 restore projection mismatch");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Basic,
+                  "x-amz-optional-object-attributes", "Unknown")),
+            "InvalidArgument"),
+         "invalid ListObjectsV2 optional attributes were accepted");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Basic,
+                  "x-amz-expected-bucket-owner", "test-principal",
+                  "test-principal")),
+            "InvalidRequest"),
+         "duplicate ListObjectsV2 expected owner was accepted");
       Require
         (Has
            (Run (Signed_Query_Request ("GET", "/missing-bucket", Basic)),

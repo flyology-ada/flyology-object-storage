@@ -66,6 +66,7 @@ procedure S3_Implementation_Corpus is
    use type Client_Buckets.Get_Tags_Outcome_Kind;
    use type Tags.Tag_Vectors.Vector;
    use type Client_Objects.Delete_Outcome_Kind;
+   use type Client_Objects.List_Outcome_Kind;
    use type Client_Objects.Tagging_Outcome_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Client_Buckets.Set_Versioning_Outcome_Kind;
@@ -417,7 +418,62 @@ procedure S3_Implementation_Corpus is
                  "S3 implementation did not expose the completed object";
             end if;
          end;
+         declare
+            Outcome : constant Client_Objects.List_Outcome :=
+              Client_Objects.List_Page
+                (HTTP, Origin, Bucket, Identity, Prefix => Key,
+                 Maximum => 1, Fetch_Owner => True, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Client_Objects.Page_Available
+              or else Outcome.Page.Contents.Length /= 1
+              or else US.To_String
+                (Outcome.Page.Contents.First_Element.Key) /= Key
+              or else not Outcome.Page.Contents.First_Element.Has_Owner
+              or else US.Length
+                (Outcome.Page.Contents.First_Element.Owner.ID) = 0
+            then
+               raise Program_Error with
+                 "S3 implementation failed high-level ListObjectsV2";
+            end if;
+         end;
       end Require_Listed_Object;
+
+      procedure Require_High_Level_List_Pagination is
+         First : constant Client_Objects.List_Outcome :=
+           Client_Objects.List_Page
+             (HTTP, Origin, Bucket, Identity, Prefix => Key, Maximum => 1,
+              Timeout => 30.0);
+      begin
+         if First.Kind /= Client_Objects.Page_Available
+           or else First.Page.Contents.Length /= 1
+           or else not First.Page.Is_Truncated
+           or else not First.Page.Has_Next_Continuation_Token
+           or else US.Length (First.Page.Next_Continuation_Token) = 0
+         then
+            raise Program_Error with
+              "S3 implementation failed high-level first list page";
+         end if;
+         declare
+            First_Key : constant String := US.To_String
+              (First.Page.Contents.First_Element.Key);
+            Next : constant Client_Objects.List_Outcome :=
+              Client_Objects.List_Page
+                (HTTP, Origin, Bucket, Identity, Prefix => Key,
+                 Maximum => 1,
+                 Continuation_Token => US.To_String
+                   (First.Page.Next_Continuation_Token),
+                 Timeout => 30.0);
+         begin
+            if Next.Kind /= Client_Objects.Page_Available
+              or else Next.Page.Contents.Length /= 1
+              or else US.To_String
+                (Next.Page.Contents.First_Element.Key) <= First_Key
+            then
+               raise Program_Error with
+                 "S3 implementation failed high-level continuation page";
+            end if;
+         end;
+      end Require_High_Level_List_Pagination;
 
       procedure Require_Head_Object is
          Baseline : Low_Level.Head_Object_Result;
@@ -1502,6 +1558,7 @@ procedure S3_Implementation_Corpus is
       Copy_With_Multipart;
       Upload_High_Level_File;
       Copy_Whole_Object;
+      Require_High_Level_List_Pagination;
       Delete_Many;
       declare
          Abort_Key : constant String := Key & "-aborted";

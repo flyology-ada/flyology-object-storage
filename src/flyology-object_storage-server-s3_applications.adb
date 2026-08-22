@@ -1921,6 +1921,15 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             when List_Objects_V2 =>
                begin
                   declare
+                     Owner_Count : constant Natural :=
+                       Apps.Request_Header_Count
+                         (X, "x-amz-expected-bucket-owner");
+                     Payer_Count : constant Natural :=
+                       Apps.Request_Header_Count (X, "x-amz-request-payer");
+                     Attributes_Count : constant Natural :=
+                       Apps.Request_Header_Count
+                         (X, "x-amz-optional-object-attributes");
+                     Owner_Accepted : Boolean := False;
                      Request : constant Listings.List_Objects_V2_Request :=
                        Listings.Parse_List_Objects_V2_Query (Query_Text);
                      Options : Backends.List_Options :=
@@ -1938,11 +1947,36 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                           (Value, Encode_Slash => False)
                         else Value);
                   begin
-                     if Request.Fetch_Owner then
+                     if Owner_Count > 1 or else Payer_Count > 1
+                       or else Attributes_Count > 1
+                     then
                         Send_Error
-                          (X, 501, "NotImplemented",
-                           "Object owner fields are not implemented",
+                          (X, 400, "InvalidRequest",
+                           "A ListObjectsV2 header is duplicated",
                            Target_Text);
+                        return;
+                     elsif Payer_Count = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-request-payer") /= "requester"
+                     then
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The request payer is invalid", Target_Text);
+                        return;
+                     elsif Attributes_Count = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-optional-object-attributes") /=
+                           "RestoreStatus"
+                     then
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The optional object attributes are invalid",
+                           Target_Text);
+                        return;
+                     end if;
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if not Owner_Accepted then
                         return;
                      end if;
                      if US.Length (Request.Continuation_Token) > 0 then
@@ -1974,17 +2008,21 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                              (Encoded (US.To_String (Request.Prefix))),
                            Delimiter          => US.To_Unbounded_String
                              (Encoded (US.To_String (Request.Delimiter))),
+                           Has_Delimiter      => Request.Has_Delimiter,
                            Encoding_Type      =>
                              (if Request.URL_Encoding
                               then US.To_Unbounded_String ("url")
                               else US.Null_Unbounded_String),
+                           Has_Encoding_Type  => Request.URL_Encoding,
                            Continuation_Token => Request.Continuation_Token,
                            Has_Continuation_Token =>
                              Request.Has_Continuation_Token,
                            Next_Continuation_Token =>
                              US.Null_Unbounded_String,
+                           Has_Next_Continuation_Token => False,
                            Start_After        => US.To_Unbounded_String
                              (Encoded (US.To_String (Request.Start_After))),
+                           Has_Start_After    => Request.Has_Start_After,
                            Key_Count          =>
                              Natural (Page.Objects.Length) +
                              Natural (Page.Common_Prefixes.Length),
@@ -2000,6 +2038,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                   (Bucket, US.To_String (Request.Prefix),
                                    US.To_String (Request.Delimiter),
                                    US.To_String (Page.Next_After)));
+                           Response.Has_Next_Continuation_Token := True;
                         end if;
                         for Object_Value of Page.Objects loop
                            Response.Contents.Append
@@ -2015,6 +2054,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                Size          => Object_Value.Info.Size,
                                Storage_Class =>
                                  US.To_Unbounded_String ("STANDARD"),
+                               Has_Owner      => Request.Fetch_Owner,
+                               Owner          =>
+                                 (Display_Name => US.Null_Unbounded_String,
+                                  ID =>
+                                    (if Request.Fetch_Owner
+                                     then Auth.Principal
+                                     else US.Null_Unbounded_String)),
                                others        => <>));
                         end loop;
                         for Prefix_Value of Page.Common_Prefixes loop
