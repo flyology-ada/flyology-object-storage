@@ -487,14 +487,16 @@ package body Object_Storage_Test_Cases is
          Store.Put_Object
            (Bucket, Key, Source, Default_Put_Options,
             null, Ada.Real_Time.Time_Last, Info, Result);
-         Assert (Result = Success, "ListObjectsV2 backend key setup");
+         Assert
+           (Result = Success, "ListObjects v1/v2 backend key setup");
       end Put_Listing_Key;
 
       procedure Delete_Listing_Key (Key : String) is
       begin
          Store.Delete_Object
            (Bucket, Key, null, Ada.Real_Time.Time_Last, Result);
-         Assert (Result = Success, "ListObjectsV2 backend key cleanup");
+         Assert
+           (Result = Success, "ListObjects v1/v2 backend key cleanup");
       end Delete_Listing_Key;
    begin
       Store.Delete_Object
@@ -610,9 +612,9 @@ package body Object_Storage_Test_Cases is
          and then US.Length (Page.Next_After) = 0,
          "zero-sized listing is empty and final");
 
-      --  ListObjectsV2 backend conformance: every nonzero bound is honored
-      --  exactly, and truncation/token state agrees with the remaining
-      --  namespace snapshot.
+      --  Shared ListObjects v1/ListObjectsV2 backend conformance: every
+      --  nonzero bound is honored exactly, and truncation/cursor state agrees
+      --  with the remaining atomic namespace snapshot.
       for Maximum in 1 .. 6 loop
          Options := (others => <>);
          Options.Maximum := Maximum;
@@ -625,7 +627,7 @@ package body Object_Storage_Test_Cases is
             and then Page.Is_Truncated = (Maximum < 6)
             and then
               (US.Length (Page.Next_After) > 0) = Page.Is_Truncated,
-            "ListObjectsV2 backend bounded-page property");
+            "ListObjects v1/v2 backend bounded-page property");
       end loop;
 
       --  A continuation is an exclusive projected-key cursor over a fresh,
@@ -649,7 +651,7 @@ package body Object_Storage_Test_Cases is
             and then Page.Objects.Length = 2
             and then US.To_String (Page.Objects (1).Key) = "dir/aa"
             and then US.To_String (Page.Objects (2).Key) = "dir/b",
-            "ListObjectsV2 mutation-safe exclusive continuation");
+            "ListObjects v1/v2 mutation-safe exclusive continuation");
          Delete_Listing_Key ("aardvark");
          Delete_Listing_Key ("dir/aa");
       end;
@@ -673,7 +675,7 @@ package body Object_Storage_Test_Cases is
            "multi/a--"
          and then Page.Is_Truncated
          and then US.To_String (Page.Next_After) = "multi/a--",
-         "ListObjectsV2 multi-character delimiter projection");
+         "ListObjects v1/v2 multi-character delimiter projection");
       Options.After := Page.Next_After;
       Store.List_Objects
         (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
@@ -683,7 +685,7 @@ package body Object_Storage_Test_Cases is
          and then US.To_String (Page.Objects.First_Element.Key) = "multi/b"
          and then Page.Common_Prefixes.Is_Empty
          and then not Page.Is_Truncated,
-         "ListObjectsV2 projected-prefix continuation");
+         "ListObjects v1/v2 projected-prefix continuation");
       Delete_Listing_Key ("multi/a--x");
       Delete_Listing_Key ("multi/a--y");
       Delete_Listing_Key ("multi/b");

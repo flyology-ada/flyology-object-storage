@@ -63,6 +63,8 @@ fi
 
 FLYOLOGY_GET_OBJECT_ATTRIBUTES_ORACLE_MODE=minio-2025-lowercase-root \
 FLYOLOGY_HEAD_OBJECT_ORACLE_MODE=minio-2025-uses-206-for-part-and-range \
+FLYOLOGY_LIST_OBJECTS_V1_ORACLE_MODE=\
+minio-2025-next-marker-without-delimiter \
 "$SCRIPT_DIR/run-s3-implementation.sh" \
   "http://127.0.0.1:$PORT" \
   "http://host.docker.internal:$PORT" \
@@ -71,6 +73,8 @@ echo "MinIO GetObjectAttributes oracle: skipped, pinned response uses" \
   "a non-AWS lowercase root element"
 echo "MinIO HeadObject range/part oracle: pinned release returns HTTP 206" \
   "and Content-Range instead of the AWS HTTP 200 response"
+echo "MinIO ListObjects v1 pagination oracle: pinned release emits an" \
+  "internal NextMarker without delimiter, contrary to AWS v1 semantics"
 
 if [ -n "${FLYOLOGY_S3T_BIN:-}" ]; then
   FLYOLOGY_S3_IMPLEMENTATION=minio \

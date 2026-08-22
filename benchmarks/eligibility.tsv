@@ -7,6 +7,7 @@ large-multipart-put	supported	CreateMultipartUpload, UploadPart, and CompleteMul
 large-get	supported	GetObject is implemented by every compared endpoint
 large-copy	supported	CopyObject is implemented by every compared endpoint
 namespace-list	supported	ListObjectsV2 is implemented by every compared endpoint
+namespace-list-v1	supported	ListObjects v1 is implemented by every compared endpoint
 multipart-upload-list	supported	ListMultipartUploads is implemented by RustFS and every Flyology backend; per-implementation exclusions are explicit
 namespace-delete	supported	batched DeleteObjects is implemented by every compared endpoint
 mixed-objects	blocked	the aggregate mixed-workload generator is not implemented

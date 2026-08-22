@@ -25,7 +25,7 @@ awk -F '\t' '
     print "duplicate benchmark scenario: " $1 > "/dev/stderr"
     exit 1
   }
-  $2 !~ /^(put|get|copy|multipart-put|list|list-multipart-uploads|delete|mixed)$/ {
+  $2 !~ /^(put|get|copy|multipart-put|list|list-v1|list-multipart-uploads|delete|mixed)$/ {
     print "invalid benchmark operation at line " NR > "/dev/stderr"
     exit 1
   }
@@ -36,14 +36,14 @@ awk -F '\t' '
     exit 1
   }
   END {
-    if (NR != 12) {
-      print "benchmark plan must contain exactly eleven scenarios" > "/dev/stderr"
+    if (NR != 13) {
+      print "benchmark plan must contain exactly twelve scenarios" > "/dev/stderr"
       exit 1
     }
   }
 ' "$PLAN"
 
-echo "benchmark plan: 11 deterministic scenarios"
+echo "benchmark plan: 12 deterministic scenarios"
 
 awk -F '\t' '
   NR == 1 {
@@ -110,14 +110,14 @@ awk -F '\t' '
         exit 1
       }
     }
-    if (counts["supported"] != 10 || counts["blocked"] != 1) {
-      print "benchmark eligibility must contain ten supported and one blocked scenario" > "/dev/stderr"
+    if (counts["supported"] != 11 || counts["blocked"] != 1) {
+      print "benchmark eligibility must contain eleven supported and one blocked scenario" > "/dev/stderr"
       exit 1
     }
   }
 ' "$PLAN" "$ELIGIBILITY"
 
-echo "benchmark eligibility: 10 supported, 1 globally blocked"
+echo "benchmark eligibility: 11 supported, 1 globally blocked"
 
 awk -F '\t' '
   FILENAME == ARGV[1] {

@@ -94,6 +94,24 @@ procedure S3_Implementation_Corpus is
       end if;
    end Check_List_Multipart_Uploads;
 
+   function Check_List_Objects_V1_Pagination return Boolean is
+      Name : constant String := "FLYOLOGY_LIST_OBJECTS_V1_ORACLE_MODE";
+   begin
+      if not Ada.Environment_Variables.Exists (Name) then
+         return True;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "rustfs-rc3-next-marker-without-delimiter"
+        or else Ada.Environment_Variables.Value (Name) =
+          "seaweedfs-4.43-next-marker-without-delimiter"
+        or else Ada.Environment_Variables.Value (Name) =
+          "minio-2025-next-marker-without-delimiter"
+      then
+         return False;
+      else
+         raise Program_Error with "unknown ListObjects v1 oracle mode";
+      end if;
+   end Check_List_Objects_V1_Pagination;
+
    function Check_Missing_Object_Attributes return Boolean is
       Name : constant String :=
         "FLYOLOGY_GET_OBJECT_ATTRIBUTES_ORACLE_MODE";
@@ -392,11 +410,35 @@ procedure S3_Implementation_Corpus is
                  or else
                    Outcome.Result.Listing.Contents.First_Element.Size /=
                      Flyology.Object_Storage.Byte_Count (Payload'Length)
+                 or else
+                   (Outcome.Result.Listing.Contents.First_Element.Has_Owner
+                    and then US.Length
+                      (Outcome.Result.Listing.Contents.First_Element.Owner.ID)
+                        = 0)
                then
                   raise Program_Error with
                     "S3 implementation failed typed ListObjects v1";
                end if;
             end;
+         end;
+         declare
+            Outcome : constant Client_Objects.List_V1_Outcome :=
+              Client_Objects.List_V1_Page
+                (HTTP, Origin, Bucket, Identity, Prefix => Key,
+                 Maximum => 1, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Client_Objects.Page_Available
+              or else Outcome.Page.Contents.Length /= 1
+              or else US.To_String
+                (Outcome.Page.Contents.First_Element.Key) /= Key
+              or else
+                (Outcome.Page.Contents.First_Element.Has_Owner
+                 and then US.Length
+                   (Outcome.Page.Contents.First_Element.Owner.ID) = 0)
+            then
+               raise Program_Error with
+                 "S3 implementation failed high-level ListObjects v1";
+            end if;
          end;
          declare
             Prepared : constant Low_Level.Prepared_Request :=
@@ -483,6 +525,42 @@ procedure S3_Implementation_Corpus is
                  "S3 implementation failed high-level continuation page";
             end if;
          end;
+         if Check_List_Objects_V1_Pagination then
+            declare
+               V1_First : constant Client_Objects.List_V1_Outcome :=
+                 Client_Objects.List_V1_Page
+                   (HTTP, Origin, Bucket, Identity, Maximum => 1,
+                    Timeout => 30.0);
+            begin
+               if V1_First.Kind /= Client_Objects.Page_Available
+                 or else V1_First.Page.Contents.Length /= 1
+                 or else not V1_First.Page.Is_Truncated
+                 or else not V1_First.Has_Next_Marker
+                 or else US.Length (V1_First.Next_Marker) = 0
+               then
+                  raise Program_Error with
+                    "S3 implementation failed ListObjects v1 first page";
+               end if;
+               declare
+                  First_Key : constant String := US.To_String
+                    (V1_First.Page.Contents.First_Element.Key);
+                  V1_Next : constant Client_Objects.List_V1_Outcome :=
+                    Client_Objects.List_V1_Page
+                      (HTTP, Origin, Bucket, Identity, Maximum => 1,
+                       Marker => US.To_String (V1_First.Next_Marker),
+                       Timeout => 30.0);
+               begin
+                  if V1_Next.Kind /= Client_Objects.Page_Available
+                    or else V1_Next.Page.Contents.Length /= 1
+                    or else US.To_String
+                      (V1_Next.Page.Contents.First_Element.Key) <= First_Key
+                  then
+                     raise Program_Error with
+                       "S3 implementation failed ListObjects v1 continuation";
+                  end if;
+               end;
+            end;
+         end if;
       end Require_High_Level_List_Pagination;
 
       procedure Require_Head_Object is

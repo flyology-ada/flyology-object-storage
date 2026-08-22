@@ -1838,7 +1838,8 @@ begin
                Default_Put_Options, null, Ada.Real_Time.Time_Last,
                Info, Result);
             Assert
-              (Result = Success, "SQLite ListObjectsV2 key setup failed");
+              (Result = Success,
+               "SQLite ListObjects v1/v2 key setup failed");
          end Put_Listing_Key;
 
          procedure Delete_Listing_Key (Object_Key : String) is
@@ -1848,7 +1849,7 @@ begin
                Ada.Real_Time.Time_Last, Result);
             Assert
               (Result = Success,
-               "SQLite ListObjectsV2 key cleanup failed");
+               "SQLite ListObjects v1/v2 key cleanup failed");
          end Delete_Listing_Key;
       begin
          Options.Maximum := 1;
@@ -1860,7 +1861,7 @@ begin
             and then US.To_String (Page.Objects.First_Element.Key) = "empty"
             and then Page.Is_Truncated
             and then US.To_String (Page.Next_After) = "empty",
-            "SQLite ListObjectsV2 first page failed");
+            "SQLite ListObjects v1/v2 first page failed");
          declare
             Cursor : constant US.Unbounded_String := Page.Next_After;
          begin
@@ -1874,7 +1875,7 @@ begin
               (Result = Success and then Page.Objects.Length = 1
                and then US.To_String (Page.Objects.First_Element.Key) =
                  "empty0",
-               "SQLite ListObjectsV2 mutation-safe continuation failed");
+               "SQLite ListObjects v1/v2 mutation-safe continuation failed");
             Delete_Listing_Key ("aardvark");
             Delete_Listing_Key ("empty0");
             Options.After := Cursor;
@@ -1886,7 +1887,7 @@ begin
            (Result = Success and then Page.Objects.Length = 1
             and then US.To_String (Page.Objects.First_Element.Key) = Key
             and then not Page.Is_Truncated,
-            "SQLite ListObjectsV2 continuation failed");
+            "SQLite ListObjects v1/v2 continuation failed");
          Options := (others => <>);
          Options.Delimiter := US.To_Unbounded_String ("/");
          Store.List_Objects
@@ -1897,7 +1898,7 @@ begin
             and then Page.Common_Prefixes.Length = 1
             and then US.To_String (Page.Common_Prefixes.First_Element) =
               Character'Val (255) & "../",
-            "SQLite ListObjectsV2 delimiter listing failed");
+            "SQLite ListObjects v1/v2 delimiter listing failed");
          Put_Listing_Key ("multi/a--x");
          Put_Listing_Key ("multi/a--y");
          Put_Listing_Key ("multi/b");
@@ -1916,7 +1917,7 @@ begin
               "multi/a--"
             and then Page.Is_Truncated
             and then US.To_String (Page.Next_After) = "multi/a--",
-            "SQLite ListObjectsV2 multi-delimiter projection failed");
+            "SQLite ListObjects v1/v2 multi-delimiter projection failed");
          Options.After := Page.Next_After;
          Store.List_Objects
            ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
@@ -1927,7 +1928,7 @@ begin
               "multi/b"
             and then Page.Common_Prefixes.Is_Empty
             and then not Page.Is_Truncated,
-            "SQLite ListObjectsV2 projected continuation failed");
+            "SQLite ListObjects v1/v2 projected continuation failed");
          Delete_Listing_Key ("multi/a--x");
          Delete_Listing_Key ("multi/a--y");
          Delete_Listing_Key ("multi/b");

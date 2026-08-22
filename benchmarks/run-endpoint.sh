@@ -399,6 +399,93 @@ verify_list_count() {
   fi
 }
 
+verify_list_v1_count() {
+  local prefix=$1 objects=$2 observed contents unique_observed max_keys
+  local truncated next_marker_count key_count_count next_token_count
+  local marker_count prefix_value owner_count raw_status check_status
+  LIST_CHECK_SEQUENCE=$((LIST_CHECK_SEQUENCE + 1))
+  local sequence=$LIST_CHECK_SEQUENCE
+  local list_log="$OUTPUT_ROOT/raw/$IMPLEMENTATION/$prefix-v1-oracle-$sequence.xml"
+  local list_headers="$OUTPUT_ROOT/raw/$IMPLEMENTATION/$prefix-v1-oracle-$sequence.headers"
+  local evidence="$OUTPUT_ROOT/raw/$IMPLEMENTATION/$prefix-v1-visibility.tsv"
+  local expected_keys="$WORK_ROOT/expected-v1-$prefix.txt"
+  local observed_keys="$WORK_ROOT/observed-v1-$prefix.txt"
+  local sorted_keys="$WORK_ROOT/sorted-v1-$prefix.txt"
+  local index=1
+  : >"$expected_keys"
+  while [ "$index" -le "$objects" ]; do
+    printf '%s-%08d\n' "$prefix" "$index" >>"$expected_keys"
+    index=$((index + 1))
+  done
+  raw_status=$(curl --silent --show-error \
+    --dump-header "$list_headers" --output "$list_log" \
+    --write-out '%{http_code}' --aws-sigv4 'aws:amz:us-east-1:s3' \
+    --user "$ACCESS_KEY:$SECRET_KEY" \
+    "$HOST_ENDPOINT/$BUCKET?prefix=$prefix-" \
+    || printf request-failed)
+  perl -0777 -ne 'while (/<Key>([^<]*)<\/Key>/g) { print "$1\n" }' \
+    "$list_log" >"$observed_keys"
+  observed=$(wc -l <"$observed_keys" | tr -d ' ')
+  contents=$(perl -0777 -ne '$n = () = /<Contents>/g; print $n' "$list_log")
+  LC_ALL=C sort -u "$observed_keys" >"$sorted_keys"
+  unique_observed=$(wc -l <"$sorted_keys" | tr -d ' ')
+  max_keys=$(perl -0777 -ne \
+    'print $1 if /<MaxKeys>([0-9]+)<\/MaxKeys>/' "$list_log")
+  truncated=$(perl -0777 -ne \
+    'print $1 if /<IsTruncated>([^<]+)<\/IsTruncated>/' "$list_log")
+  prefix_value=$(perl -0777 -ne \
+    'print $1 if /<Prefix>([^<]*)<\/Prefix>/' "$list_log")
+  marker_count=$(perl -0777 -ne \
+    '$n = () = /<Marker(?:\s|>)/g; print $n' "$list_log")
+  next_marker_count=$(perl -0777 -ne \
+    '$n = () = /<NextMarker(?:\s|>)/g; print $n' "$list_log")
+  key_count_count=$(perl -0777 -ne \
+    '$n = () = /<KeyCount(?:\s|>)/g; print $n' "$list_log")
+  next_token_count=$(perl -0777 -ne \
+    '$n = () = /<NextContinuationToken(?:\s|>)/g; print $n' "$list_log")
+  owner_count=$(perl -0777 -ne '$n = () = /<Owner>/g; print $n' "$list_log")
+  check_status=mismatch
+  if [ "$raw_status" = 200 ] \
+    && [ "$observed" = "$objects" ] \
+    && [ "$contents" = "$objects" ] \
+    && [ "$unique_observed" = "$objects" ] \
+    && [ "$max_keys" = 1000 ] \
+    && [ "$truncated" = false ] \
+    && [ "$prefix_value" = "$prefix-" ] \
+    && [ "$next_marker_count" = 0 ] \
+    && [ "$key_count_count" = 0 ] \
+    && [ "$next_token_count" = 0 ] \
+    && cmp -s "$expected_keys" "$observed_keys"
+  then
+    check_status=passed
+  fi
+  if [ ! -e "$evidence" ]; then
+    printf 'sequence\tprefix\texpected\tcontents\tobserved\tunique\tmax_keys\tis_truncated\tprefix_value\tmarker_elements\tnext_marker_elements\tkey_count_elements\tnext_token_elements\towner_elements\thttp_status\tstatus\n' \
+      >"$evidence"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$sequence" "$prefix" "$objects" "$contents" "$observed" \
+    "$unique_observed" "$max_keys" "$truncated" "$prefix_value" \
+    "$marker_count" "$next_marker_count" "$key_count_count" \
+    "$next_token_count" "$owner_count" "$raw_status" "$check_status" \
+    >>"$evidence"
+  if [ "$check_status" != passed ]; then
+    echo "ListObjects v1 raw XML oracle mismatch for $prefix: expected=$objects Contents=$contents observed=$observed unique=$unique_observed MaxKeys=$max_keys IsTruncated=$truncated Prefix=$prefix_value Marker=$marker_count NextMarker=$next_marker_count KeyCount=$key_count_count NextToken=$next_token_count Owner=$owner_count HTTP=$raw_status" >&2
+    diff -u "$expected_keys" "$observed_keys" >&2 || true
+    return 1
+  fi
+}
+
+run_list_v1() {
+  local prefix=$1 status
+  status=$(curl --silent --show-error --output /dev/null \
+    --write-out '%{http_code}' --aws-sigv4 'aws:amz:us-east-1:s3' \
+    --user "$ACCESS_KEY:$SECRET_KEY" \
+    "$HOST_ENDPOINT/$BUCKET?prefix=$prefix-" \
+    || printf request-failed)
+  test "$status" = 200
+}
+
 cleanup_objects() {
   local prefix=$1 objects=$2 concurrency=$3
   local cleanup_log="$WORK_ROOT/cleanup-$prefix.jsonl"
@@ -457,6 +544,11 @@ run_scenario() {
       byte_factor=0
       verify_list_count "$prefix" "$objects"
       ;;
+    list-v1)
+      prepare_objects "$prefix" "$bytes" "$objects" 1
+      byte_factor=0
+      verify_list_v1_count "$prefix" "$objects"
+      ;;
     list-multipart-uploads)
       byte_factor=0
       multipart_driver setup "$prefix" "$objects"
@@ -475,6 +567,8 @@ run_scenario() {
       fi
       if [ "$operation" = list-multipart-uploads ]; then
         multipart_driver list "$prefix" "$objects" >/dev/null
+      elif [ "$operation" = list-v1 ]; then
+        run_list_v1 "$prefix"
       else
         s5cmd_batch "$concurrency" "$commands" >/dev/null
       fi
@@ -503,6 +597,8 @@ run_scenario() {
       fi
       if [ "$operation" = list-multipart-uploads ]; then
         multipart_driver list "$prefix" "$objects" >>"$log"
+      elif [ "$operation" = list-v1 ]; then
+        run_list_v1 "$prefix" >>"$log"
       else
         s5cmd_batch "$concurrency" "$commands" >>"$log"
       fi
@@ -519,6 +615,7 @@ run_scenario() {
       get) verify_download_pair "$prefix" "$bytes" "$objects" ;;
       delete) verify_deleted_pair "$prefix" "$objects" ;;
       list) verify_list_count "$prefix" "$objects" ;;
+      list-v1) verify_list_v1_count "$prefix" "$objects" ;;
       list-multipart-uploads) multipart_driver list "$prefix" "$objects" ;;
     esac
     total_operations=$((objects * batches))
@@ -530,6 +627,8 @@ run_scenario() {
     note=aggregate-s5cmd-no-latency-percentiles
     if [ "$operation" = list-multipart-uploads ]; then
       note=aggregate-ada-list-driver-no-latency-percentiles
+    elif [ "$operation" = list-v1 ]; then
+      note=aggregate-curl-sigv4-no-latency-percentiles
     fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$CAMPAIGN" "$IMPLEMENTATION" "$scenario" "$repetition" passed \
@@ -538,7 +637,7 @@ run_scenario() {
       "$note" >>"$RESULTS"
     repetition=$((repetition + 1))
   done
-  if [ "$operation" = list ]; then
+  if [ "$operation" = list ] || [ "$operation" = list-v1 ]; then
     cleanup_objects "$prefix" "$objects" "$concurrency"
   elif [ "$operation" = list-multipart-uploads ]; then
     multipart_driver cleanup "$prefix" "$objects"
@@ -578,6 +677,7 @@ while IFS=$'\t' read -r scenario operation bytes objects concurrency duration wa
       large-copy) objects=2; concurrency=2 ;;
       namespace-delete) objects=64; concurrency=4 ;;
       namespace-list) objects=64; concurrency=4 ;;
+      namespace-list-v1) objects=64; concurrency=1 ;;
       multipart-upload-list) objects=32; concurrency=1 ;;
     esac
     warmup=0
