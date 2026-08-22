@@ -17,6 +17,7 @@ with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Objects;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.S3.Attributes;
+with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.SigV4;
@@ -28,6 +29,7 @@ procedure S3_Implementation_Corpus is
    package Client_Buckets renames Flyology.Object_Storage.Client.Buckets;
    package Client_Objects renames Flyology.Object_Storage.Client.Objects;
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
+   package S3_Core renames Flyology.Object_Storage.S3.Core;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
@@ -382,6 +384,7 @@ procedure S3_Implementation_Corpus is
       end Require_Listed_Object;
 
       procedure Require_Head_Object is
+         Baseline : Low_Level.Head_Object_Result;
       begin
          declare
             Parameters : Low_Level.Head_Object_Parameters;
@@ -403,6 +406,64 @@ procedure S3_Implementation_Corpus is
                  "S3 implementation returned invalid typed HeadObject " &
                  "metadata";
             end if;
+            Baseline := Outcome.Result;
+         end;
+         declare
+            Parameters : Low_Level.Head_Object_Parameters;
+         begin
+            Parameters.If_Match := Baseline.Entity_Tag;
+            Parameters.Byte_Range_Header :=
+              US.To_Unbounded_String ("bytes=0-15");
+            Parameters.Response_Cache_Control :=
+              US.To_Unbounded_String ("no-store");
+            Parameters.Response_Content_Disposition :=
+              US.To_Unbounded_String ("attachment");
+            Parameters.Response_Content_Encoding :=
+              US.To_Unbounded_String ("identity");
+            Parameters.Response_Content_Language :=
+              US.To_Unbounded_String ("en-CA");
+            Parameters.Response_Content_Type :=
+              US.To_Unbounded_String ("application/octet-stream");
+            Parameters.Response_Expires := US.To_Unbounded_String
+              ("Fri, 01 Jan 2099 00:00:00 GMT");
+            Parameters.Version_ID := US.To_Unbounded_String ("null");
+            Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+            Parameters.Part_Number := (Is_Set => True, Value => 1);
+            Parameters.Checksum_Mode := True;
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Head_Object
+                   (Origin, Low_Level.Path_Style, Bucket, Key, Parameters,
+                    Identity, "us-east-1", Timestamp);
+               Outcome : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Execute_Head_Object
+                   (HTTP, Prepared, Timeout => 30.0);
+            begin
+               if Outcome.Kind /= Low_Level.Object_Found
+                 or else Outcome.Status /= 206
+                 or else Outcome.Result.Content_Length /= 16
+                 or else US.To_String (Outcome.Result.Content_Range) /=
+                   "bytes 0-15/5242880"
+                 or else not Outcome.Result.Parts_Count.Is_Set
+                 or else Outcome.Result.Parts_Count.Value /= 2
+                 or else US.To_String (Outcome.Result.Cache_Control) /=
+                   "no-store"
+                 or else US.To_String
+                   (Outcome.Result.Content_Disposition) /= "attachment"
+                 or else US.To_String (Outcome.Result.Content_Encoding) /=
+                   "identity"
+                 or else US.To_String (Outcome.Result.Content_Language) /=
+                   "en-CA"
+                 or else US.To_String (Outcome.Result.Content_Type) /=
+                   "application/octet-stream"
+                 or else US.To_String (Outcome.Result.Expires) /=
+                   "Fri, 01 Jan 2099 00:00:00 GMT"
+               then
+                  raise Program_Error with
+                    "S3 implementation HeadObject full request/result " &
+                    "surface mismatch";
+               end if;
+            end;
          end;
          declare
             Outcome : constant Transfers.Head_Outcome :=
@@ -417,6 +478,75 @@ procedure S3_Implementation_Corpus is
             then
                raise Program_Error with
                  "S3 implementation returned invalid HeadObject metadata";
+            end if;
+         end;
+         declare
+            Outcome : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, Bucket, Key, Identity,
+                 Version_ID => "null",
+                 If_Match => US.To_String (Baseline.Entity_Tag),
+                 Checksum_Mode => True,
+                 Byte_Range_Header => "bytes=0-15",
+                 Request_Payer => "requester",
+                 Part_Number => (Is_Set => True, Value => 2),
+                 Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Transfers.Object_Found
+              or else Outcome.Status /= 206
+              or else Outcome.Bytes /= 16
+              or else US.To_String (Outcome.Details.Content_Range) /=
+                "bytes 0-15/1048576"
+              or else not Outcome.Details.Parts_Count.Is_Set
+              or else Outcome.Details.Parts_Count.Value /= 2
+            then
+               raise Program_Error with
+                 "S3 implementation convenience HeadObject part two " &
+                 "mismatch";
+            end if;
+         end;
+         declare
+            Outcome : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, Bucket, Key, Identity,
+                 If_None_Match => US.To_String (Baseline.Entity_Tag),
+                 Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Transfers.Head_Rejected
+              or else Outcome.Status /= 304
+            then
+               raise Program_Error with
+                 "S3 implementation HeadObject If-None-Match mismatch";
+            end if;
+         end;
+         declare
+            Outcome : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, Bucket, Key, Identity,
+                 If_Unmodified_Since =>
+                   "Thu, 01 Jan 1970 00:00:00 GMT",
+                 Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Transfers.Head_Rejected
+              or else Outcome.Status /= 412
+            then
+               raise Program_Error with
+                 "S3 implementation HeadObject If-Unmodified-Since " &
+                 "mismatch";
+            end if;
+         end;
+         declare
+            Outcome : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, Bucket, Key, Identity,
+                 Part_Number => (Is_Set => True, Value => 3),
+                 Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Transfers.Head_Rejected
+              or else Outcome.Status /= 416
+            then
+               raise Program_Error with
+                 "S3 implementation HeadObject absent part mismatch";
             end if;
          end;
          declare
@@ -1059,38 +1189,65 @@ procedure S3_Implementation_Corpus is
          declare
             Upload_ID : constant String :=
               US.To_String (Created.Result.Upload_ID);
-            Parameters : Low_Level.Upload_Part_Parameters;
-            Source : Upload_Source (Payload'Access);
+            First_Payload : aliased constant String :=
+              Payload (Payload'First .. Payload'First + 5 * 1_024 * 1_024 - 1);
+            Second_Payload : aliased constant String :=
+              Payload (First_Payload'Last + 1 .. Payload'Last);
+
+            function Upload
+              (Number : S3_Core.Part_Number;
+               Value  : not null access constant String)
+               return US.Unbounded_String
+            is
+               Parameters : Low_Level.Upload_Part_Parameters;
+               Source : Upload_Source (Value);
+            begin
+               Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
+               Parameters.Part_Number := Number;
+               Parameters.Payload_SHA256 := US.To_Unbounded_String
+                 (SigV4.SHA256_Hex (Value.all));
+               declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Upload_Part
+                      (Origin, Low_Level.Path_Style, Bucket, Key, Parameters,
+                       Identity, "us-east-1", Timestamp);
+                  Uploaded : constant Low_Level.Upload_Part_Outcome :=
+                    Low_Level.Execute_Upload_Part
+                      (HTTP, Prepared, Source, Timeout => 60.0);
+               begin
+                  if Uploaded.Kind /= Low_Level.Part_Uploaded then
+                     raise Program_Error with
+                       "S3 implementation rejected UploadPart" &
+                       Number'Image;
+                  end if;
+                  return Uploaded.Result.Entity_Tag;
+               end;
+            end Upload;
          begin
             if Check_List_Multipart_Uploads then
                Require_Listed_Upload (Key, Upload_ID, True);
             end if;
-            Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
-            Parameters.Payload_SHA256 := US.To_Unbounded_String
-              (SigV4.SHA256_Hex (Payload));
             declare
-               Prepared_Upload : constant Low_Level.Prepared_Request :=
-                 Low_Level.Prepare_Upload_Part
-                   (Origin, Low_Level.Path_Style, Bucket, Key, Parameters,
-                    Identity, "us-east-1", Timestamp);
-               Uploaded : constant Low_Level.Upload_Part_Outcome :=
-                 Low_Level.Execute_Upload_Part
-                   (HTTP, Prepared_Upload, Source, Timeout => 60.0);
+               First_ETag : constant US.Unbounded_String :=
+                 Upload (1, First_Payload'Access);
             begin
-               if Uploaded.Kind /= Low_Level.Part_Uploaded then
-                  raise Program_Error with
-                    "S3 implementation rejected UploadPart";
-               end if;
                Require_Listed_Part
-                 (Key, Upload_ID, US.To_String (Uploaded.Result.Entity_Tag),
-                  Flyology.Object_Storage.Byte_Count (Payload'Length));
+                 (Key, Upload_ID, US.To_String (First_ETag),
+                  Flyology.Object_Storage.Byte_Count (First_Payload'Length));
                declare
+                  Second_ETag : constant US.Unbounded_String :=
+                    Upload (2, Second_Payload'Access);
                   Completion : Multipart.Complete_Multipart_Upload_Request;
                begin
                   Completion.Parts.Append
                     (Multipart.Completed_Part'
                        (Number     => 1,
-                        Entity_Tag => Uploaded.Result.Entity_Tag,
+                        Entity_Tag => First_ETag,
+                        others     => <>));
+                  Completion.Parts.Append
+                    (Multipart.Completed_Part'
+                       (Number     => 2,
+                        Entity_Tag => Second_ETag,
                         others     => <>));
                   declare
                      Prepared_Complete : constant Low_Level.Prepared_Request :=
