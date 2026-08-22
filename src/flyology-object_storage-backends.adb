@@ -3,6 +3,23 @@ with Ada.Strings.Fixed;
 
 package body Flyology.Object_Storage.Backends is
 
+   procedure Put_Multipart_Part
+     (Item        : in out Backend'Class;
+      Bucket      : String;
+      Key         : String;
+      Upload_ID   : String;
+      Part_Number : Multipart_Part_Number;
+      Source      : in out Byte_Source'Class;
+      Token       : access Flyology.Cancellation.Token;
+      Deadline    : Ada.Real_Time.Time;
+      Info        : out Object_Information;
+      Result      : out Status) is
+   begin
+      Item.Put_Multipart_Part
+        (Bucket, Key, Upload_ID, Part_Number, Source,
+         Default_Multipart_Part_Options, Token, Deadline, Info, Result);
+   end Put_Multipart_Part;
+
    function Valid_Read_Entity_Tag_Condition
      (Value : String) return Boolean is
      (Valid_Object_Read_Entity_Tag_Condition (Value));

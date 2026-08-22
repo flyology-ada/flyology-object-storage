@@ -237,6 +237,7 @@ package Flyology.Object_Storage.Backends is
 
    type Multipart_Options is record
       Content_Type : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum     : Checksum_Information;
    end record;
 
    Default_Multipart_Options : constant Multipart_Options;
@@ -246,6 +247,7 @@ package Flyology.Object_Storage.Backends is
    type Complete_Multipart_Options is record
       Conditions    : Copy_Conditions;
       Expected_Size : Source_Length;
+      Expected_Checksum : Checksum_Information;
    end record;
 
    Default_Complete_Multipart_Options : constant Complete_Multipart_Options;
@@ -263,7 +265,16 @@ package Flyology.Object_Storage.Backends is
    type Multipart_Part_Reference is record
       Number     : Multipart_Part_Number := Multipart_Part_Number'First;
       Entity_Tag : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum   : Checksum_Information;
    end record;
+
+   --  Optional caller-supplied digest for one staged part. The backend always
+   --  computes and stores the upload's selected checksum before publication.
+   type Multipart_Part_Options is record
+      Expected_Checksum : Checksum_Information;
+   end record;
+
+   Default_Multipart_Part_Options : constant Multipart_Part_Options;
 
    package Multipart_Part_Reference_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Multipart_Part_Reference);
@@ -291,6 +302,7 @@ package Flyology.Object_Storage.Backends is
       Parts        : Listed_Multipart_Part_Vectors.Vector;
       Is_Truncated : Boolean := False;
       Next_After   : Multipart_Part_Marker := 0;
+      Checksum     : Checksum_Information;
    end record;
 
    --  Completed multipart metadata retained with a committed object. The
@@ -299,6 +311,7 @@ package Flyology.Object_Storage.Backends is
    type Completed_Object_Part is record
       Number : Multipart_Part_Number := Multipart_Part_Number'First;
       Size   : Byte_Count := 0;
+      Checksum : Checksum_Information;
    end record;
 
    package Completed_Object_Part_Vectors is new Ada.Containers.Vectors
@@ -602,10 +615,24 @@ package Flyology.Object_Storage.Backends is
       Upload_ID   : String;
       Part_Number : Multipart_Part_Number;
       Source      : in out Byte_Source'Class;
+      Options     : Multipart_Part_Options;
       Token       : access Flyology.Cancellation.Token;
       Deadline    : Ada.Real_Time.Time;
       Info        : out Object_Information;
       Result      : out Status) is abstract;
+
+   --  Compatibility convenience without a caller-supplied checksum.
+   procedure Put_Multipart_Part
+     (Item        : in out Backend'Class;
+      Bucket      : String;
+      Key         : String;
+      Upload_ID   : String;
+      Part_Number : Multipart_Part_Number;
+      Source      : in out Byte_Source'Class;
+      Token       : access Flyology.Cancellation.Token;
+      Deadline    : Ada.Real_Time.Time;
+      Info        : out Object_Information;
+      Result      : out Status);
 
    --  Return committed staged parts strictly after Options.After, ordered by
    --  part number. A truncated nonempty page resumes from Next_After.
@@ -697,11 +724,16 @@ private
    Default_Multipart_Options : constant Multipart_Options :=
      (Content_Type =>
         Ada.Strings.Unbounded.To_Unbounded_String
-          ("application/octet-stream"));
+          ("application/octet-stream"),
+      Checksum => (others => <>));
+
+   Default_Multipart_Part_Options : constant Multipart_Part_Options :=
+     (Expected_Checksum => (others => <>));
 
    Default_Complete_Multipart_Options : constant Complete_Multipart_Options :=
      (Conditions    => (others => <>),
-      Expected_Size => (Kind => Unknown));
+      Expected_Size => (Kind => Unknown),
+      Expected_Checksum => (others => <>));
 
    No_Abort_Multipart_Conditions : constant Abort_Multipart_Conditions :=
      (others => <>);

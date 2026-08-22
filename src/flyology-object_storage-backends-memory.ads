@@ -206,6 +206,7 @@ package Flyology.Object_Storage.Backends.Memory is
       Upload_ID   : String;
       Part_Number : Multipart_Part_Number;
       Source      : in out Byte_Source'Class;
+      Options     : Multipart_Part_Options;
       Token       : access Flyology.Cancellation.Token;
       Deadline    : Ada.Real_Time.Time;
       Info        : out Object_Information;
@@ -431,6 +432,12 @@ private
          Options : List_Multipart_Uploads_Options;
          Page    : out Multipart_Upload_Page;
          Result  : out Status);
+      procedure Multipart_Configuration
+        (Bucket    : String;
+         Key       : String;
+         Upload_ID : String;
+         Options   : out Multipart_Options;
+         Result    : out Status);
       procedure Commit_Part
         (Bucket      : String;
          Key         : String;

@@ -19,6 +19,7 @@ with Flyology.Object_Storage;
 with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.Files;
 with Flyology.Object_Storage.Backends.Memory;
+with Flyology.Object_Storage.Checksum_Engine;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Durability_Testing;
 with Flyology.Object_Storage.S3.Buckets;
@@ -1073,7 +1074,8 @@ package body Object_Storage_Test_Cases is
          Store.Create_Multipart_Upload
            (Bucket, Key_At (Index),
             (Content_Type =>
-               US.To_Unbounded_String (Content_Type_At (Index))),
+               US.To_Unbounded_String (Content_Type_At (Index)),
+             Checksum => (others => <>)),
             null, Ada.Real_Time.Time_Last, Upload_IDs (Index), Result);
          Assert
            (Result = Success and then US.Length (Upload_IDs (Index)) = 64,
@@ -1749,6 +1751,7 @@ package body Object_Storage_Test_Cases is
       use Flyology.Object_Storage;
       use Flyology.Object_Storage.Backends;
       package US renames Ada.Strings.Unbounded;
+      use type US.Unbounded_String;
       MiB : constant Natural := 1_024 * 1_024;
       Store : Flyology.Object_Storage.Backends.Memory.Store
         (1, 8, 12 * Byte_Count (MiB));
@@ -1873,10 +1876,10 @@ package body Object_Storage_Test_Cases is
             "staged multipart bytes were not accounted");
          Completion.Append
            (Multipart_Part_Reference'
-              (Number => 2, Entity_Tag => Last_ETag));
+              (Number => 2, Entity_Tag => Last_ETag, others => <>));
          Completion.Append
            (Multipart_Part_Reference'
-              (Number => 1, Entity_Tag => First_ETag));
+              (Number => 1, Entity_Tag => First_ETag, others => <>));
          Store.Complete_Multipart_Upload
            ("multipart-bucket", "target", US.To_String (Upload_ID),
             Completion, null, Ada.Real_Time.Time_Last, Info, Result);
@@ -1887,17 +1890,18 @@ package body Object_Storage_Test_Cases is
          Completion.Append
            (Multipart_Part_Reference'
               (Number => 1,
-               Entity_Tag => US.To_Unbounded_String ("wrong")));
+               Entity_Tag => US.To_Unbounded_String ("wrong"),
+               others => <>));
          Completion.Append
            (Multipart_Part_Reference'
-              (Number => 2, Entity_Tag => Last_ETag));
+              (Number => 2, Entity_Tag => Last_ETag, others => <>));
          Store.Complete_Multipart_Upload
            ("multipart-bucket", "target", US.To_String (Upload_ID),
             Completion, null, Ada.Real_Time.Time_Last, Info, Result);
          Assert (Result = Invalid_Part, "wrong multipart ETag was accepted");
          Completion.Replace_Element
            (1, Multipart_Part_Reference'
-             (Number => 1, Entity_Tag => First_ETag));
+             (Number => 1, Entity_Tag => First_ETag, others => <>));
          declare
             Options : Complete_Multipart_Options :=
               Default_Complete_Multipart_Options;
@@ -2005,7 +2009,7 @@ package body Object_Storage_Test_Cases is
             "failed memory copy-part condition replaced or leaked a part");
          Completion.Append
            (Multipart_Part_Reference'
-              (Number => 1, Entity_Tag => Copy_ETag));
+              (Number => 1, Entity_Tag => Copy_ETag, others => <>));
          Store.Complete_Multipart_Upload
            ("multipart-bucket", "copied-part", US.To_String (Copy_ID),
             Completion, null, Ada.Real_Time.Time_Last, Info, Result);
@@ -2050,10 +2054,10 @@ package body Object_Storage_Test_Cases is
             "replaced multipart part retained its old bytes");
          Completion.Append
            (Multipart_Part_Reference'
-              (Number => 1, Entity_Tag => First_ETag));
+              (Number => 1, Entity_Tag => First_ETag, others => <>));
          Completion.Append
            (Multipart_Part_Reference'
-              (Number => 2, Entity_Tag => Last_ETag));
+              (Number => 2, Entity_Tag => Last_ETag, others => <>));
          Store.Complete_Multipart_Upload
            ("multipart-bucket", "small", US.To_String (Small_ID),
             Completion, null, Ada.Real_Time.Time_Last, Info, Result);
@@ -2122,10 +2126,10 @@ package body Object_Storage_Test_Cases is
             Flyology.Bytes.From_Byte_String ("tail"), Last_ETag);
          Completion.Append
            (Multipart_Part_Reference'
-              (Number => 1, Entity_Tag => First_ETag));
+              (Number => 1, Entity_Tag => First_ETag, others => <>));
          Completion.Append
            (Multipart_Part_Reference'
-              (Number => 2, Entity_Tag => Last_ETag));
+              (Number => 2, Entity_Tag => Last_ETag, others => <>));
          Store.Complete_Multipart_Upload
            ("multipart-bucket", "retry", US.To_String (Retry_ID),
             Completion, null, Ada.Real_Time.Time_Last, Info, Result);
@@ -2193,6 +2197,127 @@ package body Object_Storage_Test_Cases is
                and then not Snapshot.Is_Truncated,
                "memory completed attributes continuation mismatch");
          end;
+      end;
+
+      declare
+         package Engine renames Flyology.Object_Storage.Checksum_Engine;
+         Configured : Multipart_Options := Default_Multipart_Options;
+         Checksum_ID : US.Unbounded_String;
+         Good : constant US.Unbounded_String := US.To_Unbounded_String
+           ("ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=");
+         Wrong : constant US.Unbounded_String := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Part_Options : Multipart_Part_Options;
+         Page : Multipart_Part_Page;
+         Completion : Multipart_Part_References;
+      begin
+         Configured.Checksum :=
+           (Algorithm => Checksum_SHA256,
+            Method    => Composite_Checksum,
+            Value     => US.Null_Unbounded_String);
+         Store.Create_Multipart_Upload
+           ("multipart-bucket", "checksummed", Configured, null,
+            Ada.Real_Time.Time_Last, Checksum_ID, Result);
+         Assert (Result = Success, "checksum multipart create failed");
+
+         Part_Options.Expected_Checksum := Configured.Checksum;
+         Part_Options.Expected_Checksum.Value := Good;
+         declare
+            Source : Buffer_Source :=
+              (Data => Flyology.Bytes.From_Byte_String ("abc"),
+               Position => 0, Length => (Kind => Known, Bytes => 3),
+               Bad_Last => False);
+         begin
+            Store.Put_Multipart_Part
+              ("multipart-bucket", "checksummed", US.To_String (Checksum_ID),
+               1, Source, Part_Options, null, Ada.Real_Time.Time_Last,
+               Info, Result);
+         end;
+         Assert
+           (Result = Success and then Info.Checksum.Value = Good,
+            "valid composite part checksum was not retained");
+
+         Part_Options.Expected_Checksum.Value := Wrong;
+         declare
+            Source : Buffer_Source :=
+              (Data => Flyology.Bytes.From_Byte_String ("replacement"),
+               Position => 0, Length => (Kind => Known, Bytes => 11),
+               Bad_Last => False);
+         begin
+            Store.Put_Multipart_Part
+              ("multipart-bucket", "checksummed", US.To_String (Checksum_ID),
+               1, Source, Part_Options, null, Ada.Real_Time.Time_Last,
+               Info, Result);
+         end;
+         Assert (Result = Bad_Digest, "bad part digest was accepted");
+         Store.List_Multipart_Parts
+           ("multipart-bucket", "checksummed", US.To_String (Checksum_ID),
+            (After => 0, Maximum => 1), null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Checksum.Algorithm =
+              Checksum_SHA256
+            and then Page.Checksum.Method = Composite_Checksum
+            and then Page.Parts.Length = 1
+            and then Page.Parts.First_Element.Info.Checksum.Value = Good,
+            "BadDigest replaced the staged part or ListParts lost checksum");
+
+         Completion.Append
+           (Multipart_Part_Reference'
+              (Number => 1,
+               Entity_Tag => Page.Parts.First_Element.Info.Entity_Tag,
+               Checksum => Page.Parts.First_Element.Info.Checksum));
+         declare
+            Values : constant Engine.Part_Value_Array :=
+              (1 => (Value => Page.Parts.First_Element.Info.Checksum,
+                     Length => 3));
+            Expected : constant US.Unbounded_String := US.To_Unbounded_String
+              (Engine.Multipart_Object_Value
+                 (Checksum_SHA256, Composite_Checksum, Values));
+            Complete_Options : Complete_Multipart_Options :=
+              Default_Complete_Multipart_Options;
+         begin
+            Complete_Options.Expected_Checksum := Configured.Checksum;
+            Complete_Options.Expected_Checksum.Value :=
+              US.To_Unbounded_String (US.To_String (Wrong) & "-1");
+            Store.Complete_Multipart_Upload
+              ("multipart-bucket", "checksummed", US.To_String (Checksum_ID),
+               Completion, Complete_Options, null, Ada.Real_Time.Time_Last,
+               Info, Result);
+            Assert (Result = Bad_Digest,
+                    "bad composite object digest was accepted");
+            Store.List_Multipart_Parts
+              ("multipart-bucket", "checksummed", US.To_String (Checksum_ID),
+               (After => 0, Maximum => 1), null, Ada.Real_Time.Time_Last,
+               Page, Result);
+            Assert
+              (Result = Success and then Page.Parts.Length = 1,
+               "failed checksum completion retired the upload");
+            Complete_Options.Expected_Checksum.Value := Expected;
+            Store.Complete_Multipart_Upload
+              ("multipart-bucket", "checksummed", US.To_String (Checksum_ID),
+               Completion, Complete_Options, null, Ada.Real_Time.Time_Last,
+               Info, Result);
+            Assert
+              (Result = Success and then Info.Checksum.Value = Expected,
+               "composite object checksum completion failed");
+         end;
+         declare
+            Snapshot : Object_Attribute_Snapshot;
+         begin
+            Store.Get_Object_Attributes
+              ("multipart-bucket", "checksummed", (After => 0, Maximum => 1),
+               null, Ada.Real_Time.Time_Last, Snapshot, Result);
+            Assert
+              (Result = Success and then Snapshot.Info.Checksum = Info.Checksum
+               and then Snapshot.Parts.Length = 1
+               and then Snapshot.Parts.First_Element.Checksum.Value = Good,
+               "completed checksum metadata was not retained atomically");
+         end;
+         Store.Delete_Object
+           ("multipart-bucket", "checksummed", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "checksum multipart cleanup failed");
       end;
 
       declare
@@ -2616,7 +2741,8 @@ package body Object_Storage_Test_Cases is
          Store.Create_Multipart_Upload
            ("file-bucket", "multipart-target",
             (Content_Type =>
-               US.To_Unbounded_String ("application/x-multipart-test")),
+               US.To_Unbounded_String ("application/x-multipart-test"),
+             Checksum => (others => <>)),
             null, Ada.Real_Time.Time_Last, Upload_ID, Result);
          Assert (Result = Success, "files multipart create");
          declare
@@ -2772,7 +2898,7 @@ package body Object_Storage_Test_Cases is
                     "files copy-part accepted an invalid source range");
             Completion.Append
               (Multipart_Part_Reference'
-                 (Number => 1, Entity_Tag => Copy_ETag));
+                 (Number => 1, Entity_Tag => Copy_ETag, others => <>));
             Store.Complete_Multipart_Upload
               ("file-bucket", "copy-part-target", US.To_String (Copy_ID),
                Completion, null, Ada.Real_Time.Time_Last, Info, Result);
@@ -2795,7 +2921,7 @@ package body Object_Storage_Test_Cases is
          begin
             Completion.Append
               (Multipart_Part_Reference'
-                 (Number => 1, Entity_Tag => Part_ETag));
+                 (Number => 1, Entity_Tag => Part_ETag, others => <>));
             declare
                Options : Complete_Multipart_Options :=
                  Default_Complete_Multipart_Options;
@@ -3557,7 +3683,7 @@ package body Object_Storage_Test_Cases is
                Part_ETag := Info.Entity_Tag;
                Parts.Append
                  (Multipart_Part_Reference'
-                    (Number => 1, Entity_Tag => Part_ETag));
+                    (Number => 1, Entity_Tag => Part_ETag, others => <>));
                Faults.Fail_Next_Barrier_After (Point);
                Store.Complete_Multipart_Upload
                  ("durability-bucket", "object", US.To_String (Upload_ID),

@@ -23,6 +23,7 @@ is
       Invalid_Range,
       Invalid_Part,
       Invalid_Part_Order,
+      Bad_Digest,
       Entity_Too_Small,
       Entity_Too_Large,
       Source_Not_Found,
@@ -31,6 +32,33 @@ is
       Conflict,
       Not_Implemented,
       Backend_Unavailable);
+
+   --  Storage-domain checksum metadata. Wire spelling and Base64 validation
+   --  remain in the S3 boundary; backends retain the selected algorithm,
+   --  checksum method, and canonical encoded value with the object or part.
+   type Checksum_Algorithm is
+     (No_Checksum,
+      Checksum_CRC32,
+      Checksum_CRC32C,
+      Checksum_CRC64NVME,
+      Checksum_SHA1,
+      Checksum_SHA256,
+      Checksum_SHA512,
+      Checksum_MD5,
+      Checksum_XXHASH64,
+      Checksum_XXHASH3,
+      Checksum_XXHASH128);
+
+   type Checksum_Method is
+     (No_Checksum_Method, Composite_Checksum, Full_Object_Checksum);
+
+   type Checksum_Information is record
+      Algorithm : Checksum_Algorithm := No_Checksum;
+      Method    : Checksum_Method := No_Checksum_Method;
+      Value     : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   No_Checksum_Information : constant Checksum_Information;
 
    --  Evaluate HTTP entity-tag predicates for one atomic object publication.
    --  Missing objects never satisfy If-Match and always satisfy a valid
@@ -178,6 +206,7 @@ is
       Entity_Tag    : Ada.Strings.Unbounded.Unbounded_String;
       Content_Type  : Ada.Strings.Unbounded.Unbounded_String;
       Version       : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum      : Checksum_Information;
    end record;
 
    --  One S3 object tag. The wire boundary validates the documented UTF-8
@@ -251,6 +280,7 @@ is
       Empty_Allowed : Boolean) return Boolean;
 
 private
+   No_Checksum_Information : constant Checksum_Information := (others => <>);
    Empty_Object_Tags : constant Object_Tag_Set := (others => <>);
    Default_Write_Conditions : constant Write_Conditions := (others => <>);
    Default_Put_Options : constant Put_Options :=

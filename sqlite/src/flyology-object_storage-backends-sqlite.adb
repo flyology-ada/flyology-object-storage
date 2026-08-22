@@ -629,7 +629,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
             then Options.Entity_Tag
             else US.To_Unbounded_String (GNAT.MD5.Digest (Hash))),
          Content_Type => Options.Content_Type,
-         Version      => US.Null_Unbounded_String);
+         Version      => US.Null_Unbounded_String,
+         Checksum     => No_Checksum_Information);
       Check_Context (Token, Deadline);
       GNAT.OS_Lib.Rename_File
         (US.To_String (Staging),
@@ -1220,6 +1221,9 @@ package body Flyology.Object_Storage.Backends.SQLite is
       then
          Result := Invalid_Request;
          return;
+      elsif Options.Checksum /= No_Checksum_Information then
+         Result := Not_Implemented;
+         return;
       end if;
       Item.Temp_Sequence.Next (Number);
       Upload_ID := US.To_Unbounded_String
@@ -1250,6 +1254,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Upload_ID   : String;
       Part_Number : Multipart_Part_Number;
       Source      : in out Byte_Source'Class;
+      Options     : Multipart_Part_Options;
       Token       : access Flyology.Cancellation.Token;
       Deadline    : Ada.Real_Time.Time;
       Info        : out Object_Information;
@@ -1276,6 +1281,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
         or else Upload_ID'Length not in 1 .. 1_024
+        or else Options.Expected_Checksum /= No_Checksum_Information
       then
          Result := Invalid_Request;
          return;
@@ -1347,7 +1353,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Modified     => Unix_Seconds (Ada.Calendar.Clock),
          Entity_Tag   => US.To_Unbounded_String (GNAT.MD5.Digest (Hash)),
          Content_Type => US.Null_Unbounded_String,
-         Version      => US.Null_Unbounded_String);
+         Version      => US.Null_Unbounded_String,
+         Checksum     => No_Checksum_Information);
       Check_Context (Token, Deadline);
       GNAT.OS_Lib.Rename_File
         (US.To_String (Staging),
@@ -1657,9 +1664,15 @@ package body Flyology.Object_Storage.Backends.SQLite is
       elsif Parts.Is_Empty then
          Result := Invalid_Request;
          return;
+      elsif Options.Expected_Checksum /= No_Checksum_Information then
+         Result := Invalid_Request;
+         return;
       end if;
       for Reference of Parts loop
-         if not First and then Reference.Number <= Prior then
+         if Reference.Checksum /= No_Checksum_Information then
+            Result := Invalid_Part;
+            return;
+         elsif not First and then Reference.Number <= Prior then
             Result := Invalid_Part_Order;
             return;
          end if;
@@ -1711,7 +1724,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
             Ada.Strings.Fixed.Trim
               (Natural'Image (Natural (Records.Length)), Ada.Strings.Both)),
          Content_Type => Content_Type,
-         Version      => US.Null_Unbounded_String);
+         Version      => US.Null_Unbounded_String,
+         Checksum     => No_Checksum_Information);
       Create_Staging_File
         (Item, Bucket, Key & Upload_ID, File, Staging, Payload);
       Opened := True;

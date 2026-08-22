@@ -8,6 +8,7 @@ with Flyology.IO;
 with Flyology.Object_Storage.Backends.Bucket_Listing;
 with Flyology.Object_Storage.Backends.Listing;
 with Flyology.Object_Storage.Backends.Multipart_Listing;
+with Flyology.Object_Storage.Checksum_Engine;
 with GNAT.MD5;
 with GNAT.SHA256;
 
@@ -18,6 +19,8 @@ package body Flyology.Object_Storage.Backends.Memory is
    use type Ada.Containers.Count_Type;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Strings.Unbounded.Unbounded_String;
+   package Checksum_Engine renames
+     Flyology.Object_Storage.Checksum_Engine;
 
    Empty_Info : constant Object_Information := (others => <>);
    Epoch : constant Ada.Calendar.Time :=
@@ -892,6 +895,24 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result := Success;
       end List_Uploads;
 
+      procedure Multipart_Configuration
+        (Bucket    : String;
+         Key       : String;
+         Upload_ID : String;
+         Options   : out Multipart_Options;
+         Result    : out Status)
+      is
+         Index : constant Natural := Upload_Index (Bucket, Key, Upload_ID);
+      begin
+         Options := Default_Multipart_Options;
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Options := Uploads (Index).Options;
+            Result := Success;
+         end if;
+      end Multipart_Configuration;
+
       procedure Commit_Part
         (Bucket      : String;
          Key         : String;
@@ -902,6 +923,8 @@ package body Flyology.Object_Storage.Backends.Memory is
          Stored      : out Object_Information;
          Result      : out Status)
       is
+         Upload_At : constant Natural :=
+           Upload_Index (Bucket, Key, Upload_ID);
          Index     : Natural := Part_Index (Upload_ID, Part_Number);
          Existing  : Byte_Count := 0;
          Incoming  : constant Byte_Count :=
@@ -911,8 +934,26 @@ package body Flyology.Object_Storage.Backends.Memory is
          Available : Byte_Count;
       begin
          Stored := Empty_Info;
-         if Upload_Index (Bucket, Key, Upload_ID) = 0 then
+         if Upload_At = 0 then
             Result := Not_Found;
+            return;
+         elsif not Checksum_Engine.Valid_Configuration
+           (Uploads (Upload_At).Options.Checksum)
+           or else
+             (Uploads (Upload_At).Options.Checksum.Algorithm = No_Checksum
+              and then Info.Checksum /= No_Checksum_Information)
+           or else
+             (Uploads (Upload_At).Options.Checksum.Algorithm /= No_Checksum
+              and then
+                (Info.Checksum.Algorithm /=
+                   Uploads (Upload_At).Options.Checksum.Algorithm
+                 or else Info.Checksum.Method /=
+                   Uploads (Upload_At).Options.Checksum.Method
+                 or else not Checksum_Engine.Valid_Digest
+                   (Ada.Strings.Unbounded.To_String (Info.Checksum.Value),
+                    Info.Checksum.Algorithm)))
+         then
+            Result := Backend_Unavailable;
             return;
          end if;
          if Index /= 0 then
@@ -968,12 +1009,16 @@ package body Flyology.Object_Storage.Backends.Memory is
          type Part_Index_Array is
            array (Multipart_Part_Number) of Natural;
          Index_By_Number : Part_Index_Array := (others => 0);
+         Upload_At : constant Natural :=
+           Upload_Index (Bucket, Key, Upload_ID);
       begin
          Page := (others => <>);
-         if Upload_Index (Bucket, Key, Upload_ID) = 0 then
+         if Upload_At = 0 then
             Result := Not_Found;
             return;
-         elsif Options.Maximum = 0
+         end if;
+         Page.Checksum := Uploads (Upload_At).Options.Checksum;
+         if Options.Maximum = 0
            or else Options.After = Multipart_Part_Marker'Last
          then
             Result := Success;
@@ -1037,6 +1082,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Hash : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
          Assembly_Reserved : Boolean := False;
          Completed_Parts : Completed_Object_Part_List;
+         Completed_Checksum : Checksum_Information;
       begin
          Info := Empty_Info;
          if Upload_At = 0 then
@@ -1045,10 +1091,23 @@ package body Flyology.Object_Storage.Backends.Memory is
          elsif Completion.Is_Empty then
             Result := Invalid_Request;
             return;
+         elsif not Checksum_Engine.Valid_Configuration
+           (Uploads (Upload_At).Options.Checksum)
+         then
+            Result := Backend_Unavailable;
+            return;
          end if;
 
          for Reference of Completion loop
-            if not First and then Reference.Number <= Previous then
+            if (not First and then Reference.Number <= Previous)
+              or else
+                (Uploads (Upload_At).Options.Checksum.Method =
+                   Composite_Checksum
+                 and then
+                   ((First and then Reference.Number /= 1)
+                    or else
+                      (not First and then Reference.Number /= Previous + 1)))
+            then
                Result := Invalid_Part_Order;
                return;
             end if;
@@ -1065,11 +1124,41 @@ package body Flyology.Object_Storage.Backends.Memory is
                Stored_At : constant Natural :=
                  Part_Index (Upload_ID, Reference.Number);
             begin
-               if Stored_At = 0
-                 or else Ada.Strings.Unbounded.To_String
+               if Stored_At = 0 then
+                  Result := Invalid_Part;
+                  return;
+               elsif
+                 (Uploads (Upload_At).Options.Checksum.Algorithm = No_Checksum
+                  and then Parts (Stored_At).Info.Checksum /=
+                    No_Checksum_Information)
+                 or else
+                   (Uploads (Upload_At).Options.Checksum.Algorithm /=
+                      No_Checksum
+                    and then
+                      (Parts (Stored_At).Info.Checksum.Algorithm /=
+                         Uploads (Upload_At).Options.Checksum.Algorithm
+                       or else Parts (Stored_At).Info.Checksum.Method /=
+                         Uploads (Upload_At).Options.Checksum.Method
+                       or else not Checksum_Engine.Valid_Digest
+                         (Ada.Strings.Unbounded.To_String
+                            (Parts (Stored_At).Info.Checksum.Value),
+                          Parts (Stored_At).Info.Checksum.Algorithm)))
+               then
+                  Result := Backend_Unavailable;
+                  return;
+               elsif Ada.Strings.Unbounded.To_String
                    (Reference.Entity_Tag) /=
                      Ada.Strings.Unbounded.To_String
                        (Parts (Stored_At).Info.Entity_Tag)
+                 or else
+                   (Uploads (Upload_At).Options.Checksum.Method =
+                      Composite_Checksum
+                    and then Reference.Checksum /=
+                      Parts (Stored_At).Info.Checksum)
+                 or else
+                   (Reference.Checksum.Algorithm /= No_Checksum
+                    and then Reference.Checksum /=
+                      Parts (Stored_At).Info.Checksum)
                then
                   Result := Invalid_Part;
                   return;
@@ -1093,11 +1182,66 @@ package body Flyology.Object_Storage.Backends.Memory is
                Completed_Parts.Append
                  (Completed_Object_Part'
                     (Number => Reference.Number,
-                     Size   => Parts (Stored_At).Info.Size));
+                     Size   => Parts (Stored_At).Info.Size,
+                     Checksum => Parts (Stored_At).Info.Checksum));
                Previous := Reference.Number;
                First := False;
             end;
          end loop;
+
+         if Uploads (Upload_At).Options.Checksum.Algorithm /= No_Checksum
+         then
+            declare
+               Values : Checksum_Engine.Part_Value_Array
+                 (1 .. Natural (Completion.Length));
+               Position : Positive := Values'First;
+            begin
+               for Reference of Completion loop
+                  declare
+                     Stored_At : constant Natural :=
+                       Part_Index (Upload_ID, Reference.Number);
+                  begin
+                     Values (Position) :=
+                       (Value  => Parts (Stored_At).Info.Checksum,
+                        Length => Parts (Stored_At).Info.Size);
+                     Position := Position + 1;
+                  end;
+               end loop;
+               Completed_Checksum := Uploads (Upload_At).Options.Checksum;
+               Completed_Checksum.Value :=
+                 Ada.Strings.Unbounded.To_Unbounded_String
+                   (Checksum_Engine.Multipart_Object_Value
+                      (Completed_Checksum.Algorithm,
+                       Completed_Checksum.Method, Values));
+            end;
+         end if;
+
+         if Options.Expected_Checksum.Algorithm /= No_Checksum
+           and then
+             (Options.Expected_Checksum.Algorithm /=
+                Completed_Checksum.Algorithm
+              or else Options.Expected_Checksum.Method /=
+                Completed_Checksum.Method)
+         then
+            Result := Invalid_Request;
+            return;
+         elsif Options.Expected_Checksum.Algorithm /= No_Checksum
+           and then not Checksum_Engine.Valid_Object_Digest
+             (Ada.Strings.Unbounded.To_String
+                (Options.Expected_Checksum.Value),
+              Options.Expected_Checksum.Algorithm,
+              Options.Expected_Checksum.Method,
+              Positive (Completion.Length))
+         then
+            Result := Invalid_Request;
+            return;
+         elsif Options.Expected_Checksum.Algorithm /= No_Checksum
+           and then Options.Expected_Checksum.Value /=
+             Completed_Checksum.Value
+         then
+            Result := Bad_Digest;
+            return;
+         end if;
 
          if Final_Size > Byte_Count (Natural'Last) then
             Result := Capacity_Exceeded;
@@ -1183,7 +1327,8 @@ package body Flyology.Object_Storage.Backends.Memory is
                     (Natural'Image (Natural (Completion.Length)),
                      Ada.Strings.Both)),
                Content_Type => Uploads (Upload_At).Options.Content_Type,
-               Version      => Ada.Strings.Unbounded.Null_Unbounded_String);
+               Version      => Ada.Strings.Unbounded.Null_Unbounded_String,
+               Checksum     => Completed_Checksum);
             Stored_Bucket : constant Ada.Strings.Unbounded.Unbounded_String :=
               Ada.Strings.Unbounded.To_Unbounded_String (Bucket);
             Stored_Key : constant Ada.Strings.Unbounded.Unbounded_String :=
@@ -1576,7 +1721,8 @@ package body Flyology.Object_Storage.Backends.Memory is
             else Ada.Strings.Unbounded.To_Unbounded_String
               (GNAT.MD5.Digest (Hash))),
          Content_Type => Options.Content_Type,
-         Version      => Ada.Strings.Unbounded.Null_Unbounded_String);
+         Version      => Ada.Strings.Unbounded.Null_Unbounded_String,
+         Checksum     => (others => <>));
       Item.State.Commit
         (Bucket => Bucket,
          Key    => Key,
@@ -1995,6 +2141,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+        or else not Checksum_Engine.Valid_Configuration (Options.Checksum)
       then
          Result := Invalid_Request;
       else
@@ -2010,6 +2157,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       Upload_ID   : String;
       Part_Number : Multipart_Part_Number;
       Source      : in out Byte_Source'Class;
+      Options     : Multipart_Part_Options;
       Token       : access Flyology.Cancellation.Token;
       Deadline    : Ada.Real_Time.Time;
       Info        : out Object_Information;
@@ -2021,7 +2169,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       Data     : Owned_Bytes;
       Declared : Source_Length := (Kind => Unknown);
       Stored   : Object_Information;
-      Hash     : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
+      ETag_Hash : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
+      Upload_Options : Multipart_Options;
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
@@ -2032,109 +2181,168 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result := Invalid_Request;
          return;
       end if;
-      Declared := Source.Declared_Length;
-      if Declared.Kind = Known
-        and then Declared.Bytes > Maximum_Multipart_Part_Size
-      then
-         Result := Entity_Too_Large;
+      Item.State.Multipart_Configuration
+        (Bucket, Key, Upload_ID, Upload_Options, Result);
+      if Result /= Success then
          return;
-      elsif Declared.Kind = Known
-        and then (Declared.Bytes > Item.Byte_Capacity
-                  or else Declared.Bytes > Byte_Count (Natural'Last))
+      elsif not Checksum_Engine.Valid_Configuration
+        (Upload_Options.Checksum)
       then
-         Result := Capacity_Exceeded;
+         Result := Backend_Unavailable;
+         return;
+      elsif Options.Expected_Checksum.Algorithm /= No_Checksum
+        and then
+          (Options.Expected_Checksum.Algorithm /=
+             Upload_Options.Checksum.Algorithm
+           or else Options.Expected_Checksum.Method /=
+             Upload_Options.Checksum.Method
+           or else not Checksum_Engine.Valid_Digest
+             (Ada.Strings.Unbounded.To_String
+                (Options.Expected_Checksum.Value),
+              Options.Expected_Checksum.Algorithm))
+      then
+         Result := Invalid_Request;
+         return;
+      elsif Upload_Options.Checksum.Method = Composite_Checksum
+        and then Options.Expected_Checksum.Algorithm = No_Checksum
+      then
+         Result := Invalid_Request;
          return;
       end if;
-      if Declared.Kind = Known then
-         Reserve_Buffer_Capacity
-           (Item.State, Data, Natural (Declared.Bytes), Result);
-         if Result /= Success then
+      declare
+         Effective_Algorithm : constant Checksum_Algorithm :=
+           (if Upload_Options.Checksum.Algorithm = No_Checksum
+            then Checksum_CRC64NVME
+            else Upload_Options.Checksum.Algorithm);
+         Digest_Hash : Checksum_Engine.Context
+           (Checksum_Engine.Algorithm_Value (Effective_Algorithm));
+         Actual_Checksum : Ada.Strings.Unbounded.Unbounded_String;
+      begin
+         Declared := Source.Declared_Length;
+         if Declared.Kind = Known
+           and then Declared.Bytes > Maximum_Multipart_Part_Size
+         then
+            Result := Entity_Too_Large;
+            return;
+         elsif Declared.Kind = Known
+           and then (Declared.Bytes > Item.Byte_Capacity
+                     or else Declared.Bytes > Byte_Count (Natural'Last))
+         then
+            Result := Capacity_Exceeded;
             return;
          end if;
-      end if;
-      while not Finished loop
-         Check_Context (Token, Deadline);
-         Source.Read (Buffer, Last, Finished, Token, Deadline);
-         if Last < Buffer'First - 1 or else Last > Buffer'Last then
-            Result := Invalid_Request;
-            Release_Buffer (Item.State, Data);
-            return;
-         elsif Last >= Buffer'First then
-            declare
-               Count : constant Byte_Count :=
-                 Byte_Count (Last - Buffer'First + 1);
-            begin
-               if Count > Maximum_Multipart_Part_Size
-                 or else Byte_Count (Data.Length) >
-                   Maximum_Multipart_Part_Size - Count
-               then
-                  Result := Entity_Too_Large;
-                  Release_Buffer (Item.State, Data);
-                  return;
-               elsif Count > Item.Byte_Capacity
-                 or else Byte_Count (Data.Length) >
-                   Item.Byte_Capacity - Count
-                 or else Count > Byte_Count (Natural'Last - Data.Length)
-               then
-                  Result := Capacity_Exceeded;
-                  Release_Buffer (Item.State, Data);
-                  return;
-               end if;
+         if Declared.Kind = Known then
+            Reserve_Buffer_Capacity
+              (Item.State, Data, Natural (Declared.Bytes), Result);
+            if Result /= Success then
+               return;
+            end if;
+         end if;
+         while not Finished loop
+            Check_Context (Token, Deadline);
+            Source.Read (Buffer, Last, Finished, Token, Deadline);
+            if Last < Buffer'First - 1 or else Last > Buffer'Last then
+               Result := Invalid_Request;
+               Release_Buffer (Item.State, Data);
+               return;
+            elsif Last >= Buffer'First then
                declare
-                  Required : constant Natural :=
-                    Data.Length + Natural (Count);
-                  Target : constant Natural :=
-                    Growth_Capacity (Data, Required);
+                  Count : constant Byte_Count :=
+                    Byte_Count (Last - Buffer'First + 1);
                begin
-                  Reserve_Buffer_Capacity
-                    (Item.State, Data, Target, Result);
-                  if Result = Capacity_Exceeded and then Target > Required
+                  if Count > Maximum_Multipart_Part_Size
+                    or else Byte_Count (Data.Length) >
+                      Maximum_Multipart_Part_Size - Count
                   then
-                     Reserve_Buffer_Capacity
-                       (Item.State, Data, Required, Result);
-                  end if;
-                  if Result /= Success then
+                     Result := Entity_Too_Large;
+                     Release_Buffer (Item.State, Data);
+                     return;
+                  elsif Count > Item.Byte_Capacity
+                    or else Byte_Count (Data.Length) >
+                      Item.Byte_Capacity - Count
+                    or else Count > Byte_Count (Natural'Last - Data.Length)
+                  then
+                     Result := Capacity_Exceeded;
                      Release_Buffer (Item.State, Data);
                      return;
                   end if;
+                  declare
+                     Required : constant Natural :=
+                       Data.Length + Natural (Count);
+                     Target : constant Natural :=
+                       Growth_Capacity (Data, Required);
+                  begin
+                     Reserve_Buffer_Capacity
+                       (Item.State, Data, Target, Result);
+                     if Result = Capacity_Exceeded and then Target > Required
+                     then
+                        Reserve_Buffer_Capacity
+                          (Item.State, Data, Required, Result);
+                     end if;
+                     if Result /= Success then
+                        Release_Buffer (Item.State, Data);
+                        return;
+                     end if;
+                  end;
+                  Append (Data, Buffer (Buffer'First .. Last));
+                  GNAT.MD5.Update (ETag_Hash, Buffer (Buffer'First .. Last));
+                  if Upload_Options.Checksum.Algorithm /= No_Checksum then
+                     Checksum_Engine.Update
+                       (Digest_Hash, Buffer (Buffer'First .. Last));
+                  end if;
                end;
-               Append (Data, Buffer (Buffer'First .. Last));
-               GNAT.MD5.Update (Hash, Buffer (Buffer'First .. Last));
-            end;
-         elsif not Finished then
+            elsif not Finished then
+               Result := Invalid_Request;
+               Release_Buffer (Item.State, Data);
+               return;
+            end if;
+         end loop;
+         if Declared.Kind = Known
+           and then Declared.Bytes /= Byte_Count (Data.Length)
+         then
             Result := Invalid_Request;
             Release_Buffer (Item.State, Data);
             return;
          end if;
-      end loop;
-      if Declared.Kind = Known
-        and then Declared.Bytes /= Byte_Count (Data.Length)
-      then
-         Result := Invalid_Request;
+         if Upload_Options.Checksum.Algorithm /= No_Checksum then
+            Actual_Checksum := Ada.Strings.Unbounded.To_Unbounded_String
+              (Checksum_Engine.Finish (Digest_Hash));
+         end if;
+         if Options.Expected_Checksum.Algorithm /= No_Checksum
+           and then Options.Expected_Checksum.Value /= Actual_Checksum
+         then
+            Result := Bad_Digest;
+            Release_Buffer (Item.State, Data);
+            return;
+         end if;
+         Stored :=
+           (Size         => Byte_Count (Data.Length),
+            Modified     => Current_Unix_Time,
+            Entity_Tag   => Ada.Strings.Unbounded.To_Unbounded_String
+              (GNAT.MD5.Digest (ETag_Hash)),
+            Content_Type => Ada.Strings.Unbounded.Null_Unbounded_String,
+            Version      => Ada.Strings.Unbounded.Null_Unbounded_String,
+            Checksum     =>
+              (if Upload_Options.Checksum.Algorithm = No_Checksum
+               then No_Checksum_Information
+               else (Algorithm => Upload_Options.Checksum.Algorithm,
+                     Method    => Upload_Options.Checksum.Method,
+                     Value     => Actual_Checksum)));
+         Item.State.Commit_Part
+           (Bucket      => Bucket,
+            Key         => Key,
+            Upload_ID   => Upload_ID,
+            Part_Number => Part_Number,
+            Data        => Data,
+            Info        => Stored,
+            Stored      => Info,
+            Result      => Result);
          Release_Buffer (Item.State, Data);
-         return;
-      end if;
-      Stored :=
-        (Size         => Byte_Count (Data.Length),
-         Modified     => Current_Unix_Time,
-         Entity_Tag   => Ada.Strings.Unbounded.To_Unbounded_String
-           (GNAT.MD5.Digest (Hash)),
-         Content_Type => Ada.Strings.Unbounded.Null_Unbounded_String,
-         Version      => Ada.Strings.Unbounded.Null_Unbounded_String);
-      Item.State.Commit_Part
-        (Bucket      => Bucket,
-         Key         => Key,
-         Upload_ID   => Upload_ID,
-         Part_Number => Part_Number,
-         Data        => Data,
-         Info        => Stored,
-         Stored      => Info,
-         Result      => Result);
-      Release_Buffer (Item.State, Data);
+      end;
    exception
       when others =>
          Release_Buffer (Item.State, Data);
-         raise;
+      raise;
    end Put_Multipart_Part;
 
    overriding procedure List_Multipart_Parts

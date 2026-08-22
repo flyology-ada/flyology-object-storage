@@ -624,7 +624,8 @@ package body Flyology.Object_Storage.Backends.Files is
             Modified     => Unix_Time (Modified),
             Entity_Tag   => US.To_Unbounded_String (ETag),
             Content_Type => US.To_Unbounded_String (Kind),
-            Version      => US.Null_Unbounded_String);
+            Version      => US.Null_Unbounded_String,
+            Checksum     => (others => <>));
          if File_Magic /= Legacy_Magic then
             declare
                Tag_Count : constant Natural := Read_U32 (File);
@@ -681,7 +682,8 @@ package body Flyology.Object_Storage.Backends.Files is
                      Parts.Append
                        (Completed_Object_Part'
                           (Number => Multipart_Part_Number (Number),
-                           Size   => Byte_Count (Size_Value)));
+                           Size   => Byte_Count (Size_Value),
+                           Checksum => (others => <>)));
                      Previous := Multipart_Part_Marker (Number);
                      Total := Total + Byte_Count (Size_Value);
                   end;
@@ -1617,7 +1619,8 @@ package body Flyology.Object_Storage.Backends.Files is
             then US.To_Unbounded_String (String'(1 .. 32 => '0'))
             else Options.Entity_Tag),
          Content_Type => Options.Content_Type,
-         Version      => US.Null_Unbounded_String);
+         Version      => US.Null_Unbounded_String,
+         Checksum     => (others => <>));
       Write_Header (File, Key, Info);
 
       while not Finished loop
@@ -2726,6 +2729,9 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          Result := Invalid_Request;
          return;
+      elsif Options.Checksum /= No_Checksum_Information then
+         Result := Not_Implemented;
+         return;
       end if;
       Item.Temp_Sequence.Next (Number);
       Upload_ID := US.To_Unbounded_String
@@ -2758,7 +2764,8 @@ package body Flyology.Object_Storage.Backends.Files is
          Modified     => Unix_Time (Unix_Seconds (Ada.Calendar.Clock)),
          Entity_Tag   => Upload_ID,
          Content_Type => Options.Content_Type,
-         Version      => US.Null_Unbounded_String);
+         Version      => US.Null_Unbounded_String,
+         Checksum     => Options.Checksum);
       SIO.Create (File, SIO.Out_File, US.To_String (Manifest));
       Opened := True;
       Write_Header (File, Key, Manifest_Info);
@@ -2822,6 +2829,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Upload_ID   : String;
       Part_Number : Multipart_Part_Number;
       Source      : in out Byte_Source'Class;
+      Options     : Multipart_Part_Options;
       Token       : access Flyology.Cancellation.Token;
       Deadline    : Ada.Real_Time.Time;
       Info        : out Object_Information;
@@ -2849,6 +2857,7 @@ package body Flyology.Object_Storage.Backends.Files is
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
         or else Upload_ID'Length not in 1 .. 1_024
+        or else Options.Expected_Checksum /= No_Checksum_Information
       then
          Result := Invalid_Request;
          return;
@@ -2893,7 +2902,8 @@ package body Flyology.Object_Storage.Backends.Files is
          Modified     => Unix_Time (Unix_Seconds (Ada.Calendar.Clock)),
          Entity_Tag   => US.To_Unbounded_String (String'(1 .. 32 => '0')),
          Content_Type => US.Null_Unbounded_String,
-         Version      => US.Null_Unbounded_String);
+         Version      => US.Null_Unbounded_String,
+         Checksum     => (others => <>));
       Write_Header (File, Key, Info);
       while not Finished loop
          Check_Context (Token, Deadline);
@@ -3207,7 +3217,8 @@ package body Flyology.Object_Storage.Backends.Files is
                        (Builder, US.To_String (Key),
                         US.To_String (Info.Entity_Tag), Info.Modified,
                         Multipart_Options'
-                          (Content_Type => Info.Content_Type));
+                          (Content_Type => Info.Content_Type,
+                           Checksum => Info.Checksum));
                   end;
                end if;
             end;
@@ -3448,9 +3459,15 @@ package body Flyology.Object_Storage.Backends.Files is
       elsif Parts.Is_Empty then
          Result := Invalid_Request;
          return;
+      elsif Options.Expected_Checksum /= No_Checksum_Information then
+         Result := Invalid_Request;
+         return;
       end if;
       for Reference of Parts loop
-         if not First and then Reference.Number <= Previous then
+         if Reference.Checksum /= No_Checksum_Information then
+            Result := Invalid_Part;
+            return;
+         elsif not First and then Reference.Number <= Previous then
             Result := Invalid_Part_Order;
             return;
          end if;
@@ -3535,7 +3552,8 @@ package body Flyology.Object_Storage.Backends.Files is
             Total := Total + Part_Info.Size;
             Completed_Parts.Append
               (Completed_Object_Part'
-                 (Number => Reference.Number, Size => Part_Info.Size));
+                 (Number => Reference.Number, Size => Part_Info.Size,
+                  Checksum => Part_Info.Checksum));
             Include_Part_Digest
               (Hash, US.To_String (Part_Info.Entity_Tag));
             Previous := Reference.Number;
@@ -3560,7 +3578,8 @@ package body Flyology.Object_Storage.Backends.Files is
             Ada.Strings.Fixed.Trim
               (Natural'Image (Natural (Parts.Length)), Ada.Strings.Both)),
          Content_Type => Upload_Options.Content_Type,
-         Version      => US.Null_Unbounded_String);
+         Version      => US.Null_Unbounded_String,
+         Checksum     => (others => <>));
       Item.Temp_Sequence.Next (Number);
       Temp := US.To_Unbounded_String
         (Join

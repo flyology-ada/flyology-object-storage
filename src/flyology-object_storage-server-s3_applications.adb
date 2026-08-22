@@ -280,6 +280,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
               (X, 400, "EntityTooLarge",
                "Your proposed upload exceeds the maximum allowed size",
                Resource);
+         when Bad_Digest =>
+            Send_Error
+              (X, 400, "BadDigest",
+               "The checksum you specified did not match", Resource);
          when Source_Not_Found =>
             Send_Error
               (X, 404, "NoSuchKey",
@@ -2899,7 +2903,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                           (Number => Backends.Multipart_Part_Number
                              (Part.Number),
                            Entity_Tag => US.To_Unbounded_String
-                             (Bare_ETag (US.To_String (Part.Entity_Tag)))));
+                             (Bare_ETag (US.To_String (Part.Entity_Tag))),
+                           Checksum => (others => <>)));
                   end loop;
                   Store.Complete_Multipart_Upload
                     (Bucket, Key,

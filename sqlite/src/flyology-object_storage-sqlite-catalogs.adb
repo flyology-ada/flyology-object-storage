@@ -945,7 +945,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Modified     => Unix_Time'(DB.Column (Query, 2)),
          Entity_Tag   => US.To_Unbounded_String (DB.Column_Bytes (Query, 3)),
          Content_Type => US.To_Unbounded_String (DB.Column_Bytes (Query, 4)),
-         Version      => US.Null_Unbounded_String);
+         Version      => US.Null_Unbounded_String,
+         Checksum     => No_Checksum_Information);
       Result := Success;
    end Find_Object_Internal;
 
@@ -1051,7 +1052,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                           (DB.Column (Parts_Query, 0))),
                      Size => Byte_Count
                        (Long_Long_Integer'
-                          (DB.Column (Parts_Query, 1)))));
+                          (DB.Column (Parts_Query, 1))),
+                     Checksum => No_Checksum_Information));
             else
                Snapshot.Is_Truncated := True;
                Snapshot.Next_After :=
@@ -1566,7 +1568,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                US.To_Unbounded_String (DB.Column_Bytes (Query, 3)),
              Content_Type =>
                US.To_Unbounded_String (DB.Column_Bytes (Query, 4)),
-             Version      => US.Null_Unbounded_String));
+             Version      => US.Null_Unbounded_String,
+             Checksum     => No_Checksum_Information));
       end loop;
       Page := Backends.Listing.Finish (Builder);
       Result := Success;
@@ -1812,7 +1815,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                           US.To_Unbounded_String
                             (DB.Column_Bytes (Query, 3)),
                         Content_Type => US.Null_Unbounded_String,
-                        Version => US.Null_Unbounded_String)));
+                        Version => US.Null_Unbounded_String,
+                        Checksum => No_Checksum_Information)));
             else
                Page.Is_Truncated := True;
                Page.Next_After := Backends.Multipart_Part_Marker
@@ -1881,7 +1885,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                     (Long_Long_Integer'(DB.Column (Query, 2))),
                   Backends.Multipart_Options'
                     (Content_Type => US.To_Unbounded_String
-                       (DB.Column_Bytes (Query, 3))));
+                       (DB.Column_Bytes (Query, 3)),
+                     Checksum => No_Checksum_Information));
          end case;
       end loop;
       Page := Backends.Multipart_Listing.Finish (Builder);
@@ -1948,7 +1953,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                    Entity_Tag   =>
                      US.To_Unbounded_String (DB.Column_Bytes (Query, 3)),
                    Content_Type => US.Null_Unbounded_String,
-                   Version      => US.Null_Unbounded_String)));
+                   Version      => US.Null_Unbounded_String,
+                   Checksum     => No_Checksum_Information)));
          end;
       end loop;
       Result := Success;

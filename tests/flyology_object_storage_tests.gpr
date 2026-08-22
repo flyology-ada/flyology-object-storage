@@ -14,6 +14,7 @@ project Flyology_Object_Storage_Tests is
       "files_open_probe.adb",
       "s3_bucket_tagging_benchmark.adb",
       "s3_checksum_benchmark.adb",
+      "s3_multipart_checksum_benchmark.adb",
       "s3_checksum_corpus.adb",
       "s3_multipart_listing_benchmark.adb",
       "s3_files_server.adb",

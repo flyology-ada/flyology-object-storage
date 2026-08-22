@@ -835,7 +835,8 @@ begin
          Entity_Tag   => US.To_Unbounded_String
            (Character'Val (0) & Character'Val (255) & "etag"),
          Content_Type => US.To_Unbounded_String ("application/test"),
-         Version      => US.Null_Unbounded_String);
+         Version      => US.Null_Unbounded_String,
+         Checksum     => Flyology.Object_Storage.No_Checksum_Information);
       Catalogs.Put_Object
         (Catalog, "catalog-bucket", Key, "payload-one", Info,
          Previous, Result);
@@ -903,7 +904,8 @@ begin
             Entity_Tag   => US.To_Unbounded_String
               ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
             Content_Type => US.Null_Unbounded_String,
-            Version      => US.Null_Unbounded_String);
+            Version      => US.Null_Unbounded_String,
+            Checksum     => No_Checksum_Information);
          Part_Previous : US.Unbounded_String;
          References : Multipart_Part_References;
          Records : Catalogs.Multipart_Part_Records;
@@ -956,12 +958,14 @@ begin
            (Multipart_Part_Reference'
               (Number => 1,
                Entity_Tag => US.To_Unbounded_String
-                 ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")));
+                 ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+               Checksum => No_Checksum_Information));
          References.Append
            (Multipart_Part_Reference'
               (Number => 2,
                Entity_Tag => US.To_Unbounded_String
-                 ("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")));
+                 ("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+               Checksum => No_Checksum_Information));
          Catalogs.Read_Multipart_Parts
            (Catalog, "catalog-bucket", "multipart-key", Upload_ID,
             References, Records, Result);
@@ -974,7 +978,8 @@ begin
             Entity_Tag   => US.To_Unbounded_String
               ("cccccccccccccccccccccccccccccccc-2"),
             Content_Type => US.To_Unbounded_String ("application/test"),
-            Version      => US.Null_Unbounded_String);
+            Version      => US.Null_Unbounded_String,
+            Checksum     => No_Checksum_Information);
          Catalogs.Complete_Multipart_Upload
            (Catalog, "catalog-bucket", "multipart-key", Upload_ID, Records,
             "multipart-final-payload", Info, (others => <>), Previous,
@@ -1859,7 +1864,8 @@ begin
       Store.Create_Multipart_Upload
         ("sqlite-bucket", "multipart-target",
          (Content_Type =>
-            US.To_Unbounded_String ("application/x-multipart-test")),
+            US.To_Unbounded_String ("application/x-multipart-test"),
+          Checksum => No_Checksum_Information),
          null, Ada.Real_Time.Time_Last, SQLite_Upload_ID, Result);
       Assert (Result = Success, "SQLite multipart create failed");
       declare
@@ -2293,7 +2299,8 @@ begin
                  "SQLite copy-part source absence was ambiguous");
          Completion.Append
            (Multipart_Part_Reference'
-              (Number => 1, Entity_Tag => Copy_ETag));
+              (Number => 1, Entity_Tag => Copy_ETag,
+               Checksum => No_Checksum_Information));
          Store.Complete_Multipart_Upload
            ("sqlite-bucket", "copy-part-target", US.To_String (Copy_ID),
             Completion, null, Ada.Real_Time.Time_Last, Info, Result);
@@ -2315,7 +2322,8 @@ begin
       begin
          Completion.Append
            (Multipart_Part_Reference'
-              (Number => 1, Entity_Tag => SQLite_Part_ETag));
+              (Number => 1, Entity_Tag => SQLite_Part_ETag,
+               Checksum => No_Checksum_Information));
          declare
             Options : Complete_Multipart_Options :=
               Default_Complete_Multipart_Options;

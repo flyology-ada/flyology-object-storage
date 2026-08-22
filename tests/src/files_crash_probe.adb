@@ -310,7 +310,8 @@ procedure Files_Crash_Probe is
             Parts.Append
               (Backends.Multipart_Part_Reference'
                  (Number => 1,
-                  Entity_Tag => Page.Parts.First_Element.Info.Entity_Tag));
+                  Entity_Tag => Page.Parts.First_Element.Info.Entity_Tag,
+                  Checksum => Page.Parts.First_Element.Info.Checksum));
             Store.Complete_Multipart_Upload
               (Bucket, Key, US.To_String (Upload_ID), Parts, null,
                Ada.Real_Time.Time_Last, Info, Result);
