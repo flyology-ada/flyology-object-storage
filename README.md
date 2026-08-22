@@ -196,6 +196,10 @@ The launcher refuses the older HTTP dependency so GET framing is comparable.
 Dedicated-host campaigns use `FLYOLOGY_BENCH_PROFILE=full` and must record the
 host, power, and CPU policies described in the performance guide.
 
+The checked CI policy, local equivalents, toolchain pins, oracle split, and
+artifact retention are documented in
+[continuous integration qualification](docs/qualification/continuous-integration.md).
+
 ## Client shape
 
 The client will expose the complete model-driven S3 operation surface and a

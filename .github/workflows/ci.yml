@@ -1,0 +1,285 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 7 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flyology-object-storage-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integrity:
+    name: Repository and corpus integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out sources
+        timeout-minutes: 5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch pinned botocore S3 model
+        timeout-minutes: 5
+        run: |
+          mkdir -p obj/ci
+          curl --fail --silent --show-error --location \
+            --retry 3 --connect-timeout 15 --max-time 120 \
+            https://raw.githubusercontent.com/boto/botocore/36c34f15391da01cd717c73c0fffa747c9889768/botocore/data/s3/2006-03-01/service-2.json \
+            --output obj/ci/service-2.json
+      - name: Run repository, lock, coverage, and generated-model checks
+        env:
+          CI_BASE_REF: ${{ github.base_ref }}
+          CI_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          ./tools/ci/check-repository.sh obj/ci/service-2.json \
+            2>&1 | tee obj/ci/integrity.log
+      - name: Upload integrity log
+        if: ${{ always() }}
+        timeout-minutes: 5
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: repository-integrity
+          path: obj/ci/integrity.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  test:
+    name: Root and SQLite tests (${{ matrix.os }})
+    needs: integrity
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Check out sources
+        timeout-minutes: 5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install Alire
+        timeout-minutes: 15
+        uses: alire-project/setup-alire@fc4c8ce471aa30b3af0d39ce15add1ee9eaf28f2 # v6.0.0
+        with:
+          version: 2.1.1
+          toolchain: >-
+            gnat_native=16.1.0
+            gprbuild=26.0.1
+          cache: true
+      - name: Configure Flyology index
+        timeout-minutes: 5
+        run: |
+          alr index --reset-community
+          alr index \
+            --add=git+https://github.com/flyology-ada/alire-index.git \
+            --name=flyology \
+            --before=community
+      - name: Verify exact indexed HTTP dependency
+        timeout-minutes: 5
+        run: |
+          mkdir -p obj/ci
+          alr show flyology_http=0.1.2 --solve \
+            2>&1 | tee obj/ci/http-resolution.log
+          grep -Fq 'Origin: commit 8f34e73b49b1f6b61e3f4a86a56fe2650d0ff1ca' \
+            obj/ci/http-resolution.log
+      - name: Run root and SQLite gates
+        run: ./tools/ci/run-tests.sh
+      - name: Upload test logs
+        if: ${{ always() }}
+        timeout-minutes: 5
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tests-${{ matrix.os }}
+          path: obj/ci/*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  proof:
+    name: SPARK proof
+    needs: integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    concurrency:
+      group: flyology-object-storage-proof
+      cancel-in-progress: false
+    steps:
+      - name: Check out sources
+        timeout-minutes: 5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install Alire and SPARK toolchain
+        timeout-minutes: 15
+        uses: alire-project/setup-alire@fc4c8ce471aa30b3af0d39ce15add1ee9eaf28f2 # v6.0.0
+        with:
+          version: 2.1.1
+          toolchain: >-
+            gnat_native=16.1.0
+            gprbuild=26.0.1
+          cache: true
+      - name: Configure Flyology index
+        timeout-minutes: 5
+        run: |
+          alr index --reset-community
+          alr index \
+            --add=git+https://github.com/flyology-ada/alire-index.git \
+            --name=flyology \
+            --before=community
+      - name: Install GNATprove
+        timeout-minutes: 15
+        run: alr install gnatprove=16.1.0
+      - name: Report and verify proof toolchain
+        run: |
+          mkdir -p obj/ci
+          prove="${ALIRE_HOME:-$HOME/.alire}/bin/gnatprove"
+          test -x "$prove"
+          "$prove" --version 2>&1 | tee obj/ci/gnatprove-version.log
+          grep -Fxq 'FSF 16.1.0' obj/ci/gnatprove-version.log
+          grep -Fxq 'Why3 for gnatprove version 1.8.2+git' \
+            obj/ci/gnatprove-version.log
+          grep -Fq 'cvc5 version 1.3.2' obj/ci/gnatprove-version.log
+      - name: Run serialized proof gate
+        run: ./tools/prove.sh
+      - name: Upload proof logs
+        if: ${{ always() }}
+        timeout-minutes: 5
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: spark-proof
+          path: |
+            obj/ci/gnatprove-version.log
+            obj/proof/logs/**
+            obj/proof/**/gnatprove.out
+          if-no-files-found: warn
+          retention-days: 30
+
+  docs:
+    name: GNATdoc API reference
+    needs: integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out sources
+        timeout-minutes: 5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install Alire
+        timeout-minutes: 15
+        uses: alire-project/setup-alire@fc4c8ce471aa30b3af0d39ce15add1ee9eaf28f2 # v6.0.0
+        with:
+          version: 2.1.1
+          toolchain: >-
+            gnat_native=16.1.0
+            gprbuild=26.0.1
+          cache: true
+      - name: Configure Flyology index
+        timeout-minutes: 5
+        run: |
+          alr index --reset-community
+          alr index \
+            --add=git+https://github.com/flyology-ada/alire-index.git \
+            --name=flyology \
+            --before=community
+      - name: Install GNATdoc
+        timeout-minutes: 10
+        run: alr install gnatdoc_bin=26.0.0
+      - name: Build API reference
+        run: ./tools/build-api-docs.sh
+      - name: Upload API reference and log
+        if: ${{ always() }}
+        timeout-minutes: 5
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gnatdoc-api
+          path: |
+            obj/docs/api/**
+            obj/docs/gnatdoc-run.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+  s3-smoke:
+    name: S3 black-box smoke (memory + s5cmd)
+    needs: [integrity, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out sources
+        timeout-minutes: 5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install Alire
+        timeout-minutes: 15
+        uses: alire-project/setup-alire@fc4c8ce471aa30b3af0d39ce15add1ee9eaf28f2 # v6.0.0
+        with:
+          version: 2.1.1
+          toolchain: >-
+            gnat_native=16.1.0
+            gprbuild=26.0.1
+          cache: true
+      - name: Configure Flyology index
+        timeout-minutes: 5
+        run: |
+          alr index --reset-community
+          alr index \
+            --add=git+https://github.com/flyology-ada/alire-index.git \
+            --name=flyology \
+            --before=community
+      - name: Run digest-pinned s5cmd oracle against memory backend
+        run: |
+          mkdir -p obj/ci
+          ./tests/scripts/test-flyology-server.sh memory \
+            2>&1 | tee obj/ci/s3-smoke.log
+      - name: Upload black-box smoke log
+        if: ${{ always() }}
+        timeout-minutes: 5
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: s3-black-box-smoke
+          path: obj/ci/s3-smoke.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  reference-smoke:
+    name: Reference smoke (${{ matrix.reference }})
+    if: github.event_name == 'schedule'
+    needs: integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        reference: [rustfs, seaweedfs]
+    steps:
+      - name: Check out sources
+        timeout-minutes: 5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Run bounded permissive-reference slice
+        env:
+          FLYOLOGY_S3_SERVER_RUNNER: ${{ github.workspace }}/tests/scripts/run-s3-server-slice.sh
+        run: |
+          mkdir -p obj/ci
+          ./tests/scripts/test-${{ matrix.reference }}.sh \
+            2>&1 | tee obj/ci/reference-${{ matrix.reference }}.log
+      - name: Upload reference-smoke log
+        if: ${{ always() }}
+        timeout-minutes: 5
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: reference-${{ matrix.reference }}-smoke
+          path: obj/ci/reference-${{ matrix.reference }}.log
+          if-no-files-found: warn
+          retention-days: 14
