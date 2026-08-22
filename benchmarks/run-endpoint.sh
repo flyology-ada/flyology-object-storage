@@ -30,6 +30,7 @@ COMMAND_ROOT="$WORK_ROOT/commands"
 CLIENT="flyology-bench-client-$$"
 MULTIPART_DRIVER="$PROJECT_DIR/tests/bin/s3_multipart_listing_benchmark"
 HOST_ENDPOINT=${ENDPOINT//host.docker.internal/127.0.0.1}
+LIST_CHECK_SEQUENCE=0
 
 case "$PROFILE" in
   smoke|full) ;;
@@ -123,9 +124,20 @@ s5cmd() {
 s5cmd_batch() {
   local concurrency=$1
   local commands=$2
+  local staged="$WORK_ROOT/staged-$commands"
+  # Docker Desktop can briefly expose a just-created host file as empty
+  # through an already-mounted read-only directory. Copying the complete
+  # plan into the running client makes zero-command "success" impossible.
+  docker cp "$COMMAND_ROOT/$commands" \
+    "$CLIENT:/tmp/flyology-s5cmd-batch.txt"
+  docker cp "$CLIENT:/tmp/flyology-s5cmd-batch.txt" "$staged"
+  if [ "$(hash_file "$COMMAND_ROOT/$commands")" != "$(hash_file "$staged")" ]; then
+    echo "staged s5cmd plan differs from completed host plan: $commands" >&2
+    return 1
+  fi
   docker exec "$CLIENT" /s5cmd --log error --json --stat \
     --retry-count 0 --numworkers "$concurrency" \
-    --endpoint-url "$ENDPOINT" run "/commands/$commands"
+    --endpoint-url "$ENDPOINT" run "/tmp/flyology-s5cmd-batch.txt"
 }
 
 multipart_driver() {
@@ -225,13 +237,36 @@ clear_downloads() {
 prepare_objects() {
   local prefix=$1 bytes=$2 objects=$3 concurrency=$4
   local setup_log="$WORK_ROOT/setup-$prefix.jsonl"
+  local plan_evidence="$OUTPUT_ROOT/raw/$IMPLEMENTATION/$prefix-setup-plan.tsv"
+  local plan_lines unique_destinations invalid_destinations source_hash staged_hash
   make_payload "$bytes"
   write_put_commands setup.txt "$prefix" "$bytes" "$objects"
+  plan_lines=$(wc -l <"$COMMAND_ROOT/setup.txt" | tr -d ' ')
+  unique_destinations=$(awk '{ print $NF }' "$COMMAND_ROOT/setup.txt" \
+    | LC_ALL=C sort -u | wc -l | tr -d ' ')
+  invalid_destinations=$(awk -v bucket="$BUCKET" -v prefix="$prefix" '
+    $NF != sprintf("s3://%s/%s-%08d", bucket, prefix, NR) { invalid++ }
+    END { print invalid + 0 }
+  ' "$COMMAND_ROOT/setup.txt")
+  source_hash=$(hash_file "$COMMAND_ROOT/setup.txt")
+  if [ "$plan_lines" != "$objects" ] \
+    || [ "$unique_destinations" != "$objects" ] \
+    || [ "$invalid_destinations" != 0 ]; then
+    echo "invalid namespace setup plan for $prefix: expected=$objects lines=$plan_lines unique=$unique_destinations invalid=$invalid_destinations" >&2
+    return 1
+  fi
   if ! s5cmd_batch "$concurrency" setup.txt >"$setup_log"; then
     echo "object setup failed for $prefix" >&2
     tail -50 "$setup_log" >&2
     return 1
   fi
+  staged_hash=$(hash_file "$WORK_ROOT/staged-setup.txt")
+  printf 'prefix\texpected\tlines\tunique_destinations\tinvalid_destinations\tsource_sha256\tstaged_sha256\n' \
+    >"$plan_evidence"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$prefix" "$objects" "$plan_lines" "$unique_destinations" \
+    "$invalid_destinations" "$source_hash" "$staged_hash" \
+    >>"$plan_evidence"
 }
 
 verify_remote_pair() {
@@ -271,17 +306,95 @@ verify_deleted_pair() {
 }
 
 verify_list_count() {
-  local prefix=$1 objects=$2 observed
-  local list_log="$WORK_ROOT/list-$prefix.txt"
-  if ! s5cmd ls "s3://$BUCKET/$prefix-" >"$list_log"; then
-    echo "namespace listing failed for $prefix" >&2
-    tail -50 "$list_log" >&2
-    return 1
+  local prefix=$1 objects=$2 observed contents key_count max_keys truncated
+  local next_count
+  local unique_observed raw_status check_status
+  LIST_CHECK_SEQUENCE=$((LIST_CHECK_SEQUENCE + 1))
+  local sequence=$LIST_CHECK_SEQUENCE
+  local list_log="$OUTPUT_ROOT/raw/$IMPLEMENTATION/$prefix-oracle-$sequence.xml"
+  local list_headers="$OUTPUT_ROOT/raw/$IMPLEMENTATION/$prefix-oracle-$sequence.headers"
+  local visibility_evidence="$OUTPUT_ROOT/raw/$IMPLEMENTATION/$prefix-visibility.tsv"
+  local expected_keys="$WORK_ROOT/expected-$prefix.txt"
+  local observed_keys="$WORK_ROOT/observed-$prefix.txt"
+  local sorted_keys="$WORK_ROOT/sorted-$prefix.txt"
+  local missing_keys="$WORK_ROOT/missing-$prefix.txt"
+  local index=1
+  : >"$expected_keys"
+  while [ "$index" -le "$objects" ]; do
+    printf '%s-%08d\n' "$prefix" "$index" >>"$expected_keys"
+    index=$((index + 1))
+  done
+  : >"$list_log"
+  : >"$list_headers"
+  # Pinned s5cmd can receive a complete page while dropping informational
+  # `ls` lines in its human-output path. Keep it as the measured client, but use
+  # the signed wire response as the listing correctness oracle.
+  raw_status=$(curl --silent --show-error \
+    --dump-header "$list_headers" --output "$list_log" \
+    --write-out '%{http_code}' --aws-sigv4 'aws:amz:us-east-1:s3' \
+    --user "$ACCESS_KEY:$SECRET_KEY" \
+    "$HOST_ENDPOINT/$BUCKET?list-type=2&prefix=$prefix-" \
+    || printf request-failed)
+  perl -0777 -ne 'while (/<Key>([^<]*)<\/Key>/g) { print "$1\n" }' \
+    "$list_log" >"$observed_keys"
+  observed=$(wc -l <"$observed_keys" | tr -d ' ')
+  contents=$(perl -0777 -ne '$n = () = /<Contents>/g; print $n' "$list_log")
+  LC_ALL=C sort -u "$observed_keys" >"$sorted_keys"
+  unique_observed=$(wc -l <"$sorted_keys" | tr -d ' ')
+  key_count=$(perl -0777 -ne \
+    'print $1 if /<KeyCount>([0-9]+)<\/KeyCount>/' "$list_log")
+  max_keys=$(perl -0777 -ne \
+    'print $1 if /<MaxKeys>([0-9]+)<\/MaxKeys>/' "$list_log")
+  truncated=$(perl -0777 -ne \
+    'print $1 if /<IsTruncated>([^<]+)<\/IsTruncated>/' "$list_log")
+  next_count=$(perl -0777 -ne \
+    '$n = () = /<NextContinuationToken(?:\s|>)/g; print $n' "$list_log")
+  check_status=mismatch
+  if [ "$raw_status" = 200 ] \
+    && [ "$observed" = "$objects" ] \
+    && [ "$contents" = "$objects" ] \
+    && [ "$unique_observed" = "$objects" ] \
+    && [ "$key_count" = "$objects" ] \
+    && [ "$max_keys" = 1000 ] \
+    && [ "$truncated" = false ] \
+    && [ "$next_count" = 0 ] \
+    && cmp -s "$expected_keys" "$observed_keys"
+  then
+    check_status=passed
   fi
-  observed=$(wc -l <"$list_log" | tr -d ' ')
-  if [ "$observed" != "$objects" ]; then
-    echo "namespace listing count mismatch for $prefix: expected $objects, observed $observed" >&2
-    tail -50 "$list_log" >&2
+  if [ ! -e "$visibility_evidence" ]; then
+    printf 'sequence\tprefix\texpected\tcontents\tobserved\tunique\tkey_count\tmax_keys\tis_truncated\tnext_token_elements\thttp_status\tattempts\tsettle_ns\tstatus\n' \
+      >"$visibility_evidence"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t1\t0\t%s\n' \
+    "$sequence" "$prefix" "$objects" "$contents" "$observed" \
+    "$unique_observed" "$key_count" \
+    "$max_keys" "$truncated" "$next_count" "$raw_status" "$check_status" \
+    >>"$visibility_evidence"
+  if [ "$check_status" != passed ]; then
+    local head_evidence="$OUTPUT_ROOT/raw/$IMPLEMENTATION/$prefix-missing-head.tsv"
+    local key code head_visible=0 head_missing=0
+    comm -23 "$expected_keys" "$sorted_keys" >"$missing_keys"
+    printf 'key\thead_status\n' >"$head_evidence"
+    while IFS= read -r key; do
+      code=$(curl --silent --show-error --head --output /dev/null \
+        --write-out '%{http_code}' --aws-sigv4 'aws:amz:us-east-1:s3' \
+        --user "$ACCESS_KEY:$SECRET_KEY" \
+        "$HOST_ENDPOINT/$BUCKET/$key" \
+        || printf request-failed)
+      printf '%s\t%s\n' "$key" "$code" >>"$head_evidence"
+      if [ "$code" = 200 ]; then
+        head_visible=$((head_visible + 1))
+      else
+        head_missing=$((head_missing + 1))
+      fi
+    done <"$missing_keys"
+    echo "namespace listing oracle mismatch for $prefix: expected=$objects Contents=$contents observed=$observed unique=$unique_observed KeyCount=$key_count MaxKeys=$max_keys IsTruncated=$truncated next-token-elements=$next_count HTTP=$raw_status" >&2
+    echo "missing-key HEAD results: visible=$head_visible missing=$head_missing" >&2
+    echo "namespace setup aggregate:" >&2
+    tail -50 "$WORK_ROOT/setup-$prefix.jsonl" >&2
+    echo "missing-key HEAD evidence:" >&2
+    cat "$head_evidence" >&2
     return 1
   fi
 }
@@ -336,7 +449,10 @@ run_scenario() {
       byte_factor=0
       ;;
     list)
-      prepare_objects "$prefix" "$bytes" "$objects" "$concurrency"
+      # Namespace creation is correctness setup, not measured list work.
+      # Serialize it so the listing sample is independent of concurrent PUT
+      # behavior and starts from a fully published namespace on every server.
+      prepare_objects "$prefix" "$bytes" "$objects" 1
       write_list_commands "$commands" "$prefix"
       byte_factor=0
       verify_list_count "$prefix" "$objects"

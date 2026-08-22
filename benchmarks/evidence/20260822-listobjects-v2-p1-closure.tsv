@@ -1,0 +1,26 @@
+field	value
+candidate_revision	a7e5e9d-plus-diagnostic-instrumentation
+pinned_s5cmd_image	docker.io/peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903
+signed_oracle_client	curl 8.7.1 (x86_64-apple-darwin25.0) libcurl/8.7.1 (SecureTransport) LibreSSL/3.3.6 zlib/1.2.12 nghttp2/1.68.1
+setup_plan_lines	64
+setup_unique_destinations	64
+setup_invalid_destinations	0
+setup_source_sha256	bbbc3065ce5613d64c10c9f3eba239e3f2c550d9a5e1d20ab826f1ac8a688455
+setup_staged_sha256	bbbc3065ce5613d64c10c9f3eba239e3f2c550d9a5e1d20ab826f1ac8a688455
+s5cmd_cp_success	64
+s5cmd_cp_error	0
+server_publications_before_first_list	64
+server_backend_returns_before_first_list	64
+server_response_returns_before_first_list	64
+last_publish_clock_image	-3892860065376294000
+last_backend_return_clock_image	-3892860065376282000
+last_response_return_clock_image	-3892860065376251000
+first_list_acquire_clock_image	-3892860065308386000
+first_list_finish_clock_image	-3892860065303571000
+last_response_to_first_list_acquire_ns	67865000
+first_list_snapshot_duration_ns	4815000
+first_list_backend_objects	64
+s5cmd_human_output_lines	55
+missing_human_output_keys	9
+missing_key_head_200	9
+classification	pinned-s5cmd-human-output-loss-not-server-visibility

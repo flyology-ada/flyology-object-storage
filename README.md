@@ -46,7 +46,8 @@ The core crate includes:
 - complete typed, bounded HeadBucket, GetBucketLocation, ListBuckets,
   ListObjects v1/v2 and multipart initiation, completion, ListParts, and
   ListMultipartUploads REST/XML codecs, plus the complete GetObjectAttributes
-  request/output model, with high-level paginated ListBuckets,
+  request/output model, with high-level paginated ListBuckets and
+  ListObjectsV2,
   HeadBucket, CreateBucket, GetBucketLocation, DeleteBucket, and bucket-tag
   convenience
   APIs (see [bucket convenience client](docs/architecture/client-buckets.md));

@@ -5,6 +5,21 @@ single-object operations that do not transfer a representation body. Calls use
 a caller-owned Flyology HTTP client, one whole-operation timeout, and an
 optional cancellation token.
 
+## List objects
+
+`List_Page` exposes one bounded ListObjectsV2 page without requiring callers
+to assemble modeled parameters or decode XML. It carries prefix and delimiter
+scope, an exclusive `Start_After` for the initial page, and an opaque
+continuation token for later pages. A truncated successful result returns the
+next token unchanged; callers pass it back with the same scope. FetchOwner,
+URL encoding, RestoreStatus selection, expected-owner, and Requester Pays are
+explicit policy inputs.
+
+The call owns one whole-operation timeout and honors the optional cancellation
+token while preparing, exchanging, and decoding. It never retries a rejected
+or truncated page implicitly. This keeps multi-page scheduling with the
+caller while preserving S3's page boundary and structured error result.
+
 ## Get object attributes
 
 `Get_Attributes` retrieves selected metadata without downloading the object

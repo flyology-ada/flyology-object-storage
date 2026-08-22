@@ -30,9 +30,17 @@ correctness preflight and postflight appropriate to its operation. The current
 common slice checks s5cmd's exact success/error counts, heads the first and last
 uploaded object, verifies their fixed-seed hashes, verifies every expected
 download file exists plus endpoint hashes, and requires the first and last
-deleted object to be absent. Exact remote object counts are mandatory before
-and after namespace-list measurement, and the populated namespace is deleted
-after the scenario. CopyObject is measured as server-side 64 MiB copies from
+deleted object to be absent. Exact remote object sets are mandatory before
+and after namespace-list measurement. The namespace oracle makes one signed
+ListObjectsV2 request and requires the exact ordered unique key sequence,
+matching `KeyCount`, the default `MaxKeys`, `IsTruncated=false`, and no
+continuation token. It does not count s5cmd's human-readable `ls` lines: the
+pinned client can receive a complete 64-key response while dropping lines in
+its human-output path. The retained
+[`20260822-listobjects-v2-p1-closure.tsv`](../../benchmarks/evidence/20260822-listobjects-v2-p1-closure.tsv)
+records the instrumented publication/response/list ordering that classified
+that client-output defect. The populated namespace is deleted after the
+scenario. CopyObject is measured as server-side 64 MiB copies from
 pre-populated immutable sources; the destination pair is re-read and checked
 against the source payload hash after every measured repetition.
 Namespace deletion is driven through s5cmd's batched DeleteObjects request,
