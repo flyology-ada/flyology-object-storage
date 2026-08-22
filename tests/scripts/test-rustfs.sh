@@ -74,6 +74,8 @@ FLYOLOGY_MULTIPART_CHECKSUM_ORACLE_MODE=\
 rustfs-rc3-omits-listparts-checksums \
 FLYOLOGY_CONDITIONAL_GET_ORACLE_MODE=\
 rustfs-rc3-bodyless-stale-if-match-412 \
+FLYOLOGY_DELETE_OBJECT_ORACLE_MODE=\
+rustfs-rc3-conditioned-missing-412 \
 "$SCRIPT_DIR/run-s3-implementation.sh" \
   "http://127.0.0.1:$PORT" \
   "http://host.docker.internal:$PORT" \
@@ -84,6 +86,8 @@ echo "RustFS HeadObject response-override oracle: pinned release ignores" \
   "the six override query controls"
 echo "RustFS conditional GetObject oracle: pinned release returns a" \
   "bodyless HTTP 412 without the modeled PreconditionFailed error code"
+echo "RustFS DeleteObject oracle: pinned release returns 412 rather than" \
+  "AWS's documented 404 for If-Match against a missing key"
 echo "RustFS HeadObject part oracle: pinned release ignores partNumber and" \
   "does not return x-amz-mp-parts-count; an absent part returns HTTP 500"
 echo "RustFS HeadObject range oracle: pinned release ignores Range"

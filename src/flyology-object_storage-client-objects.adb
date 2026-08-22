@@ -390,7 +390,13 @@ package body Flyology.Object_Storage.Client.Objects is
       Expected_Bucket_Owner : String := "";
       Request_Payer : String := "";
       Timeout  : Duration := 30.0;
-      Token    : access Flyology.Cancellation.Token := null)
+      Token    : access Flyology.Cancellation.Token := null;
+      MFA      : String := "";
+      Bypass_Governance_Retention : Low_Level.Optional_Boolean :=
+        (Is_Set => False, Value => False);
+      If_Match_Last_Modified_Time : String := "";
+      If_Match_Size : Low_Level.Optional_Byte_Count :=
+        (Is_Set => False, Value => 0))
       return Delete_Outcome
    is
       Parameters : Low_Level.Delete_Object_Parameters;
@@ -400,6 +406,12 @@ package body Flyology.Object_Storage.Client.Objects is
       Parameters.Expected_Bucket_Owner :=
         US.To_Unbounded_String (Expected_Bucket_Owner);
       Parameters.Request_Payer := US.To_Unbounded_String (Request_Payer);
+      Parameters.MFA := US.To_Unbounded_String (MFA);
+      Parameters.Bypass_Governance_Retention :=
+        Bypass_Governance_Retention;
+      Parameters.If_Match_Last_Modified_Time :=
+        US.To_Unbounded_String (If_Match_Last_Modified_Time);
+      Parameters.If_Match_Size := If_Match_Size;
       declare
          Prepared : constant Low_Level.Prepared_Request :=
            Low_Level.Prepare_Delete_Object

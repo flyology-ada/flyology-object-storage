@@ -485,7 +485,8 @@ procedure S3_Server_Application_Corpus is
       Query        : SigV4.Name_Value_Array := No_Query;
       Header_Name  : String := "";
       Header_Value : String := "";
-      Second_Value : String := "") return String
+      Second_Value : String := "";
+      Corrupt_Signature : Boolean := False) return String
    is
       Payload_Hash : constant String := SigV4.SHA256_Hex ("");
       Headers : constant SigV4.Name_Value_Array :=
@@ -506,7 +507,12 @@ procedure S3_Server_Application_Corpus is
         ("DELETE", Target, Query, Headers, Payload_Hash, Access_Key,
          Secret_Key, Region, Timestamp);
       Query_Text : constant String := SigV4.Canonical_Query (Query);
+      Authorization : String := US.To_String (Signing.Authorization);
    begin
+      if Corrupt_Signature then
+         Authorization (Authorization'Last) :=
+           (if Authorization (Authorization'Last) = '0' then '1' else '0');
+      end if;
       return "DELETE " & Target &
         (if Query_Text'Length = 0 then "" else "?" & Query_Text) &
         " HTTP/1.1" & CRLF & "Host: " & Host & CRLF &
@@ -516,7 +522,7 @@ procedure S3_Server_Application_Corpus is
          else Header_Name & ": " & Header_Value & CRLF) &
         (if Second_Value'Length = 0 then ""
          else Header_Name & ": " & Second_Value & CRLF) &
-        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Authorization: " & Authorization & CRLF &
         "Content-Length: 0" & CRLF & "Connection: close" & CRLF & CRLF;
    end Signed_Delete_Object_Request;
 
@@ -999,9 +1005,10 @@ procedure S3_Server_Application_Corpus is
            SigV4.Pair ("x-amz-expected-bucket-owner", Owner);
       end if;
       Signing := SigV4.Sign
-        ("PUT", "/test-bucket", Query, Headers, Payload_Hash, Access_Key,
+        ("PUT", "/versioning-bucket", Query, Headers, Payload_Hash,
+         Access_Key,
          Secret_Key, Region, Timestamp);
-      return "PUT /test-bucket?versioning= HTTP/1.1" & CRLF &
+      return "PUT /versioning-bucket?versioning= HTTP/1.1" & CRLF &
         "Host: " & Host & CRLF &
         "content-md5: " & MD5 & CRLF &
         (if Duplicate_MD5'Length = 0 then ""
@@ -1046,7 +1053,8 @@ procedure S3_Server_Application_Corpus is
       Query : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("versioning", ""));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
-        ("PUT", "/test-bucket", Query, Headers, Payload_Hash, Access_Key,
+        ("PUT", "/versioning-bucket", Query, Headers, Payload_Hash,
+         Access_Key,
          Secret_Key, Region, Timestamp);
       Wire_Body : US.Unbounded_String;
    begin
@@ -1061,7 +1069,7 @@ procedure S3_Server_Application_Corpus is
          end if;
       end if;
       US.Append (Wire_Body, CRLF);
-      return "PUT /test-bucket?versioning= HTTP/1.1" & CRLF &
+      return "PUT /versioning-bucket?versioning= HTTP/1.1" & CRLF &
         "Host: " & Host & CRLF &
         "content-md5: " & Content_MD5 (Payload) & CRLF &
         "x-amz-content-sha256: " & Payload_Hash & CRLF &
@@ -2909,9 +2917,16 @@ begin
         "<VersioningConfiguration xmlns=""" &
         "http://s3.amazonaws.com/doc/2006-03-01/""/>";
    begin
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/versioning-bucket", "")),
+            "200 OK"),
+         "versioning corpus bucket creation failed");
       declare
          Response : constant String :=
-           Run (Signed_Query_Request ("GET", "/test-bucket", Query));
+           Run (Signed_Query_Request ("GET", "/versioning-bucket", Query));
          Value : constant
            Flyology.Object_Storage.Bucket_Versioning_Configuration :=
              Versioning.Parse (Response_Body (Response));
@@ -2932,7 +2947,7 @@ begin
          "PutBucketVersioning rejected an empty optional configuration");
       declare
          Response : constant String :=
-           Run (Signed_Query_Request ("GET", "/test-bucket", Query));
+           Run (Signed_Query_Request ("GET", "/versioning-bucket", Query));
          Value : constant
            Flyology.Object_Storage.Bucket_Versioning_Configuration :=
              Versioning.Parse_Response (Response_Body (Response));
@@ -2952,7 +2967,7 @@ begin
          Response : constant String :=
            Run
              (Signed_Query_Request
-                ("GET", "/test-bucket", Query,
+                ("GET", "/versioning-bucket", Query,
                  "x-amz-expected-bucket-owner", "test-principal"));
          Value : constant
            Flyology.Object_Storage.Bucket_Versioning_Configuration :=
@@ -2974,7 +2989,7 @@ begin
          "fragmented PutBucketVersioning did not suspend status");
       declare
          Response : constant String :=
-           Run (Signed_Query_Request ("GET", "/test-bucket", Query));
+           Run (Signed_Query_Request ("GET", "/versioning-bucket", Query));
          Value : constant
            Flyology.Object_Storage.Bucket_Versioning_Configuration :=
              Versioning.Parse (Response_Body (Response));
@@ -2987,7 +3002,8 @@ begin
         (Has
            (Run
               (Signed_Query_Body_Request
-                 ("PUT", "/test-bucket", Query, Enabled_Document)),
+                 ("PUT", "/versioning-bucket", Query,
+                  Enabled_Document)),
             "<Code>InvalidRequest</Code>"),
          "PutBucketVersioning accepted a missing Content-MD5");
       Require
@@ -3129,7 +3145,7 @@ begin
          "PutBucketVersioning rejected verified root MFA Delete enable");
       declare
          Response : constant String :=
-           Run (Signed_Query_Request ("GET", "/test-bucket", Query));
+           Run (Signed_Query_Request ("GET", "/versioning-bucket", Query));
          Value : constant Bucket_Versioning_Configuration :=
            Versioning.Parse_Response (Response_Body (Response));
       begin
@@ -3197,7 +3213,7 @@ begin
       MFA_Policy.Mode := MFA_Allow_Root;
       declare
          Response : constant String :=
-           Run (Signed_Query_Request ("GET", "/test-bucket", Query));
+           Run (Signed_Query_Request ("GET", "/versioning-bucket", Query));
          Value : constant Bucket_Versioning_Configuration :=
            Versioning.Parse_Response (Response_Body (Response));
       begin
@@ -3344,7 +3360,7 @@ begin
         (Has
            (Run
               (Signed_Query_Request
-                 ("GET", "/test-bucket",
+                 ("GET", "/versioning-bucket",
                   (SigV4.Pair ("versioning", ""),
                    SigV4.Pair ("versioning", "")))),
             "<Code>InvalidArgument</Code>"),
@@ -3353,7 +3369,7 @@ begin
         (Has
            (Run
               (Signed_Query_Request
-                 ("GET", "/test-bucket",
+                 ("GET", "/versioning-bucket",
                   (SigV4.Pair ("versioning", ""),
                    SigV4.Pair ("x-id", "PutBucketVersioning")))),
             "<Code>InvalidArgument</Code>"),
@@ -3362,7 +3378,7 @@ begin
         (Has
            (Run
               (Signed_Query_Request
-                 ("GET", "/test-bucket",
+                 ("GET", "/versioning-bucket",
                   (1 => SigV4.Pair ("versioning", "bogus")))),
             "<Code>InvalidArgument</Code>"),
          "GetBucketVersioning accepted a nonempty subresource value");
@@ -3370,7 +3386,7 @@ begin
         (Has
            (Run
               (Signed_Query_Body_Request
-                 ("GET", "/test-bucket", Query, "unexpected")),
+                 ("GET", "/versioning-bucket", Query, "unexpected")),
             "<Code>InvalidRequest</Code>"),
          "GetBucketVersioning accepted a request body");
       Require
@@ -3380,6 +3396,13 @@ begin
                  ("GET", "/absent-bucket", Query)),
             "<Code>NoSuchBucket</Code>"),
          "GetBucketVersioning did not classify a missing bucket");
+      Require
+        (Has
+           (Run
+              (Signed_Bucket_Request
+                 ("DELETE", "/versioning-bucket")),
+            "204 No Content"),
+         "versioning corpus bucket cleanup failed");
    end;
 
    for Name of Listing_Buckets loop
@@ -5783,14 +5806,36 @@ begin
                  ("/test-bucket/delete-policy", Unknown)),
             "<Code>InvalidArgument</Code>"),
          "DeleteObject accepted an unknown query field");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Delete_Object_Request
+                ("/test-bucket/delete-policy", Header_Name => "if-match",
+                 Header_Value => """etag"""));
+      begin
+         Require
+           (Has (Response, "HTTP/1.1 412 ")
+            and then Has (Response, "<Code>PreconditionFailed</Code>"),
+            "DeleteObject did not atomically reject a mismatched If-Match: " &
+            Response);
+      end;
       Require
         (Has
            (Run
               (Signed_Delete_Object_Request
                  ("/test-bucket/delete-policy", Header_Name => "if-match",
-                  Header_Value => """etag""")),
-            "501 Not Implemented"),
-         "DeleteObject silently ignored If-Match");
+                  Header_Value => "bad,etag")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted a malformed If-Match");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Header_Name => "if-match",
+                  Header_Value => "bad,etag",
+                  Corrupt_Signature => True)),
+            "<Code>SignatureDoesNotMatch</Code>"),
+         "DeleteObject evaluated malformed semantics before authentication");
       Require
         (Has
            (Run
@@ -5851,8 +5896,8 @@ begin
                  ("/test-bucket/delete-policy",
                   Header_Name => "x-amz-if-match-size",
                   Header_Value => "8")),
-            "501 Not Implemented"),
-         "DeleteObject silently ignored the conditional size");
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject applied a directory-only size predicate");
       Require
         (Has
            (Run
@@ -5860,16 +5905,137 @@ begin
                  ("/test-bucket/delete-policy",
                   Header_Name => "x-amz-if-match-last-modified-time",
                   Header_Value => "Wed, 21 Oct 2015 07:28:00 GMT")),
-            "501 Not Implemented"),
-         "DeleteObject silently ignored the modification-time condition");
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject applied a directory-only time predicate");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-if-match-last-modified-time",
+                  Header_Value => "not-a-date")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted a malformed modification time");
       Require
         (Has
            (Run
               (Signed_Delete_Object_Request
                  ("/test-bucket/delete-policy", Header_Name => "x-amz-mfa",
                   Header_Value => "device 123456")),
+            "<Code>InvalidRequest</Code>"),
+         "DeleteObject accepted MFA over cleartext HTTP");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Header_Name => "x-amz-mfa",
+                  Header_Value => "device 000000"),
+                Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>AccessDenied</Code>"),
+         "DeleteObject accepted an invalid MFA credential");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Header_Name => "x-amz-mfa",
+                  Header_Value => "device 123456"),
+                Scheme => Flyology.HTTP.Secure_HTTPS,
+                Use_Null_MFA => True),
+            "<Code>AccessDenied</Code>"),
+         "DeleteObject did not fail closed without an MFA verifier");
+      declare
+         Calls : constant Natural := MFA_Policy.Calls;
+         Overlong : constant String (1 .. 2_049) := (others => 'x');
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Object_Request
+                    ("/test-bucket/delete-policy",
+                     Header_Name => "x-amz-mfa",
+                     Header_Value => Overlong),
+                   Scheme => Flyology.HTTP.Secure_HTTPS),
+               "<Code>AccessDenied</Code>"),
+            "DeleteObject accepted an overlong MFA credential");
+         Require
+           (MFA_Policy.Calls = Calls,
+            "overlong DeleteObject MFA credential reached the verifier");
+      end;
+      declare
+         Calls : constant Natural := MFA_Policy.Calls;
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Object_Request
+                    ("/test-bucket/delete-policy",
+                     Header_Name => "x-amz-mfa",
+                     Header_Value => "device 123456",
+                     Second_Value => "device 123456"),
+                   Scheme => Flyology.HTTP.Secure_HTTPS),
+               "<Code>InvalidRequest</Code>"),
+            "DeleteObject accepted duplicate MFA headers");
+         Require
+           (MFA_Policy.Calls = Calls,
+            "duplicate DeleteObject MFA headers reached the verifier");
+      end;
+      MFA_Policy.Mode := MFA_Reject_Root;
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Header_Name => "x-amz-mfa",
+                  Header_Value => "device 123456"),
+                Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>AccessDenied</Code>"),
+         "DeleteObject treated an authenticated non-root as owner");
+      MFA_Policy.Mode := MFA_Unavailable;
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Header_Name => "x-amz-mfa",
+                  Header_Value => "device 123456"),
+                Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>AccessDenied</Code>"),
+         "DeleteObject did not fail closed for an unavailable MFA verifier");
+      MFA_Policy.Mode := MFA_Raise;
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Header_Name => "x-amz-mfa",
+                  Header_Value => "device 123456"),
+                Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>AccessDenied</Code>"),
+         "DeleteObject exposed an MFA verifier exception");
+      MFA_Policy.Mode := MFA_Allow_Root;
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Version,
+                  Header_Name => "x-amz-mfa",
+                  Header_Value => "device 123456"),
+                Scheme => Flyology.HTTP.Secure_HTTPS),
             "501 Not Implemented"),
-         "DeleteObject silently ignored MFA Delete");
+         "verified MFA silently enabled object-version deletion");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("PUT", "/test-bucket/delete-mfa", "mfa-body")),
+            "200 OK"),
+         "DeleteObject verified-MFA setup failed");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-mfa", Header_Name => "x-amz-mfa",
+                  Header_Value => "device 123456"),
+                Scheme => Flyology.HTTP.Secure_HTTPS),
+            "204 No Content"),
+         "DeleteObject rejected a verified optional MFA credential");
       Require
         (Has
            (Run
@@ -5888,6 +6054,34 @@ begin
                   Second_Value => "test-principal")),
             "<Code>InvalidRequest</Code>"),
          "DeleteObject accepted duplicate expected-owner fields");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("PUT", "/test-bucket/delete-match", "match-body")),
+            "200 OK"),
+         "DeleteObject matching condition setup failed");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-match", Header_Name => "if-match",
+                  Header_Value =>
+                    '"' & GNAT.MD5.Digest ("match-body") & '"')),
+            "204 No Content"),
+         "DeleteObject rejected an exact matching generation");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Delete_Object_Request
+                ("/test-bucket/delete-match", Header_Name => "if-match",
+                 Header_Value => "*"));
+      begin
+         Require
+           (Has (Response, "404 Not Found")
+            and then Has (Response, "<Code>NoSuchKey</Code>"),
+            "conditioned missing DeleteObject was not NoSuchKey");
+      end;
       Require
         (Has
            (Run
@@ -5930,6 +6124,56 @@ begin
                  ("/test-bucket/delete-policy")),
             "204 No Content"),
          "DeleteObject was not idempotent for an absent key");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/delete-versioned", "")),
+            "200 OK"),
+         "configured DeleteObject bucket creation failed");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("PUT", "/delete-versioned/current", "preserve")),
+            "200 OK"),
+         "configured DeleteObject object setup failed");
+      declare
+         Backend_Result : Flyology.Object_Storage.Status;
+      begin
+         Store.Put_Bucket_Versioning
+           ("delete-versioned",
+            (Status => Flyology.Object_Storage.Versioning_Enabled,
+             MFA_Delete =>
+               Flyology.Object_Storage.MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Backend_Result);
+         Require
+           (Backend_Result = Flyology.Object_Storage.Success,
+            "configured DeleteObject versioning setup failed");
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Object_Request
+                    ("/delete-versioned/current")),
+               "501 Not Implemented"),
+            "DeleteObject silently removed configured-version data");
+         Require
+           (Has
+              (Run
+                 (Signed_Request
+                    ("HEAD", "/delete-versioned/current", "")),
+               "200 OK"),
+            "refused configured DeleteObject mutated current data");
+         Store.Delete_Object
+           ("delete-versioned", "current", null,
+            Ada.Real_Time.Time_Last, Backend_Result);
+         Store.Delete_Bucket
+           ("delete-versioned", null, Ada.Real_Time.Time_Last,
+            Backend_Result);
+         Require
+           (Backend_Result = Flyology.Object_Storage.Success,
+            "configured DeleteObject fixture cleanup failed");
+      end;
       Require
         (Has
            (Run

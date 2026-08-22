@@ -5047,9 +5047,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     (if Payer_Count = 1
                      then Apps.Request_Header (X, "x-amz-request-payer")
                      else "");
-                  MFA : constant String :=
-                    (if MFA_Count = 1
-                     then Apps.Request_Header (X, "x-amz-mfa") else "");
                   Match : constant String :=
                     (if Match_Count = 1
                      then Apps.Request_Header (X, "if-match") else "");
@@ -5068,6 +5065,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      then S3.Wire_Core.Parse_Byte_Count
                        (Apps.Request_Header (X, "x-amz-if-match-size"))
                      else (Valid => False));
+                  Match_Modified : constant
+                    Object_Reads.Conditional_Date_Result :=
+                      (if Modified_Count = 1
+                       then Object_Reads.Parse_Conditional_Date
+                         (Modified, Clock)
+                       else (Valid => False));
                   Owner_Accepted : Boolean;
                begin
                   if MFA_Count > 1 or else Payer_Count > 1
@@ -5082,7 +5085,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Send_Error
                        (X, 400, "InvalidArgument",
                         "The request payer value is invalid", Target_Text);
-                  elsif (MFA_Count = 1 and then MFA'Length = 0)
+                  elsif (MFA_Count = 1
+                         and then Apps.Request_Header
+                           (X, "x-amz-mfa")'Length = 0)
                     or else (Match_Count = 1 and then Match'Length = 0)
                     or else
                       (Modified_Count = 1 and then Modified'Length = 0)
@@ -5101,34 +5106,79 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 400, "InvalidArgument",
                         "The conditional object size is invalid",
                         Target_Text);
+                  elsif Modified_Count = 1
+                    and then not Match_Modified.Valid
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The conditional modification time is invalid",
+                        Target_Text);
+                  elsif Match_Count = 1
+                    and then not Valid_Object_Delete_ETag_Condition (Match)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The ETag condition is invalid", Target_Text);
                   else
                      Check_Expected_Bucket_Owner
                        (US.To_String (Auth.Principal), Owner_Accepted);
                      if Owner_Accepted then
-                        if Delete_Request.Has_Version_ID then
-                           Send_Error
-                             (X, 501, "NotImplemented",
-                              "Object versioning is not implemented",
-                              Target_Text);
-                        elsif MFA_Count > 0 or else Payer_Count > 0
-                          or else Bypass_Count > 0 or else Match_Count > 0
-                          or else Modified_Count > 0 or else Size_Count > 0
-                        then
-                           Send_Error
-                             (X, 501, "NotImplemented",
-                              "The requested DeleteObject controls are not " &
-                              "implemented", Target_Text);
-                        else
-                           Store.Delete_Object
-                             (Bucket, Key, Apps.Cancellation (X),
-                              Apps.Deadline (X), Result);
-                           if Result in Success | Not_Found then
-                              Apps.Respond (X, 204, "", "");
+                        declare
+                           MFA_Result : constant MFA.Authorization_Status :=
+                             (if MFA_Count = 1
+                              then Verify_MFA_Credential
+                                (US.To_String (Auth.Principal),
+                                 Apps.Request_Header (X, "x-amz-mfa"))
+                              else MFA.Authorized);
+                        begin
+                           if MFA_Count = 1
+                             and then MFA_Result /= MFA.Authorized
+                           then
+                              Send_MFA_Error (MFA_Result);
+                           elsif Delete_Request.Has_Version_ID then
+                              Send_Error
+                                (X, 501, "NotImplemented",
+                                 "Object version deletion is not implemented",
+                                 Target_Text);
+                           elsif Payer_Count > 0 then
+                              Send_Error
+                                (X, 501, "NotImplemented",
+                                 "Requester Pays is not implemented",
+                                 Target_Text);
+                           elsif Bypass_Count > 0 then
+                              Send_Error
+                                (X, 501, "NotImplemented",
+                                 "Governance retention enforcement is not " &
+                                 "implemented", Target_Text);
+                           elsif Modified_Count > 0 or else Size_Count > 0 then
+                              Send_Error
+                                (X, 400, "InvalidArgument",
+                                 "LastModifiedTime and Size require a " &
+                                 "directory bucket", Target_Text);
                            else
-                              Send_Backend_Error
-                                (X, Result, False, Target_Text);
+                              Store.Delete_Object
+                                (Bucket, Key, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Result,
+                                 Conditions =>
+                                   (Has_ETag => Match_Count = 1,
+                                    ETag => US.To_Unbounded_String (Match),
+                                    others => <>),
+                                 Requirements =>
+                                   (Require_Unversioned => True));
+                              if Result = Success then
+                                 Apps.Respond (X, 204, "", "");
+                              elsif Result = Not_Implemented then
+                                 Send_Error
+                                   (X, 501, "NotImplemented",
+                                    "Object versions, delete markers, and " &
+                                    "MFA Delete enforcement are not " &
+                                    "implemented", Target_Text);
+                              else
+                                 Send_Backend_Error
+                                   (X, Result, False, Target_Text);
+                              end if;
                            end if;
-                        end if;
+                        end;
                      end if;
                   end if;
                end;

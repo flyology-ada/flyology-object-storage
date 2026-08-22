@@ -186,6 +186,33 @@ procedure S3_Implementation_Corpus is
       end if;
    end Check_List_Objects_V1_Pagination;
 
+   type Delete_Object_Oracle_Mode_Kind is
+     (Complete_Delete_Object,
+      Conditioned_Missing_Is_412,
+      MinIO_2025_Ignores_If_Match);
+
+   function Delete_Object_Oracle_Mode
+     return Delete_Object_Oracle_Mode_Kind
+   is
+      Name : constant String := "FLYOLOGY_DELETE_OBJECT_ORACLE_MODE";
+   begin
+      if not Ada.Environment_Variables.Exists (Name) then
+         return Complete_Delete_Object;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "rustfs-rc3-conditioned-missing-412"
+        or else Ada.Environment_Variables.Value (Name) =
+          "seaweedfs-4.43-conditioned-missing-412"
+      then
+         return Conditioned_Missing_Is_412;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "minio-2025-ignores-if-match"
+      then
+         return MinIO_2025_Ignores_If_Match;
+      else
+         raise Program_Error with "unknown DeleteObject oracle mode";
+      end if;
+   end Delete_Object_Oracle_Mode;
+
    function Check_Missing_Object_Attributes return Boolean is
       Name : constant String :=
         "FLYOLOGY_GET_OBJECT_ATTRIBUTES_ORACLE_MODE";
@@ -2505,13 +2532,97 @@ procedure S3_Implementation_Corpus is
    begin
       HTTP_Client.Configure (HTTP, Origin);
       declare
-         Outcome : constant Client_Objects.Delete_Outcome :=
-           Client_Objects.Delete
+         Head : constant Transfers.Head_Outcome :=
+           Transfers.Head_Object
              (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
       begin
-         if Outcome.Kind /= Client_Objects.Object_Removed then
+         if Head.Kind /= Transfers.Object_Found
+           or else US.Length (Head.Entity_Tag) = 0
+         then
             raise Program_Error with
-              "S3 implementation rejected high-level DeleteObject";
+              "S3 implementation could not bind DeleteObject generation";
+         end if;
+         declare
+            Mismatch : constant Client_Objects.Delete_Outcome :=
+              Client_Objects.Delete
+                (HTTP, Origin, Bucket, Key, Identity,
+                 If_Match => """definitely-stale""", Timeout => 30.0);
+            Preserved : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
+         begin
+            if Delete_Object_Oracle_Mode = MinIO_2025_Ignores_If_Match then
+               if Mismatch.Kind /= Client_Objects.Object_Removed
+                 or else Preserved.Kind /= Transfers.Head_Rejected
+                 or else Preserved.Status /= 404
+               then
+                  raise Program_Error with
+                    "MinIO DeleteObject If-Match divergence changed";
+               end if;
+            else
+               if Mismatch.Kind /= Client_Objects.Delete_Rejected
+                 or else Mismatch.Status /= 412
+                 or else Preserved.Kind /= Transfers.Object_Found
+                 or else US.To_String (Preserved.Entity_Tag) /=
+                   US.To_String (Head.Entity_Tag)
+               then
+                  raise Program_Error with
+                    "S3 implementation violated mismatched DeleteObject";
+               end if;
+            end if;
+         end;
+         if Delete_Object_Oracle_Mode = MinIO_2025_Ignores_If_Match then
+            declare
+               Missing_Conditional : constant Client_Objects.Delete_Outcome :=
+                 Client_Objects.Delete
+                   (HTTP, Origin, Bucket, Key, Identity,
+                    If_Match => "*", Timeout => 30.0);
+               Missing_Idempotent : constant Client_Objects.Delete_Outcome :=
+                 Client_Objects.Delete
+                   (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
+            begin
+               if Missing_Conditional.Kind /= Client_Objects.Object_Removed
+                 or else Missing_Idempotent.Kind /=
+                   Client_Objects.Object_Removed
+               then
+                  raise Program_Error with
+                    "MinIO missing DeleteObject divergence changed";
+               end if;
+            end;
+         else
+            declare
+               Deleted : constant Client_Objects.Delete_Outcome :=
+                 Client_Objects.Delete
+                   (HTTP, Origin, Bucket, Key, Identity,
+                    If_Match => US.To_String (Head.Entity_Tag),
+                    Timeout => 30.0);
+               Missing_Conditional : constant Client_Objects.Delete_Outcome :=
+                 Client_Objects.Delete
+                   (HTTP, Origin, Bucket, Key, Identity,
+                    If_Match => "*", Timeout => 30.0);
+               Missing_Idempotent : constant Client_Objects.Delete_Outcome :=
+                 Client_Objects.Delete
+                   (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
+            begin
+               if Deleted.Kind /= Client_Objects.Object_Removed
+                 or else Missing_Conditional.Kind /=
+                   Client_Objects.Delete_Rejected
+                 or else Missing_Conditional.Status /=
+                   (if Delete_Object_Oracle_Mode =
+                         Conditioned_Missing_Is_412
+                    then 412 else 404)
+                 or else US.To_String (Missing_Conditional.Error.Code) /=
+                   (if Delete_Object_Oracle_Mode =
+                         Conditioned_Missing_Is_412
+                    then "PreconditionFailed" else "NoSuchKey")
+                 or else Missing_Idempotent.Kind /=
+                   Client_Objects.Object_Removed
+               then
+                  raise Program_Error with
+                    "S3 implementation DeleteObject condition/missing " &
+                    "mismatch";
+               end if;
+            end;
          end if;
       end;
       HTTP_Client.Shutdown (HTTP);

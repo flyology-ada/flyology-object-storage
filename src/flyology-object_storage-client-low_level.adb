@@ -4413,6 +4413,21 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Headers : SigV4.Name_Value_Array (1 .. Optional_Header_Count);
       Last : Natural := 0;
 
+      function Valid_Bounded_Header (Value : String) return Boolean is
+      begin
+         if Value'Length > 2 * 1_024 then
+            return False;
+         end if;
+         for Character_Value of Value loop
+            if Character'Pos (Character_Value) < 32
+              or else Character'Pos (Character_Value) = 127
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Valid_Bounded_Header;
+
       procedure Add_Header (Name, Value : String) is
       begin
          if Value'Length > 0 then
@@ -4424,6 +4439,24 @@ package body Flyology.Object_Storage.Client.Low_Level is
       if not S3.Deletions.Valid_Version_ID (Version_ID)
         or else (Request_Payer'Length > 0
                  and then Request_Payer /= "requester")
+        or else not Valid_Bounded_Header (US.To_String (Parameters.MFA))
+        or else not Valid_Bounded_Header
+          (US.To_String (Parameters.Expected_Bucket_Owner))
+        or else not Valid_Bounded_Header
+          (US.To_String (Parameters.If_Match_Last_Modified_Time))
+        or else
+          (US.Length (Parameters.MFA) > 0
+           and then Flyology.HTTP.Scheme (Origin) /=
+             Flyology.HTTP.Secure_HTTPS)
+        or else
+          (US.Length (Parameters.If_Match) > 0
+           and then not Valid_Object_Delete_ETag_Condition
+             (US.To_String (Parameters.If_Match)))
+        or else
+          (US.Length (Parameters.If_Match_Last_Modified_Time) > 0
+           and then not Object_Reads.Parse_Conditional_Date
+             (US.To_String
+                (Parameters.If_Match_Last_Modified_Time)).Valid)
       then
          raise Invalid_Request with "invalid DeleteObject parameters";
       end if;
@@ -4492,6 +4525,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end if;
    exception
       when S3.Errors.Malformed_Error =>
+         if Status = 409 then
+            return
+              (Kind   => Delete_Object_Rejected,
+               Status => Status,
+               Error  => Head_Error
+                 ("DeleteObject", Status, Request_ID, Host_ID));
+         end if;
          raise Invalid_Response with "malformed DeleteObject response";
    end Decode_Delete_Object_Response;
 
@@ -4533,6 +4573,31 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
          Host_ID : constant String :=
            Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         procedure Reject_Duplicate_Singletons is
+         begin
+            for Index in 1 .. Flyology.HTTP.Client.Header_Count (Response) loop
+               declare
+                  Name : constant String :=
+                    Ada.Characters.Handling.To_Lower
+                      (Flyology.HTTP.Client.Header_Name (Response, Index));
+               begin
+                  if Name in "x-amz-delete-marker" | "x-amz-version-id" |
+                    "x-amz-request-charged"
+                  then
+                     for Previous in 1 .. Index - 1 loop
+                        if Ada.Characters.Handling.To_Lower
+                          (Flyology.HTTP.Client.Header_Name
+                             (Response, Previous)) = Name
+                        then
+                           raise Invalid_Response with
+                             "DeleteObject response duplicates a singleton " &
+                             "header";
+                        end if;
+                     end loop;
+                  end if;
+               end;
+            end loop;
+         end Reject_Duplicate_Singletons;
          Headers : constant Delete_Object_Result :=
            (Delete_Marker => Optional_Boolean_Header
               (Flyology.HTTP.Client.Header
@@ -4546,6 +4611,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
+         Reject_Duplicate_Singletons;
          return Decode_Delete_Object_Response
            (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
             Request_ID, Host_ID, Limits);

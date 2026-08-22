@@ -77,6 +77,8 @@ FLYOLOGY_LIST_OBJECTS_V1_ORACLE_MODE=\
 seaweedfs-4.43-next-marker-without-delimiter \
 FLYOLOGY_MULTIPART_CHECKSUM_ORACLE_MODE=\
 seaweedfs-4.43-omits-multipart-checksum-metadata \
+FLYOLOGY_DELETE_OBJECT_ORACLE_MODE=\
+seaweedfs-4.43-conditioned-missing-412 \
 "$SCRIPT_DIR/run-s3-implementation.sh" \
   "http://127.0.0.1:$PORT" \
   "http://host.docker.internal:$PORT" \
@@ -87,6 +89,8 @@ echo "SeaweedFS HeadObject part oracle: pinned release returns whole-object" \
   "Content-Length for valid partNumber requests and HTTP 400 for an absent" \
   "part"
 echo "SeaweedFS HeadObject range oracle: pinned release ignores Range"
+echo "SeaweedFS DeleteObject oracle: pinned release returns 412 rather than" \
+  "AWS's documented 404 for If-Match against a missing key"
 echo "SeaweedFS ListObjects v1 pagination oracle: pinned release emits" \
   "NextMarker without delimiter, contrary to AWS v1 response semantics"
 echo "SeaweedFS multipart checksum oracle: pinned release omits ListParts" \

@@ -53,6 +53,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
    use type Low_Level.Delete_Objects_Outcome_Kind;
+   use type Low_Level.Delete_Object_Outcome_Kind;
+   use type Objects.Delete_Outcome_Kind;
    use type Low_Level.Put_Bucket_Versioning_Outcome_Kind;
    use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
    use type Client_Buckets.Set_Versioning_Outcome_Kind;
@@ -433,6 +435,8 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Copy_Source : String := "";
          Expected_Copy_If_Match : String := "";
          Expected_If_Match : String := "";
+         Expected_If_Match_Last_Modified_Time : String := "";
+         Expected_If_Match_Size : String := "";
          Expected_If_Modified_Since : String := "";
          Expected_If_None_Match : String := "";
          Expected_If_Unmodified_Since : String := "";
@@ -662,6 +666,67 @@ procedure S3_HTTP_Socket_Corpus is
                       (Expected_Checksum_CRC32'Length > 0
                        and then Ada.Strings.Fixed.Index
                          (Lower, ";x-amz-checksum-crc32;") = 0)
+                 elsif Expected_Method = "DELETE"
+                   and then
+                     (Expected_If_Match'Length > 0
+                      or else Expected_If_Match_Last_Modified_Time'Length > 0
+                      or else Expected_If_Match_Size'Length > 0
+                      or else Expected_Request_Payer'Length > 0
+                      or else Expected_Bucket_Owner'Length > 0
+                      or else Expected_MFA'Length > 0
+                      or else Expected_Governance_Bypass'Length > 0)
+                 then
+                    Header_Value (Lower, "if-match") /=
+                      Ada.Characters.Handling.To_Lower (Expected_If_Match)
+                    or else Header_Value
+                      (Lower, "x-amz-if-match-last-modified-time") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_If_Match_Last_Modified_Time)
+                    or else Header_Value
+                      (Lower, "x-amz-if-match-size") /=
+                        Expected_If_Match_Size
+                    or else Header_Value
+                      (Lower, "x-amz-request-payer") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Request_Payer)
+                    or else Header_Value
+                      (Lower, "x-amz-expected-bucket-owner") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Bucket_Owner)
+                    or else Header_Value (Lower, "x-amz-mfa") /=
+                      Ada.Characters.Handling.To_Lower (Expected_MFA)
+                    or else Header_Value
+                      (Lower, "x-amz-bypass-governance-retention") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Governance_Bypass)
+                    or else
+                      (Expected_If_Match'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";if-match;") = 0)
+                    or else
+                      (Expected_If_Match_Last_Modified_Time'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-if-match-last-modified-time;") = 0)
+                    or else
+                      (Expected_If_Match_Size'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-if-match-size;") = 0)
+                    or else
+                      (Expected_Request_Payer'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-request-payer") = 0)
+                    or else
+                      (Expected_Bucket_Owner'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-expected-bucket-owner") = 0)
+                    or else
+                      (Expected_MFA'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-mfa") = 0)
+                    or else
+                      (Expected_Governance_Bypass'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-bypass-governance-retention;") = 0)
                  elsif Expected_Request_Payer'Length > 0
                    or else Expected_Bucket_Owner'Length > 0
                    or else Expected_Object_Attributes'Length > 0
@@ -1204,6 +1269,47 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("204 No Content", "", Omit_Content_Length => True),
             "DELETE", "/example-bucket/convenient-tagged?tagging");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-delete-marker: true" & CRLF &
+               "x-amz-version-id: deleted-socket-version" & CRLF &
+               "x-amz-request-charged: requester" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/typed-delete?" &
+              "versionId=socket%20version",
+            Expected_If_Match => """socket-etag""",
+            Expected_If_Match_Last_Modified_Time =>
+              "Wed, 21 Oct 2015 07:28:00 GMT",
+            Expected_If_Match_Size => "42",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Governance_Bypass => "true",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", Omit_Content_Length => True),
+            "DELETE", "/example-bucket/convenient-delete",
+            Expected_If_Match => "*",
+            Expected_If_Match_Last_Modified_Time =>
+              "Wed, 21 Oct 2015 07:28:00 GMT",
+            Expected_If_Match_Size => "7",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Governance_Bypass => "false");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-version-id: first" & CRLF &
+               "x-amz-version-id: second" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/duplicate-delete-output");
+         Serve
+           (HTTP_Response
+              ("409 Conflict",
+               "<Error><Code>OperationAborted</Code>" &
+               "<Message>conflict</Message></Error>"),
+            "DELETE", "/example-bucket/conflict-delete");
          Serve
            (HTTP_Response
               ("200 OK", Delete_Objects_XML,
@@ -2630,6 +2736,104 @@ procedure S3_HTTP_Socket_Corpus is
                     "convenient object tagging socket flow mismatch";
                end if;
             end;
+         end;
+         declare
+            Parameters : Low_Level.Delete_Object_Parameters;
+         begin
+            Parameters.Version_ID :=
+              US.To_Unbounded_String ("socket version");
+            Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+            Parameters.Bypass_Governance_Retention :=
+              (Is_Set => True, Value => True);
+            Parameters.Expected_Bucket_Owner :=
+              US.To_Unbounded_String ("123456789012");
+            Parameters.If_Match :=
+              US.To_Unbounded_String ("""socket-etag""");
+            Parameters.If_Match_Last_Modified_Time :=
+              US.To_Unbounded_String ("Wed, 21 Oct 2015 07:28:00 GMT");
+            Parameters.If_Match_Size := (Is_Set => True, Value => 42);
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Object
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "typed-delete", Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Result : constant Low_Level.Delete_Object_Outcome :=
+                 Low_Level.Execute_Delete_Object
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Object_Deleted
+                 or else not Result.Result.Delete_Marker.Is_Set
+                 or else not Result.Result.Delete_Marker.Value
+                 or else US.To_String (Result.Result.Version_ID) /=
+                   "deleted-socket-version"
+                 or else US.To_String (Result.Result.Request_Charged) /=
+                   "requester"
+               then
+                  raise Program_Error with
+                    "typed DeleteObject socket result mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Result : constant Objects.Delete_Outcome :=
+              Objects.Delete
+                (HTTP, Origin, "example-bucket", "convenient-delete",
+                 Identity, If_Match => "*",
+                 Expected_Bucket_Owner => "123456789012",
+                 Request_Payer => "requester", Timeout => 5.0,
+                 Bypass_Governance_Retention =>
+                   (Is_Set => True, Value => False),
+                 If_Match_Last_Modified_Time =>
+                   "Wed, 21 Oct 2015 07:28:00 GMT",
+                 If_Match_Size => (Is_Set => True, Value => 7));
+         begin
+            if Result.Kind /= Objects.Object_Removed
+              or else Result.Status /= 204
+            then
+               raise Program_Error with
+                 "convenience DeleteObject socket result mismatch";
+            end if;
+         end;
+         declare
+            Parameters : Low_Level.Delete_Object_Parameters;
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Object
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 "duplicate-delete-output", Parameters, Identity,
+                 "us-east-1", "20130524T000000Z");
+            Rejected : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Delete_Object_Outcome :=
+                    Low_Level.Execute_Delete_Object
+                      (HTTP, Prepared, Timeout => 5.0);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "DeleteObject accepted duplicate singleton outputs";
+            end if;
+         end;
+         declare
+            Result : constant Objects.Delete_Outcome :=
+              Objects.Delete
+                (HTTP, Origin, "example-bucket", "conflict-delete",
+                 Identity, Timeout => 5.0);
+         begin
+            if Result.Kind /= Objects.Delete_Rejected
+              or else Result.Status /= 409
+              or else US.To_String (Result.Error.Code) /= "OperationAborted"
+            then
+               raise Program_Error with
+                 "DeleteObject socket conflict was not typed";
+            end if;
          end;
          declare
             Request : Deletions.Delete_Objects_Request;

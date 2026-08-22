@@ -229,8 +229,10 @@ package Flyology.Object_Storage.Client.Objects is
    end record;
 
    --  Delete one object or a specific object version. S3 treats a missing
-   --  unversioned key as a successful idempotent deletion. Advanced MFA and
-   --  governance-bypass controls remain available through Client.Low_Level.
+   --  unversioned key as a successful idempotent deletion. Every modeled
+   --  DeleteObject control is available here; optional boolean/count values
+   --  distinguish an omitted header from an explicitly supplied false or
+   --  zero value.
    --  @param Client Configured, caller-owned Flyology HTTP client
    --  @param Origin Exact origin used to configure Client and sign requests
    --  @param Bucket Bucket containing the object
@@ -244,6 +246,10 @@ package Flyology.Object_Storage.Client.Objects is
    --  @param Request_Payer Empty or requester for Requester Pays buckets
    --  @param Timeout Whole-operation budget
    --  @param Token Optional cancellation source
+   --  @param MFA Optional root-owner MFA device and credential value
+   --  @param Bypass_Governance_Retention Optional governance bypass request
+   --  @param If_Match_Last_Modified_Time Optional directory-bucket predicate
+   --  @param If_Match_Size Optional directory-bucket size predicate
    --  @return Modeled deletion headers or structured S3 rejection
    function Delete
      (Client   : aliased in out Flyology.HTTP.Client.Client;
@@ -258,7 +264,13 @@ package Flyology.Object_Storage.Client.Objects is
       Expected_Bucket_Owner : String := "";
       Request_Payer : String := "";
       Timeout  : Duration := 30.0;
-      Token    : access Flyology.Cancellation.Token := null)
+      Token    : access Flyology.Cancellation.Token := null;
+      MFA      : String := "";
+      Bypass_Governance_Retention : Low_Level.Optional_Boolean :=
+        (Is_Set => False, Value => False);
+      If_Match_Last_Modified_Time : String := "";
+      If_Match_Size : Low_Level.Optional_Byte_Count :=
+        (Is_Set => False, Value => 0))
       return Delete_Outcome;
 
    type Tagging_Outcome_Kind is

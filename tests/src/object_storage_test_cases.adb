@@ -12174,7 +12174,7 @@ package body Object_Storage_Test_Cases is
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Delete_Object
-                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
                  Low_Level.Path_Style, "example-bucket", "photos/a b+%",
                  Parameters, Identity, "us-east-1",
                  "20130524T000000Z");
@@ -12196,6 +12196,63 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         procedure Reject
+           (Parameters : Low_Level.Delete_Object_Parameters;
+            Origin     : String;
+            Label      : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Delete_Object
+                      (Flyology.HTTP.Parse_Origin (Origin),
+                       Low_Level.Path_Style, "example-bucket", "key",
+                       Parameters, Identity, "us-east-1",
+                       "20130524T000000Z");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request => Raised := True;
+            end;
+            Assert (Raised, Label);
+         end Reject;
+
+         Parameters : Low_Level.Delete_Object_Parameters;
+      begin
+         Parameters.MFA := US.To_Unbounded_String ("device 123456");
+         Reject
+           (Parameters, "http://localhost:9000",
+            "DeleteObject prepared MFA over insecure transport");
+         Parameters := (others => <>);
+         Parameters.MFA :=
+           US.To_Unbounded_String (String'(1 .. 2_049 => 'm'));
+         Reject
+           (Parameters, "https://localhost:9000",
+            "DeleteObject prepared oversized MFA");
+         Parameters := (others => <>);
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("owner" & Character'Val (10));
+         Reject
+           (Parameters, "http://localhost:9000",
+            "DeleteObject prepared a control-bearing owner");
+         Parameters := (others => <>);
+         Parameters.If_Match := US.To_Unbounded_String ("bad,etag");
+         Reject
+           (Parameters, "http://localhost:9000",
+            "DeleteObject prepared a malformed If-Match");
+         Parameters := (others => <>);
+         Parameters.If_Match_Last_Modified_Time :=
+           US.To_Unbounded_String ("not-a-date");
+         Reject
+           (Parameters, "http://localhost:9000",
+            "DeleteObject prepared a malformed conditional date");
+      end;
+
+      declare
          Headers : Low_Level.Delete_Object_Result;
       begin
          Headers.Delete_Marker := (Is_Set => True, Value => True);
@@ -12214,6 +12271,35 @@ package body Object_Storage_Test_Cases is
                  "deleted-version",
                "typed DeleteObject success headers");
          end;
+      end;
+
+      declare
+         Headers : Low_Level.Delete_Object_Result;
+         Outcome : constant Low_Level.Delete_Object_Outcome :=
+           Low_Level.Decode_Delete_Object_Response
+             (409,
+              "<Error><Code>OperationAborted</Code>" &
+              "<Message>conflict</Message></Error>", Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Delete_Object_Rejected
+            and then Outcome.Status = 409
+            and then US.To_String (Outcome.Error.Code) = "OperationAborted",
+            "DeleteObject did not decode a structured 409 conflict");
+      end;
+
+      declare
+         Headers : Low_Level.Delete_Object_Result;
+         Outcome : constant Low_Level.Delete_Object_Outcome :=
+           Low_Level.Decode_Delete_Object_Response
+             (409, "", Headers, "request-id");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Delete_Object_Rejected
+            and then Outcome.Status = 409
+            and then US.To_String (Outcome.Error.Code) = "HTTP409"
+            and then US.To_String (Outcome.Error.Request_ID) = "request-id",
+            "DeleteObject bodyless 409 was not a typed conflict");
       end;
 
       declare
