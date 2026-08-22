@@ -5853,9 +5853,7 @@ package body Object_Storage_Test_Cases is
               "<Location>https://example.invalid/a</Location>" &
               "<Bucket>example-bucket</Bucket><Key>a</Key>" &
               "<ETag>&quot;etag&quot;</ETag>" &
-              "<ChecksumMD5>AAAAAAAAAAAAAAAAAAAAAA==</ChecksumMD5>" &
-              "<ChecksumXXHASH128>" &
-              "AAAAAAAAAAAAAAAAAAAAAA==</ChecksumXXHASH128>" &
+              "<ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
               "<ChecksumType>FULL_OBJECT</ChecksumType>" &
               "</CompleteMultipartUploadResult>");
          Round_Trip : constant Multipart.Complete_Multipart_Upload_Result :=
@@ -5864,13 +5862,96 @@ package body Object_Storage_Test_Cases is
       begin
          Assert
            (US.To_String (Round_Trip.Entity_Tag) = """etag"""
-            and then US.To_String (Round_Trip.Checksum_MD5) =
-              "AAAAAAAAAAAAAAAAAAAAAA=="
-            and then US.To_String (Round_Trip.Checksum_XXHASH128) =
-              "AAAAAAAAAAAAAAAAAAAAAA=="
+            and then US.To_String (Round_Trip.Checksum_CRC32) =
+              "AAAAAA=="
             and then US.To_String (Round_Trip.Checksum_Type) =
               "FULL_OBJECT",
             "CompleteMultipartUpload result round trip");
+      end;
+
+      declare
+         procedure Must_Reject_Complete_Result
+           (Checksum_XML : String; Message : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant
+                    Multipart.Complete_Multipart_Upload_Result :=
+                      Multipart.Parse_Complete_Result
+                        ("<CompleteMultipartUploadResult>" &
+                         "<Bucket>example-bucket</Bucket><Key>key</Key>" &
+                         "<ETag>&quot;etag&quot;</ETag>" & Checksum_XML &
+                         "</CompleteMultipartUploadResult>");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Multipart.Malformed_Multipart =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Must_Reject_Complete_Result;
+      begin
+         Must_Reject_Complete_Result
+           ("<ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+            "<ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+            "</ChecksumSHA256>",
+            "multiple complete multipart checksums were accepted");
+         Must_Reject_Complete_Result
+           ("<ChecksumCRC64NVME>AAAAAAAAAAA=-1</ChecksumCRC64NVME>" &
+            "<ChecksumType>COMPOSITE</ChecksumType>",
+            "composite CRC64NVME completion result was accepted");
+         Must_Reject_Complete_Result
+           ("<ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+            "</ChecksumSHA256><ChecksumType>FULL_OBJECT</ChecksumType>",
+            "full-object SHA256 completion result was accepted");
+         Must_Reject_Complete_Result
+           ("<ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-01" &
+            "</ChecksumSHA256><ChecksumType>COMPOSITE</ChecksumType>",
+            "noncanonical composite part count was accepted");
+      end;
+
+      declare
+         Parsed : constant Multipart.Complete_Multipart_Upload_Result :=
+           Multipart.Parse_Complete_Result
+             ("<CompleteMultipartUploadResult>" &
+              "<Location>https://example.invalid/composite</Location>" &
+              "<Bucket>example-bucket</Bucket><Key>composite</Key>" &
+              "<ETag>&quot;etag-2&quot;</ETag>" &
+              "<ChecksumSHA256>" &
+              "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-2" &
+              "</ChecksumSHA256><ChecksumType>COMPOSITE</ChecksumType>" &
+              "</CompleteMultipartUploadResult>");
+         Round_Trip : constant Multipart.Complete_Multipart_Upload_Result :=
+           Multipart.Parse_Complete_Result
+             (Multipart.Serialize_Complete_Result (Parsed));
+      begin
+         Assert
+           (US.To_String (Round_Trip.Checksum_SHA256) =
+              "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-2"
+            and then US.To_String (Round_Trip.Checksum_Type) =
+              "COMPOSITE",
+            "composite CompleteMultipartUpload result round trip");
+      end;
+
+      declare
+         Parsed : constant Multipart.Complete_Multipart_Upload_Result :=
+           Multipart.Parse_Complete_Result
+             ("<CompleteMultipartUploadResult>" &
+              "<Bucket>example-bucket</Bucket><Key>legacy</Key>" &
+              "<ETag>&quot;legacy-etag&quot;</ETag>" &
+              "<ChecksumCRC32>AAAAAA==-1</ChecksumCRC32>" &
+              "</CompleteMultipartUploadResult>");
+      begin
+         Assert
+           (US.To_String (Parsed.Checksum_CRC32) = "AAAAAA==-1"
+            and then US.Length (Parsed.Checksum_Type) = 0,
+            "legacy untyped composite multipart checksum parsing");
       end;
 
       declare
@@ -5913,6 +5994,32 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "invalid complete multipart checksum was accepted");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant
+                 Multipart.Complete_Multipart_Upload_Result :=
+                   Multipart.Parse_Complete_Result
+                     ("<CompleteMultipartUploadResult>" &
+                      "<ChecksumSHA256>" &
+                      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-0" &
+                      "</ChecksumSHA256>" &
+                      "<ChecksumType>COMPOSITE</ChecksumType>" &
+                      "</CompleteMultipartUploadResult>");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Multipart.Malformed_Multipart =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "invalid composite multipart part count was accepted");
       end;
 
       declare
@@ -7779,14 +7886,14 @@ package body Object_Storage_Test_Cases is
              (200, "<CompleteMultipartUploadResult>" &
               "<Bucket>example-bucket</Bucket><Key>key</Key>" &
               "<ETag>&quot;whole&quot;</ETag>" &
-              "<ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+              "<ChecksumCRC32>AAAAAA==-1</ChecksumCRC32>" &
               "<ChecksumType>COMPOSITE</ChecksumType>" &
               "</CompleteMultipartUploadResult>", Headers);
       begin
          Assert
-           (Outcome.Kind = Low_Level.Completed
+            (Outcome.Kind = Low_Level.Completed
             and then US.To_String (Outcome.Result.Checksum_CRC32) =
-              "AAAAAA=="
+              "AAAAAA==-1"
             and then US.To_String
               (Outcome.Result.Server_Side_Encryption) = "aws:kms"
             and then US.To_String (Outcome.Result.Version_ID) = "version-1"
@@ -7795,6 +7902,47 @@ package body Object_Storage_Test_Cases is
             and then US.To_String (Outcome.Result.Request_Charged) =
               "requester",
             "typed CompleteMultipartUpload complete output shape");
+      end;
+
+      declare
+         procedure Client_Must_Reject_Complete
+           (Checksum_XML : String; Message : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Complete_Multipart_Outcome :=
+                    Low_Level.Decode_Complete_Multipart_Response
+                      (200, "<CompleteMultipartUploadResult>" &
+                       "<Bucket>example-bucket</Bucket><Key>key</Key>" &
+                       "<ETag>&quot;whole&quot;</ETag>" & Checksum_XML &
+                       "</CompleteMultipartUploadResult>");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Client_Must_Reject_Complete;
+      begin
+         Client_Must_Reject_Complete
+           ("<ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+            "<ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+            "</ChecksumSHA256>",
+            "client accepted multiple completion checksums");
+         Client_Must_Reject_Complete
+           ("<ChecksumCRC64NVME>AAAAAAAAAAA=-1</ChecksumCRC64NVME>" &
+            "<ChecksumType>COMPOSITE</ChecksumType>",
+            "client accepted an unsupported completion checksum pair");
+         Client_Must_Reject_Complete
+           ("<ChecksumSHA256>" &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-01" &
+            "</ChecksumSHA256><ChecksumType>COMPOSITE</ChecksumType>",
+            "client accepted a noncanonical completion part count");
       end;
 
       declare
@@ -10994,23 +11142,6 @@ package body Object_Storage_Test_Cases is
            US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
          Headers.Content_Length := 9;
          Headers.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
-         Headers.Checksum_CRC32C := US.To_Unbounded_String ("AAAAAA==");
-         Headers.Checksum_CRC64NVME :=
-           US.To_Unbounded_String ("AAAAAAAAAAA=");
-         Headers.Checksum_SHA1 :=
-           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-         Headers.Checksum_SHA256 := US.To_Unbounded_String
-           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-         Headers.Checksum_SHA512 := US.To_Unbounded_String
-           (String'(1 .. 86 => 'A') & "==");
-         Headers.Checksum_MD5 :=
-           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
-         Headers.Checksum_XXHASH64 :=
-           US.To_Unbounded_String ("AAAAAAAAAAA=");
-         Headers.Checksum_XXHASH3 :=
-           US.To_Unbounded_String ("AAAAAAAAAAA=");
-         Headers.Checksum_XXHASH128 :=
-           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
          Headers.Checksum_Type := US.To_Unbounded_String ("FULL_OBJECT");
          Headers.Entity_Tag := US.To_Unbounded_String ("""etag""");
          Headers.Missing_Meta := (Is_Set => True, Value => 2);
@@ -11145,6 +11276,25 @@ package body Object_Storage_Test_Cases is
          Headers.Entity_Tag := US.To_Unbounded_String ("""etag""");
          Headers.Last_Modified :=
            US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
+         Headers.Checksum_Type := US.To_Unbounded_String ("COMPOSITE");
+         Expect_Invalid
+           (200, Headers,
+            "HeadObject accepted checksum type without an algorithm");
+         Headers.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
+         Headers.Checksum_SHA256 := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Expect_Invalid
+           (200, Headers,
+            "HeadObject accepted multiple checksum algorithm headers");
+         Headers.Checksum_CRC32 := US.Null_Unbounded_String;
+         Headers.Checksum_SHA256 := US.Null_Unbounded_String;
+         Headers.Checksum_CRC64NVME :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Expect_Invalid
+           (200, Headers,
+            "HeadObject accepted composite CRC64NVME metadata");
+         Headers.Checksum_CRC64NVME := US.Null_Unbounded_String;
+         Headers.Checksum_Type := US.Null_Unbounded_String;
          Expect_Invalid
            (206, Headers, "HeadObject accepted 206 without Content-Range");
          Headers.Content_Range := US.To_Unbounded_String ("bytes 0-0/1");

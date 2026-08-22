@@ -155,6 +155,28 @@ procedure S3_Server_Application_Corpus is
       end if;
    end Require;
 
+   function S3_Checksum
+     (Value : String; Algorithm : Checksums.Algorithm) return String
+   is
+      Data : Ada.Streams.Stream_Element_Array
+        (1 .. Ada.Streams.Stream_Element_Offset (Value'Length));
+   begin
+      for Index in Value'Range loop
+         Data
+           (Ada.Streams.Stream_Element_Offset
+              (Index - Value'First + 1)) :=
+            Ada.Streams.Stream_Element (Character'Pos (Value (Index)));
+      end loop;
+      return Checksums.Encode_Base64
+        (Checksums.Compute (Algorithm, Data));
+   end S3_Checksum;
+
+   function CRC64NVME (Value : String) return String is
+     (S3_Checksum (Value, Checksums.Policy.Core.CRC64NVME));
+
+   function SHA256_Checksum (Value : String) return String is
+     (S3_Checksum (Value, Checksums.Policy.Core.SHA256));
+
    function HTTP_Date
      (Value : Flyology.Object_Storage.Unix_Time) return String
    is
@@ -251,7 +273,7 @@ procedure S3_Server_Application_Corpus is
    Store : Flyology.Object_Storage.Backends.Memory.Store
      (Bucket_Capacity => 8,
       Object_Capacity => 16,
-      Byte_Capacity   => 2 * 1_024 * 1_024);
+      Byte_Capacity   => 24 * 1_024 * 1_024);
    Credentials : Static_Credentials.Provider :=
      Static_Credentials.Create
        (Access_Key, Secret_Key, Principal => "test-principal");
@@ -340,6 +362,34 @@ procedure S3_Server_Application_Corpus is
            Extra_Headers,
          Query_Name => "delete");
    end Signed_Delete_Objects_Request;
+
+   --  Keep large request bodies on the heap so the signed server corpus does
+   --  not turn the Ada secondary stack into an accidental payload limit.
+   function Signed_Buffered_Request
+     (Method, Target, Payload : String) return US.Unbounded_String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        (Method, Target, No_Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+      Result : US.Unbounded_String := US.To_Unbounded_String
+        (Method & " " & Target & " HTTP/1.1" & CRLF &
+         "Host: " & Host & CRLF &
+         "x-amz-date: " & Timestamp & CRLF &
+         "x-amz-content-sha256: " & Payload_Hash & CRLF &
+         "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+         "Content-Length: " &
+         Ada.Strings.Fixed.Trim
+           (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
+         "Connection: close" & CRLF & CRLF);
+   begin
+      US.Append (Result, Payload);
+      return Result;
+   end Signed_Buffered_Request;
 
    function Signed_Create_Bucket_Request
      (Target       : String;
@@ -541,7 +591,8 @@ procedure S3_Server_Application_Corpus is
       Upload_ID   : String;
       Copy_Source : String;
       Copy_Range  : String;
-      Encryption  : String := "") return String
+      Encryption  : String := "";
+      Part_Number : String := "1") return String
    is
       Payload_Hash : constant String := SigV4.SHA256_Hex ("");
       Headers : constant SigV4.Name_Value_Array :=
@@ -560,7 +611,7 @@ procedure S3_Server_Application_Corpus is
             SigV4.Pair ("x-amz-date", Timestamp),
             SigV4.Pair ("x-amz-server-side-encryption", Encryption)));
       Query : constant SigV4.Name_Value_Array :=
-        (SigV4.Pair ("partNumber", "1"),
+        (SigV4.Pair ("partNumber", Part_Number),
          SigV4.Pair ("uploadId", Upload_ID),
          SigV4.Pair ("x-id", "UploadPartCopy"));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
@@ -585,6 +636,7 @@ procedure S3_Server_Application_Corpus is
       Query  : SigV4.Name_Value_Array;
       Extra_Header_Name  : String := "";
       Extra_Header_Value : String := "";
+      Second_Header_Name : String := "";
       Second_Header_Value : String := "") return String
    is
       Payload_Hash : constant String := SigV4.SHA256_Hex ("");
@@ -593,13 +645,22 @@ procedure S3_Server_Application_Corpus is
            (SigV4.Pair ("host", Host),
             SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
             SigV4.Pair ("x-amz-date", Timestamp))
-         else
+         elsif Second_Header_Value'Length = 0 then
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair (Extra_Header_Name, Extra_Header_Value),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp))
+         elsif Second_Header_Name'Length = 0 then
            (SigV4.Pair ("host", Host),
             SigV4.Pair
               (Extra_Header_Name,
-               Extra_Header_Value &
-                 (if Second_Header_Value'Length = 0
-                  then "" else ", " & Second_Header_Value)),
+               Extra_Header_Value & ", " & Second_Header_Value),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp))
+         else
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair (Extra_Header_Name, Extra_Header_Value),
+            SigV4.Pair (Second_Header_Name, Second_Header_Value),
             SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
             SigV4.Pair ("x-amz-date", Timestamp)));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
@@ -611,11 +672,13 @@ procedure S3_Server_Application_Corpus is
         "Host: " & Host & CRLF &
         "x-amz-date: " & Timestamp & CRLF &
         "x-amz-content-sha256: " & Payload_Hash & CRLF &
-        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
         (if Extra_Header_Name'Length = 0 then ""
          else Extra_Header_Name & ": " & Extra_Header_Value & CRLF) &
         (if Second_Header_Value'Length = 0 then ""
-         else Extra_Header_Name & ": " & Second_Header_Value & CRLF) &
+         else (if Second_Header_Name'Length = 0
+               then Extra_Header_Name else Second_Header_Name) &
+           ": " & Second_Header_Value & CRLF) &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
         "Content-Length: 0" & CRLF & "Connection: close" & CRLF & CRLF;
    end Signed_Query_Request;
 
@@ -764,12 +827,13 @@ procedure S3_Server_Application_Corpus is
         "Connection: close" & CRLF & CRLF & US.To_String (Wire_Body);
    end Signed_Bucket_Tagging_Trailer_Request;
 
-   function Run (Input : String; Receive_Max : Natural := Natural'Last)
-     return String
+   function Run_Unbounded
+     (Input : US.Unbounded_String;
+      Receive_Max : Natural := Natural'Last) return US.Unbounded_String
    is
       Wire : aliased Memory_Transport;
    begin
-      Wire.Input := US.To_Unbounded_String (Input);
+      Wire.Input := Input;
       Wire.Receive_Max := Receive_Max;
       declare
          Client  : aliased HTTP_Server.Connection (Wire'Access);
@@ -787,11 +851,24 @@ procedure S3_Server_Application_Corpus is
             S3_App.Handle (X);
          end;
       end;
-      return US.To_String (Wire.Output);
-   end Run;
+      return Wire.Output;
+   end Run_Unbounded;
+
+   function Run_Unbounded
+     (Input : String;
+      Receive_Max : Natural := Natural'Last) return US.Unbounded_String is
+     (Run_Unbounded (US.To_Unbounded_String (Input), Receive_Max));
+
+   function Run (Input : String; Receive_Max : Natural := Natural'Last)
+     return String is
+     (US.To_String (Run_Unbounded (Input, Receive_Max)));
 
    function Has (Value, Pattern : String) return Boolean is
      (Ada.Strings.Fixed.Index (Value, Pattern) /= 0);
+
+   function Has
+     (Value : US.Unbounded_String; Pattern : String) return Boolean is
+     (US.Index (Value, Pattern) /= 0);
 
    function Response_Body (Value : String) return String is
       Marker : constant Natural :=
@@ -949,6 +1026,7 @@ procedure S3_Server_Application_Corpus is
 
    procedure Check_Multipart_Server is
       Payload : constant String := "multipart body";
+      Expected_Checksum : constant String := CRC64NVME (Payload);
       Part_ETag : constant String := "b6ad3f1edd348582e829c1c38d7d3b3b";
       Create_Query : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("uploads", ""));
@@ -974,7 +1052,10 @@ procedure S3_Server_Application_Corpus is
       begin
          Require
            (Has (Response, "200 OK")
-            and then Has (Response, "ETag: """ & Part_ETag & """"),
+            and then Has (Response, "ETag: """ & Part_ETag & """")
+            and then Has
+              (Response, "x-amz-checksum-crc64nvme: " &
+                 Expected_Checksum & CRLF),
             "UploadPart server response mismatch: " & Response);
       end;
       declare
@@ -995,6 +1076,12 @@ procedure S3_Server_Application_Corpus is
             and then Listed.Parts.First_Element.Size = 14
             and then US.To_String (Listed.Parts.First_Element.Entity_Tag) =
               '"' & Part_ETag & '"'
+            and then US.To_String (Listed.Checksum_Algorithm) =
+              "CRC64NVME"
+            and then US.To_String (Listed.Checksum_Type) = "FULL_OBJECT"
+            and then US.To_String
+              (Listed.Parts.First_Element.Checksum_CRC64NVME) =
+                Expected_Checksum
             and then not Listed.Is_Truncated,
             "ListParts server response mismatch: " & Response);
       end;
@@ -1216,33 +1303,58 @@ procedure S3_Server_Application_Corpus is
               (Signed_Query_Body_Header_Request
                  ("POST", "/test-bucket/multipart-object", Query, Document,
                   "If-Match", "*"));
-            Response : constant String := Run
+            Wrong_Type : constant String := Run
               (Signed_Query_Body_Header_Request
                  ("POST", "/test-bucket/multipart-object", Query, Document,
-                  "x-amz-mp-object-size", "14"),
+                  "x-amz-checksum-type", "COMPOSITE"));
+            Wrong_Algorithm : constant String := Run
+              (Signed_Query_Body_Header_Request
+                 ("POST", "/test-bucket/multipart-object", Query, Document,
+                  "x-amz-checksum-algorithm", "CRC32"));
+            Response : constant String := Run
+              (Signed_Query_Body_Request
+                 ("POST", "/test-bucket/multipart-object", Query, Document,
+                  "x-amz-checksum-algorithm: CRC64NVME" & CRLF &
+                  "x-amz-checksum-type: FULL_OBJECT" & CRLF &
+                  "x-amz-mp-object-size: 14" & CRLF),
                Receive_Max => 2);
+            Parsed : constant Multipart.Complete_Multipart_Upload_Result :=
+              Multipart.Parse_Complete_Result (Response_Body (Response));
          begin
             Require
               (Has (Wrong_Size, "InvalidRequest")
                and then Has (Failed_Match, "PreconditionFailed")
+               and then Has (Wrong_Type, "<Code>BadDigest</Code>")
+               and then Has
+                 (Wrong_Algorithm, "<Code>InvalidRequest</Code>")
                and then Has (Response, "200 OK")
                and then Has (Response, "<ETag>""")
-               and then Has (Response, "-1""</ETag>"),
+               and then Has (Response, "-1""</ETag>")
+               and then US.To_String (Parsed.Checksum_CRC64NVME) =
+                 Expected_Checksum
+               and then US.To_String (Parsed.Checksum_Type) =
+                 "FULL_OBJECT",
                "CompleteMultipartUpload server response mismatch: " &
                Response);
          end;
       end;
       declare
          Response : constant String := Run
-           (Signed_Request
-              ("GET", "/test-bucket/multipart-object", ""));
+           (Signed_Query_Request
+              ("GET", "/test-bucket/multipart-object", No_Query,
+               "x-amz-checksum-mode", "ENABLED"));
       begin
          Require
            (Has (Response, "200 OK")
             and then Has (Response, "Content-Length: 14" & CRLF)
             and then Has (Response, "Content-Type: text/plain" & CRLF)
+            and then Has
+              (Response, "x-amz-checksum-crc64nvme: " &
+                 Expected_Checksum & CRLF)
+            and then Has
+              (Response, "x-amz-checksum-type: FULL_OBJECT" & CRLF)
             and then Has (Response, Payload),
-            "completed multipart object was not published exactly");
+            "completed multipart object/checksum was not published exactly");
       end;
       declare
          Part_One : constant SigV4.Name_Value_Array :=
@@ -1251,7 +1363,8 @@ procedure S3_Server_Application_Corpus is
            (1 => SigV4.Pair ("partNumber", "2"));
          Part_Response : constant String := Run
            (Signed_Query_Request
-              ("HEAD", "/test-bucket/multipart-object", Part_One));
+              ("HEAD", "/test-bucket/multipart-object", Part_One,
+               "x-amz-checksum-mode", "ENABLED"));
          Ranged_Response : constant String := Run
            (Signed_Query_Request
               ("HEAD", "/test-bucket/multipart-object", Part_One,
@@ -1265,6 +1378,11 @@ procedure S3_Server_Application_Corpus is
             and then Has (Part_Response, "Content-Length: 14" & CRLF)
             and then Has
               (Part_Response, "x-amz-mp-parts-count: 1" & CRLF)
+            and then Has
+              (Part_Response, "x-amz-checksum-crc64nvme: " &
+                 Expected_Checksum & CRLF)
+            and then Has
+              (Part_Response, "x-amz-checksum-type: FULL_OBJECT" & CRLF)
             and then not Has (Part_Response, Payload),
             "HeadObject completed-part selection mismatch: " &
             Part_Response);
@@ -1290,8 +1408,8 @@ procedure S3_Server_Application_Corpus is
          Response : constant String := Run
            (Signed_Query_Body_Request
               ("GET", "/test-bucket/multipart-object", Query, "",
-               "x-amz-object-attributes: ETag,ObjectParts,ObjectSize" &
-               CRLF & "x-amz-max-parts: 1" & CRLF &
+               "x-amz-object-attributes: ETag,Checksum,ObjectParts," &
+               "ObjectSize" & CRLF & "x-amz-max-parts: 1" & CRLF &
                "x-amz-part-number-marker: 0" & CRLF));
          Parsed : constant Attributes.Get_Object_Attributes_Result :=
            Attributes.Parse_Result (Response_Body (Response));
@@ -1303,6 +1421,10 @@ procedure S3_Server_Application_Corpus is
               (US.To_String (Parsed.Entity_Tag), "-1") > 0
             and then Parsed.Object_Size.Is_Set
             and then Parsed.Object_Size.Value = 14
+            and then Parsed.Has_Checksum
+            and then US.To_String (Parsed.Checksum.CRC64NVME) =
+              Expected_Checksum
+            and then US.To_String (Parsed.Checksum.Kind) = "FULL_OBJECT"
             and then Parsed.Has_Object_Parts
             and then Parsed.Object_Parts.Total_Parts_Count.Value = 1
             and then Parsed.Object_Parts.Max_Parts.Value = 1
@@ -1311,7 +1433,10 @@ procedure S3_Server_Application_Corpus is
             and then not Parsed.Object_Parts.Is_Truncated
             and then Parsed.Object_Parts.Parts.Length = 1
             and then Parsed.Object_Parts.Parts.First_Element.Number.Value = 1
-            and then Parsed.Object_Parts.Parts.First_Element.Size.Value = 14,
+            and then Parsed.Object_Parts.Parts.First_Element.Size.Value = 14
+            and then US.To_String
+              (Parsed.Object_Parts.Parts.First_Element.Checksums.CRC64NVME) =
+                Expected_Checksum,
             "GetObjectAttributes lost completed multipart metadata: " &
             Response);
       end;
@@ -1371,6 +1496,223 @@ procedure S3_Server_Application_Corpus is
                and then Has (Get_Response, "Content-Length: 4" & CRLF)
                and then Has (Get_Response, "body"),
                "ranged UploadPartCopy did not complete exact bytes");
+         end;
+      end;
+
+      --  UploadPart has a request checksum body to validate, while
+      --  UploadPartCopy does not. Both nevertheless retain the checksum
+      --  selected when the upload was initiated.
+      declare
+         type Payload_Access is access all String;
+         Large_Source : constant Payload_Access :=
+           new String'(1 .. 5 * 1_024 * 1_024 + 1 => 'c');
+         Source_Response : constant String := US.To_String
+           (Run_Unbounded
+              (Signed_Buffered_Request
+              ("PUT", "/test-bucket/multipart-composite-source",
+               Large_Source.all)));
+         Composite_Create : constant String := Run
+           (Signed_Query_Body_Request
+              ("POST", "/test-bucket/multipart-composite-copy",
+               Create_Query, "",
+               "x-amz-checksum-algorithm: SHA256" & CRLF &
+               "x-amz-checksum-type: COMPOSITE" & CRLF));
+         Composite_ID : constant String := US.To_String
+           (Multipart.Parse_Create_Result
+              (Response_Body (Composite_Create)).Upload_ID);
+         Part_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("partNumber", "1"),
+            SigV4.Pair ("uploadId", Composite_ID));
+         Missing_Checksum : constant String := Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket/multipart-composite-copy", Part_Query,
+               Payload));
+         Copy_Response : constant String := Run
+           (Signed_Upload_Part_Copy_Request
+              ("/test-bucket/multipart-composite-copy", Composite_ID,
+               "test-bucket/multipart-composite-source",
+               "bytes=0-5242879"));
+         Tail_Copy_Response : constant String := Run
+           (Signed_Upload_Part_Copy_Request
+              ("/test-bucket/multipart-composite-copy", Composite_ID,
+               "test-bucket/multipart-composite-source",
+               "bytes=5242880-5242880", Part_Number => "2"));
+         Expected_Part_Checksum : constant String :=
+           SHA256_Checksum
+             (Large_Source.all
+                (Large_Source.all'First .. Large_Source.all'Last - 1));
+         Expected_Tail_Checksum : constant String := SHA256_Checksum ("c");
+      begin
+         Require
+           (Has (Source_Response, "200 OK")
+            and then Has (Composite_Create, "200 OK")
+            and then Has (Missing_Checksum, "400 Bad Request")
+            and then Has
+              (Missing_Checksum, "<Code>InvalidRequest</Code>"),
+            "direct composite UploadPart omitted its required checksum");
+         Require
+           (Has (Copy_Response, "200 OK")
+            and then Has (Tail_Copy_Response, "200 OK"),
+            "configured composite UploadPartCopy checksum mismatch: " &
+            Copy_Response & Tail_Copy_Response);
+         declare
+            Copied : constant Multipart.Copy_Part_Result :=
+              Multipart.Parse_Copy_Part_Result
+                (Response_Body (Copy_Response));
+            Copied_Tail : constant Multipart.Copy_Part_Result :=
+              Multipart.Parse_Copy_Part_Result
+                (Response_Body (Tail_Copy_Response));
+            List_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("uploadId", Composite_ID),
+               SigV4.Pair ("x-id", "ListParts"));
+            List_Response : constant String := Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/multipart-composite-copy",
+                  List_Query));
+            Listed : constant Multipart.List_Parts_Result :=
+              Multipart.Parse_List_Parts_Result
+                (Response_Body (List_Response));
+            Completion : Multipart.Complete_Multipart_Upload_Request;
+         begin
+            Require
+              (US.To_String (Copied.Checksum_SHA256) =
+                 Expected_Part_Checksum
+               and then Has (List_Response, "200 OK")
+               and then US.To_String (Listed.Checksum_Algorithm) = "SHA256"
+               and then US.To_String (Listed.Checksum_Type) = "COMPOSITE"
+               and then Listed.Parts.Length = 2
+               and then US.To_String
+                 (Listed.Parts.First_Element.Checksum_SHA256) =
+                   Expected_Part_Checksum
+               and then US.To_String
+                 (Listed.Parts.Last_Element.Checksum_SHA256) =
+                   Expected_Tail_Checksum,
+               "ListParts lost copied composite checksum");
+            Completion.Parts.Append
+              (Multipart.Completed_Part'
+                 (Number => 1,
+                  Entity_Tag => Copied.Entity_Tag,
+                  Checksum_SHA256 =>
+                    US.To_Unbounded_String (Expected_Part_Checksum),
+                  others => <>));
+            Completion.Parts.Append
+              (Multipart.Completed_Part'
+                 (Number => 2,
+                  Entity_Tag => Copied_Tail.Entity_Tag,
+                  Checksum_SHA256 =>
+                    US.To_Unbounded_String (Expected_Tail_Checksum),
+                  others => <>));
+            declare
+               Complete_Query : constant SigV4.Name_Value_Array :=
+                 (1 => SigV4.Pair ("uploadId", Composite_ID));
+               Document : constant String :=
+                 Multipart.Serialize_Complete_Request (Completion);
+               Complete_Response : constant String := Run
+                 (Signed_Query_Body_Request
+                    ("POST", "/test-bucket/multipart-composite-copy",
+                     Complete_Query, Document));
+            begin
+               Require
+                 (Has (Complete_Response, "200 OK"),
+                  "composite completion failed: " & Complete_Response);
+               declare
+                  Completed : constant
+                    Multipart.Complete_Multipart_Upload_Result :=
+                      Multipart.Parse_Complete_Result
+                        (Response_Body (Complete_Response));
+                  Completed_Checksum : constant String :=
+                    US.To_String (Completed.Checksum_SHA256);
+                  Head_Response : constant String := Run
+                    (Signed_Query_Request
+                       ("HEAD", "/test-bucket/multipart-composite-copy",
+                        No_Query, "x-amz-checksum-mode", "ENABLED"));
+                  Part_Two : constant SigV4.Name_Value_Array :=
+                    (1 => SigV4.Pair ("partNumber", "2"));
+                  Part_Head_Response : constant String := Run
+                    (Signed_Query_Request
+                       ("HEAD", "/test-bucket/multipart-composite-copy",
+                        Part_Two, "x-amz-checksum-mode", "ENABLED"));
+                  Part_Range_Response : constant String := Run
+                    (Signed_Query_Request
+                       ("HEAD", "/test-bucket/multipart-composite-copy",
+                        Part_Two, "Range", "bytes=0-0",
+                        "x-amz-checksum-mode", "ENABLED"));
+                  Aligned_Range_Response : constant String := Run
+                    (Signed_Query_Request
+                       ("HEAD", "/test-bucket/multipart-composite-copy",
+                        No_Query, "Range", "bytes=0-5242879",
+                        "x-amz-checksum-mode", "ENABLED"));
+                  Aligned_Get_Response : constant String := Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket/multipart-composite-copy",
+                        No_Query, "Range", "bytes=5242880-5242880",
+                        "x-amz-checksum-mode", "ENABLED"));
+                  Get_Response : constant US.Unbounded_String :=
+                    Run_Unbounded
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket/multipart-composite-copy",
+                        No_Query, "x-amz-checksum-mode", "ENABLED"));
+                  Cleanup_Response : constant String := Run
+                    (Signed_Request
+                       ("DELETE",
+                        "/test-bucket/multipart-composite-source", ""));
+               begin
+                  Require
+                    (Completed_Checksum'Length > 2
+                     and then Completed_Checksum
+                       (Completed_Checksum'Last - 1 ..
+                        Completed_Checksum'Last) = "-2"
+                     and then US.To_String (Completed.Checksum_Type) =
+                       "COMPOSITE"
+                     and then Has
+                       (Head_Response, "x-amz-checksum-sha256: " &
+                          Completed_Checksum & CRLF)
+                     and then Has
+                       (Head_Response,
+                        "x-amz-checksum-type: COMPOSITE" & CRLF)
+                     and then Has
+                       (Get_Response, "x-amz-checksum-sha256: " &
+                          Completed_Checksum & CRLF)
+                     and then Has
+                       (Get_Response,
+                        "x-amz-checksum-type: COMPOSITE" & CRLF)
+                     and then Has
+                       (Get_Response, "Content-Length: 5242881" & CRLF)
+                     and then Has (Get_Response, String'(1 .. 64 => 'c'))
+                     and then Has
+                       (Part_Head_Response, "x-amz-checksum-sha256: " &
+                          Expected_Tail_Checksum & CRLF)
+                     and then not Has
+                       (Part_Head_Response, Expected_Tail_Checksum & "-")
+                     and then Has
+                       (Part_Head_Response,
+                        "x-amz-checksum-type: COMPOSITE" & CRLF)
+                     and then Has
+                       (Part_Head_Response,
+                        "x-amz-mp-parts-count: 2" & CRLF)
+                     and then Has
+                       (Part_Range_Response, "Content-Length: 1" & CRLF)
+                     and then Has
+                       (Part_Range_Response, "x-amz-checksum-sha256: " &
+                          Expected_Tail_Checksum & CRLF)
+                     and then Has
+                       (Part_Range_Response,
+                        "x-amz-mp-parts-count: 2" & CRLF)
+                     and then Has
+                       (Aligned_Range_Response,
+                        "Content-Length: 5242880" & CRLF)
+                     and then not Has
+                       (Aligned_Range_Response, "x-amz-checksum-")
+                     and then Has
+                       (Aligned_Get_Response, "206 Partial Content")
+                     and then Has
+                       (Aligned_Get_Response, "Content-Length: 1" & CRLF)
+                     and then not Has
+                       (Aligned_Get_Response, "x-amz-checksum-")
+                     and then Has (Cleanup_Response, "204 No Content"),
+                     "HeadObject/GetObject multipart checksum mismatch");
+               end;
+            end;
          end;
       end;
 
@@ -4685,7 +5027,8 @@ begin
         (Name, Value : String; Second : String := "") return String is
         (Run
            (Signed_Query_Request
-              ("GET", "/test-bucket", Zero, Name, Value, Second)));
+              ("GET", "/test-bucket", Zero, Name, Value,
+               Second_Header_Value => Second)));
    begin
       declare
          Response : constant String := Header_Response
@@ -4981,7 +5324,7 @@ begin
               (Signed_Query_Request
                  ("GET", "/test-bucket", Basic,
                   "x-amz-expected-bucket-owner", "test-principal",
-                  "test-principal")),
+                  Second_Header_Value => "test-principal")),
             "InvalidRequest"),
          "duplicate ListObjectsV2 expected owner was accepted");
       Require
@@ -5260,6 +5603,13 @@ begin
               ("DELETE", "/test-bucket/multipart-copy", "")),
          "204 No Content"),
       "multipart copy object cleanup failed");
+   Require
+     (Has
+        (Run
+           (Signed_Request
+              ("DELETE", "/test-bucket/multipart-composite-copy", "")),
+         "204 No Content"),
+      "multipart composite copy object cleanup failed");
    Require
      (Has
         (Run

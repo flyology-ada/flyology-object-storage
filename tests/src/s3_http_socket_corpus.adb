@@ -1197,8 +1197,8 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-version-id: head-version" & CRLF &
                "x-amz-checksum-sha256: " &
                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" & CRLF &
-               "x-amz-checksum-md5: AAAAAAAAAAAAAAAAAAAAAA==" & CRLF &
-               "x-amz-checksum-type: FULL_OBJECT" & CRLF,
+               "x-amz-checksum-type: COMPOSITE" & CRLF &
+               "x-amz-mp-parts-count: 3" & CRLF,
                Omit_Content_Length => True),
             "HEAD", "/example-bucket/head%20object%2B%2525?" &
               "partNumber=3&response-cache-control=no-cache&" &
@@ -1289,9 +1289,8 @@ procedure S3_HTTP_Socket_Corpus is
                "Content-Range: bytes 1-7/9" & CRLF &
                "ETag: ""typed-get""" & CRLF &
                "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
-               "x-amz-checksum-crc32: AAAAAA==" & CRLF &
                "x-amz-checksum-sha256: " &
-               "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" & CRLF &
+               "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-3" & CRLF &
                "x-amz-checksum-type: COMPOSITE" & CRLF &
                "x-amz-meta-project: flyology" & CRLF &
                "x-amz-meta-stage: get" & CRLF &
@@ -1307,6 +1306,15 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Checksum_Mode => "ENABLED");
          Serve
            (HTTP_Response
+              ("200 OK", "full",
+               "ETag: ""typed-get-full""" & CRLF &
+               "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+               "x-amz-checksum-crc64nvme: AAAAAAAAAAA=" & CRLF &
+               "x-amz-checksum-type: FULL_OBJECT" & CRLF),
+            "GET", "/example-bucket/typed-get-full",
+            Expected_Checksum_Mode => "ENABLED");
+         Serve
+           (HTTP_Response
               ("304 Not Modified", "",
                "x-amz-request-id: get-request" & CRLF &
                "x-amz-id-2: get-host" & CRLF,
@@ -1317,6 +1325,25 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "x",
                "x-amz-checksum-sha256: not-base64" & CRLF),
             "GET", "/example-bucket/typed-get-invalid");
+         Serve
+           (HTTP_Response
+              ("200 OK", "x",
+               "x-amz-checksum-crc32: AAAAAA==" & CRLF &
+               "x-amz-checksum-sha256: " &
+               "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" & CRLF &
+               "x-amz-checksum-type: COMPOSITE" & CRLF),
+            "GET", "/example-bucket/typed-get-multiple");
+         Serve
+           (HTTP_Response
+              ("200 OK", "x",
+               "x-amz-checksum-crc64nvme: AAAAAAAAAAA=" & CRLF &
+               "x-amz-checksum-type: COMPOSITE" & CRLF),
+            "GET", "/example-bucket/typed-get-illegal-pair");
+         Serve
+           (HTTP_Response
+              ("200 OK", "x",
+               "x-amz-checksum-type: COMPOSITE" & CRLF),
+            "GET", "/example-bucket/typed-get-type-only");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT",
             "/example-bucket?tagging", "<Tagging",
@@ -2925,9 +2952,9 @@ procedure S3_HTTP_Socket_Corpus is
               or else US.To_String (Result.Version_ID) /= "head-version"
               or else US.To_String (Result.Checksum_SHA256) /=
                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-              or else US.To_String (Result.Checksum_Type) /= "FULL_OBJECT"
-              or else US.To_String (Result.Details.Checksum_MD5) /=
-                "AAAAAAAAAAAAAAAAAAAAAA=="
+              or else US.To_String (Result.Checksum_Type) /= "COMPOSITE"
+              or else not Result.Details.Parts_Count.Is_Set
+              or else Result.Details.Parts_Count.Value /= 3
               or else US.Length (Result.Details.Content_Range) /= 0
             then
                raise Program_Error with "high-level HeadObject mismatch";
@@ -3081,6 +3108,8 @@ procedure S3_HTTP_Socket_Corpus is
                    (Result.Result.Metadata.First_Element.Name) /= "project"
                  or else US.To_String (Result.Result.Checksum_Type) /=
                    "COMPOSITE"
+                 or else US.To_String (Result.Result.Checksum_SHA256) /=
+                   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-3"
                  or else US.To_String
                    (Result.Result.Server_Side_Encryption) /= "aws:backup"
                  or else US.To_String (Result.Result.Storage_Class) /=
@@ -3097,6 +3126,49 @@ procedure S3_HTTP_Socket_Corpus is
                end loop;
                if US.To_String (Received) /= "getdata" then
                   raise Program_Error with "typed GetObject body mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Get_Object_Parameters;
+         begin
+            Parameters.Checksum_Mode := True;
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "typed-get-full", Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Response : HTTP_Client.Response :=
+                 Low_Level.Execute_Get_Object
+                   (HTTP, Prepared, Timeout => 5.0);
+               Result : constant Low_Level.Get_Object_Head_Outcome :=
+                 Low_Level.Decode_Get_Object_Response_Head (Response);
+               Received : US.Unbounded_String;
+               Buffer : Stream_Element_Array (1 .. 3);
+               Last : Stream_Element_Offset;
+               Finished : Boolean := False;
+            begin
+               if Result.Kind /= Low_Level.Object_Opened
+                 or else Result.Status /= 200
+                 or else US.To_String (Result.Result.Checksum_Type) /=
+                   "FULL_OBJECT"
+                 or else US.To_String
+                   (Result.Result.Checksum_CRC64NVME) /= "AAAAAAAAAAA="
+               then
+                  raise Program_Error with
+                    "full-object GetObject checksum mismatch";
+               end if;
+               while not Finished loop
+                  HTTP_Client.Read_Body
+                    (Response, Buffer, Last, Finished);
+                  for Index in Buffer'First .. Last loop
+                     US.Append (Received, Character'Val (Buffer (Index)));
+                  end loop;
+               end loop;
+               if US.To_String (Received) /= "full" then
+                  raise Program_Error with
+                    "full-object GetObject body mismatch";
                end if;
             end;
          end;
@@ -3153,6 +3225,48 @@ procedure S3_HTTP_Socket_Corpus is
                raise Program_Error with
                  "typed GetObject accepted an invalid checksum";
             end if;
+         end;
+         declare
+            procedure Reject_Invalid_Get
+              (Key : String; Message : String) is
+               Parameters : Low_Level.Get_Object_Parameters;
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object
+                   (Origin, Low_Level.Path_Style, "example-bucket", Key,
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Response : HTTP_Client.Response :=
+                 Low_Level.Execute_Get_Object
+                   (HTTP, Prepared, Timeout => 5.0);
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant
+                       Low_Level.Get_Object_Head_Outcome :=
+                         Low_Level.Decode_Get_Object_Response_Head (Response);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Reject_Invalid_Get;
+         begin
+            Reject_Invalid_Get
+              ("typed-get-multiple",
+               "GetObject accepted multiple checksum algorithm headers");
+            Reject_Invalid_Get
+              ("typed-get-illegal-pair",
+               "GetObject accepted composite CRC64NVME metadata");
+            Reject_Invalid_Get
+              ("typed-get-type-only",
+               "GetObject accepted checksum type without an algorithm");
          end;
          declare
             Value : Tags.Tag_Set;

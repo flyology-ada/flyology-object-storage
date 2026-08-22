@@ -1,6 +1,7 @@
 with Ada.Containers;
 with Ada.Strings;
 with Ada.Strings.Fixed;
+with Flyology.Object_Storage.S3.Checksum_Policy;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Wire_Core;
 
@@ -8,6 +9,8 @@ package body Flyology.Object_Storage.S3.Multipart is
 
    package US renames Ada.Strings.Unbounded;
    package Model renames Flyology.Object_Storage.S3.Model;
+   package Checksum_Policy renames
+     Flyology.Object_Storage.S3.Checksum_Policy;
    package Wire_Core renames Flyology.Object_Storage.S3.Wire_Core;
    use type Ada.Containers.Count_Type;
 
@@ -886,25 +889,121 @@ package body Flyology.Object_Storage.S3.Multipart is
       end if;
    end Validate_Checksum;
 
+   procedure Validate_Object_Checksum
+     (Value         : US.Unbounded_String;
+      Decoded_Bytes : Positive;
+      Kind          : String)
+   is
+      Text : constant String := US.To_String (Value);
+   begin
+      if Text'Length = 0 then
+         return;
+      elsif Kind = "FULL_OBJECT"
+        or else
+          (Kind'Length = 0
+           and then Wire_Core.Valid_Base64 (Text, Decoded_Bytes))
+      then
+         Validate_Checksum (Value, Decoded_Bytes);
+         return;
+      end if;
+      declare
+         Dash : constant Natural := Ada.Strings.Fixed.Index
+           (Text, "-", Going => Ada.Strings.Backward);
+      begin
+         if Dash = 0
+           or else Dash = Text'First
+           or else Dash = Text'Last
+         then
+            raise Malformed_Multipart with
+              "invalid composite multipart result checksum";
+         end if;
+         declare
+            Count : constant Wire_Core.Natural_Result :=
+              Wire_Core.Parse_Natural (Text (Dash + 1 .. Text'Last));
+         begin
+            if not Count.Valid
+              or else Count.Value not in Core.Part_Number'Range
+              or else
+                (Dash < Text'Last
+                 and then Text (Dash + 1) = '0')
+              or else not Wire_Core.Valid_Base64
+                (Text (Text'First .. Dash - 1), Decoded_Bytes)
+            then
+               raise Malformed_Multipart with
+                 "invalid composite multipart result checksum";
+            end if;
+         end;
+      end;
+   end Validate_Object_Checksum;
+
    procedure Validate (Value : Complete_Multipart_Upload_Result) is
       Kind : constant String := US.To_String (Value.Checksum_Type);
+      Count : constant Natural :=
+        Boolean'Pos (US.Length (Value.Checksum_CRC32) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_CRC32C) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_CRC64NVME) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_SHA1) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_SHA256) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_SHA512) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_MD5) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_XXHASH64) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_XXHASH3) > 0) +
+        Boolean'Pos (US.Length (Value.Checksum_XXHASH128) > 0);
+
+      function Supported_Explicit_Pair return Boolean is
+         Method : constant Checksum_Policy.Checksum_Type :=
+           (if Kind = "COMPOSITE"
+            then Checksum_Policy.Composite
+            else Checksum_Policy.Full_Object);
+      begin
+         if US.Length (Value.Checksum_CRC32) > 0 then
+            return Checksum_Policy.Supported (Core.CRC32, Method);
+         elsif US.Length (Value.Checksum_CRC32C) > 0 then
+            return Checksum_Policy.Supported (Core.CRC32C, Method);
+         elsif US.Length (Value.Checksum_CRC64NVME) > 0 then
+            return Checksum_Policy.Supported (Core.CRC64NVME, Method);
+         elsif US.Length (Value.Checksum_SHA1) > 0 then
+            return Checksum_Policy.Supported (Core.SHA1, Method);
+         elsif US.Length (Value.Checksum_SHA256) > 0 then
+            return Checksum_Policy.Supported (Core.SHA256, Method);
+         elsif US.Length (Value.Checksum_SHA512) > 0 then
+            return Checksum_Policy.Supported (Core.SHA512, Method);
+         elsif US.Length (Value.Checksum_MD5) > 0 then
+            return Checksum_Policy.Supported (Core.MD5, Method);
+         elsif US.Length (Value.Checksum_XXHASH64) > 0 then
+            return Checksum_Policy.Supported (Core.XXHASH64, Method);
+         elsif US.Length (Value.Checksum_XXHASH3) > 0 then
+            return Checksum_Policy.Supported (Core.XXHASH3, Method);
+         else
+            return Checksum_Policy.Supported (Core.XXHASH128, Method);
+         end if;
+      end Supported_Explicit_Pair;
    begin
-      Validate_Checksum (Value.Checksum_CRC32, 4);
-      Validate_Checksum (Value.Checksum_CRC32C, 4);
-      Validate_Checksum (Value.Checksum_CRC64NVME, 8);
-      Validate_Checksum (Value.Checksum_SHA1, 20);
-      Validate_Checksum (Value.Checksum_SHA256, 32);
-      Validate_Checksum (Value.Checksum_SHA512, 64);
-      Validate_Checksum (Value.Checksum_MD5, 16);
-      Validate_Checksum (Value.Checksum_XXHASH64, 8);
-      Validate_Checksum (Value.Checksum_XXHASH3, 8);
-      Validate_Checksum (Value.Checksum_XXHASH128, 16);
       if Kind'Length > 0
         and then Kind /= "COMPOSITE"
         and then Kind /= "FULL_OBJECT"
       then
          raise Malformed_Multipart with "invalid multipart checksum type";
+      elsif Count > 1 then
+         raise Malformed_Multipart with
+           "multiple multipart result checksums";
+      elsif Count = 1
+        and then Kind'Length > 0
+        and then not Supported_Explicit_Pair
+      then
+         raise Malformed_Multipart with
+           "unsupported multipart checksum algorithm and type";
       end if;
+      Validate_Object_Checksum (Value.Checksum_CRC32, 4, Kind);
+      Validate_Object_Checksum (Value.Checksum_CRC32C, 4, Kind);
+      Validate_Object_Checksum (Value.Checksum_CRC64NVME, 8, Kind);
+      Validate_Object_Checksum (Value.Checksum_SHA1, 20, Kind);
+      Validate_Object_Checksum (Value.Checksum_SHA256, 32, Kind);
+      Validate_Object_Checksum (Value.Checksum_SHA512, 64, Kind);
+      Validate_Object_Checksum (Value.Checksum_MD5, 16, Kind);
+      Validate_Object_Checksum (Value.Checksum_XXHASH64, 8, Kind);
+      Validate_Object_Checksum (Value.Checksum_XXHASH3, 8, Kind);
+      Validate_Object_Checksum (Value.Checksum_XXHASH128, 16, Kind);
    end Validate;
 
    procedure Validate (Value : Copy_Part_Result) is

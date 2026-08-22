@@ -76,6 +76,95 @@ package body Flyology.Object_Storage.Server.S3_Applications is
      (Ada.Strings.Fixed.Trim
         (Byte_Count'Image (Value), Ada.Strings.Both));
 
+   function Storage_Algorithm
+     (Value : Checksum_Policy.Algorithm) return Checksum_Algorithm is
+     (case Value is
+         when S3.Core.CRC32     => Checksum_CRC32,
+         when S3.Core.CRC32C    => Checksum_CRC32C,
+         when S3.Core.CRC64NVME => Checksum_CRC64NVME,
+         when S3.Core.SHA1      => Checksum_SHA1,
+         when S3.Core.SHA256    => Checksum_SHA256,
+         when S3.Core.SHA512    => Checksum_SHA512,
+         when S3.Core.MD5       => Checksum_MD5,
+         when S3.Core.XXHASH64  => Checksum_XXHASH64,
+         when S3.Core.XXHASH3   => Checksum_XXHASH3,
+         when S3.Core.XXHASH128 => Checksum_XXHASH128);
+
+   function Storage_Method
+     (Value : Checksum_Policy.Checksum_Type) return Checksum_Method is
+     (case Value is
+         when Checksum_Policy.Composite   => Composite_Checksum,
+         when Checksum_Policy.Full_Object => Full_Object_Checksum);
+
+   function Wire_Algorithm (Value : Checksum_Algorithm) return String is
+     (case Value is
+         when No_Checksum        => "",
+         when Checksum_CRC32     => "CRC32",
+         when Checksum_CRC32C    => "CRC32C",
+         when Checksum_CRC64NVME => "CRC64NVME",
+         when Checksum_SHA1      => "SHA1",
+         when Checksum_SHA256    => "SHA256",
+         when Checksum_SHA512    => "SHA512",
+         when Checksum_MD5       => "MD5",
+         when Checksum_XXHASH64  => "XXHASH64",
+         when Checksum_XXHASH3   => "XXHASH3",
+         when Checksum_XXHASH128 => "XXHASH128");
+
+   function Wire_Method (Value : Checksum_Method) return String is
+     (case Value is
+         when No_Checksum_Method => "",
+         when Composite_Checksum => "COMPOSITE",
+         when Full_Object_Checksum => "FULL_OBJECT");
+
+   function Checksum_Header_Name
+     (Value : Checksum_Algorithm) return String is
+     (case Value is
+         when No_Checksum        => "",
+         when Checksum_CRC32     => "x-amz-checksum-crc32",
+         when Checksum_CRC32C    => "x-amz-checksum-crc32c",
+         when Checksum_CRC64NVME => "x-amz-checksum-crc64nvme",
+         when Checksum_SHA1      => "x-amz-checksum-sha1",
+         when Checksum_SHA256    => "x-amz-checksum-sha256",
+         when Checksum_SHA512    => "x-amz-checksum-sha512",
+         when Checksum_MD5       => "x-amz-checksum-md5",
+         when Checksum_XXHASH64  => "x-amz-checksum-xxhash64",
+         when Checksum_XXHASH3   => "x-amz-checksum-xxhash3",
+         when Checksum_XXHASH128 => "x-amz-checksum-xxhash128");
+
+   procedure Set_Checksum_Headers
+     (X : in out Apps.Exchange; Value : Checksum_Information) is
+   begin
+      if Value.Algorithm /= No_Checksum then
+         Apps.Set_Header
+           (X, Checksum_Header_Name (Value.Algorithm),
+            US.To_String (Value.Value));
+         Apps.Set_Header
+           (X, "x-amz-checksum-type", Wire_Method (Value.Method));
+      end if;
+   end Set_Checksum_Headers;
+
+   function Attribute_Checksum
+     (Value : Checksum_Information) return Attributes.Checksum_Values
+   is
+      Result : Attributes.Checksum_Values;
+   begin
+      case Value.Algorithm is
+         when No_Checksum => null;
+         when Checksum_CRC32 => Result.CRC32 := Value.Value;
+         when Checksum_CRC32C => Result.CRC32C := Value.Value;
+         when Checksum_CRC64NVME => Result.CRC64NVME := Value.Value;
+         when Checksum_SHA1 => Result.SHA1 := Value.Value;
+         when Checksum_SHA256 => Result.SHA256 := Value.Value;
+         when Checksum_SHA512 => Result.SHA512 := Value.Value;
+         when Checksum_MD5 => Result.MD5 := Value.Value;
+         when Checksum_XXHASH64 => Result.XXHASH64 := Value.Value;
+         when Checksum_XXHASH3 => Result.XXHASH3 := Value.Value;
+         when Checksum_XXHASH128 => Result.XXHASH128 := Value.Value;
+      end case;
+      Result.Kind := US.To_Unbounded_String (Wire_Method (Value.Method));
+      return Result;
+   end Attribute_Checksum;
+
    function Content_MD5 (Value : String) return String is
       Digest : constant GNAT.MD5.Binary_Message_Digest :=
         GNAT.MD5.Digest (Value);
@@ -530,6 +619,52 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return False;
       end Has_Checksum_Header;
 
+      function Checksum_Value_Header_Count return Natural is
+         Result : Natural := 0;
+      begin
+         for Algorithm in Checksum_CRC32 .. Checksum_XXHASH128 loop
+            Result := Result + Apps.Request_Header_Count
+              (X, Checksum_Header_Name (Algorithm));
+         end loop;
+         return Result;
+      end Checksum_Value_Header_Count;
+
+      function Checksum_Value_Algorithm return Checksum_Algorithm is
+      begin
+         for Algorithm in Checksum_CRC32 .. Checksum_XXHASH128 loop
+            if Apps.Request_Header_Count
+              (X, Checksum_Header_Name (Algorithm)) > 0
+            then
+               return Algorithm;
+            end if;
+         end loop;
+         return No_Checksum;
+      end Checksum_Value_Algorithm;
+
+      function Parse_Checksum_Algorithm
+        (Text : String; Valid : out Boolean) return Checksum_Algorithm
+      is
+         Parsed : constant Checksum_Policy.Algorithm_Parse_Result :=
+           Checksum_Policy.Parse_Algorithm (Text);
+      begin
+         Valid := Parsed.Valid;
+         return
+           (if Parsed.Valid then Storage_Algorithm (Parsed.Value)
+            else No_Checksum);
+      end Parse_Checksum_Algorithm;
+
+      function Parse_Checksum_Method
+        (Text : String; Valid : out Boolean) return Checksum_Method
+      is
+         Parsed : constant Checksum_Policy.Type_Parse_Result :=
+           Checksum_Policy.Parse_Type (Text);
+      begin
+         Valid := Parsed.Valid;
+         return
+           (if Parsed.Valid then Storage_Method (Parsed.Value)
+            else No_Checksum_Method);
+      end Parse_Checksum_Method;
+
       procedure Check_Expected_Bucket_Owner
         (Principal : String; Accepted : out Boolean)
       is
@@ -554,12 +689,22 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       end Check_Expected_Bucket_Owner;
 
       function Copy_Result_XML
-        (Root : String; Value : Object_Information) return String is
-        ("<" & Root &
-         " xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
-         "<LastModified>" & Last_Modified (Value.Modified) &
-         "</LastModified><ETag>&quot;" &
-         US.To_String (Value.Entity_Tag) & "&quot;</ETag></" & Root & ">");
+        (Root : String; Value : Object_Information) return String
+      is
+         Checksum_XML : constant String :=
+           (if Value.Checksum.Algorithm = No_Checksum then ""
+            else "<Checksum" & Wire_Algorithm (Value.Checksum.Algorithm) &
+              ">" & US.To_String (Value.Checksum.Value) & "</Checksum" &
+              Wire_Algorithm (Value.Checksum.Algorithm) & ">");
+      begin
+         return
+           "<" & Root &
+           " xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+           "<LastModified>" & Last_Modified (Value.Modified) &
+           "</LastModified><ETag>&quot;" &
+           US.To_String (Value.Entity_Tag) & "&quot;</ETag>" & Checksum_XML &
+           "</" & Root & ">";
+      end Copy_Result_XML;
 
       package Request_IO is
          type Request_Source is limited new Backends.Byte_Source with record
@@ -648,6 +793,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Started  : Boolean := False;
             Expected : Byte_Count := 0;
             Observed : Byte_Count := 0;
+            Include_Checksum : Boolean := False;
+            Suppress_Composite_Checksum : Boolean := False;
          end record;
 
          overriding procedure Begin_Object
@@ -718,6 +865,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             if US.Length (Info.Version) > 0 then
                Apps.Set_Header
                  (X, "x-amz-version-id", US.To_String (Info.Version));
+            end if;
+            if Item.Include_Checksum
+              and then not
+                (Item.Suppress_Composite_Checksum
+                 and then Info.Checksum.Method = Composite_Checksum)
+            then
+               Set_Checksum_Headers (X, Info.Checksum);
             end if;
             if Partial then
                Apps.Set_Header
@@ -2458,6 +2612,15 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                       (Last_Modified (Upload.Initiated)),
                                     Storage_Class =>
                                       US.To_Unbounded_String ("STANDARD"),
+                                    Checksum_Algorithm =>
+                                      US.To_Unbounded_String
+                                        (Wire_Algorithm
+                                           (Upload.Options.Checksum
+                                              .Algorithm)),
+                                    Checksum_Type =>
+                                      US.To_Unbounded_String
+                                        (Wire_Method
+                                           (Upload.Options.Checksum.Method)),
                                     others => <>));
                            end loop;
                            for Prefix_Value of Page.Common_Prefixes loop
@@ -2481,10 +2644,19 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                end if;
 
             when Create_Multipart =>
-               if Apps.Request_Header_Count (X, "content-type") > 1 then
+               if Apps.Request_Header_Count (X, "content-type") > 1
+                 or else Apps.Request_Header_Count
+                   (X, "x-amz-checksum-algorithm") > 1
+                 or else Apps.Request_Header_Count
+                   (X, "x-amz-checksum-type") > 1
+                 or else Apps.Request_Header_Count
+                   (X, "x-amz-sdk-checksum-algorithm") > 0
+                 or else Checksum_Value_Header_Count > 0
+               then
                   Send_Error
                     (X, 400, "InvalidRequest",
-                     "The Content-Type header is duplicated", Target_Text);
+                     "A multipart checksum header is invalid or duplicated",
+                     Target_Text);
                   return;
                end if;
                declare
@@ -2496,6 +2668,64 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Options.Content_Type := US.To_Unbounded_String
                        (Apps.Request_Header (X, "content-type"));
                   end if;
+                  declare
+                     Algorithm_Count : constant Natural :=
+                       Apps.Request_Header_Count
+                         (X, "x-amz-checksum-algorithm");
+                     Type_Count : constant Natural :=
+                       Apps.Request_Header_Count (X, "x-amz-checksum-type");
+                     Algorithm_Valid : Boolean := False;
+                     Method_Valid : Boolean := False;
+                     Algorithm : Checksum_Algorithm := No_Checksum;
+                     Method : Checksum_Method := No_Checksum_Method;
+                  begin
+                     if Algorithm_Count = 0 and then Type_Count = 0 then
+                        Algorithm := Checksum_CRC64NVME;
+                        Method := Full_Object_Checksum;
+                        Algorithm_Valid := True;
+                        Method_Valid := True;
+                     elsif Algorithm_Count = 1 then
+                        Algorithm := Parse_Checksum_Algorithm
+                          (Apps.Request_Header
+                             (X, "x-amz-checksum-algorithm"),
+                           Algorithm_Valid);
+                        if Type_Count = 1 then
+                           Method := Parse_Checksum_Method
+                             (Apps.Request_Header
+                                (X, "x-amz-checksum-type"), Method_Valid);
+                        else
+                           Method_Valid := True;
+                           Method :=
+                             (if Algorithm = Checksum_CRC64NVME
+                              then Full_Object_Checksum
+                              else Composite_Checksum);
+                        end if;
+                     end if;
+                     if (Algorithm_Count = 0 and then Type_Count /= 0)
+                       or else
+                         (Algorithm_Count = 1
+                          and then
+                            (not Algorithm_Valid or else not Method_Valid
+                             or else
+                               (Method = Full_Object_Checksum
+                                and then Algorithm not in
+                                  Checksum_CRC32 | Checksum_CRC32C |
+                                  Checksum_CRC64NVME)
+                             or else
+                               (Method = Composite_Checksum
+                                and then Algorithm = Checksum_CRC64NVME)))
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The multipart checksum selection is invalid",
+                           Target_Text);
+                        return;
+                     elsif Algorithm_Count <= 1 then
+                        Options.Checksum :=
+                          (Algorithm => Algorithm, Method => Method,
+                           Value => US.Null_Unbounded_String);
+                     end if;
+                  end;
                   Store.Create_Multipart_Upload
                     (Bucket, Key, Options, Apps.Cancellation (X),
                      Apps.Deadline (X), Upload_ID, Result);
@@ -2564,12 +2794,14 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            Owner => <>,
                            Storage_Class =>
                              US.To_Unbounded_String ("STANDARD"),
-                           Checksum_Algorithm => US.Null_Unbounded_String,
-                           Checksum_Type => US.Null_Unbounded_String);
+                           Checksum_Algorithm => US.To_Unbounded_String
+                             (Wire_Algorithm (Page.Checksum.Algorithm)),
+                           Checksum_Type => US.To_Unbounded_String
+                             (Wire_Method (Page.Checksum.Method)));
                      begin
                         for Part of Page.Parts loop
-                           Response.Parts.Append
-                             (Multipart.Listed_Part'
+                           declare
+                              Value : Multipart.Listed_Part :=
                                 (Number => S3.Core.Part_Number (Part.Number),
                                  Last_Modified => US.To_Unbounded_String
                                    (Last_Modified (Part.Info.Modified)),
@@ -2577,7 +2809,43 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                    ('"' & US.To_String
                                       (Part.Info.Entity_Tag) & '"'),
                                  Size => Part.Info.Size,
-                                 others => <>));
+                                 others => <>);
+                           begin
+                              case Part.Info.Checksum.Algorithm is
+                                 when No_Checksum => null;
+                                 when Checksum_CRC32 =>
+                                    Value.Checksum_CRC32 :=
+                                      Part.Info.Checksum.Value;
+                                 when Checksum_CRC32C =>
+                                    Value.Checksum_CRC32C :=
+                                      Part.Info.Checksum.Value;
+                                 when Checksum_CRC64NVME =>
+                                    Value.Checksum_CRC64NVME :=
+                                      Part.Info.Checksum.Value;
+                                 when Checksum_SHA1 =>
+                                    Value.Checksum_SHA1 :=
+                                      Part.Info.Checksum.Value;
+                                 when Checksum_SHA256 =>
+                                    Value.Checksum_SHA256 :=
+                                      Part.Info.Checksum.Value;
+                                 when Checksum_SHA512 =>
+                                    Value.Checksum_SHA512 :=
+                                      Part.Info.Checksum.Value;
+                                 when Checksum_MD5 =>
+                                    Value.Checksum_MD5 :=
+                                      Part.Info.Checksum.Value;
+                                 when Checksum_XXHASH64 =>
+                                    Value.Checksum_XXHASH64 :=
+                                      Part.Info.Checksum.Value;
+                                 when Checksum_XXHASH3 =>
+                                    Value.Checksum_XXHASH3 :=
+                                      Part.Info.Checksum.Value;
+                                 when Checksum_XXHASH128 =>
+                                    Value.Checksum_XXHASH128 :=
+                                      Part.Info.Checksum.Value;
+                              end case;
+                              Response.Parts.Append (Value);
+                           end;
                         end loop;
                         Apps.Respond
                           (X, 200, "application/xml",
@@ -2605,18 +2873,89 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Observed  => 0,
                      Maximum   => Backends.Maximum_Multipart_Part_Size,
                      Completed => False);
+                  Value_Count : constant Natural :=
+                    Checksum_Value_Header_Count;
+                  SDK_Count : constant Natural := Apps.Request_Header_Count
+                    (X, "x-amz-sdk-checksum-algorithm");
+                  Value_Algorithm : constant Checksum_Algorithm :=
+                    Checksum_Value_Algorithm;
+                  SDK_Algorithm : Checksum_Algorithm := No_Checksum;
+                  SDK_Valid : Boolean := False;
+                  Page : Backends.Multipart_Part_Page;
+                  Part_Options : Backends.Multipart_Part_Options;
                begin
+                  if Value_Count > 1 or else SDK_Count > 1
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-checksum-algorithm") > 0
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-checksum-type") > 0
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The UploadPart checksum group is invalid",
+                        Target_Text);
+                     return;
+                  end if;
+                  if SDK_Count = 1 then
+                     SDK_Algorithm := Parse_Checksum_Algorithm
+                       (Apps.Request_Header
+                          (X, "x-amz-sdk-checksum-algorithm"), SDK_Valid);
+                     if not SDK_Valid or else Value_Count /= 1
+                       or else SDK_Algorithm /= Value_Algorithm
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The UploadPart checksum algorithm is invalid",
+                           Target_Text);
+                        return;
+                     end if;
+                  end if;
+                  Store.List_Multipart_Parts
+                    (Bucket, Key, US.To_String (Query.Upload_ID),
+                     (After => 0, Maximum => 0), Apps.Cancellation (X),
+                     Apps.Deadline (X), Page, Result);
+                  if Result = Not_Found then
+                     Send_Error
+                       (X, 404, "NoSuchUpload",
+                        "The specified multipart upload does not exist",
+                        Target_Text);
+                     return;
+                  elsif Result /= Success then
+                     Send_Backend_Error (X, Result, False, Target_Text);
+                     return;
+                  elsif Page.Checksum.Method = Composite_Checksum
+                    and then Value_Count = 0
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A composite UploadPart checksum is required",
+                        Target_Text);
+                     return;
+                  end if;
+                  if Value_Count = 1 then
+                     Part_Options.Expected_Checksum :=
+                       (Algorithm => Value_Algorithm,
+                        Method    => Page.Checksum.Method,
+                        Value     => US.To_Unbounded_String
+                          (Apps.Request_Header
+                             (X, Checksum_Header_Name (Value_Algorithm))));
+                  end if;
                   Store.Put_Multipart_Part
                     (Bucket, Key, US.To_String (Query.Upload_ID),
                      Backends.Multipart_Part_Number (Query.Part_Number),
-                     Source, Apps.Cancellation (X), Apps.Deadline (X),
-                     Info, Result);
+                     Source, Part_Options, Apps.Cancellation (X),
+                     Apps.Deadline (X), Info, Result);
                   if Result = Success and then not Source.Completed then
                      raise Program_Error with
                        "backend committed before validating the whole part";
                   elsif Result = Success then
                      Apps.Set_Header
                        (X, "ETag", '"' & US.To_String (Info.Entity_Tag) & '"');
+                     if Info.Checksum.Algorithm /= No_Checksum then
+                        Apps.Set_Header
+                          (X, Checksum_Header_Name (Info.Checksum.Algorithm),
+                           US.To_String (Info.Checksum.Value));
+                     end if;
                      Apps.Respond (X, 200, "", "");
                   elsif Result = Not_Found then
                      Send_Error
@@ -2797,6 +3136,16 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   SSE_MD5_Count : constant Natural :=
                     Apps.Request_Header_Count
                       (X, "x-amz-server-side-encryption-customer-key-md5");
+                  Value_Count : constant Natural :=
+                    Checksum_Value_Header_Count;
+                  Algorithm_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-checksum-algorithm");
+                  Type_Count : constant Natural := Apps.Request_Header_Count
+                    (X, "x-amz-checksum-type");
+                  Value_Algorithm : constant Checksum_Algorithm :=
+                    Checksum_Value_Algorithm;
+                  Page : Backends.Multipart_Part_Page;
 
                   function Bare_ETag (Value : String) return String is
                     (if Value'Length >= 2
@@ -2805,18 +3154,35 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      then Value (Value'First + 1 .. Value'Last - 1)
                      else Value);
 
-                  function Has_Checksum
-                    (Part : Multipart.Completed_Part) return Boolean is
-                    (US.Length (Part.Checksum_CRC32) > 0
-                     or else US.Length (Part.Checksum_CRC32C) > 0
-                     or else US.Length (Part.Checksum_CRC64NVME) > 0
-                     or else US.Length (Part.Checksum_SHA1) > 0
-                     or else US.Length (Part.Checksum_SHA256) > 0
-                     or else US.Length (Part.Checksum_SHA512) > 0
-                     or else US.Length (Part.Checksum_MD5) > 0
-                     or else US.Length (Part.Checksum_XXHASH64) > 0
-                     or else US.Length (Part.Checksum_XXHASH3) > 0
-                     or else US.Length (Part.Checksum_XXHASH128) > 0);
+                  function Part_Checksum_Count
+                    (Part : Multipart.Completed_Part) return Natural is
+                    (Boolean'Pos (US.Length (Part.Checksum_CRC32) > 0) +
+                     Boolean'Pos (US.Length (Part.Checksum_CRC32C) > 0) +
+                     Boolean'Pos (US.Length (Part.Checksum_CRC64NVME) > 0) +
+                     Boolean'Pos (US.Length (Part.Checksum_SHA1) > 0) +
+                     Boolean'Pos (US.Length (Part.Checksum_SHA256) > 0) +
+                     Boolean'Pos (US.Length (Part.Checksum_SHA512) > 0) +
+                     Boolean'Pos (US.Length (Part.Checksum_MD5) > 0) +
+                     Boolean'Pos (US.Length (Part.Checksum_XXHASH64) > 0) +
+                     Boolean'Pos (US.Length (Part.Checksum_XXHASH3) > 0) +
+                     Boolean'Pos (US.Length (Part.Checksum_XXHASH128) > 0));
+
+                  function Part_Checksum_Value
+                    (Part : Multipart.Completed_Part;
+                     Algorithm : Checksum_Algorithm) return US.Unbounded_String
+                  is
+                    (case Algorithm is
+                        when No_Checksum => US.Null_Unbounded_String,
+                        when Checksum_CRC32 => Part.Checksum_CRC32,
+                        when Checksum_CRC32C => Part.Checksum_CRC32C,
+                        when Checksum_CRC64NVME => Part.Checksum_CRC64NVME,
+                        when Checksum_SHA1 => Part.Checksum_SHA1,
+                        when Checksum_SHA256 => Part.Checksum_SHA256,
+                        when Checksum_SHA512 => Part.Checksum_SHA512,
+                        when Checksum_MD5 => Part.Checksum_MD5,
+                        when Checksum_XXHASH64 => Part.Checksum_XXHASH64,
+                        when Checksum_XXHASH3 => Part.Checksum_XXHASH3,
+                        when Checksum_XXHASH128 => Part.Checksum_XXHASH128);
                begin
                   if Payer_Count > 1
                     or else Size_Count > 1
@@ -2825,6 +3191,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     or else SSE_Algorithm_Count > 1
                     or else SSE_Key_Count > 1
                     or else SSE_MD5_Count > 1
+                    or else Value_Count > 1
+                    or else Type_Count > 1
+                    or else Algorithm_Count > 1
+                    or else Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm") > 0
                   then
                      Send_Error
                        (X, 400, "InvalidRequest",
@@ -2849,12 +3220,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 501, "NotImplemented",
                         "Requester Pays is not implemented", Target_Text);
                      return;
-                  elsif Has_Checksum_Header then
-                     Send_Error
-                       (X, 501, "NotImplemented",
-                        "Multipart completion checksums are not implemented",
-                        Target_Text);
-                     return;
                   elsif SSE_Algorithm_Count + SSE_Key_Count + SSE_MD5_Count > 0
                   then
                      Send_Error
@@ -2862,6 +3227,78 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         "The multipart upload does not use SSE-C",
                         Target_Text);
                      return;
+                  end if;
+                  Store.List_Multipart_Parts
+                    (Bucket, Key,
+                     US.To_String (Query.Existing_Upload_ID),
+                     (After => 0, Maximum => 0), Apps.Cancellation (X),
+                     Apps.Deadline (X), Page, Result);
+                  if Result = Not_Found then
+                     Send_Error
+                       (X, 404, "NoSuchUpload",
+                        "The specified multipart upload does not exist",
+                        Target_Text);
+                     return;
+                  elsif Result /= Success then
+                     Send_Backend_Error (X, Result, False, Target_Text);
+                     return;
+                  elsif Value_Count = 1
+                    and then
+                      (Page.Checksum.Algorithm = No_Checksum
+                       or else Value_Algorithm /= Page.Checksum.Algorithm)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The multipart completion checksum is invalid",
+                        Target_Text);
+                     return;
+                  end if;
+                  if Algorithm_Count = 1 then
+                     declare
+                        Algorithm_Valid : Boolean := False;
+                        Algorithm : constant Checksum_Algorithm :=
+                          Parse_Checksum_Algorithm
+                            (Apps.Request_Header
+                               (X, "x-amz-checksum-algorithm"),
+                             Algorithm_Valid);
+                     begin
+                        if not Algorithm_Valid
+                          or else Algorithm /= Page.Checksum.Algorithm
+                        then
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "The multipart checksum algorithm is invalid",
+                              Target_Text);
+                           return;
+                        end if;
+                     end;
+                  end if;
+                  if Type_Count = 1 then
+                     declare
+                        Method_Valid : Boolean := False;
+                        Method : constant Checksum_Method :=
+                          Parse_Checksum_Method
+                            (Apps.Request_Header (X, "x-amz-checksum-type"),
+                             Method_Valid);
+                     begin
+                        if not Method_Valid
+                          or else Method /= Page.Checksum.Method
+                        then
+                           Send_Error
+                             (X, 400, "BadDigest",
+                              "The multipart checksum type did not match",
+                              Target_Text);
+                           return;
+                        end if;
+                     end;
+                  end if;
+                  if Value_Count = 1 then
+                     Options.Expected_Checksum :=
+                       (Algorithm => Value_Algorithm,
+                        Method    => Page.Checksum.Method,
+                        Value     => US.To_Unbounded_String
+                          (Apps.Request_Header
+                             (X, Checksum_Header_Name (Value_Algorithm))));
                   end if;
                   if Size_Count = 1 then
                      declare
@@ -2891,20 +3328,47 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                          (Apps.Request_Header (X, "if-none-match"));
                   end if;
                   for Part of Request.Parts loop
-                     if Has_Checksum (Part) then
-                        Send_Error
-                          (X, 501, "NotImplemented",
-                           "Multipart completion checksums are not " &
-                           "implemented", Target_Text);
-                        return;
-                     end if;
-                     Completion.Append
-                       (Backends.Multipart_Part_Reference'
-                          (Number => Backends.Multipart_Part_Number
-                             (Part.Number),
-                           Entity_Tag => US.To_Unbounded_String
-                             (Bare_ETag (US.To_String (Part.Entity_Tag))),
-                           Checksum => (others => <>)));
+                     declare
+                        Count : constant Natural :=
+                          Part_Checksum_Count (Part);
+                        Value : constant US.Unbounded_String :=
+                          Part_Checksum_Value
+                            (Part, Page.Checksum.Algorithm);
+                     begin
+                        if Count > 1
+                          or else
+                            (Page.Checksum.Algorithm = No_Checksum
+                             and then Count > 0)
+                          or else
+                            (Page.Checksum.Method = Composite_Checksum
+                             and then
+                               (Count /= 1 or else US.Length (Value) = 0))
+                          or else
+                            (Page.Checksum.Method = Full_Object_Checksum
+                             and then Count = 1
+                             and then US.Length (Value) = 0)
+                        then
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "A completed part checksum is invalid",
+                              Target_Text);
+                           return;
+                        end if;
+                        Completion.Append
+                          (Backends.Multipart_Part_Reference'
+                             (Number => Backends.Multipart_Part_Number
+                                (Part.Number),
+                              Entity_Tag => US.To_Unbounded_String
+                                (Bare_ETag
+                                   (US.To_String (Part.Entity_Tag))),
+                              Checksum =>
+                                (if US.Length (Value) = 0
+                                 then No_Checksum_Information
+                                 else
+                                   (Algorithm => Page.Checksum.Algorithm,
+                                    Method    => Page.Checksum.Method,
+                                    Value     => Value))));
+                     end;
                   end loop;
                   Store.Complete_Multipart_Upload
                     (Bucket, Key,
@@ -2912,18 +3376,51 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Options,
                      Apps.Cancellation (X), Apps.Deadline (X), Info, Result);
                   if Result = Success then
-                     Apps.Respond
-                       (X, 200, "application/xml",
-                        Multipart.Serialize_Complete_Result
-                          ((Location => US.To_Unbounded_String
-                              ("/" & Bucket & "/" &
-                               Encoding.URI_Encode
-                                 (Key, Encode_Slash => False)),
-                            Bucket     => US.To_Unbounded_String (Bucket),
-                            Key        => US.To_Unbounded_String (Key),
-                            Entity_Tag => US.To_Unbounded_String
-                              ('"' & US.To_String (Info.Entity_Tag) & '"'),
-                            others     => <>)));
+                     declare
+                        Response : Multipart.Complete_Multipart_Upload_Result
+                          := (Location => US.To_Unbounded_String
+                                ("/" & Bucket & "/" &
+                                 Encoding.URI_Encode
+                                   (Key, Encode_Slash => False)),
+                              Bucket => US.To_Unbounded_String (Bucket),
+                              Key => US.To_Unbounded_String (Key),
+                              Entity_Tag => US.To_Unbounded_String
+                                ('"' & US.To_String (Info.Entity_Tag) & '"'),
+                              others => <>);
+                     begin
+                        case Info.Checksum.Algorithm is
+                           when No_Checksum => null;
+                           when Checksum_CRC32 =>
+                              Response.Checksum_CRC32 := Info.Checksum.Value;
+                           when Checksum_CRC32C =>
+                              Response.Checksum_CRC32C := Info.Checksum.Value;
+                           when Checksum_CRC64NVME =>
+                              Response.Checksum_CRC64NVME :=
+                                Info.Checksum.Value;
+                           when Checksum_SHA1 =>
+                              Response.Checksum_SHA1 := Info.Checksum.Value;
+                           when Checksum_SHA256 =>
+                              Response.Checksum_SHA256 := Info.Checksum.Value;
+                           when Checksum_SHA512 =>
+                              Response.Checksum_SHA512 := Info.Checksum.Value;
+                           when Checksum_MD5 =>
+                              Response.Checksum_MD5 := Info.Checksum.Value;
+                           when Checksum_XXHASH64 =>
+                              Response.Checksum_XXHASH64 :=
+                                Info.Checksum.Value;
+                           when Checksum_XXHASH3 =>
+                              Response.Checksum_XXHASH3 :=
+                                Info.Checksum.Value;
+                           when Checksum_XXHASH128 =>
+                              Response.Checksum_XXHASH128 :=
+                                Info.Checksum.Value;
+                        end case;
+                        Response.Checksum_Type := US.To_Unbounded_String
+                          (Wire_Method (Info.Checksum.Method));
+                        Apps.Respond
+                          (X, 200, "application/xml",
+                           Multipart.Serialize_Complete_Result (Response));
+                     end;
                   elsif Result = Not_Found then
                      Send_Error
                        (X, 404, "NoSuchUpload",
@@ -3541,6 +4038,14 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Response.Object_Size :=
                           (Is_Set => True, Value => Snapshot.Info.Size);
                      end if;
+                     if Selection.Checksum
+                       and then Snapshot.Info.Checksum.Algorithm /=
+                         No_Checksum
+                     then
+                        Response.Has_Checksum := True;
+                        Response.Checksum :=
+                          Attribute_Checksum (Snapshot.Info.Checksum);
+                     end if;
                      if Selection.Object_Parts and then Snapshot.Is_Multipart
                      then
                         Response.Has_Object_Parts := True;
@@ -3566,7 +4071,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                     Value => Natural (Part.Number)),
                                  Size =>
                                    (Is_Set => True, Value => Part.Size),
-                                 Checksums => <>));
+                                 Checksums =>
+                                   Attribute_Checksum (Part.Checksum)));
                         end loop;
                      end if;
                      Apps.Set_Header
@@ -3688,6 +4194,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, "x-amz-version-id",
                         (if US.Length (Info.Version) > 0
                          then US.To_String (Info.Version) else "null"));
+                     --  A multipart Range without partNumber cannot be
+                     --  mapped to retained part boundaries through one
+                     --  atomic backend snapshot. Do not mislabel the whole
+                     --  object checksum as a selected-part checksum.
+                     if Checksum_Count = 1
+                       and then not
+                         (Has_Range and then Snapshot.Is_Multipart
+                          and then not
+                            Object_Read_Request.Has_Part_Number)
+                     then
+                        Set_Checksum_Headers (X, Info.Checksum);
+                     end if;
                   end Set_Common_Headers;
 
                   procedure Set_Response_Overrides is
@@ -3924,6 +4442,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                             Effective_Part
                         then
                            Info.Size := Snapshot.Parts.First_Element.Size;
+                           Info.Checksum :=
+                             Snapshot.Parts.First_Element.Checksum;
                         else
                            Result := Invalid_Part;
                         end if;
@@ -4220,6 +4740,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Requested := Parsed_Range.Request;
                      end;
                   end if;
+                  Sink.Include_Checksum := Checksum_Count = 1;
+                  Sink.Suppress_Composite_Checksum := Range_Count = 1;
                   Store.Get_Object
                     (Bucket, Key, Requested, Sink, Apps.Cancellation (X),
                      Apps.Deadline (X), Info, Result, Conditions);

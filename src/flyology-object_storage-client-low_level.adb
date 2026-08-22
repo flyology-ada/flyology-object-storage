@@ -36,6 +36,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
    function Wire_Query (Canonical : String) return String;
    function Valid_Optional_Checksum
      (Value : US.Unbounded_String; Bytes : Positive) return Boolean;
+   function Valid_Optional_Object_Checksum
+     (Value : US.Unbounded_String; Bytes : Positive; Kind : String)
+      return Boolean;
+   function Valid_Read_Checksum_Headers
+     (CRC32, CRC32C, CRC64NVME, SHA1, SHA256, SHA512, MD5,
+      XXHASH64, XXHASH3, XXHASH128 : US.Unbounded_String;
+      Kind : String) return Boolean;
    function Valid_Checksum_Algorithm (Value : String) return Boolean;
    function Content_MD5 (Value : String) return String;
    function Whitespace_Only (Value : String) return Boolean;
@@ -1838,16 +1845,26 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Charged : constant String := US.To_String (Value.Request_Charged);
    begin
       if US.Length (Value.Entity_Tag) = 0
-        or else not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
-        or else not Valid_Optional_Checksum (Value.Checksum_CRC32C, 4)
-        or else not Valid_Optional_Checksum (Value.Checksum_CRC64NVME, 8)
-        or else not Valid_Optional_Checksum (Value.Checksum_SHA1, 20)
-        or else not Valid_Optional_Checksum (Value.Checksum_SHA256, 32)
-        or else not Valid_Optional_Checksum (Value.Checksum_SHA512, 64)
-        or else not Valid_Optional_Checksum (Value.Checksum_MD5, 16)
-        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH64, 8)
-        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH3, 8)
-        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH128, 16)
+        or else not Valid_Optional_Object_Checksum
+          (Value.Checksum_CRC32, 4, Checksum_Type)
+        or else not Valid_Optional_Object_Checksum
+          (Value.Checksum_CRC32C, 4, Checksum_Type)
+        or else not Valid_Optional_Object_Checksum
+          (Value.Checksum_CRC64NVME, 8, Checksum_Type)
+        or else not Valid_Optional_Object_Checksum
+          (Value.Checksum_SHA1, 20, Checksum_Type)
+        or else not Valid_Optional_Object_Checksum
+          (Value.Checksum_SHA256, 32, Checksum_Type)
+        or else not Valid_Optional_Object_Checksum
+          (Value.Checksum_SHA512, 64, Checksum_Type)
+        or else not Valid_Optional_Object_Checksum
+          (Value.Checksum_MD5, 16, Checksum_Type)
+        or else not Valid_Optional_Object_Checksum
+          (Value.Checksum_XXHASH64, 8, Checksum_Type)
+        or else not Valid_Optional_Object_Checksum
+          (Value.Checksum_XXHASH3, 8, Checksum_Type)
+        or else not Valid_Optional_Object_Checksum
+          (Value.Checksum_XXHASH128, 16, Checksum_Type)
         or else (Checksum_Type'Length > 0
                  and then Checksum_Type not in "COMPOSITE" | "FULL_OBJECT")
         or else (Encryption'Length > 0
@@ -3261,16 +3278,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
           (US.To_String (Value.Entity_Tag))
         or else not Object_Reads.Parse_Conditional_Date
           (US.To_String (Value.Last_Modified)).Valid
-        or else not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
-        or else not Valid_Optional_Checksum (Value.Checksum_CRC32C, 4)
-        or else not Valid_Optional_Checksum (Value.Checksum_CRC64NVME, 8)
-        or else not Valid_Optional_Checksum (Value.Checksum_SHA1, 20)
-        or else not Valid_Optional_Checksum (Value.Checksum_SHA256, 32)
-        or else not Valid_Optional_Checksum (Value.Checksum_SHA512, 64)
-        or else not Valid_Optional_Checksum (Value.Checksum_MD5, 16)
-        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH64, 8)
-        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH3, 8)
-        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH128, 16)
+        or else not Valid_Read_Checksum_Headers
+          (Value.Checksum_CRC32, Value.Checksum_CRC32C,
+           Value.Checksum_CRC64NVME, Value.Checksum_SHA1,
+           Value.Checksum_SHA256, Value.Checksum_SHA512,
+           Value.Checksum_MD5, Value.Checksum_XXHASH64,
+           Value.Checksum_XXHASH3, Value.Checksum_XXHASH128,
+           US.To_String (Value.Checksum_Type))
         or else not Valid_Head_Object_Enum (Value.Archive_Status, 5)
         or else not Valid_Head_Object_Enum (Value.Checksum_Type, 18)
         or else (US.Length (Value.SSE_Customer_Key_MD5) > 0
@@ -3599,16 +3613,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
           and then not Valid_Content_Range
             (US.To_String (Value.Content_Range), Value.Content_Length))
         or else (Status = 200 and then US.Length (Value.Content_Range) > 0)
-        or else not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
-        or else not Valid_Optional_Checksum (Value.Checksum_CRC32C, 4)
-        or else not Valid_Optional_Checksum (Value.Checksum_CRC64NVME, 8)
-        or else not Valid_Optional_Checksum (Value.Checksum_SHA1, 20)
-        or else not Valid_Optional_Checksum (Value.Checksum_SHA256, 32)
-        or else not Valid_Optional_Checksum (Value.Checksum_SHA512, 64)
-        or else not Valid_Optional_Checksum (Value.Checksum_MD5, 16)
-        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH64, 8)
-        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH3, 8)
-        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH128, 16)
+        or else not Valid_Read_Checksum_Headers
+          (Value.Checksum_CRC32, Value.Checksum_CRC32C,
+           Value.Checksum_CRC64NVME, Value.Checksum_SHA1,
+           Value.Checksum_SHA256, Value.Checksum_SHA512,
+           Value.Checksum_MD5, Value.Checksum_XXHASH64,
+           Value.Checksum_XXHASH3, Value.Checksum_XXHASH128,
+           US.To_String (Value.Checksum_Type))
         or else not Valid_Get_Object_Enum (Value.Checksum_Type, 19)
         or else (US.Length (Value.SSE_Customer_Key_MD5) > 0
                  and then not Wire_Core.Valid_Base64
@@ -5297,6 +5308,111 @@ package body Flyology.Object_Storage.Client.Low_Level is
      (Value : US.Unbounded_String; Bytes : Positive) return Boolean is
      (US.Length (Value) = 0
       or else Wire_Core.Valid_Base64 (US.To_String (Value), Bytes));
+
+   function Valid_Optional_Object_Checksum
+     (Value : US.Unbounded_String; Bytes : Positive; Kind : String)
+      return Boolean
+   is
+      Text : constant String := US.To_String (Value);
+      Dash : constant Natural :=
+        (if Kind = "COMPOSITE" or else Kind'Length = 0
+         then Ada.Strings.Fixed.Index
+           (Text, "-", Going => Ada.Strings.Backward)
+         else 0);
+   begin
+      if Text'Length = 0 then
+         return True;
+      elsif Kind /= "COMPOSITE" and then Kind'Length > 0 then
+         return Wire_Core.Valid_Base64 (Text, Bytes);
+      elsif Kind'Length = 0 and then Wire_Core.Valid_Base64 (Text, Bytes) then
+         return True;
+      elsif Dash = 0 or else Dash = Text'First or else Dash = Text'Last then
+         return False;
+      end if;
+      declare
+         Count : constant Wire_Core.Natural_Result :=
+           Wire_Core.Parse_Natural (Text (Dash + 1 .. Text'Last));
+      begin
+         return Count.Valid
+           and then Count.Value in S3.Core.Part_Number'Range
+           and then Text (Dash + 1) /= '0'
+           and then Wire_Core.Valid_Base64
+             (Text (Text'First .. Dash - 1), Bytes);
+      end;
+   end Valid_Optional_Object_Checksum;
+
+   function Valid_Read_Checksum_Headers
+     (CRC32, CRC32C, CRC64NVME, SHA1, SHA256, SHA512, MD5,
+      XXHASH64, XXHASH3, XXHASH128 : US.Unbounded_String;
+      Kind : String) return Boolean
+   is
+      Count : constant Natural :=
+        Boolean'Pos (US.Length (CRC32) > 0) +
+        Boolean'Pos (US.Length (CRC32C) > 0) +
+        Boolean'Pos (US.Length (CRC64NVME) > 0) +
+        Boolean'Pos (US.Length (SHA1) > 0) +
+        Boolean'Pos (US.Length (SHA256) > 0) +
+        Boolean'Pos (US.Length (SHA512) > 0) +
+        Boolean'Pos (US.Length (MD5) > 0) +
+        Boolean'Pos (US.Length (XXHASH64) > 0) +
+        Boolean'Pos (US.Length (XXHASH3) > 0) +
+        Boolean'Pos (US.Length (XXHASH128) > 0);
+
+      function Encoding_Is_Valid
+        (Value : US.Unbounded_String; Bytes : Positive) return Boolean is
+        (Valid_Optional_Checksum (Value, Bytes)
+         or else Valid_Optional_Object_Checksum (Value, Bytes, Kind));
+
+      function Pair_Is_Supported return Boolean is
+         Algorithm : constant Checksum_Policy.Algorithm :=
+           (if US.Length (CRC32) > 0 then S3.Core.CRC32
+            elsif US.Length (CRC32C) > 0 then S3.Core.CRC32C
+            elsif US.Length (CRC64NVME) > 0 then S3.Core.CRC64NVME
+            elsif US.Length (SHA1) > 0 then S3.Core.SHA1
+            elsif US.Length (SHA256) > 0 then S3.Core.SHA256
+            elsif US.Length (SHA512) > 0 then S3.Core.SHA512
+            elsif US.Length (MD5) > 0 then S3.Core.MD5
+            elsif US.Length (XXHASH64) > 0 then S3.Core.XXHASH64
+            elsif US.Length (XXHASH3) > 0 then S3.Core.XXHASH3
+            else S3.Core.XXHASH128);
+         Method : constant Checksum_Policy.Checksum_Type :=
+           (if Kind = "COMPOSITE"
+            then Checksum_Policy.Composite
+            else Checksum_Policy.Full_Object);
+      begin
+         return Checksum_Policy.Supported (Algorithm, Method);
+      end Pair_Is_Supported;
+   begin
+      if Count > 1
+        or else Kind not in "" | "COMPOSITE" | "FULL_OBJECT"
+      then
+         return False;
+      elsif Count = 0 then
+         return Kind'Length = 0;
+      elsif Kind'Length > 0 and then not Pair_Is_Supported then
+         return False;
+      elsif US.Length (CRC32) > 0 then
+         return Encoding_Is_Valid (CRC32, 4);
+      elsif US.Length (CRC32C) > 0 then
+         return Encoding_Is_Valid (CRC32C, 4);
+      elsif US.Length (CRC64NVME) > 0 then
+         return Encoding_Is_Valid (CRC64NVME, 8);
+      elsif US.Length (SHA1) > 0 then
+         return Encoding_Is_Valid (SHA1, 20);
+      elsif US.Length (SHA256) > 0 then
+         return Encoding_Is_Valid (SHA256, 32);
+      elsif US.Length (SHA512) > 0 then
+         return Encoding_Is_Valid (SHA512, 64);
+      elsif US.Length (MD5) > 0 then
+         return Encoding_Is_Valid (MD5, 16);
+      elsif US.Length (XXHASH64) > 0 then
+         return Encoding_Is_Valid (XXHASH64, 8);
+      elsif US.Length (XXHASH3) > 0 then
+         return Encoding_Is_Valid (XXHASH3, 8);
+      else
+         return Encoding_Is_Valid (XXHASH128, 16);
+      end if;
+   end Valid_Read_Checksum_Headers;
 
    function Prepare_Upload_Part
      (Origin     : Flyology.HTTP.Origin;
