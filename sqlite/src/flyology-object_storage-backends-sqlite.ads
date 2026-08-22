@@ -98,6 +98,21 @@ package Flyology.Object_Storage.Backends.SQLite is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status);
 
+   overriding procedure Put_Object_Tags
+     (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
+      Token : access Flyology.Cancellation.Token; Deadline : Ada.Real_Time.Time;
+      Result : out Status);
+
+   overriding procedure Get_Object_Tags
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token; Deadline : Ada.Real_Time.Time;
+      Tags : out Object_Tag_Set; Result : out Status);
+
+   overriding procedure Delete_Object_Tags
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token; Deadline : Ada.Real_Time.Time;
+      Result : out Status);
+
    overriding procedure List_Objects
      (Item     : in out Store;
       Bucket   : String;

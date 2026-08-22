@@ -405,6 +405,7 @@ package body Flyology.Object_Storage.Backends.Memory is
             Objects (Index).Bucket := Stored_Bucket;
             Objects (Index).Key := Stored_Key;
             Objects (Index).Info := Info;
+            Objects (Index).Tags := Empty_Object_Tags;
             Stored := Info;
             Move (Objects (Index).Data, Data);
             Reserved_Bytes := Reserved_Bytes - Reservation;
@@ -557,6 +558,54 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Success;
          end if;
       end Delete;
+
+      procedure Put_Tags
+        (Bucket : String; Key : String; Tags : Object_Tag_Set;
+         Result : out Status)
+      is
+         Index : constant Natural := Object_Index (Bucket, Key);
+      begin
+         if Bucket_Index (Bucket) = 0 then
+            Result := Bucket_Not_Found;
+         elsif Index = 0 then
+            Result := Not_Found;
+         else
+            Objects (Index).Tags := Tags;
+            Result := Success;
+         end if;
+      end Put_Tags;
+
+      procedure Get_Tags
+        (Bucket : String; Key : String; Tags : out Object_Tag_Set;
+         Result : out Status)
+      is
+         Index : constant Natural := Object_Index (Bucket, Key);
+      begin
+         Tags := Empty_Object_Tags;
+         if Bucket_Index (Bucket) = 0 then
+            Result := Bucket_Not_Found;
+         elsif Index = 0 then
+            Result := Not_Found;
+         else
+            Tags := Objects (Index).Tags;
+            Result := Success;
+         end if;
+      end Get_Tags;
+
+      procedure Delete_Tags
+        (Bucket : String; Key : String; Result : out Status)
+      is
+         Index : constant Natural := Object_Index (Bucket, Key);
+      begin
+         if Bucket_Index (Bucket) = 0 then
+            Result := Bucket_Not_Found;
+         elsif Index = 0 then
+            Result := Not_Found;
+         else
+            Objects (Index).Tags := Empty_Object_Tags;
+            Result := Success;
+         end if;
+      end Delete_Tags;
 
       procedure List
         (Bucket  : String;
@@ -934,6 +983,7 @@ package body Flyology.Object_Storage.Backends.Memory is
             Objects (Object_At).Bucket := Stored_Bucket;
             Objects (Object_At).Key := Stored_Key;
             Objects (Object_At).Info := Completed_Info;
+            Objects (Object_At).Tags := Empty_Object_Tags;
             Info := Completed_Info;
 
             Bytes := Bytes - Staged_Size - Existing_Size + Final_Size;
@@ -1466,6 +1516,55 @@ package body Flyology.Object_Storage.Backends.Memory is
          Item.State.Delete (Bucket, Key, Result);
       end if;
    end Delete_Object;
+
+   overriding procedure Put_Object_Tags
+     (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result : out Status) is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Tag_Set (Tags)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Put_Tags (Bucket, Key, Tags, Result);
+      end if;
+   end Put_Object_Tags;
+
+   overriding procedure Get_Object_Tags
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Tags : out Object_Tag_Set; Result : out Status) is
+   begin
+      Tags := Empty_Object_Tags;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Tags (Bucket, Key, Tags, Result);
+      end if;
+   end Get_Object_Tags;
+
+   overriding procedure Delete_Object_Tags
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result : out Status) is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Tags (Bucket, Key, Result);
+      end if;
+   end Delete_Object_Tags;
 
    overriding procedure List_Objects
      (Item     : in out Store;

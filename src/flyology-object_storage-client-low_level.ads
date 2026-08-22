@@ -912,6 +912,83 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Object_Outcome;
 
+   --  Complete modeled inputs for the three object-tagging operations.
+   type Put_Object_Tagging_Parameters is record
+      Version_ID            : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Get_Object_Tagging_Parameters is record
+      Version_ID            : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Delete_Object_Tagging_Parameters is record
+      Version_ID            : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_Put_Object_Tagging
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket, Key : String; Tags : Object_Tag_Set;
+      Parameters : Put_Object_Tagging_Parameters; Identity : Credentials;
+      Region, Timestamp : String) return Prepared_Request;
+
+   function Prepare_Get_Object_Tagging
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket, Key : String; Parameters : Get_Object_Tagging_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+
+   function Prepare_Delete_Object_Tagging
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket, Key : String; Parameters : Delete_Object_Tagging_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+
+   type Object_Tagging_Result is record
+      Tags       : Object_Tag_Set;
+      Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Object_Tagging_Outcome_Kind is
+     (Tags_Put, Tags_Gotten, Tags_Deleted, Object_Tagging_Rejected);
+
+   type Object_Tagging_Outcome
+     (Kind : Object_Tagging_Outcome_Kind := Object_Tagging_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Tags_Put | Tags_Gotten | Tags_Deleted =>
+            Result : Object_Tagging_Result;
+         when Object_Tagging_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Execute_Put_Object_Tagging
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome;
+
+   function Execute_Get_Object_Tagging
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome;
+
+   function Execute_Delete_Object_Tagging
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome;
+
    --  Common DeleteObjects request policy. Content-MD5 is generated from the
    --  exact serialized body and is not caller supplied. The optional modeled
    --  SDK checksum-algorithm member remains at the generic model boundary

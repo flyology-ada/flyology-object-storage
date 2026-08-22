@@ -864,6 +864,71 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Delete_Object;
 
+   overriding procedure Put_Object_Tags
+     (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
+      Token : access Flyology.Cancellation.Token; Deadline : Ada.Real_Time.Time;
+      Result : out Status) is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Tag_Set (Tags)
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Put_Object_Tags (Item.Catalog, Bucket, Key, Tags, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Put_Object_Tags;
+
+   overriding procedure Get_Object_Tags
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token; Deadline : Ada.Real_Time.Time;
+      Tags : out Object_Tag_Set; Result : out Status) is
+   begin
+      Tags := Empty_Object_Tags;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Object_Tags (Item.Catalog, Bucket, Key, Tags, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Tags := Empty_Object_Tags;
+         Result := Backend_Unavailable;
+   end Get_Object_Tags;
+
+   overriding procedure Delete_Object_Tags
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token; Deadline : Ada.Real_Time.Time;
+      Result : out Status) is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+      then
+         Result := Invalid_Request;
+      else
+         Catalogs.Delete_Object_Tags (Item.Catalog, Bucket, Key, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Delete_Object_Tags;
+
    overriding procedure List_Objects
      (Item     : in out Store;
       Bucket   : String;

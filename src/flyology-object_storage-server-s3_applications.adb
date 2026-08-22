@@ -5,6 +5,7 @@ with Ada.Streams;
 with Ada.Strings;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
+with GNAT.MD5;
 with GNAT.SHA256;
 with Flyology.Cancellation;
 with Flyology.IO;
@@ -19,6 +20,7 @@ with Flyology.Object_Storage.S3.Object_Reads;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
+with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Wire_Core;
 
 package body Flyology.Object_Storage.Server.S3_Applications is
@@ -33,6 +35,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Multipart renames S3.Multipart;
    package Multipart_Uploads renames S3.Multipart_Uploads;
    package Object_Reads renames S3.Object_Reads;
+   package Tagging renames S3.Tagging;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Calendar.Time;
    use type Apps.Response_State;
@@ -51,10 +54,60 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    Maximum_Delete_Objects_Body : constant Byte_Count := 2 * 1_024 * 1_024;
    Maximum_Complete_Multipart_Body : constant Byte_Count :=
      2 * 1_024 * 1_024;
+   Maximum_Object_Tagging_Body : constant Byte_Count :=
+     Tagging.Maximum_Document_Bytes;
 
    function Decimal (Value : Byte_Count) return String is
      (Ada.Strings.Fixed.Trim
         (Byte_Count'Image (Value), Ada.Strings.Both));
+
+   function Content_MD5 (Value : String) return String is
+      Digest : constant GNAT.MD5.Binary_Message_Digest :=
+        GNAT.MD5.Digest (Value);
+      Alphabet : constant String :=
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+      Result : String (1 .. 24);
+      Output : Positive := Result'First;
+
+      function Byte (Index : Ada.Streams.Stream_Element_Offset)
+        return Natural is (Natural (Digest (Index)));
+
+      procedure Encode_Three (First : Ada.Streams.Stream_Element_Offset) is
+         A : constant Natural := Byte (First);
+         B : constant Natural := Byte
+           (Ada.Streams.Stream_Element_Offset'Succ (First));
+         C : constant Natural := Byte
+           (Ada.Streams.Stream_Element_Offset'Succ
+              (Ada.Streams.Stream_Element_Offset'Succ (First)));
+      begin
+         Result (Output) := Alphabet (A / 4 + 1);
+         Result (Output + 1) := Alphabet ((A mod 4) * 16 + B / 16 + 1);
+         Result (Output + 2) := Alphabet ((B mod 16) * 4 + C / 64 + 1);
+         Result (Output + 3) := Alphabet (C mod 64 + 1);
+         Output := Output + 4;
+      end Encode_Three;
+   begin
+      Encode_Three (1);
+      Encode_Three (4);
+      Encode_Three (7);
+      Encode_Three (10);
+      Encode_Three (13);
+      declare
+         A : constant Natural := Byte (16);
+      begin
+         Result (21) := Alphabet (A / 4 + 1);
+         Result (22) := Alphabet ((A mod 4) * 16 + 1);
+         Result (23 .. 24) := "==";
+      end;
+      return Result;
+   end Content_MD5;
+
+   function Valid_Tagging_Content_Type (Value : String) return Boolean is
+      Lower : constant String := Ada.Characters.Handling.To_Lower (Value);
+   begin
+      return Lower = "application/xml"
+        or else Ada.Strings.Fixed.Index (Lower, "application/xml;") = 1;
+   end Valid_Tagging_Content_Type;
 
    function Last_Modified (Value : Unix_Time) return String is
       Epoch : constant Ada.Calendar.Time :=
@@ -236,10 +289,37 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          List_Buckets,
          Create_Bucket, Get_Bucket_Location, Head_Bucket, Delete_Bucket,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
+         Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
          Delete_Objects,
          List_Objects, List_Objects_V2, List_Multipart_Uploads,
          Create_Multipart, Put_Multipart_Part, Copy_Multipart_Part,
          Complete_Multipart, Abort_Multipart, List_Multipart_Parts);
+
+      function Is_Valid_Tagging_Query
+        (Query, Request_Method : String) return Boolean
+      is
+         Operation : Tagging.Tagging_Operation;
+      begin
+         if Request_Method = "PUT" then
+            Operation := Tagging.Put_Object_Tagging;
+         elsif Request_Method = "GET" then
+            Operation := Tagging.Get_Object_Tagging;
+         elsif Request_Method = "DELETE" then
+            Operation := Tagging.Delete_Object_Tagging;
+         else
+            return False;
+         end if;
+         declare
+            Parsed_Query : constant Tagging.Tagging_Query :=
+              Tagging.Parse_Query (Query, Operation);
+            pragma Unreferenced (Parsed_Query);
+         begin
+            return True;
+         end;
+      exception
+         when Tagging.Malformed_Tagging_Query =>
+            return False;
+      end Is_Valid_Tagging_Query;
 
       Target_Text : constant String := Apps.Request_Target (X);
       Method      : constant String := Apps.Request_Method (X);
@@ -279,6 +359,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Query_Text = "location=&x-id=GetBucketLocation"
         or else Query_Text = "x-id=GetBucketLocation&location=";
       Padded_Query : constant String := '&' & Query_Text & '&';
+      Has_Tagging_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&tagging") /= 0
+        or else
+          (Parsed.Kind = Requests.Object_Target
+           and then Is_Valid_Tagging_Query (Query_Text, Method));
       Has_Upload_ID_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&uploadId=") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&uploadId&") /= 0;
@@ -298,6 +383,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Delete_Request : Deletions.Delete_Object_Request;
       Object_Read_Query_Invalid : Boolean := False;
       Object_Read_Request : Object_Reads.Object_Read_Request;
+      Tagging_Query_Invalid : Boolean := False;
+      Tagging_Request : Tagging.Tagging_Query;
       Has_Copy_Source : constant Boolean :=
         Apps.Request_Header_Count (X, "x-amz-copy-source") > 0;
 
@@ -340,6 +427,24 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          end loop;
          return False;
       end Has_Encryption_Header;
+
+      function Has_Checksum_Header return Boolean is
+      begin
+         for Index in 1 .. Apps.Request_Header_Count (X) loop
+            declare
+               Name : constant String := Ada.Characters.Handling.To_Lower
+                 (Apps.Request_Header_Name (X, Index));
+            begin
+               if Name'Length >= 15
+                 and then Name (Name'First .. Name'First + 14) =
+                   "x-amz-checksum-"
+               then
+                  return True;
+               end if;
+            end;
+         end loop;
+         return False;
+      end Has_Checksum_Header;
 
       procedure Check_Expected_Bucket_Owner
         (Principal : String; Accepted : out Boolean)
@@ -658,6 +763,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
              "x-id=DeleteObject")
         and then not
           (Parsed.Kind = Requests.Object_Target
+           and then Method in "PUT" | "GET" | "DELETE"
+           and then Has_Tagging_Query)
+        and then not
+          (Parsed.Kind = Requests.Object_Target
            and then
              Method in "POST" | "PUT" | "DELETE" | "GET")
         and then not
@@ -701,7 +810,30 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             elsif Method = "GET" then List_Objects
             else Unsupported);
       elsif Parsed.Kind = Requests.Object_Target then
-         if not Parsed.Has_Query or else Is_Ordinary_Operation_Query then
+         if Parsed.Has_Query and then Has_Tagging_Query
+           and then Method in "PUT" | "GET" | "DELETE"
+         then
+            declare
+               Tagging_Operation : constant Tagging.Tagging_Operation :=
+                 (if Method = "PUT" then Tagging.Put_Object_Tagging
+                  elsif Method = "GET" then Tagging.Get_Object_Tagging
+                  else Tagging.Delete_Object_Tagging);
+            begin
+               Tagging_Request :=
+                 Tagging.Parse_Query (Query_Text, Tagging_Operation);
+               Operation :=
+                 (if Method = "PUT" then Put_Object_Tagging
+                  elsif Method = "GET" then Get_Object_Tagging
+                  else Delete_Object_Tagging);
+            exception
+               when Tagging.Malformed_Tagging_Query =>
+                  Tagging_Query_Invalid := True;
+                  Operation :=
+                    (if Method = "PUT" then Put_Object_Tagging
+                     elsif Method = "GET" then Get_Object_Tagging
+                     else Delete_Object_Tagging);
+            end;
+         elsif not Parsed.Has_Query or else Is_Ordinary_Operation_Query then
             Operation :=
               (if Method = "PUT"
                  and then
@@ -809,7 +941,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
       Apps.Configure_Route
          (X, "s3", Target_Text,
-         (if Operation in Create_Bucket | Put_Object | Delete_Objects |
+         (if Operation in Create_Bucket | Put_Object | Put_Object_Tagging |
+         Delete_Objects |
          Put_Multipart_Part | Complete_Multipart
           then Apps.Stream_Body else Apps.Reject_Body),
          Apps.Required_Authentication, 0, 0, 0, Apps.No_Upgrade);
@@ -846,9 +979,15 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (X, 400, "InvalidArgument",
             "The object-read request query is invalid", Target_Text);
          return;
+      elsif Tagging_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The object tagging request query is invalid", Target_Text);
+         return;
       end if;
 
-      if Operation not in Create_Bucket | Put_Object | Delete_Objects |
+      if Operation not in Create_Bucket | Put_Object | Put_Object_Tagging |
+        Delete_Objects |
         Put_Multipart_Part | Complete_Multipart
       then
          if not Apps.Body_Complete (X) then
@@ -2142,6 +2281,155 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   --  the destination key need not exist before a PUT.
                   Send_Backend_Error (X, Result, True, Target_Text);
                end if;
+
+            when Put_Object_Tagging | Get_Object_Tagging |
+                 Delete_Object_Tagging =>
+               declare
+                  Owner_OK : Boolean := False;
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  Kind_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-type");
+                  Algorithm_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm");
+               begin
+                  if Payer_Count > 1 or else Algorithm_Count > 1
+                    or else MD5_Count > 1 or else Kind_Count > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "An object tagging request header is duplicated",
+                        Target_Text);
+                     return;
+                  end if;
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  elsif Tagging_Request.Has_Version_ID then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Object versioning is not implemented", Target_Text);
+                     return;
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer is invalid", Target_Text);
+                     return;
+                  elsif Payer_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Requester Pays is not implemented", Target_Text);
+                     return;
+                  elsif Algorithm_Count = 1 or else Has_Checksum_Header then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Object tagging SDK checksums are not implemented",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  if Operation = Put_Object_Tagging then
+                     if MD5_Count /= 1 or else Length.Kind /= Backends.Known
+                       or else Length.Bytes > Maximum_Object_Tagging_Body
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "PutObjectTagging requires bounded " &
+                           "Content-Length " &
+                           "and Content-MD5", Target_Text);
+                        return;
+                     elsif Kind_Count = 1
+                       and then not Valid_Tagging_Content_Type
+                         (Apps.Request_Header (X, "content-type"))
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "PutObjectTagging requires application/xml",
+                           Target_Text);
+                        return;
+                     end if;
+                     declare
+                        Source : Request_IO.Request_Source :=
+                          (Length_Value  => Length,
+                           Expected_Hash => Auth.Payload_Hash,
+                           Check_Hash    =>
+                             US.To_String (Auth.Payload_Hash) /=
+                               S3.SigV4.Unsigned_Payload,
+                           Hash      => GNAT.SHA256.Initial_Context,
+                           Observed  => 0,
+                           Maximum   => Maximum_Object_Tagging_Body,
+                           Completed => False);
+                        Document : constant String := Read_Document (Source);
+                     begin
+                        if Content_MD5 (Document) /=
+                          Apps.Request_Header (X, "content-md5")
+                        then
+                           Send_Error
+                             (X, 400, "BadDigest",
+                              "The Content-MD5 did not match the request body",
+                              Target_Text);
+                           return;
+                        end if;
+                        declare
+                           Tags : constant Object_Tag_Set := Tagging.Parse
+                             (Document,
+                              (Maximum_Document_Bytes =>
+                                 Tagging.Maximum_Document_Bytes,
+                               Maximum_Depth      => 5,
+                               Maximum_Elements   => 34,
+                               Maximum_Text_Bytes => 10 * (128 + 256)));
+                        begin
+                           Store.Put_Object_Tags
+                             (Bucket, Key, Tags, Apps.Cancellation (X),
+                              Apps.Deadline (X), Result);
+                        end;
+                     exception
+                        when Tagging.Malformed_Tagging =>
+                           Send_Error
+                             (X, 400, "MalformedXML",
+                              "The XML provided did not validate against " &
+                              "the object tagging schema", Target_Text);
+                           return;
+                     end;
+                     if Result = Success then
+                        Apps.Respond (X, 200, "", "");
+                     else
+                        Send_Backend_Error (X, Result, False, Target_Text);
+                     end if;
+                  elsif Operation = Get_Object_Tagging then
+                     declare
+                        Tags : Object_Tag_Set;
+                     begin
+                        Store.Get_Object_Tags
+                          (Bucket, Key, Apps.Cancellation (X),
+                           Apps.Deadline (X), Tags, Result);
+                        if Result = Success then
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              Tagging.Serialize (Tags));
+                        else
+                           Send_Backend_Error
+                             (X, Result, False, Target_Text);
+                        end if;
+                     end;
+                  else
+                     Store.Delete_Object_Tags
+                       (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
+                        Result);
+                     if Result = Success then
+                        Apps.Respond (X, 204, "", "");
+                     else
+                        Send_Backend_Error (X, Result, False, Target_Text);
+                     end if;
+                  end if;
+               end;
 
             when Head_Object =>
                if Object_Read_Request.Has_Version_ID

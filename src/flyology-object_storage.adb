@@ -111,6 +111,40 @@ is
       return True;
    end Valid_Object_Key;
 
+   function Valid_Object_Tag_Set (Tags : Object_Tag_Set) return Boolean is
+   begin
+      for Index in 1 .. Tags.Length loop
+         declare
+            Key : constant String :=
+              Ada.Strings.Unbounded.To_String (Tags.Items (Index).Key);
+            Value : constant String :=
+              Ada.Strings.Unbounded.To_String (Tags.Items (Index).Value);
+         begin
+            if Key'Length not in 1 .. 512 or else Value'Length > 1_024 then
+               return False;
+            end if;
+            for Character_Value of Key loop
+               if Character_Value = Character'Val (0) then
+                  return False;
+               end if;
+            end loop;
+            for Character_Value of Value loop
+               if Character_Value = Character'Val (0) then
+                  return False;
+               end if;
+            end loop;
+            for Previous in 1 .. Index - 1 loop
+               if Ada.Strings.Unbounded."="
+                 (Tags.Items (Previous).Key, Tags.Items (Index).Key)
+               then
+                  return False;
+               end if;
+            end loop;
+         end;
+      end loop;
+      return True;
+   end Valid_Object_Tag_Set;
+
    function Resolve_Range
      (Size : Byte_Count; Request : Byte_Range) return Range_Resolution
    is

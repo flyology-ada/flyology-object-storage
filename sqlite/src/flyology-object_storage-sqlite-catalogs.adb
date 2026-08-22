@@ -10,7 +10,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   Schema_Version : constant Long_Long_Integer := 3;
+   Schema_Version : constant Long_Long_Integer := 4;
    Empty_Info : constant Object_Information := (others => <>);
 
    protected body Operation_Gate is
@@ -86,6 +86,17 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "FOREIGN KEY(bucket_name) REFERENCES buckets(name) " &
          "ON DELETE RESTRICT" &
          ") WITHOUT ROWID;" &
+         "CREATE TABLE object_tags (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "tag_index INTEGER NOT NULL CHECK(tag_index BETWEEN 1 AND 10)," &
+         "tag_key BLOB NOT NULL," &
+         "tag_value BLOB NOT NULL," &
+         "PRIMARY KEY(bucket_name,object_key,tag_index)," &
+         "UNIQUE(bucket_name,object_key,tag_key)," &
+         "FOREIGN KEY(bucket_name,object_key) " &
+         "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
          "CREATE TABLE multipart_parts (" &
          "upload_id TEXT NOT NULL COLLATE BINARY," &
          "part_number INTEGER NOT NULL " &
@@ -99,7 +110,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "ON DELETE CASCADE" &
          ") WITHOUT ROWID;" &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=3;");
+         "PRAGMA user_version=4;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -140,7 +151,18 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          ") WITHOUT ROWID;" &
          "ALTER TABLE buckets ADD COLUMN created INTEGER NOT NULL " &
          "DEFAULT 0 CHECK(created >= 0);" &
-         "PRAGMA user_version=3;");
+         "CREATE TABLE object_tags (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "tag_index INTEGER NOT NULL CHECK(tag_index BETWEEN 1 AND 10)," &
+         "tag_key BLOB NOT NULL," &
+         "tag_value BLOB NOT NULL," &
+         "PRIMARY KEY(bucket_name,object_key,tag_index)," &
+         "UNIQUE(bucket_name,object_key,tag_key)," &
+         "FOREIGN KEY(bucket_name,object_key) " &
+         "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
+         "PRAGMA user_version=4;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -160,7 +182,18 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item.Database,
          "ALTER TABLE buckets ADD COLUMN created INTEGER NOT NULL " &
          "DEFAULT 0 CHECK(created >= 0);" &
-         "PRAGMA user_version=3;");
+         "CREATE TABLE object_tags (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "tag_index INTEGER NOT NULL CHECK(tag_index BETWEEN 1 AND 10)," &
+         "tag_key BLOB NOT NULL," &
+         "tag_value BLOB NOT NULL," &
+         "PRIMARY KEY(bucket_name,object_key,tag_index)," &
+         "UNIQUE(bucket_name,object_key,tag_key)," &
+         "FOREIGN KEY(bucket_name,object_key) " &
+         "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
+         "PRAGMA user_version=4;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -170,6 +203,35 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Upgrade_From_V2;
+
+   procedure Upgrade_From_V3 (Item : in out Catalog) is
+      In_Transaction : Boolean := False;
+   begin
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         "CREATE TABLE object_tags (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "tag_index INTEGER NOT NULL CHECK(tag_index BETWEEN 1 AND 10)," &
+         "tag_key BLOB NOT NULL," &
+         "tag_value BLOB NOT NULL," &
+         "PRIMARY KEY(bucket_name,object_key,tag_index)," &
+         "UNIQUE(bucket_name,object_key,tag_key)," &
+         "FOREIGN KEY(bucket_name,object_key) " &
+         "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
+         "PRAGMA user_version=4;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V3;
 
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
@@ -200,6 +262,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Upgrade_From_V1 (Item);
       elsif App_ID = Application_ID and then Version = 2 then
          Upgrade_From_V2 (Item);
+      elsif App_ID = Application_ID and then Version = 3 then
+         Upgrade_From_V3 (Item);
       elsif App_ID /= Application_ID or else Version /= Schema_Version then
          raise Catalog_Error with "unsupported or unrelated SQLite database";
       end if;
@@ -214,7 +278,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item,
          "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
          "AND name IN " &
-         "('buckets','objects','multipart_uploads','multipart_parts')") /= 4
+         "('buckets','objects','object_tags'," &
+         "'multipart_uploads','multipart_parts')") /= 5
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif Text_Scalar (Item, "PRAGMA quick_check(1)") /= "ok" then
@@ -478,6 +543,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Bucket_Query : DB.Statement;
       Existing : Object_Information;
       Upsert : DB.Statement;
+      Clear_Tags : DB.Statement;
       Locked : Boolean := False;
    begin
       Previous_Payload := US.Null_Unbounded_String;
@@ -520,6 +586,14 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Bind_Bytes (Upsert, 7, US.To_String (Info.Content_Type));
       if DB.Step (Upsert) /= DB.Done then
          raise Catalog_Error with "object upsert returned a row";
+      end if;
+      DB.Prepare
+        (Clear_Tags, Item.Database,
+         "DELETE FROM object_tags WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Clear_Tags, 1, Bucket);
+      DB.Bind_Bytes (Clear_Tags, 2, Key);
+      if DB.Step (Clear_Tags) /= DB.Done then
+         raise Catalog_Error with "object tag reset returned a row";
       end if;
       DB.Commit (Item.Database);
       In_Transaction := False;
@@ -600,6 +674,153 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Delete_Object;
+
+   procedure Put_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String;
+      Tags : Object_Tag_Set; Result : out Status)
+   is
+      Existing       : Object_Information;
+      Payload        : US.Unbounded_String;
+      Delete         : DB.Statement;
+      Insert         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      Find_Object_Internal (Item, Bucket, Key, Payload, Existing, Result);
+      if Result /= Success then
+         declare
+            Bucket_Query : DB.Statement;
+         begin
+            DB.Prepare
+              (Bucket_Query, Item.Database,
+               "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+            DB.Bind (Bucket_Query, 1, Bucket);
+            if DB.Step (Bucket_Query) /= DB.Row then
+               raise Catalog_Error with
+                 "bucket existence query returned no row";
+            elsif DB.Column (Bucket_Query, 0) = 0 then
+               Result := Bucket_Not_Found;
+            end if;
+         end;
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM object_tags WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Delete, 1, Bucket);
+      DB.Bind_Bytes (Delete, 2, Key);
+      if DB.Step (Delete) /= DB.Done then
+         raise Catalog_Error with "object tag delete returned a row";
+      end if;
+      DB.Prepare
+        (Insert, Item.Database,
+         "INSERT INTO object_tags(" &
+         "bucket_name,object_key,tag_index,tag_key,tag_value" &
+         ") VALUES(?1,?2,?3,?4,?5)");
+      for Index in 1 .. Tags.Length loop
+         if Index > 1 then
+            DB.Reset (Insert);
+         end if;
+         DB.Bind (Insert, 1, Bucket);
+         DB.Bind_Bytes (Insert, 2, Key);
+         DB.Bind (Insert, 3, Long_Long_Integer (Index));
+         DB.Bind_Bytes (Insert, 4, US.To_String (Tags.Items (Index).Key));
+         DB.Bind_Bytes (Insert, 5, US.To_String (Tags.Items (Index).Value));
+         if DB.Step (Insert) /= DB.Done then
+            raise Catalog_Error with "object tag insert returned a row";
+         end if;
+      end loop;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Put_Object_Tags;
+
+   procedure Get_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String;
+      Tags : out Object_Tag_Set; Result : out Status)
+   is
+      Existing : Object_Information;
+      Payload  : US.Unbounded_String;
+      Query    : DB.Statement;
+      Locked   : Boolean := False;
+   begin
+      Tags := Empty_Object_Tags;
+      Item.Gate.Acquire;
+      Locked := True;
+      Find_Object_Internal (Item, Bucket, Key, Payload, Existing, Result);
+      if Result /= Success then
+         declare
+            Bucket_Query : DB.Statement;
+         begin
+            DB.Prepare
+              (Bucket_Query, Item.Database,
+               "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+            DB.Bind (Bucket_Query, 1, Bucket);
+            if DB.Step (Bucket_Query) /= DB.Row then
+               raise Catalog_Error with "bucket existence query returned no row";
+            elsif DB.Column (Bucket_Query, 0) = 0 then
+               Result := Bucket_Not_Found;
+            end if;
+         end;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT tag_index,tag_key,tag_value FROM object_tags " &
+         "WHERE bucket_name=?1 AND object_key=?2 ORDER BY tag_index");
+      DB.Bind (Query, 1, Bucket);
+      DB.Bind_Bytes (Query, 2, Key);
+      while DB.Step (Query) = DB.Row loop
+         if Tags.Length = Maximum_Object_Tags
+           or else DB.Column (Query, 0) /= Long_Long_Integer (Tags.Length + 1)
+         then
+            raise Catalog_Error with "invalid object tag ordering";
+         end if;
+         Tags.Length := Tags.Length + 1;
+         Tags.Items (Tags.Length) :=
+           (Key   => US.To_Unbounded_String (DB.Column_Bytes (Query, 1)),
+            Value => US.To_Unbounded_String (DB.Column_Bytes (Query, 2)));
+      end loop;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         Tags := Empty_Object_Tags;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Get_Object_Tags;
+
+   procedure Delete_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String; Result : out Status)
+   is
+      Tags : constant Object_Tag_Set := Empty_Object_Tags;
+   begin
+      Put_Object_Tags (Item, Bucket, Key, Tags, Result);
+   end Delete_Object_Tags;
 
    procedure List_Objects
      (Item    : in out Catalog;
@@ -1076,6 +1297,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    is
       Content_Type   : US.Unbounded_String;
       Upsert         : DB.Statement;
+      Clear_Tags     : DB.Statement;
       Delete         : DB.Statement;
       Existing       : Object_Information;
       Locked         : Boolean := False;
@@ -1151,6 +1373,14 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Bind_Bytes (Upsert, 7, US.To_String (Info.Content_Type));
       if DB.Step (Upsert) /= DB.Done then
          raise Catalog_Error with "multipart object upsert returned a row";
+      end if;
+      DB.Prepare
+        (Clear_Tags, Item.Database,
+         "DELETE FROM object_tags WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Clear_Tags, 1, Bucket);
+      DB.Bind_Bytes (Clear_Tags, 2, Key);
+      if DB.Step (Clear_Tags) /= DB.Done then
+         raise Catalog_Error with "multipart object tag reset returned a row";
       end if;
       DB.Prepare
         (Delete, Item.Database,

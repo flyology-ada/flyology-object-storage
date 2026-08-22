@@ -84,6 +84,32 @@ is
       Version       : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  One S3 object tag. The wire boundary validates the documented UTF-8
+   --  character repertoire and byte limits before a value reaches a backend.
+   Maximum_Object_Tags : constant := 10;
+   subtype Object_Tag_Count is Natural range 0 .. Maximum_Object_Tags;
+   subtype Object_Tag_Index is Positive range 1 .. Maximum_Object_Tags;
+
+   type Object_Tag is record
+      Key   : Ada.Strings.Unbounded.Unbounded_String;
+      Value : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Object_Tag_Array is array (Object_Tag_Index) of Object_Tag;
+
+   --  Fixed-capacity representation keeps the backend contract bounded and
+   --  permits an entire tag set to be copied under one publication boundary.
+   type Object_Tag_Set is record
+      Length : Object_Tag_Count := 0;
+      Items  : Object_Tag_Array;
+   end record;
+
+   Empty_Object_Tags : constant Object_Tag_Set;
+
+   --  Backend-safe byte bounds shared by all protocol adapters. This does not
+   --  replace S3's stricter Unicode repertoire validation.
+   function Valid_Object_Tag_Set (Tags : Object_Tag_Set) return Boolean;
+
    --  Metadata supplied when committing an object. An empty Entity_Tag asks
    --  the backend to generate the ordinary single-part S3 MD5 entity tag.
    --  This identifier is not a collision-resistant integrity checksum.
@@ -106,6 +132,7 @@ is
    function Valid_Object_Key (Value : String) return Boolean;
 
 private
+   Empty_Object_Tags : constant Object_Tag_Set := (others => <>);
    Default_Put_Options : constant Put_Options :=
      (Entity_Tag   => Ada.Strings.Unbounded.Null_Unbounded_String,
       Content_Type =>

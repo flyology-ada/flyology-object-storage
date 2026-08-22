@@ -56,4 +56,52 @@ package Flyology.Object_Storage.Client.Objects is
       Token    : access Flyology.Cancellation.Token := null)
       return Delete_Outcome;
 
+   type Tagging_Outcome_Kind is
+     (Tags_Replaced, Tags_Read, Tags_Cleared, Tagging_Rejected);
+
+   type Tagging_Outcome
+     (Kind : Tagging_Outcome_Kind := Tagging_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Tags_Replaced | Tags_Read | Tags_Cleared =>
+            Result : Low_Level.Object_Tagging_Result;
+         when Tagging_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Replace the complete tag set. Empty Tags clears the set, while
+   --  Delete_Tags provides the explicit S3 deletion operation.
+   function Put_Tags
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Key : String;
+      Tags : Object_Tag_Set; Identity : Low_Level.Credentials;
+      Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Version_ID : String := ""; Expected_Bucket_Owner : String := "";
+      Request_Payer : String := ""; Checksum_Algorithm : String := "";
+      Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Tagging_Outcome;
+
+   function Get_Tags
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Key : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Version_ID : String := ""; Expected_Bucket_Owner : String := "";
+      Request_Payer : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Tagging_Outcome;
+
+   function Delete_Tags
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Key : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Version_ID : String := ""; Expected_Bucket_Owner : String := "";
+      Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Tagging_Outcome;
+
 end Flyology.Object_Storage.Client.Objects;

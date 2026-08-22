@@ -7,6 +7,7 @@ with Flyology.Bytes;
 with Flyology.HTTP.Headers;
 with Flyology.Object_Storage.Secrets;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
+with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Wire_Core;
 with GNAT.MD5;
 
@@ -20,6 +21,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    use type Flyology.HTTP.Origin_Scheme;
    use type Flyology.HTTP.Port_Number;
    use type Model.Member_Location;
+   use type Model.Operation_Id;
    use type Model.Shape_Kind;
    use type S3.Core.Range_Parse_Status;
 
@@ -3326,6 +3328,211 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end;
       return Result;
    end Content_MD5;
+
+   function Model_Value_Of (Name, Value : String) return Model_Value is
+     (Member_Name => US.To_Unbounded_String (Name),
+      Map_Key     => US.Null_Unbounded_String,
+      Value       => US.To_Unbounded_String (Value));
+
+   function Prepare_Put_Object_Tagging
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket, Key : String; Tags : Object_Tag_Set;
+      Parameters : Put_Object_Tagging_Parameters; Identity : Credentials;
+      Region, Timestamp : String) return Prepared_Request
+   is
+      Payload : constant String := S3.Tagging.Serialize (Tags);
+      Count : constant Positive :=
+        3 + Boolean'Pos (US.Length (Parameters.Version_ID) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_Algorithm) > 0) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
+        Boolean'Pos (US.Length (Parameters.Request_Payer) > 0);
+      Values : Model_Value_Array (1 .. Count);
+      Last : Natural := 3;
+
+      procedure Add (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Last := Last + 1;
+            Values (Last) := Model_Value_Of (Name, US.To_String (Value));
+         end if;
+      end Add;
+   begin
+      Values (1) := Model_Value_Of ("Bucket", Bucket);
+      Values (2) := Model_Value_Of ("Key", Key);
+      Values (3) := Model_Value_Of ("ContentMD5", Content_MD5 (Payload));
+      Add ("VersionId", Parameters.Version_ID);
+      Add ("ChecksumAlgorithm", Parameters.Checksum_Algorithm);
+      Add ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      Add ("RequestPayer", Parameters.Request_Payer);
+      return Prepare_Model_Request
+        (Model.Put_Object_Tagging_Operation, Origin, Style, Values, Payload,
+         True, "", Identity, Region, Timestamp);
+   end Prepare_Put_Object_Tagging;
+
+   function Prepare_Get_Object_Tagging
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket, Key : String; Parameters : Get_Object_Tagging_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request
+   is
+      Count : constant Positive :=
+        2 + Boolean'Pos (US.Length (Parameters.Version_ID) > 0) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
+        Boolean'Pos (US.Length (Parameters.Request_Payer) > 0);
+      Values : Model_Value_Array (1 .. Count);
+      Last : Natural := 2;
+
+      procedure Add (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Last := Last + 1;
+            Values (Last) := Model_Value_Of (Name, US.To_String (Value));
+         end if;
+      end Add;
+   begin
+      Values (1) := Model_Value_Of ("Bucket", Bucket);
+      Values (2) := Model_Value_Of ("Key", Key);
+      Add ("VersionId", Parameters.Version_ID);
+      Add ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      Add ("RequestPayer", Parameters.Request_Payer);
+      return Prepare_Model_Request
+        (Model.Get_Object_Tagging_Operation, Origin, Style, Values, "", False,
+         "", Identity, Region, Timestamp);
+   end Prepare_Get_Object_Tagging;
+
+   function Prepare_Delete_Object_Tagging
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket, Key : String; Parameters : Delete_Object_Tagging_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request
+   is
+      Count : constant Positive :=
+        2 + Boolean'Pos (US.Length (Parameters.Version_ID) > 0) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0);
+      Values : Model_Value_Array (1 .. Count);
+      Last : Natural := 2;
+
+      procedure Add (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Last := Last + 1;
+            Values (Last) := Model_Value_Of (Name, US.To_String (Value));
+         end if;
+      end Add;
+   begin
+      Values (1) := Model_Value_Of ("Bucket", Bucket);
+      Values (2) := Model_Value_Of ("Key", Key);
+      Add ("VersionId", Parameters.Version_ID);
+      Add ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      return Prepare_Model_Request
+        (Model.Delete_Object_Tagging_Operation, Origin, Style, Values, "",
+         False, "", Identity, Region, Timestamp);
+   end Prepare_Delete_Object_Tagging;
+
+   function Execute_Object_Tagging
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Expected : Model.Operation_Id;
+      Timeout : Duration; Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits) return Object_Tagging_Outcome
+   is
+   begin
+      if Prepared.Operation /= Model_Driven_Operation
+        or else Prepared.Modeled_Operation /= Expected
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Execute_Model_Request (Client, Prepared, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Request_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+         Host_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         Version_ID : constant US.Unbounded_String := US.To_Unbounded_String
+           (Flyology.HTTP.Client.Header (Response, "x-amz-version-id"));
+         Maximum : constant Positive :=
+           (if Status = Model.Response_Code (Expected)
+            then Positive (S3.Tagging.Maximum_Document_Bytes)
+            else Limits.Maximum_Document_Bytes);
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Maximum, Token);
+         Document : constant String := Flyology.Bytes.To_Byte_String (Payload);
+      begin
+         if US.Length (Version_ID) > 0
+           and then not S3.Deletions.Valid_Version_ID
+             (US.To_String (Version_ID))
+         then
+            raise Invalid_Response with
+              "object tagging response contains an invalid version id";
+         elsif Status /= Model.Response_Code (Expected) then
+            return
+              (Kind   => Object_Tagging_Rejected,
+               Status => Status,
+               Error  => Error_Response
+                 (Document, Request_ID, Host_ID, Limits));
+         elsif Expected = Model.Get_Object_Tagging_Operation then
+            return
+              (Kind   => Tags_Gotten,
+               Status => Status,
+               Result =>
+                 (Tags       => S3.Tagging.Parse (Document, Limits),
+                  Version_ID => Version_ID));
+         elsif not Whitespace_Only (Document) then
+            raise Invalid_Response with
+              "object tagging mutation response contains a body";
+         elsif Expected = Model.Put_Object_Tagging_Operation then
+            return
+              (Kind   => Tags_Put,
+               Status => Status,
+               Result =>
+                 (Tags => Empty_Object_Tags, Version_ID => Version_ID));
+         else
+            return
+              (Kind   => Tags_Deleted,
+               Status => Status,
+               Result =>
+                 (Tags => Empty_Object_Tags, Version_ID => Version_ID));
+         end if;
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with "object tagging response exceeds limit";
+      when S3.Tagging.Malformed_Tagging | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed object tagging response";
+   end Execute_Object_Tagging;
+
+   function Execute_Put_Object_Tagging
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome is
+     (Execute_Object_Tagging
+        (Client, Prepared, Model.Put_Object_Tagging_Operation, Timeout, Token,
+         Limits));
+
+   function Execute_Get_Object_Tagging
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome is
+     (Execute_Object_Tagging
+        (Client, Prepared, Model.Get_Object_Tagging_Operation, Timeout, Token,
+         Limits));
+
+   function Execute_Delete_Object_Tagging
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome is
+     (Execute_Object_Tagging
+        (Client, Prepared, Model.Delete_Object_Tagging_Operation, Timeout,
+         Token, Limits));
 
    function Prepare_Delete_Objects
      (Origin     : Flyology.HTTP.Origin;

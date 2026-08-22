@@ -343,6 +343,34 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Result : out Status) is abstract;
+
+   --  Atomically replace, read, or clear the complete tag set associated with
+   --  one current object. Missing buckets and objects remain distinguishable.
+   procedure Put_Object_Tags
+     (Item     : in out Backend;
+      Bucket   : String;
+      Key      : String;
+      Tags     : Object_Tag_Set;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   procedure Get_Object_Tags
+     (Item     : in out Backend;
+      Bucket   : String;
+      Key      : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Tags     : out Object_Tag_Set;
+      Result   : out Status) is abstract;
+
+   procedure Delete_Object_Tags
+     (Item     : in out Backend;
+      Bucket   : String;
+      Key      : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
    --  Not_Found means the bucket exists but the key does not.
    --  Bucket_Not_Found means the bucket itself does not exist. Backends must
    --  classify and delete under one namespace-publication boundary.

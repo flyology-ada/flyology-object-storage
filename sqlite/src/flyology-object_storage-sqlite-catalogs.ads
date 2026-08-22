@@ -57,6 +57,17 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Payload : out Ada.Strings.Unbounded.Unbounded_String;
       Result  : out Status);
 
+   procedure Put_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String;
+      Tags : Object_Tag_Set; Result : out Status);
+
+   procedure Get_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String;
+      Tags : out Object_Tag_Set; Result : out Status);
+
+   procedure Delete_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String; Result : out Status);
+
    procedure List_Objects
      (Item    : in out Catalog;
       Bucket  : String;

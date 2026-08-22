@@ -99,6 +99,24 @@ package Flyology.Object_Storage.Backends.Memory is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status);
 
+   overriding procedure Put_Object_Tags
+     (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result : out Status);
+
+   overriding procedure Get_Object_Tags
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Tags : out Object_Tag_Set; Result : out Status);
+
+   overriding procedure Delete_Object_Tags
+     (Item : in out Store; Bucket, Key : String;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result : out Status);
+
    overriding procedure List_Objects
      (Item     : in out Store;
       Bucket   : String;
@@ -224,6 +242,7 @@ private
       Bucket : Ada.Strings.Unbounded.Unbounded_String;
       Key    : Ada.Strings.Unbounded.Unbounded_String;
       Info   : Object_Information;
+      Tags   : Object_Tag_Set;
       Data   : Owned_Bytes;
    end record;
    type Object_Array is array (Positive range <>) of Object_Slot;
@@ -292,6 +311,14 @@ private
         (Bucket : String;
          Key    : String;
          Result : out Status);
+      procedure Put_Tags
+        (Bucket : String; Key : String; Tags : Object_Tag_Set;
+         Result : out Status);
+      procedure Get_Tags
+        (Bucket : String; Key : String; Tags : out Object_Tag_Set;
+         Result : out Status);
+      procedure Delete_Tags
+        (Bucket : String; Key : String; Result : out Status);
       procedure List
         (Bucket  : String;
          Options : List_Options;
