@@ -23,6 +23,8 @@ with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Durability_Testing;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Attributes;
+with Flyology.Object_Storage.S3.Checksum_Policy;
+with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
@@ -8765,6 +8767,9 @@ package body Object_Storage_Test_Cases is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
       package Buckets renames Flyology.Object_Storage.S3.Buckets;
+      package Checksum_Policy renames
+        Flyology.Object_Storage.S3.Checksum_Policy;
+      package Checksums renames Flyology.Object_Storage.S3.Checksums;
       package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
       package SigV4 renames Flyology.Object_Storage.S3.SigV4;
       package US renames Ada.Strings.Unbounded;
@@ -8772,6 +8777,7 @@ package body Object_Storage_Test_Cases is
       use type Low_Level.Get_Bucket_Location_Outcome_Kind;
       use type Low_Level.Put_Bucket_Tagging_Outcome_Kind;
       use type Low_Level.Get_Bucket_Tagging_Outcome_Kind;
+      use type Low_Level.Delete_Bucket_Tagging_Outcome_Kind;
       use type Low_Level.Head_Bucket_Outcome_Kind;
       use type Low_Level.Head_Object_Outcome_Kind;
       use type Low_Level.Get_Object_Attributes_Outcome_Kind;
@@ -9497,7 +9503,6 @@ package body Object_Storage_Test_Cases is
                Value => US.To_Unbounded_String ("flyology")));
          Parameters.Expected_Bucket_Owner :=
            US.To_Unbounded_String ("123456789012");
-         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
          declare
             Document : constant String :=
               Flyology.Object_Storage.S3.Tagging.Serialize_Bucket (Value);
@@ -9511,14 +9516,76 @@ package body Object_Storage_Test_Cases is
               (Low_Level.Target (Prepared) = "/example-bucket?tagging"
                and then Low_Level.Signed_Headers (Prepared) =
                  "content-md5;host;x-amz-content-sha256;x-amz-date;" &
-                 "x-amz-expected-bucket-owner;x-amz-request-payer"
+                 "x-amz-expected-bucket-owner"
                and then Ada.Strings.Fixed.Index
                  (Low_Level.Canonical_Request (Prepared),
                   SigV4.SHA256_Hex (Document)) > 0,
                "PutBucketTagging exact signed request projection");
          end;
 
-         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("SHA256");
+         declare
+            Document : constant String :=
+              Flyology.Object_Storage.S3.Tagging.Serialize_Bucket (Value);
+         begin
+            for Algorithm in Checksum_Policy.Algorithm loop
+               Parameters.Checksum_Algorithm :=
+                 US.To_Unbounded_String
+                   (Checksum_Policy.Wire_Name (Algorithm));
+               declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Put_Bucket_Tagging
+                      (Flyology.HTTP.Parse_Origin
+                         ("http://localhost:9000"),
+                       Low_Level.Path_Style, "example-bucket", Value,
+                       Parameters, Identity, "us-east-1",
+                       "20130524T000000Z");
+                  Header_Name : constant String :=
+                    (case Algorithm is
+                        when Flyology.Object_Storage.S3.Core.CRC32 =>
+                           "x-amz-checksum-crc32",
+                        when Flyology.Object_Storage.S3.Core.CRC32C =>
+                           "x-amz-checksum-crc32c",
+                        when Flyology.Object_Storage.S3.Core.CRC64NVME =>
+                           "x-amz-checksum-crc64nvme",
+                        when Flyology.Object_Storage.S3.Core.SHA1 =>
+                           "x-amz-checksum-sha1",
+                        when Flyology.Object_Storage.S3.Core.SHA256 =>
+                           "x-amz-checksum-sha256",
+                        when Flyology.Object_Storage.S3.Core.SHA512 =>
+                           "x-amz-checksum-sha512",
+                        when Flyology.Object_Storage.S3.Core.MD5 =>
+                           "x-amz-checksum-md5",
+                        when Flyology.Object_Storage.S3.Core.XXHASH64 =>
+                           "x-amz-checksum-xxhash64",
+                        when Flyology.Object_Storage.S3.Core.XXHASH3 =>
+                           "x-amz-checksum-xxhash3",
+                        when Flyology.Object_Storage.S3.Core.XXHASH128 =>
+                           "x-amz-checksum-xxhash128");
+                  Digest : constant String := Checksums.Encode_Base64
+                    (Checksums.Compute
+                       (Algorithm,
+                        Flyology.Bytes.To_Array
+                          (Flyology.Bytes.From_Byte_String (Document))));
+                  Canonical : constant String :=
+                    Low_Level.Canonical_Request (Prepared);
+               begin
+                  Assert
+                    (Ada.Strings.Fixed.Index
+                       (Low_Level.Signed_Headers (Prepared), Header_Name) > 0
+                     and then Ada.Strings.Fixed.Index
+                       (Canonical,
+                        Header_Name & ":" & Digest & ASCII.LF) > 0
+                     and then Ada.Strings.Fixed.Index
+                       (Canonical,
+                        "x-amz-sdk-checksum-algorithm:" &
+                        Checksum_Policy.Wire_Name (Algorithm) & ASCII.LF) > 0,
+                     "PutBucketTagging checksum projection " &
+                     Checksum_Policy.Wire_Name (Algorithm));
+               end;
+            end loop;
+         end;
+
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("invalid");
          declare
             Raised : Boolean := False;
          begin
@@ -9540,25 +9607,73 @@ package body Object_Storage_Test_Cases is
             end;
             Assert
               (Raised,
-               "PutBucketTagging silently emitted an incomplete checksum");
+               "PutBucketTagging accepted an unknown checksum algorithm");
+         end;
+
+         Parameters.Checksum_Algorithm := US.Null_Unbounded_String;
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         declare
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Put_Bucket_Tagging
+                      (Flyology.HTTP.Parse_Origin
+                         ("http://localhost:9000"),
+                       Low_Level.Path_Style, "example-bucket", Value,
+                       Parameters, Identity, "us-east-1",
+                       "20130524T000000Z");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request => Raised := True;
+            end;
+            Assert
+              (Raised,
+               "PutBucketTagging emitted non-modeled request payer");
          end;
       end;
 
       declare
          Headers : Low_Level.Put_Bucket_Tagging_Result;
       begin
-         Headers.Request_Charged := US.To_Unbounded_String ("requester");
          declare
-            Outcome : constant Low_Level.Put_Bucket_Tagging_Outcome :=
+            Outcome_200 : constant Low_Level.Put_Bucket_Tagging_Outcome :=
               Low_Level.Decode_Put_Bucket_Tagging_Response
                 (200, "", Headers);
+            Outcome_204 : constant Low_Level.Put_Bucket_Tagging_Outcome :=
+              Low_Level.Decode_Put_Bucket_Tagging_Response
+                (204, "", Headers);
          begin
             Assert
-              (Outcome.Kind = Low_Level.Bucket_Tags_Replaced
-               and then US.To_String (Outcome.Result.Request_Charged) =
-                 "requester",
-               "typed PutBucketTagging success response");
+              (Outcome_200.Kind = Low_Level.Bucket_Tags_Replaced
+               and then Outcome_204.Kind = Low_Level.Bucket_Tags_Replaced,
+               "typed PutBucketTagging interoperable success responses");
          end;
+      end;
+
+      declare
+         Headers : Low_Level.Put_Bucket_Tagging_Result;
+         Raised  : Boolean := False;
+      begin
+         Headers.Request_Charged := US.To_Unbounded_String ("requester");
+         begin
+            declare
+               Ignored : constant Low_Level.Put_Bucket_Tagging_Outcome :=
+                 Low_Level.Decode_Put_Bucket_Tagging_Response
+                   (200, "", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert
+           (Raised, "PutBucketTagging accepted non-modeled charged output");
       end;
 
       declare
@@ -9599,6 +9714,28 @@ package body Object_Storage_Test_Cases is
                  "x-amz-expected-bucket-owner",
                "GetBucketTagging exact signed request projection");
          end;
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         declare
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Get_Bucket_Tagging
+                      (Flyology.HTTP.Parse_Origin
+                         ("http://localhost:9000"),
+                       Low_Level.Path_Style, "example-bucket", Parameters,
+                       Identity, "us-east-1", "20130524T000000Z");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request => Raised := True;
+            end;
+            Assert
+              (Raised, "GetBucketTagging emitted non-modeled request payer");
+         end;
       end;
 
       declare
@@ -9632,6 +9769,111 @@ package body Object_Storage_Test_Cases is
             and then US.To_String (Outcome.Error.Code) = "NoSuchTagSet"
             and then US.To_String (Outcome.Error.Request_ID) = "request-id",
             "typed GetBucketTagging error response");
+      end;
+
+      declare
+         Headers : Low_Level.Get_Bucket_Tagging_Result;
+         Raised  : Boolean := False;
+      begin
+         Headers.Request_Charged := US.To_Unbounded_String ("requester");
+         begin
+            declare
+               Ignored : constant Low_Level.Get_Bucket_Tagging_Outcome :=
+                 Low_Level.Decode_Get_Bucket_Tagging_Response
+                   (200,
+                    "<Tagging><TagSet><Tag><Key>project</Key>" &
+                    "<Value>flyology</Value></Tag></TagSet></Tagging>",
+                    Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert
+           (Raised, "GetBucketTagging accepted non-modeled charged output");
+      end;
+
+      declare
+         Parameters : Low_Level.Delete_Bucket_Tagging_Parameters;
+      begin
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Bucket_Tagging
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) = "/example-bucket?tagging"
+               and then Low_Level.Signed_Headers (Prepared) =
+                 "host;x-amz-content-sha256;x-amz-date;" &
+                 "x-amz-expected-bucket-owner",
+               "DeleteBucketTagging exact signed request projection");
+         end;
+      end;
+
+      declare
+         Outcome : constant Low_Level.Delete_Bucket_Tagging_Outcome :=
+           Low_Level.Decode_Delete_Bucket_Tagging_Response (204, "");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Bucket_Tags_Deleted,
+            "typed DeleteBucketTagging success response");
+      end;
+
+      declare
+         Outcome : constant Low_Level.Delete_Bucket_Tagging_Outcome :=
+           Low_Level.Decode_Delete_Bucket_Tagging_Response
+             (404,
+              "<Error><Code>NoSuchBucket</Code>" &
+              "<Message>missing</Message></Error>", "request-id");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Delete_Bucket_Tagging_Rejected
+            and then US.To_String (Outcome.Error.Code) = "NoSuchBucket"
+            and then US.To_String (Outcome.Error.Request_ID) = "request-id",
+            "typed DeleteBucketTagging error response");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Delete_Bucket_Tagging_Outcome :=
+                 Low_Level.Decode_Delete_Bucket_Tagging_Response
+                   (204, "unexpected");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "DeleteBucketTagging accepted a success body");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Delete_Bucket_Tagging_Outcome :=
+                 Low_Level.Decode_Delete_Bucket_Tagging_Response
+                   (204, " " & ASCII.HT & ASCII.LF);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert
+           (Raised, "DeleteBucketTagging accepted a whitespace success body");
       end;
 
       declare

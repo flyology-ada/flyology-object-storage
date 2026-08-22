@@ -433,9 +433,10 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Get_Bucket_Location_Outcome;
 
    --  Every modeled PutBucketTagging control. Content_MD5 is generated from
-   --  the serialized tag document when omitted. Optional SDK checksum
-   --  algorithms are represented explicitly and rejected until the client
-   --  can emit their required paired checksum header.
+   --  the serialized tag document when omitted. A selected SDK checksum
+   --  algorithm emits both the algorithm and matching checksum headers.
+   --  Request_Payer is retained for source compatibility with 0.1.0-dev but
+   --  is not modeled by S3 and any nonempty value is rejected.
    type Put_Bucket_Tagging_Parameters is record
       Content_MD5            : Ada.Strings.Unbounded.Unbounded_String;
       Checksum_Algorithm     : Ada.Strings.Unbounded.Unbounded_String;
@@ -454,6 +455,8 @@ package Flyology.Object_Storage.Client.Low_Level is
       Timestamp  : String) return Prepared_Request;
 
    type Put_Bucket_Tagging_Result is record
+      --  Retained for source compatibility. PutBucketTagging has no modeled
+      --  request-charging output and a nonempty response value is rejected.
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
@@ -492,6 +495,7 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    type Get_Bucket_Tagging_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+      --  Retained for source compatibility; any nonempty value is rejected.
       Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
@@ -506,6 +510,8 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    type Get_Bucket_Tagging_Result is record
       Value           : Tags.Tag_Set;
+      --  Retained for source compatibility. GetBucketTagging has no modeled
+      --  request-charging output and a nonempty response value is rejected.
       Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
@@ -541,6 +547,51 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null;
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Tagging_Outcome;
+
+   type Delete_Bucket_Tagging_Parameters is record
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_Delete_Bucket_Tagging
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Delete_Bucket_Tagging_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type Delete_Bucket_Tagging_Outcome_Kind is
+     (Bucket_Tags_Deleted, Delete_Bucket_Tagging_Rejected);
+
+   type Delete_Bucket_Tagging_Outcome
+     (Kind : Delete_Bucket_Tagging_Outcome_Kind :=
+       Delete_Bucket_Tagging_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Tags_Deleted =>
+            null;
+         when Delete_Bucket_Tagging_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Delete_Bucket_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Tagging_Outcome;
+
+   function Execute_Delete_Bucket_Tagging
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Tagging_Outcome;
 
    --  Every modeled PutBucketVersioning input outside the bucket path. An
    --  empty Content_MD5 asks the client to generate the required digest from
@@ -1971,6 +2022,7 @@ private
       Get_Bucket_Location_Operation,
       Put_Bucket_Tagging_Operation,
       Get_Bucket_Tagging_Operation,
+      Delete_Bucket_Tagging_Operation,
       Put_Bucket_Versioning_Operation,
       Get_Bucket_Versioning_Operation,
       Head_Bucket_Operation,
