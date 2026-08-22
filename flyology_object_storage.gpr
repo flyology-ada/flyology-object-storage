@@ -35,4 +35,30 @@ project Flyology_Object_Storage is
       for Artifacts (".") use ("share");
    end Install;
 
+   package Documentation is
+      --  The public API report belongs to this crate; dependency APIs have
+      --  their own documentation gates and would obscure local warnings.
+      for Excluded_Project_Files use
+        (external ("FLYOLOGY_HTTP_ALIRE_PREFIX", "")
+         & "/flyology_http.gpr",
+         external ("FLYOLOGY_ROOT", "") & "/flyology.gpr",
+         external ("FLYOLOGY_CACHELINES_ALIRE_PREFIX", "")
+         & "/flyology_cachelines.gpr",
+         external ("FLYOLOGY_QUIC_ALIRE_PREFIX", "")
+         & "/flyology_quic.gpr",
+         external ("XMLADA_ALIRE_PREFIX", "")
+         & "/input_sources/xmlada_input.gpr",
+         external ("XMLADA_ALIRE_PREFIX", "")
+         & "/sax/xmlada_sax.gpr",
+         external ("XMLADA_ALIRE_PREFIX", "")
+         & "/unicode/xmlada_unicode.gpr",
+         external ("XMLADA_ALIRE_PREFIX", "")
+         & "/dom/xmlada_dom.gpr",
+         external ("XMLADA_ALIRE_PREFIX", "")
+         & "/schema/xmlada_schema.gpr",
+         external ("XMLADA_ALIRE_PREFIX", "")
+         & "/xmlada_shared.gpr",
+         "config/flyology_object_storage_config.gpr");
+   end Documentation;
+
 end Flyology_Object_Storage;

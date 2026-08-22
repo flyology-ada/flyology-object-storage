@@ -1,5 +1,6 @@
 /obj/
 /gnatprove-*.txt
+/gnatdoc-run.txt
 /lib/
 /alire/
 /config/
