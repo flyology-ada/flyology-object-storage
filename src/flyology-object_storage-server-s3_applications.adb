@@ -4301,7 +4301,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   elsif Checksum_Status = Checksum_Mismatch then
                      Send_Error
                        (X, 400, "BadDigest",
-                        "The optional checksum does not match the request body",
+                        "The optional checksum does not match the " &
+                        "request body",
                         Target_Text);
                   else
                      Check_Expected_Bucket_Owner
@@ -4309,178 +4310,189 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   end if;
                   if Owner_Accepted then
                      declare
-                     Request : constant Deletions.Delete_Objects_Request :=
-                       Deletions.Parse_Request
-                         (Document,
-                          (Maximum_Document_Bytes =>
-                             Natural (Maximum_Delete_Objects_Body),
-                           Maximum_Depth      => 8,
-                           Maximum_Elements   =>
-                             Deletions.Maximum_Request_Elements,
-                           Maximum_Text_Bytes =>
-                             Natural (Maximum_Delete_Objects_Body)));
-                     Response : Deletions.Delete_Objects_Result;
-                     Entries  : Backends.Delete_Object_Entries;
-                     Outcomes : Backends.Delete_Object_Outcomes;
-                  begin
-                     for Object_Request of Request.Objects loop
-                        declare
-                           ETag_Valid : constant Boolean :=
-                             not Object_Request.Has_ETag
-                             or else Valid_Object_Delete_ETag_Condition
-                               (US.To_String (Object_Request.ETag));
-                        begin
-                           if US.Length (Object_Request.Version_ID) = 0
-                             and then ETag_Valid
-                             and then
-                               not Object_Request.Has_Last_Modified_Time
-                             and then not Object_Request.Has_Size
-                           then
-                              Entries.Append
-                                (Backends.Delete_Object_Entry'
-                                   (Key => Object_Request.Key,
-                                    Conditions =>
-                                      (Has_ETag => Object_Request.Has_ETag,
-                                       ETag => Object_Request.ETag,
-                                       others => <>)));
-                           end if;
-                        end;
-                     end loop;
-                     if Entries.Is_Empty then
-                        --  No storage mutation can follow, so a separate
-                        --  existence lookup is sufficient to preserve S3's
-                        --  NoSuchBucket classification without reintroducing
-                        --  the versioning/delete race on actionable entries.
-                        Store.Head_Bucket
-                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
-                           Result);
-                        if Result /= Success then
-                           Send_Backend_Error
-                             (X, Result, True, Target_Text);
-                           return;
-                        end if;
-                     else
-                        Store.Delete_Objects
-                          (Bucket, Entries,
-                           (Require_Unversioned => True),
-                           Apps.Cancellation (X), Apps.Deadline (X),
-                           Outcomes, Result);
-                        if Result = Not_Implemented then
-                           Send_Error
-                             (X, 501, "NotImplemented",
-                              "Object versions, delete markers, and MFA " &
-                              "Delete enforcement are not implemented",
-                              Target_Text);
-                           return;
-                        elsif Result /= Success then
-                           Send_Backend_Error
-                             (X, Result, True, Target_Text);
-                           return;
-                        end if;
-                     end if;
-                     declare
-                        Outcome_Index : Positive := 1;
+                        Request : constant
+                          Deletions.Delete_Objects_Request :=
+                            Deletions.Parse_Request
+                              (Document,
+                               (Maximum_Document_Bytes =>
+                                  Natural (Maximum_Delete_Objects_Body),
+                                Maximum_Depth      => 8,
+                                Maximum_Elements   =>
+                                  Deletions.Maximum_Request_Elements,
+                                Maximum_Text_Bytes =>
+                                  Natural (Maximum_Delete_Objects_Body)));
+                        Response : Deletions.Delete_Objects_Result;
+                        Entries  : Backends.Delete_Object_Entries;
+                        Outcomes : Backends.Delete_Object_Outcomes;
                      begin
                         for Object_Request of Request.Objects loop
                            declare
-                              Date_Value : constant
-                                Object_Reads.Conditional_Date_Result :=
-                                  (if Object_Request.Has_Last_Modified_Time
-                                   then Object_Reads.Parse_Conditional_Date
-                                     (US.To_String
-                                        (Object_Request.Last_Modified_Time),
-                                      Clock)
-                                   else (Valid => False));
                               ETag_Valid : constant Boolean :=
                                 not Object_Request.Has_ETag
                                 or else Valid_Object_Delete_ETag_Condition
                                   (US.To_String (Object_Request.ETag));
-                              Entry_Result : Status := Invalid_Request;
-                              Error_Code : US.Unbounded_String;
-                              Error_Message : US.Unbounded_String;
                            begin
-                              if US.Length (Object_Request.Version_ID) > 0 then
-                                 Error_Code := US.To_Unbounded_String
-                                   ("NotImplemented");
-                                 Error_Message := US.To_Unbounded_String
-                                   ("Object version deletion is not supported");
-                              elsif not ETag_Valid then
-                                 Error_Code := US.To_Unbounded_String
-                                   ("InvalidArgument");
-                                 Error_Message := US.To_Unbounded_String
-                                   ("The ETag condition is invalid");
-                              elsif Object_Request.Has_Last_Modified_Time
-                                and then not Date_Value.Valid
+                              if US.Length (Object_Request.Version_ID) = 0
+                                and then ETag_Valid
+                                and then
+                                  not Object_Request.Has_Last_Modified_Time
+                                and then not Object_Request.Has_Size
                               then
-                                 Error_Code := US.To_Unbounded_String
-                                   ("InvalidArgument");
-                                 Error_Message := US.To_Unbounded_String
-                                   ("The LastModifiedTime condition is invalid");
-                              elsif Object_Request.Has_Last_Modified_Time
-                                or else Object_Request.Has_Size
-                              then
-                                 Error_Code := US.To_Unbounded_String
-                                   ("InvalidArgument");
-                                 Error_Message := US.To_Unbounded_String
-                                   ("LastModifiedTime and Size require a " &
-                                    "directory bucket");
-                              else
-                                 Entry_Result := Outcomes (Outcome_Index).Result;
-                                 Outcome_Index := Outcome_Index + 1;
-                                 if Entry_Result = Success then
-                                    if not Request.Quiet then
-                                       Response.Deleted.Append
-                                         (Deletions.Deleted_Object'
-                                            (Key => Object_Request.Key,
-                                             Version_ID =>
-                                               Object_Request.Version_ID,
-                                             others => <>));
-                                    end if;
-                                 elsif Entry_Result = Not_Found then
-                                    Error_Code := US.To_Unbounded_String
-                                      ("NoSuchKey");
-                                    Error_Message := US.To_Unbounded_String
-                                      ("The conditioned key does not exist");
-                                 elsif Entry_Result = Precondition_Failed then
-                                    Error_Code := US.To_Unbounded_String
-                                      ("PreconditionFailed");
-                                    Error_Message := US.To_Unbounded_String
-                                      ("A delete condition did not match");
-                                 elsif Entry_Result in
-                                   Capacity_Exceeded | Backend_Unavailable
-                                 then
-                                    Error_Code := US.To_Unbounded_String
-                                      ("SlowDown");
-                                    Error_Message := US.To_Unbounded_String
-                                      ("The object could not be deleted");
-                                 elsif Entry_Result = Conflict then
-                                    Error_Code := US.To_Unbounded_String
-                                      ("OperationAborted");
-                                    Error_Message := US.To_Unbounded_String
-                                      ("The object could not be deleted");
-                                 else
-                                    Error_Code := US.To_Unbounded_String
-                                      ("InvalidRequest");
-                                    Error_Message := US.To_Unbounded_String
-                                      ("The object could not be deleted");
-                                 end if;
-                              end if;
-                              if US.Length (Error_Code) > 0 then
-                                 Response.Errors.Append
-                                   (Deletions.Delete_Error'
+                                 Entries.Append
+                                   (Backends.Delete_Object_Entry'
                                       (Key => Object_Request.Key,
-                                       Version_ID =>
-                                         Object_Request.Version_ID,
-                                       Code => Error_Code,
-                                       Message => Error_Message));
+                                       Conditions =>
+                                         (Has_ETag =>
+                                            Object_Request.Has_ETag,
+                                          ETag => Object_Request.ETag,
+                                          others => <>)));
                               end if;
                            end;
                         end loop;
+                        if Entries.Is_Empty then
+                           --  No storage mutation can follow, so a separate
+                           --  existence lookup preserves S3's NoSuchBucket
+                           --  classification without reintroducing the
+                           --  versioning/delete race on actionable entries.
+                           Store.Head_Bucket
+                             (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                              Result);
+                           if Result /= Success then
+                              Send_Backend_Error
+                                (X, Result, True, Target_Text);
+                              return;
+                           end if;
+                        else
+                           Store.Delete_Objects
+                             (Bucket, Entries,
+                              (Require_Unversioned => True),
+                              Apps.Cancellation (X), Apps.Deadline (X),
+                              Outcomes, Result);
+                           if Result = Not_Implemented then
+                              Send_Error
+                                (X, 501, "NotImplemented",
+                                 "Object versions, delete markers, and MFA " &
+                                 "Delete enforcement are not implemented",
+                                 Target_Text);
+                              return;
+                           elsif Result /= Success then
+                              Send_Backend_Error
+                                (X, Result, True, Target_Text);
+                              return;
+                           end if;
+                        end if;
+                        declare
+                           Outcome_Index : Positive := 1;
+                        begin
+                           for Object_Request of Request.Objects loop
+                              declare
+                                 Date_Value : constant
+                                   Object_Reads.Conditional_Date_Result :=
+                                     (if
+                                        Object_Request.Has_Last_Modified_Time
+                                      then
+                                        Object_Reads.Parse_Conditional_Date
+                                          (US.To_String
+                                             (Object_Request
+                                                .Last_Modified_Time),
+                                           Clock)
+                                      else (Valid => False));
+                                 ETag_Valid : constant Boolean :=
+                                   not Object_Request.Has_ETag
+                                   or else Valid_Object_Delete_ETag_Condition
+                                     (US.To_String (Object_Request.ETag));
+                                 Entry_Result : Status := Invalid_Request;
+                                 Error_Code : US.Unbounded_String;
+                                 Error_Message : US.Unbounded_String;
+                              begin
+                                 if US.Length (Object_Request.Version_ID) > 0
+                                 then
+                                    Error_Code := US.To_Unbounded_String
+                                      ("NotImplemented");
+                                    Error_Message := US.To_Unbounded_String
+                                      ("Object version deletion is not " &
+                                       "supported");
+                                 elsif not ETag_Valid then
+                                    Error_Code := US.To_Unbounded_String
+                                      ("InvalidArgument");
+                                    Error_Message := US.To_Unbounded_String
+                                      ("The ETag condition is invalid");
+                                 elsif Object_Request.Has_Last_Modified_Time
+                                   and then not Date_Value.Valid
+                                 then
+                                    Error_Code := US.To_Unbounded_String
+                                      ("InvalidArgument");
+                                    Error_Message := US.To_Unbounded_String
+                                      ("The LastModifiedTime condition is " &
+                                       "invalid");
+                                 elsif Object_Request.Has_Last_Modified_Time
+                                   or else Object_Request.Has_Size
+                                 then
+                                    Error_Code := US.To_Unbounded_String
+                                      ("InvalidArgument");
+                                    Error_Message := US.To_Unbounded_String
+                                      ("LastModifiedTime and Size require " &
+                                       "a directory bucket");
+                                 else
+                                    Entry_Result :=
+                                      Outcomes (Outcome_Index).Result;
+                                    Outcome_Index := Outcome_Index + 1;
+                                    if Entry_Result = Success then
+                                       if not Request.Quiet then
+                                          Response.Deleted.Append
+                                            (Deletions.Deleted_Object'
+                                               (Key => Object_Request.Key,
+                                                Version_ID =>
+                                                  Object_Request.Version_ID,
+                                                others => <>));
+                                       end if;
+                                    elsif Entry_Result = Not_Found then
+                                       Error_Code := US.To_Unbounded_String
+                                         ("NoSuchKey");
+                                       Error_Message := US.To_Unbounded_String
+                                         ("The conditioned key does not " &
+                                          "exist");
+                                    elsif Entry_Result = Precondition_Failed
+                                    then
+                                       Error_Code := US.To_Unbounded_String
+                                         ("PreconditionFailed");
+                                       Error_Message := US.To_Unbounded_String
+                                         ("A delete condition did not match");
+                                    elsif Entry_Result in
+                                      Capacity_Exceeded | Backend_Unavailable
+                                    then
+                                       Error_Code := US.To_Unbounded_String
+                                         ("SlowDown");
+                                       Error_Message := US.To_Unbounded_String
+                                         ("The object could not be deleted");
+                                    elsif Entry_Result = Conflict then
+                                       Error_Code := US.To_Unbounded_String
+                                         ("OperationAborted");
+                                       Error_Message := US.To_Unbounded_String
+                                         ("The object could not be deleted");
+                                    else
+                                       Error_Code := US.To_Unbounded_String
+                                         ("InvalidRequest");
+                                       Error_Message := US.To_Unbounded_String
+                                         ("The object could not be deleted");
+                                    end if;
+                                 end if;
+                                 if US.Length (Error_Code) > 0 then
+                                    Response.Errors.Append
+                                      (Deletions.Delete_Error'
+                                         (Key => Object_Request.Key,
+                                          Version_ID =>
+                                            Object_Request.Version_ID,
+                                          Code => Error_Code,
+                                          Message => Error_Message));
+                                 end if;
+                              end;
+                           end loop;
+                        end;
+                        Apps.Respond
+                          (X, 200, "application/xml",
+                           Deletions.Serialize_Result (Response));
                      end;
-                     Apps.Respond
-                       (X, 200, "application/xml",
-                        Deletions.Serialize_Result (Response));
-                  end;
                   end if;
                exception
                   when Deletions.Malformed_Delete =>

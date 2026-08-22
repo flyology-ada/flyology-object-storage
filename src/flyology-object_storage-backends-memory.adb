@@ -699,12 +699,15 @@ package body Flyology.Object_Storage.Backends.Memory is
                Index : constant Natural := Object_Index (Bucket, Key);
                Entry_Result : constant Status :=
                  Evaluate_Delete_Object_Conditions
-                   (Request_Entry.Conditions,
-                    Exists => Index /= 0,
-                    Info =>
-                      (if Index = 0 then Empty_Info else Objects (Index).Info));
+                    (Request_Entry.Conditions,
+                     Exists => Index /= 0,
+                     Info =>
+                       (if Index = 0
+                        then Empty_Info
+                        else Objects (Index).Info));
             begin
-               Outcomes.Append (Delete_Object_Outcome'(Result => Entry_Result));
+               Outcomes.Append
+                 (Delete_Object_Outcome'(Result => Entry_Result));
                if Entry_Result = Success and then Index /= 0 then
                   Bytes := Bytes - Byte_Count (Objects (Index).Data.Capacity);
                   Objects (Index) := (others => <>);
