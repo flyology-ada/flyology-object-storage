@@ -277,6 +277,149 @@ package body Flyology.Object_Storage.S3.Buckets is
       or else Value = "us-west-1"
       or else Value = "us-west-2");
 
+   type Location_Handler is new XML.Event_Handler with record
+      Depth           : Natural := 0;
+      Value           : US.Unbounded_String;
+      Root_Seen       : Boolean := False;
+      Constraint_Seen : Boolean := False;
+      Wrapped         : Boolean := False;
+   end record;
+
+   overriding procedure Start_Element
+     (Item : in out Location_Handler; Local_Name : String);
+   overriding procedure Text
+     (Item : in out Location_Handler; Value : String);
+   overriding procedure End_Element
+     (Item : in out Location_Handler; Local_Name : String);
+
+   overriding procedure Start_Element
+     (Item : in out Location_Handler; Local_Name : String) is
+   begin
+      if Item.Depth = Natural'Last then
+         raise Malformed_Bucket_Location with
+           "GetBucketLocation depth overflow";
+      end if;
+      Item.Depth := Item.Depth + 1;
+      if Item.Depth = 1 then
+         if Item.Root_Seen then
+            raise Malformed_Bucket_Location with
+              "duplicate GetBucketLocation root";
+         elsif Local_Name = "LocationConstraint" then
+            Item.Root_Seen := True;
+            Item.Constraint_Seen := True;
+         elsif Local_Name = "CreateBucketConfiguration" then
+            Item.Root_Seen := True;
+            Item.Wrapped := True;
+         else
+            raise Malformed_Bucket_Location with
+              "unexpected GetBucketLocation root";
+         end if;
+      elsif Item.Depth = 2 and then Item.Wrapped
+        and then Local_Name = "LocationConstraint"
+        and then not Item.Constraint_Seen
+      then
+         Item.Constraint_Seen := True;
+      else
+         raise Malformed_Bucket_Location with
+           "nested GetBucketLocation element";
+      end if;
+   end Start_Element;
+
+   overriding procedure Text
+     (Item : in out Location_Handler; Value : String) is
+   begin
+      if (not Item.Wrapped and then Item.Depth = 1)
+        or else (Item.Wrapped and then Item.Depth = 2)
+      then
+         US.Append (Item.Value, Value);
+      elsif Item.Wrapped and then Item.Depth = 1 then
+         for Character_Value of Value loop
+            if Character_Value not in ' ' | ASCII.HT | ASCII.LF | ASCII.CR
+            then
+               raise Malformed_Bucket_Location with
+                 "non-whitespace GetBucketLocation wrapper text";
+            end if;
+         end loop;
+      else
+         raise Malformed_Bucket_Location with
+           "GetBucketLocation text outside root";
+      end if;
+   end Text;
+
+   overriding procedure End_Element
+     (Item : in out Location_Handler; Local_Name : String) is
+   begin
+      if Item.Wrapped and then Item.Depth = 2
+        and then Local_Name = "LocationConstraint"
+      then
+         Item.Depth := 1;
+      elsif Item.Wrapped and then Item.Depth = 1
+        and then Local_Name = "CreateBucketConfiguration"
+        and then Item.Constraint_Seen
+      then
+         Item.Depth := 0;
+      elsif not Item.Wrapped and then Item.Depth = 1
+        and then Local_Name = "LocationConstraint"
+      then
+         Item.Depth := 0;
+      else
+         raise Malformed_Bucket_Location with
+           "invalid GetBucketLocation closing element";
+      end if;
+   end End_Element;
+
+   function Parse_Location_Constraint
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits) return String
+   is
+      Handler : aliased Location_Handler;
+   begin
+      XML.Parse (Document, Handler, Limits);
+      if Handler.Depth /= 0
+        or else not Handler.Root_Seen
+        or else not Handler.Constraint_Seen
+      then
+         raise Malformed_Bucket_Location with
+           "incomplete GetBucketLocation document";
+      end if;
+      declare
+         Value : constant String := US.To_String (Handler.Value);
+      begin
+         if Value'Length > 0
+           and then Value /= "us-east-1"
+           and then not Valid_Location_Constraint (Value)
+         then
+            raise Malformed_Bucket_Location with
+              "invalid GetBucketLocation constraint";
+         end if;
+         return Value;
+      end;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Bucket_Location with
+           "malformed GetBucketLocation XML";
+   end Parse_Location_Constraint;
+
+   function Serialize_Location_Constraint (Region : String) return String is
+      Value : constant String :=
+        (if Region = "us-east-1" then "" else Region);
+   begin
+      if Region /= "us-east-1" and then not Valid_Location_Constraint (Region)
+      then
+         raise Malformed_Bucket_Location with
+           "invalid configured bucket location";
+      end if;
+      return
+        "<?xml version=""1.0"" encoding=""UTF-8""?>" &
+        "<LocationConstraint xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/"">" & XML.Escape_Text (Value) &
+        "</LocationConstraint>";
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Bucket_Location with
+           "bucket location contains invalid XML text";
+   end Serialize_Location_Constraint;
+
    function Element (Name, Value : String) return String is
      ("<" & Name & ">" & XML.Escape_Text (Value) & "</" & Name & ">");
 

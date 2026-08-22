@@ -6565,6 +6565,7 @@ package body Object_Storage_Test_Cases is
       package SigV4 renames Flyology.Object_Storage.S3.SigV4;
       package US renames Ada.Strings.Unbounded;
       use type Low_Level.Create_Bucket_Outcome_Kind;
+      use type Low_Level.Get_Bucket_Location_Outcome_Kind;
       use type Low_Level.Head_Bucket_Outcome_Kind;
       use type Low_Level.Head_Object_Outcome_Kind;
       use type Low_Level.List_Buckets_Outcome_Kind;
@@ -6901,6 +6902,164 @@ package body Object_Storage_Test_Cases is
                  "x-amz-grant-write-acp;x-amz-object-ownership",
                "CreateBucket every modeled request header is signed");
          end;
+      end;
+
+      declare
+         East_Document : constant String :=
+           Buckets.Serialize_Location_Constraint ("us-east-1");
+         West_Document : constant String :=
+           Buckets.Serialize_Location_Constraint ("us-west-2");
+      begin
+         Assert
+           (Buckets.Parse_Location_Constraint (East_Document) = ""
+            and then Ada.Strings.Fixed.Index
+              (East_Document, ">us-east-1<") = 0,
+            "GetBucketLocation us-east-1 was not encoded as null");
+         Assert
+           (Buckets.Parse_Location_Constraint (West_Document) = "us-west-2"
+            and then Buckets.Parse_Location_Constraint
+              ("<LocationConstraint>EU</LocationConstraint>") = "EU",
+            "GetBucketLocation legacy constraint round trip");
+      end;
+
+      declare
+         procedure Rejects (Document : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant String :=
+                    Buckets.Parse_Location_Constraint (Document);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Buckets.Malformed_Bucket_Location => Raised := True;
+            end;
+            Assert (Raised, "malformed GetBucketLocation XML was accepted");
+         end Rejects;
+      begin
+         Rejects ("<WrongRoot>us-west-2</WrongRoot>");
+         Rejects
+           ("<LocationConstraint><Region>us-west-2</Region>" &
+            "</LocationConstraint>");
+         Rejects
+           ("<LocationConstraint>not-a-region</LocationConstraint>");
+         Rejects
+           ("<?xml version=""1.0"" encoding=""UTF-8""?>" &
+            "<LocationConstraint xmlns=""http://s3.amazonaws.com/doc/" &
+            "2006-03-01/"">");
+      end;
+
+      Assert
+        (Buckets.Parse_Location_Constraint
+           ("<LocationConstraint>us-east-1</LocationConstraint>") =
+           "us-east-1",
+         "compatible literal us-east-1 location was rejected");
+      Assert
+        (Buckets.Parse_Location_Constraint
+           ("<CreateBucketConfiguration>" &
+            "<LocationConstraint></LocationConstraint>" &
+            "</CreateBucketConfiguration>") = "",
+         "compatible wrapped location constraint was rejected");
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant String :=
+                 Buckets.Parse_Location_Constraint
+                   ("<CreateBucketConfiguration>" &
+                    "<LocationConstraint/>" &
+                    "<LocationConstraint/>" &
+                    "</CreateBucketConfiguration>");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Buckets.Malformed_Bucket_Location => Raised := True;
+         end;
+         Assert (Raised, "duplicate wrapped location was accepted");
+      end;
+
+      declare
+         Parameters : Low_Level.Get_Bucket_Location_Parameters;
+      begin
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Location
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) = "/example-bucket?location"
+               and then Low_Level.Signed_Headers (Prepared) =
+                 "host;x-amz-content-sha256;x-amz-date;" &
+                 "x-amz-expected-bucket-owner"
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Canonical_Request (Prepared),
+                  ASCII.LF & "location=" & ASCII.LF) > 0,
+               "GetBucketLocation exact signed request projection");
+         end;
+      end;
+
+      declare
+         Outcome : constant Low_Level.Get_Bucket_Location_Outcome :=
+           Low_Level.Decode_Get_Bucket_Location_Response
+             (200,
+              "<LocationConstraint xmlns=""http://s3.amazonaws.com/doc/" &
+              "2006-03-01/"">us-west-2</LocationConstraint>");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Bucket_Location_Found
+            and then US.To_String
+              (Outcome.Result.Location_Constraint) = "us-west-2",
+            "typed GetBucketLocation success response");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Get_Bucket_Location_Outcome :=
+                 Low_Level.Decode_Get_Bucket_Location_Response
+                   (200,
+                    "<LocationConstraint>us-west-2" &
+                    "</LocationConstraint>",
+                    Limits =>
+                      (Maximum_Document_Bytes => 32,
+                       Maximum_Depth          => 2,
+                       Maximum_Elements       => 2,
+                       Maximum_Text_Bytes     => 16));
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "GetBucketLocation XML limit was ignored");
+      end;
+
+      declare
+         Outcome : constant Low_Level.Get_Bucket_Location_Outcome :=
+           Low_Level.Decode_Get_Bucket_Location_Response
+             (404,
+              "<Error><Code>NoSuchBucket</Code>" &
+              "<Message>missing</Message></Error>", "request-id");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Get_Bucket_Location_Rejected
+            and then US.To_String (Outcome.Error.Code) = "NoSuchBucket"
+            and then US.To_String (Outcome.Error.Request_ID) = "request-id",
+            "typed GetBucketLocation error response");
       end;
 
       declare

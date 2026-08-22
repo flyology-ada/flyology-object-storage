@@ -374,6 +374,55 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Create_Bucket_Outcome;
 
+   type Get_Bucket_Location_Parameters is record
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_Get_Bucket_Location
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Get_Bucket_Location_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type Get_Bucket_Location_Result is record
+      Location_Constraint : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Get_Bucket_Location_Outcome_Kind is
+     (Bucket_Location_Found, Get_Bucket_Location_Rejected);
+
+   type Get_Bucket_Location_Outcome
+     (Kind : Get_Bucket_Location_Outcome_Kind :=
+       Get_Bucket_Location_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Location_Found =>
+            Result : Get_Bucket_Location_Result;
+         when Get_Bucket_Location_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Get_Bucket_Location_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Location_Outcome;
+
+   function Execute_Get_Bucket_Location
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Location_Outcome;
+
    type Head_Bucket_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
@@ -1430,6 +1479,7 @@ private
       List_Buckets_Operation,
       Model_Driven_Operation,
       Create_Bucket_Operation,
+      Get_Bucket_Location_Operation,
       Head_Bucket_Operation,
       Head_Object_Operation,
       Get_Object_Operation,

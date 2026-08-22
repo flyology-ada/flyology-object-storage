@@ -891,6 +891,61 @@ begin
      (Has (Run (Signed_Request ("HEAD", "/test-bucket", "")), "200 OK"),
       "signed HeadBucket failed");
 
+   declare
+      Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("location", ""),
+         SigV4.Pair ("x-id", "GetBucketLocation"));
+      Response : constant String :=
+        Run (Signed_Query_Request ("GET", "/test-bucket", Query));
+   begin
+      Require
+        (Has (Response, "200 OK")
+         and then Has (Response, "Content-Type: application/xml")
+         and then Buckets.Parse_Location_Constraint
+           (Response_Body (Response)) = "",
+         "GetBucketLocation did not return null us-east-1 constraint");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Query,
+                  "x-amz-expected-bucket-owner", "test-principal")),
+            "200 OK"),
+         "GetBucketLocation rejected the authenticated owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketLocation ignored the expected owner precondition");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket",
+                  (1 => SigV4.Pair ("location", "")))),
+            "404 Not Found"),
+         "GetBucketLocation did not check bucket existence");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket", Query, "unexpected")),
+            "400 Bad Request"),
+         "GetBucketLocation accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("location", ""),
+                   SigV4.Pair ("location", "")))),
+            "400 Bad Request"),
+         "GetBucketLocation accepted a duplicate subresource");
+   end;
+
    for Name of Listing_Buckets loop
       Require
         (Has

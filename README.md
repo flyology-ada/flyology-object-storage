@@ -39,9 +39,10 @@ The core crate includes:
   member location, enumeration, XML trait, checksum trait, and authentication
   trait in the 116-operation botocore S3 model;
 - AWS-vector-tested SigV4 header signing and bounded, entity-safe REST/XML;
-- complete typed, bounded ListBuckets, ListObjects v1/v2 and multipart
+- complete typed, bounded GetBucketLocation, ListBuckets, ListObjects v1/v2 and multipart
   initiation, completion, ListParts, and ListMultipartUploads REST/XML codecs;
-- signed, bounded CreateBucket, HeadBucket, GetObject, HeadObject, PutObject,
+- signed, bounded CreateBucket, GetBucketLocation, HeadBucket, GetObject,
+  HeadObject, PutObject,
   ListBuckets, ListObjects, ListObjectsV2, DeleteBucket,
   DeleteObject, DeleteObjects REST/XML, and multipart
   initiate/upload/complete/abort/ListParts/ListMultipartUploads low-level
@@ -51,7 +52,7 @@ The core crate includes:
   boundary for all 116 pinned operations, while operation-specific typed
   codecs and interoperability gates remain tracked as incomplete;
 - an authenticated path-style S3 server application for the initial
-  Create/Head/DeleteBucket, ListObjects v1/v2, DeleteObjects,
+  Create/GetLocation/Head/DeleteBucket, ListObjects v1/v2, DeleteObjects,
   Put/Copy/Get/Head/DeleteObject, and core multipart/ListParts/
   ListMultipartUploads slice, with SigV4 admission before body acceptance,
   streamed payload-hash verification before commit, atomic suffix-range

@@ -1689,6 +1689,96 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "CreateBucket response exceeds XML limit";
    end Execute_Create_Bucket;
 
+   function Prepare_Get_Bucket_Location
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Get_Bucket_Location_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Owner : constant String :=
+        US.To_String (Parameters.Expected_Bucket_Owner);
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("location", ""));
+      Headers : SigV4.Name_Value_Array
+        (1 .. Boolean'Pos (Owner'Length > 0));
+   begin
+      if Owner'Length > 0 then
+         Headers (1) := SigV4.Pair ("x-amz-expected-bucket-owner", Owner);
+      end if;
+      return Prepare_Object_Request
+        (Get_Bucket_Location_Operation, "GET", Origin, Style, Bucket, "",
+         Query, Headers, "", "", Identity, Region, Timestamp,
+         Object_Resource => False);
+   end Prepare_Get_Bucket_Location;
+
+   function Decode_Get_Bucket_Location_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Location_Outcome
+   is
+   begin
+      if Status = 200 then
+         return
+           (Kind   => Bucket_Location_Found,
+            Status => Status,
+            Result =>
+              (Location_Constraint => US.To_Unbounded_String
+                 (S3.Buckets.Parse_Location_Constraint (Payload, Limits))));
+      else
+         return
+           (Kind   => Get_Bucket_Location_Rejected,
+            Status => Status,
+            Error  => Error_Response
+              (Payload, Request_ID, Host_ID, Limits));
+      end if;
+   exception
+      when S3.Buckets.Malformed_Bucket_Location |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed GetBucketLocation response";
+   end Decode_Get_Bucket_Location_Response;
+
+   function Execute_Get_Bucket_Location
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Location_Outcome
+   is
+   begin
+      if Prepared.Operation /= Get_Bucket_Location_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Request_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+         Host_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Get_Bucket_Location_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
+            Host_ID, Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "GetBucketLocation response exceeds XML limit";
+   end Execute_Get_Bucket_Location;
+
    function Prepare_Head_Bucket
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;

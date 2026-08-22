@@ -6,6 +6,7 @@ with Flyology.Object_Storage.S3.XML;
 package Flyology.Object_Storage.S3.Buckets is
 
    Invalid_Bucket_Configuration : exception;
+   Malformed_Bucket_Location : exception;
 
    subtype Max_Buckets_Value is Positive range 1 .. 10_000;
    Maximum_Bucket_Region_Length : constant := 63;
@@ -65,6 +66,20 @@ package Flyology.Object_Storage.S3.Buckets is
    --  emits the namespaced CreateBucketConfiguration document.
    function Serialize_Create_Configuration
      (Value : Create_Bucket_Configuration) return String;
+
+   --  Legacy GetBucketLocation represents us-east-1 as an empty root value;
+   --  EU remains the legacy spelling for eu-west-1. Other values follow the
+   --  pinned AWS BucketLocationConstraint enumeration.
+   function Valid_Location_Constraint (Value : String) return Boolean;
+
+   --  The parser additionally accepts literal us-east-1 from compatible
+   --  servers and the exact single-field CreateBucketConfiguration wrapper
+   --  emitted by SeaweedFS 4.43. Serialization retains AWS's null scalar.
+   function Parse_Location_Constraint
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits) return String;
+
+   function Serialize_Location_Constraint (Region : String) return String;
 
    --  Every member of the pinned ListBuckets Bucket structure. Empty values
    --  preserve optional-member absence exactly as received.

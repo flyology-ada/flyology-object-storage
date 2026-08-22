@@ -1,0 +1,52 @@
+with Ada.Strings.Unbounded;
+with Flyology.Cancellation;
+with Flyology.HTTP;
+with Flyology.HTTP.Client;
+with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.S3.Errors;
+
+--  High-level bucket operations over a configured Flyology HTTP client.
+package Flyology.Object_Storage.Client.Buckets is
+
+   type Location_Outcome_Kind is (Location_Found, Location_Rejected);
+
+   type Location_Outcome
+     (Kind : Location_Outcome_Kind := Location_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Location_Found =>
+            --  Normalized AWS signing region: an empty legacy constraint is
+            --  us-east-1 and EU is eu-west-1.
+            Region : Ada.Strings.Unbounded.Unbounded_String;
+            Legacy_Constraint : Ada.Strings.Unbounded.Unbounded_String;
+         when Location_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Resolve one bucket's legacy GetBucketLocation value into a usable
+   --  signing region while preserving the raw constraint for callers that
+   --  need wire-level compatibility diagnostics.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose location is requested
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region Region used to sign the location request
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional 12-digit owner precondition
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Normalized signing region or structured S3 rejection
+   function Get_Location
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Location_Outcome;
+
+end Flyology.Object_Storage.Client.Buckets;

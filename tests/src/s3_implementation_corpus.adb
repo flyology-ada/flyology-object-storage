@@ -13,6 +13,7 @@ with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Multipart;
@@ -21,6 +22,7 @@ with Flyology.Object_Storage.S3.SigV4;
 procedure S3_Implementation_Corpus is
    package HTTP_Client renames Flyology.HTTP.Client;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+   package Client_Buckets renames Flyology.Object_Storage.Client.Buckets;
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
@@ -39,6 +41,7 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Delete_Object_Outcome_Kind;
    use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Head_Bucket_Outcome_Kind;
+   use type Low_Level.Get_Bucket_Location_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.List_Buckets_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
@@ -50,6 +53,7 @@ procedure S3_Implementation_Corpus is
    use type Transfers.Copy_Outcome_Kind;
    use type Transfers.Head_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
+   use type Client_Buckets.Location_Outcome_Kind;
 
    Access_Key : constant String := "FLYOLOGYS3ORACLE";
    Secret_Key : constant String := "flyology-s3-oracle-secret-key-tests";
@@ -826,6 +830,59 @@ procedure S3_Implementation_Corpus is
          raise;
    end Require_Head_Bucket;
 
+   procedure Require_Bucket_Location
+     (Origin    : Flyology.HTTP.Origin;
+      Bucket    : String;
+      Timestamp : String)
+   is
+      HTTP       : aliased HTTP_Client.Client (Capacity => 1);
+      Identity   : constant Low_Level.Credentials :=
+        Low_Level.Make_Credentials (Access_Key, Secret_Key);
+      Parameters : Low_Level.Get_Bucket_Location_Parameters;
+      Prepared   : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Get_Bucket_Location
+          (Origin, Low_Level.Path_Style, Bucket, Parameters, Identity,
+           "us-east-1", Timestamp);
+   begin
+      HTTP_Client.Configure (HTTP, Origin);
+      declare
+         Outcome : constant Low_Level.Get_Bucket_Location_Outcome :=
+           Low_Level.Execute_Get_Bucket_Location
+             (HTTP, Prepared, Timeout => 30.0);
+      begin
+         if Outcome.Kind /= Low_Level.Bucket_Location_Found
+           or else
+             (US.Length (Outcome.Result.Location_Constraint) /= 0
+              and then US.To_String
+                (Outcome.Result.Location_Constraint) /= "us-east-1")
+         then
+            raise Program_Error with
+              "S3 implementation returned wrong GetBucketLocation value";
+         end if;
+      end;
+      declare
+         Outcome : constant Client_Buckets.Location_Outcome :=
+           Client_Buckets.Get_Location
+             (HTTP, Origin, Bucket, Identity, Timeout => 30.0);
+      begin
+         if Outcome.Kind /= Client_Buckets.Location_Found
+           or else US.To_String (Outcome.Region) /= "us-east-1"
+           or else
+             (US.Length (Outcome.Legacy_Constraint) /= 0
+              and then US.To_String
+                (Outcome.Legacy_Constraint) /= "us-east-1")
+         then
+            raise Program_Error with
+              "high-level bucket-location normalization mismatch";
+         end if;
+      end;
+      HTTP_Client.Shutdown (HTTP);
+   exception
+      when others =>
+         HTTP_Client.Shutdown (HTTP);
+         raise;
+   end Require_Bucket_Location;
+
    procedure Require_Listed_Bucket
      (Origin    : Flyology.HTTP.Origin;
       Bucket    : String;
@@ -1045,6 +1102,7 @@ begin
             task body Lightweight_Client is
             begin
                Require_Head_Bucket (Origin, Bucket, Timestamp);
+               Require_Bucket_Location (Origin, Bucket, Timestamp);
                Require_Listed_Bucket (Origin, Bucket, Timestamp);
                Lightweight_Result.Report (True);
             exception
@@ -1060,9 +1118,11 @@ begin
             raise Program_Error with US.To_String (Detail);
          end if;
          Require_Head_Bucket (Origin, Bucket, Timestamp);
+         Require_Bucket_Location (Origin, Bucket, Timestamp);
          Require_Listed_Bucket (Origin, Bucket, Timestamp);
          Ada.Text_IO.Put_Line
-           ("S3 implementation setup: bucket created, headed, and listed");
+           ("S3 implementation setup: bucket created, located, headed, " &
+            "and listed");
       elsif Ada.Command_Line.Argument (4) = "cleanup" then
          Delete_One (Origin, Bucket, "native-object", Timestamp);
          Delete_One
