@@ -3176,6 +3176,176 @@ package body Object_Storage_Test_Cases is
       end;
    end Check_Multipart_Completion_Codec;
 
+   procedure Check_List_Parts_Codec (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Multipart renames Flyology.Object_Storage.S3.Multipart;
+      package US renames Ada.Strings.Unbounded;
+
+      function Root (Content : String) return String is
+        ("<ListPartsResult><Bucket>bucket</Bucket><Key>key</Key>" &
+         "<UploadId>upload</UploadId><PartNumberMarker>0" &
+         "</PartNumberMarker><MaxParts>2</MaxParts>" &
+         "<IsTruncated>false</IsTruncated>" & Content &
+         "</ListPartsResult>");
+
+      procedure Must_Reject (Document, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Multipart.List_Parts_Result :=
+                 Multipart.Parse_List_Parts_Result (Document);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Multipart.Malformed_Multipart =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Must_Reject;
+   begin
+      declare
+         Parsed : constant Multipart.List_Parts_Result :=
+           Multipart.Parse_List_Parts_Result
+             ("<ListPartsResult xmlns=""http://s3.amazonaws.com/doc/" &
+              "2006-03-01/""><Bucket>bucket</Bucket><Key>a&amp;b</Key>" &
+              "<UploadId>upload</UploadId><PartNumberMarker>1" &
+              "</PartNumberMarker><NextPartNumberMarker>2" &
+              "</NextPartNumberMarker><MaxParts>1</MaxParts>" &
+              "<IsTruncated>true</IsTruncated><Part>" &
+              "<PartNumber>2</PartNumber>" &
+              "<LastModified>2026-08-21T12:00:00.000Z</LastModified>" &
+              "<ETag>&quot;etag&quot;</ETag>" &
+              "<Size>9223372036854775807</Size>" &
+              "<ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+              "<ChecksumCRC32C>AAAAAA==</ChecksumCRC32C>" &
+              "<ChecksumCRC64NVME>AAAAAAAAAAA=</ChecksumCRC64NVME>" &
+              "<ChecksumSHA1>AAAAAAAAAAAAAAAAAAAAAAAAAAA=</ChecksumSHA1>" &
+              "<ChecksumSHA256>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+              "</ChecksumSHA256><ChecksumSHA512>" &
+              String'(1 .. 86 => 'A') & "==</ChecksumSHA512>" &
+              "<ChecksumMD5>AAAAAAAAAAAAAAAAAAAAAA==</ChecksumMD5>" &
+              "<ChecksumXXHASH64>AAAAAAAAAAA=</ChecksumXXHASH64>" &
+              "<ChecksumXXHASH3>AAAAAAAAAAA=</ChecksumXXHASH3>" &
+              "<ChecksumXXHASH128>AAAAAAAAAAAAAAAAAAAAAA==" &
+              "</ChecksumXXHASH128></Part>" &
+              "<Initiator><ID>initiator-id</ID>" &
+              "<DisplayName>initiator</DisplayName></Initiator>" &
+              "<Owner><ID>owner-id</ID><DisplayName>owner</DisplayName>" &
+              "</Owner><StorageClass>STANDARD</StorageClass>" &
+              "<ChecksumAlgorithm>SHA256</ChecksumAlgorithm>" &
+              "<ChecksumType>FULL_OBJECT</ChecksumType>" &
+              "<Future><Nested>ignored</Nested></Future>" &
+              "</ListPartsResult>");
+         Round_Trip : constant Multipart.List_Parts_Result :=
+           Multipart.Parse_List_Parts_Result
+             (Multipart.Serialize_List_Parts_Result (Parsed));
+      begin
+         Assert
+           (Parsed.Parts.Length = 1
+            and then Parsed.Parts.First_Element.Number = 2
+            and then Parsed.Parts.First_Element.Size =
+              Flyology.Object_Storage.Byte_Count'Last
+            and then US.To_String (Parsed.Key) = "a&b"
+            and then Parsed.Has_Initiator
+            and then Parsed.Has_Owner
+            and then US.To_String (Parsed.Owner.ID) = "owner-id"
+            and then US.To_String (Parsed.Storage_Class) = "STANDARD"
+            and then US.To_String (Parsed.Checksum_Algorithm) = "SHA256"
+            and then US.To_String (Parsed.Checksum_Type) = "FULL_OBJECT",
+            "ListParts complete response fields");
+         Assert
+           (Round_Trip.Parts.Length = 1
+            and then Round_Trip.Next_Part_Number_Marker = 2
+            and then Round_Trip.Parts.First_Element.Size =
+              Flyology.Object_Storage.Byte_Count'Last
+            and then US.To_String
+              (Round_Trip.Parts.First_Element.Checksum_SHA512) =
+                String'(1 .. 86 => 'A') & "=="
+            and then US.To_String
+              (Round_Trip.Parts.First_Element.Checksum_XXHASH128) =
+                "AAAAAAAAAAAAAAAAAAAAAA==",
+            "ListParts serialization round trip");
+      end;
+
+      declare
+         Empty : constant Multipart.List_Parts_Result :=
+           Multipart.Parse_List_Parts_Result (Root (""));
+      begin
+         Assert
+           (Empty.Parts.Is_Empty and then not Empty.Is_Truncated,
+            "ListParts empty final page");
+      end;
+
+      Must_Reject ("<Wrong/>", "ListParts wrong root was accepted");
+      Must_Reject
+        ("<ListPartsResult><Bucket>bucket</Bucket></ListPartsResult>",
+         "ListParts missing required fields was accepted");
+      Must_Reject
+        (Root ("<Bucket>again</Bucket>"),
+         "ListParts duplicate scalar was accepted");
+      Must_Reject
+        ("<ListPartsResult><Bucket>bucket</Bucket><Key>key</Key>" &
+         "<UploadId>upload</UploadId><PartNumberMarker>10001" &
+         "</PartNumberMarker><MaxParts>1</MaxParts>" &
+         "<IsTruncated>false</IsTruncated></ListPartsResult>",
+         "ListParts oversized marker was accepted");
+      Must_Reject
+        ("<ListPartsResult><Bucket>bucket</Bucket><Key>key</Key>" &
+         "<UploadId>upload</UploadId><PartNumberMarker>0" &
+         "</PartNumberMarker><MaxParts>1001</MaxParts>" &
+         "<IsTruncated>false</IsTruncated></ListPartsResult>",
+         "ListParts oversized page size was accepted");
+      Must_Reject
+        ("<ListPartsResult><Bucket>bucket</Bucket><Key>key</Key>" &
+         "<UploadId>upload</UploadId><PartNumberMarker>0" &
+         "</PartNumberMarker><MaxParts>1</MaxParts>" &
+         "<IsTruncated>True</IsTruncated></ListPartsResult>",
+         "ListParts noncanonical boolean was accepted");
+      Must_Reject
+        (Root ("<Part><PartNumber>1</PartNumber>" &
+               "<LastModified>x</LastModified><ETag>e</ETag>" &
+               "<Size>9223372036854775808</Size></Part>"),
+         "ListParts overflowing part size was accepted");
+      Must_Reject
+        (Root ("<Part><PartNumber>1</PartNumber>" &
+               "<LastModified>x</LastModified><ETag>e</ETag><Size>1</Size>" &
+               "<ChecksumCRC32>abc</ChecksumCRC32></Part>"),
+         "ListParts malformed checksum was accepted");
+      Must_Reject
+        (Root ("<Part><PartNumber>2</PartNumber><LastModified>x" &
+               "</LastModified><ETag>e</ETag><Size>1</Size></Part>" &
+               "<Part><PartNumber>1</PartNumber><LastModified>x" &
+               "</LastModified><ETag>e</ETag><Size>1</Size></Part>"),
+         "ListParts unordered parts were accepted");
+      Must_Reject
+        ("<ListPartsResult><Bucket>bucket</Bucket><Key>key</Key>" &
+         "<UploadId>upload</UploadId><PartNumberMarker>0" &
+         "</PartNumberMarker><NextPartNumberMarker>2" &
+         "</NextPartNumberMarker><MaxParts>1</MaxParts>" &
+         "<IsTruncated>true</IsTruncated><Part>" &
+         "<PartNumber>1</PartNumber><LastModified>x</LastModified>" &
+         "<ETag>e</ETag><Size>1</Size></Part></ListPartsResult>",
+         "ListParts mismatched next marker was accepted");
+      Must_Reject
+        (Root ("<StorageClass>UNKNOWN</StorageClass>"),
+         "ListParts invalid storage class was accepted");
+      Must_Reject
+        (Root ("<ChecksumAlgorithm>UNKNOWN</ChecksumAlgorithm>"),
+         "ListParts invalid checksum algorithm was accepted");
+      Must_Reject
+        (Root ("<ChecksumType>FULL_OBJECT</ChecksumType>"),
+         "ListParts checksum type without algorithm was accepted");
+      Must_Reject
+        (Root ("<Part><PartNumber><Nested/></PartNumber>" &
+               "<LastModified>x</LastModified><ETag>e</ETag>" &
+               "<Size>1</Size></Part>"),
+         "ListParts nested scalar was accepted");
+   end Check_List_Parts_Codec;
+
    procedure Check_Delete_Objects_Result_Codec
      (Unused : in out Fixture)
    is
@@ -6162,6 +6332,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.multipart-completion-codec",
             Check_Multipart_Completion_Codec'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.list-parts-codec",
+            Check_List_Parts_Codec'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.delete-objects-result-codec",

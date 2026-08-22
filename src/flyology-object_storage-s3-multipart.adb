@@ -1,11 +1,13 @@
 with Ada.Containers;
 with Ada.Strings;
 with Ada.Strings.Fixed;
+with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Wire_Core;
 
 package body Flyology.Object_Storage.S3.Multipart is
 
    package US renames Ada.Strings.Unbounded;
+   package Model renames Flyology.Object_Storage.S3.Model;
    package Wire_Core renames Flyology.Object_Storage.S3.Wire_Core;
    use type Ada.Containers.Count_Type;
 
@@ -1032,5 +1034,588 @@ package body Flyology.Object_Storage.S3.Multipart is
          US.To_String (Value.Checksum_XXHASH128));
       return Result_Document ("CopyPartResult", US.To_String (Content));
    end Serialize_Copy_Part_Result;
+
+   type List_Parts_Field is
+     (No_List_Parts_Field,
+      LP_Bucket, LP_Key, LP_Upload_ID, LP_Part_Number_Marker,
+      LP_Next_Part_Number_Marker, LP_Max_Parts, LP_Is_Truncated,
+      LP_Storage_Class, LP_Checksum_Algorithm, LP_Checksum_Type,
+      LP_Part_Number, LP_Last_Modified, LP_Entity_Tag, LP_Size,
+      LP_Checksum_CRC32, LP_Checksum_CRC32C, LP_Checksum_CRC64NVME,
+      LP_Checksum_SHA1, LP_Checksum_SHA256, LP_Checksum_SHA512,
+      LP_Checksum_MD5, LP_Checksum_XXHASH64, LP_Checksum_XXHASH3,
+      LP_Checksum_XXHASH128, LP_Identity_ID, LP_Identity_Display_Name);
+
+   type List_Parts_Context is
+     (LP_Root_Context, LP_Part_Context, LP_Initiator_Context,
+      LP_Owner_Context);
+   type List_Parts_Seen is array (List_Parts_Field) of Boolean;
+
+   type List_Parts_Handler is new XML.Event_Handler with record
+      Value          : List_Parts_Result;
+      Current_Part   : Listed_Part;
+      Current_Identity : Multipart_Identity;
+      Text_Value     : US.Unbounded_String;
+      Depth          : Natural := 0;
+      Ignore_Depth   : Natural := 0;
+      Context        : List_Parts_Context := LP_Root_Context;
+      Field          : List_Parts_Field := No_List_Parts_Field;
+      Seen           : List_Parts_Seen := (others => False);
+   end record;
+
+   overriding procedure Start_Element
+     (Item : in out List_Parts_Handler; Local_Name : String);
+   overriding procedure Text
+     (Item : in out List_Parts_Handler; Value : String);
+   overriding procedure End_Element
+     (Item : in out List_Parts_Handler; Local_Name : String);
+
+   procedure Select_List_Parts_Field
+     (Item : in out List_Parts_Handler; Field : List_Parts_Field) is
+   begin
+      if Item.Seen (Field) then
+         raise Malformed_Multipart with "duplicate ListParts field";
+      end if;
+      Item.Seen (Field) := True;
+      Item.Field := Field;
+      US.Set_Unbounded_String (Item.Text_Value, "");
+   end Select_List_Parts_Field;
+
+   function Parse_Marker (Value : String) return Part_Marker_Value is
+      Parsed : constant Wire_Core.Natural_Result :=
+        Wire_Core.Parse_Natural (Value);
+   begin
+      if not Parsed.Valid or else Parsed.Value > Part_Marker_Value'Last then
+         raise Malformed_Multipart with "invalid ListParts marker";
+      end if;
+      return Part_Marker_Value (Parsed.Value);
+   end Parse_Marker;
+
+   function Parse_Page_Size (Value : String) return Core.Page_Size is
+      Parsed : constant Wire_Core.Natural_Result :=
+        Wire_Core.Parse_Natural (Value);
+   begin
+      if not Parsed.Valid or else Parsed.Value > Core.Page_Size'Last then
+         raise Malformed_Multipart with "invalid ListParts page size";
+      end if;
+      return Core.Page_Size (Parsed.Value);
+   end Parse_Page_Size;
+
+   function Parse_Listed_Part_Number (Value : String)
+      return Core.Part_Number
+   is
+      Parsed : constant Wire_Core.Natural_Result :=
+        Wire_Core.Parse_Natural (Value);
+   begin
+      if not Parsed.Valid or else Parsed.Value not in Core.Part_Number'Range
+      then
+         raise Malformed_Multipart with "invalid listed part number";
+      end if;
+      return Core.Part_Number (Parsed.Value);
+   end Parse_Listed_Part_Number;
+
+   function Parse_Listed_Size (Value : String) return Byte_Count is
+      Parsed : constant Wire_Core.Byte_Count_Result :=
+        Wire_Core.Parse_Byte_Count (Value);
+   begin
+      if not Parsed.Valid then
+         raise Malformed_Multipart with "invalid listed part size";
+      end if;
+      return Parsed.Value;
+   end Parse_Listed_Size;
+
+   function Parse_List_Parts_Boolean (Value : String) return Boolean is
+      Parsed : constant Wire_Core.Boolean_Result :=
+        Wire_Core.Parse_Boolean (Value);
+   begin
+      if not Parsed.Valid then
+         raise Malformed_Multipart with "invalid ListParts boolean";
+      end if;
+      return Parsed.Value;
+   end Parse_List_Parts_Boolean;
+
+   procedure Finish_List_Parts_Field (Item : in out List_Parts_Handler) is
+      Value : constant String := US.To_String (Item.Text_Value);
+   begin
+      case Item.Field is
+         when LP_Bucket =>
+            Item.Value.Bucket := Item.Text_Value;
+         when LP_Key =>
+            Item.Value.Key := Item.Text_Value;
+         when LP_Upload_ID =>
+            Item.Value.Upload_ID := Item.Text_Value;
+         when LP_Part_Number_Marker =>
+            Item.Value.Part_Number_Marker := Parse_Marker (Value);
+         when LP_Next_Part_Number_Marker =>
+            Item.Value.Next_Part_Number_Marker := Parse_Marker (Value);
+         when LP_Max_Parts =>
+            Item.Value.Max_Parts := Parse_Page_Size (Value);
+         when LP_Is_Truncated =>
+            Item.Value.Is_Truncated := Parse_List_Parts_Boolean (Value);
+         when LP_Storage_Class =>
+            Item.Value.Storage_Class := Item.Text_Value;
+         when LP_Checksum_Algorithm =>
+            Item.Value.Checksum_Algorithm := Item.Text_Value;
+         when LP_Checksum_Type =>
+            Item.Value.Checksum_Type := Item.Text_Value;
+         when LP_Part_Number =>
+            Item.Current_Part.Number := Parse_Listed_Part_Number (Value);
+         when LP_Last_Modified =>
+            Item.Current_Part.Last_Modified := Item.Text_Value;
+         when LP_Entity_Tag =>
+            Item.Current_Part.Entity_Tag := Item.Text_Value;
+         when LP_Size =>
+            Item.Current_Part.Size := Parse_Listed_Size (Value);
+         when LP_Checksum_CRC32 =>
+            Item.Current_Part.Checksum_CRC32 := Item.Text_Value;
+         when LP_Checksum_CRC32C =>
+            Item.Current_Part.Checksum_CRC32C := Item.Text_Value;
+         when LP_Checksum_CRC64NVME =>
+            Item.Current_Part.Checksum_CRC64NVME := Item.Text_Value;
+         when LP_Checksum_SHA1 =>
+            Item.Current_Part.Checksum_SHA1 := Item.Text_Value;
+         when LP_Checksum_SHA256 =>
+            Item.Current_Part.Checksum_SHA256 := Item.Text_Value;
+         when LP_Checksum_SHA512 =>
+            Item.Current_Part.Checksum_SHA512 := Item.Text_Value;
+         when LP_Checksum_MD5 =>
+            Item.Current_Part.Checksum_MD5 := Item.Text_Value;
+         when LP_Checksum_XXHASH64 =>
+            Item.Current_Part.Checksum_XXHASH64 := Item.Text_Value;
+         when LP_Checksum_XXHASH3 =>
+            Item.Current_Part.Checksum_XXHASH3 := Item.Text_Value;
+         when LP_Checksum_XXHASH128 =>
+            Item.Current_Part.Checksum_XXHASH128 := Item.Text_Value;
+         when LP_Identity_ID =>
+            Item.Current_Identity.ID := Item.Text_Value;
+         when LP_Identity_Display_Name =>
+            Item.Current_Identity.Display_Name := Item.Text_Value;
+         when No_List_Parts_Field =>
+            null;
+      end case;
+      Item.Field := No_List_Parts_Field;
+      US.Set_Unbounded_String (Item.Text_Value, "");
+   end Finish_List_Parts_Field;
+
+   procedure Reset_Listed_Part (Item : in out List_Parts_Handler) is
+   begin
+      Item.Current_Part := (others => <>);
+      for Field in LP_Part_Number .. LP_Checksum_XXHASH128 loop
+         Item.Seen (Field) := False;
+      end loop;
+      Item.Context := LP_Part_Context;
+   end Reset_Listed_Part;
+
+   procedure Reset_Identity
+     (Item : in out List_Parts_Handler; Context : List_Parts_Context) is
+   begin
+      Item.Current_Identity := (others => <>);
+      Item.Seen (LP_Identity_ID) := False;
+      Item.Seen (LP_Identity_Display_Name) := False;
+      Item.Context := Context;
+   end Reset_Identity;
+
+   overriding procedure Start_Element
+     (Item : in out List_Parts_Handler; Local_Name : String) is
+   begin
+      if Item.Depth = Natural'Last then
+         raise Malformed_Multipart with "ListParts XML depth overflow";
+      end if;
+      Item.Depth := Item.Depth + 1;
+      if Item.Ignore_Depth /= 0 then
+         return;
+      elsif Item.Field /= No_List_Parts_Field then
+         raise Malformed_Multipart with "nested ListParts scalar";
+      end if;
+      if Item.Depth = 1 then
+         if Local_Name /= "ListPartsResult" then
+            raise Malformed_Multipart with "wrong ListParts root";
+         end if;
+      elsif Item.Depth = 2 then
+         if Local_Name = "Bucket" then
+            Select_List_Parts_Field (Item, LP_Bucket);
+         elsif Local_Name = "Key" then
+            Select_List_Parts_Field (Item, LP_Key);
+         elsif Local_Name = "UploadId" then
+            Select_List_Parts_Field (Item, LP_Upload_ID);
+         elsif Local_Name = "PartNumberMarker" then
+            Select_List_Parts_Field (Item, LP_Part_Number_Marker);
+         elsif Local_Name = "NextPartNumberMarker" then
+            Select_List_Parts_Field (Item, LP_Next_Part_Number_Marker);
+         elsif Local_Name = "MaxParts" then
+            Select_List_Parts_Field (Item, LP_Max_Parts);
+         elsif Local_Name = "IsTruncated" then
+            Select_List_Parts_Field (Item, LP_Is_Truncated);
+         elsif Local_Name = "StorageClass" then
+            Select_List_Parts_Field (Item, LP_Storage_Class);
+         elsif Local_Name = "ChecksumAlgorithm" then
+            Select_List_Parts_Field (Item, LP_Checksum_Algorithm);
+         elsif Local_Name = "ChecksumType" then
+            Select_List_Parts_Field (Item, LP_Checksum_Type);
+         elsif Local_Name = "Part" then
+            if Item.Value.Parts.Length >=
+              Ada.Containers.Count_Type (Core.Page_Size'Last)
+            then
+               raise Malformed_Multipart with "too many listed parts";
+            end if;
+            Reset_Listed_Part (Item);
+         elsif Local_Name = "Initiator" then
+            if Item.Value.Has_Initiator then
+               raise Malformed_Multipart with "duplicate ListParts initiator";
+            end if;
+            Item.Value.Has_Initiator := True;
+            Reset_Identity (Item, LP_Initiator_Context);
+         elsif Local_Name = "Owner" then
+            if Item.Value.Has_Owner then
+               raise Malformed_Multipart with "duplicate ListParts owner";
+            end if;
+            Item.Value.Has_Owner := True;
+            Reset_Identity (Item, LP_Owner_Context);
+         else
+            Item.Ignore_Depth := Item.Depth;
+         end if;
+      elsif Item.Depth = 3 and then Item.Context = LP_Part_Context then
+         if Local_Name = "PartNumber" then
+            Select_List_Parts_Field (Item, LP_Part_Number);
+         elsif Local_Name = "LastModified" then
+            Select_List_Parts_Field (Item, LP_Last_Modified);
+         elsif Local_Name = "ETag" then
+            Select_List_Parts_Field (Item, LP_Entity_Tag);
+         elsif Local_Name = "Size" then
+            Select_List_Parts_Field (Item, LP_Size);
+         elsif Local_Name = "ChecksumCRC32" then
+            Select_List_Parts_Field (Item, LP_Checksum_CRC32);
+         elsif Local_Name = "ChecksumCRC32C" then
+            Select_List_Parts_Field (Item, LP_Checksum_CRC32C);
+         elsif Local_Name = "ChecksumCRC64NVME" then
+            Select_List_Parts_Field (Item, LP_Checksum_CRC64NVME);
+         elsif Local_Name = "ChecksumSHA1" then
+            Select_List_Parts_Field (Item, LP_Checksum_SHA1);
+         elsif Local_Name = "ChecksumSHA256" then
+            Select_List_Parts_Field (Item, LP_Checksum_SHA256);
+         elsif Local_Name = "ChecksumSHA512" then
+            Select_List_Parts_Field (Item, LP_Checksum_SHA512);
+         elsif Local_Name = "ChecksumMD5" then
+            Select_List_Parts_Field (Item, LP_Checksum_MD5);
+         elsif Local_Name = "ChecksumXXHASH64" then
+            Select_List_Parts_Field (Item, LP_Checksum_XXHASH64);
+         elsif Local_Name = "ChecksumXXHASH3" then
+            Select_List_Parts_Field (Item, LP_Checksum_XXHASH3);
+         elsif Local_Name = "ChecksumXXHASH128" then
+            Select_List_Parts_Field (Item, LP_Checksum_XXHASH128);
+         else
+            Item.Ignore_Depth := Item.Depth;
+         end if;
+      elsif Item.Depth = 3
+        and then Item.Context in LP_Initiator_Context | LP_Owner_Context
+      then
+         if Local_Name = "ID" then
+            Select_List_Parts_Field (Item, LP_Identity_ID);
+         elsif Local_Name = "DisplayName" then
+            Select_List_Parts_Field (Item, LP_Identity_Display_Name);
+         else
+            Item.Ignore_Depth := Item.Depth;
+         end if;
+      else
+         raise Malformed_Multipart with "nested ListParts field";
+      end if;
+   end Start_Element;
+
+   overriding procedure Text
+     (Item : in out List_Parts_Handler; Value : String) is
+   begin
+      if Item.Ignore_Depth /= 0 then
+         return;
+      elsif Item.Field = No_List_Parts_Field then
+         Require_Whitespace (Value);
+      else
+         US.Append (Item.Text_Value, Value);
+      end if;
+   end Text;
+
+   overriding procedure End_Element
+     (Item : in out List_Parts_Handler; Local_Name : String)
+   is
+      pragma Unreferenced (Local_Name);
+   begin
+      if Item.Depth = 0 then
+         raise Malformed_Multipart with "ListParts XML stack underflow";
+      elsif Item.Ignore_Depth /= 0 then
+         if Item.Depth = Item.Ignore_Depth then
+            Item.Ignore_Depth := 0;
+         end if;
+      elsif Item.Field /= No_List_Parts_Field then
+         Finish_List_Parts_Field (Item);
+      elsif Item.Depth = 2 and then Item.Context = LP_Part_Context then
+         if not Item.Seen (LP_Part_Number)
+           or else not Item.Seen (LP_Last_Modified)
+           or else not Item.Seen (LP_Entity_Tag)
+           or else not Item.Seen (LP_Size)
+           or else US.Length (Item.Current_Part.Last_Modified) = 0
+           or else US.Length (Item.Current_Part.Entity_Tag) = 0
+         then
+            raise Malformed_Multipart with "incomplete listed part";
+         end if;
+         Item.Value.Parts.Append (Item.Current_Part);
+         Item.Context := LP_Root_Context;
+      elsif Item.Depth = 2 and then Item.Context = LP_Initiator_Context then
+         Item.Value.Initiator := Item.Current_Identity;
+         Item.Context := LP_Root_Context;
+      elsif Item.Depth = 2 and then Item.Context = LP_Owner_Context then
+         Item.Value.Owner := Item.Current_Identity;
+         Item.Context := LP_Root_Context;
+      end if;
+      Item.Depth := Item.Depth - 1;
+   end End_Element;
+
+   function Valid_List_Parts_Enumeration
+     (Value : String; Member : Positive) return Boolean
+   is
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.List_Parts_Operation));
+      Shape : constant Model.Shape_Index :=
+        Model.Member_Shape (Output, Member);
+   begin
+      if Model.Enumeration_Count (Shape) = 0 then
+         return False;
+      end if;
+      for Index in 1 .. Model.Enumeration_Count (Shape) loop
+         if Model.Enumeration_Value (Shape, Index) = Value then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Valid_List_Parts_Enumeration;
+
+   function Valid_Listed_Part (Value : Listed_Part) return Boolean is
+     (US.Length (Value.Last_Modified) > 0
+      and then US.Length (Value.Entity_Tag) > 0
+      and then
+        (US.Length (Value.Checksum_CRC32) = 0
+         or else Wire_Core.Valid_Base64
+           (US.To_String (Value.Checksum_CRC32), 4))
+      and then
+        (US.Length (Value.Checksum_CRC32C) = 0
+         or else Wire_Core.Valid_Base64
+           (US.To_String (Value.Checksum_CRC32C), 4))
+      and then
+        (US.Length (Value.Checksum_CRC64NVME) = 0
+         or else Wire_Core.Valid_Base64
+           (US.To_String (Value.Checksum_CRC64NVME), 8))
+      and then
+        (US.Length (Value.Checksum_SHA1) = 0
+         or else Wire_Core.Valid_Base64
+           (US.To_String (Value.Checksum_SHA1), 20))
+      and then
+        (US.Length (Value.Checksum_SHA256) = 0
+         or else Wire_Core.Valid_Base64
+           (US.To_String (Value.Checksum_SHA256), 32))
+      and then
+        (US.Length (Value.Checksum_SHA512) = 0
+         or else Wire_Core.Valid_Base64
+           (US.To_String (Value.Checksum_SHA512), 64))
+      and then
+        (US.Length (Value.Checksum_MD5) = 0
+         or else Wire_Core.Valid_Base64
+           (US.To_String (Value.Checksum_MD5), 16))
+      and then
+        (US.Length (Value.Checksum_XXHASH64) = 0
+         or else Wire_Core.Valid_Base64
+           (US.To_String (Value.Checksum_XXHASH64), 8))
+      and then
+        (US.Length (Value.Checksum_XXHASH3) = 0
+         or else Wire_Core.Valid_Base64
+           (US.To_String (Value.Checksum_XXHASH3), 8))
+      and then
+        (US.Length (Value.Checksum_XXHASH128) = 0
+         or else Wire_Core.Valid_Base64
+           (US.To_String (Value.Checksum_XXHASH128), 16)));
+
+   procedure Validate (Value : List_Parts_Result) is
+      Previous : Part_Marker_Value := Value.Part_Number_Marker;
+      Count : constant Ada.Containers.Count_Type := Value.Parts.Length;
+   begin
+      if US.Length (Value.Bucket) = 0
+        or else US.Length (Value.Key) = 0
+        or else US.Length (Value.Upload_ID) = 0
+      then
+         raise Malformed_Multipart with "incomplete ListParts identity";
+      elsif Count > Ada.Containers.Count_Type (Value.Max_Parts)
+        or else Value.Is_Truncated /=
+          (Value.Next_Part_Number_Marker > 0)
+        or else (Value.Max_Parts = 0 and then Value.Is_Truncated)
+      then
+         raise Malformed_Multipart with "inconsistent ListParts pagination";
+      elsif US.Length (Value.Storage_Class) > 0
+        and then not Valid_List_Parts_Enumeration
+          (US.To_String (Value.Storage_Class), 13)
+      then
+         raise Malformed_Multipart with "invalid ListParts storage class";
+      elsif US.Length (Value.Checksum_Algorithm) > 0
+        and then not Valid_List_Parts_Enumeration
+          (US.To_String (Value.Checksum_Algorithm), 15)
+      then
+         raise Malformed_Multipart with "invalid ListParts checksum algorithm";
+      elsif US.Length (Value.Checksum_Type) > 0
+        and then
+          (US.Length (Value.Checksum_Algorithm) = 0
+           or else not Valid_List_Parts_Enumeration
+             (US.To_String (Value.Checksum_Type), 16))
+      then
+         raise Malformed_Multipart with "invalid ListParts checksum type";
+      elsif not Value.Has_Initiator
+        and then
+          (US.Length (Value.Initiator.ID) > 0
+           or else US.Length (Value.Initiator.Display_Name) > 0)
+      then
+         raise Malformed_Multipart with "ListParts initiator lacks presence";
+      elsif not Value.Has_Owner
+        and then
+          (US.Length (Value.Owner.ID) > 0
+           or else US.Length (Value.Owner.Display_Name) > 0)
+      then
+         raise Malformed_Multipart with "ListParts owner lacks presence";
+      end if;
+      for Part of Value.Parts loop
+         if not Valid_Listed_Part (Part)
+           or else Part.Number <= Previous
+         then
+            raise Malformed_Multipart with "invalid ListParts part sequence";
+         end if;
+         Previous := Part.Number;
+      end loop;
+      if Value.Is_Truncated
+        and then
+          (Value.Parts.Is_Empty
+           or else Value.Next_Part_Number_Marker /= Previous)
+      then
+         raise Malformed_Multipart with "invalid ListParts next marker";
+      end if;
+   end Validate;
+
+   function Parse_List_Parts_Result
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return List_Parts_Result
+   is
+      Handler : aliased List_Parts_Handler;
+   begin
+      XML.Parse (Document, Handler, Limits);
+      if not Handler.Seen (LP_Bucket)
+        or else not Handler.Seen (LP_Key)
+        or else not Handler.Seen (LP_Upload_ID)
+        or else not Handler.Seen (LP_Part_Number_Marker)
+        or else not Handler.Seen (LP_Max_Parts)
+        or else not Handler.Seen (LP_Is_Truncated)
+      then
+         raise Malformed_Multipart with "ListParts lacks required fields";
+      end if;
+      Validate (Handler.Value);
+      return Handler.Value;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Multipart with "malformed ListParts XML";
+   end Parse_List_Parts_Result;
+
+   function Marker_Image (Value : Part_Marker_Value) return String is
+     (Ada.Strings.Fixed.Trim
+        (Part_Marker_Value'Image (Value), Ada.Strings.Both));
+
+   function Page_Size_Image (Value : Core.Page_Size) return String is
+     (Ada.Strings.Fixed.Trim
+        (Core.Page_Size'Image (Value), Ada.Strings.Both));
+
+   function Byte_Count_Image (Value : Byte_Count) return String is
+     (Ada.Strings.Fixed.Trim (Byte_Count'Image (Value), Ada.Strings.Both));
+
+   procedure Append_Identity
+     (Target : in out US.Unbounded_String; Name : String;
+      Value : Multipart_Identity) is
+   begin
+      US.Append (Target, "<" & Name & ">");
+      Append_Optional (Target, "ID", US.To_String (Value.ID));
+      Append_Optional
+        (Target, "DisplayName", US.To_String (Value.Display_Name));
+      US.Append (Target, "</" & Name & ">");
+   end Append_Identity;
+
+   function Serialize_List_Parts_Result
+     (Value : List_Parts_Result) return String
+   is
+      Result : US.Unbounded_String;
+   begin
+      Validate (Value);
+      US.Append
+        (Result,
+         "<?xml version=""1.0"" encoding=""UTF-8""?>" &
+         "<ListPartsResult xmlns=""http://s3.amazonaws.com/doc/" &
+         "2006-03-01/"">" &
+         Element ("Bucket", US.To_String (Value.Bucket)) &
+         Element ("Key", US.To_String (Value.Key)) &
+         Element ("UploadId", US.To_String (Value.Upload_ID)) &
+         Element
+           ("PartNumberMarker", Marker_Image (Value.Part_Number_Marker)));
+      if Value.Next_Part_Number_Marker > 0 then
+         US.Append
+           (Result,
+            Element
+              ("NextPartNumberMarker",
+               Marker_Image (Value.Next_Part_Number_Marker)));
+      end if;
+      US.Append
+        (Result,
+         Element ("MaxParts", Page_Size_Image (Value.Max_Parts)) &
+         Element
+           ("IsTruncated",
+            (if Value.Is_Truncated then "true" else "false")));
+      for Part of Value.Parts loop
+         US.Append
+           (Result,
+            "<Part>" & Element ("PartNumber", Marker_Image
+              (Part_Marker_Value (Part.Number))) &
+            Element ("LastModified", US.To_String (Part.Last_Modified)) &
+            Element ("ETag", US.To_String (Part.Entity_Tag)) &
+            Element ("Size", Byte_Count_Image (Part.Size)));
+         Append_Optional
+           (Result, "ChecksumCRC32", US.To_String (Part.Checksum_CRC32));
+         Append_Optional
+           (Result, "ChecksumCRC32C", US.To_String (Part.Checksum_CRC32C));
+         Append_Optional
+           (Result, "ChecksumCRC64NVME",
+            US.To_String (Part.Checksum_CRC64NVME));
+         Append_Optional
+           (Result, "ChecksumSHA1", US.To_String (Part.Checksum_SHA1));
+         Append_Optional
+           (Result, "ChecksumSHA256", US.To_String (Part.Checksum_SHA256));
+         Append_Optional
+           (Result, "ChecksumSHA512", US.To_String (Part.Checksum_SHA512));
+         Append_Optional
+           (Result, "ChecksumMD5", US.To_String (Part.Checksum_MD5));
+         Append_Optional
+           (Result, "ChecksumXXHASH64",
+            US.To_String (Part.Checksum_XXHASH64));
+         Append_Optional
+           (Result, "ChecksumXXHASH3", US.To_String (Part.Checksum_XXHASH3));
+         Append_Optional
+           (Result, "ChecksumXXHASH128",
+            US.To_String (Part.Checksum_XXHASH128));
+         US.Append (Result, "</Part>");
+      end loop;
+      if Value.Has_Initiator then
+         Append_Identity (Result, "Initiator", Value.Initiator);
+      end if;
+      if Value.Has_Owner then
+         Append_Identity (Result, "Owner", Value.Owner);
+      end if;
+      Append_Optional
+        (Result, "StorageClass", US.To_String (Value.Storage_Class));
+      Append_Optional
+        (Result, "ChecksumAlgorithm",
+         US.To_String (Value.Checksum_Algorithm));
+      Append_Optional
+        (Result, "ChecksumType", US.To_String (Value.Checksum_Type));
+      US.Append (Result, "</ListPartsResult>");
+      return US.To_String (Result);
+   end Serialize_List_Parts_Result;
 
 end Flyology.Object_Storage.S3.Multipart;

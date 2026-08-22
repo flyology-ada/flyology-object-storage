@@ -130,4 +130,63 @@ package Flyology.Object_Storage.S3.Multipart is
    function Serialize_Copy_Part_Result
      (Value : Copy_Part_Result) return String;
 
+   subtype Part_Marker_Value is Natural range 0 .. Core.Part_Number'Last;
+
+   type Multipart_Identity is record
+      ID           : Ada.Strings.Unbounded.Unbounded_String;
+      Display_Name : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Every member in the pinned ListParts Part structure.
+   type Listed_Part is record
+      Number             : Core.Part_Number := Core.Part_Number'First;
+      Last_Modified      : Ada.Strings.Unbounded.Unbounded_String;
+      Entity_Tag         : Ada.Strings.Unbounded.Unbounded_String;
+      Size               : Byte_Count := 0;
+      Checksum_CRC32     : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_CRC32C    : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_CRC64NVME : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA1      : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA256    : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA512    : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_MD5       : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH64  : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH3   : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH128 : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   package Listed_Part_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Listed_Part);
+
+   subtype Listed_Part_List is Listed_Part_Vectors.Vector;
+
+   --  All REST/XML body members in the pinned ListParts output shape.
+   --  AbortDate, AbortRuleId, and RequestCharged are HTTP headers handled by
+   --  the operation layer.
+   type List_Parts_Result is record
+      Bucket                  : Ada.Strings.Unbounded.Unbounded_String;
+      Key                     : Ada.Strings.Unbounded.Unbounded_String;
+      Upload_ID               : Ada.Strings.Unbounded.Unbounded_String;
+      Part_Number_Marker      : Part_Marker_Value := 0;
+      Next_Part_Number_Marker : Part_Marker_Value := 0;
+      Max_Parts               : Core.Page_Size := 0;
+      Is_Truncated            : Boolean := False;
+      Parts                   : Listed_Part_List;
+      Has_Initiator           : Boolean := False;
+      Initiator               : Multipart_Identity;
+      Has_Owner               : Boolean := False;
+      Owner                   : Multipart_Identity;
+      Storage_Class           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm      : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Type           : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Parse_List_Parts_Result
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return List_Parts_Result;
+
+   function Serialize_List_Parts_Result
+     (Value : List_Parts_Result) return String;
+
 end Flyology.Object_Storage.S3.Multipart;
