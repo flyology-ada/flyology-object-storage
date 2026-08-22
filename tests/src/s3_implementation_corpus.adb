@@ -39,6 +39,7 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Upload_Part_Copy_Outcome_Kind;
    use type Transfers.Download_Outcome_Kind;
+   use type Transfers.Copy_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
 
    Access_Key : constant String := "FLYOLOGYS3ORACLE";
@@ -317,6 +318,7 @@ procedure S3_Implementation_Corpus is
 
       procedure Copy_Whole_Object is
          Copy_Key : constant String := Key & "-copy-object";
+         Convenience_Key : constant String := Key & "-copy-convenience";
          Parameters : Low_Level.Copy_Object_Parameters;
       begin
          Parameters.Copy_Source :=
@@ -337,6 +339,26 @@ procedure S3_Implementation_Corpus is
             then
                raise Program_Error with
                  "S3 implementation rejected typed CopyObject";
+            end if;
+         end;
+         declare
+            Copied : constant Transfers.Copy_Outcome :=
+              Transfers.Copy_Object
+                (HTTP, Origin, Bucket, Key & "-high level+%25", Bucket,
+                 Convenience_Key, Identity, Timeout => 60.0);
+         begin
+            if Copied.Kind = Transfers.Copy_Rejected then
+               raise Program_Error with
+                 "S3 implementation rejected high-level CopyObject: " &
+                 Copied.Status'Image & " " &
+                 US.To_String (Copied.Error.Code) & " " &
+                 US.To_String (Copied.Error.Message);
+            elsif US.Length (Copied.Entity_Tag) = 0
+              or else US.Length (Copied.Last_Modified) = 0
+            then
+               raise Program_Error with
+                 "S3 implementation returned incomplete high-level " &
+                 "CopyObject metadata";
             end if;
          end;
       end Copy_Whole_Object;
@@ -430,8 +452,8 @@ procedure S3_Implementation_Corpus is
       end;
       Require_Listed_Object;
       Copy_With_Multipart;
-      Copy_Whole_Object;
       Upload_High_Level_File;
+      Copy_Whole_Object;
       declare
          Abort_Key : constant String := Key & "-aborted";
          Prepared_Create : constant Low_Level.Prepared_Request :=
@@ -696,6 +718,8 @@ begin
          Delete_One
            (Origin, Bucket, "native-object-copy-object", Timestamp);
          Delete_One
+           (Origin, Bucket, "native-object-copy-convenience", Timestamp);
+         Delete_One
            (Origin, Bucket, "native-object-high level+%25", Timestamp);
          declare
             task Lightweight_Client is
@@ -711,6 +735,9 @@ begin
                Delete_One
                  (Origin, Bucket,
                   "lightweight-object-copy-object", Timestamp);
+               Delete_One
+                 (Origin, Bucket,
+                  "lightweight-object-copy-convenience", Timestamp);
                Delete_One
                  (Origin, Bucket,
                   "lightweight-object-high level+%25", Timestamp);

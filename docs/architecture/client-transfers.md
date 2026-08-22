@@ -4,6 +4,21 @@
 model-driven S3 client. It provides single-file upload/download and an ordered
 multi-subject call without hiding S3 results or resource policy.
 
+## Server-side copy
+
+`Copy_Object` takes raw source and destination bucket/key strings and performs
+a server-side S3 CopyObject. It owns percent-encoding and signing the
+`x-amz-copy-source` header, including keys containing spaces, plus signs, and
+literal percent bytes. The compact result retains the entity tag, modification
+time, and source/destination version identifiers, or the structured S3 error.
+An optional source entity-tag precondition supports safe conditional copies.
+
+The convenience call deliberately excludes metadata replacement, tagging,
+ACL, encryption, object-lock, and version-selection policy. Those controls
+remain explicit at `Client.Low_Level.Prepare_Copy_Object`, where the complete
+typed core and generated-model boundary can represent them without surprising
+defaults such as silently discarding existing user metadata.
+
 ## Automatic multipart uploads
 
 `Upload_File` hashes a local file and every multipart range in one sequential

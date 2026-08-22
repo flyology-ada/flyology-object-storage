@@ -84,6 +84,58 @@ package Flyology.Object_Storage.Client.Transfers is
       Multipart_Part_Size : Byte_Count := Default_Multipart_Part_Size)
       return Upload_Outcome;
 
+   type Copy_Outcome_Kind is (Object_Copied, Copy_Rejected);
+
+   type Copy_Outcome
+     (Kind : Copy_Outcome_Kind := Copy_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Copied =>
+            Entity_Tag             : Ada.Strings.Unbounded.Unbounded_String;
+            Last_Modified          : Ada.Strings.Unbounded.Unbounded_String;
+            Version_ID             : Ada.Strings.Unbounded.Unbounded_String;
+            Copy_Source_Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+         when Copy_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Copy one S3 object without downloading it. Source_Bucket and Source_Key
+   --  are raw application strings; this operation owns the required
+   --  x-amz-copy-source URI encoding and signs the resulting header. Client
+   --  must already be configured for Origin. Advanced metadata, tagging,
+   --  ACL, encryption, lock, and version-selection controls remain available
+   --  through Low_Level.Prepare_Copy_Object.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Source_Bucket Source S3 bucket, before URI encoding
+   --  @param Source_Key Source S3 object key, before URI encoding
+   --  @param Destination_Bucket Destination S3 bucket
+   --  @param Destination_Key Destination S3 object key
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Source_If_Match Optional source entity-tag precondition
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Compact successful copy metadata or the S3 rejection
+   --  @exception Low_Level.Invalid_Request if the source bucket/key is
+   --     invalid or its encoded representation exceeds the supported bound
+   function Copy_Object
+     (Client             : aliased in out Flyology.HTTP.Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Identity           : Low_Level.Credentials;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Source_If_Match    : String := "";
+      Timeout            : Duration := 30.0;
+      Token              : access Flyology.Cancellation.Token := null)
+      return Copy_Outcome;
+
    type Download_Outcome_Kind is (File_Downloaded, Download_Rejected);
 
    type Download_Outcome

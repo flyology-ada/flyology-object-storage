@@ -11,6 +11,8 @@ with Flyology.IO.Files;
 with Flyology.HTTP.Client.Request_Bodies.Files;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
+with Flyology.Object_Storage.S3.Requests;
+with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Task_Scopes;
 with GNAT.OS_Lib;
 with GNAT.SHA256;
@@ -24,6 +26,9 @@ package body Flyology.Object_Storage.Client.Transfers is
    package Model renames Flyology.Object_Storage.S3.Model;
    package Core renames Flyology.Object_Storage.S3.Core;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
+   package Requests renames Flyology.Object_Storage.S3.Requests;
+   package Encoding renames
+     Flyology.Object_Storage.S3.SigV4_Encoding;
 
    package Digest_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => GNAT.SHA256.Message_Digest);
@@ -37,6 +42,9 @@ package body Flyology.Object_Storage.Client.Transfers is
    use type Low_Level.Complete_Multipart_Outcome_Kind;
    use type Low_Level.Create_Multipart_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
+   use type Low_Level.Copy_Object_Outcome_Kind;
+   use type Requests.Target_Kind;
+   use type Requests.Target_Status;
 
    Hash_Buffer_Size : constant := 64 * 1_024;
    Maximum_Error_Body : constant := 1_024 * 1_024;
@@ -633,6 +641,93 @@ package body Flyology.Object_Storage.Client.Transfers is
          end if;
          raise;
    end Upload_File;
+
+   function Copy_Object
+     (Client             : aliased in out Flyology.HTTP.Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Identity           : Low_Level.Credentials;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Source_If_Match    : String := "";
+      Timeout            : Duration := 30.0;
+      Token              : access Flyology.Cancellation.Token := null)
+      return Copy_Outcome
+   is
+      Maximum_Copy_Source_Length : constant :=
+        Requests.Maximum_Target_Length - 1;
+      Deadline : constant Ada.Real_Time.Time := Deadline_For (Timeout);
+   begin
+      Check_Cancelled (Token);
+      if Source_Bucket'Length = 0
+        or else Source_Key'Length = 0
+        or else Source_Bucket'Length >= Maximum_Copy_Source_Length
+        or else Source_Key'Length >
+          Maximum_Copy_Source_Length - Source_Bucket'Length - 1
+      then
+         raise Low_Level.Invalid_Request with "invalid CopyObject source";
+      end if;
+      declare
+         Raw_Source : constant String := Source_Bucket & "/" & Source_Key;
+         Encoded_Source : constant String :=
+           Encoding.URI_Encode (Raw_Source, Encode_Slash => False);
+      begin
+         if Encoded_Source'Length > Maximum_Copy_Source_Length then
+            raise Low_Level.Invalid_Request with
+              "encoded CopyObject source exceeds header limit";
+         end if;
+         declare
+            Source_Target : constant String := "/" & Encoded_Source;
+            Parsed_Source : constant Requests.Target_Result :=
+              Requests.Parse_Target (Source_Target);
+            Parameters : Low_Level.Copy_Object_Parameters;
+         begin
+            if Parsed_Source.Status /= Requests.Target_Parsed
+              or else Parsed_Source.Kind /= Requests.Object_Target
+              or else Requests.Bucket_Name
+                (Source_Target, Parsed_Source) /= Source_Bucket
+              or else Requests.Object_Key
+                (Source_Target, Parsed_Source) /= Source_Key
+            then
+               raise Low_Level.Invalid_Request with
+                 "invalid CopyObject source bucket or key";
+            end if;
+            Parameters.Copy_Source :=
+              US.To_Unbounded_String (Encoded_Source);
+            Parameters.Copy_Source_If_Match :=
+              US.To_Unbounded_String (Source_If_Match);
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Copy_Object
+                   (Origin, Style, Destination_Bucket, Destination_Key,
+                    Parameters, Identity, Region, Current_Timestamp);
+               Outcome : constant Low_Level.Copy_Object_Outcome :=
+                 Low_Level.Execute_Copy_Object
+                   (Client, Prepared, Remaining (Deadline), Token);
+            begin
+               if Outcome.Kind = Low_Level.Copy_Object_Rejected then
+                  return
+                    (Kind   => Copy_Rejected,
+                     Status => Outcome.Status,
+                     Error  => Outcome.Error);
+               end if;
+               return
+                 (Kind                   => Object_Copied,
+                  Status                 => Outcome.Status,
+                  Entity_Tag             =>
+                    Outcome.Result.Copy_Result.Entity_Tag,
+                  Last_Modified          =>
+                    Outcome.Result.Copy_Result.Last_Modified,
+                  Version_ID             => Outcome.Result.Version_ID,
+                  Copy_Source_Version_ID =>
+                    Outcome.Result.Copy_Source_Version_ID);
+            end;
+         end;
+      end;
+   end Copy_Object;
 
    function Download_File
      (Client     : aliased in out Flyology.HTTP.Client.Client;

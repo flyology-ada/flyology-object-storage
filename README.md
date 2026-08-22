@@ -165,13 +165,18 @@ Uploaded := Transfers.Upload_File
   (Client, Origin, "bucket", "key", "archive.tar", Identity);
 Downloaded := Transfers.Download_File
   (Client, Origin, "bucket", "key", "archive.tar", Identity);
+Copied := Transfers.Copy_Object
+  (Client, Origin, "source-bucket", "source key", "bucket", "copy key",
+   Identity);
 Transfers.Transfer_Many
   (Client, Origin, Items, Results, Identity, Options => Options);
 ```
 
 `Upload_File` switches to multipart at 64 MiB by default, streams 16 MiB parts
 from one open descriptor, and exposes both thresholds as trailing policy
-parameters. Multipart parts for one file are deliberately sequential; batch
+parameters. `Copy_Object` owns copy-source URI encoding and signing, including
+special-character keys, and returns compact copy metadata or the structured
+S3 error. Multipart parts for one file are deliberately sequential; batch
 parallelism is across independent subjects. `Transfer_Many` remains a
 synchronous structured scope and bounds concurrent objects, HTTP requests and
 in-flight bytes independently. Flyology's runtime owns multiplexing,

@@ -53,9 +53,11 @@ for KEY in \
   native-object \
   native-object-copy-part \
   native-object-copy-object \
+  native-object-copy-convenience \
   lightweight-object \
   lightweight-object-copy-part \
   lightweight-object-copy-object \
+  lightweight-object-copy-convenience \
   "native-object-high level+%25" \
   "lightweight-object-high level+%25"
 do

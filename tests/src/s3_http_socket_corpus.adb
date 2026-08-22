@@ -36,6 +36,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
+   use type Transfers.Copy_Outcome_Kind;
    use type Sockets.Selector_Status;
 
    CRLF : constant String := Character'Val (13) & Character'Val (10);
@@ -315,6 +316,8 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Target    : String;
          Expected_Body_Root : String := "";
          Expected_Content_Type : String := "";
+         Expected_Copy_Source : String := "";
+         Expected_Copy_If_Match : String := "";
          Fragmented         : Boolean := False)
       is
          Buffer : Stream_Element_Array (1 .. 4_096);
@@ -362,7 +365,22 @@ procedure S3_HTTP_Socket_Corpus is
               or else Ada.Strings.Fixed.Index
                 (Lower, "authorization: aws4-hmac-sha256 credential=") = 0
               or else
-                (if Expected_Content_Type'Length = 0 then
+                (if Expected_Copy_Source'Length > 0 then
+                    Header_Value (Lower, "x-amz-copy-source") /=
+                      Ada.Characters.Handling.To_Lower
+                        (Expected_Copy_Source)
+                    or else Header_Value
+                      (Lower, "x-amz-copy-source-if-match") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Copy_If_Match)
+                    or else Ada.Strings.Fixed.Index
+                      (Lower,
+                       "signedheaders=host;x-amz-content-sha256;" &
+                       "x-amz-copy-source" &
+                       (if Expected_Copy_If_Match'Length = 0 then ";"
+                        else ";x-amz-copy-source-if-match;") &
+                       "x-amz-date") = 0
+                 elsif Expected_Content_Type'Length = 0 then
                     Ada.Strings.Fixed.Index
                       (Lower,
                        "signedheaders=host;x-amz-content-sha256;" &
@@ -444,6 +462,11 @@ procedure S3_HTTP_Socket_Corpus is
       Embedded_Error_XML : constant String :=
         "<Error><Code>InternalError</Code>" &
         "<Message>late failure</Message></Error>";
+      Copy_XML : constant String :=
+        "<CopyObjectResult>" &
+        "<LastModified>2026-08-21T17:00:00.000Z</LastModified>" &
+        "<ETag>&quot;high-level-copy&quot;</ETag>" &
+        "</CopyObjectResult>";
    begin
       Sockets.Create_Socket (Listener);
       Sockets.Bind_Socket
@@ -506,6 +529,19 @@ procedure S3_HTTP_Socket_Corpus is
             & "ETag: ""download-truncated""" & CRLF
             & "Connection: close" & CRLF & CRLF & "short",
             "GET", "/example-bucket/download-truncated");
+         Serve
+           (HTTP_Response
+              ("200 OK", Copy_XML,
+               "x-amz-version-id: destination-version" & CRLF &
+               "x-amz-copy-source-version-id: source-version" & CRLF),
+            "PUT", "/example-bucket/copied%20object%2B%2525",
+            Expected_Copy_Source =>
+              "source-bucket/source%20key%2B%2525",
+            Expected_Copy_If_Match => """source-etag""");
+         Serve
+           (HTTP_Response ("412 Precondition Failed", Error_XML),
+            "PUT", "/example-bucket/copy-rejected",
+            Expected_Copy_Source => "source-bucket/source-key");
          Serve
            (HTTP_Response ("200 OK", Create_XML), "POST",
             "/example-bucket/object%20key?uploads", Fragmented => True);
@@ -924,6 +960,90 @@ procedure S3_HTTP_Socket_Corpus is
                   raise;
             end;
             Cleanup;
+         end;
+         declare
+            Result : constant Transfers.Copy_Outcome :=
+              Transfers.Copy_Object
+                (HTTP, Origin, "source-bucket", "source key+%25",
+                 "example-bucket", "copied object+%25", Identity,
+                 Source_If_Match => """source-etag""",
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Transfers.Object_Copied
+              or else Result.Status /= 200
+              or else US.To_String (Result.Entity_Tag) /=
+                """high-level-copy"""
+              or else US.To_String (Result.Last_Modified) /=
+                "2026-08-21T17:00:00.000Z"
+              or else US.To_String (Result.Version_ID) /=
+                "destination-version"
+              or else US.To_String (Result.Copy_Source_Version_ID) /=
+                "source-version"
+            then
+               raise Program_Error with
+                 "high-level CopyObject result mismatch";
+            end if;
+         end;
+         declare
+            Result : constant Transfers.Copy_Outcome :=
+              Transfers.Copy_Object
+                (HTTP, Origin, "source-bucket", "source-key",
+                 "example-bucket", "copy-rejected", Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Transfers.Copy_Rejected
+              or else Result.Status /= 412
+              or else US.To_String (Result.Error.Code) /= "AccessDenied"
+            then
+               raise Program_Error with
+                 "high-level CopyObject rejection mismatch";
+            end if;
+         end;
+         declare
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Transfers.Copy_Outcome :=
+                    Transfers.Copy_Object
+                      (HTTP, Origin, "source-bucket",
+                       String'(1 .. 8_192 => 'x'), "example-bucket",
+                       "copy-too-large", Identity, Timeout => 5.0);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request =>
+                  Raised := True;
+            end;
+            if not Raised then
+               raise Program_Error with
+                 "oversized high-level CopyObject source was accepted";
+            end if;
+         end;
+         declare
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Transfers.Copy_Outcome :=
+                    Transfers.Copy_Object
+                      (HTTP, Origin, "source/bucket", "source-key",
+                       "example-bucket", "copy-invalid-source", Identity,
+                       Timeout => 5.0);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request =>
+                  Raised := True;
+            end;
+            if not Raised then
+               raise Program_Error with
+                 "ambiguous high-level CopyObject source was accepted";
+            end if;
          end;
          declare
             Prepared_Create : constant Low_Level.Prepared_Request :=
