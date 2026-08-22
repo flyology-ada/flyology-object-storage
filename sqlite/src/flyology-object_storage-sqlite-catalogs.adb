@@ -1178,6 +1178,110 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Delete_Object;
 
+   procedure Delete_Objects
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Entries  : Backends.Delete_Object_Entries;
+      Retired  : out Payloads;
+      Outcomes : out Backends.Delete_Object_Outcomes;
+      Result   : out Status)
+   is
+      Bucket_Query   : DB.Statement;
+      Delete         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      Retired.Clear;
+      Outcomes.Clear;
+      if Entries.Is_Empty
+        or else Entries.Length > Backends.Maximum_Delete_Objects
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      for Request_Entry of Entries loop
+         if not Valid_Object_Key (US.To_String (Request_Entry.Key))
+           or else
+             (Request_Entry.Conditions.Has_ETag
+              and then not Valid_Object_Delete_ETag_Condition
+                (US.To_String (Request_Entry.Conditions.ETag)))
+         then
+            Result := Invalid_Request;
+            return;
+         end if;
+      end loop;
+      Retired.Reserve_Capacity (Entries.Length);
+      Outcomes.Reserve_Capacity (Entries.Length);
+
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Bucket_Query, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Bucket_Query, 1, Bucket);
+      if DB.Step (Bucket_Query) /= DB.Row then
+         raise Catalog_Error with "bucket existence query returned no row";
+      elsif DB.Column (Bucket_Query, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Bucket_Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM objects WHERE bucket_name=?1 AND object_key=?2");
+      for Request_Entry of Entries loop
+         declare
+            Payload      : US.Unbounded_String;
+            Existing     : Object_Information := (others => <>);
+            Lookup       : Status;
+            Entry_Result : Status;
+            Key          : constant String := US.To_String (Request_Entry.Key);
+         begin
+            Find_Object_Internal
+              (Item, Bucket, Key, Payload, Existing, Lookup);
+            Entry_Result :=
+              Backends.Evaluate_Delete_Object_Conditions
+                (Request_Entry.Conditions, Lookup = Success, Existing);
+            Outcomes.Append
+              (Backends.Delete_Object_Outcome'(Result => Entry_Result));
+            if Entry_Result = Success and then Lookup = Success then
+               Retired.Append (Payload);
+               DB.Bind (Delete, 1, Bucket);
+               DB.Bind_Bytes (Delete, 2, Key);
+               if DB.Step (Delete) /= DB.Done then
+                  raise Catalog_Error with "object batch delete returned a row";
+               elsif DB.Changes (Item.Database) /= 1 then
+                  raise Catalog_Error with
+                    "object batch delete changed an unexpected row count";
+               end if;
+               DB.Reset (Delete);
+            end if;
+         end;
+      end loop;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Retired.Clear;
+         Outcomes.Clear;
+         raise;
+   end Delete_Objects;
+
    procedure Put_Object_Tags
      (Item : in out Catalog; Bucket, Key : String;
       Tags : Object_Tag_Set; Result : out Status)

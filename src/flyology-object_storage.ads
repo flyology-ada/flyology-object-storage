@@ -61,6 +61,30 @@ is
    with Post => Evaluate_Object_Read_Conditions'Result in
      Success | Precondition_Failed | Not_Modified | Invalid_Request;
 
+   --  Validate the S3 DeleteObjects ETag condition. The wildcard, an exact
+   --  unquoted opaque tag, and the corresponding quoted form are accepted;
+   --  lists, weak validators, whitespace decoration, and controls are not.
+   function Valid_Object_Delete_ETag_Condition
+     (Value : String) return Boolean;
+
+   --  Evaluate every conditional DeleteObjects member against one catalog
+   --  snapshot. An unconditioned missing key is an idempotent success, while
+   --  a conditioned missing key is Not_Found. Last_Modified_Time is already
+   --  parsed to signed Unix seconds by the protocol boundary.
+   function Evaluate_Object_Delete_Conditions
+     (Has_ETag               : Boolean;
+      ETag                   : String;
+      Has_Last_Modified_Time : Boolean;
+      Last_Modified_Time     : Long_Long_Integer;
+      Has_Size               : Boolean;
+      Expected_Size          : Byte_Count;
+      Exists                 : Boolean;
+      Entity_Tag             : String;
+      Modified               : Unix_Time;
+      Size                   : Byte_Count) return Status
+   with Post => Evaluate_Object_Delete_Conditions'Result in
+     Success | Not_Found | Precondition_Failed | Invalid_Request;
+
    --  Persisted bucket-versioning state. Unconfigured denotes that no value
    --  has ever been supplied; it is distinct from Suspended on the S3 wire.
    type Bucket_Versioning_Status is

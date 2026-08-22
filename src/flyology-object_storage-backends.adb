@@ -86,6 +86,25 @@ package body Flyology.Object_Storage.Backends is
          Ada.Strings.Unbounded.To_String (Conditions.If_None_Match),
          Exists, Entity_Tag));
 
+   function Evaluate_Delete_Object_Conditions
+     (Conditions : Delete_Object_Conditions;
+      Exists     : Boolean;
+      Info       : Object_Information) return Status
+   is
+   begin
+      return Evaluate_Object_Delete_Conditions
+        (Has_ETag => Conditions.Has_ETag,
+         ETag => Ada.Strings.Unbounded.To_String (Conditions.ETag),
+         Has_Last_Modified_Time => Conditions.Has_Last_Modified_Time,
+         Last_Modified_Time => Conditions.Last_Modified_Time,
+         Has_Size => Conditions.Has_Size,
+         Expected_Size => Conditions.Size,
+         Exists => Exists,
+         Entity_Tag => Ada.Strings.Unbounded.To_String (Info.Entity_Tag),
+         Modified => Info.Modified,
+         Size => Info.Size);
+   end Evaluate_Delete_Object_Conditions;
+
    procedure Complete_Multipart_Upload
      (Item      : in out Backend'Class;
       Bucket    : String;

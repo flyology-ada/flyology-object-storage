@@ -95,6 +95,44 @@ package Flyology.Object_Storage.Backends is
       Exists     : Boolean;
       Entity_Tag : String) return Status;
 
+   --  HTTP-independent predicates for one DeleteObjects entry. The protocol
+   --  adapter parses Last_Modified_Time before crossing this boundary.
+   type Delete_Object_Conditions is record
+      Has_ETag               : Boolean := False;
+      ETag                   : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Last_Modified_Time : Boolean := False;
+      Last_Modified_Time     : Long_Long_Integer := 0;
+      Has_Size               : Boolean := False;
+      Size                   : Byte_Count := 0;
+   end record;
+
+   No_Delete_Object_Conditions : constant Delete_Object_Conditions;
+
+   --  Evaluate one entry against an exact catalog snapshot.
+   function Evaluate_Delete_Object_Conditions
+     (Conditions : Delete_Object_Conditions;
+      Exists     : Boolean;
+      Info       : Object_Information) return Status;
+
+   Maximum_Delete_Objects : constant := 1_000;
+
+   type Delete_Object_Entry is record
+      Key        : Ada.Strings.Unbounded.Unbounded_String;
+      Conditions : Delete_Object_Conditions;
+   end record;
+
+   package Delete_Object_Entry_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Delete_Object_Entry);
+   subtype Delete_Object_Entries is Delete_Object_Entry_Vectors.Vector;
+
+   type Delete_Object_Outcome is record
+      Result : Status := Backend_Unavailable;
+   end record;
+
+   package Delete_Object_Outcome_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Delete_Object_Outcome);
+   subtype Delete_Object_Outcomes is Delete_Object_Outcome_Vectors.Vector;
+
    --  Conditional-read timestamps are signed so valid HTTP dates before the
    --  Unix epoch can be compared without lossy clamping.
    type Optional_Condition_Time (Is_Set : Boolean := False) is record
@@ -463,6 +501,21 @@ package Flyology.Object_Storage.Backends is
       Deadline : Ada.Real_Time.Time;
       Result : out Status) is abstract;
 
+   --  Evaluate and publish a bounded ordered batch under one backend batch
+   --  boundary. Outcomes align one-for-one with Entries when Result is
+   --  Success. Missing unconditioned keys are reported as Success; conditioned
+   --  missing keys remain Not_Found. Backends must validate the complete
+   --  request before mutating catalog state. This contract does not promise
+   --  cross-file power-loss atomicity for a pure filesystem implementation.
+   procedure Delete_Objects
+     (Item     : in out Backend;
+      Bucket   : String;
+      Entries  : Delete_Object_Entries;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Outcomes : out Delete_Object_Outcomes;
+      Result   : out Status) is abstract;
+
    --  Atomically replace, read, or clear the complete tag set associated with
    --  one current object. Missing buckets and objects remain distinguishable.
    procedure Put_Object_Tags
@@ -644,5 +697,8 @@ private
       If_Modified_Since   => (Is_Set => False),
       If_None_Match       => Ada.Strings.Unbounded.Null_Unbounded_String,
       If_Unmodified_Since => (Is_Set => False));
+
+   No_Delete_Object_Conditions : constant Delete_Object_Conditions :=
+     (others => <>);
 
 end Flyology.Object_Storage.Backends;

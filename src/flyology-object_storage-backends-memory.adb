@@ -669,6 +669,45 @@ package body Flyology.Object_Storage.Backends.Memory is
          end if;
       end Delete;
 
+      procedure Delete_Many
+        (Bucket   : String;
+         Entries  : Delete_Object_Entries;
+         Outcomes : in out Delete_Object_Outcomes;
+         Result   : out Status)
+      is
+      begin
+         Outcomes.Clear;
+         if Bucket_Index (Bucket) = 0 then
+            Result := Bucket_Not_Found;
+            return;
+         end if;
+         for Request_Entry of Entries loop
+            declare
+               Key : constant String :=
+                 Ada.Strings.Unbounded.To_String (Request_Entry.Key);
+               Index : constant Natural := Object_Index (Bucket, Key);
+               Entry_Result : constant Status :=
+                 Evaluate_Delete_Object_Conditions
+                   (Request_Entry.Conditions,
+                    Exists => Index /= 0,
+                    Info =>
+                      (if Index = 0 then Empty_Info else Objects (Index).Info));
+            begin
+               Outcomes.Append (Delete_Object_Outcome'(Result => Entry_Result));
+               if Entry_Result = Success and then Index /= 0 then
+                  Bytes := Bytes - Byte_Count (Objects (Index).Data.Capacity);
+                  Objects (Index) := (others => <>);
+               end if;
+            end;
+         end loop;
+         while Highest_Object > 0
+           and then not Objects (Highest_Object).Used
+         loop
+            Highest_Object := Highest_Object - 1;
+         end loop;
+         Result := Success;
+      end Delete_Many;
+
       procedure Put_Tags
         (Bucket : String; Key : String; Tags : Object_Tag_Set;
          Result : out Status)
@@ -1765,6 +1804,42 @@ package body Flyology.Object_Storage.Backends.Memory is
          Item.State.Delete (Bucket, Key, Result);
       end if;
    end Delete_Object;
+
+   overriding procedure Delete_Objects
+     (Item     : in out Store;
+      Bucket   : String;
+      Entries  : Delete_Object_Entries;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Outcomes : out Delete_Object_Outcomes;
+      Result   : out Status)
+   is
+   begin
+      Outcomes.Clear;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else Entries.Is_Empty
+        or else Entries.Length > Maximum_Delete_Objects
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      for Request_Entry of Entries loop
+         if not Valid_Object_Key
+           (Ada.Strings.Unbounded.To_String (Request_Entry.Key))
+           or else
+             (Request_Entry.Conditions.Has_ETag
+              and then not Valid_Object_Delete_ETag_Condition
+                (Ada.Strings.Unbounded.To_String
+                   (Request_Entry.Conditions.ETag)))
+         then
+            Result := Invalid_Request;
+            return;
+         end if;
+      end loop;
+      Outcomes.Reserve_Capacity (Entries.Length);
+      Item.State.Delete_Many (Bucket, Entries, Outcomes, Result);
+   end Delete_Objects;
 
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;

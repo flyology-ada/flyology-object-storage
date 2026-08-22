@@ -90,12 +90,28 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Snapshot : out Backends.Object_Attribute_Snapshot;
       Result   : out Status);
 
+   package Payload_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Natural,
+      Element_Type => Ada.Strings.Unbounded.Unbounded_String,
+      "=" => Ada.Strings.Unbounded."=");
+   subtype Payloads is Payload_Vectors.Vector;
+
    procedure Delete_Object
      (Item    : in out Catalog;
       Bucket  : String;
       Key     : String;
       Payload : out Ada.Strings.Unbounded.Unbounded_String;
       Result  : out Status);
+
+   --  Delete one ordered batch in a single SQLite transaction. Retired
+   --  payload names become unreferenced only after the transaction commits.
+   procedure Delete_Objects
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Entries  : Backends.Delete_Object_Entries;
+      Retired  : out Payloads;
+      Outcomes : out Backends.Delete_Object_Outcomes;
+      Result   : out Status);
 
    procedure Put_Object_Tags
      (Item : in out Catalog; Bucket, Key : String;
@@ -129,12 +145,6 @@ package Flyology.Object_Storage.SQLite.Catalogs is
    package Multipart_Part_Record_Vectors is new Ada.Containers.Vectors
      (Index_Type => Natural, Element_Type => Multipart_Part_Record);
    subtype Multipart_Part_Records is Multipart_Part_Record_Vectors.Vector;
-
-   package Payload_Vectors is new Ada.Containers.Vectors
-     (Index_Type => Natural,
-      Element_Type => Ada.Strings.Unbounded.Unbounded_String,
-      "=" => Ada.Strings.Unbounded."=");
-   subtype Payloads is Payload_Vectors.Vector;
 
    procedure Create_Multipart_Upload
      (Item         : in out Catalog;

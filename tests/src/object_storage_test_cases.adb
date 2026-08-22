@@ -728,6 +728,191 @@ package body Object_Storage_Test_Cases is
       Assert (Result = Success, "listing cleanup bucket");
    end Exercise_Listing;
 
+   procedure Exercise_Delete_Objects
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package US renames Ada.Strings.Unbounded;
+      Entries      : Delete_Object_Entries;
+      Outcomes     : Delete_Object_Outcomes;
+      Match_Info   : Object_Information;
+      Size_Info    : Object_Information;
+      Time_Info    : Object_Information;
+      Result       : Status;
+
+      procedure Put
+        (Key, Payload : String;
+         Info         : out Object_Information)
+      is
+         Source : Buffer_Source :=
+           (Data     => Flyology.Bytes.From_Byte_String (Payload),
+            Position => 0,
+            Length   =>
+              (Kind => Known, Bytes => Byte_Count (Payload'Length)),
+            Bad_Last => False);
+      begin
+         Store.Put_Object
+           (Bucket, Key, Source, Default_Put_Options, null,
+            Ada.Real_Time.Time_Last, Info, Result);
+         Assert (Result = Success, "DeleteObjects conformance put " & Key);
+      end Put;
+
+      function Item
+        (Key        : String;
+         Conditions : Delete_Object_Conditions :=
+           No_Delete_Object_Conditions) return Delete_Object_Entry is
+        ((Key => US.To_Unbounded_String (Key), Conditions => Conditions));
+   begin
+      Entries.Append (Item ("probe"));
+      Store.Delete_Objects
+        ("missing-delete-objects-bucket", Entries, null,
+         Ada.Real_Time.Time_Last, Outcomes, Result);
+      Assert
+        (Result = Bucket_Not_Found and then Outcomes.Is_Empty,
+         "DeleteObjects missing bucket classification");
+
+      Store.Create_Bucket
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "DeleteObjects conformance bucket create");
+      Put ("match", "hello", Match_Info);
+      Put ("mismatch", "keep", Size_Info);
+      Put ("size", "1234567", Size_Info);
+      Put ("timestamp", "clock", Time_Info);
+
+      Entries.Clear;
+      Entries.Append
+        (Item
+           ("match",
+            (Has_ETag => True,
+             ETag => US.To_Unbounded_String
+               ('"' & US.To_String (Match_Info.Entity_Tag) & '"'),
+             Has_Last_Modified_Time => True,
+             Last_Modified_Time => Long_Long_Integer (Match_Info.Modified),
+             Has_Size => True,
+             Size => Match_Info.Size)));
+      Entries.Append (Item ("already-missing"));
+      Entries.Append
+        (Item
+           ("mismatch",
+            (Has_ETag => True,
+             ETag => US.To_Unbounded_String ("not-the-etag"),
+             others => <>)));
+      Entries.Append
+        (Item
+           ("conditioned-missing",
+            (Has_ETag => True,
+             ETag => US.To_Unbounded_String ("*"),
+             others => <>)));
+      Entries.Append
+        (Item
+           ("size",
+            (Has_Size => True, Size => Size_Info.Size, others => <>)));
+      Entries.Append (Item ("size"));
+      Entries.Append
+        (Item
+           ("timestamp",
+            (Has_Last_Modified_Time => True,
+             Last_Modified_Time =>
+               (if Time_Info.Modified = 0
+                then 1 else Long_Long_Integer (Time_Info.Modified) - 1),
+             others => <>)));
+      Store.Delete_Objects
+        (Bucket, Entries, null, Ada.Real_Time.Time_Last, Outcomes, Result);
+      Assert
+        (Result = Success and then Outcomes.Length = Entries.Length,
+         "DeleteObjects ordered outcome cardinality");
+      Assert
+        (Outcomes (1).Result = Success
+         and then Outcomes (2).Result = Success
+         and then Outcomes (3).Result = Precondition_Failed
+         and then Outcomes (4).Result = Not_Found
+         and then Outcomes (5).Result = Success
+         and then Outcomes (6).Result = Success
+         and then Outcomes (7).Result = Precondition_Failed,
+         "DeleteObjects ordered conditional outcomes");
+      Store.Head_Object
+        (Bucket, "match", null, Ada.Real_Time.Time_Last, Match_Info, Result);
+      Assert (Result = Not_Found, "DeleteObjects matching key remained");
+      Store.Head_Object
+        (Bucket, "mismatch", null, Ada.Real_Time.Time_Last,
+         Match_Info, Result);
+      Assert (Result = Success, "DeleteObjects ETag mismatch mutated key");
+      Store.Head_Object
+        (Bucket, "size", null, Ada.Real_Time.Time_Last, Match_Info, Result);
+      Assert (Result = Not_Found, "DeleteObjects size match remained");
+      Store.Head_Object
+        (Bucket, "timestamp", null, Ada.Real_Time.Time_Last,
+         Match_Info, Result);
+      Assert
+        (Result = Success, "DeleteObjects timestamp mismatch mutated key");
+
+      Entries.Clear;
+      Entries.Append (Item ("mismatch"));
+      Entries.Append
+        (Item
+           ("timestamp",
+            (Has_ETag => True,
+             ETag => US.To_Unbounded_String ("bad,etag"),
+             others => <>)));
+      Store.Delete_Objects
+        (Bucket, Entries, null, Ada.Real_Time.Time_Last, Outcomes, Result);
+      Assert
+        (Result = Invalid_Request and then Outcomes.Is_Empty,
+         "DeleteObjects invalid request was not rejected before publication");
+      Store.Head_Object
+        (Bucket, "mismatch", null, Ada.Real_Time.Time_Last,
+         Match_Info, Result);
+      Assert
+        (Result = Success, "DeleteObjects invalid suffix partially mutated");
+
+      Entries.Clear;
+      Entries.Append (Item ("mismatch"));
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.Delete_Objects
+              (Bucket, Entries, Cancel'Access, Ada.Real_Time.Time_Last,
+               Outcomes, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "DeleteObjects ignored pre-cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Delete_Objects
+              (Bucket, Entries, null, Ada.Real_Time.Time_First,
+               Outcomes, Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "DeleteObjects ignored expired deadline");
+      end;
+
+      Entries.Clear;
+      Entries.Append (Item ("mismatch"));
+      Entries.Append (Item ("timestamp"));
+      Store.Delete_Objects
+        (Bucket, Entries, null, Ada.Real_Time.Time_Last, Outcomes, Result);
+      Assert
+        (Result = Success
+         and then Outcomes.Length = 2
+         and then Outcomes (1).Result = Success
+         and then Outcomes (2).Result = Success,
+         "DeleteObjects conformance cleanup batch");
+      Store.Delete_Bucket
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "DeleteObjects conformance bucket cleanup");
+   end Exercise_Delete_Objects;
+
    procedure Exercise_Multipart_Upload_Listing
      (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
       Bucket : String)
@@ -1210,6 +1395,40 @@ package body Object_Storage_Test_Cases is
       Assert
         (Read_Result (If_None_Match => "*, ""etag""") = Invalid_Request,
          "malformed read If-None-Match was accepted");
+      Assert
+        (Valid_Object_Delete_ETag_Condition ("etag")
+         and then Valid_Object_Delete_ETag_Condition ("""etag""")
+         and then Valid_Object_Delete_ETag_Condition ("*"),
+         "valid DeleteObjects ETag condition was rejected");
+      Assert
+        (not Valid_Object_Delete_ETag_Condition ("")
+         and then not Valid_Object_Delete_ETag_Condition ("W/""etag""")
+         and then not Valid_Object_Delete_ETag_Condition ("etag,other")
+         and then not Valid_Object_Delete_ETag_Condition (" etag"),
+         "malformed DeleteObjects ETag condition was accepted");
+      Assert
+        (Evaluate_Object_Delete_Conditions
+           (True, """etag""", True, 100, True, 5,
+            True, "etag", 100, 5) = Success,
+         "matching DeleteObjects conditions failed");
+      Assert
+        (Evaluate_Object_Delete_Conditions
+           (False, "", False, 0, False, 0,
+            False, "", 0, 0) = Success,
+         "unconditioned missing DeleteObjects key was not idempotent");
+      Assert
+        (Evaluate_Object_Delete_Conditions
+           (True, "*", False, 0, False, 0,
+            False, "", 0, 0) = Not_Found,
+         "conditioned missing DeleteObjects key did not report Not_Found");
+      Assert
+        (Evaluate_Object_Delete_Conditions
+           (False, "", True, 99, False, 0,
+            True, "etag", 100, 5) = Precondition_Failed
+         and then Evaluate_Object_Delete_Conditions
+           (False, "", False, 0, True, 4,
+            True, "etag", 100, 5) = Precondition_Failed,
+         "DeleteObjects metadata mismatch was accepted");
    end Check_Validators;
 
    procedure Check_Memory_Lifecycle (Unused : in out Fixture) is
@@ -3394,6 +3613,41 @@ package body Object_Storage_Test_Cases is
          Clean;
          raise;
    end Check_Backend_Listings;
+
+   procedure Check_Backend_Delete_Objects (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      package Memory renames Flyology.Object_Storage.Backends.Memory;
+      package Files renames Flyology.Object_Storage.Backends.Files;
+      Root : constant String :=
+        Ada.Directories.Compose
+          (Ada.Directories.Compose
+             (Ada.Directories.Current_Directory, "obj"),
+           "fs-delete-objects-conformance");
+
+      procedure Clean is
+      begin
+         if Ada.Directories.Exists (Root) then
+            Ada.Directories.Delete_Tree (Root);
+         end if;
+      end Clean;
+   begin
+      declare
+         Store : Memory.Store (4, 16, 256);
+      begin
+         Exercise_Delete_Objects (Store, "memory-delete-objects-bucket");
+      end;
+      Clean;
+      declare
+         Store : Files.Store := Files.Open (Root, Maximum_Object_Size => 64);
+      begin
+         Exercise_Delete_Objects (Store, "files-delete-objects-bucket");
+      end;
+      Clean;
+   exception
+      when others =>
+         Clean;
+         raise;
+   end Check_Backend_Delete_Objects;
 
    procedure Check_S3_Core_Rules (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
@@ -11795,6 +12049,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("backends.listing-conformance",
             Check_Backend_Listings'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("backends.delete-objects-conformance",
+            Check_Backend_Delete_Objects'Access));
       Result.Add_Test
         (Caller.Create
            ("backends.object-tagging-conformance",

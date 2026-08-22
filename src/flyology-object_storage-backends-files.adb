@@ -2112,6 +2112,135 @@ package body Flyology.Object_Storage.Backends.Files is
          Result := Backend_Unavailable;
    end Delete_Object;
 
+   overriding procedure Delete_Objects
+     (Item     : in out Store;
+      Bucket   : String;
+      Entries  : Delete_Object_Entries;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Outcomes : out Delete_Object_Outcomes;
+      Result   : out Status)
+   is
+      Locked   : Boolean := False;
+      Removals : Delete_Object_Entries;
+   begin
+      Outcomes.Clear;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else Entries.Is_Empty
+        or else Entries.Length > Maximum_Delete_Objects
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      for Request_Entry of Entries loop
+         if not Valid_Object_Key (US.To_String (Request_Entry.Key))
+           or else
+             (Request_Entry.Conditions.Has_ETag
+              and then not Valid_Object_Delete_ETag_Condition
+                (US.To_String (Request_Entry.Conditions.ETag)))
+         then
+            Result := Invalid_Request;
+            return;
+         end if;
+      end loop;
+      Outcomes.Reserve_Capacity (Entries.Length);
+      Removals.Reserve_Capacity (Entries.Length);
+
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Bucket_Not_Found;
+         Item.Publication.Release;
+         Locked := False;
+         return;
+      end if;
+
+      for Request_Entry of Entries loop
+         Check_Context (Token, Deadline);
+         declare
+            Key  : constant String := US.To_String (Request_Entry.Key);
+            Path : constant String := Object_Path (Item, Bucket, Key);
+            Removed_Earlier : Boolean := False;
+            Physical_Exists : constant Boolean :=
+              Ada.Directories.Exists (Path);
+            Info : Object_Information := Empty_Info;
+         begin
+            for Removal of Removals loop
+               if US.To_String (Removal.Key) = Key then
+                  Removed_Earlier := True;
+                  exit;
+               end if;
+            end loop;
+            declare
+               Exists : constant Boolean :=
+                 Physical_Exists and then not Removed_Earlier;
+            begin
+               if Exists then
+                  if GNAT.OS_Lib.Is_Symbolic_Link (Path)
+                    or else Ada.Directories.Kind (Path) /=
+                      Ada.Directories.Ordinary_File
+                  then
+                     raise Ada.IO_Exceptions.Data_Error;
+                  end if;
+                  declare
+                     File    : SIO.File_Type;
+                     Body_At : SIO.Positive_Count;
+                  begin
+                     SIO.Open (File, SIO.In_File, Path);
+                     Read_Header (File, Key, Info, Body_At);
+                     SIO.Close (File);
+                  exception
+                     when others =>
+                        if SIO.Is_Open (File) then
+                           SIO.Close (File);
+                        end if;
+                        raise;
+                  end;
+               end if;
+               declare
+                  Entry_Result : constant Status :=
+                    Evaluate_Delete_Object_Conditions
+                      (Request_Entry.Conditions, Exists, Info);
+               begin
+                  Outcomes.Append
+                    (Delete_Object_Outcome'(Result => Entry_Result));
+                  if Entry_Result = Success and then Exists then
+                     Removals.Append (Request_Entry);
+                  end if;
+               end;
+            end;
+         end;
+      end loop;
+      for Removal of Removals loop
+         Check_Context (Token, Deadline);
+         declare
+            Path : constant String :=
+              Object_Path (Item, Bucket, US.To_String (Removal.Key));
+         begin
+            Ada.Directories.Delete_File (Path);
+            Sync_Directory
+              (Item, Ada.Directories.Containing_Directory (Path));
+         end;
+      end loop;
+      Result := Success;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Outcomes.Clear;
+         Result := Backend_Unavailable;
+   end Delete_Objects;
+
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;

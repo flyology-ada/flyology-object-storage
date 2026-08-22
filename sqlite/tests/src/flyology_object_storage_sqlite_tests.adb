@@ -1026,18 +1026,67 @@ begin
          and then Versioning.MFA_Delete =
            Flyology.Object_Storage.MFA_Delete_Disabled,
          "catalog versioning configuration did not survive reopen");
-      Catalogs.Delete_Object
-        (Catalog, "catalog-bucket", Key, Payload, Result);
-      Assert
-        (Result = Flyology.Object_Storage.Success and then
-         US.To_String (Payload) = "payload-two",
-         "persisted catalog object was not deleted");
-      Catalogs.Delete_Object
-        (Catalog, "catalog-bucket", "multipart-key", Payload, Result);
-      Assert
-        (Result = Flyology.Object_Storage.Success
-         and then US.To_String (Payload) = "multipart-final-payload",
-         "persisted catalog multipart object was not deleted");
+      declare
+         use Flyology.Object_Storage.Backends;
+         Entries  : Delete_Object_Entries;
+         Outcomes : Delete_Object_Outcomes;
+         Retired  : Catalogs.Payloads;
+         Injector : Databases.Database;
+         Raised   : Boolean := False;
+         Found    : Flyology.Object_Storage.Object_Information;
+      begin
+         Entries.Append
+           (Delete_Object_Entry'
+              (Key        => US.To_Unbounded_String (Key),
+               Conditions => No_Delete_Object_Conditions));
+         Entries.Append
+           (Delete_Object_Entry'
+              (Key        => US.To_Unbounded_String ("multipart-key"),
+               Conditions => No_Delete_Object_Conditions));
+         Databases.Open (Injector, Database_Path);
+         Databases.Execute
+           (Injector,
+            "CREATE TRIGGER fail_delete_objects BEFORE DELETE ON objects " &
+            "WHEN OLD.object_key=CAST('multipart-key' AS BLOB) BEGIN " &
+            "SELECT RAISE(ABORT,'delete-objects failpoint'); END;");
+         Databases.Close (Injector);
+         begin
+            Catalogs.Delete_Objects
+              (Catalog, "catalog-bucket", Entries,
+               Retired, Outcomes, Result);
+         exception
+            when others => Raised := True;
+         end;
+         Assert
+           (Raised and then Retired.Is_Empty and then Outcomes.Is_Empty,
+            "DeleteObjects catalog failpoint did not roll back outputs");
+         Catalogs.Find_Object
+           (Catalog, "catalog-bucket", Key, Payload, Found, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success,
+            "DeleteObjects rollback lost the first catalog row");
+         Catalogs.Find_Object
+           (Catalog, "catalog-bucket", "multipart-key",
+            Payload, Found, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success,
+            "DeleteObjects rollback lost the triggering catalog row");
+         Databases.Open (Injector, Database_Path);
+         Databases.Execute (Injector, "DROP TRIGGER fail_delete_objects;");
+         Databases.Close (Injector);
+         Catalogs.Delete_Objects
+           (Catalog, "catalog-bucket", Entries, Retired, Outcomes, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success
+            and then Outcomes.Length = 2
+            and then Outcomes (1).Result = Flyology.Object_Storage.Success
+            and then Outcomes (2).Result = Flyology.Object_Storage.Success
+            and then Retired.Length = 2
+            and then US.To_String (Retired (0)) = "payload-two"
+            and then US.To_String (Retired (1)) =
+              "multipart-final-payload",
+            "transactional catalog DeleteObjects result ordering");
+      end;
       Catalogs.Delete_Bucket (Catalog, "catalog-bucket", Result);
       Assert (Result = Flyology.Object_Storage.Success,
               "empty catalog bucket was not deleted");
@@ -1054,12 +1103,29 @@ begin
      (Catalog, "legacy-bucket",
       "schema-v1 migration invented versioning configuration");
    declare
+      use Flyology.Object_Storage.Backends;
       Result : Flyology.Object_Storage.Status;
+      Entries : Delete_Object_Entries;
+      Outcomes : Delete_Object_Outcomes;
+      Retired : Catalogs.Payloads;
    begin
       Catalogs.Head_Bucket (Catalog, "legacy-bucket", Result);
       Assert
         (Result = Flyology.Object_Storage.Success,
          "schema-v1 migration did not preserve the bucket namespace");
+      Entries.Append
+        (Delete_Object_Entry'
+           (Key        => US.To_Unbounded_String ("migration-missing"),
+            Conditions => No_Delete_Object_Conditions));
+      Catalogs.Delete_Objects
+        (Catalog, "legacy-bucket", Entries, Retired, Outcomes, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Outcomes.Length = 1
+         and then Outcomes.First_Element.Result =
+           Flyology.Object_Storage.Success
+         and then Retired.Is_Empty,
+         "schema-v1 migration did not support DeleteObjects");
    end;
    Catalogs.Close (Catalog);
    Databases.Open (Database, Database_Path);
@@ -2307,20 +2373,50 @@ begin
          end;
          Assert (Propagated, "SQLite backend swallowed a sink exception");
       end;
-      Store.Delete_Object
-        ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Result);
-      Assert (Result = Success, "SQLite backend object delete failed");
-      Store.Delete_Object
-        ("sqlite-bucket", "empty", null, Ada.Real_Time.Time_Last, Result);
-      Assert (Result = Success, "SQLite backend empty delete failed");
-      Store.Delete_Object
-        ("sqlite-bucket", "multipart-target", null,
-         Ada.Real_Time.Time_Last, Result);
-      Assert (Result = Success, "SQLite multipart object delete failed");
-      Store.Delete_Object
-        ("sqlite-bucket", "copied", null,
-         Ada.Real_Time.Time_Last, Result);
-      Assert (Result = Success, "SQLite copied object delete failed");
+      declare
+         Entries  : Delete_Object_Entries;
+         Outcomes : Delete_Object_Outcomes;
+         Keys : constant array (Positive range 1 .. 5) of
+           US.Unbounded_String :=
+             (1 => US.To_Unbounded_String (Key),
+              2 => US.To_Unbounded_String ("empty"),
+              3 => US.To_Unbounded_String ("multipart-target"),
+              4 => US.To_Unbounded_String ("copied"),
+              5 => US.To_Unbounded_String ("already-missing"));
+      begin
+         for Object_Key of Keys loop
+            Entries.Append
+              (Delete_Object_Entry'
+                 (Key        => Object_Key,
+                  Conditions => No_Delete_Object_Conditions));
+         end loop;
+         Store.Delete_Objects
+           ("sqlite-bucket", Entries, null, Ada.Real_Time.Time_Last,
+            Outcomes, Result);
+         Assert
+           (Result = Success and then Outcomes.Length = Entries.Length
+            and then (for all Outcome of Outcomes =>
+              Outcome.Result = Success),
+            "SQLite backend DeleteObjects ordered batch failed");
+      end;
+   end;
+   declare
+      package Backend renames Flyology.Object_Storage.Backends.SQLite;
+      use Flyology.Object_Storage;
+      Key : constant String := Character'Val (255) & "../../opaque/key";
+      Store : Backend.Store := Backend.Open (Backend_Root);
+      Info  : Object_Information;
+      Result : Status;
+   begin
+      Store.Head_Bucket
+        ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success, "SQLite DeleteObjects bucket did not reopen");
+      Store.Head_Object
+        ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);
+      Assert
+        (Result = Not_Found,
+         "SQLite DeleteObjects row survived crash-recovery reopen");
       Store.Delete_Bucket
         ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "SQLite backend bucket delete failed");

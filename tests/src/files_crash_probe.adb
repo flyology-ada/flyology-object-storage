@@ -77,8 +77,8 @@ procedure Files_Crash_Probe is
       Require (Result = Storage.Success, "could not create test bucket");
    end Create_Bucket;
 
-   procedure Put
-     (Store : in out Files.Store; Payload : String)
+   procedure Put_At
+     (Store : in out Files.Store; Object_Key, Payload : String)
    is
       Source : Buffer_Source :=
         (Data => Flyology.Bytes.From_Byte_String (Payload), Position => 0);
@@ -86,9 +86,14 @@ procedure Files_Crash_Probe is
       Result : Storage.Status;
    begin
       Store.Put_Object
-        (Bucket, Key, Source, Storage.Default_Put_Options,
+        (Bucket, Object_Key, Source, Storage.Default_Put_Options,
          null, Ada.Real_Time.Time_Last, Info, Result);
       Require (Result = Storage.Success, "could not put test object");
+   end Put_At;
+
+   procedure Put (Store : in out Files.Store; Payload : String) is
+   begin
+      Put_At (Store, Key, Payload);
    end Put;
 
    procedure Set_Object_Tag (Store : in out Files.Store; Value : String) is
@@ -173,8 +178,13 @@ procedure Files_Crash_Probe is
          null;
       else
          Create_Bucket (Store);
-         if Scenario in "put" | "delete" | "object-tags" then
+         if Scenario in "put" | "delete" | "delete-objects" |
+           "object-tags"
+         then
             Put (Store, "old");
+            if Scenario = "delete-objects" then
+               Put_At (Store, "second-object", "also-old");
+            end if;
             if Scenario = "object-tags" then
                Set_Object_Tag (Store, "old");
             end if;
@@ -220,6 +230,23 @@ procedure Files_Crash_Probe is
       elsif Scenario = "delete" then
          Store.Delete_Object
            (Bucket, Key, null, Ada.Real_Time.Time_Last, Result);
+      elsif Scenario = "delete-objects" then
+         declare
+            Entries  : Backends.Delete_Object_Entries;
+            Outcomes : Backends.Delete_Object_Outcomes;
+         begin
+            Entries.Append
+              (Backends.Delete_Object_Entry'
+                 (Key        => US.To_Unbounded_String (Key),
+                  Conditions => Backends.No_Delete_Object_Conditions));
+            Entries.Append
+              (Backends.Delete_Object_Entry'
+                 (Key        => US.To_Unbounded_String ("second-object"),
+                  Conditions => Backends.No_Delete_Object_Conditions));
+            Store.Delete_Objects
+              (Bucket, Entries, null, Ada.Real_Time.Time_Last,
+               Outcomes, Result);
+         end;
       elsif Scenario = "object-tags" then
          Set_Object_Tag (Store, "new");
          Result := Storage.Success;
@@ -296,6 +323,18 @@ procedure Files_Crash_Probe is
               (Result in Storage.Success | Storage.Not_Found,
                "crash exposed malformed object deletion");
          end if;
+      elsif Scenario = "delete-objects" then
+         Store.Head_Object
+           (Bucket, Key, null, Ada.Real_Time.Time_Last, Info, Result);
+         Require
+           (Result in Storage.Success | Storage.Not_Found,
+            "crash exposed malformed first batch deletion");
+         Store.Head_Object
+           (Bucket, "second-object", null, Ada.Real_Time.Time_Last,
+            Info, Result);
+         Require
+           (Result in Storage.Success | Storage.Not_Found,
+            "crash exposed malformed second batch deletion");
       elsif Scenario = "object-tags" then
          declare
             Tags : Storage.Object_Tag_Set;

@@ -1,5 +1,6 @@
 with Ada.Calendar;
 with Ada.Calendar.Formatting;
+with Ada.Containers;
 with Ada.Directories;
 with Ada.IO_Exceptions;
 with Ada.Strings;
@@ -17,6 +18,7 @@ with Interfaces.C.Strings;
 package body Flyology.Object_Storage.Backends.SQLite is
 
    use type Ada.Calendar.Time;
+   use type Ada.Containers.Count_Type;
    use type Ada.Directories.File_Kind;
    use type Ada.Directories.File_Size;
    use type Ada.Real_Time.Time;
@@ -1007,6 +1009,53 @@ package body Flyology.Object_Storage.Backends.SQLite is
       when others =>
          Result := Backend_Unavailable;
    end Delete_Object;
+
+   overriding procedure Delete_Objects
+     (Item     : in out Store;
+      Bucket   : String;
+      Entries  : Delete_Object_Entries;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Outcomes : out Delete_Object_Outcomes;
+      Result   : out Status)
+   is
+      Retired : Catalogs.Payloads;
+   begin
+      Outcomes.Clear;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else Entries.Is_Empty
+        or else Entries.Length > Maximum_Delete_Objects
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      for Request_Entry of Entries loop
+         if not Valid_Object_Key (US.To_String (Request_Entry.Key))
+           or else
+             (Request_Entry.Conditions.Has_ETag
+              and then not Valid_Object_Delete_ETag_Condition
+                (US.To_String (Request_Entry.Conditions.ETag)))
+         then
+            Result := Invalid_Request;
+            return;
+         end if;
+      end loop;
+      Catalogs.Delete_Objects
+        (Item.Catalog, Bucket, Entries, Retired, Outcomes, Result);
+      if Result = Success then
+         for Payload of Retired loop
+            Delete_Payload_If_Present (Item, US.To_String (Payload));
+         end loop;
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Outcomes.Clear;
+         Result := Backend_Unavailable;
+   end Delete_Objects;
 
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;

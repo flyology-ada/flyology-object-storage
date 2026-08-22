@@ -9,6 +9,89 @@ is
    Maximum_Condition_Length : constant := 16_384;
    Maximum_Entity_Tag_Length : constant := 8_192;
 
+   function Valid_Object_Delete_ETag_Condition
+     (Value : String) return Boolean
+   is
+      Quoted : constant Boolean :=
+        Value'Length >= 2
+        and then Value (Value'First) = '"'
+        and then Value (Value'Last) = '"';
+   begin
+      if Value'Length = 0 or else Value'Length > Maximum_Entity_Tag_Length then
+         return False;
+      elsif Value = "*" then
+         return True;
+      elsif Value (Value'First) = '"' or else Value (Value'Last) = '"' then
+         if not Quoted or else Value'Length = 2 then
+            return False;
+         end if;
+      end if;
+      for Position in Value'Range loop
+         if Character'Pos (Value (Position)) <= 16#20#
+           or else Character'Pos (Value (Position)) = 16#7F#
+           or else Value (Position) = '*'
+           or else Value (Position) = ','
+           or else
+             (Value (Position) = '"'
+              and then
+                (not Quoted
+                 or else Position not in Value'First | Value'Last))
+         then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Valid_Object_Delete_ETag_Condition;
+
+   function Evaluate_Object_Delete_Conditions
+     (Has_ETag               : Boolean;
+      ETag                   : String;
+      Has_Last_Modified_Time : Boolean;
+      Last_Modified_Time     : Long_Long_Integer;
+      Has_Size               : Boolean;
+      Expected_Size          : Byte_Count;
+      Exists                 : Boolean;
+      Entity_Tag             : String;
+      Modified               : Unix_Time;
+      Size                   : Byte_Count) return Status
+   is
+      ETag_Matches : Boolean := True;
+   begin
+      if Has_ETag and then not Valid_Object_Delete_ETag_Condition (ETag) then
+         return Invalid_Request;
+      elsif not Exists then
+         if Has_ETag or else Has_Last_Modified_Time or else Has_Size then
+            return Not_Found;
+         else
+            return Success;
+         end if;
+      end if;
+
+      if Has_ETag then
+         ETag_Matches := ETag = "*" or else ETag = Entity_Tag;
+         if not ETag_Matches
+           and then Entity_Tag'Length <= Maximum_Entity_Tag_Length
+           and then ETag'Length = Entity_Tag'Length + 2
+           and then ETag (ETag'First) = '"'
+           and then ETag (ETag'Last) = '"'
+         then
+            ETag_Matches :=
+              ETag (ETag'First + 1 .. ETag'Last - 1) = Entity_Tag;
+         end if;
+      end if;
+
+      if not ETag_Matches
+        or else
+          (Has_Last_Modified_Time
+           and then Last_Modified_Time /= Long_Long_Integer (Modified))
+        or else (Has_Size and then Expected_Size /= Size)
+      then
+         return Precondition_Failed;
+      else
+         return Success;
+      end if;
+   end Evaluate_Object_Delete_Conditions;
+
    function Character_At (Value : String; Offset : Positive)
       return Character
    with Pre => Offset <= Value'Length;
