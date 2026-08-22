@@ -63,6 +63,7 @@ trap - EXIT INT TERM
 echo "files abrupt-crash matrix: 70 pre/post-barrier cases OK"
 
 ./bin/flyology_object_storage_tests
+./bin/s3_checksum_corpus
 ./bin/s3_server_application_corpus
 for run in 1 2 3
 do

@@ -39,6 +39,10 @@ The core crate includes:
   member location, enumeration, XML trait, checksum trait, and authentication
   trait in the 116-operation botocore S3 model;
 - AWS-vector-tested SigV4 header signing and bounded, entity-safe REST/XML;
+- a backend-neutral streaming checksum foundation for all ten pinned S3
+  algorithms, with strict canonical Base64, AWS composite policy, full-object
+  CRC linearization, and a reproducible 320-vector differential corpus (see
+  [S3 checksum foundation](docs/architecture/s3-checksums.md));
 - complete typed, bounded HeadBucket, GetBucketLocation, ListBuckets,
   ListObjects v1/v2 and multipart initiation, completion, ListParts, and
   ListMultipartUploads REST/XML codecs, plus the complete GetObjectAttributes

@@ -130,6 +130,25 @@ record one sample per completed request before p50/p95/p99 claims are
 accepted. Resource telemetry must also be added before the `full` profile is
 used to ratify a performance threshold.
 
+## Checksum microbenchmark
+
+Run 'benchmarks/run-checksums.sh [MiB-per-algorithm]' for a focused streaming
+benchmark of all ten S3 algorithms. It feeds one deterministic 1 MiB buffer
+repeatedly into a single context and reports TSV containing the algorithm,
+total bytes, elapsed monotonic time, MiB/s, and final digest. The digest
+prevents the measured work from becoming dead code. This benchmark is for
+implementation regressions and algorithm selection; it does not replace the
+end-to-end server matrix and does not set a release threshold from a developer
+machine.
+
+An unqualified Apple arm64 development-profile smoke run on 2026-08-22 used
+64 MiB per algorithm. It measured approximately 383 MiB/s CRC32, 389 MiB/s
+CRC32C, 381 MiB/s CRC64NVME, 213 MiB/s SHA1, 143 MiB/s SHA256, 338 MiB/s
+SHA512, 472 MiB/s MD5, 13.4 GiB/s XXHASH64, 9.0 GiB/s XXHASH3, and 14.4 GiB/s
+XXHASH128. These numbers show no pathological scalar path in the initial
+implementation; they are explicitly not a portable baseline or qualification
+claim.
+
 ## Development smoke evidence
 
 The retained `20260821Tmultipart-final` campaign is a correctness-checked,
