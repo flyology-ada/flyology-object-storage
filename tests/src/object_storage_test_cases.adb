@@ -43,6 +43,7 @@ with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
+with Object_Tagging_Race_Conformance;
 
 package body Object_Storage_Test_Cases is
 
@@ -12814,7 +12815,7 @@ package body Object_Storage_Test_Cases is
    end Check_SigV4_Verification;
 
    procedure Exercise_Object_Tagging
-     (Store : in out Flyology.Object_Storage.Backends.Backend'Class;
+     (Store : aliased in out Flyology.Object_Storage.Backends.Backend'Class;
       Bucket : String)
    is
       use AUnit.Assertions;
@@ -12866,6 +12867,11 @@ package body Object_Storage_Test_Cases is
       Assert
         (Result = Success and then Tags = Wanted,
          "tagging atomic read did not preserve order and values");
+      Object_Tagging_Race_Conformance.Exercise
+        (Store, Bucket, "tagged/key", Wanted);
+      Store.Put_Object_Tags
+        (Bucket, "tagged/key", Wanted, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "tagging race reset failed");
 
       Store.Put_Object
         (Bucket, "tagged/key", Replacement, Default_Put_Options, null,

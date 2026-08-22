@@ -33,7 +33,8 @@ Executable evidence includes:
 
 - `backends.object-tagging-conformance` for memory and files, covering
   cancellation, expired deadlines, missing buckets and keys, idempotence, and
-  complete-set replacement and deletion;
+  complete-set replacement and deletion, plus the same bounded concurrent
+  put/delete/read snapshot race used by SQLite;
 - files live/dangling valid-object symlink probes plus six abrupt-process cases
   around the three pre/post durability barriers;
 - SQLite commit-cancellation rollback, reopen persistence, malformed stored-tag

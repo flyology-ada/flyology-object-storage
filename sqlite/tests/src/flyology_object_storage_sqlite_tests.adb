@@ -16,6 +16,7 @@ with Flyology.Object_Storage.Backends.SQLite;
 with Flyology.Object_Storage.Checksum_Engine;
 with Flyology.Object_Storage.SQLite.Catalogs;
 with Flyology.Object_Storage.SQLite.Databases;
+with Object_Tagging_Race_Conformance;
 with Flyology.Object_Storage.Tags;
 
 procedure Flyology_Object_Storage_Sqlite_Tests is
@@ -2299,6 +2300,12 @@ begin
       Assert
         (Result = Success and then Tags = Wanted,
          "SQLite backend object tags did not round-trip");
+      Object_Tagging_Race_Conformance.Exercise
+        (Store, "sqlite-bucket", Key, Wanted);
+      Store.Put_Object_Tags
+        ("sqlite-bucket", Key, Wanted, null, Ada.Real_Time.Time_Last,
+         Result);
+      Assert (Result = Success, "SQLite tag race reset failed");
       declare
          Replacement : Buffer_Source :=
            (Data     => Flyology.Bytes.From_Byte_String ("second body"),
