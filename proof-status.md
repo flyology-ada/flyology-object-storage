@@ -2,8 +2,8 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest atomic CompleteMultipartUpload condition-parser forced six-unit
-manifest-wide level-0 proof completed with 478/478 checks proved, warnings as
+The latest checksum and strict UTF-8 tag-validation forced eight-unit
+manifest-wide level-0 proof completed with 588/588 checks proved, warnings as
 errors, zero justified checks, and zero Assume statements.
 
 ## Proved and Finalized
@@ -16,7 +16,8 @@ errors, zero justified checks, and zero Assume statements.
   - [x] Looks_Like_IPv4
   - [x] Valid_Bucket_Name
   - [x] Valid_Object_Key
-  - [x] Valid_Object_Tag_Set (6 checks after manifest widening)
+  - [x] Valid_Object_Tag_Set (5 checks in the latest manifest widening)
+  - [x] Valid_Tag_Text (45 checks after manifest widening)
   - [x] Evaluate_Object_Write_Conditions
   - [x] Read_Entity_Tag_List and bounded helper loops (53 checks)
   - [x] Resolve_Range (23 attributed prover checks)
@@ -30,6 +31,16 @@ errors, zero justified checks, and zero Assume statements.
   - [x] Valid_Consecutive_Completion_Order
   - [x] Parse_Range_Header
   - [x] Compatibility rename of the shared Resolve_Range
+- [x] Flyology.Object_Storage.S3.Checksum_Policy
+      (scoped level 0, 9/9 checks)
+  - [x] exact algorithm and checksum-type wire names
+  - [x] COMPOSITE and FULL_OBJECT support matrix
+  - [x] digest lengths and default checksum types
+- [x] Flyology.Object_Storage.S3.Checksum_CRC
+      (scoped level 0, 43/43 checks)
+  - [x] streaming update and finish operations
+  - [x] Matrix_Times increasing-index termination (4/4 focused checks)
+  - [x] Combine decreasing-byte-count termination (15/15 focused checks)
 - [x] Flyology.Object_Storage.S3.Model (level 0, all; generated descriptor)
   - [x] 116 operation identities and REST traits
   - [x] 718 shape identities and scalar/container traits
@@ -58,11 +69,6 @@ errors, zero justified checks, and zero Assume statements.
   - [x] Valid_Timestamp
   - [x] validation helpers
 
-## Reviewed
-<!-- Review proved implementations for proof-antipatterns before moving them. -->
-
-- [x] Flyology.Object_Storage.Valid_Tag_Text
-       (scoped level 0, 42/42 checks; forced-manifest widening pending)
 ## In Progress
 <!-- A proof worker executes the tactical loop for the item below. -->
 
@@ -71,7 +77,10 @@ errors, zero justified checks, and zero Assume statements.
 
 ## Discovered Obligations
 
-- [ ] Re-widen the forced manifest after adding the strict UTF-8 S3 tag text
+- [x] Widen the forced manifest to Checksum_Policy and Checksum_CRC after
+      scoped termination review.
+
+- [x] Re-widen the forced manifest after adding the strict UTF-8 S3 tag text
       validator (owned by the root proof lane after scoped review).
 
 - [x] Proved the bounded escape cursor invariant and increasing variant.
@@ -147,3 +156,7 @@ errors, zero justified checks, and zero Assume statements.
       domain, proved bounded parsing, matching, loop termination, and all
       run-time checks, then widened the forced manifest to 478/478 checks with
       zero justified checks and zero Assume statements.
+- [x] Proved checksum policy and CRC streaming/combination helpers, closed the
+      strict UTF-8 tag validator's helper precondition, and widened the forced
+      eight-unit manifest to 588/588 checks with warnings as errors, zero
+      justified checks, and zero Assume statements.

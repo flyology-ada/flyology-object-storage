@@ -354,7 +354,8 @@ is
 
       function Continuation (Offset : Natural) return Boolean is
         (Offset <= Natural (Value'Last - Cursor)
-         and then Byte_At (Offset) in 16#80# .. 16#BF#);
+         and then Byte_At (Offset) in 16#80# .. 16#BF#)
+        with Pre => Cursor in Value'Range;
 
       function Allowed (Code : Natural) return Boolean is
          Character_Value : constant Wide_Wide_Character :=
