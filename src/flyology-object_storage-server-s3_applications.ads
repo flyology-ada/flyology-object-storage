@@ -18,8 +18,8 @@ package Flyology.Object_Storage.Server.S3_Applications is
 
    --  Serve one Flyology HTTP exchange. The current slice implements the
    --  path-style Create/Head/DeleteBucket, Put/Get/Head/DeleteObject,
-   --  DeleteObjects, ListObjects v1, and ListObjectsV2 operations. Unsupported
-   --  S3 operations
+   --  DeleteObjects, ListObjects v1/v2, and core multipart operations,
+   --  including ListParts. Unsupported S3 operations
    --  receive a typed NotImplemented response and never reach the backend.
    --  @param X Borrowed request-scoped Flyology HTTP exchange
    procedure Handle

@@ -51,8 +51,8 @@ The core crate includes:
   boundary for all 116 pinned operations, while operation-specific typed
   codecs and interoperability gates remain tracked as incomplete;
 - an authenticated path-style S3 server application for the initial
-  Create/Head/DeleteBucket, ListObjects v1/v2, DeleteObjects, and
-  Put/Copy/Get/Head/DeleteObject slice, with SigV4
+  Create/Head/DeleteBucket, ListObjects v1/v2, DeleteObjects,
+  Put/Copy/Get/Head/DeleteObject, and core multipart/ListParts slice, with SigV4
   admission before body acceptance, streamed payload-hash verification before
   commit, atomic suffix-range resolution, and typed S3 error responses;
 - the namespace for the low-level and convenience clients.

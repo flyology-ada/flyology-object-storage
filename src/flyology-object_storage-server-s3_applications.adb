@@ -226,7 +226,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Delete_Objects,
          List_Objects, List_Objects_V2,
          Create_Multipart, Put_Multipart_Part, Copy_Multipart_Part,
-         Complete_Multipart, Abort_Multipart);
+         Complete_Multipart, Abort_Multipart, List_Multipart_Parts);
 
       Target_Text : constant String := Apps.Request_Target (X);
       Method      : constant String := Apps.Request_Method (X);
@@ -261,6 +261,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Query_Text = "delete=&x-id=DeleteObjects"
         or else Query_Text = "x-id=DeleteObjects&delete=";
       Padded_Query : constant String := '&' & Query_Text & '&';
+      Has_Upload_ID_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&uploadId=") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&uploadId&") /= 0;
       Is_List_Objects_V2_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&list-type=2&") /= 0
         or else
@@ -581,7 +584,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
              "x-id=DeleteObject")
         and then not
           (Parsed.Kind = Requests.Object_Target
-           and then Method in "POST" | "PUT" | "DELETE")
+           and then
+             (Method in "POST" | "PUT" | "DELETE"
+              or else (Method = "GET" and then Has_Upload_ID_Query)))
         and then not
           (Parsed.Kind = Requests.Bucket_Target and then Method = "GET")
       then
@@ -629,7 +634,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          elsif Method = "DELETE" and then Query_Text = "x-id=DeleteObject"
          then
             Operation := Delete_Object;
-         elsif Method in "POST" | "PUT" | "DELETE" then
+         elsif Method in "POST" | "PUT" | "DELETE" | "GET" then
             begin
                declare
                   Query : constant Multipart.Multipart_Query :=
@@ -666,6 +671,14 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                          (X_ID'Length = 0
                           or else X_ID = "AbortMultipartUpload")
                      then Abort_Multipart
+                     elsif Query.Kind = Multipart.List_Parts_Query
+                       and then Method = "GET"
+                       and then
+                         (X_ID'Length = 0 or else X_ID = "ListParts")
+                     then List_Multipart_Parts
+                     elsif Query.Kind = Multipart.Existing_Upload_Query
+                       and then Method = "GET" and then X_ID'Length = 0
+                     then List_Multipart_Parts
                      else Unsupported);
                end;
             exception
@@ -674,6 +687,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Operation :=
                     (if Method = "PUT" then Put_Multipart_Part
                      elsif Method = "POST" then Complete_Multipart
+                     elsif Method = "GET" then List_Multipart_Parts
                      else Abort_Multipart);
             end;
          end if;
@@ -1024,6 +1038,85 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Send_Backend_Error
                        (X, Result, True, Target_Text);
                   end if;
+               end;
+
+            when List_Multipart_Parts =>
+               begin
+                  declare
+                     Query : constant Multipart.Multipart_Query :=
+                       Multipart.Parse_Query (Query_Text);
+                     Marker : constant Multipart.Part_Marker_Value :=
+                       (if Query.Kind = Multipart.List_Parts_Query
+                        then Query.Part_Number_Marker else 0);
+                     Maximum : constant S3.Core.Page_Size :=
+                       (if Query.Kind = Multipart.List_Parts_Query
+                        then Query.Max_Parts else S3.Core.Page_Size'Last);
+                     Upload_ID : constant String :=
+                       (if Query.Kind = Multipart.List_Parts_Query
+                        then US.To_String (Query.Listed_Upload_ID)
+                        else US.To_String (Query.Existing_Upload_ID));
+                     Options : constant
+                       Backends.List_Multipart_Parts_Options :=
+                         (After => Backends.Multipart_Part_Marker (Marker),
+                          Maximum => Backends.List_Limit (Maximum));
+                     Page : Backends.Multipart_Part_Page;
+                  begin
+                     Store.List_Multipart_Parts
+                       (Bucket, Key, Upload_ID, Options,
+                        Apps.Cancellation (X), Apps.Deadline (X), Page,
+                        Result);
+                     if Result = Not_Found then
+                        Send_Error
+                          (X, 404, "NoSuchUpload",
+                           "The specified multipart upload does not exist",
+                           Target_Text);
+                        return;
+                     elsif Result /= Success then
+                        Send_Backend_Error (X, Result, False, Target_Text);
+                        return;
+                     end if;
+                     declare
+                        Response : Multipart.List_Parts_Result :=
+                          (Bucket => US.To_Unbounded_String (Bucket),
+                           Key => US.To_Unbounded_String (Key),
+                           Upload_ID => US.To_Unbounded_String (Upload_ID),
+                           Part_Number_Marker => Marker,
+                           Next_Part_Number_Marker =>
+                             Multipart.Part_Marker_Value (Page.Next_After),
+                           Max_Parts => Maximum,
+                           Is_Truncated => Page.Is_Truncated,
+                           Parts => <>,
+                           Has_Initiator => False,
+                           Initiator => <>,
+                           Has_Owner => False,
+                           Owner => <>,
+                           Storage_Class =>
+                             US.To_Unbounded_String ("STANDARD"),
+                           Checksum_Algorithm => US.Null_Unbounded_String,
+                           Checksum_Type => US.Null_Unbounded_String);
+                     begin
+                        for Part of Page.Parts loop
+                           Response.Parts.Append
+                             (Multipart.Listed_Part'
+                                (Number => S3.Core.Part_Number (Part.Number),
+                                 Last_Modified => US.To_Unbounded_String
+                                   (Last_Modified (Part.Info.Modified)),
+                                 Entity_Tag => US.To_Unbounded_String
+                                   ('"' & US.To_String
+                                      (Part.Info.Entity_Tag) & '"'),
+                                 Size => Part.Info.Size,
+                                 others => <>));
+                        end loop;
+                        Apps.Respond
+                          (X, 200, "application/xml",
+                           Multipart.Serialize_List_Parts_Result (Response));
+                     end;
+                  end;
+               exception
+                  when Multipart.Malformed_Multipart =>
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The ListParts request is invalid", Target_Text);
                end;
 
             when Put_Multipart_Part =>

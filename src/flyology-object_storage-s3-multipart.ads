@@ -8,8 +8,11 @@ package Flyology.Object_Storage.S3.Multipart is
 
    Malformed_Multipart : exception;
 
+   subtype Part_Marker_Value is Natural range 0 .. Core.Part_Number'Last;
+
    type Multipart_Query_Kind is
-     (Create_Upload_Query, Upload_Part_Query, Existing_Upload_Query);
+     (Create_Upload_Query, Upload_Part_Query, Existing_Upload_Query,
+      List_Parts_Query);
 
    type Multipart_Query (Kind : Multipart_Query_Kind := Create_Upload_Query)
    is record
@@ -22,12 +25,16 @@ package Flyology.Object_Storage.S3.Multipart is
             Part_Number : Core.Part_Number := Core.Part_Number'First;
          when Existing_Upload_Query =>
             Existing_Upload_ID : Ada.Strings.Unbounded.Unbounded_String;
+         when List_Parts_Query =>
+            Listed_Upload_ID   : Ada.Strings.Unbounded.Unbounded_String;
+            Part_Number_Marker : Part_Marker_Value := 0;
+            Max_Parts          : Core.Page_Size := Core.Page_Size'Last;
       end case;
    end record;
 
    --  Parse the exact query shapes used by CreateMultipartUpload, UploadPart,
-   --  CompleteMultipartUpload, and AbortMultipartUpload. Names and values use
-   --  strict URI percent decoding; '+' remains a literal plus byte.
+   --  CompleteMultipartUpload, AbortMultipartUpload, and ListParts. Names and
+   --  values use strict URI percent decoding; '+' remains a literal plus byte.
    function Parse_Query (Query : String) return Multipart_Query;
 
    type Completed_Part is record
@@ -129,8 +136,6 @@ package Flyology.Object_Storage.S3.Multipart is
 
    function Serialize_Copy_Part_Result
      (Value : Copy_Part_Result) return String;
-
-   subtype Part_Marker_Value is Natural range 0 .. Core.Part_Number'Last;
 
    type Multipart_Identity is record
       ID           : Ada.Strings.Unbounded.Unbounded_String;

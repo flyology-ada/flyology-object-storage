@@ -40,6 +40,7 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
+   use type Low_Level.List_Parts_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Upload_Part_Copy_Outcome_Kind;
    use type Transfers.Download_Outcome_Kind;
@@ -334,6 +335,61 @@ procedure S3_Implementation_Corpus is
          end;
       end Require_Head_Object;
 
+      procedure Require_Listed_Part
+        (Object_Key, Upload_ID, Entity_Tag : String;
+         Size : Flyology.Object_Storage.Byte_Count)
+      is
+         Parameters : Low_Level.List_Parts_Parameters;
+
+         function Bare_ETag (Value : String) return String is
+           (if Value'Length >= 2
+              and then Value (Value'First) = '"'
+              and then Value (Value'Last) = '"'
+            then Value (Value'First + 1 .. Value'Last - 1)
+            else Value);
+      begin
+         Parameters.Max_Parts := 1;
+         Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_List_Parts
+                (Origin, Low_Level.Path_Style, Bucket, Object_Key,
+                 Parameters, Identity, "us-east-1", Timestamp);
+            Outcome : constant Low_Level.List_Parts_Outcome :=
+              Low_Level.Execute_List_Parts
+                (HTTP, Prepared, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Low_Level.Parts_Listed then
+               raise Program_Error with
+                 "S3 implementation rejected typed ListParts: " &
+                 Outcome.Status'Image & " " &
+                 US.To_String (Outcome.Error.Code) & " " &
+                 US.To_String (Outcome.Error.Message);
+            elsif Outcome.Result.Listing.Parts.Length /= 1 then
+               raise Program_Error with
+                 "S3 implementation ListParts count mismatch:" &
+                 Outcome.Result.Listing.Parts.Length'Image;
+            elsif Outcome.Result.Listing.Parts.First_Element.Number /= 1
+              or else Outcome.Result.Listing.Parts.First_Element.Size /= Size
+              or else Bare_ETag
+                (US.To_String
+                   (Outcome.Result.Listing.Parts.First_Element.Entity_Tag)) /=
+                  Bare_ETag (Entity_Tag)
+              or else Outcome.Result.Listing.Is_Truncated
+            then
+               raise Program_Error with
+                 "S3 implementation ListParts value mismatch: number=" &
+                 Outcome.Result.Listing.Parts.First_Element.Number'Image &
+                 " size=" &
+                 Outcome.Result.Listing.Parts.First_Element.Size'Image &
+                 " etag=" & US.To_String
+                   (Outcome.Result.Listing.Parts.First_Element.Entity_Tag) &
+                 " expected_etag=" & Entity_Tag & " truncated=" &
+                 Outcome.Result.Listing.Is_Truncated'Image;
+            end if;
+         end;
+      end Require_Listed_Part;
+
       procedure Copy_With_Multipart is
          Copy_Key : constant String := Key & "-copy-part";
          Prepared_Create : constant Low_Level.Prepared_Request :=
@@ -369,6 +425,10 @@ procedure S3_Implementation_Corpus is
                   raise Program_Error with
                     "S3 implementation rejected UploadPartCopy";
                end if;
+               Require_Listed_Part
+                 (Copy_Key, Upload_ID,
+                  US.To_String (Copied.Result.Copy_Part.Entity_Tag),
+                  Flyology.Object_Storage.Byte_Count (Payload'Length));
                declare
                   Completion : Multipart.Complete_Multipart_Upload_Request;
                begin
@@ -572,6 +632,9 @@ procedure S3_Implementation_Corpus is
                   raise Program_Error with
                     "S3 implementation rejected UploadPart";
                end if;
+               Require_Listed_Part
+                 (Key, Upload_ID, US.To_String (Uploaded.Result.Entity_Tag),
+                  Flyology.Object_Storage.Byte_Count (Payload'Length));
                declare
                   Completion : Multipart.Complete_Multipart_Upload_Request;
                begin

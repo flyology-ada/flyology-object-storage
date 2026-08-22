@@ -470,6 +470,49 @@ procedure S3_Server_Application_Corpus is
             "UploadPart server response mismatch: " & Response);
       end;
       declare
+         Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("max-parts", "1"),
+            SigV4.Pair ("part-number-marker", "0"),
+            SigV4.Pair ("uploadId", Upload_ID),
+            SigV4.Pair ("x-id", "ListParts"));
+         Response : constant String := Run
+           (Signed_Query_Request
+              ("GET", "/test-bucket/multipart-object", Query));
+         Listed : constant Multipart.List_Parts_Result :=
+           Multipart.Parse_List_Parts_Result (Response_Body (Response));
+      begin
+         Require
+           (Has (Response, "200 OK") and then Listed.Parts.Length = 1
+            and then Listed.Parts.First_Element.Number = 1
+            and then Listed.Parts.First_Element.Size = 14
+            and then US.To_String (Listed.Parts.First_Element.Entity_Tag) =
+              '"' & Part_ETag & '"'
+            and then not Listed.Is_Truncated,
+            "ListParts server response mismatch: " & Response);
+      end;
+      declare
+         Missing : constant SigV4.Name_Value_Array :=
+           (1 => SigV4.Pair ("uploadId", "missing"));
+         Invalid : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("max-parts", "1001"),
+            SigV4.Pair ("uploadId", Upload_ID));
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/test-bucket/multipart-object", Missing)),
+               "NoSuchUpload"),
+            "ListParts missing upload was not reported");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/test-bucket/multipart-object", Invalid)),
+               "InvalidArgument"),
+            "ListParts oversized page was accepted");
+      end;
+      declare
          Completion : Multipart.Complete_Multipart_Upload_Request;
          Query : constant SigV4.Name_Value_Array :=
            (1 => SigV4.Pair ("uploadId", Upload_ID));

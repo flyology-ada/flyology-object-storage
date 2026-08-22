@@ -2981,6 +2981,10 @@ package body Object_Storage_Test_Cases is
              ("uploadId=upload%2B%2F%3D&partNumber=10000");
          Existing : constant Multipart.Multipart_Query :=
            Multipart.Parse_Query ("uploadId=a+b");
+         Listed : constant Multipart.Multipart_Query :=
+           Multipart.Parse_Query
+             ("part-number-marker=7&uploadId=a+b&max-parts=11&" &
+              "x-id=ListParts");
       begin
          Assert
            (Create.Kind = Multipart.Create_Upload_Query
@@ -2988,7 +2992,11 @@ package body Object_Storage_Test_Cases is
             and then Part.Part_Number = 10_000
             and then US.To_String (Part.Upload_ID) = "upload+/="
             and then Existing.Kind = Multipart.Existing_Upload_Query
-            and then US.To_String (Existing.Existing_Upload_ID) = "a+b",
+            and then US.To_String (Existing.Existing_Upload_ID) = "a+b"
+            and then Listed.Kind = Multipart.List_Parts_Query
+            and then US.To_String (Listed.Listed_Upload_ID) = "a+b"
+            and then Listed.Part_Number_Marker = 7
+            and then Listed.Max_Parts = 11,
             "multipart query decoding and classification");
       end;
       Must_Reject_Query
@@ -3010,6 +3018,14 @@ package body Object_Storage_Test_Cases is
       Must_Reject_Query
         ("uploadId=x&partNumber=1&x-id=AbortMultipartUpload",
          "wrong multipart operation identifier accepted");
+      Must_Reject_Query
+        ("uploadId=x&part-number-marker=10001",
+         "oversized ListParts marker accepted");
+      Must_Reject_Query
+        ("uploadId=x&max-parts=1001", "oversized ListParts page accepted");
+      Must_Reject_Query
+        ("uploadId=x&max-parts=1&x-id=CompleteMultipartUpload",
+         "mixed ListParts/completion query accepted");
 
       declare
          Parsed : constant Multipart.Complete_Multipart_Upload_Request :=

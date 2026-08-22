@@ -52,9 +52,12 @@ package body Flyology.Object_Storage.S3.Multipart is
 
    function Parse_Query (Query : String) return Multipart_Query is
       Seen_Uploads, Seen_Upload_ID, Seen_Part, Seen_X_ID : Boolean := False;
+      Seen_Marker, Seen_Max_Parts : Boolean := False;
       Upload_ID : US.Unbounded_String;
       Operation_ID : US.Unbounded_String;
       Part_Number : Core.Part_Number := Core.Part_Number'First;
+      Part_Number_Marker : Part_Marker_Value := 0;
+      Max_Parts : Core.Page_Size := Core.Page_Size'Last;
       Parameter_Count : Natural := 1;
    begin
       if Query'Length = 0 or else Query'Length > Maximum_Query_Length then
@@ -118,6 +121,35 @@ package body Flyology.Object_Storage.S3.Multipart is
                         Seen_Part := True;
                         Part_Number := Core.Part_Number (Parsed.Value);
                      end;
+                  elsif Name = "part-number-marker" then
+                     declare
+                        Parsed : constant Wire_Core.Natural_Result :=
+                          Wire_Core.Parse_Natural (Value);
+                     begin
+                        if Seen_Marker or else not Parsed.Valid
+                          or else Parsed.Value > Part_Marker_Value'Last
+                        then
+                           raise Malformed_Multipart with
+                             "invalid multipart part marker";
+                        end if;
+                        Seen_Marker := True;
+                        Part_Number_Marker :=
+                          Part_Marker_Value (Parsed.Value);
+                     end;
+                  elsif Name = "max-parts" then
+                     declare
+                        Parsed : constant Wire_Core.Natural_Result :=
+                          Wire_Core.Parse_Natural (Value);
+                     begin
+                        if Seen_Max_Parts or else not Parsed.Valid
+                          or else Parsed.Value > Core.Page_Size'Last
+                        then
+                           raise Malformed_Multipart with
+                             "invalid multipart page size";
+                        end if;
+                        Seen_Max_Parts := True;
+                        Max_Parts := Core.Page_Size (Parsed.Value);
+                     end;
                   elsif Name = "x-id" then
                      if Seen_X_ID or else Value'Length = 0 then
                         raise Malformed_Multipart with
@@ -136,7 +168,8 @@ package body Flyology.Object_Storage.S3.Multipart is
       end;
 
       if Seen_Uploads then
-         if Seen_Upload_ID or else Seen_Part
+         if Seen_Upload_ID or else Seen_Part or else Seen_Marker
+           or else Seen_Max_Parts
            or else (Seen_X_ID and then US.To_String (Operation_ID) /=
              "CreateMultipartUpload")
          then
@@ -146,9 +179,11 @@ package body Flyology.Object_Storage.S3.Multipart is
          return (Kind => Create_Upload_Query,
                  Operation_ID => Operation_ID);
       elsif Seen_Upload_ID and then Seen_Part then
-         if Seen_X_ID
-           and then US.To_String (Operation_ID) /= "UploadPart"
-           and then US.To_String (Operation_ID) /= "UploadPartCopy"
+         if Seen_Marker or else Seen_Max_Parts
+           or else
+             (Seen_X_ID
+              and then US.To_String (Operation_ID) /= "UploadPart"
+              and then US.To_String (Operation_ID) /= "UploadPartCopy")
          then
             raise Malformed_Multipart with
               "inconsistent multipart part query";
@@ -158,6 +193,24 @@ package body Flyology.Object_Storage.S3.Multipart is
             Operation_ID => Operation_ID,
             Upload_ID   => Upload_ID,
             Part_Number => Part_Number);
+      elsif Seen_Upload_ID
+        and then
+          (Seen_Marker or else Seen_Max_Parts
+           or else
+             (Seen_X_ID
+              and then US.To_String (Operation_ID) = "ListParts"))
+      then
+         if Seen_X_ID and then US.To_String (Operation_ID) /= "ListParts"
+         then
+            raise Malformed_Multipart with
+              "inconsistent multipart listing query";
+         end if;
+         return
+           (Kind               => List_Parts_Query,
+            Operation_ID       => Operation_ID,
+            Listed_Upload_ID   => Upload_ID,
+            Part_Number_Marker => Part_Number_Marker,
+            Max_Parts          => Max_Parts);
       elsif Seen_Upload_ID then
          if Seen_X_ID
            and then US.To_String (Operation_ID) /= "CompleteMultipartUpload"
