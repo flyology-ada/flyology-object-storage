@@ -24,6 +24,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    use type Ada.Containers.Count_Type;
    use type Ada.Streams.Stream_Element_Offset;
    use type Flyology.Object_Storage.Status;
+   use type Flyology.Object_Storage.Bucket_Versioning_Status;
+   use type Flyology.Object_Storage.MFA_Delete_Status;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Flyology.Object_Storage.Tags.Tag_Vectors.Vector;
 
@@ -156,7 +158,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          raise;
    end Create_V3_Database;
 
-   type V4_Tag_Layout is (Object_Tags_Only, Bucket_Tags_Only);
+   type V4_Tag_Layout is
+     (Object_Tags_Only, Bucket_Tags_Only, Versioning_Only);
 
    procedure Create_V4_Database (Layout : V4_Tag_Layout) is
       Legacy : Databases.Database;
@@ -198,6 +201,16 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
             ") WITHOUT ROWID;" &
             "INSERT INTO bucket_tags VALUES" &
             "('legacy-bucket',1,X'7374617465',X'6F6C64');");
+         when Versioning_Only =>
+            Databases.Execute
+              (Legacy,
+               "ALTER TABLE buckets ADD COLUMN versioning_status INTEGER " &
+               "NOT NULL DEFAULT 0 CHECK(versioning_status BETWEEN 0 AND 2);" &
+               "ALTER TABLE buckets ADD COLUMN mfa_delete_status INTEGER " &
+               "NOT NULL DEFAULT 0 " &
+               "CHECK(mfa_delete_status BETWEEN 0 AND 2);" &
+               "UPDATE buckets SET versioning_status=1," &
+               "mfa_delete_status=2 WHERE name='legacy-bucket';");
       end case;
       Databases.Execute (Legacy, "PRAGMA user_version=4;");
       Databases.Close (Legacy);
@@ -258,6 +271,55 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V5_Database;
+
+   procedure Create_V6_Database is
+      Legacy : Databases.Database;
+   begin
+      Create_V5_Database (Attributes_Layout);
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "CREATE TABLE bucket_tags (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 1 AND 50)," &
+         "tag_key BLOB NOT NULL CHECK(length(tag_key) BETWEEN 1 AND 512)," &
+         "tag_value BLOB NOT NULL CHECK(length(tag_value) <= 1024)," &
+         "PRIMARY KEY(bucket_name,tag_key)," &
+         "UNIQUE(bucket_name,ordinal)," &
+         "FOREIGN KEY(bucket_name) " &
+         "REFERENCES buckets(name) ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
+         "INSERT INTO bucket_tags VALUES" &
+         "('legacy-bucket',1,X'70726F6A656374',X'666C796F6C6F6779');" &
+         "PRAGMA user_version=6;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V6_Database;
+
+   procedure Assert_Unconfigured_Versioning
+     (Catalog : in out Catalogs.Catalog;
+      Bucket  : String;
+      Label   : String)
+   is
+      Configuration : Flyology.Object_Storage.
+        Bucket_Versioning_Configuration;
+      Result : Flyology.Object_Storage.Status;
+   begin
+      Catalogs.Get_Bucket_Versioning
+        (Catalog, Bucket, Configuration, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Configuration.Status =
+           Flyology.Object_Storage.Versioning_Unconfigured
+         and then Configuration.MFA_Delete =
+           Flyology.Object_Storage.MFA_Delete_Unconfigured,
+         Label);
+   end Assert_Unconfigured_Versioning;
 
    type Buffer_Source is new
      Flyology.Object_Storage.Backends.Byte_Source with
@@ -672,6 +734,7 @@ begin
       Wanted   : Flyology.Object_Storage.Object_Tag_Set :=
         Flyology.Object_Storage.Empty_Object_Tags;
       Tags     : Flyology.Object_Storage.Object_Tag_Set;
+      Versioning : Flyology.Object_Storage.Bucket_Versioning_Configuration;
    begin
       Catalogs.Create_Bucket (Catalog, "catalog-bucket", 1_234_500, Result);
       Assert (Result = Flyology.Object_Storage.Success,
@@ -714,6 +777,35 @@ begin
             and then Observed = Value,
             "catalog bucket tag replacement retained old rows");
       end;
+
+      Catalogs.Get_Bucket_Versioning
+        (Catalog, "catalog-bucket", Versioning, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Versioning.Status =
+           Flyology.Object_Storage.Versioning_Unconfigured
+         and then Versioning.MFA_Delete =
+           Flyology.Object_Storage.MFA_Delete_Unconfigured,
+         "new catalog bucket invented versioning configuration");
+      Catalogs.Put_Bucket_Versioning
+        (Catalog, "catalog-bucket",
+         (Status => Flyology.Object_Storage.Versioning_Enabled,
+          MFA_Delete => Flyology.Object_Storage.MFA_Delete_Unconfigured),
+         Result);
+      Catalogs.Put_Bucket_Versioning
+        (Catalog, "catalog-bucket",
+         (Status => Flyology.Object_Storage.Versioning_Unconfigured,
+          MFA_Delete => Flyology.Object_Storage.MFA_Delete_Disabled),
+         Result);
+      Catalogs.Get_Bucket_Versioning
+        (Catalog, "catalog-bucket", Versioning, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Versioning.Status =
+           Flyology.Object_Storage.Versioning_Enabled
+         and then Versioning.MFA_Delete =
+           Flyology.Object_Storage.MFA_Delete_Disabled,
+         "catalog versioning fields were not merged atomically");
 
       Info :=
         (Size         => 42,
@@ -892,6 +984,7 @@ begin
       Wanted  : Flyology.Object_Storage.Object_Tag_Set :=
         Flyology.Object_Storage.Empty_Object_Tags;
       Tags    : Flyology.Object_Storage.Object_Tag_Set;
+      Versioning : Flyology.Object_Storage.Bucket_Versioning_Configuration;
    begin
       Wanted.Length := 2;
       Wanted.Items (1) :=
@@ -924,6 +1017,15 @@ begin
             and then Observed = Expected,
             "catalog bucket tags did not survive reopen");
       end;
+      Catalogs.Get_Bucket_Versioning
+        (Catalog, "catalog-bucket", Versioning, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Versioning.Status =
+           Flyology.Object_Storage.Versioning_Enabled
+         and then Versioning.MFA_Delete =
+           Flyology.Object_Storage.MFA_Delete_Disabled,
+         "catalog versioning configuration did not survive reopen");
       Catalogs.Delete_Object
         (Catalog, "catalog-bucket", Key, Payload, Result);
       Assert
@@ -948,6 +1050,9 @@ begin
 
    Create_V1_Database;
    Catalogs.Open (Catalog, Database_Path);
+   Assert_Unconfigured_Versioning
+     (Catalog, "legacy-bucket",
+      "schema-v1 migration invented versioning configuration");
    declare
       Result : Flyology.Object_Storage.Status;
    begin
@@ -965,8 +1070,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 6,
-         "schema-v1 migration did not publish version 6");
+         and then Databases.Column (Version, 0) = 7,
+         "schema-v1 migration did not publish version 7");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -1005,6 +1110,9 @@ begin
          and then US.To_String (Page.Buckets (2).Name) = "new-bucket"
          and then Page.Buckets (2).Created = 42,
          "schema-v2 bucket migration did not preserve timestamps");
+      Assert_Unconfigured_Versioning
+        (Catalog, "legacy-bucket",
+         "schema-v2 migration invented versioning configuration");
       Catalogs.Get_Bucket_Tags
         (Catalog, "legacy-bucket", Observed, Result);
       Assert
@@ -1031,8 +1139,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 6,
-         "schema-v2 migration did not publish version 6");
+         and then Databases.Column (Version, 0) = 7,
+         "schema-v2 migration did not publish version 7");
    end;
    declare
       Tables : Databases.Statement;
@@ -1051,6 +1159,9 @@ begin
 
    Create_V3_Database;
    Catalogs.Open (Catalog, Database_Path);
+   Assert_Unconfigured_Versioning
+     (Catalog, "legacy-bucket",
+      "schema-v3 migration invented versioning configuration");
    Catalogs.Close (Catalog);
    Databases.Open (Database, Database_Path);
    declare
@@ -1065,10 +1176,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 6
+         and then Databases.Column (Version, 0) = 7
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 6 tables");
+         "schema-v3 migration did not publish schema 7 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1108,7 +1219,27 @@ begin
                        US.To_String (Observed.First_Element.Value) = "old",
                      "schema-v4 bucket tags were not preserved");
                end;
+            when Versioning_Only =>
+               declare
+                  Configuration : Flyology.Object_Storage.
+                    Bucket_Versioning_Configuration;
+               begin
+                  Catalogs.Get_Bucket_Versioning
+                    (Catalog, "legacy-bucket", Configuration, Result);
+                  Assert
+                    (Result = Flyology.Object_Storage.Success
+                     and then Configuration.Status =
+                       Flyology.Object_Storage.Versioning_Enabled
+                     and then Configuration.MFA_Delete =
+                       Flyology.Object_Storage.MFA_Delete_Disabled,
+                     "schema-v4 versioning values were not preserved");
+               end;
          end case;
+         if Layout /= Versioning_Only then
+            Assert_Unconfigured_Versioning
+              (Catalog, "legacy-bucket",
+               "schema-v4 tag migration invented versioning configuration");
+         end if;
       end;
       Catalogs.Close (Catalog);
       Databases.Open (Database, Database_Path);
@@ -1119,8 +1250,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 6,
-            "schema-v4 migration did not publish version 6");
+            and then Databases.Column (Version, 0) = 7,
+            "schema-v4 migration did not publish version 7");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -1149,6 +1280,9 @@ begin
             and then US.To_String (Observed_Tags.Items (1).Key) = "state"
             and then US.To_String (Observed_Tags.Items (1).Value) = "old",
             "schema-v5 migration did not preserve object tags");
+         Assert_Unconfigured_Versioning
+           (Catalog, "legacy-bucket",
+            "schema-v5 migration invented versioning configuration");
          if Layout = Bucket_Tags_Layout then
             declare
                Observed : Storage_Tags.Tag_Set;
@@ -1184,7 +1318,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 6
+            and then Databases.Column (Version, 0) = 7
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -1195,6 +1329,78 @@ begin
       Databases.Close (Database);
       Delete_Database;
    end loop;
+
+   Create_V6_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      Result : Flyology.Object_Storage.Status;
+      Object_Tags : Flyology.Object_Storage.Object_Tag_Set;
+      Bucket_Tags : Storage_Tags.Tag_Set;
+      Configuration : Flyology.Object_Storage.
+        Bucket_Versioning_Configuration;
+   begin
+      Catalogs.Get_Object_Tags
+        (Catalog, "legacy-bucket", "k", Object_Tags, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Object_Tags.Length = 1
+         and then US.To_String (Object_Tags.Items (1).Key) = "state",
+         "schema-v6 migration did not preserve object tags");
+      Catalogs.Get_Bucket_Tags
+        (Catalog, "legacy-bucket", Bucket_Tags, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Bucket_Tags.Length = 1
+         and then US.To_String (Bucket_Tags.First_Element.Key) = "project",
+         "schema-v6 migration did not preserve bucket tags");
+      Assert_Unconfigured_Versioning
+        (Catalog, "legacy-bucket",
+         "schema-v6 migration invented versioning configuration");
+      Catalogs.Put_Bucket_Versioning
+        (Catalog, "legacy-bucket",
+         (Status => Flyology.Object_Storage.Versioning_Suspended,
+          MFA_Delete => Flyology.Object_Storage.MFA_Delete_Disabled),
+         Result);
+      Catalogs.Get_Bucket_Versioning
+        (Catalog, "legacy-bucket", Configuration, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Configuration.Status =
+           Flyology.Object_Storage.Versioning_Suspended
+         and then Configuration.MFA_Delete =
+           Flyology.Object_Storage.MFA_Delete_Disabled,
+         "schema-v6 migration could not persist versioning configuration");
+   end;
+   Catalogs.Close (Catalog);
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      Configuration : Flyology.Object_Storage.
+        Bucket_Versioning_Configuration;
+      Result : Flyology.Object_Storage.Status;
+   begin
+      Catalogs.Get_Bucket_Versioning
+        (Catalog, "legacy-bucket", Configuration, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Configuration.Status =
+           Flyology.Object_Storage.Versioning_Suspended
+         and then Configuration.MFA_Delete =
+           Flyology.Object_Storage.MFA_Delete_Disabled,
+         "schema-v6 migrated versioning configuration did not survive reopen");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 7,
+         "schema-v6 migration did not publish version 7");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
 
    if Ada.Directories.Exists (Backend_Root) then
       Ada.Directories.Delete_Tree (Backend_Root);
@@ -1365,6 +1571,42 @@ begin
       Store.Head_Bucket
         ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "SQLite backend bucket head failed");
+      declare
+         Configuration : Bucket_Versioning_Configuration;
+      begin
+         Store.Get_Bucket_Versioning
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Configuration, Result);
+         Assert
+           (Result = Success
+            and then Configuration.Status = Versioning_Unconfigured
+            and then Configuration.MFA_Delete = MFA_Delete_Unconfigured,
+            "SQLite backend invented initial versioning configuration");
+         Store.Put_Bucket_Versioning
+           ("sqlite-bucket",
+            (Status => Versioning_Enabled,
+             MFA_Delete => MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Versioning
+           ("sqlite-bucket",
+            (Status => Versioning_Unconfigured,
+             MFA_Delete => MFA_Delete_Disabled),
+            null, Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Versioning
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Configuration, Result);
+         Assert
+           (Result = Success
+            and then Configuration.Status = Versioning_Enabled
+            and then Configuration.MFA_Delete = MFA_Delete_Disabled,
+            "SQLite backend versioning fields did not merge atomically");
+         Store.Get_Bucket_Versioning
+           ("missing-bucket", null, Ada.Real_Time.Time_Last,
+            Configuration, Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite versioning did not distinguish a missing bucket");
+      end;
       Store.Put_Object
         ("sqlite-bucket", Key, Source,
          (Entity_Tag   => US.To_Unbounded_String ("etag-1"),
@@ -1628,6 +1870,18 @@ begin
             and then Page.Buckets.First_Element.Created =
               SQLite_Bucket_Created,
             "SQLite bucket creation time did not survive reopen");
+      end;
+      declare
+         Configuration : Bucket_Versioning_Configuration;
+      begin
+         Store.Get_Bucket_Versioning
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Configuration, Result);
+         Assert
+           (Result = Success
+            and then Configuration.Status = Versioning_Enabled
+            and then Configuration.MFA_Delete = MFA_Delete_Disabled,
+            "SQLite backend versioning configuration did not survive reopen");
       end;
       Store.Head_Object
         ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

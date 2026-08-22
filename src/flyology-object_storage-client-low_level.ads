@@ -15,6 +15,7 @@ with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.SigV4;
+with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
 
@@ -536,6 +537,103 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null;
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Tagging_Outcome;
+
+   --  Every modeled PutBucketVersioning input outside the bucket path. An
+   --  empty Content_MD5 asks the client to generate the required digest from
+   --  the exact serialized configuration document.
+   type Put_Bucket_Versioning_Parameters is record
+      Content_MD5          : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm   : Ada.Strings.Unbounded.Unbounded_String;
+      MFA                  : Ada.Strings.Unbounded.Unbounded_String;
+      Configuration        : Bucket_Versioning_Configuration;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_Put_Bucket_Versioning
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Put_Bucket_Versioning_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type Put_Bucket_Versioning_Outcome_Kind is
+     (Bucket_Versioning_Updated, Put_Bucket_Versioning_Rejected);
+
+   type Put_Bucket_Versioning_Outcome
+     (Kind : Put_Bucket_Versioning_Outcome_Kind :=
+       Put_Bucket_Versioning_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Versioning_Updated =>
+            null;
+         when Put_Bucket_Versioning_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Put_Bucket_Versioning_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
+      return Put_Bucket_Versioning_Outcome;
+
+   function Execute_Put_Bucket_Versioning
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
+      return Put_Bucket_Versioning_Outcome;
+
+   type Get_Bucket_Versioning_Parameters is record
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_Get_Bucket_Versioning
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Get_Bucket_Versioning_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type Get_Bucket_Versioning_Outcome_Kind is
+     (Bucket_Versioning_Found, Get_Bucket_Versioning_Rejected);
+
+   type Get_Bucket_Versioning_Outcome
+     (Kind : Get_Bucket_Versioning_Outcome_Kind :=
+       Get_Bucket_Versioning_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Versioning_Found =>
+            Configuration : Bucket_Versioning_Configuration;
+         when Get_Bucket_Versioning_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Get_Bucket_Versioning_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
+      return Get_Bucket_Versioning_Outcome;
+
+   function Execute_Get_Bucket_Versioning
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
+      return Get_Bucket_Versioning_Outcome;
 
    type Head_Bucket_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
@@ -1868,6 +1966,8 @@ private
       Get_Bucket_Location_Operation,
       Put_Bucket_Tagging_Operation,
       Get_Bucket_Tagging_Operation,
+      Put_Bucket_Versioning_Operation,
+      Get_Bucket_Versioning_Operation,
       Head_Bucket_Operation,
       Head_Object_Operation,
       Get_Object_Operation,

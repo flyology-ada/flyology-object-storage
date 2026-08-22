@@ -22,6 +22,7 @@ with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.Tagging;
+with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.S3.Wire_Core;
 with Flyology.Object_Storage.Tags;
 
@@ -39,6 +40,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Multipart_Uploads renames S3.Multipart_Uploads;
    package Object_Reads renames S3.Object_Reads;
    package Tagging renames S3.Tagging;
+   package Versioning renames S3.Versioning;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Calendar.Time;
    use type Apps.Response_State;
@@ -54,6 +56,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    Body_Entity_Too_Large : exception;
 
    Maximum_Create_Bucket_Body : constant Byte_Count := 64 * 1_024;
+   Maximum_Versioning_Body : constant Byte_Count :=
+     Versioning.Maximum_Document_Bytes;
    Maximum_Delete_Objects_Body : constant Byte_Count := 2 * 1_024 * 1_024;
    Maximum_Complete_Multipart_Body : constant Byte_Count :=
      2 * 1_024 * 1_024;
@@ -298,6 +302,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          List_Buckets,
          Create_Bucket, Get_Bucket_Location, Head_Bucket, Delete_Bucket,
          Put_Bucket_Tagging, Get_Bucket_Tagging,
+         Put_Bucket_Versioning, Get_Bucket_Versioning,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
          Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
          Get_Object_Attributes,
@@ -385,6 +390,23 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else
           (Parsed.Kind = Requests.Object_Target
            and then Is_Valid_Tagging_Query (Query_Text, Method));
+      Is_Bucket_Versioning_Query : constant Boolean :=
+        Query_Text = "versioning"
+        or else Query_Text = "versioning="
+        or else
+          Query_Text =
+            "versioning=&x-id=" &
+              (if Method = "PUT"
+               then "PutBucketVersioning" else "GetBucketVersioning")
+        or else
+          Query_Text =
+            "x-id=" &
+              (if Method = "PUT"
+               then "PutBucketVersioning" else "GetBucketVersioning") &
+            "&versioning=";
+      Has_Bucket_Versioning_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&versioning&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&versioning=&") /= 0;
       Has_Upload_ID_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&uploadId=") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&uploadId&") /= 0;
@@ -408,6 +430,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Delete_Object_Query_Invalid : Boolean := False;
       Delete_Request : Deletions.Delete_Object_Request;
       Object_Read_Query_Invalid : Boolean := False;
+      Bucket_Versioning_Query_Invalid : Boolean := False;
       Object_Read_Request : Object_Reads.Object_Read_Request;
       Tagging_Query_Invalid : Boolean := False;
       Tagging_Request : Tagging.Tagging_Query;
@@ -805,6 +828,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Parsed.Kind = Requests.Object_Target and then Method = "HEAD")
         and then not
           (Parsed.Kind = Requests.Bucket_Target and then Method = "GET")
+        and then not
+          (Parsed.Kind = Requests.Bucket_Target
+           and then Method = "PUT"
+           and then Has_Bucket_Versioning_Query)
       then
          Send_Error
            (X, 501, "NotImplemented",
@@ -815,6 +842,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       if Parsed.Kind = Requests.Service_Target then
          Operation := (if Method = "GET" then List_Buckets else Unsupported);
       elsif Parsed.Kind = Requests.Bucket_Target then
+         Bucket_Versioning_Query_Invalid :=
+           Method in "GET" | "PUT"
+           and then Has_Bucket_Versioning_Query
+           and then not Is_Bucket_Versioning_Query;
          Operation :=
            (if Method = "PUT"
               and then
@@ -839,6 +870,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Put_Bucket_Tagging
             elsif Method = "GET" and then Is_Get_Bucket_Tagging_Query
             then Get_Bucket_Tagging
+            elsif Method = "PUT" and then Has_Bucket_Versioning_Query
+            then Put_Bucket_Versioning
+            elsif Method = "GET" and then Has_Bucket_Versioning_Query
+            then Get_Bucket_Versioning
             elsif Method = "GET" and then Is_List_Objects_V2_Query
             then List_Objects_V2
             elsif Method = "GET" and then Is_List_Multipart_Uploads_Query
@@ -986,7 +1021,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
       Apps.Configure_Route
          (X, "s3", Target_Text,
-         (if Operation in Create_Bucket | Put_Bucket_Tagging | Put_Object |
+         (if Operation in Create_Bucket | Put_Bucket_Tagging |
+         Put_Bucket_Versioning | Put_Object |
          Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
          Complete_Multipart
           then Apps.Stream_Body else Apps.Reject_Body),
@@ -1015,6 +1051,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (X, 400, "InvalidArgument",
             "The multipart request query is invalid", Target_Text);
          return;
+      elsif Bucket_Versioning_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The bucket versioning request query is invalid", Target_Text);
+         return;
       elsif Delete_Object_Query_Invalid then
          Send_Error
            (X, 400, "InvalidArgument",
@@ -1037,7 +1078,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return;
       end if;
 
-      if Operation not in Create_Bucket | Put_Bucket_Tagging | Put_Object |
+      if Operation not in Create_Bucket | Put_Bucket_Tagging |
+        Put_Bucket_Versioning | Put_Object |
         Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
       then
@@ -1657,6 +1699,110 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            Send_Backend_Error
                              (X, Result, True, Target_Text);
                         end if;
+                     end if;
+                  end if;
+               end;
+
+            when Put_Bucket_Versioning =>
+               declare
+                  Source : Request_IO.Request_Source :=
+                    (Length_Value  => Length,
+                     Expected_Hash => Auth.Payload_Hash,
+                     Check_Hash    =>
+                       US.To_String (Auth.Payload_Hash) /=
+                         S3.SigV4.Unsigned_Payload,
+                     Hash      => GNAT.SHA256.Initial_Context,
+                     Observed  => 0,
+                     Maximum   => Maximum_Versioning_Body,
+                     Completed => False);
+                  Document : constant String := Read_Document (Source);
+                  Configuration : Bucket_Versioning_Configuration;
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  MFA_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-mfa");
+                  Checksum_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm");
+                  Owner_Accepted : Boolean;
+               begin
+                  Configuration := Versioning.Parse (Document);
+                  if MD5_Count /= 1 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "PutBucketVersioning requires one Content-MD5 header",
+                        Target_Text);
+                  elsif Apps.Request_Header (X, "content-md5") /=
+                    Content_MD5 (Document)
+                  then
+                     Send_Error
+                       (X, 400, "BadDigest",
+                        "The Content-MD5 you specified did not match",
+                        Target_Text);
+                  elsif MFA_Count > 1 or else Checksum_Count > 1 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A PutBucketVersioning control header is duplicated",
+                        Target_Text);
+                  elsif MFA_Count = 1
+                    or else
+                      Configuration.MFA_Delete /=
+                        MFA_Delete_Unconfigured
+                  then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "MFA-delete policy enforcement is not implemented",
+                        Target_Text);
+                  elsif Checksum_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "SDK checksum negotiation is not implemented",
+                        Target_Text);
+                  elsif Configuration.Status = Versioning_Unconfigured then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "A versioning status is required", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Put_Bucket_Versioning
+                          (Bucket, Configuration, Apps.Cancellation (X),
+                           Apps.Deadline (X), Result);
+                        if Result = Success then
+                           Apps.Respond (X, 200, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               exception
+                  when Versioning.Malformed_Configuration =>
+                     Send_Error
+                       (X, 400, "MalformedXML",
+                        "The XML provided was not well-formed or did not " &
+                        "validate against the published schema", Target_Text);
+               end;
+
+            when Get_Bucket_Versioning =>
+               declare
+                  Owner_Accepted : Boolean;
+                  Configuration : Bucket_Versioning_Configuration;
+               begin
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_Accepted);
+                  if Owner_Accepted then
+                     Store.Get_Bucket_Versioning
+                       (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                        Configuration, Result);
+                     if Result = Success then
+                        Apps.Respond
+                          (X, 200, "application/xml",
+                           Versioning.Serialize (Configuration));
+                     else
+                        Send_Backend_Error
+                          (X, Result, True, Target_Text);
                      end if;
                   end if;
                end;

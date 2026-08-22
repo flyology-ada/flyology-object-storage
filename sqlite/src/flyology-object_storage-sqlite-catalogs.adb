@@ -1279,7 +1279,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
             DB.Bind (Bucket_Query, 1, Bucket);
             if DB.Step (Bucket_Query) /= DB.Row then
-               raise Catalog_Error with "bucket existence query returned no row";
+               raise Catalog_Error with
+                 "bucket existence query returned no row";
             elsif DB.Column (Bucket_Query, 0) = 0 then
                Result := Bucket_Not_Found;
             end if;

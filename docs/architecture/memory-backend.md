@@ -59,3 +59,9 @@ entering the protected state and replaces the complete vector in one protected
 operation; Get returns a copied snapshot, so caller mutation cannot alias store
 state. Tags consume bounded configuration memory, do not make a bucket
 nonempty, and disappear with bucket deletion.
+
+Each bucket slot also holds presence-preserving versioning configuration.
+Status and MFA-delete fields can be updated independently inside the same
+protected operation, so readers observe one old-or-new snapshot. This state is
+configuration metadata only: the memory backend does not thereby create object
+versions or claim ListObjectVersions behavior.

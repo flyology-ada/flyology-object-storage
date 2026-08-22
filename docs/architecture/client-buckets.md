@@ -49,6 +49,13 @@ controls. The low-level surface additionally exposes an explicit Content-MD5
 for protocol tests and the modeled checksum-algorithm member; checksum selection
 currently fails locally until paired checksum generation is implemented.
 
+`Set_Versioning` enables or suspends versioning configuration and
+`Get_Versioning` preserves the distinction between an absent configuration and
+Suspended. The convenience setter deliberately omits MFA-delete; callers that
+own a separately verified MFA policy use the complete typed low-level request.
+These calls do not imply object-version creation or ListObjectVersions support
+at the target endpoint.
+
 These operations are deliberately individual. Parallel work across many
 buckets or objects belongs in an application-owned joined scope, while
 multi-file data transfer uses `Client.Transfers.Transfer_Many` and its explicit

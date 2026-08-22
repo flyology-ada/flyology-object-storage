@@ -15,6 +15,7 @@ procedure Files_Crash_Probe is
    use type Ada.Containers.Count_Type;
    use type Ada.Streams.Stream_Element_Offset;
    use type Flyology.Object_Storage.Status;
+   use type Flyology.Object_Storage.Bucket_Versioning_Status;
    package US renames Ada.Strings.Unbounded;
    package Storage renames Flyology.Object_Storage;
    package Backends renames Flyology.Object_Storage.Backends;
@@ -166,6 +167,7 @@ procedure Files_Crash_Probe is
    procedure Prepare (Scenario, Root : String) is
       Store     : Files.Store := Files.Open (Root);
       Upload_ID : US.Unbounded_String;
+      Result    : Storage.Status;
    begin
       if Scenario = "bucket" then
          null;
@@ -183,6 +185,14 @@ procedure Files_Crash_Probe is
             if Scenario in "part" | "complete" then
                Put_Part (Store, US.To_String (Upload_ID), "old");
             end if;
+         elsif Scenario = "versioning" then
+            Store.Put_Bucket_Versioning
+              (Bucket,
+               (Status     => Storage.Versioning_Enabled,
+                MFA_Delete => Storage.MFA_Delete_Unconfigured),
+               null, Ada.Real_Time.Time_Last, Result);
+            Require (Result = Storage.Success,
+                     "could not prepare versioning configuration");
          elsif Scenario not in "initiate" | "delete-bucket" then
             raise Program_Error with "unknown crash scenario";
          end if;
@@ -228,6 +238,12 @@ procedure Files_Crash_Probe is
       elsif Scenario = "delete-bucket" then
          Store.Delete_Bucket
            (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      elsif Scenario = "versioning" then
+         Store.Put_Bucket_Versioning
+           (Bucket,
+            (Status     => Storage.Versioning_Suspended,
+             MFA_Delete => Storage.MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Result);
       elsif Scenario = "complete" then
          Upload_ID := US.To_Unbounded_String (Only_Upload (Store));
          declare
@@ -336,6 +352,21 @@ procedure Files_Crash_Probe is
             if Result = Storage.Success then
                Require (Info.Size = 3, "completed object has wrong size");
             end if;
+         end;
+      elsif Scenario = "versioning" then
+         declare
+            Configuration : Storage.Bucket_Versioning_Configuration;
+         begin
+            Store.Get_Bucket_Versioning
+              (Bucket, null, Ada.Real_Time.Time_Last,
+               Configuration, Result);
+            Require
+              (Result = Storage.Success
+               and then
+                 Configuration.Status in
+                   Storage.Versioning_Enabled |
+                   Storage.Versioning_Suspended,
+               "crash exposed a partial versioning configuration");
          end;
       else
          raise Program_Error with "unknown crash scenario";

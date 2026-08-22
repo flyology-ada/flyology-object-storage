@@ -298,4 +298,89 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Get_Tags_Outcome;
 
+   subtype Configurable_Versioning_Status is Bucket_Versioning_Status range
+     Versioning_Enabled .. Versioning_Suspended;
+
+   type Set_Versioning_Outcome_Kind is
+     (Versioning_Updated, Set_Versioning_Rejected);
+
+   type Set_Versioning_Outcome
+     (Kind : Set_Versioning_Outcome_Kind := Set_Versioning_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Versioning_Updated =>
+            null;
+         when Set_Versioning_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Enable or suspend bucket versioning configuration. This convenience
+   --  call does not expose MFA-delete because safe use requires a separately
+   --  verified MFA policy. It does not imply that object version creation or
+   --  ListObjectVersions is implemented by a compatible endpoint.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose configuration is changed
+   --  @param Versioning Enabled or Suspended
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Completed configuration update or structured S3 rejection
+   function Set_Versioning
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Versioning : Configurable_Versioning_Status;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Set_Versioning_Outcome;
+
+   type Get_Versioning_Outcome_Kind is
+     (Versioning_Found, Get_Versioning_Rejected);
+
+   type Get_Versioning_Outcome
+     (Kind : Get_Versioning_Outcome_Kind := Get_Versioning_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Versioning_Found =>
+            Configuration : Bucket_Versioning_Configuration;
+         when Get_Versioning_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Read the presence-preserving bucket versioning configuration.
+   --  Unconfigured is distinct from Suspended.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose configuration is read
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Configuration snapshot or structured S3 rejection
+   function Get_Versioning
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Get_Versioning_Outcome;
+
 end Flyology.Object_Storage.Client.Buckets;

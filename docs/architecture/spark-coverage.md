@@ -34,3 +34,12 @@ the shared atomic whole/bounded/open/suffix range resolver. Automatic
 multipart planning uses the same proved core for part-size validity,
 overflow-safe ceiling division, the 10,000-part ceiling, and the 50 TiB object
 bound.
+
+Bucket-versioning independent-field merge is implemented in the SPARK-enabled
+domain unit and reused by the memory and files backends. Its postcondition
+states the exact preservation rule for each Unconfigured update field; the
+unit corpus also exhausts all 81 current/update enum combinations. SQLite uses
+an equivalent single-statement `CASE` update under its serialized catalog gate
+and is checked through merge, reopen, and migration tests. The recorded proof
+count above remains the last completed authoritative run until the coordinated
+post-change proof gate publishes its replacement.

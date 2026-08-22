@@ -68,6 +68,9 @@ procedure S3_Implementation_Corpus is
    use type Client_Objects.Delete_Outcome_Kind;
    use type Client_Objects.Tagging_Outcome_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
+   use type Client_Buckets.Set_Versioning_Outcome_Kind;
+   use type Client_Buckets.Get_Versioning_Outcome_Kind;
+   use type Flyology.Object_Storage.Bucket_Versioning_Status;
 
    Access_Key : constant String := "FLYOLOGYS3ORACLE";
    Secret_Key : constant String := "flyology-s3-oracle-secret-key-tests";
@@ -1707,6 +1710,69 @@ procedure S3_Implementation_Corpus is
          raise;
    end Create_Bucket;
 
+   procedure Delete_Empty_Bucket
+     (Origin    : Flyology.HTTP.Origin;
+      Bucket    : String;
+      Timestamp : String);
+
+   procedure Require_Bucket_Versioning
+     (Origin : Flyology.HTTP.Origin; Bucket : String)
+   is
+      Probe      : constant String := Bucket & "-versioning";
+      HTTP       : aliased HTTP_Client.Client (Capacity => 1);
+      Identity   : constant Low_Level.Credentials :=
+        Low_Level.Make_Credentials (Access_Key, Secret_Key);
+   begin
+      Create_Bucket (Origin, Probe, "");
+      HTTP_Client.Configure (HTTP, Origin);
+      declare
+         Initial : constant Client_Buckets.Get_Versioning_Outcome :=
+           Client_Buckets.Get_Versioning
+             (HTTP, Origin, Probe, Identity, Timeout => 30.0);
+         Enabled : constant Client_Buckets.Set_Versioning_Outcome :=
+           Client_Buckets.Set_Versioning
+             (HTTP, Origin, Probe,
+              Flyology.Object_Storage.Versioning_Enabled,
+              Identity, Timeout => 30.0);
+         Enabled_Value : constant Client_Buckets.Get_Versioning_Outcome :=
+           Client_Buckets.Get_Versioning
+             (HTTP, Origin, Probe, Identity, Timeout => 30.0);
+         Suspended : constant Client_Buckets.Set_Versioning_Outcome :=
+           Client_Buckets.Set_Versioning
+             (HTTP, Origin, Probe,
+              Flyology.Object_Storage.Versioning_Suspended,
+              Identity, Timeout => 30.0);
+         Suspended_Value : constant Client_Buckets.Get_Versioning_Outcome :=
+           Client_Buckets.Get_Versioning
+             (HTTP, Origin, Probe, Identity, Timeout => 30.0);
+      begin
+         if Initial.Kind /= Client_Buckets.Versioning_Found
+           or else
+             Initial.Configuration.Status /=
+               Flyology.Object_Storage.Versioning_Unconfigured
+           or else Enabled.Kind /= Client_Buckets.Versioning_Updated
+           or else Enabled_Value.Kind /= Client_Buckets.Versioning_Found
+           or else
+             Enabled_Value.Configuration.Status /=
+               Flyology.Object_Storage.Versioning_Enabled
+           or else Suspended.Kind /= Client_Buckets.Versioning_Updated
+           or else Suspended_Value.Kind /= Client_Buckets.Versioning_Found
+           or else
+             Suspended_Value.Configuration.Status /=
+               Flyology.Object_Storage.Versioning_Suspended
+         then
+            raise Program_Error with
+              "bucket versioning configuration oracle mismatch";
+         end if;
+      end;
+      HTTP_Client.Shutdown (HTTP);
+      Delete_Empty_Bucket (Origin, Probe, "");
+   exception
+      when others =>
+         HTTP_Client.Shutdown (HTTP);
+         raise;
+   end Require_Bucket_Versioning;
+
    procedure Delete_One
      (Origin    : Flyology.HTTP.Origin;
       Bucket    : String;
@@ -1858,9 +1924,10 @@ begin
          Require_Head_Bucket (Origin, Bucket, Timestamp);
          Require_Bucket_Location (Origin, Bucket, Timestamp);
          Require_Listed_Bucket (Origin, Bucket, Timestamp);
+         Require_Bucket_Versioning (Origin, Bucket);
          Ada.Text_IO.Put_Line
            ("S3 implementation setup: bucket created, located, headed, " &
-            "and listed");
+            "listed, and versioning-configured");
       elsif Ada.Command_Line.Argument (4) = "cleanup" then
          Delete_One (Origin, Bucket, "native-object", Timestamp);
          Delete_One

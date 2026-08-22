@@ -58,9 +58,10 @@ run_crash_cases part 3
 run_crash_cases abort 1
 run_crash_cases delete-bucket 1
 run_crash_cases complete 4
+run_crash_cases versioning 3
 rm -rf "$CRASH_ROOT"
 trap - EXIT INT TERM
-echo "files abrupt-crash matrix: 70 pre/post-barrier cases OK"
+echo "files abrupt-crash matrix: 76 pre/post-barrier cases OK"
 
 ./bin/flyology_object_storage_tests
 ./bin/s3_checksum_corpus

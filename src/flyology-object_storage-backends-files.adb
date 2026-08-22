@@ -880,8 +880,6 @@ package body Flyology.Object_Storage.Backends.Files is
          Result.Root_Path := Full;
          Result.Maximum_Object_Size := Maximum_Object_Size;
          Ensure_Directory (Result, Join (US.To_String (Full), "buckets"));
-         Ensure_Directory
-           (Result, Join (US.To_String (Full), "bucket-configurations"));
          if Ada.Directories.Exists (Join (US.To_String (Full), "tmp")) then
             if GNAT.OS_Lib.Is_Symbolic_Link
               (Join (US.To_String (Full), "tmp"))

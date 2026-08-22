@@ -26,6 +26,8 @@ procedure S3_HTTP_Socket_Corpus is
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
    package Objects renames Flyology.Object_Storage.Client.Objects;
    package Buckets renames Flyology.Object_Storage.Client.Buckets;
+   package Client_Buckets renames
+     Flyology.Object_Storage.Client.Buckets;
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
    package Model renames Flyology.Object_Storage.S3.Model;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
@@ -43,6 +45,11 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
+   use type Low_Level.Put_Bucket_Versioning_Outcome_Kind;
+   use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
+   use type Client_Buckets.Set_Versioning_Outcome_Kind;
+   use type Client_Buckets.Get_Versioning_Outcome_Kind;
+   use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
@@ -432,6 +439,26 @@ procedure S3_HTTP_Socket_Corpus is
                        (if Expected_Copy_If_Match'Length = 0 then ";"
                         else ";x-amz-copy-source-if-match;") &
                        "x-amz-date") = 0
+                 elsif Expected_Content_MD5'Length > 0 then
+                    Header_Value (Lower, "content-md5")'Length = 0
+                    or else
+                      (Expected_Content_MD5 /= "*"
+                       and then Header_Value (Lower, "content-md5") /=
+                         Ada.Characters.Handling.To_Lower
+                           (Expected_Content_MD5))
+                    or else
+                      (Expected_Bucket_Owner'Length > 0
+                       and then Header_Value
+                         (Lower, "x-amz-expected-bucket-owner") /=
+                           Ada.Characters.Handling.To_Lower
+                             (Expected_Bucket_Owner))
+                    or else Ada.Strings.Fixed.Index
+                      (Lower,
+                       "signedheaders=content-md5;host;" &
+                       "x-amz-content-sha256;x-amz-date" &
+                       (if Expected_Bucket_Owner'Length > 0 then
+                           ";x-amz-expected-bucket-owner"
+                        else "")) = 0
                  elsif Expected_Request_Payer'Length > 0
                    or else Expected_Bucket_Owner'Length > 0
                    or else Expected_Object_Attributes'Length > 0
@@ -534,6 +561,12 @@ procedure S3_HTTP_Socket_Corpus is
                        "signedheaders=content-type;host;" &
                        "x-amz-content-sha256;x-amz-date") = 0)
             then
+               Ada.Text_IO.Put_Line
+                 (Ada.Text_IO.Standard_Error,
+                  "expected signed request: " & Expected_Method & " " &
+                  Expected_Target);
+               Ada.Text_IO.Put_Line
+                 (Ada.Text_IO.Standard_Error, "observed head: " & Header);
                raise Program_Error with "unexpected signed S3 request head";
             end if;
             if Separator + 4 <= Request'Last then
@@ -733,6 +766,33 @@ procedure S3_HTTP_Socket_Corpus is
               "upload-id-marker=upload-before&uploads",
             Expected_Request_Payer => "requester",
             Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket?versioning",
+            Expected_Body_Root => "<VersioningConfiguration",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<VersioningConfiguration>" &
+               "<Status>Enabled</Status>" &
+               "</VersioningConfiguration>"),
+            "GET", "/example-bucket?versioning",
+            Expected_Bucket_Owner => "123456789012",
+            Fragmented => True);
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket?versioning",
+            Expected_Body_Root => "<Status>Suspended</Status>",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<VersioningConfiguration>" &
+               "<Status>Suspended</Status>" &
+               "</VersioningConfiguration>"),
+            "GET", "/example-bucket?versioning", Fragmented => True);
          Serve
            (HTTP_Response
               ("200 OK", "", Omit_Content_Length => True),
@@ -1064,6 +1124,10 @@ procedure S3_HTTP_Socket_Corpus is
       State.Complete (True);
    exception
       when Occurrence : others =>
+         Ada.Text_IO.Put_Line
+           (Ada.Text_IO.Standard_Error,
+            "raw S3 socket server failure: " &
+            Ada.Exceptions.Exception_Information (Occurrence));
          if Sockets.Is_Open (Peer) then
             Sockets.Close_Socket (Peer);
          end if;
@@ -1318,6 +1382,75 @@ procedure S3_HTTP_Socket_Corpus is
                     "typed ListMultipartUploads socket error mismatch";
                end if;
             end;
+         end;
+         declare
+            Put_Parameters : constant
+              Low_Level.Put_Bucket_Versioning_Parameters :=
+              (Content_MD5 => US.Null_Unbounded_String,
+               Checksum_Algorithm => US.Null_Unbounded_String,
+               MFA => US.Null_Unbounded_String,
+               Configuration =>
+                 (Status     =>
+                    Flyology.Object_Storage.Versioning_Enabled,
+                  MFA_Delete =>
+                    Flyology.Object_Storage.MFA_Delete_Unconfigured),
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Put_Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Bucket_Versioning
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 Put_Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Put_Result : constant
+              Low_Level.Put_Bucket_Versioning_Outcome :=
+                Low_Level.Execute_Put_Bucket_Versioning
+                  (HTTP, Put_Prepared, Timeout => 5.0);
+            Get_Parameters : constant
+              Low_Level.Get_Bucket_Versioning_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Get_Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Versioning
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 Get_Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Get_Result : constant
+              Low_Level.Get_Bucket_Versioning_Outcome :=
+                Low_Level.Execute_Get_Bucket_Versioning
+                  (HTTP, Get_Prepared, Timeout => 5.0);
+         begin
+            if Put_Result.Kind /= Low_Level.Bucket_Versioning_Updated then
+               raise Program_Error with
+                 "typed PutBucketVersioning socket result mismatch";
+            elsif Get_Result.Kind /= Low_Level.Bucket_Versioning_Found
+              or else
+                Get_Result.Configuration.Status /=
+                  Flyology.Object_Storage.Versioning_Enabled
+            then
+               raise Program_Error with
+                 "typed GetBucketVersioning socket result mismatch";
+            end if;
+         end;
+         declare
+            Set_Result : constant Client_Buckets.Set_Versioning_Outcome :=
+              Client_Buckets.Set_Versioning
+                (HTTP, Origin, "example-bucket",
+                 Flyology.Object_Storage.Versioning_Suspended,
+                 Identity, Timeout => 5.0);
+            Get_Result : constant Client_Buckets.Get_Versioning_Outcome :=
+              Client_Buckets.Get_Versioning
+                (HTTP, Origin, "example-bucket", Identity,
+                 Timeout => 5.0);
+         begin
+            if Set_Result.Kind /= Client_Buckets.Versioning_Updated
+              or else Get_Result.Kind /= Client_Buckets.Versioning_Found
+              or else
+                Get_Result.Configuration.Status /=
+                  Flyology.Object_Storage.Versioning_Suspended
+            then
+               raise Program_Error with
+                 "convenience bucket versioning socket result mismatch";
+            end if;
          end;
          declare
             Values : constant Low_Level.Model_Value_Array :=

@@ -32,6 +32,276 @@ package body Flyology.Object_Storage.Client.Low_Level is
    function Valid_Optional_Checksum
      (Value : US.Unbounded_String; Bytes : Positive) return Boolean;
    function Valid_Checksum_Algorithm (Value : String) return Boolean;
+   function Content_MD5 (Value : String) return String;
+   function Whitespace_Only (Value : String) return Boolean;
+   function Error_Response
+     (Payload, Request_ID, Host_ID : String;
+      Limits : S3.XML.Parse_Limits) return S3.Errors.Error_Response;
+   function Prepare_Object_Request
+     (Operation : Operation_Kind;
+      Method    : String;
+      Origin    : Flyology.HTTP.Origin;
+      Style     : Addressing_Style;
+      Bucket    : String;
+      Key       : String;
+      Query     : SigV4.Name_Value_Array;
+      Additional_Headers : SigV4.Name_Value_Array;
+      Payload   : String;
+      Payload_Hash_Value : String;
+      Identity  : Credentials;
+      Region    : String;
+      Timestamp : String;
+      Object_Resource : Boolean := True) return Prepared_Request;
+   function Valid_Request_Payer (Value : String) return Boolean is
+     (Value'Length = 0 or else Value = "requester");
+
+   function Prepare_Put_Bucket_Tagging
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Value      : Tags.Tag_Set;
+      Parameters : Put_Bucket_Tagging_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Document : constant String := S3.Tagging.Serialize_Bucket (Value);
+      Supplied_MD5 : constant String :=
+        US.To_String (Parameters.Content_MD5);
+      MD5 : constant String :=
+        (if Supplied_MD5'Length = 0
+         then Content_MD5 (Document) else Supplied_MD5);
+      Checksum : constant String :=
+        US.To_String (Parameters.Checksum_Algorithm);
+      Owner : constant String :=
+        US.To_String (Parameters.Expected_Bucket_Owner);
+      Payer : constant String := US.To_String (Parameters.Request_Payer);
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("tagging", ""));
+      Headers : SigV4.Name_Value_Array
+        (1 .. 1 + Boolean'Pos (Owner'Length > 0) +
+           Boolean'Pos (Payer'Length > 0));
+      Last : Positive := 1;
+   begin
+      if not Wire_Core.Valid_Base64 (MD5, 16)
+        or else not Valid_Request_Payer (Payer)
+        or else
+          (Checksum'Length > 0
+           and then not Valid_Checksum_Algorithm (Checksum))
+      then
+         raise Invalid_Request with "invalid PutBucketTagging parameters";
+      elsif Checksum'Length > 0 then
+         raise Invalid_Request with
+           "PutBucketTagging optional checksums are not implemented";
+      end if;
+      Headers (1) := SigV4.Pair ("content-md5", MD5);
+      if Owner'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) :=
+           SigV4.Pair ("x-amz-expected-bucket-owner", Owner);
+      end if;
+      if Payer'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) := SigV4.Pair ("x-amz-request-payer", Payer);
+      end if;
+      return Prepare_Object_Request
+        (Put_Bucket_Tagging_Operation, "PUT", Origin, Style, Bucket, "",
+         Query, Headers, Document, "", Identity, Region, Timestamp,
+         Object_Resource => False);
+   exception
+      when S3.Tagging.Invalid_Tag =>
+         raise Invalid_Request with "invalid PutBucketTagging tag set";
+   end Prepare_Put_Bucket_Tagging;
+
+   function Decode_Put_Bucket_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Put_Bucket_Tagging_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Tagging_Outcome
+   is
+      Charged : constant String := US.To_String (Headers.Request_Charged);
+   begin
+      if Status = 200 then
+         if not Whitespace_Only (Payload) then
+            raise Invalid_Response with
+              "PutBucketTagging success contains a response body";
+         elsif not Valid_Request_Payer (Charged) then
+            raise Invalid_Response with
+              "PutBucketTagging returned invalid request charging metadata";
+         end if;
+         return
+           (Kind => Bucket_Tags_Replaced, Status => Status,
+            Result => Headers);
+      else
+         return
+           (Kind   => Put_Bucket_Tagging_Rejected,
+            Status => Status,
+            Error  => Error_Response
+              (Payload, Request_ID, Host_ID, Limits));
+      end if;
+   exception
+      when S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed PutBucketTagging response";
+   end Decode_Put_Bucket_Tagging_Response;
+
+   function Execute_Put_Bucket_Tagging
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Tagging_Outcome
+   is
+   begin
+      if Prepared.Operation /= Put_Bucket_Tagging_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Request_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+         Host_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         Headers : constant Put_Bucket_Tagging_Result :=
+           (Request_Charged => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-request-charged")));
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Put_Bucket_Tagging_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
+            Request_ID, Host_ID, Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "PutBucketTagging response exceeds XML limit";
+   end Execute_Put_Bucket_Tagging;
+
+   function Prepare_Get_Bucket_Tagging
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Get_Bucket_Tagging_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Owner : constant String :=
+        US.To_String (Parameters.Expected_Bucket_Owner);
+      Payer : constant String := US.To_String (Parameters.Request_Payer);
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("tagging", ""));
+      Headers : SigV4.Name_Value_Array
+        (1 .. Boolean'Pos (Owner'Length > 0) +
+           Boolean'Pos (Payer'Length > 0));
+      Last : Natural := 0;
+   begin
+      if not Valid_Request_Payer (Payer) then
+         raise Invalid_Request with "invalid GetBucketTagging parameters";
+      end if;
+      if Owner'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) :=
+           SigV4.Pair ("x-amz-expected-bucket-owner", Owner);
+      end if;
+      if Payer'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) := SigV4.Pair ("x-amz-request-payer", Payer);
+      end if;
+      return Prepare_Object_Request
+        (Get_Bucket_Tagging_Operation, "GET", Origin, Style, Bucket, "",
+         Query, Headers, "", "", Identity, Region, Timestamp,
+         Object_Resource => False);
+   end Prepare_Get_Bucket_Tagging;
+
+   function Decode_Get_Bucket_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Get_Bucket_Tagging_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Tagging_Outcome
+   is
+      Charged : constant String := US.To_String (Headers.Request_Charged);
+      Result : Get_Bucket_Tagging_Result := Headers;
+   begin
+      if Status = 200 then
+         if not Valid_Request_Payer (Charged) then
+            raise Invalid_Response with
+              "GetBucketTagging returned invalid request charging metadata";
+         end if;
+         Result.Value := S3.Tagging.Parse_Bucket_Response (Payload, Limits);
+         return
+           (Kind => Bucket_Tags_Found, Status => Status, Result => Result);
+      else
+         return
+           (Kind   => Get_Bucket_Tagging_Rejected,
+            Status => Status,
+            Error  => Error_Response
+              (Payload, Request_ID, Host_ID, Limits));
+      end if;
+   exception
+      when S3.Tagging.Malformed_Tagging | S3.Tagging.Invalid_Tag |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed GetBucketTagging response";
+   end Decode_Get_Bucket_Tagging_Response;
+
+   function Execute_Get_Bucket_Tagging
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Tagging_Outcome
+   is
+   begin
+      if Prepared.Operation /= Get_Bucket_Tagging_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Request_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+         Host_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         Headers : constant Get_Bucket_Tagging_Result :=
+           (Value => Tags.Tag_Vectors.Empty_Vector,
+            Request_Charged => US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-request-charged")));
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response,
+              Natural'Min
+                (Limits.Maximum_Document_Bytes,
+                 S3.Tagging.Maximum_Document_Bytes),
+              Token);
+      begin
+         return Decode_Get_Bucket_Tagging_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
+            Request_ID, Host_ID, Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "GetBucketTagging response exceeds XML limit";
+   end Execute_Get_Bucket_Tagging;
+
    function Valid_SSE_C_Group
      (Algorithm, Key, Key_MD5 : String) return Boolean;
    function Optional_Boolean_Header
@@ -2083,111 +2353,116 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "GetBucketLocation response exceeds XML limit";
    end Execute_Get_Bucket_Location;
 
-   function Valid_Request_Payer (Value : String) return Boolean is
-     (Value'Length = 0 or else Value = "requester");
-
-   function Prepare_Put_Bucket_Tagging
+   function Prepare_Put_Bucket_Versioning
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
       Bucket     : String;
-      Value      : Tags.Tag_Set;
-      Parameters : Put_Bucket_Tagging_Parameters;
+      Parameters : Put_Bucket_Versioning_Parameters;
       Identity   : Credentials;
       Region     : String;
       Timestamp  : String) return Prepared_Request
    is
-      Document : constant String := S3.Tagging.Serialize_Bucket (Value);
+      Payload : constant String :=
+        S3.Versioning.Serialize (Parameters.Configuration);
       Supplied_MD5 : constant String :=
         US.To_String (Parameters.Content_MD5);
       MD5 : constant String :=
         (if Supplied_MD5'Length = 0
-         then Content_MD5 (Document) else Supplied_MD5);
+         then Content_MD5 (Payload) else Supplied_MD5);
       Checksum : constant String :=
         US.To_String (Parameters.Checksum_Algorithm);
+      MFA : constant String := US.To_String (Parameters.MFA);
       Owner : constant String :=
         US.To_String (Parameters.Expected_Bucket_Owner);
-      Payer : constant String := US.To_String (Parameters.Request_Payer);
-      Query : constant SigV4.Name_Value_Array :=
-        (1 => SigV4.Pair ("tagging", ""));
-      Headers : SigV4.Name_Value_Array
-        (1 .. 1 + Boolean'Pos (Owner'Length > 0) +
-           Boolean'Pos (Payer'Length > 0));
-      Last : Positive := 1;
+      Count : constant Positive :=
+        2 + Boolean'Pos (Checksum'Length > 0)
+          + Boolean'Pos (MFA'Length > 0)
+          + Boolean'Pos (Owner'Length > 0);
+      Values : Model_Value_Array (1 .. Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String; Present : Boolean := True) is
+      begin
+         if Present then
+            Last := Last + 1;
+            Values (Last) :=
+              (Member_Name => US.To_Unbounded_String (Name),
+               Map_Key     => US.Null_Unbounded_String,
+               Value       => US.To_Unbounded_String (Value));
+         end if;
+      end Add;
+
+      function Valid_Bounded_Header (Value : String) return Boolean is
+      begin
+         if Value'Length > 2 * 1_024 then
+            return False;
+         end if;
+         for Character_Value of Value loop
+            if Character_Value in ASCII.NUL | ASCII.CR | ASCII.LF then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Valid_Bounded_Header;
    begin
       if not Wire_Core.Valid_Base64 (MD5, 16)
-        or else not Valid_Request_Payer (Payer)
-        or else
-          (Checksum'Length > 0
-           and then not Valid_Checksum_Algorithm (Checksum))
+        or else not Valid_Bounded_Header (MFA)
+        or else not Valid_Bounded_Header (Owner)
       then
-         raise Invalid_Request with "invalid PutBucketTagging parameters";
-      elsif Checksum'Length > 0 then
          raise Invalid_Request with
-           "PutBucketTagging optional checksums are not implemented";
+           "invalid PutBucketVersioning header";
       end if;
-      Headers (1) := SigV4.Pair ("content-md5", MD5);
-      if Owner'Length > 0 then
-         Last := Last + 1;
-         Headers (Last) :=
-           SigV4.Pair ("x-amz-expected-bucket-owner", Owner);
-      end if;
-      if Payer'Length > 0 then
-         Last := Last + 1;
-         Headers (Last) := SigV4.Pair ("x-amz-request-payer", Payer);
-      end if;
-      return Prepare_Object_Request
-        (Put_Bucket_Tagging_Operation, "PUT", Origin, Style, Bucket, "",
-         Query, Headers, Document, "", Identity, Region, Timestamp,
-         Object_Resource => False);
-   exception
-      when S3.Tagging.Invalid_Tag =>
-         raise Invalid_Request with "invalid PutBucketTagging tag set";
-   end Prepare_Put_Bucket_Tagging;
+      Add ("Bucket", Bucket);
+      Add ("ContentMD5", MD5);
+      Add ("ChecksumAlgorithm", Checksum, Checksum'Length > 0);
+      Add ("MFA", MFA, MFA'Length > 0);
+      Add ("ExpectedBucketOwner", Owner, Owner'Length > 0);
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Put_Bucket_Versioning_Operation, Origin, Style, Values,
+         Payload, True, "", Identity, Region, Timestamp)
+      do
+         Result.Operation := Put_Bucket_Versioning_Operation;
+      end return;
+   end Prepare_Put_Bucket_Versioning;
 
-   function Decode_Put_Bucket_Tagging_Response
+   function Decode_Put_Bucket_Versioning_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
-      Headers    : Put_Bucket_Tagging_Result;
       Request_ID : String := "";
       Host_ID    : String := "";
-      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
-      return Put_Bucket_Tagging_Outcome
+      Limits     : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
+      return Put_Bucket_Versioning_Outcome
    is
-      Charged : constant String := US.To_String (Headers.Request_Charged);
    begin
       if Status = 200 then
          if not Whitespace_Only (Payload) then
             raise Invalid_Response with
-              "PutBucketTagging success contains a response body";
-         elsif not Valid_Request_Payer (Charged) then
-            raise Invalid_Response with
-              "PutBucketTagging returned invalid request charging metadata";
+              "PutBucketVersioning success contains a response body";
          end if;
-         return
-           (Kind => Bucket_Tags_Replaced, Status => Status,
-            Result => Headers);
+         return (Kind => Bucket_Versioning_Updated, Status => Status);
       else
          return
-           (Kind   => Put_Bucket_Tagging_Rejected,
+           (Kind   => Put_Bucket_Versioning_Rejected,
             Status => Status,
             Error  => Error_Response
               (Payload, Request_ID, Host_ID, Limits));
       end if;
    exception
       when S3.Errors.Malformed_Error =>
-         raise Invalid_Response with "malformed PutBucketTagging response";
-   end Decode_Put_Bucket_Tagging_Response;
+         raise Invalid_Response with
+           "malformed PutBucketVersioning response";
+   end Decode_Put_Bucket_Versioning_Response;
 
-   function Execute_Put_Bucket_Tagging
+   function Execute_Put_Bucket_Versioning
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null;
-      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
-      return Put_Bucket_Tagging_Outcome
+      Limits   : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
+      return Put_Bucket_Versioning_Outcome
    is
    begin
-      if Prepared.Operation /= Put_Bucket_Tagging_Operation then
+      if Prepared.Operation /= Put_Bucket_Versioning_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
@@ -2200,104 +2475,100 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
          Host_ID : constant String :=
            Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         Headers : constant Put_Bucket_Tagging_Result :=
-           (Request_Charged => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-request-charged")));
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_Put_Bucket_Tagging_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-            Request_ID, Host_ID, Limits);
+         return Decode_Put_Bucket_Versioning_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
+            Host_ID, Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
          raise Invalid_Response with
-           "PutBucketTagging response exceeds XML limit";
-   end Execute_Put_Bucket_Tagging;
+           "PutBucketVersioning response exceeds XML limit";
+   end Execute_Put_Bucket_Versioning;
 
-   function Prepare_Get_Bucket_Tagging
+   function Prepare_Get_Bucket_Versioning
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
       Bucket     : String;
-      Parameters : Get_Bucket_Tagging_Parameters;
+      Parameters : Get_Bucket_Versioning_Parameters;
       Identity   : Credentials;
       Region     : String;
       Timestamp  : String) return Prepared_Request
    is
       Owner : constant String :=
         US.To_String (Parameters.Expected_Bucket_Owner);
-      Payer : constant String := US.To_String (Parameters.Request_Payer);
-      Query : constant SigV4.Name_Value_Array :=
-        (1 => SigV4.Pair ("tagging", ""));
-      Headers : SigV4.Name_Value_Array
-        (1 .. Boolean'Pos (Owner'Length > 0) +
-           Boolean'Pos (Payer'Length > 0));
-      Last : Natural := 0;
+      Count : constant Positive := 1 + Boolean'Pos (Owner'Length > 0);
+      Values : Model_Value_Array (1 .. Count) :=
+        (1 =>
+           (Member_Name => US.To_Unbounded_String ("Bucket"),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Bucket)),
+         others => <>);
    begin
-      if not Valid_Request_Payer (Payer) then
-         raise Invalid_Request with "invalid GetBucketTagging parameters";
+      if Owner'Length > 2 * 1_024
+        or else Ada.Strings.Fixed.Index (Owner, String'(1 => ASCII.NUL)) > 0
+        or else Ada.Strings.Fixed.Index (Owner, String'(1 => ASCII.CR)) > 0
+        or else Ada.Strings.Fixed.Index (Owner, String'(1 => ASCII.LF)) > 0
+      then
+         raise Invalid_Request with
+           "invalid GetBucketVersioning owner header";
       end if;
       if Owner'Length > 0 then
-         Last := Last + 1;
-         Headers (Last) :=
-           SigV4.Pair ("x-amz-expected-bucket-owner", Owner);
+         Values (2) :=
+           (Member_Name =>
+              US.To_Unbounded_String ("ExpectedBucketOwner"),
+            Map_Key => US.Null_Unbounded_String,
+            Value   => US.To_Unbounded_String (Owner));
       end if;
-      if Payer'Length > 0 then
-         Last := Last + 1;
-         Headers (Last) := SigV4.Pair ("x-amz-request-payer", Payer);
-      end if;
-      return Prepare_Object_Request
-        (Get_Bucket_Tagging_Operation, "GET", Origin, Style, Bucket, "",
-         Query, Headers, "", "", Identity, Region, Timestamp,
-         Object_Resource => False);
-   end Prepare_Get_Bucket_Tagging;
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Get_Bucket_Versioning_Operation, Origin, Style, Values,
+         "", False, "", Identity, Region, Timestamp)
+      do
+         Result.Operation := Get_Bucket_Versioning_Operation;
+      end return;
+   end Prepare_Get_Bucket_Versioning;
 
-   function Decode_Get_Bucket_Tagging_Response
+   function Decode_Get_Bucket_Versioning_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
-      Headers    : Get_Bucket_Tagging_Result;
       Request_ID : String := "";
       Host_ID    : String := "";
-      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
-      return Get_Bucket_Tagging_Outcome
+      Limits     : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
+      return Get_Bucket_Versioning_Outcome
    is
-      Charged : constant String := US.To_String (Headers.Request_Charged);
-      Result : Get_Bucket_Tagging_Result := Headers;
    begin
       if Status = 200 then
-         if not Valid_Request_Payer (Charged) then
-            raise Invalid_Response with
-              "GetBucketTagging returned invalid request charging metadata";
-         end if;
-         Result.Value := S3.Tagging.Parse_Bucket_Response (Payload, Limits);
          return
-           (Kind => Bucket_Tags_Found, Status => Status, Result => Result);
+           (Kind          => Bucket_Versioning_Found,
+            Status        => Status,
+            Configuration => S3.Versioning.Parse (Payload, Limits));
       else
          return
-           (Kind   => Get_Bucket_Tagging_Rejected,
+           (Kind   => Get_Bucket_Versioning_Rejected,
             Status => Status,
             Error  => Error_Response
               (Payload, Request_ID, Host_ID, Limits));
       end if;
    exception
-      when S3.Tagging.Malformed_Tagging | S3.Tagging.Invalid_Tag |
+      when S3.Versioning.Malformed_Configuration |
            S3.Errors.Malformed_Error =>
-         raise Invalid_Response with "malformed GetBucketTagging response";
-   end Decode_Get_Bucket_Tagging_Response;
+         raise Invalid_Response with
+           "malformed GetBucketVersioning response";
+   end Decode_Get_Bucket_Versioning_Response;
 
-   function Execute_Get_Bucket_Tagging
+   function Execute_Get_Bucket_Versioning
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null;
-      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
-      return Get_Bucket_Tagging_Outcome
+      Limits   : S3.XML.Parse_Limits := S3.Versioning.Default_Limits)
+      return Get_Bucket_Versioning_Outcome
    is
    begin
-      if Prepared.Operation /= Get_Bucket_Tagging_Operation then
+      if Prepared.Operation /= Get_Bucket_Versioning_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
@@ -2310,28 +2581,19 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
          Host_ID : constant String :=
            Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         Headers : constant Get_Bucket_Tagging_Result :=
-           (Value => Tags.Tag_Vectors.Empty_Vector,
-            Request_Charged => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-request-charged")));
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
-             (Response,
-              Natural'Min
-                (Limits.Maximum_Document_Bytes,
-                 S3.Tagging.Maximum_Document_Bytes),
-              Token);
+             (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_Get_Bucket_Tagging_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-            Request_ID, Host_ID, Limits);
+         return Decode_Get_Bucket_Versioning_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
+            Host_ID, Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
          raise Invalid_Response with
-           "GetBucketTagging response exceeds XML limit";
-   end Execute_Get_Bucket_Tagging;
+           "GetBucketVersioning response exceeds XML limit";
+   end Execute_Get_Bucket_Versioning;
 
    function Prepare_Head_Bucket
      (Origin     : Flyology.HTTP.Origin;

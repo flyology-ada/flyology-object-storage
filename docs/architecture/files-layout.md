@@ -45,9 +45,10 @@ and delete, object replacement and delete, object-tag and bucket-tag
 replacement, multipart initiation, part replacement, completion, and abort,
 then reopens the root and requires a
 well-formed old-or-new state. A separate process corpus terminates workers
-without Ada finalization immediately before and after all 35 barriers in those
-same mutation paths (70 cases), then independently reopens and verifies each
-store. The adapter uses `F_FULLFSYNC` where available and falls back to `fsync`
+without Ada finalization immediately before and after all 38 barriers in those
+same mutation paths, including bucket-versioning publication (76 cases), then
+independently reopens and verifies each store. The adapter uses `F_FULLFSYNC`
+where available and falls back to `fsync`
 on POSIX. Windows remains unqualified until its directory-metadata persistence
 path has an independent host-level crash corpus. Cross-process writers remain
 unsupported.
@@ -71,3 +72,11 @@ same publication gate as bucket deletion, then syncs both affected directories.
 Get rejects symlinked configuration or tag paths and returns one validated
 snapshot. The three publication barriers have deterministic device-error and
 abrupt-process old-or-new coverage.
+
+Bucket versioning configuration is a separate fixed-size
+`configuration/versioning.fos` record alongside the tag record. Updates merge
+independently supplied status and MFA-delete fields while holding the same
+publication gate, synchronize a temporary record, atomically rename it, and
+synchronize both affected directories. DeleteBucket removes both records with
+the bucket tree, and a later bucket with the same name begins unconfigured.
+Symlinked or malformed configuration records fail closed.

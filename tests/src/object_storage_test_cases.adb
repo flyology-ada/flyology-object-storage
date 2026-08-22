@@ -35,6 +35,7 @@ with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.SigV4_Verification;
 with Flyology.Object_Storage.S3.Tagging;
+with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
 
@@ -11043,6 +11044,337 @@ package body Object_Storage_Test_Cases is
       end;
    end Check_Low_Level_Object_Tagging;
 
+   procedure Check_Bucket_Versioning (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package Files renames Flyology.Object_Storage.Backends.Files;
+      package Memory renames Flyology.Object_Storage.Backends.Memory;
+      package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+      package Versioning renames
+        Flyology.Object_Storage.S3.Versioning;
+      package US renames Ada.Strings.Unbounded;
+      use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
+      use type Low_Level.Put_Bucket_Versioning_Outcome_Kind;
+
+      procedure Exercise
+        (Store : in out Flyology.Object_Storage.Backends.Backend'Class)
+      is
+         Result : Status;
+         Value  : Bucket_Versioning_Configuration;
+      begin
+         Store.Create_Bucket
+           ("versioning-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "versioning test bucket create failed");
+         Store.Get_Bucket_Versioning
+           ("versioning-bucket", null, Ada.Real_Time.Time_Last,
+            Value, Result);
+         Assert
+           (Result = Success
+            and then Value.Status = Versioning_Unconfigured
+            and then Value.MFA_Delete = MFA_Delete_Unconfigured,
+            "new bucket did not report unconfigured versioning");
+         Store.Put_Bucket_Versioning
+           ("versioning-bucket",
+            (Status => Versioning_Enabled,
+             MFA_Delete => MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "enabling versioning failed");
+         Store.Put_Bucket_Versioning
+           ("versioning-bucket",
+            (Status => Versioning_Unconfigured,
+             MFA_Delete => MFA_Delete_Disabled),
+            null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "MFA-delete update failed");
+         Store.Get_Bucket_Versioning
+           ("versioning-bucket", null, Ada.Real_Time.Time_Last,
+            Value, Result);
+         Assert
+           (Result = Success
+            and then Value.Status = Versioning_Enabled
+            and then Value.MFA_Delete = MFA_Delete_Disabled,
+            "atomic independent versioning fields did not merge");
+         Store.Put_Bucket_Versioning
+           ("versioning-bucket",
+            (Status => Versioning_Suspended,
+             MFA_Delete => MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Versioning
+           ("versioning-bucket", null, Ada.Real_Time.Time_Last,
+            Value, Result);
+         Assert
+           (Result = Success
+            and then Value.Status = Versioning_Suspended
+            and then Value.MFA_Delete = MFA_Delete_Disabled,
+            "suspension discarded independent MFA-delete state");
+         Store.Get_Bucket_Versioning
+           ("missing-bucket", null, Ada.Real_Time.Time_Last,
+            Value, Result);
+         Assert
+           (Result = Not_Found
+            and then Value.Status = Versioning_Unconfigured,
+            "missing bucket versioning classification");
+      end Exercise;
+
+      procedure Expect_Malformed (Document, Label : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Bucket_Versioning_Configuration :=
+                 Versioning.Parse (Document);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Versioning.Malformed_Configuration =>
+               Raised := True;
+         end;
+         Assert (Raised, Label);
+      end Expect_Malformed;
+
+      Identity : constant Low_Level.Credentials :=
+        Low_Level.Make_Credentials
+          ("AKIAIOSFODNN7EXAMPLE",
+           "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+      Root : constant String := "obj/versioning-files";
+   begin
+      for Current_Status in Bucket_Versioning_Status loop
+         for Current_MFA in MFA_Delete_Status loop
+            for Update_Status in Bucket_Versioning_Status loop
+               for Update_MFA in MFA_Delete_Status loop
+                  declare
+                     Current : constant
+                       Bucket_Versioning_Configuration :=
+                         (Status => Current_Status,
+                          MFA_Delete => Current_MFA);
+                     Update : constant
+                       Bucket_Versioning_Configuration :=
+                         (Status => Update_Status,
+                          MFA_Delete => Update_MFA);
+                     Merged : constant
+                       Bucket_Versioning_Configuration :=
+                         Merge_Bucket_Versioning (Current, Update);
+                  begin
+                     Assert
+                       (Merged.Status =
+                          (if Update_Status = Versioning_Unconfigured
+                           then Current_Status else Update_Status)
+                        and then Merged.MFA_Delete =
+                          (if Update_MFA = MFA_Delete_Unconfigured
+                           then Current_MFA else Update_MFA),
+                        "exhaustive versioning merge mismatch");
+                  end;
+               end loop;
+            end loop;
+         end loop;
+      end loop;
+      declare
+         Value : constant Bucket_Versioning_Configuration :=
+           (Status => Versioning_Enabled,
+            MFA_Delete => MFA_Delete_Disabled);
+         Document : constant String := Versioning.Serialize (Value);
+         Parsed : constant Bucket_Versioning_Configuration :=
+           Versioning.Parse (Document);
+      begin
+         Assert
+           (Parsed = Value
+            and then Ada.Strings.Fixed.Index
+              (Document, "<MfaDelete>Disabled</MfaDelete>") > 0
+            and then Ada.Strings.Fixed.Index
+              (Document, "<Status>Enabled</Status>") > 0,
+            "bucket versioning XML round trip");
+      end;
+      declare
+         Parsed : constant Bucket_Versioning_Configuration :=
+           Versioning.Parse
+             ("<VersioningConfiguration xmlns=""" &
+              "http://s3.amazonaws.com/doc/2006-03-01/""/>");
+      begin
+         Assert
+           (Parsed.Status = Versioning_Unconfigured
+            and then Parsed.MFA_Delete = MFA_Delete_Unconfigured,
+            "empty versioning configuration lost member absence");
+      end;
+      Expect_Malformed ("", "empty versioning document accepted");
+      Expect_Malformed
+        ("<Other/>", "wrong versioning root accepted");
+      Expect_Malformed
+        ("<VersioningConfiguration><Status>Enabled</Status>" &
+         "<Status>Suspended</Status></VersioningConfiguration>",
+         "duplicate versioning status accepted");
+      Expect_Malformed
+        ("<VersioningConfiguration><MFADelete>Enabled</MFADelete>" &
+         "</VersioningConfiguration>",
+         "incorrectly cased MFA-delete element accepted");
+      Expect_Malformed
+        ("<VersioningConfiguration><Unknown>Enabled</Unknown>" &
+         "</VersioningConfiguration>",
+         "unknown versioning field accepted");
+      Expect_Malformed
+        ("<VersioningConfiguration><Status><Value>Enabled</Value></Status>" &
+         "</VersioningConfiguration>",
+         "nested versioning status accepted");
+      Expect_Malformed
+        ("<VersioningConfiguration><Status>Disabled</Status>" &
+         "</VersioningConfiguration>",
+         "invalid versioning status accepted");
+      Expect_Malformed
+        ("<VersioningConfiguration><Status> Enabled </Status>" &
+         "</VersioningConfiguration>",
+         "padded versioning status accepted");
+      Expect_Malformed
+        ("<!DOCTYPE x [<!ENTITY y ""Enabled"">]>" &
+         "<VersioningConfiguration><Status>&y;</Status>" &
+         "</VersioningConfiguration>",
+         "versioning XML entity accepted");
+      Expect_Malformed
+        (String'(1 .. Versioning.Maximum_Document_Bytes + 1 => 'x'),
+         "oversized versioning document accepted");
+
+      declare
+         Store : Memory.Store
+           (Bucket_Capacity => 4,
+            Object_Capacity => 4,
+            Byte_Capacity   => 1_024);
+      begin
+         Exercise (Store);
+      end;
+
+      if Ada.Directories.Exists (Root) then
+         Ada.Directories.Delete_Tree (Root);
+      end if;
+      declare
+         Store : Files.Store :=
+           Files.Open (Root, Commit => Files.Process_Crash_Atomic);
+         Before, After : Bucket_Page;
+         Options : List_Buckets_Options;
+         Result : Status;
+      begin
+         Exercise (Store);
+         Store.List_Buckets
+           (Options, null, Ada.Real_Time.Time_Last, Before, Result);
+         Store.Put_Bucket_Versioning
+           ("versioning-bucket",
+            (Status => Versioning_Enabled,
+             MFA_Delete => MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Result);
+         Store.List_Buckets
+           (Options, null, Ada.Real_Time.Time_Last, After, Result);
+         Assert
+           (Before.Buckets.Length = 1
+            and then After.Buckets.Length = 1
+            and then Before.Buckets.First_Element.Created =
+              After.Buckets.First_Element.Created,
+            "files versioning update changed bucket creation time");
+      end;
+      declare
+         Store : Files.Store :=
+           Files.Open (Root, Commit => Files.Process_Crash_Atomic);
+         Value : Bucket_Versioning_Configuration;
+         Result : Status;
+      begin
+         Store.Get_Bucket_Versioning
+           ("versioning-bucket", null, Ada.Real_Time.Time_Last,
+            Value, Result);
+         Assert
+           (Result = Success
+            and then Value.Status = Versioning_Enabled
+            and then Value.MFA_Delete = MFA_Delete_Disabled,
+            "files versioning configuration did not persist");
+         Store.Delete_Bucket
+           ("versioning-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success
+            and then not Ada.Directories.Exists
+              (Root & "/buckets/versioning-bucket/configuration/" &
+               "versioning.fos"),
+            "files bucket deletion retained versioning configuration");
+      end;
+      Ada.Directories.Delete_Tree (Root);
+
+      declare
+         Parameters : Low_Level.Put_Bucket_Versioning_Parameters;
+      begin
+         Parameters.Configuration.Status := Versioning_Enabled;
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Bucket_Versioning
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket?versioning"
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Signed_Headers (Prepared), "content-md5") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Signed_Headers (Prepared),
+                  "x-amz-expected-bucket-owner") > 0,
+               "typed PutBucketVersioning request projection");
+         end;
+      end;
+      declare
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_Get_Bucket_Versioning
+             (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+              Low_Level.Path_Style, "example-bucket",
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012")),
+              Identity, "us-east-1", "20130524T000000Z");
+      begin
+         Assert
+           (Low_Level.Target (Prepared) =
+              "/example-bucket?versioning"
+            and then Ada.Strings.Fixed.Index
+              (Low_Level.Signed_Headers (Prepared),
+               "x-amz-expected-bucket-owner") > 0,
+            "typed GetBucketVersioning request projection");
+      end;
+      declare
+         Outcome : constant Low_Level.Get_Bucket_Versioning_Outcome :=
+           Low_Level.Decode_Get_Bucket_Versioning_Response
+             (200,
+              "<VersioningConfiguration><Status>Suspended</Status>" &
+              "</VersioningConfiguration>");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Bucket_Versioning_Found
+            and then Outcome.Configuration.Status =
+              Versioning_Suspended
+            and then Outcome.Configuration.MFA_Delete =
+              MFA_Delete_Unconfigured,
+            "typed GetBucketVersioning success decode");
+      end;
+      declare
+         Outcome : constant Low_Level.Put_Bucket_Versioning_Outcome :=
+           Low_Level.Decode_Put_Bucket_Versioning_Response (200, "");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Bucket_Versioning_Updated,
+            "typed PutBucketVersioning success decode");
+      end;
+      declare
+         Outcome : constant Low_Level.Get_Bucket_Versioning_Outcome :=
+           Low_Level.Decode_Get_Bucket_Versioning_Response
+             (404,
+              "<Error><Code>NoSuchBucket</Code>" &
+              "<Message>missing</Message></Error>",
+              "request-id", "host-id");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Get_Bucket_Versioning_Rejected
+            and then US.To_String (Outcome.Error.Code) = "NoSuchBucket"
+            and then US.To_String (Outcome.Error.Request_ID) = "request-id",
+            "typed GetBucketVersioning error decode");
+      end;
+   end Check_Bucket_Versioning;
+
    function Suite return AUnit.Test_Suites.Access_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite :=
         AUnit.Test_Suites.New_Suite;
@@ -11146,6 +11478,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.low-level-object-tagging",
             Check_Low_Level_Object_Tagging'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.bucket-versioning-core",
+            Check_Bucket_Versioning'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.generated-model-exhaustive",

@@ -1010,7 +1010,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
 
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
-      Token : access Flyology.Cancellation.Token; Deadline : Ada.Real_Time.Time;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
       Result : out Status) is
    begin
       Check_Context (Token, Deadline);
@@ -1031,7 +1032,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
 
    overriding procedure Get_Object_Tags
      (Item : in out Store; Bucket, Key : String;
-      Token : access Flyology.Cancellation.Token; Deadline : Ada.Real_Time.Time;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
       Tags : out Object_Tag_Set; Result : out Status) is
    begin
       Tags := Empty_Object_Tags;
@@ -1054,7 +1056,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
 
    overriding procedure Delete_Object_Tags
      (Item : in out Store; Bucket, Key : String;
-      Token : access Flyology.Cancellation.Token; Deadline : Ada.Real_Time.Time;
+      Token : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
       Result : out Status) is
    begin
       Check_Context (Token, Deadline);

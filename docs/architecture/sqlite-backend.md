@@ -36,7 +36,8 @@ missing payload, or a payload with the wrong size fails closed. Foreign keys,
 opaque BLOB keys/metadata, bounded metadata, strict statement state, and exact
 64-bit size conversions are enforced at the adapter boundary.
 
-Schema version 6 combines completed-multipart attributes and bucket tags.
+Schema version 7 combines completed-multipart attributes, bucket tags, and
+bucket-versioning configuration.
 Completed part numbers and sizes live in an
 `object_parts` child table. Completion replaces the object row and its part
 rows in one transaction; ordinary PUT and COPY remove stale part rows in the
@@ -59,12 +60,16 @@ Version 3 records bucket creation time transactionally. Version 4 introduced
 the object-tag table; the independently developed bucket-tag-only version-4
 layout is also recognized. Version 5 existed in two released-development
 layouts: object tags plus `object_parts`, and object tags plus `bucket_tags`.
-Opening any recognized version-1 through version-5 catalog upgrades it under
-an exclusive transaction to version 6, creates only missing tables, and
-preserves existing object tags, completed-part rows, and bucket tags. Existing
+The independently developed versioning-only version-4 layout is recognized in
+addition to both tag-table version-4 layouts. Opening any recognized version-1
+through version-6 catalog upgrades it under an exclusive transaction to
+version 7, creates only missing tables and columns, and preserves existing
+object tags, completed-part rows, bucket tags, and versioning values. Existing
 buckets use
 `0` to mean that the historical creation time is unavailable, while every new
-bucket receives its actual commit-time value. Bucket pages are selected under
+bucket receives its actual commit-time value. Versioning and MFA-delete use
+separate checked state columns; one atomic SQL update merges only configured
+fields, and migrated buckets remain unconfigured. Bucket pages are selected under
 the catalog operation gate with binary ordering, exclusive continuation,
 prefix filtering, and a SQL `MaxBuckets + 1` limit, so no unbounded account
 listing is retained in Ada memory.

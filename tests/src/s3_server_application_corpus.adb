@@ -23,6 +23,7 @@ with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Tagging;
+with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.Tags;
 with Flyology.Object_Storage.Server.Authentication;
 with Flyology.Object_Storage.Server.S3_Applications;
@@ -43,6 +44,7 @@ procedure S3_Server_Application_Corpus is
    package Backends renames Flyology.Object_Storage.Backends;
    package Tagging renames Flyology.Object_Storage.S3.Tagging;
    package Tags renames Flyology.Object_Storage.Tags;
+   package Versioning renames Flyology.Object_Storage.S3.Versioning;
    package Authentication renames
      Flyology.Object_Storage.Server.Authentication;
    package Static_Credentials renames
@@ -52,6 +54,7 @@ procedure S3_Server_Application_Corpus is
    use type Ada.Containers.Count_Type;
    use type Ada.Calendar.Time;
    use type Flyology.Object_Storage.Status;
+   use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type Tags.Tag_Vectors.Vector;
 
    CRLF : constant String := Character'Val (13) & Character'Val (10);
@@ -655,6 +658,71 @@ procedure S3_Server_Application_Corpus is
          return Value (Marker + 4 .. Value'Last);
       end if;
    end Response_Body;
+
+   function Signed_Versioning_Request
+     (Payload      : String;
+      MD5          : String;
+      MFA          : String := "";
+      Checksum     : String := "";
+      Owner        : String := "";
+      Duplicate_MD5 : String := "") return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Header_Count : constant Positive :=
+        4 + Boolean'Pos (MFA'Length > 0)
+          + Boolean'Pos (Checksum'Length > 0)
+          + Boolean'Pos (Owner'Length > 0)
+          + Boolean'Pos (Duplicate_MD5'Length > 0);
+      Headers : SigV4.Name_Value_Array (1 .. Header_Count);
+      Last : Natural := 4;
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("versioning", ""));
+      Signing : SigV4.Signing_Result;
+   begin
+      Headers (1) := SigV4.Pair ("content-md5", MD5);
+      Headers (2) := SigV4.Pair ("host", Host);
+      Headers (3) := SigV4.Pair ("x-amz-content-sha256", Payload_Hash);
+      Headers (4) := SigV4.Pair ("x-amz-date", Timestamp);
+      if Duplicate_MD5'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) := SigV4.Pair ("content-md5", Duplicate_MD5);
+      end if;
+      if MFA'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) := SigV4.Pair ("x-amz-mfa", MFA);
+      end if;
+      if Checksum'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) :=
+           SigV4.Pair ("x-amz-sdk-checksum-algorithm", Checksum);
+      end if;
+      if Owner'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) :=
+           SigV4.Pair ("x-amz-expected-bucket-owner", Owner);
+      end if;
+      Signing := SigV4.Sign
+        ("PUT", "/test-bucket", Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+      return "PUT /test-bucket?versioning= HTTP/1.1" & CRLF &
+        "Host: " & Host & CRLF &
+        "content-md5: " & MD5 & CRLF &
+        (if Duplicate_MD5'Length = 0 then ""
+         else "content-md5: " & Duplicate_MD5 & CRLF) &
+        "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        (if MFA'Length = 0 then ""
+         else "x-amz-mfa: " & MFA & CRLF) &
+        (if Checksum'Length = 0 then ""
+         else "x-amz-sdk-checksum-algorithm: " & Checksum & CRLF) &
+        (if Owner'Length = 0 then ""
+         else "x-amz-expected-bucket-owner: " & Owner & CRLF) &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Content-Length: " &
+        Ada.Strings.Fixed.Trim
+          (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
+        "Connection: close" & CRLF & CRLF & Payload;
+   end Signed_Versioning_Request;
 
    procedure Check_Cancellation_Propagation is
       Wire : aliased Memory_Transport;
@@ -1854,6 +1922,186 @@ begin
                   "Content-MD5: 1B2M2Y8AsgTpgAmY7PhCfg==" & CRLF)),
             "501 Not Implemented"),
          "PutBucketTagging accepted an extra query parameter");
+   end;
+
+   declare
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("versioning", ""));
+      Enabled_Document : constant String :=
+        "<VersioningConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">" &
+        "<Status>Enabled</Status></VersioningConfiguration>";
+      Suspended_Document : constant String :=
+        "<VersioningConfiguration><Status>Suspended</Status>" &
+        "</VersioningConfiguration>";
+      MFA_Document : constant String :=
+        "<VersioningConfiguration><MfaDelete>Enabled</MfaDelete>" &
+        "<Status>Enabled</Status></VersioningConfiguration>";
+   begin
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket", Query));
+         Value : constant
+           Flyology.Object_Storage.Bucket_Versioning_Configuration :=
+             Versioning.Parse (Response_Body (Response));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then
+              Value.Status =
+                Flyology.Object_Storage.Versioning_Unconfigured,
+            "GetBucketVersioning did not preserve initial absence");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Enabled_Document, Content_MD5 (Enabled_Document))),
+            "200 OK"),
+         "PutBucketVersioning rejected enabled status");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/test-bucket", Query,
+                 "x-amz-expected-bucket-owner", "test-principal"));
+         Value : constant
+           Flyology.Object_Storage.Bucket_Versioning_Configuration :=
+             Versioning.Parse (Response_Body (Response));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then
+              Value.Status = Flyology.Object_Storage.Versioning_Enabled,
+            "GetBucketVersioning did not return enabled status");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Suspended_Document, Content_MD5 (Suspended_Document)),
+               1),
+            "200 OK"),
+         "fragmented PutBucketVersioning did not suspend status");
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket", Query));
+         Value : constant
+           Flyology.Object_Storage.Bucket_Versioning_Configuration :=
+             Versioning.Parse (Response_Body (Response));
+      begin
+         Require
+           (Value.Status = Flyology.Object_Storage.Versioning_Suspended,
+            "suspended versioning configuration was not visible");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Query, Enabled_Document)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketVersioning accepted a missing Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Enabled_Document, String'(1 .. 24 => 'A'))),
+            "<Code>BadDigest</Code>"),
+         "PutBucketVersioning accepted a mismatched Content-MD5");
+      declare
+         Malformed : constant String :=
+           "<VersioningConfiguration><Status>Disabled</Status>" &
+           "</VersioningConfiguration>";
+         Response : constant String :=
+           Run
+             (Signed_Versioning_Request
+                (Malformed, Content_MD5 (Malformed)));
+      begin
+         if not Has (Response, "<Code>MalformedXML</Code>") then
+            Ada.Text_IO.Put_Line
+              (Ada.Text_IO.Standard_Error,
+               "unexpected invalid-versioning response: " & Response);
+         end if;
+         Require
+           (Has (Response, "<Code>MalformedXML</Code>"),
+            "PutBucketVersioning accepted an invalid status");
+      end;
+      declare
+         Oversized : constant String :=
+           String'(1 .. Versioning.Maximum_Document_Bytes + 1 => 'x');
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Versioning_Request
+                    (Oversized, Content_MD5 (Oversized))),
+               "<Code>EntityTooLarge</Code>"),
+            "PutBucketVersioning accepted an oversized document");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Enabled_Document, Content_MD5 (Enabled_Document),
+                  MFA => "123456 789012")),
+            "<Code>NotImplemented</Code>"),
+         "PutBucketVersioning pretended to enforce MFA");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (MFA_Document, Content_MD5 (MFA_Document),
+                  MFA => "123456 789012")),
+            "<Code>NotImplemented</Code>"),
+         "PutBucketVersioning accepted MFA-delete configuration");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Enabled_Document, Content_MD5 (Enabled_Document),
+                  Checksum => "CRC32")),
+            "<Code>NotImplemented</Code>"),
+         "PutBucketVersioning silently ignored checksum negotiation");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Enabled_Document, Content_MD5 (Enabled_Document),
+                  Owner => "different-owner")),
+            "403 Forbidden"),
+         "PutBucketVersioning ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("versioning", ""),
+                   SigV4.Pair ("versioning", "")))),
+            "<Code>InvalidArgument</Code>"),
+         "GetBucketVersioning accepted duplicate subresources");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("versioning", ""),
+                   SigV4.Pair ("x-id", "PutBucketVersioning")))),
+            "<Code>InvalidArgument</Code>"),
+         "GetBucketVersioning accepted a mismatched operation ID");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket", Query, "unexpected")),
+            "<Code>InvalidRequest</Code>"),
+         "GetBucketVersioning accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket", Query)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetBucketVersioning did not classify a missing bucket");
    end;
 
    for Name of Listing_Buckets loop
