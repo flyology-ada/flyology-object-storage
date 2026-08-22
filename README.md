@@ -41,10 +41,12 @@ The core crate includes:
 - AWS-vector-tested SigV4 header signing and bounded, entity-safe REST/XML;
 - complete typed, bounded HeadBucket, GetBucketLocation, ListBuckets,
   ListObjects v1/v2 and multipart initiation, completion, ListParts, and
-  ListMultipartUploads REST/XML codecs, with high-level paginated ListBuckets,
+  ListMultipartUploads REST/XML codecs, plus the complete GetObjectAttributes
+  request/output model, with high-level paginated ListBuckets,
   HeadBucket, CreateBucket, GetBucketLocation and DeleteBucket convenience
   APIs (see [bucket convenience client](docs/architecture/client-buckets.md));
-- a high-level, idempotent DeleteObject client that preserves version,
+- high-level GetObjectAttributes and idempotent DeleteObject clients that
+  preserve selected metadata, version,
   delete-marker, requester-charged, and structured error outcomes (see
   [object convenience client](docs/architecture/client-objects.md));
 - signed, bounded CreateBucket, GetBucketLocation, HeadBucket, GetObject,
@@ -59,7 +61,7 @@ The core crate includes:
   codecs and interoperability gates remain tracked as incomplete;
 - an authenticated path-style S3 server application for the initial
   Create/GetLocation/Head/DeleteBucket, ListObjects v1/v2, DeleteObjects,
-  Put/Copy/Get/Head/DeleteObject, and core multipart/ListParts/
+  Put/Copy/Get/Head/GetAttributes/DeleteObject, and core multipart/ListParts/
   ListMultipartUploads slice, with SigV4 admission before body acceptance,
   streamed payload-hash verification before commit, atomic suffix-range
   resolution, and typed S3 error responses;

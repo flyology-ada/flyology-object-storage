@@ -64,10 +64,14 @@ fi
   "http://host.docker.internal:$PORT" \
   "$BUCKET-slice" "$ACCESS_KEY" "$SECRET_KEY"
 
+FLYOLOGY_GET_OBJECT_ATTRIBUTES_ORACLE_MODE=\
+rustfs-rc3-missing-error-message \
 "$SCRIPT_DIR/run-s3-implementation.sh" \
   "http://127.0.0.1:$PORT" \
   "http://host.docker.internal:$PORT" \
   "$BUCKET" "$ACCESS_KEY" "$SECRET_KEY" yes
+echo "RustFS GetObjectAttributes missing-key oracle: skipped, pinned" \
+  "response omits the required Error Message member"
 
 if [ -n "${FLYOLOGY_S3T_BIN:-}" ]; then
   FLYOLOGY_S3_IMPLEMENTATION=rustfs \

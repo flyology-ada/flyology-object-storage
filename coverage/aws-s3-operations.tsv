@@ -55,7 +55,7 @@ GetBucketWebsite	extended	missing	partial	missing	missing
 GetObject	core	covered	covered	partial	covered
 GetObjectAcl	extended	missing	partial	missing	missing
 GetObjectAnnotation	extended	missing	partial	missing	missing
-GetObjectAttributes	core	missing	partial	missing	missing
+GetObjectAttributes	core	covered	covered	partial	covered
 GetObjectLegalHold	extended	missing	partial	missing	missing
 GetObjectLockConfiguration	extended	missing	partial	missing	missing
 GetObjectRetention	extended	missing	partial	missing	missing

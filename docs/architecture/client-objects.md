@@ -5,6 +5,22 @@ single-object operations that do not transfer a representation body. Calls use
 a caller-owned Flyology HTTP client, one whole-operation timeout, and an
 optional cancellation token.
 
+## Get object attributes
+
+`Get_Attributes` retrieves selected metadata without downloading the object
+body. Its default selection requests ETag, checksum, completed-part metadata,
+storage class, and object size; callers may select any nonempty subset. Version,
+part-page controls, expected-owner, Requester Pays, and SSE-C inputs remain
+explicit. Independent presence flags distinguish an omitted page header from
+an explicitly supplied zero.
+
+Success returns all modeled response headers together with the bounded typed
+REST/XML result. An unavailable optional selection is represented by absence,
+not a fabricated checksum or storage class. Rejection preserves the structured
+S3 error and request identifiers. The low-level API exposes the same complete
+request and output models for callers that need direct signing or a fixed
+timestamp.
+
 ## Delete
 
 `Delete` is idempotent for an absent key in an existing unversioned bucket, as

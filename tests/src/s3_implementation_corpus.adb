@@ -16,6 +16,7 @@ with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Objects;
 with Flyology.Object_Storage.Client.Transfers;
+with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.SigV4;
@@ -41,6 +42,7 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
+   use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
@@ -80,6 +82,45 @@ procedure S3_Implementation_Corpus is
            "unknown ListMultipartUploads oracle mode";
       end if;
    end Check_List_Multipart_Uploads;
+
+   function Check_Missing_Object_Attributes return Boolean is
+      Name : constant String :=
+        "FLYOLOGY_GET_OBJECT_ATTRIBUTES_ORACLE_MODE";
+   begin
+      if not Ada.Environment_Variables.Exists (Name) then
+         return True;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "rustfs-rc3-missing-error-message"
+      then
+         return False;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "minio-2025-lowercase-root"
+      then
+         return False;
+      else
+         raise Program_Error with
+           "unknown GetObjectAttributes oracle mode";
+      end if;
+   end Check_Missing_Object_Attributes;
+
+   function Check_Get_Object_Attributes return Boolean is
+      Name : constant String :=
+        "FLYOLOGY_GET_OBJECT_ATTRIBUTES_ORACLE_MODE";
+   begin
+      if not Ada.Environment_Variables.Exists (Name)
+        or else Ada.Environment_Variables.Value (Name) =
+          "rustfs-rc3-missing-error-message"
+      then
+         return True;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "minio-2025-lowercase-root"
+      then
+         return False;
+      else
+         raise Program_Error with
+           "unknown GetObjectAttributes oracle mode";
+      end if;
+   end Check_Get_Object_Attributes;
 
    type Upload_Source
      (Value : not null access constant String) is
@@ -546,6 +587,107 @@ procedure S3_Implementation_Corpus is
          end;
       end Require_Object_Tagging;
 
+      procedure Require_Get_Object_Attributes is
+         Parameters : Low_Level.Get_Object_Attributes_Parameters;
+      begin
+         Parameters.Has_Max_Parts := True;
+         Parameters.Max_Parts := 1;
+         Parameters.Has_Part_Number_Marker := True;
+         Parameters.Part_Number_Marker := 0;
+         Parameters.Attributes :=
+           (Entity_Tag => True, Checksum => True, Object_Parts => True,
+            Storage_Class => True, Object_Size => True);
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Attributes
+                (Origin, Low_Level.Path_Style, Bucket, Key, Parameters,
+                 Identity, "us-east-1", Timestamp);
+            Outcome : constant Low_Level.Get_Object_Attributes_Outcome :=
+              Low_Level.Execute_Get_Object_Attributes
+                (HTTP, Prepared, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Low_Level.Object_Attributes_Found then
+               raise Program_Error with
+                 "S3 implementation rejected GetObjectAttributes: " &
+                 Outcome.Status'Image & " " &
+                 US.To_String (Outcome.Error.Code) & " " &
+                 US.To_String (Outcome.Error.Message);
+            elsif not Outcome.Result.Attributes.Has_Entity_Tag
+              or else US.Length (Outcome.Result.Attributes.Entity_Tag) = 0
+              or else not Outcome.Result.Attributes.Object_Size.Is_Set
+              or else Outcome.Result.Attributes.Object_Size.Value /=
+                Flyology.Object_Storage.Byte_Count (Payload'Length)
+              or else US.Length (Outcome.Result.Last_Modified) = 0
+            then
+               raise Program_Error with
+                 "S3 implementation returned invalid object attributes";
+            elsif Outcome.Result.Attributes.Has_Object_Parts
+              and then
+                ((Outcome.Result.Attributes.Object_Parts.
+                    Total_Parts_Count.Is_Set
+                  and then Outcome.Result.Attributes.Object_Parts.
+                    Total_Parts_Count.Value /= 1)
+                 or else Outcome.Result.Attributes.Object_Parts.Parts.Length >
+                   1
+                 or else
+                   (not Outcome.Result.Attributes.Object_Parts.Parts.Is_Empty
+                    and then
+                      (Outcome.Result.Attributes.Object_Parts.Parts.
+                         First_Element.Number.Value /= 1
+                       or else Outcome.Result.Attributes.Object_Parts.Parts.
+                         First_Element.Size.Value /=
+                           Flyology.Object_Storage.Byte_Count
+                             (Payload'Length))))
+            then
+               raise Program_Error with
+                 "S3 implementation returned invalid completed-part " &
+                 "attributes";
+            end if;
+         end;
+
+         declare
+            Selection : constant
+              Flyology.Object_Storage.S3.Attributes.Attribute_Selection :=
+                (Entity_Tag => True, Object_Size => True, others => False);
+            Outcome : constant Client_Objects.Get_Attributes_Outcome :=
+              Client_Objects.Get_Attributes
+                (HTTP, Origin, Bucket, Key, Identity,
+                 Attributes => Selection, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Low_Level.Object_Attributes_Found
+              or else not Outcome.Result.Attributes.Has_Entity_Tag
+              or else not Outcome.Result.Attributes.Object_Size.Is_Set
+              or else Outcome.Result.Attributes.Object_Size.Value /=
+                Flyology.Object_Storage.Byte_Count (Payload'Length)
+            then
+               raise Program_Error with
+                 "high-level GetObjectAttributes result mismatch";
+            end if;
+         end;
+
+         if Check_Missing_Object_Attributes then
+            Parameters := (others => <>);
+            Parameters.Attributes.Object_Size := True;
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object_Attributes
+                   (Origin, Low_Level.Path_Style, Bucket, Key & "-missing",
+                    Parameters, Identity, "us-east-1", Timestamp);
+               Outcome : constant Low_Level.Get_Object_Attributes_Outcome :=
+                 Low_Level.Execute_Get_Object_Attributes
+                   (HTTP, Prepared, Timeout => 30.0);
+            begin
+               if Outcome.Kind /= Low_Level.Get_Object_Attributes_Rejected
+                 or else Outcome.Status /= 404
+               then
+                  raise Program_Error with
+                    "S3 implementation GetObjectAttributes missing-key " &
+                    "mismatch";
+               end if;
+            end;
+         end if;
+      end Require_Get_Object_Attributes;
+
       procedure Require_Listed_Part
         (Object_Key, Upload_ID, Entity_Tag : String;
          Size : Flyology.Object_Storage.Byte_Count)
@@ -946,6 +1088,9 @@ procedure S3_Implementation_Corpus is
       end;
       Require_Listed_Object;
       Require_Head_Object;
+      if Check_Get_Object_Attributes then
+         Require_Get_Object_Attributes;
+      end if;
       Require_Get_Object;
       Require_Object_Tagging;
       Copy_With_Multipart;
