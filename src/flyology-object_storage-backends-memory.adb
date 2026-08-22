@@ -406,6 +406,7 @@ package body Flyology.Object_Storage.Backends.Memory is
             Objects (Index).Key := Stored_Key;
             Objects (Index).Info := Info;
             Objects (Index).Tags := Empty_Object_Tags;
+            Objects (Index).Completed_Parts.Clear;
             Stored := Info;
             Move (Objects (Index).Data, Data);
             Reserved_Bytes := Reserved_Bytes - Reservation;
@@ -535,6 +536,44 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Success;
          end if;
       end Head;
+
+      procedure Attributes
+        (Bucket   : String;
+         Key      : String;
+         Options  : Object_Attribute_Options;
+         Snapshot : out Object_Attribute_Snapshot;
+         Result   : out Status)
+      is
+         Index : constant Natural := Object_Index (Bucket, Key);
+      begin
+         Snapshot := (others => <>);
+         if Index = 0 then
+            Result := Not_Found;
+            return;
+         end if;
+         Snapshot.Info := Objects (Index).Info;
+         Snapshot.Is_Multipart := not Objects (Index).Completed_Parts.Is_Empty;
+         Snapshot.Total_Parts :=
+           Natural (Objects (Index).Completed_Parts.Length);
+         if Options.Maximum > 0 then
+            for Part of Objects (Index).Completed_Parts loop
+               if Part.Number > Options.After then
+                  if Snapshot.Parts.Length <
+                    Ada.Containers.Count_Type (Options.Maximum)
+                  then
+                     Snapshot.Parts.Append (Part);
+                  else
+                     Snapshot.Is_Truncated := True;
+                     Snapshot.Next_After :=
+                       Multipart_Part_Marker
+                         (Snapshot.Parts.Last_Element.Number);
+                     exit;
+                  end if;
+               end if;
+            end loop;
+         end if;
+         Result := Success;
+      end Attributes;
 
       procedure Delete
         (Bucket : String;
@@ -849,6 +888,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Existing_Size : Byte_Count := 0;
          Hash : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
          Assembly_Reserved : Boolean := False;
+         Completed_Parts : Completed_Object_Part_List;
       begin
          Info := Empty_Info;
          if Upload_At = 0 then
@@ -902,6 +942,10 @@ package body Flyology.Object_Storage.Backends.Memory is
                Include_Part_Digest
                  (Hash, Ada.Strings.Unbounded.To_String
                     (Parts (Stored_At).Info.Entity_Tag));
+               Completed_Parts.Append
+                 (Completed_Object_Part'
+                    (Number => Reference.Number,
+                     Size   => Parts (Stored_At).Info.Size));
                Previous := Reference.Number;
                First := False;
             end;
@@ -1003,6 +1047,8 @@ package body Flyology.Object_Storage.Backends.Memory is
             Objects (Object_At).Key := Stored_Key;
             Objects (Object_At).Info := Completed_Info;
             Objects (Object_At).Tags := Empty_Object_Tags;
+            Completed_Object_Part_Vectors.Move
+              (Objects (Object_At).Completed_Parts, Completed_Parts);
             Info := Completed_Info;
 
             Bytes := Bytes - Staged_Size - Existing_Size + Final_Size;
@@ -1428,6 +1474,28 @@ package body Flyology.Object_Storage.Backends.Memory is
          Item.State.Head (Bucket, Key, Info, Result);
       end if;
    end Head_Object;
+
+   overriding procedure Get_Object_Attributes
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Options  : Object_Attribute_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Snapshot : out Object_Attribute_Snapshot;
+      Result   : out Status)
+   is
+   begin
+      Snapshot := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Attributes (Bucket, Key, Options, Snapshot, Result);
+      end if;
+   end Get_Object_Attributes;
 
    overriding procedure Get_Object
      (Item      : in out Store;

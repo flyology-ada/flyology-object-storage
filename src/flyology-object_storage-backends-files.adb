@@ -32,7 +32,8 @@ package body Flyology.Object_Storage.Backends.Files is
      Ada.Calendar.Formatting.Time_Of
        (1970, 1, 1, 0, 0, 0, Time_Zone => 0);
    Legacy_Magic : constant String := "FOSOBJ01";
-   Magic : constant String := "FOSOBJ02";
+   Tag_Magic : constant String := "FOSOBJ02";
+   Magic : constant String := "FOSOBJ03";
    Maximum_Metadata_Length : constant Natural := 8 * 1_024;
    Maximum_Object_Path_Depth : constant Natural := 32;
    Body_Size_Position : constant SIO.Positive_Count := 29;
@@ -429,7 +430,9 @@ package body Flyology.Object_Storage.Backends.Files is
      (File : in out SIO.File_Type;
       Key  : String;
       Info : Object_Information;
-      Tags : Object_Tag_Set := Empty_Object_Tags)
+      Tags : Object_Tag_Set := Empty_Object_Tags;
+      Parts : Completed_Object_Part_List :=
+        Completed_Object_Part_Vectors.Empty_Vector)
    is
       ETag : constant String := US.To_String (Info.Entity_Tag);
       Kind : constant String := US.To_String (Info.Content_Type);
@@ -456,13 +459,19 @@ package body Flyology.Object_Storage.Backends.Files is
             Write_String (File, Tag_Value);
          end;
       end loop;
+      Write_U32 (File, Natural (Parts.Length));
+      for Part of Parts loop
+         Write_U32 (File, Natural (Part.Number));
+         Write_U64 (File, Long_Long_Integer (Part.Size));
+      end loop;
    end Write_Header;
 
-   procedure Read_Header_Any_With_Tags
+   procedure Read_Header_Any_With_Metadata
      (File      : in out SIO.File_Type;
       Key       : out US.Unbounded_String;
       Info      : out Object_Information;
       Tags      : out Object_Tag_Set;
+      Parts     : out Completed_Object_Part_List;
       Body_At   : out SIO.Positive_Count)
    is
       File_Magic : constant String := Read_String (File, Magic'Length);
@@ -473,7 +482,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Size : constant Long_Long_Integer := Read_U64 (File);
    begin
       Tags := Empty_Object_Tags;
-      if File_Magic not in Magic | Legacy_Magic
+      Parts.Clear;
+      if File_Magic not in Magic | Tag_Magic | Legacy_Magic
         or else Key_Length not in 1 .. 1_024
         or else ETag_Length > Maximum_Metadata_Length
         or else Kind_Length > Maximum_Metadata_Length
@@ -492,7 +502,7 @@ package body Flyology.Object_Storage.Backends.Files is
             Entity_Tag   => US.To_Unbounded_String (ETag),
             Content_Type => US.To_Unbounded_String (Kind),
             Version      => US.Null_Unbounded_String);
-         if File_Magic = Magic then
+         if File_Magic /= Legacy_Magic then
             declare
                Tag_Count : constant Natural := Read_U32 (File);
             begin
@@ -522,6 +532,42 @@ package body Flyology.Object_Storage.Backends.Files is
                end if;
             end;
          end if;
+         if File_Magic = Magic then
+            declare
+               Count : constant Natural := Read_U32 (File);
+               Previous : Multipart_Part_Marker := 0;
+               Total : Byte_Count := 0;
+            begin
+               if Count > Multipart_Part_Number'Last then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+               for Index in 1 .. Count loop
+                  declare
+                     Number : constant Natural := Read_U32 (File);
+                     Size_Value : constant Long_Long_Integer :=
+                       Read_U64 (File);
+                  begin
+                     if Number not in Multipart_Part_Number'Range
+                       or else Number <= Previous
+                       or else Size_Value < 0
+                       or else Byte_Count (Size_Value) >
+                         Byte_Count'Last - Total
+                     then
+                        raise Ada.IO_Exceptions.Data_Error;
+                     end if;
+                     Parts.Append
+                       (Completed_Object_Part'
+                          (Number => Multipart_Part_Number (Number),
+                           Size   => Byte_Count (Size_Value)));
+                     Previous := Multipart_Part_Marker (Number);
+                     Total := Total + Byte_Count (Size_Value);
+                  end;
+               end loop;
+               if Count > 0 and then Total /= Info.Size then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+            end;
+         end if;
          Body_At := SIO.Index (File);
          if SIO.Count (Info.Size) > SIO.Count'Last - (Body_At - 1)
            or else SIO.Size (File) /= Body_At - 1 + SIO.Count (Info.Size)
@@ -529,7 +575,7 @@ package body Flyology.Object_Storage.Backends.Files is
             raise Ada.IO_Exceptions.Data_Error;
          end if;
       end;
-   end Read_Header_Any_With_Tags;
+   end Read_Header_Any_With_Metadata;
 
    procedure Read_Header_Any
      (File      : in out SIO.File_Type;
@@ -538,20 +584,37 @@ package body Flyology.Object_Storage.Backends.Files is
       Body_At   : out SIO.Positive_Count)
    is
       Tags : Object_Tag_Set;
+      Parts : Completed_Object_Part_List;
    begin
-      Read_Header_Any_With_Tags (File, Key, Info, Tags, Body_At);
+      Read_Header_Any_With_Metadata
+        (File, Key, Info, Tags, Parts, Body_At);
    end Read_Header_Any;
+
+   procedure Read_Header_Any_With_Tags
+     (File      : in out SIO.File_Type;
+      Key       : out US.Unbounded_String;
+      Info      : out Object_Information;
+      Tags      : out Object_Tag_Set;
+      Body_At   : out SIO.Positive_Count)
+   is
+      Parts : Completed_Object_Part_List;
+   begin
+      Read_Header_Any_With_Metadata
+        (File, Key, Info, Tags, Parts, Body_At);
+   end Read_Header_Any_With_Tags;
 
    procedure Read_Header_With_Tags
      (File      : in out SIO.File_Type;
       Expected  : String;
       Info      : out Object_Information;
       Tags      : out Object_Tag_Set;
+      Parts     : out Completed_Object_Part_List;
       Body_At   : out SIO.Positive_Count)
    is
       Key : US.Unbounded_String;
    begin
-      Read_Header_Any_With_Tags (File, Key, Info, Tags, Body_At);
+      Read_Header_Any_With_Metadata
+        (File, Key, Info, Tags, Parts, Body_At);
       if US.To_String (Key) /= Expected then
          raise Ada.IO_Exceptions.Data_Error;
       end if;
@@ -570,6 +633,23 @@ package body Flyology.Object_Storage.Backends.Files is
          raise Ada.IO_Exceptions.Data_Error;
       end if;
    end Read_Header;
+
+   procedure Read_Header_With_Parts
+     (File      : in out SIO.File_Type;
+      Expected  : String;
+      Info      : out Object_Information;
+      Parts     : out Completed_Object_Part_List;
+      Body_At   : out SIO.Positive_Count)
+   is
+      Key : US.Unbounded_String;
+      Tags : Object_Tag_Set;
+   begin
+      Read_Header_Any_With_Metadata
+        (File, Key, Info, Tags, Parts, Body_At);
+      if US.To_String (Key) /= Expected then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+   end Read_Header_With_Parts;
 
    procedure Read_Manifest
      (Item      : Store;
@@ -1326,6 +1406,72 @@ package body Flyology.Object_Storage.Backends.Files is
          Result := Backend_Unavailable;
    end Head_Object;
 
+   overriding procedure Get_Object_Attributes
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Options  : Object_Attribute_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Snapshot : out Object_Attribute_Snapshot;
+      Result   : out Status)
+   is
+      File    : SIO.File_Type;
+      Body_At : SIO.Positive_Count;
+      All_Parts : Completed_Object_Part_List;
+      Path : constant String := Object_Path (Item, Bucket, Key);
+   begin
+      Snapshot := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+      then
+         Result := Invalid_Request;
+         return;
+      elsif not Ada.Directories.Exists (Path) then
+         Result := Not_Found;
+         return;
+      end if;
+      SIO.Open (File, SIO.In_File, Path);
+      Read_Header_With_Parts
+        (File, Key, Snapshot.Info, All_Parts, Body_At);
+      SIO.Close (File);
+      Snapshot.Is_Multipart := not All_Parts.Is_Empty;
+      Snapshot.Total_Parts := Natural (All_Parts.Length);
+      if Options.Maximum > 0 then
+         for Part of All_Parts loop
+            Check_Context (Token, Deadline);
+            if Part.Number > Options.After then
+               if Snapshot.Parts.Length <
+                 Ada.Containers.Count_Type (Options.Maximum)
+               then
+                  Snapshot.Parts.Append (Part);
+               else
+                  Snapshot.Is_Truncated := True;
+                  Snapshot.Next_After :=
+                    Multipart_Part_Marker
+                      (Snapshot.Parts.Last_Element.Number);
+                  exit;
+               end if;
+            end if;
+         end loop;
+      end if;
+      Result := Success;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         raise;
+      when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         Snapshot := (others => <>);
+         Result := Backend_Unavailable;
+   end Get_Object_Attributes;
+
    overriding procedure Get_Object
      (Item      : in out Store;
       Bucket    : String;
@@ -1492,6 +1638,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Number    : Long_Long_Integer;
       Info      : Object_Information;
       Old_Tags  : Object_Tag_Set;
+      Completed_Parts : Completed_Object_Part_List;
       Body_At   : SIO.Positive_Count;
       Remaining : Byte_Count;
       Buffer    : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
@@ -1521,7 +1668,8 @@ package body Flyology.Object_Storage.Backends.Files is
 
       SIO.Open (Source, SIO.In_File, Path);
       Source_Open := True;
-      Read_Header_With_Tags (Source, Key, Info, Old_Tags, Body_At);
+      Read_Header_With_Tags
+        (Source, Key, Info, Old_Tags, Completed_Parts, Body_At);
       Item.Temp_Sequence.Next (Number);
       Temp := US.To_Unbounded_String
         (Join
@@ -1532,7 +1680,8 @@ package body Flyology.Object_Storage.Backends.Files is
                Ada.Calendar.Time'Image (Ada.Calendar.Clock)) & ".tmp"));
       SIO.Create (Staged, SIO.Out_File, US.To_String (Temp));
       Staged_Open := True;
-      Write_Header (Staged, Key, Info, Tags);
+      Write_Header
+        (Staged, Key, Info, Tags => Tags, Parts => Completed_Parts);
       SIO.Set_Index (Source, Body_At);
       Remaining := Info.Size;
       while Remaining > 0 loop
@@ -2529,6 +2678,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Total       : Byte_Count := 0;
       Hash        : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
       Renamed     : Boolean;
+      Completed_Parts : Completed_Object_Part_List;
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
@@ -2626,6 +2776,9 @@ package body Flyology.Object_Storage.Backends.Files is
                return;
             end if;
             Total := Total + Part_Info.Size;
+            Completed_Parts.Append
+              (Completed_Object_Part'
+                 (Number => Reference.Number, Size => Part_Info.Size));
             Include_Part_Digest
               (Hash, US.To_String (Part_Info.Entity_Tag));
             Previous := Reference.Number;
@@ -2660,7 +2813,7 @@ package body Flyology.Object_Storage.Backends.Files is
                Ada.Calendar.Time'Image (Ada.Calendar.Clock)) & ".complete"));
       SIO.Create (File, SIO.Out_File, US.To_String (Temp));
       Opened := True;
-      Write_Header (File, Key, Info);
+      Write_Header (File, Key, Info, Parts => Completed_Parts);
       for Reference of Parts loop
          declare
             Part_Info : Object_Information;

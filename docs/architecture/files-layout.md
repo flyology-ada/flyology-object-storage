@@ -6,12 +6,16 @@ opaque bytes encoded as uppercase hexadecimal and split into bounded path
 components; caller-provided slashes and dot segments are never interpreted.
 
 Each object is one versioned binary record containing a magic value, bounded
-metadata, the original key, a complete bounded object-tag set, and the body.
-Version-2 records carry tags; legacy version-1 records remain readable with an
-empty set. PUT writes a unique temporary record
+metadata, the original key, a complete bounded object-tag set, retained
+completed-multipart part numbers and sizes, and the body. Version-3 records
+carry tags and completed-part metadata. Version-2 tag records and legacy
+version-1 records remain readable; both expose no completed-part metadata.
+PUT writes a unique temporary record
 and publishes it with an operating-system rename, so readers never observe a
 new body paired with old metadata. Reads validate the magic, lengths, key, and
-exact file size before yielding bytes.
+exact file size before yielding bytes. GetObjectAttributes reads object
+metadata and its bounded part page from that one immutable record, so the
+values cannot describe different object generations.
 
 Object-tag replacement and deletion use that same publication gate and record
 rename. Because tags and payload form one indivisible record, a tag mutation

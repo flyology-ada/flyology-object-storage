@@ -91,6 +91,16 @@ package Flyology.Object_Storage.Backends.Memory is
       Result    : out Status;
       Conditions : Read_Conditions := Default_Read_Conditions);
 
+   overriding procedure Get_Object_Attributes
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Options  : Object_Attribute_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Snapshot : out Object_Attribute_Snapshot;
+      Result   : out Status);
+
    overriding procedure Delete_Object
      (Item     : in out Store;
       Bucket   : String;
@@ -245,6 +255,7 @@ private
       Key    : Ada.Strings.Unbounded.Unbounded_String;
       Info   : Object_Information;
       Tags   : Object_Tag_Set;
+      Completed_Parts : Completed_Object_Part_List;
       Data   : Owned_Bytes;
    end record;
    type Object_Array is array (Positive range <>) of Object_Slot;
@@ -309,6 +320,12 @@ private
          Key    : String;
          Info   : out Object_Information;
          Result : out Status);
+      procedure Attributes
+        (Bucket   : String;
+         Key      : String;
+         Options  : Object_Attribute_Options;
+         Snapshot : out Object_Attribute_Snapshot;
+         Result   : out Status);
       procedure Delete
         (Bucket : String;
          Key    : String;

@@ -50,6 +50,15 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Info    : out Object_Information;
       Result  : out Status);
 
+   procedure Get_Object_Attributes
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Options  : Backends.Object_Attribute_Options;
+      Check    : not null access procedure;
+      Snapshot : out Backends.Object_Attribute_Snapshot;
+      Result   : out Status);
+
    procedure Delete_Object
      (Item    : in out Catalog;
       Bucket  : String;

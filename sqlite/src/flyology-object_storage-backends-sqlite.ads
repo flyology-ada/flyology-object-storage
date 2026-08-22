@@ -90,6 +90,16 @@ package Flyology.Object_Storage.Backends.SQLite is
       Result    : out Status;
       Conditions : Read_Conditions := Default_Read_Conditions);
 
+   overriding procedure Get_Object_Attributes
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Options  : Object_Attribute_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Snapshot : out Object_Attribute_Snapshot;
+      Result   : out Status);
+
    overriding procedure Delete_Object
      (Item     : in out Store;
       Bucket   : String;

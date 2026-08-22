@@ -1538,6 +1538,52 @@ package body Object_Storage_Test_Cases is
            (Result = Success
             and then Store.Bytes_Used = Byte_Count (5 * MiB + 4),
             "multipart completion was not retryable after capacity failure");
+         declare
+            Retained_Tags : Object_Tag_Set := Empty_Object_Tags;
+         begin
+            Retained_Tags.Length := 1;
+            Retained_Tags.Items (1) :=
+              (Key   => US.To_Unbounded_String ("generation"),
+               Value => US.To_Unbounded_String ("multipart"));
+            Store.Put_Object_Tags
+              ("multipart-bucket", "retry", Retained_Tags, null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "memory multipart object tag update failed");
+         end;
+         declare
+            Options : Object_Attribute_Options :=
+              (After => 0, Maximum => 1);
+            Snapshot : Object_Attribute_Snapshot;
+         begin
+            Store.Get_Object_Attributes
+              ("multipart-bucket", "retry", Options, null,
+               Ada.Real_Time.Time_Last, Snapshot, Result);
+            Assert
+              (Result = Success and then Snapshot.Is_Multipart
+               and then US.To_String (Snapshot.Info.Entity_Tag) =
+                 US.To_String (Info.Entity_Tag)
+               and then Snapshot.Total_Parts = 2
+               and then Snapshot.Parts.Length = 1
+               and then Snapshot.Parts.First_Element.Number = 1
+               and then Snapshot.Parts.First_Element.Size =
+                 Byte_Count (5 * MiB)
+               and then Snapshot.Is_Truncated
+               and then Snapshot.Next_After = 1,
+               "memory completed attributes first page mismatch");
+            Options.After := Snapshot.Next_After;
+            Store.Get_Object_Attributes
+              ("multipart-bucket", "retry", Options, null,
+               Ada.Real_Time.Time_Last, Snapshot, Result);
+            Assert
+              (Result = Success and then Snapshot.Total_Parts = 2
+               and then Snapshot.Parts.Length = 1
+               and then Snapshot.Parts.First_Element.Number = 2
+               and then Snapshot.Parts.First_Element.Size = 4
+               and then not Snapshot.Is_Truncated,
+               "memory completed attributes continuation mismatch");
+         end;
       end;
 
       declare
@@ -2013,6 +2059,19 @@ package body Object_Storage_Test_Cases is
             and then Info.Size = 11
             and then US.To_String (Info.Entity_Tag) = "etag-2",
             "files metadata persists across reopen");
+         declare
+            Snapshot : Object_Attribute_Snapshot;
+         begin
+            Store.Get_Object_Attributes
+              ("file-bucket", Key, (others => <>), null,
+               Ada.Real_Time.Time_Last, Snapshot, Result);
+            Assert
+              (Result = Success and then not Snapshot.Is_Multipart
+               and then Snapshot.Total_Parts = 0
+               and then Snapshot.Parts.Is_Empty
+               and then Snapshot.Info.Size = 11,
+               "ordinary files object exposed multipart attributes");
+         end;
          Exercise_Conditional_Read (Store, "file-bucket", Key);
          declare
             Page : Multipart_Part_Page;
@@ -2153,6 +2212,36 @@ package body Object_Storage_Test_Cases is
                and then US.To_String (Info.Content_Type) =
                  "application/x-multipart-test",
                "files multipart completion persisted across reopen");
+            declare
+               Retained_Tags : Object_Tag_Set := Empty_Object_Tags;
+            begin
+               Retained_Tags.Length := 1;
+               Retained_Tags.Items (1) :=
+                 (Key   => US.To_Unbounded_String ("generation"),
+                  Value => US.To_Unbounded_String ("multipart"));
+               Store.Put_Object_Tags
+                 ("file-bucket", "multipart-target", Retained_Tags, null,
+                  Ada.Real_Time.Time_Last, Result);
+               Assert
+                 (Result = Success,
+                  "files multipart object tag update failed");
+            end;
+            declare
+               Snapshot : Object_Attribute_Snapshot;
+            begin
+               Store.Get_Object_Attributes
+                 ("file-bucket", "multipart-target", (others => <>), null,
+                  Ada.Real_Time.Time_Last, Snapshot, Result);
+               Assert
+                 (Result = Success and then Snapshot.Is_Multipart
+                  and then Snapshot.Total_Parts = 1
+                  and then Snapshot.Parts.Length = 1
+                  and then Snapshot.Parts.First_Element.Number = 1
+                  and then Snapshot.Parts.First_Element.Size = 14
+                  and then US.To_String (Snapshot.Info.Entity_Tag) =
+                    US.To_String (Info.Entity_Tag),
+                  "files completed object attributes mismatch");
+            end;
             Store.Get_Object
               ("file-bucket", "multipart-target", Whole_Object,
                Multipart_Sink, null, Ada.Real_Time.Time_Last, Info, Result);

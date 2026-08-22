@@ -6,7 +6,10 @@ objects, staged multipart parts, allocator slack in unknown-length objects,
 buffers reserved by in-progress PutObject and UploadPart calls, and immutable
 snapshots held while GetObject calls invoke caller sinks. Bucket, key, and
 control metadata are bounded separately by the bucket/object slot limits and
-are not charged to this byte counter.
+are not charged to this byte counter. A completed object slot also retains at
+most 10,000 selected multipart part numbers and sizes. GetObjectAttributes
+copies only its requested page while holding the protected state, so its
+object metadata and part page always describe the same generation.
 
 Known-length sources reserve their exact declared length before the first
 source read. Unknown-length sources reserve before every allocation growth;

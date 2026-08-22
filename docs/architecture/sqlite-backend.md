@@ -36,9 +36,18 @@ missing payload, or a payload with the wrong size fails closed. Foreign keys,
 opaque BLOB keys/metadata, bounded metadata, strict statement state, and exact
 64-bit size conversions are enforced at the adapter boundary.
 
-Schema version 3 records bucket creation time transactionally. The version-2
-migration adds that field and then the tag table under an exclusive transaction;
-existing buckets use
+Schema version 5 retains completed-multipart part numbers and sizes in an
+`object_parts` child table. Completion replaces the object row and its part
+rows in one transaction; ordinary PUT and COPY remove stale part rows in the
+same transaction. GetObjectAttributes selects object metadata, total count,
+and one bounded part page while holding the catalog operation gate. The
+version-4 migration creates the child table under an exclusive transaction;
+multipart objects completed by an older development schema have no
+reconstructable per-part rows.
+
+Schema version 3 introduced bucket creation time transactionally. Version 4
+added the tag table. Earlier migrations add both missing tables under an
+exclusive transaction; existing buckets use
 `0` to mean that the historical creation time is unavailable, while every new
 bucket receives its actual commit-time value. Bucket pages are selected under
 the catalog operation gate with binary ordering, exclusive continuation,

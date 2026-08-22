@@ -10,7 +10,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   Schema_Version : constant Long_Long_Integer := 4;
+   Schema_Version : constant Long_Long_Integer := 5;
    Empty_Info : constant Object_Information := (others => <>);
 
    protected body Operation_Gate is
@@ -109,8 +109,18 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "FOREIGN KEY(upload_id) REFERENCES multipart_uploads(upload_id) " &
          "ON DELETE CASCADE" &
          ") WITHOUT ROWID;" &
+         "CREATE TABLE object_parts (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "part_number INTEGER NOT NULL " &
+         "CHECK(part_number BETWEEN 1 AND 10000)," &
+         "size INTEGER NOT NULL CHECK(size >= 0)," &
+         "PRIMARY KEY(bucket_name,object_key,part_number)," &
+         "FOREIGN KEY(bucket_name,object_key) " &
+         "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=4;");
+         "PRAGMA user_version=5;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -162,7 +172,17 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "FOREIGN KEY(bucket_name,object_key) " &
          "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
          ") WITHOUT ROWID;" &
-         "PRAGMA user_version=4;");
+         "CREATE TABLE object_parts (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "part_number INTEGER NOT NULL " &
+         "CHECK(part_number BETWEEN 1 AND 10000)," &
+         "size INTEGER NOT NULL CHECK(size >= 0)," &
+         "PRIMARY KEY(bucket_name,object_key,part_number)," &
+         "FOREIGN KEY(bucket_name,object_key) " &
+         "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
+         "PRAGMA user_version=5;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -193,7 +213,17 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "FOREIGN KEY(bucket_name,object_key) " &
          "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
          ") WITHOUT ROWID;" &
-         "PRAGMA user_version=4;");
+         "CREATE TABLE object_parts (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "part_number INTEGER NOT NULL " &
+         "CHECK(part_number BETWEEN 1 AND 10000)," &
+         "size INTEGER NOT NULL CHECK(size >= 0)," &
+         "PRIMARY KEY(bucket_name,object_key,part_number)," &
+         "FOREIGN KEY(bucket_name,object_key) " &
+         "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
+         "PRAGMA user_version=5;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -222,7 +252,17 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "FOREIGN KEY(bucket_name,object_key) " &
          "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
          ") WITHOUT ROWID;" &
-         "PRAGMA user_version=4;");
+         "CREATE TABLE object_parts (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "part_number INTEGER NOT NULL " &
+         "CHECK(part_number BETWEEN 1 AND 10000)," &
+         "size INTEGER NOT NULL CHECK(size >= 0)," &
+         "PRIMARY KEY(bucket_name,object_key,part_number)," &
+         "FOREIGN KEY(bucket_name,object_key) " &
+         "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
+         "PRAGMA user_version=5;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -232,6 +272,34 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Upgrade_From_V3;
+
+   procedure Upgrade_From_V4 (Item : in out Catalog) is
+      In_Transaction : Boolean := False;
+   begin
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         "CREATE TABLE object_parts (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "part_number INTEGER NOT NULL " &
+         "CHECK(part_number BETWEEN 1 AND 10000)," &
+         "size INTEGER NOT NULL CHECK(size >= 0)," &
+         "PRIMARY KEY(bucket_name,object_key,part_number)," &
+         "FOREIGN KEY(bucket_name,object_key) " &
+         "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
+         "PRAGMA user_version=5;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V4;
 
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
@@ -264,6 +332,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Upgrade_From_V2 (Item);
       elsif App_ID = Application_ID and then Version = 3 then
          Upgrade_From_V3 (Item);
+      elsif App_ID = Application_ID and then Version = 4 then
+         Upgrade_From_V4 (Item);
       elsif App_ID /= Application_ID or else Version /= Schema_Version then
          raise Catalog_Error with "unsupported or unrelated SQLite database";
       end if;
@@ -278,8 +348,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item,
          "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
          "AND name IN " &
-         "('buckets','objects','object_tags'," &
-         "'multipart_uploads','multipart_parts')") /= 5
+         "('buckets','objects','object_tags','multipart_uploads'," &
+         "'multipart_parts','object_parts')") /= 6
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif Text_Scalar (Item, "PRAGMA quick_check(1)") /= "ok" then
@@ -530,6 +600,92 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Find_Object;
 
+   procedure Get_Object_Attributes
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Options  : Backends.Object_Attribute_Options;
+      Check    : not null access procedure;
+      Snapshot : out Backends.Object_Attribute_Snapshot;
+      Result   : out Status)
+   is
+      Payload : US.Unbounded_String;
+      Count_Query : DB.Statement;
+      Parts_Query : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      Snapshot := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      Check.all;
+      Find_Object_Internal
+        (Item, Bucket, Key, Payload, Snapshot.Info, Result);
+      if Result /= Success then
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Count_Query, Item.Database,
+         "SELECT count(*) FROM object_parts " &
+         "WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Count_Query, 1, Bucket);
+      DB.Bind_Bytes (Count_Query, 2, Key);
+      if DB.Step (Count_Query) /= DB.Row
+        or else Long_Long_Integer'(DB.Column (Count_Query, 0))
+          not in 0 .. 10_000
+      then
+         raise Catalog_Error with "invalid completed object part count";
+      end if;
+      Snapshot.Total_Parts :=
+        Natural (Long_Long_Integer'(DB.Column (Count_Query, 0)));
+      Snapshot.Is_Multipart := Snapshot.Total_Parts > 0;
+      if Options.Maximum > 0 and then Snapshot.Is_Multipart then
+         DB.Prepare
+           (Parts_Query, Item.Database,
+            "SELECT part_number,size FROM object_parts " &
+            "WHERE bucket_name=?1 AND object_key=?2 " &
+            "AND part_number>?3 ORDER BY part_number LIMIT ?4");
+         DB.Bind (Parts_Query, 1, Bucket);
+         DB.Bind_Bytes (Parts_Query, 2, Key);
+         DB.Bind
+           (Parts_Query, 3, Long_Long_Integer (Options.After));
+         DB.Bind
+           (Parts_Query, 4,
+            Long_Long_Integer (Options.Maximum) + 1);
+         while DB.Step (Parts_Query) = DB.Row loop
+            Check.all;
+            if Snapshot.Parts.Length <
+              Ada.Containers.Count_Type (Options.Maximum)
+            then
+               Snapshot.Parts.Append
+                 (Backends.Completed_Object_Part'
+                    (Number => Backends.Multipart_Part_Number
+                       (Long_Long_Integer'
+                          (DB.Column (Parts_Query, 0))),
+                     Size => Byte_Count
+                       (Long_Long_Integer'
+                          (DB.Column (Parts_Query, 1)))));
+            else
+               Snapshot.Is_Truncated := True;
+               Snapshot.Next_After :=
+                 Backends.Multipart_Part_Marker
+                   (Snapshot.Parts.Last_Element.Number);
+               exit;
+            end if;
+         end loop;
+      end if;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Get_Object_Attributes;
+
    procedure Put_Object
      (Item             : in out Catalog;
       Bucket           : String;
@@ -595,6 +751,19 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       if DB.Step (Clear_Tags) /= DB.Done then
          raise Catalog_Error with "object tag reset returned a row";
       end if;
+      declare
+         Delete_Parts : DB.Statement;
+      begin
+         DB.Prepare
+           (Delete_Parts, Item.Database,
+            "DELETE FROM object_parts " &
+            "WHERE bucket_name=?1 AND object_key=?2");
+         DB.Bind (Delete_Parts, 1, Bucket);
+         DB.Bind_Bytes (Delete_Parts, 2, Key);
+         if DB.Step (Delete_Parts) /= DB.Done then
+            raise Catalog_Error with "object part delete returned a row";
+         end if;
+      end;
       DB.Commit (Item.Database);
       In_Transaction := False;
       Result := Success;
@@ -1394,6 +1563,42 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       if DB.Step (Upsert) /= DB.Done then
          raise Catalog_Error with "multipart object upsert returned a row";
       end if;
+      declare
+         Delete_Parts : DB.Statement;
+      begin
+         DB.Prepare
+           (Delete_Parts, Item.Database,
+            "DELETE FROM object_parts " &
+            "WHERE bucket_name=?1 AND object_key=?2");
+         DB.Bind (Delete_Parts, 1, Bucket);
+         DB.Bind_Bytes (Delete_Parts, 2, Key);
+         if DB.Step (Delete_Parts) /= DB.Done then
+            raise Catalog_Error with
+              "completed object part delete returned a row";
+         end if;
+      end;
+      for Record_Value of Selected loop
+         declare
+            Insert_Part : DB.Statement;
+         begin
+            DB.Prepare
+              (Insert_Part, Item.Database,
+               "INSERT INTO object_parts(" &
+               "bucket_name,object_key,part_number,size) " &
+               "VALUES(?1,?2,?3,?4)");
+            DB.Bind (Insert_Part, 1, Bucket);
+            DB.Bind_Bytes (Insert_Part, 2, Key);
+            DB.Bind
+              (Insert_Part, 3, Long_Long_Integer (Record_Value.Number));
+            DB.Bind
+              (Insert_Part, 4,
+               Long_Long_Integer (Record_Value.Info.Size));
+            if DB.Step (Insert_Part) /= DB.Done then
+               raise Catalog_Error with
+                 "completed object part insert returned a row";
+            end if;
+         end;
+      end loop;
       DB.Prepare
         (Clear_Tags, Item.Database,
          "DELETE FROM object_tags WHERE bucket_name=?1 AND object_key=?2");

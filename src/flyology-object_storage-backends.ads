@@ -250,6 +250,34 @@ package Flyology.Object_Storage.Backends is
       Next_After   : Multipart_Part_Marker := 0;
    end record;
 
+   --  Completed multipart metadata retained with a committed object. The
+   --  values are HTTP-independent and refer to the exact immutable object
+   --  generation described by Object_Attribute_Snapshot.Info.
+   type Completed_Object_Part is record
+      Number : Multipart_Part_Number := Multipart_Part_Number'First;
+      Size   : Byte_Count := 0;
+   end record;
+
+   package Completed_Object_Part_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Completed_Object_Part);
+
+   subtype Completed_Object_Part_List is
+     Completed_Object_Part_Vectors.Vector;
+
+   type Object_Attribute_Options is record
+      After   : Multipart_Part_Marker := 0;
+      Maximum : List_Limit := List_Limit'Last;
+   end record;
+
+   type Object_Attribute_Snapshot is record
+      Info         : Object_Information;
+      Is_Multipart : Boolean := False;
+      Total_Parts  : Natural range 0 .. Multipart_Part_Number'Last := 0;
+      Parts        : Completed_Object_Part_List;
+      Is_Truncated : Boolean := False;
+      Next_After   : Multipart_Part_Marker := 0;
+   end record;
+
    --  Exclusive S3 marker pair for active-upload listing.  Upload_ID may be
    --  empty to skip every upload whose key equals Key.
    type Multipart_Upload_Marker is record
@@ -363,6 +391,21 @@ package Flyology.Object_Storage.Backends is
    --  writes exactly its announced Content_Length. When Result is
    --  Invalid_Range, Info is the immutable object snapshot against which
    --  Requested was resolved and no sink callback has occurred.
+
+   --  Return object metadata and a bounded page of retained completed-part
+   --  metadata from one atomic object-generation snapshot. Ordinary PUT and
+   --  COPY objects report Is_Multipart false and no parts. A successful
+   --  multipart completion reports its total selected part count even when
+   --  the requested page is empty.
+   procedure Get_Object_Attributes
+     (Item     : in out Backend;
+      Bucket   : String;
+      Key      : String;
+      Options  : Object_Attribute_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Snapshot : out Object_Attribute_Snapshot;
+      Result   : out Status) is abstract;
 
    procedure Delete_Object
      (Item   : in out Backend;

@@ -129,6 +129,34 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          raise;
    end Create_V3_Database;
 
+   procedure Create_V4_Database is
+      Legacy : Databases.Database;
+   begin
+      Create_V3_Database;
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "CREATE TABLE object_tags (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "tag_index INTEGER NOT NULL CHECK(tag_index BETWEEN 1 AND 10)," &
+         "tag_key BLOB NOT NULL," &
+         "tag_value BLOB NOT NULL," &
+         "PRIMARY KEY(bucket_name,object_key,tag_index)," &
+         "UNIQUE(bucket_name,object_key,tag_key)," &
+         "FOREIGN KEY(bucket_name,object_key) " &
+         "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
+         "PRAGMA user_version=4;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V4_Database;
+
    type Buffer_Source is new
      Flyology.Object_Storage.Backends.Byte_Source with
    record
@@ -795,20 +823,20 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 4,
-         "schema-v2 migration did not publish version 4");
+         and then Databases.Column (Version, 0) = 5,
+         "schema-v2 migration did not publish version 5");
    end;
    declare
-      Tags_Table : Databases.Statement;
+      Tables : Databases.Statement;
    begin
       Databases.Prepare
-        (Tags_Table, Database,
+        (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
-         "AND name='object_tags'");
+         "AND name IN ('object_tags','object_parts')");
       Assert
-        (Databases.Step (Tags_Table) = Databases.Row
-         and then Databases.Column (Tags_Table, 0) = 1,
-         "schema-v2 migration did not create object_tags");
+        (Databases.Step (Tables) = Databases.Row
+         and then Databases.Column (Tables, 0) = 2,
+         "schema-v2 migration did not create attribute tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -819,21 +847,43 @@ begin
    Databases.Open (Database, Database_Path);
    declare
       Version : Databases.Statement;
-      Tags_Table : Databases.Statement;
+      Table_Count : Databases.Statement;
    begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Table_Count, Database,
+         "SELECT count(*) FROM sqlite_schema " &
+         "WHERE type='table' " &
+         "AND name IN ('object_tags','object_parts')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 4,
-         "schema-v3 migration did not publish version 4");
+         and then Databases.Column (Version, 0) = 5
+         and then Databases.Step (Table_Count) = Databases.Row
+         and then Databases.Column (Table_Count, 0) = 2,
+         "schema-v3 migration did not publish attribute tables at version 5");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V4_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version     : Databases.Statement;
+      Parts_Table : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
       Databases.Prepare
-        (Tags_Table, Database,
-         "SELECT count(*) FROM sqlite_master WHERE type='table' " &
-         "AND name='object_tags'");
+        (Parts_Table, Database,
+         "SELECT count(*) FROM sqlite_schema " &
+         "WHERE type='table' AND name='object_parts'");
       Assert
-        (Databases.Step (Tags_Table) = Databases.Row
-         and then Databases.Column (Tags_Table, 0) = 1,
-         "schema-v3 migration did not create object_tags");
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 5
+         and then Databases.Step (Parts_Table) = Databases.Row
+         and then Databases.Column (Parts_Table, 0) = 1,
+         "schema-v4 migration did not publish object_parts at version 5");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1229,6 +1279,19 @@ begin
         (Result = Success and then Info.Size = 11 and then
          US.To_String (Info.Entity_Tag) = "etag-2",
          "SQLite backend metadata did not persist");
+      declare
+         Snapshot : Object_Attribute_Snapshot;
+      begin
+         Store.Get_Object_Attributes
+           ("sqlite-bucket", Key, (others => <>), null,
+            Ada.Real_Time.Time_Last, Snapshot, Result);
+         Assert
+           (Result = Success and then not Snapshot.Is_Multipart
+            and then Snapshot.Total_Parts = 0
+            and then Snapshot.Parts.Is_Empty
+            and then Snapshot.Info.Size = 11,
+            "ordinary SQLite object exposed multipart attributes");
+      end;
       Exercise_Conditional_Read (Store, "sqlite-bucket", Key);
       Wanted.Length := 2;
       Wanted.Items (1) :=
@@ -1402,6 +1465,36 @@ begin
             and then US.To_String (Info.Content_Type) =
               "application/x-multipart-test",
             "SQLite multipart completion did not persist");
+         declare
+            Retained_Tags : Object_Tag_Set := Empty_Object_Tags;
+         begin
+            Retained_Tags.Length := 1;
+            Retained_Tags.Items (1) :=
+              (Key   => US.To_Unbounded_String ("generation"),
+               Value => US.To_Unbounded_String ("multipart"));
+            Store.Put_Object_Tags
+              ("sqlite-bucket", "multipart-target", Retained_Tags, null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "SQLite multipart object tag update failed");
+         end;
+         declare
+            Snapshot : Object_Attribute_Snapshot;
+         begin
+            Store.Get_Object_Attributes
+              ("sqlite-bucket", "multipart-target", (others => <>), null,
+               Ada.Real_Time.Time_Last, Snapshot, Result);
+            Assert
+              (Result = Success and then Snapshot.Is_Multipart
+               and then Snapshot.Total_Parts = 1
+               and then Snapshot.Parts.Length = 1
+               and then Snapshot.Parts.First_Element.Number = 1
+               and then Snapshot.Parts.First_Element.Size = 14
+               and then US.To_String (Snapshot.Info.Entity_Tag) =
+                 US.To_String (Info.Entity_Tag),
+               "SQLite completed object attributes mismatch");
+         end;
          Store.Get_Object
            ("sqlite-bucket", "multipart-target", Whole_Object,
             Multipart_Sink, null, Ada.Real_Time.Time_Last, Info, Result);

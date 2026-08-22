@@ -733,6 +733,41 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Head_Object;
 
+   overriding procedure Get_Object_Attributes
+     (Item     : in out Store;
+      Bucket   : String;
+      Key      : String;
+      Options  : Object_Attribute_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Snapshot : out Object_Attribute_Snapshot;
+      Result   : out Status)
+   is
+      procedure Check is
+      begin
+         Check_Context (Token, Deadline);
+      end Check;
+   begin
+      Snapshot := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Catalogs.Get_Object_Attributes
+        (Item.Catalog, Bucket, Key, Options, Check'Access,
+         Snapshot, Result);
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Snapshot := (others => <>);
+         Result := Backend_Unavailable;
+   end Get_Object_Attributes;
+
    overriding procedure Get_Object
      (Item      : in out Store;
       Bucket    : String;
