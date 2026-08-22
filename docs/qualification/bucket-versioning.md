@@ -24,19 +24,25 @@ The authorized scoped proof command was:
 alr -n exec -- "$PROVE" \
   -P tools/flyology_object_storage_proof.gpr -j0 --level=0 \
   --output=oneline --output-header --warnings=error \
+  --limit-subp=flyology-object_storage.adb:249 \
   -u flyology-object_storage.adb
+./tools/prove.sh
 ```
 
 Here `PROVE` is resolved exactly as in `tools/prove.sh` from the active Alire
 installation.
 
-It proved 46/46 checks in all eight domain-unit subprograms, including the
-`Merge_Bucket_Versioning` postcondition, with zero justified or unproved
-checks, zero warnings, and zero `Assume` statements. This scoped result is
-retained alongside the later manifest-wide qualification in
-`proof-status.md`.
+The exact scoped run proved 2/2 checks: one termination check and one CVC5
+functional-contract check for `Merge_Bucket_Versioning`. The subsequent
+eight-unit widening proved 595/595 checks. Both reports contain zero justified
+or unproved checks, zero warnings, and zero `Assume` statements. The earlier
+46/46 post-change domain-unit result remains recorded in `proof-status.md`.
 
-The core gate includes the strict XML adversarial corpus; atomic memory and
+The core gate includes the strict XML adversarial corpus, including required
+S3 request namespaces, rejected foreign namespaces and attributes, exact
+input/output serializer member ordering, bounded compatibility parsing for
+namespace-free responses, and an empty optional configuration as an atomic
+no-op; atomic memory and
 files backend conformance; files reopen, bucket-recreation, symlink, and
 76-case abrupt-crash checks; signed application requests; and typed plus
 convenience clients over fragmented loopback sockets from native and Flyology

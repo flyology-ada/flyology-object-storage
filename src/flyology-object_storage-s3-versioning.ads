@@ -22,11 +22,28 @@ package Flyology.Object_Storage.S3.Versioning is
       Limits   : XML.Parse_Limits := Default_Limits)
       return Bucket_Versioning_Configuration;
 
-   --  Serialize exactly the configured members in model order beneath the
-   --  AWS S3 namespace. An entirely unconfigured value emits an empty root,
-   --  as GetBucketVersioning does for a bucket never configured.
+   --  Parse an implementation response. AWS responses use the S3 namespace,
+   --  while a few otherwise compatible implementations omit it; foreign
+   --  namespaces and all element attributes still fail closed.
+   --  @param Document Complete REST/XML response document
+   --  @param Limits XML resource bounds
+   --  @return Presence-preserving storage-domain configuration
+   function Parse_Response
+     (Document : String;
+      Limits   : XML.Parse_Limits := Default_Limits)
+      return Bucket_Versioning_Configuration;
+
+   --  Serialize exactly the configured members in PutBucketVersioning input
+   --  model order beneath the AWS S3 namespace.
    --  @param Value Configuration to serialize
    --  @return Complete REST/XML document
    function Serialize (Value : Bucket_Versioning_Configuration) return String;
+
+   --  Serialize exactly the configured members in GetBucketVersioning output
+   --  model order. An entirely unconfigured value emits an empty root.
+   --  @param Value Configuration snapshot to serialize
+   --  @return Complete REST/XML response document
+   function Serialize_Response
+     (Value : Bucket_Versioning_Configuration) return String;
 
 end Flyology.Object_Storage.S3.Versioning;

@@ -14,10 +14,15 @@ package body Flyology.Object_Storage.S3.Versioning is
       Root_Seen       : Boolean := False;
       Status_Seen     : Boolean := False;
       MFA_Delete_Seen : Boolean := False;
+      Allow_Empty_Namespace : Boolean := False;
    end record;
 
    overriding procedure Start_Element
      (Item : in out Configuration_Handler; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out Configuration_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
    overriding procedure Text
      (Item : in out Configuration_Handler; Value : String);
    overriding procedure End_Element
@@ -32,6 +37,22 @@ package body Flyology.Object_Storage.S3.Versioning is
          end if;
       end loop;
    end Require_Whitespace;
+
+   overriding procedure Start_Element_Details
+     (Item            : in out Configuration_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural)
+   is
+   begin
+      if (Namespace_URI /= "http://s3.amazonaws.com/doc/2006-03-01/"
+          and then
+            (not Item.Allow_Empty_Namespace or else Namespace_URI'Length > 0))
+        or else Attribute_Count /= 0
+      then
+         raise Malformed_Configuration with
+           "bucket versioning namespace or attributes are invalid";
+      end if;
+   end Start_Element_Details;
 
    overriding procedure Start_Element
      (Item : in out Configuration_Handler; Local_Name : String) is
@@ -126,12 +147,14 @@ package body Flyology.Object_Storage.S3.Versioning is
       end if;
    end End_Element;
 
-   function Parse
+   function Parse_Document
      (Document : String;
-      Limits   : XML.Parse_Limits := Default_Limits)
+      Limits   : XML.Parse_Limits;
+      Allow_Empty_Namespace : Boolean)
       return Bucket_Versioning_Configuration
    is
-      Handler : aliased Configuration_Handler;
+      Handler : aliased Configuration_Handler :=
+        (Allow_Empty_Namespace => Allow_Empty_Namespace, others => <>);
    begin
       XML.Parse (Document, Handler, Limits);
       if Handler.Depth /= 0 or else not Handler.Root_Seen then
@@ -143,7 +166,21 @@ package body Flyology.Object_Storage.S3.Versioning is
       when XML.XML_Error =>
          raise Malformed_Configuration with
            "malformed bucket versioning XML";
-   end Parse;
+   end Parse_Document;
+
+   function Parse
+     (Document : String;
+      Limits   : XML.Parse_Limits := Default_Limits)
+      return Bucket_Versioning_Configuration is
+     (Parse_Document
+        (Document, Limits, Allow_Empty_Namespace => False));
+
+   function Parse_Response
+     (Document : String;
+      Limits   : XML.Parse_Limits := Default_Limits)
+      return Bucket_Versioning_Configuration is
+     (Parse_Document
+        (Document, Limits, Allow_Empty_Namespace => True));
 
    function Serialize (Value : Bucket_Versioning_Configuration) return String
    is
@@ -168,5 +205,30 @@ package body Flyology.Object_Storage.S3.Versioning is
          else "<Status>" & Status & "</Status>") &
         "</VersioningConfiguration>";
    end Serialize;
+
+   function Serialize_Response
+     (Value : Bucket_Versioning_Configuration) return String
+   is
+      Status : constant String :=
+        (case Value.Status is
+            when Versioning_Unconfigured => "",
+            when Versioning_Enabled      => "Enabled",
+            when Versioning_Suspended    => "Suspended");
+      MFA_Delete : constant String :=
+        (case Value.MFA_Delete is
+            when MFA_Delete_Unconfigured => "",
+            when MFA_Delete_Enabled      => "Enabled",
+            when MFA_Delete_Disabled     => "Disabled");
+   begin
+      return
+        "<?xml version=""1.0"" encoding=""UTF-8""?>" &
+        "<VersioningConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">" &
+        (if Status'Length = 0 then ""
+         else "<Status>" & Status & "</Status>") &
+        (if MFA_Delete'Length = 0 then ""
+         else "<MfaDelete>" & MFA_Delete & "</MfaDelete>") &
+        "</VersioningConfiguration>";
+   end Serialize_Response;
 
 end Flyology.Object_Storage.S3.Versioning;

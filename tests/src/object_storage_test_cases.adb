@@ -11140,6 +11140,10 @@ package body Object_Storage_Test_Cases is
           ("AKIAIOSFODNN7EXAMPLE",
            "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
       Root : constant String := "obj/versioning-files";
+      Versioning_Start : constant String :=
+        "<VersioningConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">";
+      Versioning_End : constant String := "</VersioningConfiguration>";
    begin
       for Current_Status in Bucket_Versioning_Status loop
          for Current_MFA in MFA_Delete_Status loop
@@ -11186,6 +11190,16 @@ package body Object_Storage_Test_Cases is
             and then Ada.Strings.Fixed.Index
               (Document, "<Status>Enabled</Status>") > 0,
             "bucket versioning XML round trip");
+         declare
+            Response : constant String :=
+              Versioning.Serialize_Response (Value);
+         begin
+            Assert
+              (Ada.Strings.Fixed.Index (Response, "<Status>") <
+                 Ada.Strings.Fixed.Index (Response, "<MfaDelete>")
+               and then Versioning.Parse_Response (Response) = Value,
+               "bucket versioning response model order");
+         end;
       end;
       declare
          Parsed : constant Bucket_Versioning_Configuration :=
@@ -11202,34 +11216,53 @@ package body Object_Storage_Test_Cases is
       Expect_Malformed
         ("<Other/>", "wrong versioning root accepted");
       Expect_Malformed
-        ("<VersioningConfiguration><Status>Enabled</Status>" &
-         "<Status>Suspended</Status></VersioningConfiguration>",
+        (Versioning_Start & "<Status>Enabled</Status>" &
+         "<Status>Suspended</Status>" & Versioning_End,
          "duplicate versioning status accepted");
       Expect_Malformed
-        ("<VersioningConfiguration><MFADelete>Enabled</MFADelete>" &
-         "</VersioningConfiguration>",
+        (Versioning_Start & "<MFADelete>Enabled</MFADelete>" &
+         Versioning_End,
          "incorrectly cased MFA-delete element accepted");
       Expect_Malformed
-        ("<VersioningConfiguration><Unknown>Enabled</Unknown>" &
-         "</VersioningConfiguration>",
+        (Versioning_Start & "<Unknown>Enabled</Unknown>" & Versioning_End,
          "unknown versioning field accepted");
       Expect_Malformed
-        ("<VersioningConfiguration><Status><Value>Enabled</Value></Status>" &
-         "</VersioningConfiguration>",
+        (Versioning_Start & "<Status><Value>Enabled</Value></Status>" &
+         Versioning_End,
          "nested versioning status accepted");
       Expect_Malformed
-        ("<VersioningConfiguration><Status>Disabled</Status>" &
-         "</VersioningConfiguration>",
+        (Versioning_Start & "<Status>Disabled</Status>" & Versioning_End,
          "invalid versioning status accepted");
       Expect_Malformed
-        ("<VersioningConfiguration><Status> Enabled </Status>" &
-         "</VersioningConfiguration>",
+        (Versioning_Start & "<Status> Enabled </Status>" & Versioning_End,
          "padded versioning status accepted");
       Expect_Malformed
         ("<!DOCTYPE x [<!ENTITY y ""Enabled"">]>" &
-         "<VersioningConfiguration><Status>&y;</Status>" &
-         "</VersioningConfiguration>",
+         Versioning_Start & "<Status>&y;</Status>" & Versioning_End,
          "versioning XML entity accepted");
+      Expect_Malformed
+        ("<VersioningConfiguration><Status>Enabled</Status>" &
+         "</VersioningConfiguration>",
+         "namespace-free versioning request accepted");
+      Expect_Malformed
+        ("<VersioningConfiguration xmlns=""urn:foreign"">" &
+         "<Status>Enabled</Status></VersioningConfiguration>",
+         "foreign versioning namespace accepted");
+      Expect_Malformed
+        ("<VersioningConfiguration xmlns=""" &
+         "http://s3.amazonaws.com/doc/2006-03-01/"" extra=""x"">" &
+         "<Status>Enabled</Status></VersioningConfiguration>",
+         "versioning element attribute accepted");
+      declare
+         Parsed : constant Bucket_Versioning_Configuration :=
+           Versioning.Parse_Response
+             ("<VersioningConfiguration><Status>Enabled</Status>" &
+              "</VersioningConfiguration>");
+      begin
+         Assert
+           (Parsed.Status = Versioning_Enabled,
+            "namespace-free compatible versioning response rejected");
+      end;
       Expect_Malformed
         (String'(1 .. Versioning.Maximum_Document_Bytes + 1 => 'x'),
          "oversized versioning document accepted");

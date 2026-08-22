@@ -306,7 +306,6 @@ package body Flyology.Object_Storage.Client.Low_Level is
      (Algorithm, Key, Key_MD5 : String) return Boolean;
    function Optional_Boolean_Header
      (Value : String) return Optional_Boolean;
-   function Content_MD5 (Value : String) return String;
    function Valid_Content_Range
      (Value : String; Length : Optional_Byte_Count) return Boolean;
 
@@ -2544,7 +2543,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          return
            (Kind          => Bucket_Versioning_Found,
             Status        => Status,
-            Configuration => S3.Versioning.Parse (Payload, Limits));
+            Configuration => S3.Versioning.Parse_Response (Payload, Limits));
       else
          return
            (Kind   => Get_Bucket_Versioning_Rejected,

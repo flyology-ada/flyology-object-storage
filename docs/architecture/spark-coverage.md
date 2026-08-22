@@ -39,9 +39,10 @@ Bucket-versioning independent-field merge is implemented in the SPARK-enabled
 domain unit and reused by the memory and files backends. Its postcondition
 states the exact preservation rule for each Unconfigured update field; the
 unit corpus also exhausts all 81 current/update enum combinations. The
-authorized post-change scoped report in `obj/proof/gnatprove/gnatprove.out`
-proves 46/46 domain-unit checks, including the merge postcondition, with
-warnings as errors and no justified, unproved, or assumed checks. SQLite uses
-an equivalent single-statement `CASE` update under its serialized catalog gate
-and is checked through merge, reopen, and migration tests. A manifest-wide
-post-change proof remains a separate coordinated release gate.
+final exact scoped report proves 2/2 checks for the merge, including its
+functional postcondition and termination. The subsequent eight-unit widening
+proves 595/595 checks with warnings as errors and no justified, unproved, or
+assumed checks. SQLite uses an equivalent single-statement `CASE` update under
+its serialized catalog gate and is checked through merge, reopen, and
+migration tests. Exact commands and historical domain-unit evidence are
+recorded in `proof-status.md` and the qualification report.

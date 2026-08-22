@@ -1941,11 +1941,18 @@ begin
         "http://s3.amazonaws.com/doc/2006-03-01/"">" &
         "<Status>Enabled</Status></VersioningConfiguration>";
       Suspended_Document : constant String :=
-        "<VersioningConfiguration><Status>Suspended</Status>" &
+        "<VersioningConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">" &
+        "<Status>Suspended</Status>" &
         "</VersioningConfiguration>";
       MFA_Document : constant String :=
-        "<VersioningConfiguration><MfaDelete>Enabled</MfaDelete>" &
+        "<VersioningConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">" &
+        "<MfaDelete>Enabled</MfaDelete>" &
         "<Status>Enabled</Status></VersioningConfiguration>";
+      Empty_Document : constant String :=
+        "<VersioningConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/""/>";
    begin
       declare
          Response : constant String :=
@@ -1960,6 +1967,24 @@ begin
               Value.Status =
                 Flyology.Object_Storage.Versioning_Unconfigured,
             "GetBucketVersioning did not preserve initial absence");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Empty_Document, Content_MD5 (Empty_Document))),
+            "200 OK"),
+         "PutBucketVersioning rejected an empty optional configuration");
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket", Query));
+         Value : constant
+           Flyology.Object_Storage.Bucket_Versioning_Configuration :=
+             Versioning.Parse_Response (Response_Body (Response));
+      begin
+         Require
+           (Value.Status = Flyology.Object_Storage.Versioning_Unconfigured,
+            "empty versioning update changed configured state");
       end;
       Require
         (Has
@@ -2019,7 +2044,9 @@ begin
          "PutBucketVersioning accepted a mismatched Content-MD5");
       declare
          Malformed : constant String :=
-           "<VersioningConfiguration><Status>Disabled</Status>" &
+           "<VersioningConfiguration xmlns=""" &
+           "http://s3.amazonaws.com/doc/2006-03-01/"">" &
+           "<Status>Disabled</Status>" &
            "</VersioningConfiguration>";
          Response : constant String :=
            Run
@@ -2034,6 +2061,30 @@ begin
          Require
            (Has (Response, "<Code>MalformedXML</Code>"),
             "PutBucketVersioning accepted an invalid status");
+      end;
+      declare
+         Foreign_Namespace : constant String :=
+           "<VersioningConfiguration xmlns=""urn:foreign"">" &
+           "<Status>Enabled</Status></VersioningConfiguration>";
+         Attributed : constant String :=
+           "<VersioningConfiguration xmlns=""" &
+           "http://s3.amazonaws.com/doc/2006-03-01/"" extra=""x"">" &
+           "<Status>Enabled</Status></VersioningConfiguration>";
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Versioning_Request
+                    (Foreign_Namespace, Content_MD5 (Foreign_Namespace))),
+               "<Code>MalformedXML</Code>"),
+            "PutBucketVersioning accepted a foreign namespace");
+         Require
+           (Has
+              (Run
+                 (Signed_Versioning_Request
+                    (Attributed, Content_MD5 (Attributed))),
+               "<Code>MalformedXML</Code>"),
+            "PutBucketVersioning accepted an element attribute");
       end;
       declare
          Oversized : constant String :=
@@ -2105,6 +2156,14 @@ begin
                    SigV4.Pair ("x-id", "PutBucketVersioning")))),
             "<Code>InvalidArgument</Code>"),
          "GetBucketVersioning accepted a mismatched operation ID");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (1 => SigV4.Pair ("versioning", "bogus")))),
+            "<Code>InvalidArgument</Code>"),
+         "GetBucketVersioning accepted a nonempty subresource value");
       Require
         (Has
            (Run

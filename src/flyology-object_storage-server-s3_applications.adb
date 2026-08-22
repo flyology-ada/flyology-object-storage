@@ -406,7 +406,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             "&versioning=";
       Has_Bucket_Versioning_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&versioning&") /= 0
-        or else Ada.Strings.Fixed.Index (Padded_Query, "&versioning=&") /= 0;
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&versioning=") /= 0;
       Has_Upload_ID_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&uploadId=") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&uploadId&") /= 0;
@@ -1770,10 +1770,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 501, "NotImplemented",
                         "SDK checksum negotiation is not implemented",
                         Target_Text);
-                  elsif Configuration.Status = Versioning_Unconfigured then
-                     Send_Error
-                       (X, 400, "InvalidArgument",
-                        "A versioning status is required", Target_Text);
                   else
                      Check_Expected_Bucket_Owner
                        (US.To_String (Auth.Principal), Owner_Accepted);
@@ -1811,7 +1807,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      if Result = Success then
                         Apps.Respond
                           (X, 200, "application/xml",
-                           Versioning.Serialize (Configuration));
+                           Versioning.Serialize_Response (Configuration));
                      else
                         Send_Backend_Error
                           (X, Result, True, Target_Text);

@@ -2,14 +2,13 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest HeadObject conditional-read, checksum, and strict UTF-8
-tag-validation forced eight-unit manifest-wide level-0 proof completed with
-593/593 checks proved, warnings as
-errors, zero justified checks, and zero Assume statements.
-The bucket-versioning domain change also completed an authorized scoped
-level-0 proof of `Flyology.Object_Storage` with 46/46 checks proved, warnings
-as errors, zero justified checks, and zero Assume statements. That scoped
-campaign did not replace the later manifest-wide qualification.
+The latest bucket-versioning, HeadObject conditional-read, checksum, and
+strict UTF-8 tag-validation forced eight-unit manifest-wide level-0 proof
+completed with 595/595 checks proved, warnings as errors, zero justified
+checks, and zero Assume statements. The final exact
+`Merge_Bucket_Versioning` scoped run proved 2/2 checks; the earlier authorized
+post-change domain-unit run proved 46/46 checks. Both used warnings as errors
+with zero justified or unproved checks and zero Assume statements.
 
 ## Proved and Finalized
 <!-- Before marking an item complete here, follow the Widen Scope step
@@ -30,7 +29,8 @@ campaign did not replace the later manifest-wide qualification.
   - [x] Evaluate_Object_Read_Conditions (1 target-attributed check;
         417/417 aggregate checks in the scoped report)
   - [x] Resolve_Range (23 attributed prover checks)
-  - [x] Merge_Bucket_Versioning (exact independent-field preservation)
+  - [x] Merge_Bucket_Versioning (exact independent-field preservation;
+        2/2 focused checks including termination)
 - [x] Flyology.Object_Storage.S3.Core (level 0, all)
   - [x] Can_Transition
   - [x] Valid_Part_Size
@@ -183,3 +183,8 @@ campaign did not replace the later manifest-wide qualification.
       into the SPARK root, proved both entry points in scoped level-0 runs, and
       widened the forced eight-unit manifest to 593/593 checks with warnings
       as errors, zero justified checks, and zero Assume statements.
+- [x] Re-proved `Merge_Bucket_Versioning` at its final-base body declaration
+      in an exact scoped level-0 run: 2/2 checks (one termination and one CVC5
+      functional-contract check), zero warnings, justified or unproved checks,
+      and zero Assume statements; then widened all eight forced units to
+      595/595 checks with the same clean result.
