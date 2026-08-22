@@ -182,6 +182,24 @@ package body Flyology_Object_Storage_Server_Credentials is
       return Passed;
    end Cryptographic_Self_Test;
 
+   function Random_Token return String is
+      Bytes : String (1 .. 32) := (others => Character'Val (0));
+   begin
+      if Random_Bytes (Bytes'Address, Bytes'Length) /= 0 then
+         raise Program_Error with "operating-system random source failed";
+      end if;
+      declare
+         Result : constant String := Hex (Bytes);
+      begin
+         Wipe (Bytes);
+         return Result;
+      end;
+   exception
+      when others =>
+         Wipe (Bytes);
+         raise;
+   end Random_Token;
+
    function Load (Path : String) return Credential is
       C_Path : Interfaces.C.Strings.chars_ptr :=
         Interfaces.C.Strings.New_String (Path);

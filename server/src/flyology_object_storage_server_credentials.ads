@@ -22,6 +22,8 @@ package Flyology_Object_Storage_Server_Credentials is
    --  iteration-one vector before accepting administrator credentials.
    function Cryptographic_Self_Test return Boolean;
 
+   function Random_Token return String;
+
    procedure Wipe (Value : in out String);
 
 private

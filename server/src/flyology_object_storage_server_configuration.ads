@@ -13,6 +13,7 @@ package Flyology_Object_Storage_Server_Configuration is
       S3_Address   : Flyology.IO.Sockets.IP_Address :=
         Flyology.IO.Sockets.Loopback_IPv4;
       S3_Port      : Flyology.IO.Sockets.Port := 9_000;
+      Admin_Port   : Flyology.IO.Sockets.Port := 9_001;
       Capacity     : Server_Capacity := 128;
    end record;
 

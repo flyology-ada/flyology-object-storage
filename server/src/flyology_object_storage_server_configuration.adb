@@ -66,6 +66,8 @@ package body Flyology_Object_Storage_Server_Configuration is
       Result.S3_Address := Flyology.IO.Sockets.Parse_IP_Address (Address);
       Result.S3_Port := Flyology.IO.Sockets.Port'Value
         (Environment ("FLYOLOGY_S3_PORT", "9000"));
+      Result.Admin_Port := Flyology.IO.Sockets.Port'Value
+        (Environment ("FLYOLOGY_ADMIN_PORT", "9001"));
       Result.Capacity := Server_Capacity'Value
         (Environment ("FLYOLOGY_S3_CAPACITY", "128"));
       if not Ada.Environment_Variables.Exists ("AWS_ACCESS_KEY_ID")

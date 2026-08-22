@@ -10,6 +10,8 @@ with Flyology.HTTP.Server;
 with Flyology.HTTP.Server.Applications;
 with Flyology.HTTP.Server.Connection_Handlers;
 with Flyology.HTTP.Server.Connections;
+with Flyology.HTTP.Server.Responses;
+with Flyology.HTTP.Server.Routing;
 with Flyology.IO.Connections;
 with Flyology.IO.Sockets;
 with Flyology.IO.Structured_Servers;
@@ -20,10 +22,13 @@ with Flyology.Supervision;
 with Flyology.Supervision.Children;
 with Flyology.Supervision.Static;
 with Flyology_Object_Storage_Server_Signals;
+with Flyology_Object_Storage_Server_Credentials;
+with Flyology_Object_Storage_Server_Sessions;
 
 procedure Flyology_Object_Storage_Server_Runtime is
    package HTTP renames Flyology.HTTP.Server;
    package Apps renames Flyology.HTTP.Server.Applications;
+   package Responses renames Flyology.HTTP.Server.Responses;
    package Owned renames Flyology.IO.Connections;
    package Sockets renames Flyology.IO.Sockets;
    package Authentication renames
@@ -31,6 +36,8 @@ procedure Flyology_Object_Storage_Server_Runtime is
    package Static_Credentials renames
      Flyology.Object_Storage.Server.Static_Credentials;
    package US renames Ada.Strings.Unbounded;
+   package Admin_Credentials renames
+     Flyology_Object_Storage_Server_Credentials;
 
    use type Flyology.Supervision.Supervisor_Outcome;
 
@@ -71,14 +78,40 @@ procedure Flyology_Object_Storage_Server_Runtime is
       Credentials              => Credentials,
       Rules                    => Rules);
 
-   type Application_Context is limited null record;
+   protected type Runtime_Status is
+      procedure Set_S3_Port (Value : Sockets.Port);
+      procedure Set_Admin_Port (Value : Sockets.Port);
+      function S3_Port return Sockets.Port;
+      function Admin_Port return Sockets.Port;
+   private
+      Bound_S3_Port : Sockets.Port := 0;
+      Bound_Admin_Port : Sockets.Port := 0;
+   end Runtime_Status;
+
+   protected body Runtime_Status is
+      procedure Set_S3_Port (Value : Sockets.Port) is
+      begin
+         Bound_S3_Port := Value;
+      end Set_S3_Port;
+
+      procedure Set_Admin_Port (Value : Sockets.Port) is
+      begin
+         Bound_Admin_Port := Value;
+      end Set_Admin_Port;
+
+      function S3_Port return Sockets.Port is (Bound_S3_Port);
+      function Admin_Port return Sockets.Port is (Bound_Admin_Port);
+   end Runtime_Status;
+
+   type Application_Context is record
+      Sessions : access Flyology_Object_Storage_Server_Sessions.Store;
+      Status   : access Runtime_Status;
+   end record;
 
    procedure Run_S3
      (Context : in out Application_Context;
       Control : not null access Flyology.Supervision.Generation_Control)
    is
-      pragma Unreferenced (Context);
-
       type Server_Context is limited null record;
 
       procedure Handle
@@ -152,6 +185,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
            (Configuration.S3_Address, Configuration.S3_Port));
       Sockets.Listen_Socket (Listener, Length => Configuration.Capacity * 2);
       Bound := Sockets.Get_Socket_Name (Listener);
+      Context.Status.Set_S3_Port (Bound.Port);
       Flyology.Supervision.Mark_Ready (Control.all);
       Ada.Text_IO.Put_Line
         ("READY s3 http://" & Sockets.Image (Bound.Address) & ":" &
@@ -190,25 +224,334 @@ procedure Flyology_Object_Storage_Server_Runtime is
       end;
    end Run_S3;
 
+   procedure Run_Management
+     (Context : in out Application_Context;
+      Control : not null access Flyology.Supervision.Generation_Control)
+   is
+      package Routing is new Flyology.HTTP.Server.Routing
+        (Application_Context);
+
+      Cookie_Name : constant String := "flyology_admin";
+      Login_Prefix : constant String := "username=admin&password=";
+
+      function Session_Token (X : Apps.Exchange) return String is
+      begin
+         if X.Request_Header_Count ("Cookie") /= 1 then
+            return "";
+         end if;
+         declare
+            Header : constant String := X.Request_Header ("Cookie");
+            Marker : constant String := Cookie_Name & "=";
+            Cursor : Natural := Header'First;
+            Found  : US.Unbounded_String;
+            Seen   : Boolean := False;
+         begin
+            while Cursor <= Header'Last loop
+               declare
+                  Separator : constant Natural :=
+                    Ada.Strings.Fixed.Index (Header, ";", From => Cursor);
+                  Segment_Last : constant Natural :=
+                    (if Separator = 0 then Header'Last else Separator - 1);
+                  Segment : constant String := Ada.Strings.Fixed.Trim
+                    (Header (Cursor .. Segment_Last), Ada.Strings.Both);
+               begin
+                  if Segment'Length >= Marker'Length
+                    and then Segment
+                      (Segment'First .. Segment'First + Marker'Length - 1) =
+                        Marker
+                  then
+                     if Seen then
+                        return "";
+                     end if;
+                     Seen := True;
+                     Found := US.To_Unbounded_String
+                       (Segment
+                          (Segment'First + Marker'Length .. Segment'Last));
+                  end if;
+                  exit when Separator = 0;
+                  Cursor := Separator + 1;
+               end;
+            end loop;
+            return US.To_String (Found);
+         end;
+      end Session_Token;
+
+      function Authenticated
+        (State : Application_Context; X : Apps.Exchange) return Boolean
+      is
+         Token : constant String := Session_Token (X);
+      begin
+         return State.Sessions.Valid (Token, Ada.Real_Time.Clock);
+      end Authenticated;
+
+      function Local_Authority
+        (State : Application_Context) return String
+      is
+        ("127.0.0.1:" & Compact (Natural (State.Status.Admin_Port)));
+
+      function Local_Request
+        (State : Application_Context; X : Apps.Exchange) return Boolean
+      is (X.Request_Authority = Local_Authority (State));
+
+      function Same_Origin
+        (State : Application_Context; X : Apps.Exchange) return Boolean
+      is
+         Count : constant Natural := X.Request_Header_Count ("Origin");
+      begin
+         return Local_Request (State, X)
+           and then (Count = 0
+           or else (Count = 1 and then X.Request_Header ("Origin") =
+             "http://" & Local_Authority (State)));
+      end Same_Origin;
+
+      procedure No_Store (X : in out Apps.Exchange) is
+      begin
+         X.Set_Header ("Cache-Control", "no-store");
+         X.Set_Header ("X-Content-Type-Options", "nosniff");
+         X.Set_Header ("Content-Security-Policy",
+                       "default-src 'self'; frame-ancestors 'none'");
+      end No_Store;
+
+      procedure Home
+        (State : in out Application_Context; X : in out Apps.Exchange)
+      is
+         HTML : constant String :=
+           "<!doctype html><html lang=""en""><head><meta charset=""utf-8"">" &
+           "<meta name=""viewport"" content=""width=device-width"">" &
+           "<title>Flyology Object Storage</title></head><body>" &
+           "<main><h1>Flyology Object Storage</h1>" &
+           "<p>The management workbench is initializing.</p>" &
+           "<form method=""post"" action=""/api/login"">" &
+           "<label>Username <input name=""username"" value=""admin"">" &
+           "</label><label>Password " &
+           "<input name=""password"" type=""password"">" &
+           "</label><button>Sign in</button></form></main></body></html>";
+      begin
+         No_Store (X);
+         if not Local_Request (State, X) then
+            X.Respond
+              (421, "text/plain; charset=utf-8", "misdirected request");
+            return;
+         end if;
+         X.Respond (200, "text/html; charset=utf-8", HTML);
+      end Home;
+
+      procedure Login
+        (State : in out Application_Context; X : in out Apps.Exchange)
+      is
+         Form : constant String := X.Content;
+      begin
+         No_Store (X);
+         if not Same_Origin (State, X)
+           or else Form'Length /= Login_Prefix'Length +
+             Admin_Credentials.Generated_Password_Length
+           or else Form
+             (Form'First .. Form'First + Login_Prefix'Length - 1) /=
+             Login_Prefix
+           or else not Admin_Credentials.Verify
+             (Admin_Credential, "admin",
+              Form (Form'First + Login_Prefix'Length .. Form'Last))
+         then
+            X.JSON (401, "{""authenticated"":false}");
+            return;
+         end if;
+         declare
+            Token : String :=
+              Admin_Credentials.Random_Token;
+            Options : constant Responses.Cookie_Options :=
+              (Secure      => False,
+               HTTP_Only   => True,
+               SameSite    => Responses.SameSite_Strict,
+               Path        => US.To_Unbounded_String ("/"),
+               Has_Max_Age => True,
+               Max_Age     => 43_200,
+               others      => <>);
+         begin
+            State.Sessions.Create (Token, Ada.Real_Time.Clock);
+            Responses.Set_Cookie (X, Cookie_Name, Token, Options);
+            Admin_Credentials.Wipe (Token);
+         exception
+            when others =>
+               State.Sessions.Revoke (Token);
+               Admin_Credentials.Wipe (Token);
+               raise;
+         end;
+         X.JSON (200, "{""authenticated"":true}");
+      end Login;
+
+      procedure Status
+        (State : in out Application_Context; X : in out Apps.Exchange) is
+      begin
+         No_Store (X);
+         if not Local_Request (State, X)
+           or else not Authenticated (State, X)
+         then
+            X.JSON (401, "{""authenticated"":false}");
+            return;
+         end if;
+         X.JSON
+           (200, "{""authenticated"":true,""backend"":""" &
+            Flyology_Object_Storage_Server_Configuration.Image
+              (Configuration.Backend) & """,""s3_port"":" &
+            Compact (Natural (State.Status.S3_Port)) & "}");
+      end Status;
+
+      procedure Logout
+        (State : in out Application_Context; X : in out Apps.Exchange)
+      is
+         Token : constant String := Session_Token (X);
+         Options : constant Responses.Cookie_Options :=
+           (Secure      => False,
+            HTTP_Only   => True,
+            SameSite    => Responses.SameSite_Strict,
+            Path        => US.To_Unbounded_String ("/"),
+            Has_Max_Age => True,
+            Max_Age     => 0,
+            others      => <>);
+      begin
+         No_Store (X);
+         if not Same_Origin (State, X)
+           or else not Authenticated (State, X)
+         then
+            X.JSON (401, "{""authenticated"":false}");
+            return;
+         end if;
+         State.Sessions.Revoke (Token);
+         Responses.Set_Cookie (X, Cookie_Name, "", Options);
+         X.JSON (200, "{""authenticated"":false}");
+      end Logout;
+
+      type Service_Context is limited record
+         Application : aliased Application_Context;
+         Routes : aliased Routing.Router
+           (Capacity => 4, Slashes => Routing.Strict_Slashes);
+         Budget : aliased HTTP.Ingress_Budget (Limit => 4 * 1_024);
+      end record;
+
+      procedure Handle
+        (State : in out Service_Context;
+         Connection : in out Owned.Connection;
+         Peer : Sockets.Endpoint;
+         Cancellation : not null access Owned.Cancellation_Token)
+      is
+         Channel : aliased HTTP.Connections.Connection_Transport
+           (Connection'Unchecked_Access);
+         Client : aliased HTTP.Connection (Channel'Access);
+      begin
+         HTTP.Configure_Ingress_Budget (Client, State.Budget'Access);
+         State.Routes.Serve
+           (State.Application, Client, Peer, Timeout => 30.0,
+            Header_Timeout => 5.0, Token => Cancellation);
+      end Handle;
+
+      package Structured is new Flyology.IO.Structured_Servers
+        (Handler_Context => Service_Context,
+         Handle => Handle,
+         Handler_Model => Flyology.Lightweight_Task);
+
+      Server : aliased Structured.Server (Capacity => 32);
+      State : aliased Service_Context;
+      Listener : Sockets.Socket_Type;
+      Bound : Sockets.Endpoint;
+      protected Lifecycle is
+         procedure Complete;
+         function Done return Boolean;
+      private
+         Finished : Boolean := False;
+      end Lifecycle;
+      protected body Lifecycle is
+         procedure Complete is
+         begin
+            Finished := True;
+         end Complete;
+         function Done return Boolean is (Finished);
+      end Lifecycle;
+   begin
+      State.Application := Context;
+      State.Routes.Get ("/", Home'Access, Name => "admin.home");
+      State.Routes.Post
+        ("/api/login", Login'Access, Name => "admin.login",
+         Policy =>
+           (Routing.Default_Route_Policy with delta
+              Body_Handling => Apps.Buffer_Body, Max_Body => 256,
+              Concurrency => 1, Rate_Per_Second => 2));
+      State.Routes.Get
+        ("/api/status", Status'Access, Name => "admin.status");
+      State.Routes.Post
+        ("/api/logout", Logout'Access, Name => "admin.logout",
+         Policy =>
+           (Routing.Default_Route_Policy with delta
+              Concurrency => 4, Rate_Per_Second => 4));
+      Sockets.Create_Socket (Listener);
+      Sockets.Set_Socket_Option
+        (Listener, Sockets.Socket_Level, (Sockets.Reuse_Address, True));
+      Sockets.Bind_Socket
+        (Listener, Sockets.Network_Endpoint
+           (Sockets.Loopback_IPv4, Configuration.Admin_Port));
+      Sockets.Listen_Socket (Listener, Length => 64);
+      Bound := Sockets.Get_Socket_Name (Listener);
+      Context.Status.Set_Admin_Port (Bound.Port);
+      Flyology.Supervision.Mark_Ready (Control.all);
+      Ada.Text_IO.Put_Line
+        ("READY admin http://127.0.0.1:" & Compact (Natural (Bound.Port)) &
+         "/");
+      Ada.Text_IO.Flush;
+      declare
+         task Stopper is
+            pragma Task_Info (Flyology.Native_Task);
+         end Stopper;
+         task body Stopper is
+         begin
+            loop
+               exit when Lifecycle.Done;
+               if Flyology.Supervision.Stopping (Control.all).Requested then
+                  Structured.Request_Shutdown (Server);
+                  exit;
+               end if;
+               delay 0.050;
+            end loop;
+         end Stopper;
+      begin
+         begin
+            Structured.Serve
+              (Server, Listener, State, Drain_Timeout => 2.0);
+            Lifecycle.Complete;
+         exception
+            when others =>
+               Lifecycle.Complete;
+               raise;
+         end;
+      end;
+   end Run_Management;
+
    package S3_Child is new Flyology.Supervision.Children
      (Application_Context => Application_Context,
       Execute             => Run_S3,
       Task_Model          => Flyology.Native_Task);
 
-   type Service_Kind is (S3_Service);
+   package Management_Child is new Flyology.Supervision.Children
+     (Application_Context => Application_Context,
+      Execute             => Run_Management,
+      Task_Model          => Flyology.Native_Task);
+
+   type Service_Kind is (S3_Service, Management_Service);
 
    function Logical_Id
      (Child : Service_Kind) return Flyology.Supervision.Child_Id
-   is (case Child is when S3_Service => 1);
+   is (case Child is
+         when S3_Service         => 1,
+         when Management_Service => 2);
 
    function Specification
      (Child : Service_Kind) return Flyology.Supervision.Child_Specification
    is
-      pragma Unreferenced (Child);
       Value : Flyology.Supervision.Child_Specification := (others => <>);
    begin
       Value.Restart := Flyology.Supervision.On_Failure;
-      Value.Impact := Flyology.Supervision.Isolate_Child;
+      Value.Impact :=
+        (if Child = S3_Service
+         then Flyology.Supervision.Restart_Dependents
+         else Flyology.Supervision.Isolate_Child);
       Value.Stopping :=
         (Grace             => Ada.Real_Time.Seconds (12),
          Request_Abort     => False,
@@ -222,9 +565,8 @@ procedure Flyology_Object_Storage_Server_Runtime is
    function Depends_On
      (Child, Prerequisite : Service_Kind) return Boolean
    is
-      pragma Unreferenced (Child, Prerequisite);
    begin
-      return False;
+      return Child = Management_Service and then Prerequisite = S3_Service;
    end Depends_On;
 
    function No_Cohort
@@ -241,9 +583,13 @@ procedure Flyology_Object_Storage_Server_Runtime is
       Control : aliased in out Flyology.Supervision.Generation_Control;
       Result  : out Flyology.Supervision.Generation_Result)
    is
-      pragma Unreferenced (Child);
    begin
-      S3_Child.Run (Context, Control, Result);
+      case Child is
+         when S3_Service =>
+            S3_Child.Run (Context, Control, Result);
+         when Management_Service =>
+            Management_Child.Run (Context, Control, Result);
+      end case;
    end Run_One_Generation;
 
    package Supervisors is new Flyology.Supervision.Static
@@ -255,7 +601,11 @@ procedure Flyology_Object_Storage_Server_Runtime is
       Cohort_Member       => No_Cohort,
       Run_One_Generation  => Run_One_Generation);
 
-   Context    : aliased Application_Context;
+   Session_State : aliased Flyology_Object_Storage_Server_Sessions.Store;
+   Status_State  : aliased Runtime_Status;
+   Context       : aliased Application_Context :=
+     (Sessions => Session_State'Access,
+      Status   => Status_State'Access);
    Supervisor : aliased Supervisors.Supervisor;
    Result     : Flyology.Supervision.Supervisor_Result;
 

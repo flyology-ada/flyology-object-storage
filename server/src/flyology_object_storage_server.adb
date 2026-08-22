@@ -55,7 +55,8 @@ begin
             procedure Run is new Flyology_Object_Storage_Server_Runtime
               (Backend_Type => Flyology.Object_Storage.Backends.Memory.Store,
                Store        => Store.all,
-               Configuration => Settings);
+               Configuration => Settings,
+               Admin_Credential => Admin);
          begin
             Run;
          end;
@@ -68,7 +69,8 @@ begin
             procedure Run is new Flyology_Object_Storage_Server_Runtime
               (Backend_Type => Flyology.Object_Storage.Backends.Files.Store,
                Store        => Store,
-               Configuration => Settings);
+               Configuration => Settings,
+               Admin_Credential => Admin);
          begin
             Run;
          end;
@@ -81,7 +83,8 @@ begin
             procedure Run is new Flyology_Object_Storage_Server_Runtime
               (Backend_Type => Flyology.Object_Storage.Backends.SQLite.Store,
                Store        => Store,
-               Configuration => Settings);
+               Configuration => Settings,
+               Admin_Credential => Admin);
          begin
             Run;
          end;
