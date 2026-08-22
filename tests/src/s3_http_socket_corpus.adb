@@ -39,6 +39,7 @@ procedure S3_HTTP_Socket_Corpus is
    use Ada.Streams;
    use type Low_Level.List_Buckets_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
+   use type Objects.List_Outcome_Kind;
    use type Low_Level.Create_Multipart_Outcome_Kind;
    use type Low_Level.Complete_Multipart_Outcome_Kind;
    use type Low_Level.Abort_Multipart_Outcome_Kind;
@@ -620,6 +621,23 @@ procedure S3_HTTP_Socket_Corpus is
         "<Name>example-bucket</Name><KeyCount>0</KeyCount>" &
         "<MaxKeys>2</MaxKeys><IsTruncated>false</IsTruncated>" &
         "</ListBucketResult>";
+      First_Page_XML : constant String :=
+        "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Name>example-bucket</Name>" &
+        "<Prefix>socket-page/</Prefix><KeyCount>1</KeyCount>" &
+        "<MaxKeys>1</MaxKeys><IsTruncated>true</IsTruncated>" &
+        "<NextContinuationToken>opaque-next</NextContinuationToken>" &
+        "<Contents><Key>socket-page/a</Key><Size>1</Size></Contents>" &
+        "</ListBucketResult>";
+      Second_Page_XML : constant String :=
+        "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Name>example-bucket</Name>" &
+        "<Prefix>socket-page/</Prefix>" &
+        "<ContinuationToken>opaque-next</ContinuationToken>" &
+        "<KeyCount>1</KeyCount><MaxKeys>1</MaxKeys>" &
+        "<IsTruncated>false</IsTruncated>" &
+        "<Contents><Key>socket-page/b</Key><Size>1</Size></Contents>" &
+        "</ListBucketResult>";
       List_Buckets_XML : constant String :=
         "<ListAllMyBucketsResult xmlns=""http://s3.amazonaws.com/doc/" &
         "2006-03-01/""><Owner><ID>socket-owner</ID></Owner>" &
@@ -746,6 +764,14 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Request_Payer => "requester",
             Expected_Bucket_Owner => "123456789012",
             Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response ("200 OK", First_Page_XML), "GET",
+            "/example-bucket?list-type=2&max-keys=1&" &
+              "prefix=socket-page%2F");
+         Serve
+           (HTTP_Response ("200 OK", Second_Page_XML), "GET",
+            "/example-bucket?continuation-token=opaque-next&" &
+              "list-type=2&max-keys=1&prefix=socket-page%2F");
          Serve
            (HTTP_Response
               ("200 OK", List_Uploads_XML,
@@ -1323,6 +1349,84 @@ procedure S3_HTTP_Socket_Corpus is
             if not Raised then
                raise Program_Error with "oversized socket response accepted";
             end if;
+         end;
+         declare
+            Stop      : aliased Flyology.Cancellation.Token;
+            Cancelled : Boolean := False;
+            Timed_Out : Boolean := False;
+         begin
+            Stop.Request;
+            begin
+               declare
+                  Ignored : constant Objects.List_Outcome :=
+                    Objects.List_Page
+                      (HTTP, Origin, "example-bucket", Identity,
+                       Prefix => "socket-page/", Maximum => 1,
+                       Timeout => 5.0, Token => Stop'Access);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Cancelled := True;
+            end;
+            begin
+               declare
+                  Ignored : constant Objects.List_Outcome :=
+                    Objects.List_Page
+                      (HTTP, Origin, "example-bucket", Identity,
+                       Prefix => "socket-page/", Maximum => 1,
+                       Timeout => 0.0);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Flyology.IO.Timeout_Error =>
+                  Timed_Out := True;
+            end;
+            if not Cancelled or else not Timed_Out then
+               raise Program_Error with
+                 "high-level ListObjectsV2 ignored cancellation/deadline";
+            end if;
+         end;
+         declare
+            First : constant Objects.List_Outcome :=
+              Objects.List_Page
+                (HTTP, Origin, "example-bucket", Identity,
+                 Prefix => "socket-page/", Maximum => 1, Timeout => 5.0);
+         begin
+            if First.Kind /= Objects.Page_Available
+              or else Natural (First.Page.Contents.Length) /= 1
+              or else not First.Page.Is_Truncated
+              or else not First.Page.Has_Next_Continuation_Token
+              or else US.To_String (First.Page.Next_Continuation_Token) /=
+                "opaque-next"
+            then
+               raise Program_Error with
+                 "high-level ListObjectsV2 lost truncated-page token";
+            end if;
+            declare
+               Next : constant Objects.List_Outcome :=
+                 Objects.List_Page
+                   (HTTP, Origin, "example-bucket", Identity,
+                    Prefix => "socket-page/", Maximum => 1,
+                    Continuation_Token => US.To_String
+                      (First.Page.Next_Continuation_Token),
+                    Timeout => 5.0);
+            begin
+               if Next.Kind /= Objects.Page_Available
+                 or else Natural (Next.Page.Contents.Length) /= 1
+                 or else US.To_String
+                   (Next.Page.Contents.First_Element.Key) /= "socket-page/b"
+                 or else Next.Page.Is_Truncated
+                 or else Next.Page.Has_Next_Continuation_Token
+               then
+                  raise Program_Error with
+                    "high-level ListObjectsV2 continuation mismatch";
+               end if;
+            end;
          end;
          declare
             List_Parameters : Low_Level.List_Multipart_Uploads_Parameters;

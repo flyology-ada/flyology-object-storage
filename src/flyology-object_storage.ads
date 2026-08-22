@@ -94,6 +94,15 @@ is
          (if Update.MFA_Delete = MFA_Delete_Unconfigured
           then Current.MFA_Delete else Update.MFA_Delete);
 
+   --  Bytewise prefix and exclusive-cursor predicates shared by every
+   --  ListObjects backend. Delimiter projection is applied before the cursor
+   --  predicate so a collapsed CommonPrefixes entry counts as one item.
+   function Listing_Matches_Prefix
+     (Key, Prefix : String) return Boolean;
+
+   function Listing_Follows_Cursor
+     (Projected_Key, After : String) return Boolean;
+
    --  Requested object byte interval. Backends resolve this request against
    --  the same immutable object snapshot that they stream, including suffix
    --  requests, so callers never need a racy Head_Object/Get_Object pair.

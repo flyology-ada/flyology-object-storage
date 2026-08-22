@@ -476,6 +476,26 @@ package body Object_Storage_Test_Cases is
            when 5 => "omega",
            when 6 => "dir/a",
            when others => raise Program_Error);
+
+      procedure Put_Listing_Key (Key : String) is
+         Source : Buffer_Source :=
+           (Data     => Flyology.Bytes.From_Byte_String ("x"),
+            Position => 0,
+            Length   => (Kind => Known, Bytes => 1),
+            Bad_Last => False);
+      begin
+         Store.Put_Object
+           (Bucket, Key, Source, Default_Put_Options,
+            null, Ada.Real_Time.Time_Last, Info, Result);
+         Assert (Result = Success, "ListObjectsV2 backend key setup");
+      end Put_Listing_Key;
+
+      procedure Delete_Listing_Key (Key : String) is
+      begin
+         Store.Delete_Object
+           (Bucket, Key, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "ListObjectsV2 backend key cleanup");
+      end Delete_Listing_Key;
    begin
       Store.Delete_Object
         ("missing-bucket", "key", null, Ada.Real_Time.Time_Last, Result);
@@ -589,6 +609,84 @@ package body Object_Storage_Test_Cases is
          and then not Page.Is_Truncated
          and then US.Length (Page.Next_After) = 0,
          "zero-sized listing is empty and final");
+
+      --  ListObjectsV2 backend conformance: every nonzero bound is honored
+      --  exactly, and truncation/token state agrees with the remaining
+      --  namespace snapshot.
+      for Maximum in 1 .. 6 loop
+         Options := (others => <>);
+         Options.Maximum := Maximum;
+         Store.List_Objects
+           (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+         Assert
+           (Result = Success
+            and then Natural (Page.Objects.Length) = Maximum
+            and then Page.Common_Prefixes.Is_Empty
+            and then Page.Is_Truncated = (Maximum < 6)
+            and then
+              (US.Length (Page.Next_After) > 0) = Page.Is_Truncated,
+            "ListObjectsV2 backend bounded-page property");
+      end loop;
+
+      --  A continuation is an exclusive projected-key cursor over a fresh,
+      --  atomic call snapshot.  A later insertion before the cursor cannot
+      --  repeat, while a later insertion after it is eligible for the next
+      --  page.
+      Options := (others => <>);
+      Options.Maximum := 2;
+      Store.List_Objects
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      declare
+         Cursor : constant US.Unbounded_String := Page.Next_After;
+      begin
+         Put_Listing_Key ("aardvark");
+         Put_Listing_Key ("dir/aa");
+         Options.After := Cursor;
+         Store.List_Objects
+           (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+         Assert
+           (Result = Success
+            and then Page.Objects.Length = 2
+            and then US.To_String (Page.Objects (1).Key) = "dir/aa"
+            and then US.To_String (Page.Objects (2).Key) = "dir/b",
+            "ListObjectsV2 mutation-safe exclusive continuation");
+         Delete_Listing_Key ("aardvark");
+         Delete_Listing_Key ("dir/aa");
+      end;
+
+      --  Delimiters are strings, not characters.  A collapsed common prefix
+      --  consumes one result and its projected name is the exclusive cursor.
+      Put_Listing_Key ("multi/a--x");
+      Put_Listing_Key ("multi/a--y");
+      Put_Listing_Key ("multi/b");
+      Options := (others => <>);
+      Options.Prefix := US.To_Unbounded_String ("multi/");
+      Options.Delimiter := US.To_Unbounded_String ("--");
+      Options.Maximum := 1;
+      Store.List_Objects
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success
+         and then Page.Objects.Is_Empty
+         and then Page.Common_Prefixes.Length = 1
+         and then US.To_String (Page.Common_Prefixes.First_Element) =
+           "multi/a--"
+         and then Page.Is_Truncated
+         and then US.To_String (Page.Next_After) = "multi/a--",
+         "ListObjectsV2 multi-character delimiter projection");
+      Options.After := Page.Next_After;
+      Store.List_Objects
+        (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success
+         and then Page.Objects.Length = 1
+         and then US.To_String (Page.Objects.First_Element.Key) = "multi/b"
+         and then Page.Common_Prefixes.Is_Empty
+         and then not Page.Is_Truncated,
+         "ListObjectsV2 projected-prefix continuation");
+      Delete_Listing_Key ("multi/a--x");
+      Delete_Listing_Key ("multi/a--y");
+      Delete_Listing_Key ("multi/b");
 
       declare
          Cancel : aliased Flyology.Cancellation.Token;
@@ -3370,6 +3468,49 @@ package body Object_Storage_Test_Cases is
            (Flyology.Object_Storage.Byte_Count'Last,
             Flyology.Object_Storage.Byte_Count'Last) = 1,
          "overflow-safe maximum part count");
+
+      Assert
+        (Flyology.Object_Storage.Listing_Matches_Prefix
+           ("logs/archive/object", "logs/")
+         and then not Flyology.Object_Storage.Listing_Matches_Prefix
+           ("log", "logs/")
+         and then Flyology.Object_Storage.Listing_Matches_Prefix ("x", ""),
+         "ListObjectsV2 byte-prefix predicate");
+      Assert
+        (Flyology.Object_Storage.Listing_Follows_Cursor ("b", "a")
+         and then not
+           Flyology.Object_Storage.Listing_Follows_Cursor ("a", "a")
+         and then not
+           Flyology.Object_Storage.Listing_Follows_Cursor ("a", "b"),
+         "ListObjectsV2 exclusive cursor predicate");
+      declare
+         Valid : constant String :=
+           "fos1." & String'(1 .. 64 => 'a') & "." & "00ff";
+         Empty : constant String :=
+           "fos1." & String'(1 .. 64 => '0') & ".";
+         Odd : constant String :=
+           "fos1." & String'(1 .. 64 => '0') & ".0";
+         Bad_Digest : constant String :=
+           "fos1." & String'(1 .. 63 => '0') & "g.";
+         Bad_Cursor : constant String :=
+           "fos1." & String'(1 .. 64 => '0') & ".0g";
+      begin
+         Assert
+           (Core.Valid_Listing_Continuation_Syntax (Valid)
+            and then Core.Valid_Listing_Continuation_Syntax (Empty)
+            and then not Core.Valid_Listing_Continuation_Syntax (Odd)
+            and then not
+              Core.Valid_Listing_Continuation_Syntax (Bad_Digest)
+            and then not
+              Core.Valid_Listing_Continuation_Syntax (Bad_Cursor)
+            and then not Core.Valid_Listing_Continuation_Syntax
+              ("fos2." & String'(1 .. 64 => '0') & ".")
+            and then not Core.Valid_Listing_Continuation_Syntax
+              ("fos1." & String'(1 .. 64 => '0') & "." &
+               String'(1 .. 2 * Core.Maximum_Listing_Cursor_Bytes + 2 =>
+                 '0')),
+            "ListObjectsV2 continuation syntax bounds");
+      end;
 
       Assert
         (Core.Can_Transition (Core.Initiated, Core.Active),

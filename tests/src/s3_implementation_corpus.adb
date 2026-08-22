@@ -439,9 +439,11 @@ procedure S3_Implementation_Corpus is
       end Require_Listed_Object;
 
       procedure Require_High_Level_List_Pagination is
+         --  Use the complete bucket namespace so the fixture has multiple
+         --  independently verified objects on every permissive oracle.
          First : constant Client_Objects.List_Outcome :=
            Client_Objects.List_Page
-             (HTTP, Origin, Bucket, Identity, Prefix => Key, Maximum => 1,
+             (HTTP, Origin, Bucket, Identity, Maximum => 1,
               Timeout => 30.0);
       begin
          if First.Kind /= Client_Objects.Page_Available
@@ -451,15 +453,23 @@ procedure S3_Implementation_Corpus is
            or else US.Length (First.Page.Next_Continuation_Token) = 0
          then
             raise Program_Error with
-              "S3 implementation failed high-level first list page";
+              "S3 implementation failed high-level first list page: kind=" &
+              Client_Objects.List_Outcome_Kind'Image (First.Kind) &
+              (if First.Kind = Client_Objects.Page_Available
+               then " count=" & First.Page.Contents.Length'Image &
+                 " truncated=" & First.Page.Is_Truncated'Image &
+                 " token-present=" &
+                 First.Page.Has_Next_Continuation_Token'Image &
+                 " token-length=" &
+                 US.Length (First.Page.Next_Continuation_Token)'Image
+               else " status=" & First.Status'Image);
          end if;
          declare
             First_Key : constant String := US.To_String
               (First.Page.Contents.First_Element.Key);
             Next : constant Client_Objects.List_Outcome :=
               Client_Objects.List_Page
-                (HTTP, Origin, Bucket, Identity, Prefix => Key,
-                 Maximum => 1,
+                (HTTP, Origin, Bucket, Identity, Maximum => 1,
                  Continuation_Token => US.To_String
                    (First.Page.Next_Continuation_Token),
                  Timeout => 30.0);

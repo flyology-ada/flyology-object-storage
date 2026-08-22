@@ -6,13 +6,6 @@ package body Flyology.Object_Storage.Backends.Listing is
    package US renames Ada.Strings.Unbounded;
    use type Ada.Containers.Count_Type;
 
-   function Starts_With (Value, Prefix : String) return Boolean is
-     (Prefix'Length <= Value'Length
-      and then
-        (Prefix'Length = 0
-         or else Value
-           (Value'First .. Value'First + Prefix'Length - 1) = Prefix));
-
    procedure Initialize (Item : in out Builder; Options : List_Options) is
    begin
       Item.Options := Options;
@@ -33,7 +26,7 @@ package body Flyology.Object_Storage.Backends.Listing is
       Keep      : constant Ada.Containers.Count_Type :=
         Ada.Containers.Count_Type (Item.Options.Maximum) + 1;
    begin
-      if not Starts_With (Key, Prefix) then
+      if not Listing_Matches_Prefix (Key, Prefix) then
          return;
       end if;
       if Delimiter'Length > 0
@@ -52,7 +45,7 @@ package body Flyology.Object_Storage.Backends.Listing is
          Value.Info := Info;
       end if;
 
-      if US.To_String (Value.Key) <= After then
+      if not Listing_Follows_Cursor (US.To_String (Value.Key), After) then
          return;
       end if;
       if not Item.Candidates.Is_Empty then

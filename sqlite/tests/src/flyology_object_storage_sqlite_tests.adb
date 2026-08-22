@@ -1758,6 +1758,30 @@ begin
       declare
          Page    : List_Page;
          Options : List_Options;
+
+         procedure Put_Listing_Key (Object_Key : String) is
+            Listing_Source : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String ("x"),
+               Position => 0,
+               Length   => (Kind => Known, Bytes => 1));
+         begin
+            Store.Put_Object
+              ("sqlite-bucket", Object_Key, Listing_Source,
+               Default_Put_Options, null, Ada.Real_Time.Time_Last,
+               Info, Result);
+            Assert
+              (Result = Success, "SQLite ListObjectsV2 key setup failed");
+         end Put_Listing_Key;
+
+         procedure Delete_Listing_Key (Object_Key : String) is
+         begin
+            Store.Delete_Object
+              ("sqlite-bucket", Object_Key, null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "SQLite ListObjectsV2 key cleanup failed");
+         end Delete_Listing_Key;
       begin
          Options.Maximum := 1;
          Store.List_Objects
@@ -1768,8 +1792,25 @@ begin
             and then US.To_String (Page.Objects.First_Element.Key) = "empty"
             and then Page.Is_Truncated
             and then US.To_String (Page.Next_After) = "empty",
-            "SQLite backend listing first page failed");
-         Options.After := Page.Next_After;
+            "SQLite ListObjectsV2 first page failed");
+         declare
+            Cursor : constant US.Unbounded_String := Page.Next_After;
+         begin
+            Put_Listing_Key ("aardvark");
+            Put_Listing_Key ("empty0");
+            Options.After := Cursor;
+            Store.List_Objects
+              ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+               Page, Result);
+            Assert
+              (Result = Success and then Page.Objects.Length = 1
+               and then US.To_String (Page.Objects.First_Element.Key) =
+                 "empty0",
+               "SQLite ListObjectsV2 mutation-safe continuation failed");
+            Delete_Listing_Key ("aardvark");
+            Delete_Listing_Key ("empty0");
+            Options.After := Cursor;
+         end;
          Store.List_Objects
            ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
             Page, Result);
@@ -1777,7 +1818,7 @@ begin
            (Result = Success and then Page.Objects.Length = 1
             and then US.To_String (Page.Objects.First_Element.Key) = Key
             and then not Page.Is_Truncated,
-            "SQLite backend listing continuation failed");
+            "SQLite ListObjectsV2 continuation failed");
          Options := (others => <>);
          Options.Delimiter := US.To_Unbounded_String ("/");
          Store.List_Objects
@@ -1788,7 +1829,40 @@ begin
             and then Page.Common_Prefixes.Length = 1
             and then US.To_String (Page.Common_Prefixes.First_Element) =
               Character'Val (255) & "../",
-            "SQLite backend delimiter listing failed");
+            "SQLite ListObjectsV2 delimiter listing failed");
+         Put_Listing_Key ("multi/a--x");
+         Put_Listing_Key ("multi/a--y");
+         Put_Listing_Key ("multi/b");
+         Options := (others => <>);
+         Options.Prefix := US.To_Unbounded_String ("multi/");
+         Options.Delimiter := US.To_Unbounded_String ("--");
+         Options.Maximum := 1;
+         Store.List_Objects
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success
+            and then Page.Objects.Is_Empty
+            and then Page.Common_Prefixes.Length = 1
+            and then US.To_String (Page.Common_Prefixes.First_Element) =
+              "multi/a--"
+            and then Page.Is_Truncated
+            and then US.To_String (Page.Next_After) = "multi/a--",
+            "SQLite ListObjectsV2 multi-delimiter projection failed");
+         Options.After := Page.Next_After;
+         Store.List_Objects
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Objects.Length = 1
+            and then US.To_String (Page.Objects.First_Element.Key) =
+              "multi/b"
+            and then Page.Common_Prefixes.Is_Empty
+            and then not Page.Is_Truncated,
+            "SQLite ListObjectsV2 projected continuation failed");
+         Delete_Listing_Key ("multi/a--x");
+         Delete_Listing_Key ("multi/a--y");
+         Delete_Listing_Key ("multi/b");
          declare
             Cancel : aliased Flyology.Cancellation.Token;
             Raised : Boolean := False;

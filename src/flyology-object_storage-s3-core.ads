@@ -14,6 +14,15 @@ is
    subtype Part_Number is Positive range 1 .. 10_000;
    subtype Page_Size is Natural range 0 .. 1_000;
 
+   Maximum_Listing_Cursor_Bytes : constant := 1_024;
+
+   --  Validate the bounded Flyology continuation envelope before token
+   --  decoding or digest work: fos1., 64 hexadecimal characters encoding a
+   --  SHA-256 digest, a dot, and an even hexadecimal cursor no longer than an
+   --  S3 object key.
+   function Valid_Listing_Continuation_Syntax
+     (Token : String) return Boolean;
+
    type Checksum_Algorithm is
      (No_Checksum, CRC32, CRC32C, CRC64NVME, SHA1, SHA256, SHA512, MD5,
       XXHASH64, XXHASH3, XXHASH128);

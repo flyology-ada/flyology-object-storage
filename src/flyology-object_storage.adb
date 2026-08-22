@@ -261,6 +261,14 @@ is
       and then Value
         (Value'First .. Value'First - 1 + Prefix'Length) = Prefix);
 
+   function Listing_Matches_Prefix
+     (Key, Prefix : String) return Boolean is
+     (Starts_With (Key, Prefix));
+
+   function Listing_Follows_Cursor
+     (Projected_Key, After : String) return Boolean is
+     (Projected_Key > After);
+
    function Ends_With (Value, Suffix : String) return Boolean is
      (Suffix'Length = 0
       or else

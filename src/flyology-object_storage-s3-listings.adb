@@ -2,7 +2,6 @@ with Ada.Containers;
 with Ada.Strings;
 with Ada.Strings.Fixed;
 with Flyology.Object_Storage.S3.Model;
-with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.Wire_Core;
 with GNAT.SHA256;
 
@@ -320,9 +319,7 @@ package body Flyology.Object_Storage.S3.Listings is
    is
       Invalid : constant Continuation_Result := (others => <>);
    begin
-      if Token'Length < Token_Prefix'Length + 65
-        or else Token'Length > Token_Prefix'Length + 65 + 2 * 1_024
-      then
+      if not Core.Valid_Listing_Continuation_Syntax (Token) then
          return Invalid;
       end if;
       declare
@@ -335,8 +332,6 @@ package body Flyology.Object_Storage.S3.Listings is
          if Raw (1 .. Token_Prefix'Length) /= Token_Prefix
            or else Raw (Digest_Last + 1) /= '.'
            or else Hex_Length mod 2 /= 0
-           or else not SigV4_Encoding.Valid_SHA256_Hex
-             (Raw (Digest_First .. Digest_Last))
          then
             return Invalid;
          end if;
@@ -972,7 +967,9 @@ package body Flyology.Object_Storage.S3.Listings is
       then
          raise Malformed_Listing with
            "S3 delimiter lacks presence state";
-      elsif not Value.Has_Start_After and then US.Length (Value.Start_After) > 0
+      elsif
+        not Value.Has_Start_After
+        and then US.Length (Value.Start_After) > 0
       then
          raise Malformed_Listing with
            "S3 start-after lacks presence state";

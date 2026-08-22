@@ -2,6 +2,55 @@ package body Flyology.Object_Storage.S3.Core
   with SPARK_Mode => On
 is
 
+   function Is_Hexadecimal (Value : Character) return Boolean is
+     (Value in '0' .. '9' | 'a' .. 'f' | 'A' .. 'F');
+
+   function Valid_Listing_Continuation_Syntax
+     (Token : String) return Boolean
+   is
+      Prefix_Length : constant := 5;
+      Digest_Length : constant := 64;
+      Header_Length : constant := Prefix_Length + Digest_Length + 1;
+      Maximum_Length : constant :=
+        Header_Length + 2 * Maximum_Listing_Cursor_Bytes;
+      Length : constant Natural := Token'Length;
+   begin
+      if Length < Header_Length
+        or else Length > Maximum_Length
+        or else (Length - Header_Length) mod 2 /= 0
+      then
+         return False;
+      end if;
+      declare
+         Raw : constant String (1 .. Length) := Token;
+      begin
+         if Raw (1 .. Prefix_Length) /= "fos1."
+           or else Raw (Header_Length) /= '.'
+         then
+            return False;
+         end if;
+         for Index in Prefix_Length + 1 .. Prefix_Length + Digest_Length loop
+            pragma Loop_Invariant
+              (Index in Prefix_Length + 1 .. Prefix_Length + Digest_Length);
+            pragma Loop_Variant (Increases => Index);
+            if not Is_Hexadecimal (Raw (Index)) then
+               return False;
+            end if;
+         end loop;
+         if Length > Header_Length then
+            for Index in Header_Length + 1 .. Length loop
+               pragma Loop_Invariant
+                 (Index in Header_Length + 1 .. Length);
+               pragma Loop_Variant (Increases => Index);
+               if not Is_Hexadecimal (Raw (Index)) then
+                  return False;
+               end if;
+            end loop;
+         end if;
+         return True;
+      end;
+   end Valid_Listing_Continuation_Syntax;
+
    function Is_OWS (Value : Character) return Boolean is
      (Value = ' ' or else Value = Character'Val (9));
 
