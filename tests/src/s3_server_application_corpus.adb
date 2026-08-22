@@ -3473,11 +3473,13 @@ begin
       Request.Objects.Append
         (Deletions.Object_Identifier'
          (Key        => US.To_Unbounded_String ("multi-a"),
-          Version_ID => US.Null_Unbounded_String));
+          Version_ID => US.Null_Unbounded_String,
+          others     => <>));
       Request.Objects.Append
         (Deletions.Object_Identifier'
          (Key        => US.To_Unbounded_String ("multi-b"),
-          Version_ID => US.Null_Unbounded_String));
+          Version_ID => US.Null_Unbounded_String,
+          others     => <>));
       declare
          Payload : constant String := Deletions.Serialize_Request (Request);
          Response : constant String := Run
@@ -3508,7 +3510,8 @@ begin
       Request.Objects.Append
         (Deletions.Object_Identifier'
          (Key        => US.To_Unbounded_String ("already-absent"),
-          Version_ID => US.Null_Unbounded_String));
+          Version_ID => US.Null_Unbounded_String,
+          others     => <>));
       declare
          Response : constant String := Run
            (Signed_Request
@@ -3533,7 +3536,8 @@ begin
       Request.Objects.Append
         (Deletions.Object_Identifier'
          (Key        => US.To_Unbounded_String ("version-preserved"),
-          Version_ID => US.To_Unbounded_String ("unsupported-version")));
+          Version_ID => US.To_Unbounded_String ("unsupported-version"),
+          others     => <>));
       declare
          Response : constant String := Run
            (Signed_Request

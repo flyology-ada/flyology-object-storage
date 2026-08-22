@@ -1385,11 +1385,13 @@ procedure S3_Implementation_Corpus is
          Request.Objects.Append
            (Deletions.Object_Identifier'
               (Key        => US.To_Unbounded_String (First_Key),
-               Version_ID => US.Null_Unbounded_String));
+               Version_ID => US.Null_Unbounded_String,
+               others     => <>));
          Request.Objects.Append
            (Deletions.Object_Identifier'
               (Key        => US.To_Unbounded_String (Second_Key),
-               Version_ID => US.Null_Unbounded_String));
+               Version_ID => US.Null_Unbounded_String,
+               others     => <>));
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Delete_Objects

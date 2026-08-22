@@ -1281,15 +1281,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Object_Tagging_Outcome;
 
-   --  Common DeleteObjects request policy. Content-MD5 is generated from the
-   --  exact serialized body and is not caller supplied. The optional modeled
-   --  SDK checksum-algorithm member remains at the generic model boundary
-   --  until its paired checksum value/trailer policy is qualified.
+   --  Every non-Bucket/Delete member in the pinned DeleteObjects input shape.
+   --  Content-MD5 is always generated over the exact serialized document.
+   --  When Checksum_Algorithm is present, the client also generates the
+   --  matching algorithm-specific checksum header over those same bytes.
    type Delete_Objects_Parameters is record
       MFA                         : Ada.Strings.Unbounded.Unbounded_String;
       Request_Payer               : Ada.Strings.Unbounded.Unbounded_String;
       Bypass_Governance_Retention : Optional_Boolean;
       Expected_Bucket_Owner       : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm          : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
    function Prepare_Delete_Objects

@@ -28,8 +28,14 @@ package Flyology.Object_Storage.S3.Deletions is
    function Valid_Version_ID (Item : String) return Boolean;
 
    type Object_Identifier is record
-      Key        : Ada.Strings.Unbounded.Unbounded_String;
-      Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Key                    : Ada.Strings.Unbounded.Unbounded_String;
+      Version_ID             : Ada.Strings.Unbounded.Unbounded_String;
+      Has_ETag               : Boolean := False;
+      ETag                   : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Last_Modified_Time : Boolean := False;
+      Last_Modified_Time     : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Size               : Boolean := False;
+      Size                   : Byte_Count := 0;
    end record;
 
    package Object_Vectors is new Ada.Containers.Vectors

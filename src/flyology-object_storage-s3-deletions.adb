@@ -7,23 +7,31 @@ package body Flyology.Object_Storage.S3.Deletions is
    package US renames Ada.Strings.Unbounded;
    use type Ada.Containers.Count_Type;
 
-   type Field_Kind is (No_Field, Key_Field, Version_Field, Quiet_Field);
+   type Field_Kind is
+     (No_Field, Key_Field, Version_Field, ETag_Field,
+      Last_Modified_Time_Field, Size_Field, Quiet_Field);
 
    type Delete_Handler is new XML.Event_Handler with record
       Value          : Delete_Objects_Request;
       Current        : Object_Identifier;
       Text_Value     : US.Unbounded_String;
       Depth          : Natural := 0;
-      Ignore_Depth   : Natural := 0;
       Field          : Field_Kind := No_Field;
       In_Object      : Boolean := False;
       Seen_Key       : Boolean := False;
       Seen_Version   : Boolean := False;
+      Seen_ETag      : Boolean := False;
+      Seen_Last_Modified_Time : Boolean := False;
+      Seen_Size      : Boolean := False;
       Seen_Quiet     : Boolean := False;
    end record;
 
    overriding procedure Start_Element
      (Item : in out Delete_Handler; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out Delete_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
    overriding procedure Text
      (Item : in out Delete_Handler; Value : String);
    overriding procedure End_Element
@@ -55,6 +63,21 @@ package body Flyology.Object_Storage.S3.Deletions is
       US.Set_Unbounded_String (Item.Text_Value, "");
    end Select_Field;
 
+   overriding procedure Start_Element_Details
+     (Item            : in out Delete_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural)
+   is
+      pragma Unreferenced (Item);
+   begin
+      if Namespace_URI /= "http://s3.amazonaws.com/doc/2006-03-01/"
+        or else Attribute_Count /= 0
+      then
+         raise Malformed_Delete with
+           "DeleteObjects namespace or attributes are invalid";
+      end if;
+   end Start_Element_Details;
+
    overriding procedure Start_Element
      (Item : in out Delete_Handler; Local_Name : String) is
    begin
@@ -62,9 +85,7 @@ package body Flyology.Object_Storage.S3.Deletions is
          raise Malformed_Delete with "DeleteObjects XML depth overflow";
       end if;
       Item.Depth := Item.Depth + 1;
-      if Item.Ignore_Depth /= 0 then
-         return;
-      elsif Item.Depth = 1 then
+      if Item.Depth = 1 then
          if Local_Name /= "Delete" then
             raise Malformed_Delete with "wrong DeleteObjects root";
          end if;
@@ -76,19 +97,31 @@ package body Flyology.Object_Storage.S3.Deletions is
             Item.Current := (others => <>);
             Item.Seen_Key := False;
             Item.Seen_Version := False;
+            Item.Seen_ETag := False;
+            Item.Seen_Last_Modified_Time := False;
+            Item.Seen_Size := False;
             Item.In_Object := True;
          elsif Local_Name = "Quiet" then
             Select_Field (Item, Item.Seen_Quiet, Quiet_Field);
          else
-            Item.Ignore_Depth := Item.Depth;
+            raise Malformed_Delete with "unknown DeleteObjects field";
          end if;
       elsif Item.Depth = 3 and then Item.In_Object then
          if Local_Name = "Key" then
             Select_Field (Item, Item.Seen_Key, Key_Field);
          elsif Local_Name = "VersionId" then
             Select_Field (Item, Item.Seen_Version, Version_Field);
+         elsif Local_Name = "ETag" then
+            Select_Field (Item, Item.Seen_ETag, ETag_Field);
+         elsif Local_Name = "LastModifiedTime" then
+            Select_Field
+              (Item, Item.Seen_Last_Modified_Time,
+               Last_Modified_Time_Field);
+         elsif Local_Name = "Size" then
+            Select_Field (Item, Item.Seen_Size, Size_Field);
          else
-            Item.Ignore_Depth := Item.Depth;
+            raise Malformed_Delete with
+              "unknown DeleteObjects object field";
          end if;
       else
          raise Malformed_Delete with "nested DeleteObjects field";
@@ -98,11 +131,27 @@ package body Flyology.Object_Storage.S3.Deletions is
    overriding procedure Text
      (Item : in out Delete_Handler; Value : String) is
    begin
-      if Item.Ignore_Depth /= 0 then
-         return;
-      elsif Item.Field = No_Field then
+      if Item.Field = No_Field then
          Require_Whitespace (Value);
       else
+         declare
+            Maximum : constant Natural :=
+              (case Item.Field is
+                  when Key_Field => 1_024,
+                  when Version_Field => Maximum_Version_ID_Length,
+                  when ETag_Field => 8_192,
+                  when Last_Modified_Time_Field => 128,
+                  when Size_Field => 19,
+                  when Quiet_Field => 5,
+                  when No_Field => 0);
+         begin
+            if Value'Length > Maximum
+              or else US.Length (Item.Text_Value) > Maximum - Value'Length
+            then
+               raise Malformed_Delete with
+                 "DeleteObjects scalar exceeds its bound";
+            end if;
+         end;
          US.Append (Item.Text_Value, Value);
       end if;
    end Text;
@@ -114,16 +163,31 @@ package body Flyology.Object_Storage.S3.Deletions is
    begin
       if Item.Depth = 0 then
          raise Malformed_Delete with "DeleteObjects XML stack underflow";
-      elsif Item.Ignore_Depth /= 0 then
-         if Item.Depth = Item.Ignore_Depth then
-            Item.Ignore_Depth := 0;
-         end if;
       elsif Item.Field /= No_Field then
          case Item.Field is
             when Key_Field =>
                Item.Current.Key := Item.Text_Value;
             when Version_Field =>
                Item.Current.Version_ID := Item.Text_Value;
+            when ETag_Field =>
+               Item.Current.Has_ETag := True;
+               Item.Current.ETag := Item.Text_Value;
+            when Last_Modified_Time_Field =>
+               Item.Current.Has_Last_Modified_Time := True;
+               Item.Current.Last_Modified_Time := Item.Text_Value;
+            when Size_Field =>
+               declare
+                  Parsed : constant S3.Wire_Core.Byte_Count_Result :=
+                    S3.Wire_Core.Parse_Byte_Count
+                      (US.To_String (Item.Text_Value));
+               begin
+                  if not Parsed.Valid then
+                     raise Malformed_Delete with
+                       "invalid DeleteObjects object size";
+                  end if;
+                  Item.Current.Has_Size := True;
+                  Item.Current.Size := Parsed.Value;
+               end;
             when Quiet_Field =>
                declare
                   Parsed : constant S3.Wire_Core.Boolean_Result :=
@@ -148,6 +212,13 @@ package body Flyology.Object_Storage.S3.Deletions is
            and then US.Length (Item.Current.Version_ID) = 0
          then
             raise Malformed_Delete with "empty DeleteObjects version ID";
+         elsif Item.Seen_ETag and then US.Length (Item.Current.ETag) = 0 then
+            raise Malformed_Delete with "empty DeleteObjects ETag";
+         elsif Item.Seen_Last_Modified_Time
+           and then US.Length (Item.Current.Last_Modified_Time) = 0
+         then
+            raise Malformed_Delete with
+              "empty DeleteObjects last-modified time";
          end if;
          Item.Value.Objects.Append (Item.Current);
          Item.In_Object := False;
@@ -290,6 +361,18 @@ package body Flyology.Object_Storage.S3.Deletions is
             raise Malformed_Delete with "invalid DeleteObjects key";
          elsif not Valid_Version_ID (US.To_String (Item.Version_ID)) then
             raise Malformed_Delete with "invalid DeleteObjects version ID";
+         elsif Item.Has_ETag
+           and then
+             (US.Length (Item.ETag) = 0 or else US.Length (Item.ETag) > 8_192)
+         then
+            raise Malformed_Delete with "invalid DeleteObjects ETag";
+         elsif Item.Has_Last_Modified_Time
+           and then
+             (US.Length (Item.Last_Modified_Time) = 0
+              or else US.Length (Item.Last_Modified_Time) > 128)
+         then
+            raise Malformed_Delete with
+              "invalid DeleteObjects last-modified time";
          end if;
       end loop;
    end Validate;
@@ -322,8 +405,26 @@ package body Flyology.Object_Storage.S3.Deletions is
          "<?xml version=""1.0"" encoding=""UTF-8""?>" &
          "<Delete xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">");
       for Item of Value.Objects loop
-         US.Append (Result, "<Object>" & Element
-           ("Key", US.To_String (Item.Key)));
+         US.Append (Result, "<Object>");
+         if Item.Has_ETag then
+            US.Append (Result, Element ("ETag", US.To_String (Item.ETag)));
+         end if;
+         US.Append (Result, Element ("Key", US.To_String (Item.Key)));
+         if Item.Has_Last_Modified_Time then
+            US.Append
+              (Result,
+               Element
+                 ("LastModifiedTime",
+                  US.To_String (Item.Last_Modified_Time)));
+         end if;
+         if Item.Has_Size then
+            US.Append
+              (Result,
+               Element
+                 ("Size",
+                  Ada.Strings.Fixed.Trim
+                    (Byte_Count'Image (Item.Size), Ada.Strings.Both)));
+         end if;
          if US.Length (Item.Version_ID) > 0 then
             US.Append (Result, Element
               ("VersionId", US.To_String (Item.Version_ID)));

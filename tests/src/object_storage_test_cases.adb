@@ -5923,7 +5923,89 @@ package body Object_Storage_Test_Cases is
          end;
          Assert (Raised, Message);
       end Must_Reject;
+
+      procedure Must_Reject_Request (Document, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Deletions.Delete_Objects_Request :=
+                 Deletions.Parse_Request (Document);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Deletions.Malformed_Delete =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Must_Reject_Request;
    begin
+      declare
+         Document : constant String :=
+           "<Delete xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+           "<Object><ETag>*</ETag><Key>a&amp;b</Key>" &
+           "<LastModifiedTime>Tue, 15 Oct 2024 15:04:05 GMT" &
+           "</LastModifiedTime><Size>50</Size><VersionId>v1</VersionId>" &
+           "</Object><Quiet>true</Quiet></Delete>";
+         Parsed : constant Deletions.Delete_Objects_Request :=
+           Deletions.Parse_Request (Document);
+         Round_Trip : constant Deletions.Delete_Objects_Request :=
+           Deletions.Parse_Request
+             (Deletions.Serialize_Request (Parsed));
+         Item : constant Deletions.Object_Identifier :=
+           Parsed.Objects.First_Element;
+      begin
+         Assert
+           (Parsed.Objects.Length = 1
+            and then Parsed.Quiet
+            and then US.To_String (Item.Key) = "a&b"
+            and then US.To_String (Item.Version_ID) = "v1"
+            and then Item.Has_ETag
+            and then US.To_String (Item.ETag) = "*"
+            and then Item.Has_Last_Modified_Time
+            and then US.To_String (Item.Last_Modified_Time) =
+              "Tue, 15 Oct 2024 15:04:05 GMT"
+            and then Item.Has_Size
+            and then Item.Size = 50
+            and then Round_Trip.Objects.First_Element.Has_ETag
+            and then Round_Trip.Objects.First_Element.Has_Size,
+            "DeleteObjects request omitted modeled object conditions");
+      end;
+
+      Must_Reject_Request
+        ("<Delete><Object><Key>k</Key></Object></Delete>",
+         "namespace-free DeleteObjects request was accepted");
+      Must_Reject_Request
+        ("<x:Delete xmlns:x=""urn:foreign""><x:Object><x:Key>k" &
+         "</x:Key></x:Object></x:Delete>",
+         "foreign DeleteObjects request namespace was accepted");
+      Must_Reject_Request
+        ("<Delete xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"" " &
+         "extra=""x""><Object><Key>k</Key></Object></Delete>",
+         "DeleteObjects request attribute was accepted");
+      Must_Reject_Request
+        ("<Delete xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+         "<Object><Key>k</Key><Unknown>x</Unknown></Object></Delete>",
+         "unknown DeleteObjects object field was accepted");
+      Must_Reject_Request
+        ("<Delete xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+         "<Object><Key>k</Key><ETag/></Object></Delete>",
+         "empty DeleteObjects ETag was accepted");
+      Must_Reject_Request
+        ("<Delete xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+         "<Object><Key>k</Key><Size>-1</Size></Object></Delete>",
+         "negative DeleteObjects size was accepted");
+      declare
+         Parsed : constant Deletions.Delete_Objects_Request :=
+           Deletions.Parse_Request
+             ("<Delete xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+              "<Object><Key>k</Key></Object><Quiet>false</Quiet></Delete>");
+      begin
+         Assert (not Parsed.Quiet, "false DeleteObjects Quiet was changed");
+      end;
+
       declare
          Parsed : constant Deletions.Delete_Objects_Result :=
            Deletions.Parse_Result
@@ -6002,7 +6084,8 @@ package body Object_Storage_Test_Cases is
            (Deletions.Object_Identifier'
               (Key        => US.To_Unbounded_String
                  (String'(1 .. 1_025 => 'k')),
-               Version_ID => US.Null_Unbounded_String));
+               Version_ID => US.Null_Unbounded_String,
+               others     => <>));
          begin
             declare
                Ignored : constant String :=
@@ -8018,6 +8101,7 @@ package body Object_Storage_Test_Cases is
       Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
         ("AKIAIOSFODNN7EXAMPLE",
          "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+
    begin
       declare
          Parameters : Low_Level.Copy_Object_Parameters;
@@ -9932,7 +10016,57 @@ package body Object_Storage_Test_Cases is
       Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
         ("AKIAIOSFODNN7EXAMPLE",
          "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+
+      procedure Check_Delete_Checksum
+        (Algorithm   : String;
+         Header_Name : String)
+      is
+         Request    : Deletions.Delete_Objects_Request;
+         Parameters : Low_Level.Delete_Objects_Parameters;
+      begin
+         Request.Objects.Append
+           (Deletions.Object_Identifier'
+              (Key        => US.To_Unbounded_String ("checksum-key"),
+               Version_ID => US.Null_Unbounded_String,
+               others     => <>));
+         Parameters.Checksum_Algorithm :=
+           US.To_Unbounded_String (Algorithm);
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Objects
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Request,
+                 Parameters, Identity, "us-east-1", "20130524T000000Z");
+            Canonical : constant String :=
+              Low_Level.Canonical_Request (Prepared);
+            Signed : constant String :=
+              ";" & Low_Level.Signed_Headers (Prepared) & ";";
+         begin
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Signed, ";" & Header_Name & ";") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Signed, ";x-amz-sdk-checksum-algorithm;") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Canonical, Header_Name & ":") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Canonical,
+                  "x-amz-sdk-checksum-algorithm:" & Algorithm) > 0,
+               "DeleteObjects checksum mapping " & Algorithm);
+         end;
+      end Check_Delete_Checksum;
    begin
+      Check_Delete_Checksum ("CRC32", "x-amz-checksum-crc32");
+      Check_Delete_Checksum ("CRC32C", "x-amz-checksum-crc32c");
+      Check_Delete_Checksum ("CRC64NVME", "x-amz-checksum-crc64nvme");
+      Check_Delete_Checksum ("SHA1", "x-amz-checksum-sha1");
+      Check_Delete_Checksum ("SHA256", "x-amz-checksum-sha256");
+      Check_Delete_Checksum ("SHA512", "x-amz-checksum-sha512");
+      Check_Delete_Checksum ("MD5", "x-amz-checksum-md5");
+      Check_Delete_Checksum ("XXHASH64", "x-amz-checksum-xxhash64");
+      Check_Delete_Checksum ("XXHASH3", "x-amz-checksum-xxhash3");
+      Check_Delete_Checksum ("XXHASH128", "x-amz-checksum-xxhash128");
+
       declare
          Parameters : Low_Level.Delete_Bucket_Parameters;
       begin
@@ -10195,11 +10329,13 @@ package body Object_Storage_Test_Cases is
          Request.Objects.Append
            (Deletions.Object_Identifier'
               (Key        => US.To_Unbounded_String ("a&b"),
-               Version_ID => US.Null_Unbounded_String));
+               Version_ID => US.Null_Unbounded_String,
+               others     => <>));
          Request.Objects.Append
            (Deletions.Object_Identifier'
               (Key        => US.To_Unbounded_String ("second"),
-               Version_ID => US.To_Unbounded_String ("v1")));
+               Version_ID => US.To_Unbounded_String ("v1"),
+               others     => <>));
          Request.Quiet := True;
          Parameters.MFA := US.To_Unbounded_String ("device 123456");
          Parameters.Request_Payer := US.To_Unbounded_String ("requester");
@@ -10207,6 +10343,7 @@ package body Object_Storage_Test_Cases is
            (Is_Set => True, Value => False);
          Parameters.Expected_Bucket_Owner :=
            US.To_Unbounded_String ("123456789012");
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("SHA256");
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Delete_Objects
@@ -10223,13 +10360,47 @@ package body Object_Storage_Test_Cases is
             Assert
               (Low_Level.Signed_Headers (Prepared) =
                  "content-md5;host;x-amz-bypass-governance-retention;" &
-                 "x-amz-content-sha256;x-amz-date;" &
+                 "x-amz-checksum-sha256;x-amz-content-sha256;x-amz-date;" &
                  "x-amz-expected-bucket-owner;x-amz-mfa;" &
-                 "x-amz-request-payer"
+                 "x-amz-request-payer;x-amz-sdk-checksum-algorithm"
                and then Ada.Strings.Fixed.Index
-                 (Canonical, "content-md5:oHu1qjgIzoBt4qEk27Rx2Q==") > 0,
+                 (Canonical, "content-md5:oHu1qjgIzoBt4qEk27Rx2Q==") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Canonical, "x-amz-checksum-sha256:") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Canonical, "x-amz-sdk-checksum-algorithm:SHA256") > 0,
                "DeleteObjects Content-MD5 and modeled headers are signed");
          end;
+      end;
+
+      declare
+         Request : Deletions.Delete_Objects_Request;
+         Parameters : Low_Level.Delete_Objects_Parameters;
+         Raised : Boolean := False;
+      begin
+         Request.Objects.Append
+           (Deletions.Object_Identifier'
+              (Key        => US.To_Unbounded_String ("key"),
+               Version_ID => US.Null_Unbounded_String,
+               others     => <>));
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("sha256");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Objects
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", Request,
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "invalid DeleteObjects checksum algorithm prepared");
       end;
 
       declare

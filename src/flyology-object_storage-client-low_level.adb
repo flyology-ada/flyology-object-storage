@@ -6,6 +6,8 @@ with Ada.Strings.Fixed;
 with Flyology.Bytes;
 with Flyology.HTTP.Headers;
 with Flyology.Object_Storage.Secrets;
+with Flyology.Object_Storage.S3.Checksum_Policy;
+with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Object_Reads;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.Tagging;
@@ -19,6 +21,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
    package Model renames Flyology.Object_Storage.S3.Model;
    package Encoding renames Flyology.Object_Storage.S3.SigV4_Encoding;
    package Object_Reads renames Flyology.Object_Storage.S3.Object_Reads;
+   package Checksum_Policy renames
+     Flyology.Object_Storage.S3.Checksum_Policy;
+   package Checksums renames Flyology.Object_Storage.S3.Checksums;
    package Wire_Core renames Flyology.Object_Storage.S3.Wire_Core;
    use type Flyology.HTTP.Origin_Scheme;
    use type Flyology.HTTP.Port_Number;
@@ -4592,11 +4597,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Request_Payer : constant String :=
         US.To_String (Parameters.Request_Payer);
+      Algorithm_Text : constant String :=
+        US.To_String (Parameters.Checksum_Algorithm);
+      Algorithm : constant Checksum_Policy.Algorithm_Parse_Result :=
+        Checksum_Policy.Parse_Algorithm (Algorithm_Text);
       Header_Count : constant Natural :=
         1 + Boolean'Pos (US.Length (Parameters.MFA) > 0) +
         Boolean'Pos (Request_Payer'Length > 0) +
         Boolean'Pos (Parameters.Bypass_Governance_Retention.Is_Set) +
-        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0);
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
+        2 * Boolean'Pos (Algorithm_Text'Length > 0);
       Headers : SigV4.Name_Value_Array (1 .. Header_Count);
       Query : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("delete", ""));
@@ -4612,6 +4622,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
    begin
       if Request_Payer'Length > 0 and then Request_Payer /= "requester" then
          raise Invalid_Request with "invalid DeleteObjects request payer";
+      elsif Algorithm_Text'Length > 0 and then not Algorithm.Valid then
+         raise Invalid_Request with "invalid DeleteObjects checksum algorithm";
       end if;
       declare
          Payload : constant String :=
@@ -4629,6 +4641,30 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Add
            ("x-amz-expected-bucket-owner",
             US.To_String (Parameters.Expected_Bucket_Owner));
+         if Algorithm_Text'Length > 0 then
+            declare
+               Digest : constant Checksums.Digest_Value :=
+                 Checksums.Compute
+                   (Algorithm.Value,
+                    Flyology.Bytes.To_Array
+                      (Flyology.Bytes.From_Byte_String (Payload)));
+               Header_Name : constant String :=
+                 (case Algorithm.Value is
+                     when S3.Core.CRC32 => "x-amz-checksum-crc32",
+                     when S3.Core.CRC32C => "x-amz-checksum-crc32c",
+                     when S3.Core.CRC64NVME => "x-amz-checksum-crc64nvme",
+                     when S3.Core.SHA1 => "x-amz-checksum-sha1",
+                     when S3.Core.SHA256 => "x-amz-checksum-sha256",
+                     when S3.Core.SHA512 => "x-amz-checksum-sha512",
+                     when S3.Core.MD5 => "x-amz-checksum-md5",
+                     when S3.Core.XXHASH64 => "x-amz-checksum-xxhash64",
+                     when S3.Core.XXHASH3 => "x-amz-checksum-xxhash3",
+                     when S3.Core.XXHASH128 => "x-amz-checksum-xxhash128");
+            begin
+               Add ("x-amz-sdk-checksum-algorithm", Algorithm_Text);
+               Add (Header_Name, Checksums.Encode_Base64 (Digest));
+            end;
+         end if;
          return Result : Prepared_Request := Prepare_Object_Request
            (Delete_Objects_Operation, "POST", Origin, Style, Bucket, "",
             Query, Headers, Payload, "", Identity, Region, Timestamp,
