@@ -2,10 +2,12 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest uncontended, serialized multipart-checksum final-base qualification
-forced eight-unit manifest-wide level-0 proof completed with 625/625 checks
-proved (157 flow and 468 prover), warnings as errors, zero justified or
-unproved checks, and zero Assume statements. Final-base scoped level-0 runs
+The latest uncontended, serialized bucket-versioning final-base qualification
+on commit `905375f` forced an eight-unit manifest-wide level-0 proof and
+completed with 625/625 checks proved (157 flow and 468 prover), warnings as
+errors, zero warnings, justified or unproved checks, and zero Assume,
+Suppress, False_Positive, or SPARK Off constructs across the proof surface.
+Final-base scoped level-0 runs
 proved the impacted root SPARK unit with 196 target-attributed checks
 (220 aggregate),
 `Checksum_Policy` with 9/9 checks, and `Checksum_CRC` with 43
@@ -231,3 +233,9 @@ statements.
       overlapped an external proof lane is quarantined under
       `obj/proof/logs/invalid-concurrent-20260822/` and is explicitly excluded
       from qualification evidence.
+- [x] Re-proved the bucket-versioning final base after rebasing onto the
+      callback/deadline safety checks: one clean, serialized forced eight-unit
+      manifest run proved 625/625 checks (157 flow and 468 prover) with
+      warnings as errors, zero warnings, justified or unproved checks, and
+      zero Assume, Suppress, False_Positive, or SPARK Off constructs. The
+      invocation header and complete output are retained under `obj/proof/`.
