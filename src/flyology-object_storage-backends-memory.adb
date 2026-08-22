@@ -266,6 +266,7 @@ package body Flyology.Object_Storage.Backends.Memory is
                Buckets (Index).Name :=
                  Ada.Strings.Unbounded.To_Unbounded_String (Name);
                Buckets (Index).Created := Created;
+               Buckets (Index).Tags.Clear;
                Result := Success;
                return;
             end if;
@@ -325,6 +326,35 @@ package body Flyology.Object_Storage.Backends.Memory is
          Buckets (Index) := (others => <>);
          Result := Success;
       end Delete_Bucket;
+
+      procedure Put_Bucket_Tags
+        (Name : String; Value : Tags.Tag_Set; Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Buckets (Index).Tags := Value;
+            Result := Success;
+         end if;
+      end Put_Bucket_Tags;
+
+      procedure Get_Bucket_Tags
+        (Name : String; Value : out Tags.Tag_Set; Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Value.Clear;
+         if Index = 0 then
+            Result := Not_Found;
+         elsif Buckets (Index).Tags.Is_Empty then
+            Result := Tag_Set_Not_Found;
+         else
+            Value := Buckets (Index).Tags;
+            Result := Success;
+         end if;
+      end Get_Bucket_Tags;
 
       procedure Reserve_Transient
         (Amount : Byte_Count; Result : out Status) is
@@ -1221,6 +1251,43 @@ package body Flyology.Object_Storage.Backends.Memory is
          Item.State.Delete_Bucket (Bucket, Result);
       end if;
    end Delete_Bucket;
+
+   overriding procedure Put_Bucket_Tags
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Tags.Tag_Set;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Tags.Valid_Bucket_Tag_Set (Value)
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.Put_Bucket_Tags (Bucket, Value, Result);
+      end if;
+   end Put_Bucket_Tags;
+
+   overriding procedure Get_Bucket_Tags
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Tags.Tag_Set;
+      Result   : out Status)
+   is
+   begin
+      Value.Clear;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Tags (Bucket, Value, Result);
+      end if;
+   end Get_Bucket_Tags;
 
    overriding procedure Put_Object
      (Item     : in out Store;

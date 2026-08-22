@@ -14,6 +14,7 @@ with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.SQLite;
 with Flyology.Object_Storage.SQLite.Catalogs;
 with Flyology.Object_Storage.SQLite.Databases;
+with Flyology.Object_Storage.Tags;
 
 procedure Flyology_Object_Storage_Sqlite_Tests is
    package Databases renames Flyology.Object_Storage.SQLite.Databases;
@@ -24,6 +25,13 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    use type Ada.Streams.Stream_Element_Offset;
    use type Flyology.Object_Storage.Status;
    use type Flyology.Object_Storage.Object_Tag_Set;
+   use type Flyology.Object_Storage.Tags.Tag_Vectors.Vector;
+
+   package Storage_Tags renames Flyology.Object_Storage.Tags;
+
+   function Tag_Item (Key, Value : String) return Storage_Tags.Tag is
+     ((Key   => US.To_Unbounded_String (Key),
+       Value => US.To_Unbounded_String (Value)));
 
    Expected_Source : constant String :=
      "2026-07-24 19:02:57 " &
@@ -110,6 +118,25 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          raise;
    end Create_V2_Database;
 
+   procedure Create_V1_Database is
+      Legacy : Databases.Database;
+   begin
+      Create_V2_Database;
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "DROP TABLE multipart_parts;" &
+         "DROP TABLE multipart_uploads;" &
+         "PRAGMA user_version=1;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V1_Database;
+
    procedure Create_V3_Database is
       Legacy : Databases.Database;
    begin
@@ -129,25 +156,50 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          raise;
    end Create_V3_Database;
 
-   procedure Create_V4_Database is
+   type V4_Tag_Layout is (Object_Tags_Only, Bucket_Tags_Only);
+
+   procedure Create_V4_Database (Layout : V4_Tag_Layout) is
       Legacy : Databases.Database;
    begin
       Create_V3_Database;
       Databases.Open (Legacy, Database_Path);
-      Databases.Execute
-        (Legacy,
-         "CREATE TABLE object_tags (" &
-         "bucket_name TEXT NOT NULL COLLATE BINARY," &
-         "object_key BLOB NOT NULL," &
-         "tag_index INTEGER NOT NULL CHECK(tag_index BETWEEN 1 AND 10)," &
-         "tag_key BLOB NOT NULL," &
-         "tag_value BLOB NOT NULL," &
-         "PRIMARY KEY(bucket_name,object_key,tag_index)," &
-         "UNIQUE(bucket_name,object_key,tag_key)," &
-         "FOREIGN KEY(bucket_name,object_key) " &
-         "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
-         ") WITHOUT ROWID;" &
-         "PRAGMA user_version=4;");
+      case Layout is
+         when Object_Tags_Only =>
+            Databases.Execute
+              (Legacy,
+               "CREATE TABLE object_tags (" &
+            "bucket_name TEXT NOT NULL COLLATE BINARY," &
+            "object_key BLOB NOT NULL," &
+            "tag_index INTEGER NOT NULL CHECK(tag_index BETWEEN 1 AND 10)," &
+            "tag_key BLOB NOT NULL," &
+            "tag_value BLOB NOT NULL," &
+            "PRIMARY KEY(bucket_name,object_key,tag_index)," &
+            "UNIQUE(bucket_name,object_key,tag_key)," &
+            "FOREIGN KEY(bucket_name,object_key) " &
+            "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+            ") WITHOUT ROWID;" &
+            "INSERT INTO objects VALUES" &
+            "('legacy-bucket',X'6B','legacy-payload',1,1," &
+            "X'65',X'74');" &
+            "INSERT INTO object_tags VALUES" &
+            "('legacy-bucket',X'6B',1,X'7374617465',X'6F6C64');");
+         when Bucket_Tags_Only =>
+            Databases.Execute
+              (Legacy,
+               "CREATE TABLE bucket_tags (" &
+            "bucket_name TEXT NOT NULL COLLATE BINARY," &
+            "ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 1 AND 50)," &
+            "tag_key BLOB NOT NULL CHECK(length(tag_key) BETWEEN 1 AND 512)," &
+            "tag_value BLOB NOT NULL CHECK(length(tag_value) <= 1024)," &
+            "PRIMARY KEY(bucket_name,tag_key)," &
+            "UNIQUE(bucket_name,ordinal)," &
+            "FOREIGN KEY(bucket_name) " &
+            "REFERENCES buckets(name) ON DELETE CASCADE" &
+            ") WITHOUT ROWID;" &
+            "INSERT INTO bucket_tags VALUES" &
+            "('legacy-bucket',1,X'7374617465',X'6F6C64');");
+      end case;
+      Databases.Execute (Legacy, "PRAGMA user_version=4;");
       Databases.Close (Legacy);
    exception
       when others =>
@@ -156,6 +208,56 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V4_Database;
+
+   type V5_Layout is (Attributes_Layout, Bucket_Tags_Layout);
+
+   procedure Create_V5_Database (Layout : V5_Layout) is
+      Legacy : Databases.Database;
+   begin
+      Create_V4_Database (Object_Tags_Only);
+      Databases.Open (Legacy, Database_Path);
+      case Layout is
+         when Attributes_Layout =>
+            Databases.Execute
+              (Legacy,
+               "CREATE TABLE object_parts (" &
+               "bucket_name TEXT NOT NULL COLLATE BINARY," &
+               "object_key BLOB NOT NULL," &
+               "part_number INTEGER NOT NULL " &
+               "CHECK(part_number BETWEEN 1 AND 10000)," &
+               "size INTEGER NOT NULL CHECK(size >= 0)," &
+               "PRIMARY KEY(bucket_name,object_key,part_number)," &
+               "FOREIGN KEY(bucket_name,object_key) " &
+               "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+               ") WITHOUT ROWID;" &
+               "INSERT INTO object_parts VALUES" &
+               "('legacy-bucket',X'6B',1,1);");
+         when Bucket_Tags_Layout =>
+            Databases.Execute
+              (Legacy,
+               "CREATE TABLE bucket_tags (" &
+               "bucket_name TEXT NOT NULL COLLATE BINARY," &
+               "ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 1 AND 50)," &
+               "tag_key BLOB NOT NULL " &
+               "CHECK(length(tag_key) BETWEEN 1 AND 512)," &
+               "tag_value BLOB NOT NULL CHECK(length(tag_value) <= 1024)," &
+               "PRIMARY KEY(bucket_name,tag_key)," &
+               "UNIQUE(bucket_name,ordinal)," &
+               "FOREIGN KEY(bucket_name) " &
+               "REFERENCES buckets(name) ON DELETE CASCADE" &
+               ") WITHOUT ROWID;" &
+               "INSERT INTO bucket_tags VALUES" &
+               "('legacy-bucket',1,X'70726F6A656374',X'666C796F6C6F6779');");
+      end case;
+      Databases.Execute (Legacy, "PRAGMA user_version=5;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V5_Database;
 
    type Buffer_Source is new
      Flyology.Object_Storage.Backends.Byte_Source with
@@ -569,6 +671,38 @@ begin
       Assert (Result = Flyology.Object_Storage.Already_Exists,
               "duplicate catalog bucket was accepted");
 
+      declare
+         Value    : Storage_Tags.Tag_Set;
+         Observed : Storage_Tags.Tag_Set;
+      begin
+         Catalogs.Get_Bucket_Tags
+           (Catalog, "catalog-bucket", Observed, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Tag_Set_Not_Found
+            and then Observed.Is_Empty,
+            "new catalog bucket unexpectedly had tags");
+         Value.Append (Tag_Item ("project", "flyology"));
+         Value.Append (Tag_Item ("environment", "test"));
+         Catalogs.Put_Bucket_Tags
+           (Catalog, "catalog-bucket", Value, Result);
+         Catalogs.Get_Bucket_Tags
+           (Catalog, "catalog-bucket", Observed, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success
+            and then Observed = Value,
+            "catalog bucket tags did not round trip");
+         Value.Clear;
+         Value.Append (Tag_Item ("replacement", "complete"));
+         Catalogs.Put_Bucket_Tags
+           (Catalog, "catalog-bucket", Value, Result);
+         Catalogs.Get_Bucket_Tags
+           (Catalog, "catalog-bucket", Observed, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success
+            and then Observed = Value,
+            "catalog bucket tag replacement retained old rows");
+      end;
+
       Info :=
         (Size         => 42,
          Modified     => 1_234_567,
@@ -766,6 +900,18 @@ begin
       Assert
         (Result = Flyology.Object_Storage.Success and then Tags.Length = 0,
          "catalog tag deletion did not clear the complete set");
+      declare
+         Expected : Storage_Tags.Tag_Set;
+         Observed : Storage_Tags.Tag_Set;
+      begin
+         Expected.Append (Tag_Item ("replacement", "complete"));
+         Catalogs.Get_Bucket_Tags
+           (Catalog, "catalog-bucket", Observed, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success
+            and then Observed = Expected,
+            "catalog bucket tags did not survive reopen");
+      end;
       Catalogs.Delete_Object
         (Catalog, "catalog-bucket", Key, Payload, Result);
       Assert
@@ -788,6 +934,41 @@ begin
    Catalogs.Close (Catalog);
    Delete_Database;
 
+   Create_V1_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      Result : Flyology.Object_Storage.Status;
+   begin
+      Catalogs.Head_Bucket (Catalog, "legacy-bucket", Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success,
+         "schema-v1 migration did not preserve the bucket namespace");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Tables  : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 6,
+         "schema-v1 migration did not publish version 6");
+      Databases.Prepare
+        (Tables, Database,
+         "SELECT count(*) FROM sqlite_master WHERE type='table' " &
+         "AND name IN ('buckets','objects','object_tags'," &
+         "'multipart_uploads','multipart_parts','object_parts'," &
+         "'bucket_tags')");
+      Assert
+        (Databases.Step (Tables) = Databases.Row
+         and then Databases.Column (Tables, 0) = 7,
+         "schema-v1 migration did not create the complete schema");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
    Create_V2_Database;
    Catalogs.Open (Catalog, Database_Path);
    declare
@@ -796,6 +977,8 @@ begin
       Options : List_Buckets_Options;
       Page    : Bucket_Page;
       Result  : Status;
+      Value   : Storage_Tags.Tag_Set;
+      Observed : Storage_Tags.Tag_Set;
 
       procedure Check is null;
    begin
@@ -810,6 +993,19 @@ begin
          and then US.To_String (Page.Buckets (2).Name) = "new-bucket"
          and then Page.Buckets (2).Created = 42,
          "schema-v2 bucket migration did not preserve timestamps");
+      Catalogs.Get_Bucket_Tags
+        (Catalog, "legacy-bucket", Observed, Result);
+      Assert
+        (Result = Tag_Set_Not_Found and then Observed.Is_Empty,
+         "schema-v2 migration fabricated a legacy tag set");
+      Value.Append (Tag_Item ("migrated", "yes"));
+      Catalogs.Put_Bucket_Tags
+        (Catalog, "legacy-bucket", Value, Result);
+      Catalogs.Get_Bucket_Tags
+        (Catalog, "legacy-bucket", Observed, Result);
+      Assert
+        (Result = Success and then Observed = Value,
+         "schema-v2 migration did not install the bucket tag table");
       Catalogs.Delete_Bucket (Catalog, "legacy-bucket", Result);
       Assert (Result = Success, "legacy bucket cleanup failed");
       Catalogs.Delete_Bucket (Catalog, "new-bucket", Result);
@@ -823,20 +1019,20 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 5,
-         "schema-v2 migration did not publish version 5");
+         and then Databases.Column (Version, 0) = 6,
+         "schema-v2 migration did not publish version 6");
    end;
    declare
       Tables : Databases.Statement;
    begin
       Databases.Prepare
-        (Tables, Database,
+         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
-         "AND name IN ('object_tags','object_parts')");
+         "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 2,
-         "schema-v2 migration did not create attribute tables");
+         and then Databases.Column (Tables, 0) = 3,
+         "schema-v2 migration did not create attribute and tag tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -854,39 +1050,139 @@ begin
         (Table_Count, Database,
          "SELECT count(*) FROM sqlite_schema " &
          "WHERE type='table' " &
-         "AND name IN ('object_tags','object_parts')");
+         "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 5
+         and then Databases.Column (Version, 0) = 6
          and then Databases.Step (Table_Count) = Databases.Row
-         and then Databases.Column (Table_Count, 0) = 2,
-         "schema-v3 migration did not publish attribute tables at version 5");
+         and then Databases.Column (Table_Count, 0) = 3,
+         "schema-v3 migration did not publish schema 6 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
 
-   Create_V4_Database;
-   Catalogs.Open (Catalog, Database_Path);
-   Catalogs.Close (Catalog);
-   Databases.Open (Database, Database_Path);
-   declare
-      Version     : Databases.Statement;
-      Parts_Table : Databases.Statement;
-   begin
-      Databases.Prepare (Version, Database, "PRAGMA user_version");
-      Databases.Prepare
-        (Parts_Table, Database,
-         "SELECT count(*) FROM sqlite_schema " &
-         "WHERE type='table' AND name='object_parts'");
-      Assert
-        (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 5
-         and then Databases.Step (Parts_Table) = Databases.Row
-         and then Databases.Column (Parts_Table, 0) = 1,
-         "schema-v4 migration did not publish object_parts at version 5");
-   end;
-   Databases.Close (Database);
-   Delete_Database;
+   for Layout in V4_Tag_Layout loop
+      Create_V4_Database (Layout);
+      Catalogs.Open (Catalog, Database_Path);
+      declare
+         Result : Flyology.Object_Storage.Status;
+      begin
+         case Layout is
+            when Object_Tags_Only =>
+               declare
+                  Observed : Flyology.Object_Storage.Object_Tag_Set;
+               begin
+                  Catalogs.Get_Object_Tags
+                    (Catalog, "legacy-bucket", "k", Observed, Result);
+                  Assert
+                    (Result = Flyology.Object_Storage.Success
+                     and then Observed.Length = 1
+                     and then US.To_String (Observed.Items (1).Key) = "state"
+                     and then US.To_String (Observed.Items (1).Value) = "old",
+                     "schema-v4 object tags were not preserved");
+               end;
+            when Bucket_Tags_Only =>
+               declare
+                  Observed : Storage_Tags.Tag_Set;
+               begin
+                  Catalogs.Get_Bucket_Tags
+                    (Catalog, "legacy-bucket", Observed, Result);
+                  Assert
+                    (Result = Flyology.Object_Storage.Success
+                     and then Observed.Length = 1
+                     and then
+                       US.To_String (Observed.First_Element.Key) = "state"
+                     and then
+                       US.To_String (Observed.First_Element.Value) = "old",
+                     "schema-v4 bucket tags were not preserved");
+               end;
+         end case;
+      end;
+      Catalogs.Close (Catalog);
+      Databases.Open (Database, Database_Path);
+      declare
+         Version : Databases.Statement;
+         Tables  : Databases.Statement;
+      begin
+         Databases.Prepare (Version, Database, "PRAGMA user_version");
+         Assert
+           (Databases.Step (Version) = Databases.Row
+            and then Databases.Column (Version, 0) = 6,
+            "schema-v4 migration did not publish version 6");
+         Databases.Prepare
+            (Tables, Database,
+             "SELECT count(*) FROM sqlite_master WHERE type='table' " &
+            "AND name IN ('object_tags','object_parts','bucket_tags')");
+         Assert
+           (Databases.Step (Tables) = Databases.Row
+            and then Databases.Column (Tables, 0) = 3,
+            "schema-v4 migration did not publish the complete schema");
+      end;
+      Databases.Close (Database);
+      Delete_Database;
+   end loop;
+
+   for Layout in V5_Layout loop
+      Create_V5_Database (Layout);
+      Catalogs.Open (Catalog, Database_Path);
+      declare
+         Result : Flyology.Object_Storage.Status;
+         Observed_Tags : Flyology.Object_Storage.Object_Tag_Set;
+      begin
+         Catalogs.Get_Object_Tags
+           (Catalog, "legacy-bucket", "k", Observed_Tags, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success
+            and then Observed_Tags.Length = 1
+            and then US.To_String (Observed_Tags.Items (1).Key) = "state"
+            and then US.To_String (Observed_Tags.Items (1).Value) = "old",
+            "schema-v5 migration did not preserve object tags");
+         if Layout = Bucket_Tags_Layout then
+            declare
+               Observed : Storage_Tags.Tag_Set;
+            begin
+               Catalogs.Get_Bucket_Tags
+                 (Catalog, "legacy-bucket", Observed, Result);
+               Assert
+                 (Result = Flyology.Object_Storage.Success
+                  and then Observed.Length = 1
+                  and then
+                    US.To_String (Observed.First_Element.Key) = "project"
+                  and then
+                    US.To_String (Observed.First_Element.Value) = "flyology",
+                  "schema-v5 migration did not preserve bucket tags");
+            end;
+         end if;
+      end;
+      Catalogs.Close (Catalog);
+      Databases.Open (Database, Database_Path);
+      declare
+         Version : Databases.Statement;
+         Tables  : Databases.Statement;
+         Part_Rows : Databases.Statement;
+      begin
+         Databases.Prepare (Version, Database, "PRAGMA user_version");
+         Databases.Prepare
+           (Tables, Database,
+            "SELECT count(*) FROM sqlite_master WHERE type='table' " &
+            "AND name IN ('object_tags','object_parts','bucket_tags')");
+         Databases.Prepare
+           (Part_Rows, Database,
+            "SELECT count(*) FROM object_parts WHERE " &
+            "bucket_name='legacy-bucket' AND object_key=X'6B'");
+         Assert
+           (Databases.Step (Version) = Databases.Row
+            and then Databases.Column (Version, 0) = 6
+            and then Databases.Step (Tables) = Databases.Row
+            and then Databases.Column (Tables, 0) = 3
+            and then Databases.Step (Part_Rows) = Databases.Row
+            and then Databases.Column (Part_Rows, 0) =
+              (if Layout = Attributes_Layout then 1 else 0),
+            "schema-v5 migration did not preserve the historical layout");
+      end;
+      Databases.Close (Database);
+      Delete_Database;
+   end loop;
 
    if Ada.Directories.Exists (Backend_Root) then
       Ada.Directories.Delete_Tree (Backend_Root);
@@ -939,6 +1235,54 @@ begin
       Store.Create_Bucket
         ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "SQLite backend bucket create failed");
+      declare
+         Value    : Storage_Tags.Tag_Set;
+         Observed : Storage_Tags.Tag_Set;
+         Cancel   : aliased Flyology.Cancellation.Token;
+         Raised   : Boolean := False;
+      begin
+         Store.Get_Bucket_Tags
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Result);
+         Assert
+           (Result = Tag_Set_Not_Found and then Observed.Is_Empty,
+            "SQLite new bucket unexpectedly had tags");
+         Store.Put_Bucket_Tags
+           ("sqlite-bucket", Value, null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Invalid_Request,
+            "SQLite accepted an empty bucket tag set");
+         Value.Append (Tag_Item ("project", "flyology"));
+         Value.Append (Tag_Item ("environment", "test"));
+         Store.Put_Bucket_Tags
+           ("sqlite-bucket", Value, null, Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Tags
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Result);
+         Assert
+           (Result = Success and then Observed = Value,
+            "SQLite backend bucket tags did not round trip");
+         Value.Clear;
+         Value.Append (Tag_Item ("replacement", "complete"));
+         Store.Put_Bucket_Tags
+           ("sqlite-bucket", Value, null, Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Tags
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Result);
+         Assert
+           (Result = Success and then Observed = Value,
+            "SQLite backend bucket tags were not atomically replaced");
+         Cancel.Request;
+         begin
+            Store.Get_Bucket_Tags
+              ("sqlite-bucket", Cancel'Access, Ada.Real_Time.Time_Last,
+               Observed, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled =>
+               Raised := True;
+         end;
+         Assert (Raised, "SQLite bucket tag get ignored cancellation");
+      end;
       for Index in 1 .. 3 loop
          Store.Create_Bucket
            (Listing_Bucket_Name (Index), null, Ada.Real_Time.Time_Last,
@@ -1312,6 +1656,18 @@ begin
       Assert
         (Result = Success and then Tags.Length = 0,
          "SQLite backend tag deletion did not clear the complete set");
+      declare
+         Expected : Storage_Tags.Tag_Set;
+         Observed : Storage_Tags.Tag_Set;
+      begin
+         Expected.Append (Tag_Item ("replacement", "complete"));
+         Store.Get_Bucket_Tags
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Result);
+         Assert
+           (Result = Success and then Observed = Expected,
+            "SQLite backend bucket tags did not survive reopen");
+      end;
       declare
          Page    : Multipart_Upload_Page;
          Options : List_Multipart_Uploads_Options;

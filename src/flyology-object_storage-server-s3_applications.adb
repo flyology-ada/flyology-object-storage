@@ -226,6 +226,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Send_Error
               (X, 404, "NoSuchBucket",
                "The specified bucket does not exist", Resource);
+         when Tag_Set_Not_Found =>
+            Send_Error
+              (X, 404, "NoSuchTagSet",
+               "The bucket has no tag set", Resource);
          when Already_Exists =>
             Send_Error
               (X, 409, "BucketAlreadyOwnedByYou",

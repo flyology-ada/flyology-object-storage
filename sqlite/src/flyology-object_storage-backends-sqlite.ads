@@ -2,6 +2,7 @@ with Ada.Finalization;
 with Ada.Real_Time;
 with Ada.Strings.Unbounded;
 with Flyology.Cancellation;
+with Flyology.Object_Storage.Tags;
 with Flyology.Object_Storage.SQLite.Catalogs;
 
 --  SQLite catalog with immutable object bodies stored as external files.
@@ -44,6 +45,22 @@ package Flyology.Object_Storage.Backends.SQLite is
       Bucket   : String;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   overriding procedure Put_Bucket_Tags
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Tags.Tag_Set;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   overriding procedure Get_Bucket_Tags
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Tags.Tag_Set;
       Result   : out Status);
 
    overriding procedure Put_Object

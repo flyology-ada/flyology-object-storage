@@ -2,6 +2,7 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.SQLite.Databases;
+with Flyology.Object_Storage.Tags;
 
 --  Transactional namespace and object metadata for the SQLite backend.
 --  Payloads are immutable external files named by the backend.
@@ -32,6 +33,18 @@ package Flyology.Object_Storage.SQLite.Catalogs is
 
    procedure Delete_Bucket
      (Item : in out Catalog; Name : String; Result : out Status);
+
+   procedure Put_Bucket_Tags
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : Tags.Tag_Set;
+      Result : out Status);
+
+   procedure Get_Bucket_Tags
+     (Item   : in out Catalog;
+      Bucket : String;
+      Value  : out Tags.Tag_Set;
+      Result : out Status);
 
    procedure Put_Object
      (Item             : in out Catalog;

@@ -34,7 +34,12 @@ package body Flyology.Object_Storage.Backends.Files is
    Legacy_Magic : constant String := "FOSOBJ01";
    Tag_Magic : constant String := "FOSOBJ02";
    Magic : constant String := "FOSOBJ03";
+   Bucket_Tag_Magic : constant String := "FOSTAG01";
    Maximum_Metadata_Length : constant Natural := 8 * 1_024;
+   Maximum_Tag_Key_Bytes : constant Natural :=
+     4 * Tags.Maximum_Key_Characters;
+   Maximum_Tag_Value_Bytes : constant Natural :=
+     4 * Tags.Maximum_Value_Characters;
    Maximum_Object_Path_Depth : constant Natural := 32;
    Body_Size_Position : constant SIO.Positive_Count := 29;
    Metadata_Position  : constant SIO.Positive_Count := 37;
@@ -132,6 +137,13 @@ package body Flyology.Object_Storage.Backends.Files is
 
    function Multipart_Path (Item : Store; Bucket : String) return String is
      (Join (Bucket_Path (Item, Bucket), "multipart"));
+
+   function Configuration_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Bucket_Path (Item, Bucket), "configuration"));
+
+   function Tags_Path (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "tags.fos"));
 
    function Upload_Path
      (Item : Store; Bucket : String; Upload_ID : String) return String is
@@ -421,6 +433,64 @@ package body Flyology.Object_Storage.Backends.Files is
       end loop;
       return Result;
    end Read_String;
+
+   procedure Write_Tags
+     (File : in out SIO.File_Type; Value : Tags.Tag_Set)
+   is
+   begin
+      Write_String (File, Bucket_Tag_Magic);
+      Write_U32 (File, Natural (Value.Length));
+      for Item of Value loop
+         declare
+            Key  : constant String := US.To_String (Item.Key);
+            Text : constant String := US.To_String (Item.Value);
+         begin
+            Write_U32 (File, Key'Length);
+            Write_U32 (File, Text'Length);
+            Write_String (File, Key);
+            Write_String (File, Text);
+         end;
+      end loop;
+   end Write_Tags;
+
+   procedure Read_Tags
+     (File : in out SIO.File_Type; Value : out Tags.Tag_Set)
+   is
+      File_Magic : constant String :=
+        Read_String (File, Bucket_Tag_Magic'Length);
+      Count      : constant Natural := Read_U32 (File);
+   begin
+      Value.Clear;
+      if File_Magic /= Bucket_Tag_Magic
+        or else Count not in 1 .. Tags.Maximum_Bucket_Tags
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      for Index in 1 .. Count loop
+         pragma Unreferenced (Index);
+         declare
+            Key_Length   : constant Natural := Read_U32 (File);
+            Value_Length : constant Natural := Read_U32 (File);
+         begin
+            if Key_Length not in 1 .. Maximum_Tag_Key_Bytes
+              or else Value_Length > Maximum_Tag_Value_Bytes
+            then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+            Value.Append
+              (Tags.Tag'
+                 (Key   => US.To_Unbounded_String
+                    (Read_String (File, Key_Length)),
+                  Value => US.To_Unbounded_String
+                    (Read_String (File, Value_Length))));
+         end;
+      end loop;
+      if SIO.Index (File) /= SIO.Size (File) + 1
+        or else not Tags.Valid_Bucket_Tag_Set (Value)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+   end Read_Tags;
 
    function Unix_Seconds
      (Value : Ada.Calendar.Time) return Long_Long_Integer is
@@ -815,6 +885,9 @@ package body Flyology.Object_Storage.Backends.Files is
          Ensure_Directory
            (Item,
             Join (US.To_String (Staged), "multipart"));
+         Ensure_Directory
+           (Item,
+            Join (US.To_String (Staged), "configuration"));
          GNAT.OS_Lib.Rename_File (US.To_String (Staged), Path, Renamed);
          if Renamed then
             Sync_Directory (Item, Buckets_Path (Item));
@@ -1023,6 +1096,160 @@ package body Flyology.Object_Storage.Backends.Files is
          end if;
          Result := Backend_Unavailable;
    end Delete_Bucket;
+
+   overriding procedure Put_Bucket_Tags
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Tags.Tag_Set;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+      File      : SIO.File_Type;
+      Opened    : Boolean := False;
+      Locked    : Boolean := False;
+      Published : Boolean := False;
+      Temp      : US.Unbounded_String;
+      Number    : Long_Long_Integer;
+      Renamed   : Boolean := False;
+      Target    : constant String := Tags_Path (Item, Bucket);
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Tags.Valid_Bucket_Tag_Set (Value)
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Item.Temp_Sequence.Next (Number);
+      Temp := US.To_Unbounded_String
+        (Join
+           (Temp_Path (Item),
+            "tags-" & GNAT.SHA256.Digest
+              (Bucket & Long_Long_Integer'Image (Number) &
+               Ada.Calendar.Time'Image (Ada.Calendar.Clock))));
+      SIO.Create (File, SIO.Out_File, US.To_String (Temp));
+      Opened := True;
+      Write_Tags (File, Value);
+      SIO.Close (File);
+      Opened := False;
+      Sync_File (Item, US.To_String (Temp));
+
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         Result := Not_Found;
+         return;
+      end if;
+      Ensure_Directory (Item, Configuration_Path (Item, Bucket));
+      GNAT.OS_Lib.Rename_File (US.To_String (Temp), Target, Renamed);
+      if not Renamed then
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         Result := Backend_Unavailable;
+         return;
+      end if;
+      Published := True;
+      Sync_Directory (Item, Configuration_Path (Item, Bucket));
+      Sync_Directory (Item, Temp_Path (Item));
+      Item.Publication.Release;
+      Locked := False;
+      Result := Success;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         Result := Backend_Unavailable;
+   end Put_Bucket_Tags;
+
+   overriding procedure Get_Bucket_Tags
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Tags.Tag_Set;
+      Result   : out Status)
+   is
+      File   : SIO.File_Type;
+      Opened : Boolean := False;
+      Locked : Boolean := False;
+      Path   : constant String := Tags_Path (Item, Bucket);
+   begin
+      Value.Clear;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Not_Found;
+      elsif not Ada.Directories.Exists (Path) then
+         Result := Tag_Set_Not_Found;
+      elsif GNAT.OS_Lib.Is_Symbolic_Link
+          (Configuration_Path (Item, Bucket))
+        or else GNAT.OS_Lib.Is_Symbolic_Link (Path)
+        or else Ada.Directories.Kind (Path) /= Ada.Directories.Ordinary_File
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         SIO.Open (File, SIO.In_File, Path);
+         Opened := True;
+         Read_Tags (File, Value);
+         SIO.Close (File);
+         Opened := False;
+         Result := Success;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Value.Clear;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Tags;
 
    overriding procedure Put_Object
      (Item     : in out Store;

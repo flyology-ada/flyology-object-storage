@@ -3,6 +3,7 @@ with Ada.Real_Time;
 with Ada.Strings.Unbounded;
 with Ada.Streams;
 with Flyology.Cancellation;
+with Flyology.Object_Storage.Tags;
 
 --  Defines the HTTP-independent streaming contract implemented by storage
 --  backends. Calls are synchronous and may be made from either Flyology lane.
@@ -337,6 +338,25 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Result : out Status) is abstract;
+
+   --  Atomically replace the complete tag set of an existing bucket.
+   procedure Put_Bucket_Tags
+     (Item     : in out Backend;
+      Bucket   : String;
+      Value    : Tags.Tag_Set;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic tag-set snapshot. Tag_Set_Not_Found distinguishes an
+   --  existing untagged bucket from an absent bucket.
+   procedure Get_Bucket_Tags
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Tags.Tag_Set;
+      Result   : out Status) is abstract;
 
    procedure Put_Object
      (Item     : in out Backend;

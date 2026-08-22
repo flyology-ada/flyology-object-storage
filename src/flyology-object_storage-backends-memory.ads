@@ -3,6 +3,7 @@ with Ada.Real_Time;
 with Ada.Strings.Unbounded;
 with Ada.Streams;
 with Flyology.Cancellation;
+with Flyology.Object_Storage.Tags;
 
 --  Provides a bounded concurrent in-memory backend. Byte_Capacity covers
 --  retained committed, staged, and in-progress payload buffer capacity;
@@ -45,6 +46,22 @@ package Flyology.Object_Storage.Backends.Memory is
       Bucket   : String;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   overriding procedure Put_Bucket_Tags
+     (Item     : in out Store;
+      Bucket   : String;
+      Value    : Tags.Tag_Set;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   overriding procedure Get_Bucket_Tags
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Value    : out Tags.Tag_Set;
       Result   : out Status);
 
    overriding procedure Put_Object
@@ -246,6 +263,7 @@ private
       Used    : Boolean := False;
       Name    : Ada.Strings.Unbounded.Unbounded_String;
       Created : Unix_Time := 0;
+      Tags    : Flyology.Object_Storage.Tags.Tag_Set;
    end record;
    type Bucket_Array is array (Positive range <>) of Bucket_Slot;
 
@@ -292,6 +310,10 @@ private
          Result  : out Status);
       procedure Head_Bucket (Name : String; Result : out Status);
       procedure Delete_Bucket (Name : String; Result : out Status);
+      procedure Put_Bucket_Tags
+        (Name : String; Value : Tags.Tag_Set; Result : out Status);
+      procedure Get_Bucket_Tags
+        (Name : String; Value : out Tags.Tag_Set; Result : out Status);
       procedure Reserve_Transient
         (Amount : Byte_Count; Result : out Status);
       procedure Release_Transient (Amount : Byte_Count);

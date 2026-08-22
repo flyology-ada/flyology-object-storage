@@ -9,6 +9,7 @@ with Flyology.Object_Storage;
 with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.Files;
 with Flyology.Object_Storage.Durability_Testing;
+with Flyology.Object_Storage.Tags;
 
 procedure Files_Crash_Probe is
    use type Ada.Containers.Count_Type;
@@ -19,6 +20,7 @@ procedure Files_Crash_Probe is
    package Backends renames Flyology.Object_Storage.Backends;
    package Files renames Flyology.Object_Storage.Backends.Files;
    package Faults renames Flyology.Object_Storage.Durability_Testing;
+   package Tags renames Flyology.Object_Storage.Tags;
 
    Bucket : constant String := "durability-bucket";
    Key    : constant String := "object";
@@ -88,7 +90,7 @@ procedure Files_Crash_Probe is
       Require (Result = Storage.Success, "could not put test object");
    end Put;
 
-   procedure Set_Tag (Store : in out Files.Store; Value : String) is
+   procedure Set_Object_Tag (Store : in out Files.Store; Value : String) is
       Tags : Storage.Object_Tag_Set := Storage.Empty_Object_Tags;
       Result : Storage.Status;
    begin
@@ -99,7 +101,20 @@ procedure Files_Crash_Probe is
       Store.Put_Object_Tags
         (Bucket, Key, Tags, null, Ada.Real_Time.Time_Last, Result);
       Require (Result = Storage.Success, "could not set test object tag");
-   end Set_Tag;
+   end Set_Object_Tag;
+
+   procedure Put_Bucket_Tags (Store : in out Files.Store; Text : String) is
+      Value  : Tags.Tag_Set;
+      Result : Storage.Status;
+   begin
+      Value.Append
+        (Tags.Tag'
+           (Key   => US.To_Unbounded_String ("state"),
+            Value => US.To_Unbounded_String (Text)));
+      Store.Put_Bucket_Tags
+        (Bucket, Value, null, Ada.Real_Time.Time_Last, Result);
+      Require (Result = Storage.Success, "could not put test bucket tags");
+   end Put_Bucket_Tags;
 
    procedure Create_Upload
      (Store : in out Files.Store; Upload_ID : out US.Unbounded_String)
@@ -156,11 +171,13 @@ procedure Files_Crash_Probe is
          null;
       else
          Create_Bucket (Store);
-         if Scenario in "put" | "delete" | "tags" then
+         if Scenario in "put" | "delete" | "object-tags" then
             Put (Store, "old");
-            if Scenario = "tags" then
-               Set_Tag (Store, "old");
+            if Scenario = "object-tags" then
+               Set_Object_Tag (Store, "old");
             end if;
+         elsif Scenario = "bucket-tags" then
+            Put_Bucket_Tags (Store, "old");
          elsif Scenario in "part" | "abort" | "complete" then
             Create_Upload (Store, Upload_ID);
             if Scenario in "part" | "complete" then
@@ -187,11 +204,14 @@ procedure Files_Crash_Probe is
       elsif Scenario = "put" then
          Put (Store, "replacement");
          Result := Storage.Success;
+      elsif Scenario = "bucket-tags" then
+         Put_Bucket_Tags (Store, "replacement");
+         Result := Storage.Success;
       elsif Scenario = "delete" then
          Store.Delete_Object
            (Bucket, Key, null, Ada.Real_Time.Time_Last, Result);
-      elsif Scenario = "tags" then
-         Set_Tag (Store, "new");
+      elsif Scenario = "object-tags" then
+         Set_Object_Tag (Store, "new");
          Result := Storage.Success;
       elsif Scenario = "initiate" then
          Store.Create_Multipart_Upload
@@ -260,7 +280,7 @@ procedure Files_Crash_Probe is
               (Result in Storage.Success | Storage.Not_Found,
                "crash exposed malformed object deletion");
          end if;
-      elsif Scenario = "tags" then
+      elsif Scenario = "object-tags" then
          declare
             Tags : Storage.Object_Tag_Set;
          begin
@@ -271,6 +291,18 @@ procedure Files_Crash_Probe is
                and then US.To_String (Tags.Items (1).Key) = "state"
                and then US.To_String (Tags.Items (1).Value) in "old" | "new",
                "crash exposed a partial object-tag replacement");
+         end;
+      elsif Scenario = "bucket-tags" then
+         declare
+            Value : Tags.Tag_Set;
+         begin
+            Store.Get_Bucket_Tags
+              (Bucket, null, Ada.Real_Time.Time_Last, Value, Result);
+            Require
+              (Result = Storage.Success and then Value.Length = 1
+               and then US.To_String (Value.First_Element.Value) in
+                 "old" | "replacement",
+               "crash exposed a partial bucket tag replacement");
          end;
       elsif Scenario in "initiate" | "abort" then
          Require

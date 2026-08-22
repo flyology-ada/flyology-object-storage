@@ -48,9 +48,10 @@ run_crash_cases() {
     done
   done
 }
-run_crash_cases bucket 8
+run_crash_cases bucket 10
 run_crash_cases put 3
-run_crash_cases tags 3
+run_crash_cases object-tags 3
+run_crash_cases bucket-tags 3
 run_crash_cases delete 1
 run_crash_cases initiate 6
 run_crash_cases part 3
@@ -59,7 +60,7 @@ run_crash_cases delete-bucket 1
 run_crash_cases complete 4
 rm -rf "$CRASH_ROOT"
 trap - EXIT INT TERM
-echo "files abrupt-crash matrix: 60 pre/post-barrier cases OK"
+echo "files abrupt-crash matrix: 70 pre/post-barrier cases OK"
 
 ./bin/flyology_object_storage_tests
 ./bin/s3_server_application_corpus

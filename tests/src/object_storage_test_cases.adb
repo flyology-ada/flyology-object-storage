@@ -36,6 +36,7 @@ with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.SigV4_Verification;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.XML;
+with Flyology.Object_Storage.Tags;
 
 package body Object_Storage_Test_Cases is
 
@@ -211,6 +212,122 @@ package body Object_Storage_Test_Cases is
         (Invalid_Request, 0,
          "mixed wildcard entity-tag list was accepted");
    end Exercise_Conditional_Read;
+   procedure Exercise_Bucket_Tags
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      package Storage_Tags renames Flyology.Object_Storage.Tags;
+      package US renames Ada.Strings.Unbounded;
+      use type Storage_Tags.Tag_Vectors.Vector;
+      Value    : Storage_Tags.Tag_Set;
+      Snapshot : Storage_Tags.Tag_Set;
+      Result   : Status;
+
+      function Item (Key, Text : String) return Storage_Tags.Tag is
+        ((Key   => US.To_Unbounded_String (Key),
+          Value => US.To_Unbounded_String (Text)));
+   begin
+      Store.Get_Bucket_Tags
+        ("missing-tag-bucket", null, Ada.Real_Time.Time_Last,
+         Snapshot, Result);
+      Assert (Result = Not_Found, "tag get did not distinguish absent bucket");
+
+      Store.Get_Bucket_Tags
+        (Bucket, null, Ada.Real_Time.Time_Last, Snapshot, Result);
+      Assert
+        (Result = Tag_Set_Not_Found and then Snapshot.Is_Empty,
+         "untagged bucket did not report NoSuchTagSet state");
+
+      Value.Append (Item ("Project", "Flyology Ada"));
+      Value.Append
+        (Item
+           (Character'Val (16#CE#) & Character'Val (16#A0#),
+            Character'Val (16#E4#) & Character'Val (16#B8#) &
+            Character'Val (16#80#)));
+      Store.Put_Bucket_Tags
+        (Bucket, Value, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "valid bucket tag set was rejected");
+      Store.Get_Bucket_Tags
+        (Bucket, null, Ada.Real_Time.Time_Last, Snapshot, Result);
+      Assert
+        (Result = Success and then Snapshot = Value,
+         "bucket tag snapshot did not round trip");
+
+      Snapshot (Snapshot.First_Index).Value :=
+        US.To_Unbounded_String ("caller mutation");
+      Store.Get_Bucket_Tags
+        (Bucket, null, Ada.Real_Time.Time_Last, Snapshot, Result);
+      Assert
+        (Result = Success
+         and then US.To_String (Snapshot (Snapshot.First_Index).Value) =
+           "Flyology Ada",
+         "returned bucket tag set aliased backend state");
+
+      Value.Clear;
+      Value.Append (Item ("replacement", ""));
+      Store.Put_Bucket_Tags
+        (Bucket, Value, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Tags
+        (Bucket, null, Ada.Real_Time.Time_Last, Snapshot, Result);
+      Assert
+        (Result = Success and then Snapshot = Value,
+         "PutBucketTagging did not atomically replace the complete set");
+
+      Value.Append (Item ("replacement", "duplicate"));
+      Store.Put_Bucket_Tags
+        (Bucket, Value, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Invalid_Request, "duplicate tag key was accepted");
+      Value.Clear;
+      Value.Append (Item ("aws:reserved", "x"));
+      Store.Put_Bucket_Tags
+        (Bucket, Value, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Invalid_Request, "reserved aws tag key was accepted");
+      Value.Clear;
+      Value.Append (Item ("invalid?", "x"));
+      Store.Put_Bucket_Tags
+        (Bucket, Value, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Invalid_Request, "invalid tag character was accepted");
+
+      Value.Clear;
+      for Index in 1 .. Storage_Tags.Maximum_Bucket_Tags + 1 loop
+         Value.Append
+           (Item
+              ("key" & Ada.Strings.Fixed.Trim
+                 (Natural'Image (Index), Ada.Strings.Both),
+               "value"));
+      end loop;
+      Store.Put_Bucket_Tags
+        (Bucket, Value, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Invalid_Request, "51-tag set was accepted");
+
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.Get_Bucket_Tags
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last,
+               Snapshot, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "bucket tag get ignored cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Get_Bucket_Tags
+              (Bucket, null, Ada.Real_Time.Time_First, Snapshot, Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "bucket tag get ignored deadline");
+      end;
+   end Exercise_Bucket_Tags;
 
    procedure Exercise_Bucket_Listing
      (Store : in out Flyology.Object_Storage.Backends.Backend'Class)
@@ -1004,6 +1121,7 @@ package body Object_Storage_Test_Cases is
       Store.Head_Bucket
         ("test-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "head existing memory bucket");
+      Exercise_Bucket_Tags (Store, "test-bucket");
       Store.Put_Object
         ("test-bucket", "../opaque/key", Source, Default_Put_Options,
          null, Ada.Real_Time.Time_Last, Info, Result);
@@ -1969,6 +2087,7 @@ package body Object_Storage_Test_Cases is
          Store.Head_Bucket
            ("file-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "head existing files bucket");
+         Exercise_Bucket_Tags (Store, "file-bucket");
          Store.Put_Object
            ("file-bucket", Key, Source,
             (Entity_Tag   => US.To_Unbounded_String ("etag-1"),
@@ -2460,7 +2579,7 @@ package body Object_Storage_Test_Cases is
          Ada.Directories.Delete_Tree (Base);
       end if;
 
-      for Point in 0 .. 9 loop
+      for Point in 0 .. 11 loop
          declare
             Root : constant String := Path ("bucket", Point);
             Result : Status;
@@ -2474,7 +2593,7 @@ package body Object_Storage_Test_Cases is
             end;
             Assert
               (Result =
-                 (if Point < 8 then Backend_Unavailable else Success),
+                 (if Point < 10 then Backend_Unavailable else Success),
                "bucket creation durability barrier count changed");
             declare
                Store : Files.Store := Files.Open (Root);
@@ -2489,6 +2608,70 @@ package body Object_Storage_Test_Cases is
                if Result = Success then
                   Assert (Observed = Success,
                           "successful durable bucket was not observable");
+               end if;
+            end;
+            Clean (Root);
+         exception
+            when others =>
+               Clean (Root);
+               raise;
+         end;
+      end loop;
+
+      for Point in 0 .. 4 loop
+         declare
+            Root : constant String := Path ("tags", Point);
+            Result : Status;
+            Old_Value : Flyology.Object_Storage.Tags.Tag_Set;
+            New_Value : Flyology.Object_Storage.Tags.Tag_Set;
+         begin
+            Old_Value.Append
+              (Flyology.Object_Storage.Tags.Tag'
+                 (Key   => US.To_Unbounded_String ("state"),
+                  Value => US.To_Unbounded_String ("old")));
+            New_Value.Append
+              (Flyology.Object_Storage.Tags.Tag'
+                 (Key   => US.To_Unbounded_String ("state"),
+                  Value => US.To_Unbounded_String ("replacement")));
+            declare
+               Store : Files.Store := Files.Open (Root);
+            begin
+               Create_Bucket (Store, Result);
+               Assert (Result = Success, "tag fault setup bucket");
+               Store.Put_Bucket_Tags
+                 ("durability-bucket", Old_Value, null,
+                  Ada.Real_Time.Time_Last, Result);
+               Assert (Result = Success, "tag fault setup value");
+               Faults.Fail_Next_Barrier_After (Point);
+               Store.Put_Bucket_Tags
+                 ("durability-bucket", New_Value, null,
+                  Ada.Real_Time.Time_Last, Result);
+               Faults.Clear_Failure;
+            end;
+            Assert
+              (Result =
+                 (if Point < 3 then Backend_Unavailable else Success),
+               "tag publication durability barrier count changed");
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Observed : Flyology.Object_Storage.Tags.Tag_Set;
+               Read_Result : Status;
+               Text : US.Unbounded_String;
+            begin
+               Store.Get_Bucket_Tags
+                 ("durability-bucket", null, Ada.Real_Time.Time_Last,
+                  Observed, Read_Result);
+               if Read_Result = Success and then Observed.Length = 1 then
+                  Text := Observed.First_Element.Value;
+               end if;
+               Assert
+                 (Read_Result = Success and then Observed.Length = 1
+                  and then US.To_String (Text) in "old" | "replacement",
+                  "tag sync fault exposed a partial tag set");
+               if Result = Success then
+                  Assert
+                    (US.To_String (Text) = "replacement",
+                     "successful durable tag put retained old set");
                end if;
             end;
             Clean (Root);
