@@ -81,16 +81,19 @@ version ID, and the common CRC32, CRC32C, SHA-1, and SHA-256 checksum headers.
 Nonempty checksum headers are validated for their exact decoded width, and a
 checksum type must be `COMPOSITE` or `FULL_OBJECT`.
 
-Optional version, entity-tag precondition, and checksum-mode inputs remain
-explicit. A bodyless unsuccessful HEAD response becomes a compact synthetic
+The convenience call retains its original version, entity-tag, and checksum
+arguments and adds the remaining modeled controls as trailing named
+arguments. Its `Details` component exposes the complete validated typed result
+without removing the compact common-field aliases. A bodyless unsuccessful
+HEAD response becomes a compact synthetic
 `HTTP<status>` S3 error while retaining `x-amz-request-id` and `x-amz-id-2`.
 This avoids inventing an XML error document that S3 does not send. The typed
 `Client.Low_Level.Prepare_Head_Object`/`Execute_Head_Object` path exposes all
-21 pinned request members and 43 response members when callers need the full
-surface rather than this intentionally compact convenience result. User
+21 pinned request members and 43 response members. User
 metadata is preserved as an ordered entry vector. Checksums, numeric counts,
-and modeled enums are validated before success is returned, and SSE-C request
-keys are rejected on plaintext HTTP.
+modeled enums, entity tags, dates, Accept-Ranges, and ranged response framing
+are validated before success is returned. SSE-C request keys are rejected on
+plaintext HTTP, and any response-body octet is a protocol failure for HEAD.
 
 ## Multi-subject transfers
 

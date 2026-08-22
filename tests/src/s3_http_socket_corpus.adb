@@ -339,7 +339,9 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Copy_Source : String := "";
          Expected_Copy_If_Match : String := "";
          Expected_If_Match : String := "";
+         Expected_If_Modified_Since : String := "";
          Expected_If_None_Match : String := "";
+         Expected_If_Unmodified_Since : String := "";
          Expected_Range : String := "";
          Expected_Checksum_Mode : String := "";
          Expected_Request_Payer : String := "";
@@ -459,15 +461,23 @@ procedure S3_HTTP_Socket_Corpus is
                            ";x-amz-request-payer"
                         else "")) = 0
                  elsif Expected_If_Match'Length > 0
+                   or else Expected_If_Modified_Since'Length > 0
                    or else Expected_If_None_Match'Length > 0
+                   or else Expected_If_Unmodified_Since'Length > 0
                    or else Expected_Range'Length > 0
                    or else Expected_Checksum_Mode'Length > 0
                  then
                     Header_Value (Lower, "if-match") /=
                       Ada.Characters.Handling.To_Lower (Expected_If_Match)
+                    or else Header_Value (Lower, "if-modified-since") /=
+                      Ada.Characters.Handling.To_Lower
+                        (Expected_If_Modified_Since)
                     or else Header_Value (Lower, "if-none-match") /=
                       Ada.Characters.Handling.To_Lower
                         (Expected_If_None_Match)
+                    or else Header_Value (Lower, "if-unmodified-since") /=
+                      Ada.Characters.Handling.To_Lower
+                        (Expected_If_Unmodified_Since)
                     or else Header_Value (Lower, "range") /=
                       Ada.Characters.Handling.To_Lower (Expected_Range)
                     or else Header_Value
@@ -481,9 +491,17 @@ procedure S3_HTTP_Socket_Corpus is
                        and then Ada.Strings.Fixed.Index
                          (Lower, ";if-match;") = 0)
                     or else
+                      (Expected_If_Modified_Since'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";if-modified-since;") = 0)
+                    or else
                       (Expected_If_None_Match'Length > 0
                        and then Ada.Strings.Fixed.Index
                          (Lower, ";if-none-match;") = 0)
+                    or else
+                      (Expected_If_Unmodified_Since'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";if-unmodified-since;") = 0)
                     or else
                       (Expected_Range'Length > 0
                        and then Ada.Strings.Fixed.Index
@@ -885,20 +903,43 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Copy_Source => "source-bucket/source-key");
          Serve
            (HTTP_Response
-              ("200 OK", "",
-               "Content-Length: 42" & CRLF &
+              ("206 Partial Content", "",
+               "Content-Length: 4" & CRLF &
+               "Content-Range: bytes 1-4/42" & CRLF &
                "ETag: ""head-etag""" & CRLF &
                "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
                "Content-Type: application/test" & CRLF &
                "x-amz-version-id: head-version" & CRLF &
                "x-amz-checksum-sha256: " &
                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" & CRLF &
+               "x-amz-checksum-md5: AAAAAAAAAAAAAAAAAAAAAA==" & CRLF &
                "x-amz-checksum-type: FULL_OBJECT" & CRLF,
                Omit_Content_Length => True),
             "HEAD", "/example-bucket/head%20object%2B%2525?" &
-              "versionId=version%20one",
+              "partNumber=3&response-cache-control=no-cache&" &
+              "response-content-disposition=attachment&" &
+              "response-content-encoding=gzip&" &
+              "response-content-language=en-CA&response-content-type=" &
+              "application%2Ftest&response-expires=Fri%2C%2021%20Aug%20" &
+              "2026%2018%3A00%3A00%20GMT&versionId=version%20one",
             Expected_If_Match => """expected-etag""",
+            Expected_If_Modified_Since =>
+              "Fri, 21 Aug 2026 16:00:00 GMT",
+            Expected_If_None_Match => """other-etag""",
+            Expected_If_Unmodified_Since =>
+              "Fri, 21 Aug 2026 18:00:00 GMT",
+            Expected_Range => "bytes=1-4",
             Expected_Checksum_Mode => "ENABLED");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "Content-Length: 42" & CRLF &
+               "ETag: ""head-policy""" & CRLF &
+               "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/head-policy",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
               ("404 Not Found", "",
@@ -910,18 +951,38 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("200 OK", "",
                "Content-Length: 1" & CRLF &
+               "ETag: ""checksum-etag""" & CRLF &
+               "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
                "x-amz-checksum-sha256: not-base64" & CRLF,
                Omit_Content_Length => True),
             "HEAD", "/example-bucket/head-invalid-checksum");
          Serve
            (HTTP_Response
+              ("200 OK", "",
+               "Content-Length: 1" & CRLF &
+               "ETag: ""first""" & CRLF &
+               "ETag: ""second""" & CRLF &
+               "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/head-duplicate-header");
+         Serve
+           ("HTTP/1.1 200 OK" & CRLF &
+            "Transfer-Encoding: chunked" & CRLF &
+            "ETag: ""framed""" & CRLF &
+            "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+            "Connection: close" & CRLF & CRLF,
+            "HEAD", "/example-bucket/head-transfer-encoding");
+         Serve
+           (HTTP_Response
               ("206 Partial Content", "",
                "Content-Length: 7" & CRLF &
+               "Content-Range: bytes 1-7/9" & CRLF &
                "x-amz-delete-marker: false" & CRLF &
                "x-amz-archive-status: ARCHIVE_ACCESS" & CRLF &
                "x-amz-checksum-crc32: AAAAAA==" & CRLF &
                "x-amz-checksum-type: FULL_OBJECT" & CRLF &
                "ETag: ""typed-head""" & CRLF &
+               "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
                "x-amz-missing-meta: 2" & CRLF &
                "x-amz-meta-project: flyology" & CRLF &
                "x-amz-meta-stage: typed" & CRLF &
@@ -2005,11 +2066,24 @@ procedure S3_HTTP_Socket_Corpus is
                 (HTTP, Origin, "example-bucket", "head object+%25",
                  Identity, Version_ID => "version one",
                  If_Match => """expected-etag""", Checksum_Mode => True,
-                 Timeout => 5.0);
+                 Timeout => 5.0,
+                 If_Modified_Since =>
+                   "Fri, 21 Aug 2026 16:00:00 GMT",
+                 If_None_Match => """other-etag""",
+                 If_Unmodified_Since =>
+                   "Fri, 21 Aug 2026 18:00:00 GMT",
+                 Byte_Range_Header => "bytes=1-4",
+                 Response_Cache_Control => "no-cache",
+                 Response_Content_Disposition => "attachment",
+                 Response_Content_Encoding => "gzip",
+                 Response_Content_Language => "en-CA",
+                 Response_Content_Type => "application/test",
+                 Response_Expires => "Fri, 21 Aug 2026 18:00:00 GMT",
+                 Part_Number => (Is_Set => True, Value => 3));
          begin
             if Result.Kind /= Transfers.Object_Found
-              or else Result.Status /= 200
-              or else Result.Bytes /= 42
+              or else Result.Status /= 206
+              or else Result.Bytes /= 4
               or else US.To_String (Result.Entity_Tag) /= """head-etag"""
               or else US.To_String (Result.Last_Modified) /=
                 "Fri, 21 Aug 2026 17:00:00 GMT"
@@ -2019,8 +2093,28 @@ procedure S3_HTTP_Socket_Corpus is
               or else US.To_String (Result.Checksum_SHA256) /=
                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
               or else US.To_String (Result.Checksum_Type) /= "FULL_OBJECT"
+              or else US.To_String (Result.Details.Checksum_MD5) /=
+                "AAAAAAAAAAAAAAAAAAAAAA=="
+              or else US.To_String (Result.Details.Content_Range) /=
+                "bytes 1-4/42"
             then
                raise Program_Error with "high-level HeadObject mismatch";
+            end if;
+         end;
+         declare
+            Result : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, "example-bucket", "head-policy", Identity,
+                 Request_Payer => "requester",
+                 Expected_Bucket_Owner => "123456789012",
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Transfers.Object_Found
+              or else Result.Status /= 200
+              or else Result.Bytes /= 42
+            then
+               raise Program_Error with
+                 "high-level HeadObject owner/payer mismatch";
             end if;
          end;
          declare
@@ -2062,6 +2156,33 @@ procedure S3_HTTP_Socket_Corpus is
                  "invalid HeadObject checksum was accepted";
             end if;
          end;
+         for Index in 1 .. 2 loop
+            declare
+               Key : constant String :=
+                 (if Index = 1 then "head-duplicate-header"
+                  else "head-transfer-encoding");
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant Transfers.Head_Outcome :=
+                       Transfers.Head_Object
+                         (HTTP, Origin, "example-bucket", Key,
+                          Identity, Timeout => 5.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with
+                    "invalid HeadObject singleton/framing was accepted";
+               end if;
+            end;
+         end loop;
          declare
             Parameters : Low_Level.Head_Object_Parameters;
             Prepared : constant Low_Level.Prepared_Request :=

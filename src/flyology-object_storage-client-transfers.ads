@@ -162,6 +162,7 @@ package Flyology.Object_Storage.Client.Transfers is
       Status : Flyology.HTTP.Status_Code := 500;
       case Kind is
          when Object_Found =>
+            Details        : Low_Level.Head_Object_Result;
             Bytes          : Byte_Count := 0;
             Entity_Tag     : Ada.Strings.Unbounded.Unbounded_String;
             Last_Modified  : Ada.Strings.Unbounded.Unbounded_String;
@@ -182,6 +183,39 @@ package Flyology.Object_Storage.Client.Transfers is
    --  outcomes. Checksum_Mode requests S3 checksum response fields when the
    --  implementation supports them. Bodyless HEAD errors are returned as a
    --  synthetic HTTP-status S3 error while preserving request identifiers.
+   --  The original version/match/checksum arguments remain in place for
+   --  source compatibility; the trailing named arguments expose every other
+   --  modeled HeadObject control. Details preserves the complete validated
+   --  low-level result while the sibling fields provide common shortcuts.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Source S3 bucket
+   --  @param Key Source S3 object key
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Version_ID Optional exact object version
+   --  @param If_Match Optional strong entity-tag precondition
+   --  @param Checksum_Mode Request stored checksum response fields
+   --  @param Timeout Whole-operation monotonic budget
+   --  @param Token Optional cancellation source
+   --  @param If_Modified_Since Optional HTTP-date precondition
+   --  @param If_None_Match Optional weak entity-tag precondition
+   --  @param If_Unmodified_Since Optional HTTP-date precondition
+   --  @param Byte_Range_Header Optional single bytes range
+   --  @param Response_Cache_Control Optional response header override
+   --  @param Response_Content_Disposition Optional response header override
+   --  @param Response_Content_Encoding Optional response header override
+   --  @param Response_Content_Language Optional response header override
+   --  @param Response_Content_Type Optional response header override
+   --  @param Response_Expires Optional response Expires override
+   --  @param SSE_Customer_Algorithm Optional SSE-C algorithm
+   --  @param SSE_Customer_Key Optional Base64 SSE-C key; HTTPS only
+   --  @param SSE_Customer_Key_MD5 Optional Base64 SSE-C key digest
+   --  @param Request_Payer Empty or requester
+   --  @param Part_Number Optional one-based multipart part selection
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @return Complete successful metadata or structured rejection
    function Head_Object
      (Client        : aliased in out Flyology.HTTP.Client.Client;
       Origin        : Flyology.HTTP.Origin;
@@ -194,7 +228,24 @@ package Flyology.Object_Storage.Client.Transfers is
       If_Match      : String := "";
       Checksum_Mode : Boolean := False;
       Timeout       : Duration := 30.0;
-      Token         : access Flyology.Cancellation.Token := null)
+      Token         : access Flyology.Cancellation.Token := null;
+      If_Modified_Since : String := "";
+      If_None_Match : String := "";
+      If_Unmodified_Since : String := "";
+      Byte_Range_Header : String := "";
+      Response_Cache_Control : String := "";
+      Response_Content_Disposition : String := "";
+      Response_Content_Encoding : String := "";
+      Response_Content_Language : String := "";
+      Response_Content_Type : String := "";
+      Response_Expires : String := "";
+      SSE_Customer_Algorithm : String := "";
+      SSE_Customer_Key : String := "";
+      SSE_Customer_Key_MD5 : String := "";
+      Request_Payer : String := "";
+      Part_Number : Low_Level.Optional_Part_Number :=
+        (Is_Set => False, Value => 1);
+      Expected_Bucket_Owner : String := "")
       return Head_Outcome;
 
    type Download_Outcome_Kind is (File_Downloaded, Download_Rejected);

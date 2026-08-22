@@ -7911,6 +7911,7 @@ package body Object_Storage_Test_Cases is
       use type Low_Level.Head_Bucket_Outcome_Kind;
       use type Low_Level.Head_Object_Outcome_Kind;
       use type Low_Level.Get_Object_Attributes_Outcome_Kind;
+      use type Low_Level.Head_Object_Result;
       use type Low_Level.List_Buckets_Outcome_Kind;
       Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
         ("AKIAIOSFODNN7EXAMPLE",
@@ -9408,10 +9409,15 @@ package body Object_Storage_Test_Cases is
       begin
          Headers.Delete_Marker := (Is_Set => True, Value => False);
          Headers.Accept_Ranges := US.To_Unbounded_String ("bytes");
+         Headers.Expiration :=
+           US.To_Unbounded_String ("expiry-date=""future"", rule-id=rule");
+         Headers.Restore :=
+           US.To_Unbounded_String ("ongoing-request=""false""");
          Headers.Archive_Status := US.To_Unbounded_String ("ARCHIVE_ACCESS");
          Headers.Last_Modified :=
            US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
          Headers.Content_Length := 9;
+         Headers.Content_Range := US.To_Unbounded_String ("bytes 0-8/9");
          Headers.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
          Headers.Checksum_CRC32C := US.To_Unbounded_String ("AAAAAA==");
          Headers.Checksum_CRC64NVME :=
@@ -9434,6 +9440,16 @@ package body Object_Storage_Test_Cases is
          Headers.Entity_Tag := US.To_Unbounded_String ("""etag""");
          Headers.Missing_Meta := (Is_Set => True, Value => 2);
          Headers.Version_ID := US.To_Unbounded_String ("version");
+         Headers.Cache_Control := US.To_Unbounded_String ("no-cache");
+         Headers.Content_Disposition :=
+           US.To_Unbounded_String ("attachment");
+         Headers.Content_Encoding := US.To_Unbounded_String ("gzip");
+         Headers.Content_Language := US.To_Unbounded_String ("en-CA");
+         Headers.Content_Type := US.To_Unbounded_String ("application/test");
+         Headers.Expires :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 01:00:00 GMT");
+         Headers.Website_Redirect_Location :=
+           US.To_Unbounded_String ("/replacement");
          Headers.Server_Side_Encryption :=
            US.To_Unbounded_String ("aws:kms:dsse");
          Headers.Metadata.Append
@@ -9442,6 +9458,9 @@ package body Object_Storage_Test_Cases is
                Value => US.To_Unbounded_String ("flyology")));
          Headers.SSE_Customer_Key_MD5 :=
            US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Headers.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Headers.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
          Headers.Bucket_Key_Enabled := (Is_Set => True, Value => True);
          Headers.Storage_Class :=
            US.To_Unbounded_String ("INTELLIGENT_TIERING");
@@ -9460,10 +9479,7 @@ package body Object_Storage_Test_Cases is
          begin
             Assert
               (Outcome.Kind = Low_Level.Object_Found
-               and then Outcome.Result.Content_Length = 9
-               and then Outcome.Result.Metadata.Length = 1
-               and then Outcome.Result.Parts_Count.Is_Set
-               and then Outcome.Result.Parts_Count.Value = 3,
+               and then Outcome.Result = Headers,
                "typed HeadObject complete response headers");
          end;
       end;
@@ -9472,7 +9488,33 @@ package body Object_Storage_Test_Cases is
          Headers : Low_Level.Head_Object_Result;
          Raised : Boolean := False;
       begin
+         Headers.Content_Length := 1;
+         Headers.Entity_Tag := US.To_Unbounded_String ("""etag""");
+         Headers.Last_Modified :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
+         begin
+            declare
+               Ignored : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Decode_Head_Object_Response (200, " ", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert (Raised, "HeadObject accepted a whitespace response body");
+      end;
+
+      declare
+         Headers : Low_Level.Head_Object_Result;
+         Raised : Boolean := False;
+      begin
          Headers.Checksum_CRC32 := US.To_Unbounded_String ("not-base64");
+         Headers.Entity_Tag := US.To_Unbounded_String ("""etag""");
+         Headers.Last_Modified :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
          begin
             declare
                Ignored : constant Low_Level.Head_Object_Outcome :=
@@ -9486,6 +9528,56 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "HeadObject accepted an invalid checksum header");
+      end;
+
+      declare
+         Headers : Low_Level.Head_Object_Result;
+
+         procedure Expect_Invalid
+           (Status  : Flyology.HTTP.Status_Code;
+            Value   : Low_Level.Head_Object_Result;
+            Message : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Head_Object_Outcome :=
+                    Low_Level.Decode_Head_Object_Response
+                      (Status, "", Value);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Expect_Invalid;
+      begin
+         Headers.Content_Length := 1;
+         Headers.Entity_Tag := US.To_Unbounded_String ("""etag""");
+         Headers.Last_Modified :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
+         Expect_Invalid
+           (206, Headers, "HeadObject accepted 206 without Content-Range");
+         Headers.Content_Range := US.To_Unbounded_String ("bytes 0-0/1");
+         Expect_Invalid
+           (200, Headers, "HeadObject accepted unsolicited Content-Range");
+         Headers.Content_Range := US.Null_Unbounded_String;
+         Headers.Accept_Ranges := US.To_Unbounded_String ("items");
+         Expect_Invalid
+           (200, Headers, "HeadObject accepted invalid Accept-Ranges");
+         Headers.Accept_Ranges := US.Null_Unbounded_String;
+         Headers.Last_Modified := US.To_Unbounded_String ("not-a-date");
+         Expect_Invalid
+           (200, Headers, "HeadObject accepted invalid Last-Modified");
+         Headers.Last_Modified :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
+         Headers.Entity_Tag := US.To_Unbounded_String ("bare-etag");
+         Expect_Invalid
+           (200, Headers, "HeadObject accepted an unquoted ETag");
       end;
 
       declare

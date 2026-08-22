@@ -218,10 +218,13 @@ Transfers.Transfer_Many
 from one open descriptor, and exposes both thresholds as trailing policy
 parameters. `Copy_Object` owns copy-source URI encoding and signing, including
 special-character keys, and returns compact copy metadata or the structured
-S3 error. `Head_Object` is the bodyless reconciliation primitive: it returns
-64-bit size, entity tag, modification/content/version metadata, and validated
-checksum headers, or a structured rejection that preserves request IDs even
-when the HEAD response has no XML body. Multipart parts for one file are deliberately sequential; batch
+S3 error. `Head_Object` is the bodyless reconciliation primitive: its common
+fields expose 64-bit size, entity tag, modification/content/version metadata,
+while `Details` preserves every modeled response member. Trailing named
+arguments cover all modeled conditions, range, response overrides, SSE-C,
+request-payer, part, owner, and checksum controls. A structured rejection
+preserves request IDs even when the HEAD response has no XML body. Multipart
+parts for one file are deliberately sequential; batch
 parallelism is across independent subjects. `Transfer_Many` remains a
 synchronous structured scope and bounds concurrent objects, HTTP requests and
 in-flight bytes independently. Flyology's runtime owns multiplexing,

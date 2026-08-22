@@ -18,6 +18,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
    package Model renames Flyology.Object_Storage.S3.Model;
    package Encoding renames Flyology.Object_Storage.S3.SigV4_Encoding;
+   package Object_Reads renames Flyology.Object_Storage.S3.Object_Reads;
    package Wire_Core renames Flyology.Object_Storage.S3.Wire_Core;
    use type Flyology.HTTP.Origin_Scheme;
    use type Flyology.HTTP.Port_Number;
@@ -36,6 +37,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
    function Optional_Boolean_Header
      (Value : String) return Optional_Boolean;
    function Content_MD5 (Value : String) return String;
+   function Valid_Content_Range
+     (Value : String; Length : Optional_Byte_Count) return Boolean;
 
    No_Headers : constant SigV4.Name_Value_Array (1 .. 0) :=
      (others => <>);
@@ -2842,9 +2845,41 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return False;
    end Valid_Head_Object_Enum;
 
-   procedure Validate_Head_Object_Headers (Value : Head_Object_Result) is
+   function Valid_Response_Entity_Tag (Value : String) return Boolean is
    begin
-      if not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
+      if Value'Length < 2
+        or else Value (Value'First) /= '"'
+        or else Value (Value'Last) /= '"'
+      then
+         return False;
+      end if;
+      for Index in Value'First + 1 .. Value'Last - 1 loop
+         if Character'Pos (Value (Index)) < 16#21#
+           or else Value (Index) = '"'
+           or else Character'Pos (Value (Index)) = 16#7F#
+         then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Valid_Response_Entity_Tag;
+
+   procedure Validate_Head_Object_Headers
+     (Value : Head_Object_Result; Status : Flyology.HTTP.Status_Code)
+   is
+      Length : constant Optional_Byte_Count :=
+        (Is_Set => True, Value => Value.Content_Length);
+   begin
+      if (Status = 206
+          and then not Valid_Content_Range
+            (US.To_String (Value.Content_Range), Length))
+        or else (Status = 200 and then US.Length (Value.Content_Range) > 0)
+        or else US.To_String (Value.Accept_Ranges) not in "" | "bytes"
+        or else not Valid_Response_Entity_Tag
+          (US.To_String (Value.Entity_Tag))
+        or else not Object_Reads.Parse_Conditional_Date
+          (US.To_String (Value.Last_Modified)).Valid
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
         or else not Valid_Optional_Checksum (Value.Checksum_CRC32C, 4)
         or else not Valid_Optional_Checksum (Value.Checksum_CRC64NVME, 8)
         or else not Valid_Optional_Checksum (Value.Checksum_SHA1, 20)
@@ -2886,10 +2921,10 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Host_ID    : String := "") return Head_Object_Outcome
    is
    begin
-      if not Whitespace_Only (Payload) then
+      if Payload'Length > 0 then
          raise Invalid_Response with "HeadObject contains a response body";
       elsif Status in 200 | 206 then
-         Validate_Head_Object_Headers (Headers);
+         Validate_Head_Object_Headers (Headers, Status);
          return (Kind => Object_Found, Status => Status, Result => Headers);
       else
          return
@@ -2907,6 +2942,55 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null)
       return Head_Object_Outcome
    is
+      function Is_Head_Singleton_Header (Name : String) return Boolean is
+        (Name = "accept-ranges"
+         or else Name = "cache-control"
+         or else Name = "content-disposition"
+         or else Name = "content-encoding"
+         or else Name = "content-language"
+         or else Name = "content-length"
+         or else Name = "content-range"
+         or else Name = "content-type"
+         or else Name = "etag"
+         or else Name = "expires"
+         or else Name = "last-modified"
+         or else Name = "x-amz-archive-status"
+         or else Name = "x-amz-checksum-crc32"
+         or else Name = "x-amz-checksum-crc32c"
+         or else Name = "x-amz-checksum-crc64nvme"
+         or else Name = "x-amz-checksum-md5"
+         or else Name = "x-amz-checksum-sha1"
+         or else Name = "x-amz-checksum-sha256"
+         or else Name = "x-amz-checksum-sha512"
+         or else Name = "x-amz-checksum-type"
+         or else Name = "x-amz-checksum-xxhash128"
+         or else Name = "x-amz-checksum-xxhash3"
+         or else Name = "x-amz-checksum-xxhash64"
+         or else Name = "x-amz-delete-marker"
+         or else Name = "x-amz-expiration"
+         or else Name = "x-amz-id-2"
+         or else Name = "x-amz-missing-meta"
+         or else Name = "x-amz-mp-parts-count"
+         or else Name = "x-amz-object-lock-legal-hold"
+         or else Name = "x-amz-object-lock-mode"
+         or else Name = "x-amz-object-lock-retain-until-date"
+         or else Name = "x-amz-replication-status"
+         or else Name = "x-amz-request-charged"
+         or else Name = "x-amz-request-id"
+         or else Name = "x-amz-restore"
+         or else Name = "x-amz-server-side-encryption"
+         or else Name =
+           "x-amz-server-side-encryption-aws-kms-key-id"
+         or else Name =
+           "x-amz-server-side-encryption-bucket-key-enabled"
+         or else Name =
+           "x-amz-server-side-encryption-customer-algorithm"
+         or else Name =
+           "x-amz-server-side-encryption-customer-key-md5"
+         or else Name = "x-amz-storage-class"
+         or else Name = "x-amz-tagging-count"
+         or else Name = "x-amz-version-id"
+         or else Name = "x-amz-website-redirect-location");
    begin
       if Prepared.Operation /= Head_Object_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
@@ -2934,6 +3018,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
                  (Flyology.HTTP.Client.Header_Name (Response, Index));
                Prefix : constant String := "x-amz-meta-";
             begin
+               if Name = "transfer-encoding" then
+                  raise Invalid_Response with
+                    "HeadObject response uses transfer coding";
+               elsif Is_Head_Singleton_Header (Name) then
+                  for Previous in 1 .. Index - 1 loop
+                     if Ada.Characters.Handling.To_Lower
+                       (Flyology.HTTP.Client.Header_Name
+                          (Response, Previous)) = Name
+                     then
+                        raise Invalid_Response with
+                          "HeadObject response duplicates a singleton header";
+                     end if;
+                  end loop;
+               end if;
                if Name'Length > Prefix'Length
                  and then Name (Name'First .. Name'First + Prefix'Length - 1)
                    = Prefix

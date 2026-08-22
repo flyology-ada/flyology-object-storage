@@ -724,7 +724,24 @@ package body Flyology.Object_Storage.Client.Transfers is
       If_Match      : String := "";
       Checksum_Mode : Boolean := False;
       Timeout       : Duration := 30.0;
-      Token         : access Flyology.Cancellation.Token := null)
+      Token         : access Flyology.Cancellation.Token := null;
+      If_Modified_Since : String := "";
+      If_None_Match : String := "";
+      If_Unmodified_Since : String := "";
+      Byte_Range_Header : String := "";
+      Response_Cache_Control : String := "";
+      Response_Content_Disposition : String := "";
+      Response_Content_Encoding : String := "";
+      Response_Content_Language : String := "";
+      Response_Content_Type : String := "";
+      Response_Expires : String := "";
+      SSE_Customer_Algorithm : String := "";
+      SSE_Customer_Key : String := "";
+      SSE_Customer_Key_MD5 : String := "";
+      Request_Payer : String := "";
+      Part_Number : Low_Level.Optional_Part_Number :=
+        (Is_Set => False, Value => 1);
+      Expected_Bucket_Owner : String := "")
       return Head_Outcome
    is
       Deadline : constant Ada.Real_Time.Time := Deadline_For (Timeout);
@@ -733,6 +750,33 @@ package body Flyology.Object_Storage.Client.Transfers is
       Check_Cancelled (Token);
       Parameters.Version_ID := US.To_Unbounded_String (Version_ID);
       Parameters.If_Match := US.To_Unbounded_String (If_Match);
+      Parameters.If_Modified_Since :=
+        US.To_Unbounded_String (If_Modified_Since);
+      Parameters.If_None_Match := US.To_Unbounded_String (If_None_Match);
+      Parameters.If_Unmodified_Since :=
+        US.To_Unbounded_String (If_Unmodified_Since);
+      Parameters.Byte_Range_Header :=
+        US.To_Unbounded_String (Byte_Range_Header);
+      Parameters.Response_Cache_Control :=
+        US.To_Unbounded_String (Response_Cache_Control);
+      Parameters.Response_Content_Disposition :=
+        US.To_Unbounded_String (Response_Content_Disposition);
+      Parameters.Response_Content_Encoding :=
+        US.To_Unbounded_String (Response_Content_Encoding);
+      Parameters.Response_Content_Language :=
+        US.To_Unbounded_String (Response_Content_Language);
+      Parameters.Response_Content_Type :=
+        US.To_Unbounded_String (Response_Content_Type);
+      Parameters.Response_Expires := US.To_Unbounded_String (Response_Expires);
+      Parameters.SSE_Customer_Algorithm :=
+        US.To_Unbounded_String (SSE_Customer_Algorithm);
+      Parameters.SSE_Customer_Key := US.To_Unbounded_String (SSE_Customer_Key);
+      Parameters.SSE_Customer_Key_MD5 :=
+        US.To_Unbounded_String (SSE_Customer_Key_MD5);
+      Parameters.Request_Payer := US.To_Unbounded_String (Request_Payer);
+      Parameters.Part_Number := Part_Number;
+      Parameters.Expected_Bucket_Owner :=
+        US.To_Unbounded_String (Expected_Bucket_Owner);
       Parameters.Checksum_Mode := Checksum_Mode;
       declare
          Prepared : constant Low_Level.Prepared_Request :=
@@ -752,6 +796,7 @@ package body Flyology.Object_Storage.Client.Transfers is
          return
            (Kind            => Object_Found,
             Status          => Outcome.Status,
+            Details         => Outcome.Result,
             Bytes           => Outcome.Result.Content_Length,
             Entity_Tag      => Outcome.Result.Entity_Tag,
             Last_Modified   => Outcome.Result.Last_Modified,
