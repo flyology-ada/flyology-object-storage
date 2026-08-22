@@ -1,0 +1,21 @@
+name = "flyology_object_storage_tests"
+description = ""
+version = "0.1.0-dev"
+
+authors = ["Yurii Rashkovskii"]
+maintainers = ["Yurii Rashkovskii <yrashk@gmail.com>"]
+maintainers-logins = ["yrashk"]
+licenses = "MIT OR Apache-2.0 WITH LLVM-exception"
+website = ""
+tags = []
+
+executables = ["flyology_object_storage_tests", "s3_files_server", "s3_http_socket_corpus", "s3_transfer_many_corpus", "s3_implementation_corpus", "s3_memory_server"]
+
+[[depends-on]]
+flyology_object_storage = "*"
+
+[[pins]]
+flyology_object_storage = { path='..' }
+
+[[depends-on]]
+aunit = "^26.0.0"

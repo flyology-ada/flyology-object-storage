@@ -1,0 +1,11 @@
+scenario	common_status	reason
+small-put	supported	PutObject is implemented by every compared endpoint
+small-get	supported	GetObject is implemented by every compared endpoint
+medium-put	supported	PutObject is implemented by every compared endpoint
+medium-get	supported	GetObject is implemented by every compared endpoint
+large-multipart-put	supported	CreateMultipartUpload, UploadPart, and CompleteMultipartUpload are implemented by every compared endpoint
+large-get	supported	GetObject is implemented by every compared endpoint
+large-copy	supported	CopyObject is implemented by every compared endpoint
+namespace-list	supported	ListObjectsV2 is implemented by every compared endpoint
+namespace-delete	supported	batched DeleteObjects is implemented by every compared endpoint
+mixed-objects	blocked	the aggregate mixed-workload generator is not implemented

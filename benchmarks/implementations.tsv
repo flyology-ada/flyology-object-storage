@@ -1,0 +1,6 @@
+implementation	role	backend	durability
+rustfs	permissive-reference	external	reference-default
+seaweedfs	permissive-reference	external	reference-default
+flyology-memory	candidate	memory	volatile
+flyology-files	candidate	files	atomic-not-power-durable
+flyology-sqlite	candidate	sqlite	wal-synchronous-full

@@ -1,0 +1,39 @@
+# Memory backend capacity
+
+The memory backend's `Byte_Capacity` is a hard bound on retained payload
+buffer capacity, not a sum of logical S3 object sizes. It covers committed
+objects, staged multipart parts, allocator slack in unknown-length objects,
+buffers reserved by in-progress PutObject and UploadPart calls, and immutable
+snapshots held while GetObject calls invoke caller sinks. Bucket, key, and
+control metadata are bounded separately by the bucket/object slot limits and
+are not charged to this byte counter.
+
+Known-length sources reserve their exact declared length before the first
+source read. Unknown-length sources reserve before every allocation growth;
+when geometric growth will not fit, they retry the exact required size. A
+growth reserves the full replacement while the old array remains charged, so
+the allocator's temporary old-plus-new peak is also inside the bound. A
+failed, short, malformed, cancelled, timed-out, or exceptional source frees
+its buffer before returning its reservation. Commit atomically converts the
+reservation into retained capacity. `Bytes_Used` reports committed, staged,
+and in-progress retained capacity, so it can exceed the sum of object sizes
+when an unknown-length buffer has spare capacity.
+
+This bound intentionally includes coexistence during atomic replacement and
+streaming reads. An overwrite needs room for both the old committed payload
+and the incoming buffer until publication. Multipart completion likewise
+needs room for the staged parts and the contiguous assembled object at the
+same time. Each active nonempty GetObject reserves an exact immutable body
+snapshot so a concurrent overwrite or delete cannot change the bytes being
+streamed. CopyObject holds that source snapshot while its destination buffer
+is built, so its conservative peak is the resident source plus one snapshot
+plus one destination buffer. Operators should therefore budget approximately
+twice the largest completing or concurrently read object, or three times the
+largest copied object, plus unrelated resident data. If that headroom is
+unavailable, the operation returns `Capacity_Exceeded`; a failed
+multipart completion does not consume the upload and can be retried after
+capacity is freed or the store is replaced with a larger instance.
+
+These rules make the volatile backend resistant to concurrent body-retention
+exhaustion, but they do not turn it into a durable store. Use the files or
+SQLite backend for restart persistence.

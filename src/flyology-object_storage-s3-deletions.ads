@@ -1,0 +1,48 @@
+with Ada.Containers.Vectors;
+with Ada.Strings.Unbounded;
+with Flyology.Object_Storage.S3.XML;
+
+--  Typed, bounded REST/XML documents for S3 DeleteObjects.
+package Flyology.Object_Storage.S3.Deletions is
+
+   Malformed_Delete : exception;
+   Maximum_Objects : constant := 1_000;
+
+   type Object_Identifier is record
+      Key        : Ada.Strings.Unbounded.Unbounded_String;
+      Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   package Object_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Object_Identifier);
+
+   type Delete_Objects_Request is record
+      Objects : Object_Vectors.Vector;
+      Quiet   : Boolean := False;
+   end record;
+
+   function Parse_Request
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Delete_Objects_Request;
+
+   function Serialize_Request (Value : Delete_Objects_Request) return String;
+
+   type Delete_Error is record
+      Key        : Ada.Strings.Unbounded.Unbounded_String;
+      Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Code       : Ada.Strings.Unbounded.Unbounded_String;
+      Message    : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   package Delete_Error_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Delete_Error);
+
+   type Delete_Objects_Result is record
+      Deleted : Object_Vectors.Vector;
+      Errors  : Delete_Error_Vectors.Vector;
+   end record;
+
+   function Serialize_Result (Value : Delete_Objects_Result) return String;
+
+end Flyology.Object_Storage.S3.Deletions;

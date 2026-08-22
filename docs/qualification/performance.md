@@ -1,0 +1,138 @@
+# Server performance qualification
+
+Performance qualification compares Flyology Object Storage with the pinned
+RustFS and SeaweedFS oracle versions on the same dedicated host. MinIO remains
+a compatibility runtime, not a performance target. A result is comparable
+only when its machine, kernel, filesystem, compiler, container runtime, power
+mode, server revision, client revision, and scenario-file digest are recorded.
+
+The server matrix will run every scenario in
+[`benchmarks/scenarios.tsv`](../../benchmarks/scenarios.tsv) against:
+
+1. RustFS;
+2. SeaweedFS;
+3. the Flyology memory backend;
+4. the Flyology files backend; and
+5. the Flyology SQLite backend.
+
+[`benchmarks/implementations.tsv`](../../benchmarks/implementations.tsv) is
+the machine-checked comparison manifest. RustFS and SeaweedFS are the two
+permissively licensed references. MinIO is deliberately excluded from the
+performance target set: it remains useful compatibility evidence, but its
+license and implementation lineage make it a poor optimization target for
+this project.
+
+All endpoints are driven by the same digest-pinned s5cmd process for the
+cross-server comparison. A second lane uses the Flyology high-level client to
+measure our complete client/runtime path. Every measured run has a correctness
+preflight and postflight appropriate to its operation. The current common
+slice checks s5cmd's exact success/error counts, heads the first and last
+uploaded object, verifies their fixed-seed hashes, verifies every expected
+download file exists plus endpoint hashes, and requires the first and last
+deleted object to be absent. Exact remote object counts are mandatory before
+and after namespace-list measurement, and the populated namespace is deleted
+after the scenario. CopyObject is measured as server-side 64 MiB copies from
+pre-populated immutable sources; the destination pair is re-read and checked
+against the source payload hash after every measured repetition.
+Namespace deletion is driven through s5cmd's batched DeleteObjects request,
+not mislabeled as a series of independent DeleteObject requests.
+
+`benchmarks/run-matrix.sh` automates the common endpoint lifecycle and drives
+the two references plus all three Flyology backends sequentially. Its default
+`smoke` profile uses reduced object counts and one aggregate repetition. A
+`full` profile honors each scenario's warmup and duration, uses five
+repetitions by default, and requires explicit `FLYOLOGY_BENCH_HOST_LABEL`,
+`FLYOLOGY_BENCH_POWER_MODE`, and `FLYOLOGY_BENCH_CPU_POLICY` metadata. The
+launcher refuses to compare Flyology until the indexed fixed-length HTTP
+response dependency is consumed.
+
+The current common eligibility manifest is
+[`benchmarks/eligibility.tsv`](../../benchmarks/eligibility.tsv). Nine
+scenarios (small/medium PUT and GET, forced 64 MiB multipart PUT, large GET,
+64 MiB CopyObject, batched namespace delete, and namespace list) are
+executable. Mixed objects
+is emitted as a blocked row until its workload generator and correctness
+postflights exist; it is never silently omitted or timed as a failure.
+
+Each campaign retains `samples.tsv`, digest-pinned s5cmd aggregate JSON logs,
+machine metadata, and `summary.tsv`. The summary reports median aggregate
+operations/second and bytes/second plus same-campaign ratios to RustFS and
+SeaweedFS. It deliberately contains no latency percentiles: s5cmd does not
+emit one sample per request, so p50/p95/p99 remain reserved for the in-process
+driver lane.
+
+## Measurement protocol
+
+- Use one isolated host and loopback networking; never compare across hosts.
+- Run one server at a time with identical CPU affinity and resource limits.
+- Use deterministic payloads generated from a recorded seed.
+- Run the declared warmup, then five independent measured repetitions.
+- The current aggregate s5cmd lane reports every repetition plus median
+  requests/second and bytes/second. Dedicated-host qualification additionally
+  requires CPU time, peak RSS, and disk bytes written; those resource samples
+  remain a launcher gate rather than being inferred from throughput. The
+  in-process lane additionally reports p50, p95, p99, and maximum per-request
+  latency.
+- Record cold-start and steady-state results separately. Do not combine them.
+- Record failures, retries, throttling, and tail latency; throughput alone is
+  not a passing result.
+- Retain raw, machine-readable samples as CI artifacts. Summaries are derived
+  from those samples and are never the sole evidence.
+- For every Flyology series, report throughput ratios and inverse tail-latency
+  ratios against RustFS and SeaweedFS from the same campaign. Never compare
+  numbers collected on different machines or campaign runs.
+
+The mixed scenario uses a fixed-seed distribution of 70% 4 KiB, 25% 1 MiB,
+and 5% 64 MiB objects, with 60% GET, 25% PUT, 10% HEAD, and 5% DELETE after
+its initial population phase.
+
+## Backend semantics
+
+Memory, files, and SQLite are separate result series. Memory is non-durable.
+The files backend is labeled atomic/non-power-durable until its fsync mode is
+implemented. SQLite is measured with its production `WAL` and
+`synchronous=FULL` settings; a weaker SQLite durability mode cannot be used to
+claim parity. Results with different durability semantics may guide tuning but
+must not be presented as equivalent.
+
+## Regression policy
+
+The first stable dedicated-host campaign establishes baselines; it does not
+invent a threshold from a laptop run. After two repeatable campaigns, the
+repository will pin per-scenario absolute budgets and oracle-relative floors
+for each backend. The optimization objective is to close the gap to the best
+permissive reference for that scenario, while preserving the backend's stated
+durability semantics. CI fails when the five-run median violates a ratified
+throughput floor, its p99 latency ceiling, or its oracle-relative floor, and
+reruns once to distinguish a noisy host from a repeatable regression. Any
+correctness, crash, leak, or data-integrity failure fails immediately
+regardless of speed.
+
+Runnable loopback endpoints now exist for memory, files, and SQLite, and the
+black-box correctness preflight passes against all three. The aggregate s5cmd
+launcher and raw result schema are executable. Percentile latency will not be
+inferred from s5cmd's aggregate `--stat` output: an in-process driver must
+record one sample per completed request before p50/p95/p99 claims are
+accepted. Resource telemetry must also be added before the `full` profile is
+used to ratify a performance threshold.
+
+## Development smoke evidence
+
+The retained `20260821Tmultipart-final` campaign is a correctness-checked,
+unqualified-host smoke comparison of two concurrent 64 MiB multipart uploads.
+It is tuning evidence, not a release baseline. Its same-campaign aggregate
+results were 284 MB/s for memory (1.324x RustFS), 278 MB/s for files (1.293x),
+231 MB/s for SQLite (1.075x), 215 MB/s for RustFS, and 105 MB/s for SeaweedFS.
+The raw samples, summary, host metadata, scenario digests, and immutable
+reference/client image digests are retained under
+[`benchmarks/results/20260821Tmultipart-final`](../../benchmarks/results/20260821Tmultipart-final).
+
+The retained `20260821Tcopy-reviewed` campaign applies the same caveat to two
+concurrent 64 MiB server-side copies. It measured 371 MB/s for memory (0.792x
+RustFS, 0.666x SeaweedFS), 444 MB/s for files (0.949x, 0.798x), and 474 MB/s
+for SQLite (1.013x, 0.851x), versus 468 MB/s for RustFS and 557 MB/s for
+SeaweedFS. Each series used pre-populated sources and verified destination
+hashes after timing. The corrected provenance recorder stores exactly one
+revision field per implementation and rejects newline or tab injection. Raw
+evidence is retained under
+[`benchmarks/results/20260821Tcopy-reviewed`](../../benchmarks/results/20260821Tcopy-reviewed).

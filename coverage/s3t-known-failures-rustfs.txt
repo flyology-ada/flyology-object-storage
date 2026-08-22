@@ -1,0 +1,3 @@
+# RustFS 1.0.0-rc.3 reports InvalidArgument instead of NoSuchUpload when the
+# supplied multipart upload ID does not exist.
+s3tests/functional/test_s3.py::test_multipart_upload_complete_without_create

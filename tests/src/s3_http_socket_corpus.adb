@@ -1,0 +1,1075 @@
+with Ada.Characters.Handling;
+with Ada.Directories;
+with Ada.Exceptions;
+with Ada.Streams;
+with Ada.Streams.Stream_IO;
+with Ada.Strings.Fixed;
+with Ada.Strings.Unbounded;
+with Ada.Text_IO;
+with Flyology;
+with Flyology.Cancellation;
+with Flyology.HTTP;
+with Flyology.HTTP.Client;
+with Flyology.IO;
+with Flyology.IO.Sockets;
+with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.Client.Transfers;
+with Flyology.Object_Storage.S3.Model;
+with Flyology.Object_Storage.S3.Multipart;
+with Flyology.Object_Storage.S3.SigV4;
+
+procedure S3_HTTP_Socket_Corpus is
+   package HTTP_Client renames Flyology.HTTP.Client;
+   package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+   package Transfers renames Flyology.Object_Storage.Client.Transfers;
+   package Model renames Flyology.Object_Storage.S3.Model;
+   package Multipart renames Flyology.Object_Storage.S3.Multipart;
+   package SigV4 renames Flyology.Object_Storage.S3.SigV4;
+   package Sockets renames Flyology.IO.Sockets;
+   package US renames Ada.Strings.Unbounded;
+
+   use Ada.Streams;
+   use type Low_Level.List_Outcome_Kind;
+   use type Low_Level.Create_Multipart_Outcome_Kind;
+   use type Low_Level.Complete_Multipart_Outcome_Kind;
+   use type Low_Level.Abort_Multipart_Outcome_Kind;
+   use type Low_Level.Upload_Part_Outcome_Kind;
+   use type Transfers.Download_Outcome_Kind;
+   use type Transfers.Upload_Outcome_Kind;
+   use type Sockets.Selector_Status;
+
+   CRLF : constant String := Character'Val (13) & Character'Val (10);
+   Upload_Payload : aliased constant String :=
+     String'(1 .. 120 * 1_024 => 'u');
+   Download_Payload : constant String :=
+     String'(1 .. 120 * 1_024 => 'd');
+
+   type Upload_Source
+     (Value : not null access constant String) is
+     new HTTP_Client.Request_Body_Source with record
+      Position : Natural := 0;
+      Chunk    : Positive := 997;
+   end record;
+
+   overriding function Declared_Length
+     (Item : Upload_Source) return HTTP_Client.Body_Length is
+     (HTTP_Client.Known_Length
+        (HTTP_Client.Body_Size (Item.Value'Length)));
+
+   overriding procedure Read
+     (Item     : in out Upload_Source;
+      Data     : out Stream_Element_Array;
+      Last     : out Stream_Element_Offset;
+      Finished : out Boolean;
+      Timeout  : Duration;
+      Token    : access Flyology.Cancellation.Token)
+   is
+      pragma Unreferenced (Timeout, Token);
+      Remaining : constant Natural := Item.Value'Length - Item.Position;
+      Count : constant Natural := Natural'Min
+        (Remaining, Natural'Min (Natural (Data'Length), Item.Chunk));
+   begin
+      Data := (others => 0);
+      if Count = 0 then
+         Last := Data'First - 1;
+      else
+         for Offset in 0 .. Count - 1 loop
+            Data (Data'First + Stream_Element_Offset (Offset)) :=
+              Stream_Element
+                (Character'Pos
+                   (Item.Value
+                      (Item.Value'First + Item.Position + Offset)));
+         end loop;
+         Last := Data'First + Stream_Element_Offset (Count - 1);
+         Item.Position := Item.Position + Count;
+      end if;
+      Finished := Item.Position = Item.Value'Length;
+   end Read;
+
+   function Bytes (Value : String) return Stream_Element_Array is
+      Result : Stream_Element_Array
+        (1 .. Stream_Element_Offset (Value'Length));
+   begin
+      for Offset in 0 .. Value'Length - 1 loop
+         Result (Result'First + Stream_Element_Offset (Offset)) :=
+           Stream_Element (Character'Pos (Value (Value'First + Offset)));
+      end loop;
+      return Result;
+   end Bytes;
+
+   procedure Write_File (Path, Value : String) is
+      package SIO renames Ada.Streams.Stream_IO;
+      File : SIO.File_Type;
+   begin
+      SIO.Create (File, SIO.Out_File, Path);
+      if Value'Length > 0 then
+         SIO.Write (File, Bytes (Value));
+      end if;
+      SIO.Close (File);
+   exception
+      when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         raise;
+   end Write_File;
+
+   procedure Delete_If_Present (Path : String) is
+   begin
+      if Ada.Directories.Exists (Path) then
+         Ada.Directories.Delete_File (Path);
+      end if;
+   end Delete_If_Present;
+
+   function Read_File (Path : String) return String is
+      package SIO renames Ada.Streams.Stream_IO;
+      use type SIO.Count;
+      File : SIO.File_Type;
+   begin
+      SIO.Open (File, SIO.In_File, Path);
+      declare
+         Size : constant SIO.Count := SIO.Size (File);
+      begin
+         if Size = 0 then
+            SIO.Close (File);
+            return "";
+         elsif Size > SIO.Count (Natural'Last) then
+            raise Program_Error with "test file is too large";
+         end if;
+         declare
+            Data : Stream_Element_Array (1 .. Stream_Element_Offset (Size));
+            Last : Stream_Element_Offset;
+            Result : String (1 .. Natural (Size));
+         begin
+            SIO.Read (File, Data, Last);
+            if Last /= Data'Last then
+               raise Program_Error with "short test file read";
+            end if;
+            for Index in Result'Range loop
+               Result (Index) := Character'Val
+                 (Data
+                    (Data'First
+                     + Stream_Element_Offset (Index - Result'First)));
+            end loop;
+            SIO.Close (File);
+            return Result;
+         end;
+      end;
+   exception
+      when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         raise;
+   end Read_File;
+
+   procedure Require_No_Download_Temporary (Path : String) is
+      Search : Ada.Directories.Search_Type;
+      Active : Boolean := False;
+      Found  : Boolean;
+      Directory : constant String := Ada.Directories.Containing_Directory
+        (Path);
+      Pattern : constant String := Ada.Directories.Simple_Name (Path)
+        & ".flyology-*.part";
+   begin
+      Ada.Directories.Start_Search (Search, Directory, Pattern);
+      Active := True;
+      Found := Ada.Directories.More_Entries (Search);
+      Ada.Directories.End_Search (Search);
+      Active := False;
+      if Found then
+         raise Program_Error with "download temporary file was not removed";
+      end if;
+   exception
+      when others =>
+         if Active then
+            Ada.Directories.End_Search (Search);
+         end if;
+         raise;
+   end Require_No_Download_Temporary;
+
+   function Decimal (Value : Natural) return String is
+      Image : constant String := Natural'Image (Value);
+   begin
+      return Image (Image'First + 1 .. Image'Last);
+   end Decimal;
+
+   function HTTP_Response
+     (Status, Payload      : String;
+      Extra_Headers        : String := "";
+      Omit_Content_Length  : Boolean := False) return String is
+     ("HTTP/1.1 " & Status & CRLF &
+      (if Omit_Content_Length then ""
+       else "Content-Length: " & Decimal (Payload'Length) & CRLF) &
+      Extra_Headers & "Connection: close" & CRLF & CRLF & Payload);
+
+   protected type Coordination is
+      procedure Publish (Value : Sockets.Port);
+      entry Wait_Ready (Value : out Sockets.Port);
+      procedure Complete (Passed : Boolean; Detail : String := "");
+      entry Wait_Done (Passed : out Boolean; Detail : out US.Unbounded_String);
+   private
+      Port_Value   : Sockets.Port := Sockets.Any_Port;
+      Ready        : Boolean := False;
+      Done         : Boolean := False;
+      Passed_Value : Boolean := False;
+      Detail_Value : US.Unbounded_String;
+   end Coordination;
+
+   protected body Coordination is
+      procedure Publish (Value : Sockets.Port) is
+      begin
+         Port_Value := Value;
+         Ready := True;
+      end Publish;
+
+      entry Wait_Ready (Value : out Sockets.Port) when Ready is
+      begin
+         Value := Port_Value;
+      end Wait_Ready;
+
+      procedure Complete (Passed : Boolean; Detail : String := "") is
+      begin
+         Passed_Value := Passed;
+         Detail_Value := US.To_Unbounded_String (Detail);
+         Done := True;
+      end Complete;
+
+      entry Wait_Done
+        (Passed : out Boolean; Detail : out US.Unbounded_String) when Done is
+      begin
+         Passed := Passed_Value;
+         Detail := Detail_Value;
+      end Wait_Done;
+   end Coordination;
+
+   State : Coordination;
+
+   protected type Client_Results is
+      procedure Report (Passed : Boolean; Detail : String := "");
+      entry Wait_All
+        (Passed : out Boolean; Detail : out US.Unbounded_String);
+   private
+      Count        : Natural := 0;
+      Passed_Value : Boolean := True;
+      Detail_Value : US.Unbounded_String;
+   end Client_Results;
+
+   protected body Client_Results is
+      procedure Report (Passed : Boolean; Detail : String := "") is
+      begin
+         Count := Count + 1;
+         Passed_Value := Passed_Value and Passed;
+         if not Passed and then US.Length (Detail_Value) = 0 then
+            Detail_Value := US.To_Unbounded_String (Detail);
+         end if;
+      end Report;
+
+      entry Wait_All
+        (Passed : out Boolean; Detail : out US.Unbounded_String)
+        when Count = 2
+      is
+      begin
+         Passed := Passed_Value;
+         Detail := Detail_Value;
+      end Wait_All;
+   end Client_Results;
+
+   Clients : Client_Results;
+
+   task Raw_S3_Server is
+      pragma Task_Info (Flyology.Native_Task);
+   end Raw_S3_Server;
+
+   task body Raw_S3_Server is
+      Listener : Sockets.Socket_Type;
+      Peer     : Sockets.Socket_Type;
+      Address  : Sockets.Endpoint;
+      Status   : Sockets.Selector_Status;
+      Port     : Sockets.Port;
+
+      function Header_Value (Header, Name : String) return String is
+         Marker : constant String := CRLF & Name & ":";
+         Position : constant Natural :=
+           Ada.Strings.Fixed.Index (Header, Marker);
+         First : Natural := Position + Marker'Length;
+         Last  : Natural;
+      begin
+         if Position = 0 then
+            return "";
+         end if;
+         while First <= Header'Last and then Header (First) = ' ' loop
+            First := First + 1;
+         end loop;
+         Last := Ada.Strings.Fixed.Index
+           (Header, CRLF, From => First) - 1;
+         if Last < First then
+            return "";
+         end if;
+         return Header (First .. Last);
+      end Header_Value;
+
+      procedure Serve
+        (Response           : String;
+         Expected_Method    : String;
+         Expected_Target    : String;
+         Expected_Body_Root : String := "";
+         Expected_Content_Type : String := "";
+         Fragmented         : Boolean := False)
+      is
+         Buffer : Stream_Element_Array (1 .. 4_096);
+         Last   : Stream_Element_Offset;
+         Head   : US.Unbounded_String;
+      begin
+         Sockets.Accept_Socket
+           (Listener, Peer, Address, Timeout => 5.0, Status => Status);
+         if Status /= Sockets.Completed then
+            raise Program_Error with "socket accept timed out";
+         end if;
+         loop
+            Sockets.Receive (Peer, Buffer, Last, Timeout => 5.0);
+            if Last < Buffer'First then
+               raise Program_Error with "client closed before request head";
+            end if;
+            for Index in Buffer'First .. Last loop
+               US.Append (Head, Character'Val (Buffer (Index)));
+            end loop;
+            exit when Ada.Strings.Fixed.Index
+              (US.To_String (Head), CRLF & CRLF) /= 0;
+         end loop;
+         declare
+            Request : constant String := US.To_String (Head);
+            Separator : constant Natural :=
+              Ada.Strings.Fixed.Index (Request, CRLF & CRLF);
+            Header : constant String :=
+              Request (Request'First .. Separator + 3);
+            Lower   : constant String :=
+              Ada.Characters.Handling.To_Lower (Header);
+            Target : constant String :=
+              Ada.Characters.Handling.To_Lower
+                (Expected_Method & " " & Expected_Target & " http/1.1") &
+              CRLF;
+            Length_Text : constant String :=
+              Header_Value (Lower, "content-length");
+            Expected_Length : constant Natural :=
+              (if Length_Text'Length = 0
+               then 0 else Natural'Value (Length_Text));
+            Request_Body : US.Unbounded_String;
+         begin
+            if Ada.Strings.Fixed.Index (Lower, Target) /= 1
+              or else Ada.Strings.Fixed.Index
+                (Lower, "host: 127.0.0.1:" & Decimal (Natural (Port))) = 0
+              or else Ada.Strings.Fixed.Index
+                (Lower, "authorization: aws4-hmac-sha256 credential=") = 0
+              or else
+                (if Expected_Content_Type'Length = 0 then
+                    Ada.Strings.Fixed.Index
+                      (Lower,
+                       "signedheaders=host;x-amz-content-sha256;" &
+                       "x-amz-date") = 0
+                 else
+                    Header_Value (Lower, "content-type") /=
+                      Ada.Characters.Handling.To_Lower
+                        (Expected_Content_Type)
+                    or else Ada.Strings.Fixed.Index
+                      (Lower,
+                       "signedheaders=content-type;host;" &
+                       "x-amz-content-sha256;x-amz-date") = 0)
+            then
+               raise Program_Error with "unexpected signed S3 request head";
+            end if;
+            if Separator + 4 <= Request'Last then
+               US.Append
+                 (Request_Body, Request (Separator + 4 .. Request'Last));
+            end if;
+            while US.Length (Request_Body) < Expected_Length loop
+               Sockets.Receive (Peer, Buffer, Last, Timeout => 5.0);
+               if Last < Buffer'First then
+                  raise Program_Error with
+                    "client closed before complete request body";
+               end if;
+               for Index in Buffer'First .. Last loop
+                  US.Append
+                    (Request_Body, Character'Val (Buffer (Index)));
+               end loop;
+            end loop;
+            if US.Length (Request_Body) /= Expected_Length then
+               raise Program_Error with "request body length mismatch";
+            elsif Expected_Body_Root'Length > 0 then
+               declare
+                  Body_Text : constant String := US.To_String (Request_Body);
+                  Expected_Hash : constant String :=
+                    SigV4.SHA256_Hex (Body_Text);
+               begin
+                  if Ada.Strings.Fixed.Index
+                    (Body_Text, Expected_Body_Root) = 0
+                    or else Header_Value
+                      (Lower, "x-amz-content-sha256") /= Expected_Hash
+                  then
+                     raise Program_Error with
+                       "signed S3 request body mismatch";
+                  end if;
+               end;
+            end if;
+         end;
+         if Fragmented then
+            for Character_Value of Response loop
+               Sockets.Send_All
+                 (Peer, Bytes (String'(1 => Character_Value)), Timeout => 5.0);
+            end loop;
+         else
+            Sockets.Send_All (Peer, Bytes (Response), Timeout => 5.0);
+         end if;
+         Sockets.Close_Socket (Peer);
+      end Serve;
+
+      Success_XML : constant String :=
+        "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/"">" &
+        "<Name>example-bucket</Name><KeyCount>0</KeyCount>" &
+        "<MaxKeys>2</MaxKeys><IsTruncated>false</IsTruncated>" &
+        "</ListBucketResult>";
+      Error_XML : constant String :=
+        "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>";
+      Create_XML : constant String :=
+        "<InitiateMultipartUploadResult>" &
+        "<Bucket>example-bucket</Bucket><Key>object key</Key>" &
+        "<UploadId>socket-upload</UploadId>" &
+        "</InitiateMultipartUploadResult>";
+      Complete_XML : constant String :=
+        "<CompleteMultipartUploadResult>" &
+        "<Bucket>example-bucket</Bucket><Key>object key</Key>" &
+        "<ETag>&quot;whole&quot;</ETag>" &
+        "</CompleteMultipartUploadResult>";
+      Embedded_Error_XML : constant String :=
+        "<Error><Code>InternalError</Code>" &
+        "<Message>late failure</Message></Error>";
+   begin
+      Sockets.Create_Socket (Listener);
+      Sockets.Bind_Socket
+        (Listener,
+         Sockets.Network_Endpoint
+           (Sockets.Loopback_IPv4, Sockets.Any_Port));
+      Sockets.Listen_Socket (Listener);
+      Port := Sockets.Get_Socket_Name (Listener).Port;
+      State.Publish (Port);
+      for Round in 1 .. 2 loop
+         Serve
+           (HTTP_Response ("200 OK", Success_XML), "GET",
+            "/example-bucket?list-type=2&max-keys=2",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: socket-request" & CRLF &
+               "x-amz-id-2: socket-host" & CRLF),
+            "GET", "/example-bucket?list-type=2&max-keys=2");
+         Serve
+           (HTTP_Response ("200 OK", String'(1 .. 256 => 'x')), "GET",
+            "/example-bucket?list-type=2&max-keys=2");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", Omit_Content_Length => True),
+            "HEAD", "/example-bucket");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""model-stream""" & CRLF),
+            "PUT", "/example-bucket/model-stream", "u");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""high-level""" & CRLF),
+            "PUT", "/example-bucket/high%20level%2Bfile%2525",
+            "high-level file payload", "application/test");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""empty""" & CRLF),
+            "PUT", "/example-bucket/high-level-empty");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "PUT", "/example-bucket/high-level-rejected",
+            "high-level file payload");
+         Serve
+           (HTTP_Response
+              ("200 OK", Download_Payload,
+               "ETag: ""download-large""" & CRLF),
+            "GET", "/example-bucket/download%20large%2B%2525");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""download-empty""" & CRLF),
+            "GET", "/example-bucket/download-empty");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "GET", "/example-bucket/download-rejected");
+         Serve
+           ("HTTP/1.1 200 OK" & CRLF
+            & "Content-Length: 64" & CRLF
+            & "ETag: ""download-truncated""" & CRLF
+            & "Connection: close" & CRLF & CRLF & "short",
+            "GET", "/example-bucket/download-truncated");
+         Serve
+           (HTTP_Response ("200 OK", Create_XML), "POST",
+            "/example-bucket/object%20key?uploads", Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""socket-part""" & CRLF),
+            "PUT",
+            "/example-bucket/object%20key?partNumber=1&" &
+            "uploadId=socket-upload", "u");
+         Serve
+           (HTTP_Response ("200 OK", Complete_XML), "POST",
+            "/example-bucket/object%20key?uploadId=socket-upload",
+            "<CompleteMultipartUpload", Fragmented => True);
+         Serve
+           (HTTP_Response ("200 OK", Embedded_Error_XML), "POST",
+            "/example-bucket/object%20key?uploadId=socket-upload",
+            "<CompleteMultipartUpload");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", Omit_Content_Length => True), "DELETE",
+            "/example-bucket/object%20key?uploadId=socket-upload");
+      end loop;
+      Sockets.Close_Socket (Listener);
+      State.Complete (True);
+   exception
+      when Occurrence : others =>
+         if Sockets.Is_Open (Peer) then
+            Sockets.Close_Socket (Peer);
+         end if;
+         if Sockets.Is_Open (Listener) then
+            Sockets.Close_Socket (Listener);
+         end if;
+         State.Complete
+           (False, Ada.Exceptions.Exception_Information (Occurrence));
+   end Raw_S3_Server;
+
+   procedure Run_Client is
+      Port       : Sockets.Port;
+      HTTP       : aliased HTTP_Client.Client (Capacity => 1);
+      Parameters : Low_Level.List_Objects_V2_Parameters;
+      Identity   : constant Low_Level.Credentials := Low_Level.Make_Credentials
+        ("AKIAIOSFODNN7EXAMPLE",
+         "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+   begin
+      State.Wait_Ready (Port);
+      Parameters.Max_Keys := 2;
+      declare
+         Origin : constant Flyology.HTTP.Origin := Flyology.HTTP.Parse_Origin
+           ("http://127.0.0.1:" & Decimal (Natural (Port)));
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_List_Objects_V2
+             (Origin, Low_Level.Path_Style, "example-bucket", Parameters,
+              Identity, "us-east-1", "20130524T000000Z");
+      begin
+         HTTP_Client.Configure (HTTP, Origin);
+         declare
+            Result : constant Low_Level.List_Objects_V2_Outcome :=
+              Low_Level.Execute_List_Objects_V2
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Listed
+              or else Result.Listing.Key_Count /= 0
+            then
+               raise Program_Error with "socket success result mismatch";
+            end if;
+         end;
+         declare
+            Result : constant Low_Level.List_Objects_V2_Outcome :=
+              Low_Level.Execute_List_Objects_V2
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Rejected
+              or else US.To_String (Result.Error.Request_ID) /=
+                "socket-request"
+              or else US.To_String (Result.Error.Host_ID) /= "socket-host"
+            then
+               raise Program_Error with "socket error result mismatch";
+            end if;
+         end;
+         declare
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.List_Objects_V2_Outcome :=
+                    Low_Level.Execute_List_Objects_V2
+                      (HTTP, Prepared, Timeout => 5.0,
+                       Limits =>
+                         (Maximum_Document_Bytes => 64,
+                          Maximum_Depth          => 8,
+                          Maximum_Elements       => 32,
+                          Maximum_Text_Bytes     => 64));
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            if not Raised then
+               raise Program_Error with "oversized socket response accepted";
+            end if;
+         end;
+         declare
+            Values : constant Low_Level.Model_Value_Array :=
+              (1 =>
+                 (Member_Name =>
+                    US.To_Unbounded_String ("Bucket"),
+                  Map_Key => US.Null_Unbounded_String,
+                  Value => US.To_Unbounded_String ("example-bucket")));
+            Prepared_Head : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Model_Request
+                (Model.Head_Bucket_Operation, Origin,
+                 Low_Level.Path_Style, Values, "", False, "", Identity,
+                 "us-east-1", "20130524T000000Z");
+            Response : constant HTTP_Client.Response :=
+              Low_Level.Execute_Model_Request
+                (HTTP, Prepared_Head, Timeout => 5.0);
+         begin
+            if HTTP_Client.Status (Response) /= 200
+              or else not HTTP_Client.Body_Complete (Response)
+            then
+               raise Program_Error with
+                 "generic model execution result mismatch";
+            end if;
+         end;
+         declare
+            Values : constant Low_Level.Model_Value_Array :=
+              ((Member_Name => US.To_Unbounded_String ("Bucket"),
+                Map_Key => US.Null_Unbounded_String,
+                Value => US.To_Unbounded_String ("example-bucket")),
+               (Member_Name => US.To_Unbounded_String ("Key"),
+                Map_Key => US.Null_Unbounded_String,
+                Value => US.To_Unbounded_String ("model-stream")));
+            Prepared_Put : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Model_Streaming_Request
+                (Model.Put_Object_Operation, Origin,
+                 Low_Level.Path_Style, Values,
+                 SigV4.SHA256_Hex (Upload_Payload), Identity,
+                 "us-east-1", "20130524T000000Z");
+            Source : Upload_Source (Upload_Payload'Access);
+            Response : constant HTTP_Client.Response :=
+              Low_Level.Execute_Model_Request
+                (HTTP, Prepared_Put, Source, Timeout => 5.0);
+         begin
+            if HTTP_Client.Status (Response) /= 200
+              or else HTTP_Client.Header (Response, "etag") /=
+                """model-stream"""
+            then
+               raise Program_Error with
+                 "generic streaming model execution result mismatch";
+            end if;
+         end;
+         declare
+            Upload_Path : constant String :=
+              "/tmp/flyology-object-storage-upload-"
+              & Decimal (Natural (Port)) & ".bin";
+            Empty_Path : constant String := Upload_Path & ".empty";
+
+            procedure Check_High_Level_Uploads is
+               Cancelled : Boolean := False;
+               Timed_Out : Boolean := False;
+               Stop : aliased Flyology.Cancellation.Token;
+            begin
+               Stop.Request;
+               begin
+                  declare
+                     Ignored : constant Transfers.Upload_Outcome :=
+                       Transfers.Upload_File
+                         (HTTP, Origin, "example-bucket", "cancelled",
+                          Upload_Path, Identity, Timeout => 5.0,
+                          Token => Stop'Access);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled =>
+                     Cancelled := True;
+               end;
+               if not Cancelled then
+                  raise Program_Error with
+                    "high-level upload ignored pre-cancellation";
+               end if;
+               begin
+                  declare
+                     Ignored : constant Transfers.Upload_Outcome :=
+                       Transfers.Upload_File
+                         (HTTP, Origin, "example-bucket", "timed-out",
+                          Upload_Path, Identity, Timeout => 0.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.IO.Timeout_Error =>
+                     Timed_Out := True;
+               end;
+               if not Timed_Out then
+                  raise Program_Error with
+                    "high-level upload ignored zero timeout";
+               end if;
+               declare
+                  Result : constant Transfers.Upload_Outcome :=
+                    Transfers.Upload_File
+                      (HTTP, Origin, "example-bucket",
+                       "high level+file%25", Upload_Path, Identity,
+                       Content_Type => "application/test", Timeout => 5.0);
+               begin
+                  if Result.Kind /= Transfers.File_Uploaded
+                    or else Result.Bytes /= 23
+                    or else US.To_String (Result.Entity_Tag) /=
+                      """high-level"""
+                  then
+                     raise Program_Error with
+                       "high-level file upload result mismatch";
+                  end if;
+               end;
+               declare
+                  Result : constant Transfers.Upload_Outcome :=
+                    Transfers.Upload_File
+                      (HTTP, Origin, "example-bucket", "high-level-empty",
+                       Empty_Path, Identity, Timeout => 5.0);
+               begin
+                  if Result.Kind /= Transfers.File_Uploaded
+                    or else Result.Bytes /= 0
+                    or else US.To_String (Result.Entity_Tag) /= """empty"""
+                  then
+                     raise Program_Error with
+                       "high-level empty upload result mismatch";
+                  end if;
+               end;
+               declare
+                  Result : constant Transfers.Upload_Outcome :=
+                    Transfers.Upload_File
+                      (HTTP, Origin, "example-bucket",
+                       "high-level-rejected", Upload_Path, Identity,
+                       Timeout => 5.0);
+               begin
+                  if Result.Kind /= Transfers.Upload_Rejected
+                    or else Result.Status /= 403
+                    or else US.To_String (Result.Error.Code) /=
+                      "AccessDenied"
+                  then
+                     raise Program_Error with
+                       "high-level upload rejection mismatch";
+                  end if;
+               end;
+            end Check_High_Level_Uploads;
+         begin
+            Write_File (Upload_Path, "high-level file payload");
+            Write_File (Empty_Path, "");
+            begin
+               Check_High_Level_Uploads;
+            exception
+               when others =>
+                  Delete_If_Present (Upload_Path);
+                  Delete_If_Present (Empty_Path);
+                  raise;
+            end;
+            Delete_If_Present (Upload_Path);
+            Delete_If_Present (Empty_Path);
+         end;
+         declare
+            Download_Path : constant String :=
+              "/tmp/flyology-object-storage-download-"
+              & Decimal (Natural (Port)) & ".bin";
+            Empty_Path : constant String := Download_Path & ".empty";
+            Rejected_Path : constant String := Download_Path & ".rejected";
+            Truncated_Path : constant String := Download_Path & ".truncated";
+
+            procedure Cleanup is
+            begin
+               Delete_If_Present (Download_Path);
+               Delete_If_Present (Empty_Path);
+               Delete_If_Present (Rejected_Path);
+               Delete_If_Present (Truncated_Path);
+            end Cleanup;
+
+            procedure Check_High_Level_Downloads is
+               Cancelled : Boolean := False;
+               Timed_Out : Boolean := False;
+               Truncated : Boolean := False;
+               Stop : aliased Flyology.Cancellation.Token;
+            begin
+               Write_File (Download_Path, "preserved-before-start");
+               Stop.Request;
+               begin
+                  declare
+                     Ignored : constant Transfers.Download_Outcome :=
+                       Transfers.Download_File
+                         (HTTP, Origin, "example-bucket", "cancelled",
+                          Download_Path, Identity, Timeout => 5.0,
+                          Token => Stop'Access);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled =>
+                     Cancelled := True;
+               end;
+               if not Cancelled
+                 or else Read_File (Download_Path) /= "preserved-before-start"
+               then
+                  raise Program_Error with
+                    "high-level download pre-cancellation was not atomic";
+               end if;
+               begin
+                  declare
+                     Ignored : constant Transfers.Download_Outcome :=
+                       Transfers.Download_File
+                         (HTTP, Origin, "example-bucket", "timed-out",
+                          Download_Path, Identity, Timeout => 0.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.IO.Timeout_Error =>
+                     Timed_Out := True;
+               end;
+               if not Timed_Out
+                 or else Read_File (Download_Path) /= "preserved-before-start"
+               then
+                  raise Program_Error with
+                    "high-level download zero-timeout was not atomic";
+               end if;
+               declare
+                  Result : constant Transfers.Download_Outcome :=
+                    Transfers.Download_File
+                      (HTTP, Origin, "example-bucket",
+                       "download large+%25", Download_Path, Identity,
+                       Timeout => 5.0);
+               begin
+                  if Result.Kind /= Transfers.File_Downloaded
+                    or else Result.Bytes /= Download_Payload'Length
+                    or else US.To_String (Result.Entity_Tag) /=
+                      """download-large"""
+                    or else Read_File (Download_Path) /= Download_Payload
+                  then
+                     raise Program_Error with
+                       "high-level large download result mismatch";
+                  end if;
+               end;
+               Require_No_Download_Temporary (Download_Path);
+
+               Write_File (Empty_Path, "replace-me");
+               declare
+                  Result : constant Transfers.Download_Outcome :=
+                    Transfers.Download_File
+                      (HTTP, Origin, "example-bucket", "download-empty",
+                       Empty_Path, Identity, Timeout => 5.0);
+               begin
+                  if Result.Kind /= Transfers.File_Downloaded
+                    or else Result.Bytes /= 0
+                    or else US.To_String (Result.Entity_Tag) /=
+                      """download-empty"""
+                    or else Read_File (Empty_Path)'Length /= 0
+                  then
+                     raise Program_Error with
+                       "high-level empty download result mismatch";
+                  end if;
+               end;
+               Require_No_Download_Temporary (Empty_Path);
+
+               Write_File (Rejected_Path, "preserve-rejected");
+               declare
+                  Result : constant Transfers.Download_Outcome :=
+                    Transfers.Download_File
+                      (HTTP, Origin, "example-bucket", "download-rejected",
+                       Rejected_Path, Identity, Timeout => 5.0);
+               begin
+                  if Result.Kind /= Transfers.Download_Rejected
+                    or else Result.Status /= 403
+                    or else US.To_String (Result.Error.Code) /= "AccessDenied"
+                    or else Read_File (Rejected_Path) /= "preserve-rejected"
+                  then
+                     raise Program_Error with
+                       "high-level download rejection mismatch";
+                  end if;
+               end;
+               Require_No_Download_Temporary (Rejected_Path);
+
+               Write_File (Truncated_Path, "preserve-truncated");
+               begin
+                  declare
+                     Ignored : constant Transfers.Download_Outcome :=
+                       Transfers.Download_File
+                         (HTTP, Origin, "example-bucket",
+                          "download-truncated", Truncated_Path, Identity,
+                          Timeout => 5.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.HTTP.Protocol_Error =>
+                     Truncated := True;
+               end;
+               if not Truncated
+                 or else Read_File (Truncated_Path) /= "preserve-truncated"
+               then
+                  raise Program_Error with
+                    "truncated download replaced the destination";
+               end if;
+               Require_No_Download_Temporary (Truncated_Path);
+            end Check_High_Level_Downloads;
+         begin
+            begin
+               Check_High_Level_Downloads;
+            exception
+               when others =>
+                  Cleanup;
+                  raise;
+            end;
+            Cleanup;
+         end;
+         declare
+            Prepared_Create : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Create_Multipart_Upload
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 "object key", Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant Low_Level.Create_Multipart_Outcome :=
+              Low_Level.Execute_Create_Multipart_Upload
+                (HTTP, Prepared_Create, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Created
+              or else US.To_String (Result.Result.Upload_ID) /=
+                "socket-upload"
+            then
+               raise Program_Error with
+                 "socket CreateMultipartUpload result mismatch";
+            end if;
+         end;
+         declare
+            Completion : Multipart.Complete_Multipart_Upload_Request;
+         begin
+            declare
+               Parameters : Low_Level.Upload_Part_Parameters;
+               Source : Upload_Source (Upload_Payload'Access);
+            begin
+               Parameters.Upload_ID :=
+                 US.To_Unbounded_String ("socket-upload");
+               Parameters.Payload_SHA256 := US.To_Unbounded_String
+                 (SigV4.SHA256_Hex (Upload_Payload));
+               declare
+                  Prepared_Upload : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Upload_Part
+                      (Origin, Low_Level.Path_Style, "example-bucket",
+                       "object key", Parameters, Identity, "us-east-1",
+                       "20130524T000000Z");
+                  Uploaded : constant Low_Level.Upload_Part_Outcome :=
+                    Low_Level.Execute_Upload_Part
+                      (HTTP, Prepared_Upload, Source, Timeout => 5.0);
+               begin
+                  if Uploaded.Kind /= Low_Level.Part_Uploaded
+                    or else US.To_String (Uploaded.Result.Entity_Tag) /=
+                      """socket-part"""
+                  then
+                     raise Program_Error with
+                       "socket UploadPart result mismatch";
+                  end if;
+               end;
+            end;
+            Completion.Parts.Append
+              (Multipart.Completed_Part'
+                 (Number => 1,
+                  Entity_Tag => US.To_Unbounded_String ("""part"""),
+                  others => <>));
+            declare
+               Prepared_Complete : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Complete_Multipart_Upload
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "object key", "socket-upload", Completion, Identity,
+                    "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.Complete_Multipart_Outcome :=
+                 Low_Level.Execute_Complete_Multipart_Upload
+                   (HTTP, Prepared_Complete, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Completed
+                 or else US.To_String (Result.Result.Entity_Tag) /=
+                   """whole"""
+               then
+                  raise Program_Error with
+                    "socket CompleteMultipartUpload result mismatch";
+               end if;
+               declare
+                  Embedded : constant Low_Level.Complete_Multipart_Outcome :=
+                    Low_Level.Execute_Complete_Multipart_Upload
+                      (HTTP, Prepared_Complete, Timeout => 5.0);
+               begin
+                  if Embedded.Kind /= Low_Level.Complete_Rejected
+                    or else US.To_String (Embedded.Error.Code) /=
+                      "InternalError"
+                  then
+                     raise Program_Error with
+                       "socket embedded multipart error mismatch";
+                  end if;
+               end;
+               declare
+                  Prepared_Abort : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Abort_Multipart_Upload
+                      (Origin, Low_Level.Path_Style, "example-bucket",
+                       "object key", "socket-upload", Identity,
+                       "us-east-1", "20130524T000000Z");
+                  Aborted_Result : constant
+                    Low_Level.Abort_Multipart_Outcome :=
+                      Low_Level.Execute_Abort_Multipart_Upload
+                        (HTTP, Prepared_Abort, Timeout => 5.0);
+               begin
+                  if Aborted_Result.Kind /= Low_Level.Aborted then
+                     raise Program_Error with
+                       "socket AbortMultipartUpload result mismatch";
+                  end if;
+               end;
+            end;
+         end;
+         HTTP_Client.Shutdown (HTTP);
+      end;
+   end Run_Client;
+
+   procedure Run_And_Report is
+   begin
+      Run_Client;
+      Clients.Report (True);
+   exception
+      when Occurrence : others =>
+         Clients.Report
+           (False, Ada.Exceptions.Exception_Information (Occurrence));
+   end Run_And_Report;
+
+   Server_Passed : Boolean;
+   Client_Passed : Boolean;
+   Server_Detail : US.Unbounded_String;
+   Client_Detail : US.Unbounded_String;
+begin
+   Run_And_Report;
+   declare
+      task Lightweight_Client is
+         pragma Task_Info (Flyology.Lightweight_Task);
+      end Lightweight_Client;
+
+      task body Lightweight_Client is
+      begin
+         Run_And_Report;
+      end Lightweight_Client;
+   begin
+      null;
+   end;
+   Clients.Wait_All (Client_Passed, Client_Detail);
+   State.Wait_Done (Server_Passed, Server_Detail);
+   if not Client_Passed then
+      raise Program_Error with US.To_String (Client_Detail);
+   elsif not Server_Passed then
+      raise Program_Error with US.To_String (Server_Detail);
+   end if;
+   Ada.Text_IO.Put_Line ("S3 HTTP socket corpus: OK");
+exception
+   when Occurrence : others =>
+      Ada.Text_IO.Put_Line
+        ("S3 HTTP socket corpus failed: " &
+         Ada.Exceptions.Exception_Information (Occurrence));
+      raise;
+end S3_HTTP_Socket_Corpus;
