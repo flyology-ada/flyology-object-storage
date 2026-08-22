@@ -6,6 +6,16 @@ requests. Every call uses a caller-owned Flyology HTTP client, accepts a whole
 operation timeout and optional cancellation token, and returns either a typed
 success record or the structured S3 error.
 
+## List
+
+`List_Page` returns one typed, bounded page and defaults to 1,000 buckets, so
+the convenient path follows AWS's recommendation to paginate. Prefix and
+bucket-region filters are optional; a returned continuation token can be
+passed unchanged to the next call. The complete result preserves owner,
+creation time, region, ARN, prefix-presence, and continuation-presence fields.
+Callers that must distinguish an explicitly supplied empty query value use the
+presence flags on `Client.Low_Level.List_Buckets_Parameters`.
+
 ## Create
 
 `Create` creates a general-purpose bucket. For `us-east-1` it omits the legacy

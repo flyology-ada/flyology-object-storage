@@ -1008,6 +1008,18 @@ begin
 
    declare
       Response : constant String := Run
+        ("GET /?max-buckets=1&max-buckets=2 HTTP/1.1" & CRLF &
+         "Host: " & Host & CRLF & "Content-Length: 0" & CRLF &
+         "Connection: close" & CRLF & CRLF);
+   begin
+      Require
+        (Has (Response, "403 Forbidden")
+         and then not Has (Response, "InvalidArgument"),
+         "malformed ListBuckets query bypassed authentication");
+   end;
+
+   declare
+      Response : constant String := Run
         (Signed_Request ("PUT", "/absent-bucket/object", "payload"));
    begin
       Require
@@ -1344,6 +1356,43 @@ begin
    end loop;
 
    declare
+      Response : constant String := Run (Signed_Request ("GET", "/", ""));
+      Page : constant Buckets.List_Buckets_Result :=
+        Buckets.Parse_List_Buckets (Response_Body (Response));
+      Optional_Metadata_Leaked : Boolean := False;
+   begin
+      for Item of Page.Buckets loop
+         Optional_Metadata_Leaked := Optional_Metadata_Leaked
+           or else US.Length (Item.Bucket_Region) > 0
+           or else US.Length (Item.Bucket_ARN) > 0;
+      end loop;
+      Require
+        (Has (Response, "200 OK")
+         and then not Optional_Metadata_Leaked,
+         "unpaginated ListBuckets invented optional bucket metadata");
+   end;
+
+   declare
+      Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("continuation-token", ""),
+         SigV4.Pair ("max-buckets", "1"),
+         SigV4.Pair ("prefix", ""));
+      Response : constant String :=
+        Run (Signed_Query_Request ("GET", "/", Query));
+      Page : constant Buckets.List_Buckets_Result :=
+        Buckets.Parse_List_Buckets (Response_Body (Response));
+   begin
+      Require
+        (Has (Response, "200 OK")
+         and then Page.Has_Prefix
+         and then US.Length (Page.Prefix) = 0
+         and then Page.Buckets.Length = 1
+         and then US.Length
+           (Page.Buckets.First_Element.Bucket_Region) > 0,
+         "ListBuckets lost present empty pagination members");
+   end;
+
+   declare
       First_Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("max-buckets", "1"),
          SigV4.Pair ("prefix", "list-"),
@@ -1410,6 +1459,9 @@ begin
          SigV4.Pair ("max-buckets", "2"));
       Other_Region : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("bucket-region", "us-west-2"));
+      Oversized_Token : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair
+           ("continuation-token", String'(1 .. 1_025 => 't')));
       Region_Response : constant String :=
         Run (Signed_Query_Request ("GET", "/", Other_Region));
       Region_Page : constant Buckets.List_Buckets_Result :=
@@ -1419,6 +1471,11 @@ begin
         (Has (Run (Signed_Query_Request ("GET", "/", Duplicate)),
               "400 Bad Request"),
          "duplicate ListBuckets parameter was accepted");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/", Oversized_Token)),
+            "400 Bad Request"),
+         "oversized ListBuckets token was accepted");
       Require
         (Has (Region_Response, "200 OK")
          and then Region_Page.Buckets.Is_Empty,

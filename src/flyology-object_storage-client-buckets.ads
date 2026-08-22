@@ -3,10 +3,54 @@ with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Errors;
 
 --  High-level bucket operations over a configured Flyology HTTP client.
 package Flyology.Object_Storage.Client.Buckets is
+
+   type List_Outcome_Kind is (Page_Available, List_Rejected);
+
+   type List_Outcome
+     (Kind : List_Outcome_Kind := List_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Page_Available =>
+            Page : Flyology.Object_Storage.S3.Buckets.List_Buckets_Result;
+         when List_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  List one bounded page of general-purpose buckets. Pagination is enabled
+   --  by default with a 1,000-bucket page, following AWS's recommendation.
+   --  Pass the returned continuation token to obtain the next page.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Maximum Maximum number of buckets returned in this page
+   --  @param Continuation_Token Opaque token returned by the prior page
+   --  @param Prefix Optional bucket-name prefix filter
+   --  @param Bucket_Region Optional bucket-region filter
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return One typed page or a structured S3 rejection
+   function List_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Maximum  : Flyology.Object_Storage.S3.Buckets.Max_Buckets_Value :=
+        1_000;
+      Continuation_Token : String := "";
+      Prefix   : String := "";
+      Bucket_Region : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Outcome;
 
    type Create_Outcome_Kind is (Creation_Completed, Create_Rejected);
 

@@ -852,11 +852,14 @@ procedure S3_HTTP_Socket_Corpus is
          HTTP_Client.Configure (HTTP, Origin);
          declare
             Bucket_Parameters : constant Low_Level.List_Buckets_Parameters :=
-              (Max_Buckets        => 1,
-               Has_Max_Buckets    => True,
-               Continuation_Token => US.Null_Unbounded_String,
-               Prefix             => US.To_Unbounded_String ("socket-"),
-               Bucket_Region      => US.To_Unbounded_String ("us-east-1"));
+              (Max_Buckets            => 1,
+               Has_Max_Buckets        => True,
+               Continuation_Token     => US.Null_Unbounded_String,
+               Has_Continuation_Token => False,
+               Prefix                 => US.To_Unbounded_String ("socket-"),
+               Has_Prefix             => True,
+               Bucket_Region          =>
+                 US.To_Unbounded_String ("us-east-1"));
             Bucket_Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_List_Buckets
                 (Origin, Low_Level.Path_Style, Bucket_Parameters, Identity,

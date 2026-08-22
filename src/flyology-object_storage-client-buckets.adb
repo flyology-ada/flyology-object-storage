@@ -4,6 +4,7 @@ with Ada.Calendar.Formatting;
 package body Flyology.Object_Storage.Client.Buckets is
 
    package US renames Ada.Strings.Unbounded;
+   use type Low_Level.List_Buckets_Outcome_Kind;
    use type Low_Level.Create_Bucket_Outcome_Kind;
    use type Low_Level.Delete_Bucket_Outcome_Kind;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
@@ -20,6 +21,47 @@ package body Flyology.Object_Storage.Client.Buckets is
         & Image (Image'First + 14 .. Image'First + 15)
         & Image (Image'First + 17 .. Image'First + 18) & "Z";
    end Timestamp;
+
+   function List_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Maximum  : Flyology.Object_Storage.S3.Buckets.Max_Buckets_Value :=
+        1_000;
+      Continuation_Token : String := "";
+      Prefix   : String := "";
+      Bucket_Region : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Outcome
+   is
+      Parameters : constant Low_Level.List_Buckets_Parameters :=
+        (Max_Buckets            => Maximum,
+         Has_Max_Buckets        => True,
+         Continuation_Token     =>
+           US.To_Unbounded_String (Continuation_Token),
+         Has_Continuation_Token => Continuation_Token'Length > 0,
+         Prefix                 => US.To_Unbounded_String (Prefix),
+         Has_Prefix             => Prefix'Length > 0,
+         Bucket_Region          => US.To_Unbounded_String (Bucket_Region));
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_List_Buckets
+          (Origin, Style, Parameters, Identity, Region, Timestamp);
+      Outcome : constant Low_Level.List_Buckets_Outcome :=
+        Low_Level.Execute_List_Buckets
+          (Client, Prepared, Timeout, Token);
+   begin
+      if Outcome.Kind = Low_Level.List_Buckets_Rejected then
+         return
+           (Kind => List_Rejected, Status => Outcome.Status,
+            Error => Outcome.Error);
+      end if;
+      return
+        (Kind => Page_Available, Status => Outcome.Status,
+         Page => Outcome.Result);
+   end List_Page;
 
    function Create
      (Client   : aliased in out Flyology.HTTP.Client.Client;

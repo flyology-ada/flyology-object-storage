@@ -266,13 +266,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Objects_V2_Outcome;
 
-   --  Every member of the pinned ListBuckets request shape. Has_Max_Buckets
-   --  preserves omission independently from the default value.
+   --  Every member of the pinned ListBuckets request shape. Presence flags
+   --  preserve omission independently from default or empty scalar values.
    type List_Buckets_Parameters is record
       Max_Buckets        : S3.Buckets.Max_Buckets_Value := 10_000;
       Has_Max_Buckets    : Boolean := False;
       Continuation_Token : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Continuation_Token : Boolean := False;
       Prefix             : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Prefix         : Boolean := False;
       Bucket_Region      : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 

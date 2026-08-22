@@ -6593,7 +6593,9 @@ package body Object_Storage_Test_Cases is
                Bucket_ARN    => US.To_Unbounded_String
                  ("arn:aws:s3:::alpha-bucket")));
          Value.Continuation_Token := US.To_Unbounded_String ("next<&>");
+         Value.Has_Continuation_Token := True;
          Value.Prefix := US.To_Unbounded_String ("alpha-");
+         Value.Has_Prefix := True;
          declare
             Document : constant String :=
               Buckets.Serialize_List_Buckets (Value);
@@ -6602,6 +6604,8 @@ package body Object_Storage_Test_Cases is
          begin
             Assert
               (Parsed.Has_Owner
+               and then Parsed.Has_Continuation_Token
+               and then Parsed.Has_Prefix
                and then US.To_String (Parsed.Owner.Display_Name) =
                  "owner&name"
                and then Parsed.Buckets.Length = 1
@@ -6622,11 +6626,13 @@ package body Object_Storage_Test_Cases is
 
       declare
          Parameters : constant Low_Level.List_Buckets_Parameters :=
-           (Max_Buckets        => 2,
-            Has_Max_Buckets    => True,
-            Continuation_Token => US.To_Unbounded_String ("token +/="),
-            Prefix             => US.To_Unbounded_String ("team/ "),
-            Bucket_Region      => US.To_Unbounded_String ("us-west-2"));
+           (Max_Buckets            => 2,
+            Has_Max_Buckets        => True,
+            Continuation_Token     => US.To_Unbounded_String ("token +/="),
+            Has_Continuation_Token => True,
+            Prefix                 => US.To_Unbounded_String ("team/ "),
+            Has_Prefix             => True,
+            Bucket_Region          => US.To_Unbounded_String ("us-west-2"));
          Prepared : constant Low_Level.Prepared_Request :=
            Low_Level.Prepare_List_Buckets
              (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
@@ -6653,6 +6659,19 @@ package body Object_Storage_Test_Cases is
             and then US.To_String (Request.Prefix) = "team-bucket"
             and then US.To_String (Request.Bucket_Region) = "us-east-1",
             "strict ListBuckets server query projection");
+      end;
+
+      declare
+         Request : constant Buckets.List_Buckets_Request :=
+           Buckets.Parse_List_Buckets_Query
+             ("continuation-token=&prefix=");
+      begin
+         Assert
+           (Request.Has_Continuation_Token
+            and then US.Length (Request.Continuation_Token) = 0
+            and then Request.Has_Prefix
+            and then US.Length (Request.Prefix) = 0,
+            "ListBuckets lost present empty query members");
       end;
 
       declare
@@ -6705,12 +6724,57 @@ package body Object_Storage_Test_Cases is
          Expect_Bad_Query ("max-buckets=10001");
          Expect_Bad_Query ("max-buckets=1&max-buckets=2");
          Expect_Bad_Query ("prefix=bad%2");
+         Expect_Bad_Query
+           ("continuation-token=" & String'(1 .. 1_025 => 't'));
          Expect_Bad_Query ("bucket-region=US-EAST-1");
          Expect_Bad_Query
            ("bucket-region=" &
             String'(1 .. Buckets.Maximum_Bucket_Region_Length + 1 => 'a'));
          Expect_Bad_Query ("unknown=value");
          Expect_Bad_Query ("x-id=ListObjectsV2");
+      end;
+
+      declare
+         Parameters : Low_Level.List_Buckets_Parameters;
+         Prepared : Low_Level.Prepared_Request;
+      begin
+         Parameters.Has_Max_Buckets := True;
+         Parameters.Max_Buckets := 1;
+         Parameters.Has_Continuation_Token := True;
+         Parameters.Has_Prefix := True;
+         Prepared := Low_Level.Prepare_List_Buckets
+           (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+            Low_Level.Path_Style, Parameters, Identity, "us-east-1",
+            "20130524T000000Z");
+         Assert
+           (Low_Level.Target (Prepared) =
+              "/?continuation-token&max-buckets=1&prefix",
+            "ListBuckets low-level request collapsed empty members: " &
+              Low_Level.Target (Prepared));
+      end;
+
+      declare
+         Parameters : Low_Level.List_Buckets_Parameters;
+         Raised : Boolean := False;
+      begin
+         Parameters.Has_Continuation_Token := True;
+         Parameters.Continuation_Token :=
+           US.To_Unbounded_String (String'(1 .. 1_025 => 't'));
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Buckets
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request => Raised := True;
+         end;
+         Assert (Raised, "oversized ListBuckets token was prepared");
       end;
 
       declare
@@ -6727,6 +6791,7 @@ package body Object_Storage_Test_Cases is
          Assert
            (Outcome.Kind = Low_Level.Buckets_Listed
             and then Outcome.Result.Has_Owner
+            and then Outcome.Result.Has_Prefix
             and then Outcome.Result.Buckets.Length = 1
             and then US.To_String (Outcome.Result.Prefix) = "o",
             "typed ListBuckets success response");
@@ -6750,6 +6815,26 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "duplicate ListBuckets container was accepted");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Buckets.List_Buckets_Result :=
+                 Buckets.Parse_List_Buckets
+                   ("<ListAllMyBucketsResult><Buckets/>" &
+                    "<ContinuationToken>" & String'(1 .. 1_025 => 't') &
+                    "</ContinuationToken></ListAllMyBucketsResult>");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Buckets.Malformed_Bucket_Listing => Raised := True;
+         end;
+         Assert (Raised, "oversized ListBuckets response token was accepted");
       end;
 
       declare

@@ -11,6 +11,7 @@ package Flyology.Object_Storage.S3.Buckets is
 
    subtype Max_Buckets_Value is Positive range 1 .. 10_000;
    Maximum_Bucket_Region_Length : constant := 63;
+   Maximum_Continuation_Token_Length : constant := 1_024;
 
    type List_Buckets_Request is record
       Max_Buckets            : Max_Buckets_Value := Max_Buckets_Value'Last;
@@ -18,6 +19,7 @@ package Flyology.Object_Storage.S3.Buckets is
       Continuation_Token     : Ada.Strings.Unbounded.Unbounded_String;
       Has_Continuation_Token : Boolean := False;
       Prefix                 : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Prefix             : Boolean := False;
       Bucket_Region          : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
@@ -109,14 +111,16 @@ package Flyology.Object_Storage.S3.Buckets is
       ID           : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
-   --  Every member of the pinned ListBuckets output shape. Has_Owner
-   --  distinguishes an absent Owner structure from an empty present one.
+   --  Every member of the pinned ListBuckets output shape. Presence flags
+   --  distinguish absent structures/scalars from empty present values.
    type List_Buckets_Result is record
       Buckets            : Bucket_List;
       Has_Owner          : Boolean := False;
       Owner              : Bucket_Owner;
       Continuation_Token : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Continuation_Token : Boolean := False;
       Prefix             : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Prefix         : Boolean := False;
    end record;
 
    Malformed_Bucket_Listing : exception;

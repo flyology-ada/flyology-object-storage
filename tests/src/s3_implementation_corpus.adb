@@ -42,7 +42,6 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
-   use type Low_Level.List_Buckets_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
    use type Low_Level.List_Parts_Outcome_Kind;
@@ -56,6 +55,7 @@ procedure S3_Implementation_Corpus is
    use type Client_Buckets.Create_Outcome_Kind;
    use type Client_Buckets.Delete_Outcome_Kind;
    use type Client_Buckets.Location_Outcome_Kind;
+   use type Client_Buckets.List_Outcome_Kind;
    use type Client_Objects.Delete_Outcome_Kind;
 
    Access_Key : constant String := "FLYOLOGYS3ORACLE";
@@ -909,30 +909,27 @@ procedure S3_Implementation_Corpus is
       Bucket    : String;
       Timestamp : String)
    is
+      pragma Unreferenced (Timestamp);
       HTTP       : aliased HTTP_Client.Client (Capacity => 1);
       Identity   : constant Low_Level.Credentials :=
         Low_Level.Make_Credentials (Access_Key, Secret_Key);
-      Parameters : Low_Level.List_Buckets_Parameters;
-      Prepared   : constant Low_Level.Prepared_Request :=
-        Low_Level.Prepare_List_Buckets
-          (Origin, Low_Level.Path_Style, Parameters, Identity,
-           "us-east-1", Timestamp);
       Found      : Boolean := False;
    begin
       HTTP_Client.Configure (HTTP, Origin);
       declare
-         Outcome : constant Low_Level.List_Buckets_Outcome :=
-           Low_Level.Execute_List_Buckets
-             (HTTP, Prepared, Timeout => 30.0);
+         Outcome : constant Client_Buckets.List_Outcome :=
+           Client_Buckets.List_Page
+             (HTTP, Origin, Identity, Maximum => 1_000,
+              Timeout => 30.0);
       begin
-         if Outcome.Kind /= Low_Level.Buckets_Listed then
+         if Outcome.Kind /= Client_Buckets.Page_Available then
             raise Program_Error with
               "S3 implementation rejected ListBuckets: " &
               Outcome.Status'Image & " " &
               US.To_String (Outcome.Error.Code) & " " &
               US.To_String (Outcome.Error.Message);
          end if;
-         for Value of Outcome.Result.Buckets loop
+         for Value of Outcome.Page.Buckets loop
             if US.To_String (Value.Name) = Bucket then
                Found := True;
                exit;

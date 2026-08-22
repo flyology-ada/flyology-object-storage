@@ -70,7 +70,7 @@ package body Flyology.Object_Storage.S3.Buckets is
             Count := Count + 1;
          end if;
       end loop;
-      if Count > 16 then
+      if Count > 5 then
          raise Malformed_List_Buckets_Request with
            "too many ListBuckets query parameters";
       end if;
@@ -109,7 +109,10 @@ package body Flyology.Object_Storage.S3.Buckets is
                      Result.Has_Max_Buckets := True;
                      Result.Max_Buckets := Max_Buckets_Value (Number.Value);
                   elsif Name = "continuation-token" then
-                     if Seen_Token or else Value'Length = 0 then
+                     if Seen_Token
+                       or else Value'Length >
+                         Maximum_Continuation_Token_Length
+                     then
                         raise Malformed_List_Buckets_Request with
                           "invalid ListBuckets continuation token";
                      end if;
@@ -123,6 +126,7 @@ package body Flyology.Object_Storage.S3.Buckets is
                           "duplicate ListBuckets prefix";
                      end if;
                      Seen_Prefix := True;
+                     Result.Has_Prefix := True;
                      Result.Prefix := US.To_Unbounded_String (Value);
                   elsif Name = "bucket-region" then
                      if Seen_Region
@@ -932,8 +936,10 @@ package body Flyology.Object_Storage.S3.Buckets is
             Select_Field
               (Item, Item.Seen_Continuation_Token,
                Continuation_Token_Field);
+            Item.Value.Has_Continuation_Token := True;
          elsif Local_Name = "Prefix" then
             Select_Field (Item, Item.Seen_Prefix, Prefix_Field);
+            Item.Value.Has_Prefix := True;
          else
             Item.Ignore_Depth := Item.Depth;
          end if;
@@ -1024,6 +1030,11 @@ package body Flyology.Object_Storage.S3.Buckets is
       if Value.Buckets.Length > 10_000 then
          raise Malformed_Bucket_Listing with
            "ListBuckets result exceeds MaxBuckets";
+      elsif US.Length (Value.Continuation_Token) >
+        Maximum_Continuation_Token_Length
+      then
+         raise Malformed_Bucket_Listing with
+           "ListBuckets continuation token exceeds 1,024 bytes";
       elsif not Value.Has_Owner
         and then
           (US.Length (Value.Owner.Display_Name) > 0
@@ -1089,10 +1100,18 @@ package body Flyology.Object_Storage.S3.Buckets is
          US.Append (Result, "</Bucket>");
       end loop;
       US.Append (Result, "</Buckets>");
-      Append_Optional
-        (Result, "ContinuationToken",
-         US.To_String (Value.Continuation_Token));
-      Append_Optional (Result, "Prefix", US.To_String (Value.Prefix));
+      if Value.Has_Continuation_Token
+        or else US.Length (Value.Continuation_Token) > 0
+      then
+         US.Append
+           (Result,
+            Element
+              ("ContinuationToken",
+               US.To_String (Value.Continuation_Token)));
+      end if;
+      if Value.Has_Prefix or else US.Length (Value.Prefix) > 0 then
+         US.Append (Result, Element ("Prefix", US.To_String (Value.Prefix)));
+      end if;
       US.Append (Result, "</ListAllMyBucketsResult>");
       return US.To_String (Result);
    exception

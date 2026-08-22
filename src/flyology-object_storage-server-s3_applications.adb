@@ -833,6 +833,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        Configured_Region'Length > 0
                        and then Requested_Region'Length > 0
                        and then Requested_Region /= Configured_Region;
+                     Has_Listing_Parameter : constant Boolean :=
+                       Request.Has_Max_Buckets
+                       or else Request.Has_Continuation_Token
+                       or else Request.Has_Prefix
+                       or else Requested_Region'Length > 0;
                      Options : Backends.List_Buckets_Options :=
                        (Prefix  => Request.Prefix,
                         After   => US.Null_Unbounded_String,
@@ -854,7 +859,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            Target_Text);
                         return;
                      end if;
-                     if Request.Has_Continuation_Token then
+                     if Request.Has_Continuation_Token
+                       and then US.Length (Request.Continuation_Token) > 0
+                     then
                         Token := Buckets.Decode_Continuation
                           (US.To_String (Request.Continuation_Token),
                            US.To_String (Request.Prefix), Requested_Region);
@@ -887,9 +894,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                              (Display_Name => US.Null_Unbounded_String,
                               ID           => Auth.Principal),
                            Continuation_Token => US.Null_Unbounded_String,
-                           Prefix             => Request.Prefix);
+                           Has_Continuation_Token => False,
+                           Prefix             => Request.Prefix,
+                           Has_Prefix         => Request.Has_Prefix);
                      begin
                         if Page.Is_Truncated then
+                           Response.Has_Continuation_Token := True;
                            Response.Continuation_Token :=
                              US.To_Unbounded_String
                                (Buckets.Encode_Continuation
@@ -907,11 +917,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                     else US.To_Unbounded_String
                                       (Last_Modified
                                          (Bucket_Value.Created))),
-                                 Bucket_Region => US.To_Unbounded_String
-                                   (Effective_Region),
-                                 Bucket_ARN => US.To_Unbounded_String
-                                   ("arn:aws:s3:::" &
-                                    US.To_String (Bucket_Value.Name))));
+                                 Bucket_Region =>
+                                   (if Has_Listing_Parameter
+                                    then US.To_Unbounded_String
+                                      (Effective_Region)
+                                    else US.Null_Unbounded_String),
+                                 Bucket_ARN => US.Null_Unbounded_String));
                         end loop;
                         Apps.Respond
                           (X, 200, "application/xml",

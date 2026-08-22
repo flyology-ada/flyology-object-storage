@@ -1414,15 +1414,19 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Optional_Count : constant Natural :=
         Boolean'Pos (Parameters.Has_Max_Buckets) +
-        Boolean'Pos (US.Length (Parameters.Continuation_Token) > 0) +
-        Boolean'Pos (US.Length (Parameters.Prefix) > 0) +
+        Boolean'Pos
+          (Parameters.Has_Continuation_Token
+           or else US.Length (Parameters.Continuation_Token) > 0) +
+        Boolean'Pos
+          (Parameters.Has_Prefix or else US.Length (Parameters.Prefix) > 0) +
         Boolean'Pos (US.Length (Parameters.Bucket_Region) > 0);
       Values : Model_Value_Array (1 .. Optional_Count);
       Last   : Natural := 0;
 
-      procedure Add (Name, Value : String) is
+      procedure Add
+        (Name, Value : String; Present : Boolean := True) is
       begin
-         if Value'Length > 0 then
+         if Present then
             Last := Last + 1;
             Values (Last) :=
               (Member_Name => US.To_Unbounded_String (Name),
@@ -1431,6 +1435,12 @@ package body Flyology.Object_Storage.Client.Low_Level is
          end if;
       end Add;
    begin
+      if US.Length (Parameters.Continuation_Token) >
+        S3.Buckets.Maximum_Continuation_Token_Length
+      then
+         raise Invalid_Request with
+           "ListBuckets continuation token exceeds 1,024 bytes";
+      end if;
       if Parameters.Has_Max_Buckets then
          Add
            ("MaxBuckets",
@@ -1441,9 +1451,15 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end if;
       Add
         ("ContinuationToken",
-         US.To_String (Parameters.Continuation_Token));
-      Add ("Prefix", US.To_String (Parameters.Prefix));
-      Add ("BucketRegion", US.To_String (Parameters.Bucket_Region));
+         US.To_String (Parameters.Continuation_Token),
+         Parameters.Has_Continuation_Token
+           or else US.Length (Parameters.Continuation_Token) > 0);
+      Add
+        ("Prefix", US.To_String (Parameters.Prefix),
+         Parameters.Has_Prefix or else US.Length (Parameters.Prefix) > 0);
+      Add
+        ("BucketRegion", US.To_String (Parameters.Bucket_Region),
+         US.Length (Parameters.Bucket_Region) > 0);
       return Result : Prepared_Request := Prepare_Model_Request
         (Model.List_Buckets_Operation, Origin, Style, Values, "", False, "",
          Identity, Region, Timestamp)
