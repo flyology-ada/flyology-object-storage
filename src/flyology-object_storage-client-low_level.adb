@@ -2564,26 +2564,18 @@ package body Flyology.Object_Storage.Client.Low_Level is
          then Content_MD5 (Payload) else Supplied_MD5);
       Checksum : constant String :=
         US.To_String (Parameters.Checksum_Algorithm);
+      Algorithm : constant Checksum_Policy.Algorithm_Parse_Result :=
+        Checksum_Policy.Parse_Algorithm (Checksum);
       MFA : constant String := US.To_String (Parameters.MFA);
       Owner : constant String :=
         US.To_String (Parameters.Expected_Bucket_Owner);
-      Count : constant Positive :=
-        2 + Boolean'Pos (Checksum'Length > 0)
-          + Boolean'Pos (MFA'Length > 0)
-          + Boolean'Pos (Owner'Length > 0);
-      Values : Model_Value_Array (1 .. Count);
-      Last : Natural := 0;
-
-      procedure Add (Name, Value : String; Present : Boolean := True) is
-      begin
-         if Present then
-            Last := Last + 1;
-            Values (Last) :=
-              (Member_Name => US.To_Unbounded_String (Name),
-               Map_Key     => US.Null_Unbounded_String,
-               Value       => US.To_Unbounded_String (Value));
-         end if;
-      end Add;
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("versioning", ""));
+      Headers : SigV4.Name_Value_Array
+        (1 .. 1 + Boolean'Pos (MFA'Length > 0)
+           + Boolean'Pos (Owner'Length > 0)
+           + 2 * Boolean'Pos (Checksum'Length > 0));
+      Last : Positive := 1;
 
       function Valid_Bounded_Header (Value : String) return Boolean is
       begin
@@ -2601,18 +2593,53 @@ package body Flyology.Object_Storage.Client.Low_Level is
       if not Wire_Core.Valid_Base64 (MD5, 16)
         or else not Valid_Bounded_Header (MFA)
         or else not Valid_Bounded_Header (Owner)
+        or else (Checksum'Length > 0 and then not Algorithm.Valid)
       then
          raise Invalid_Request with
            "invalid PutBucketVersioning header";
       end if;
-      Add ("Bucket", Bucket);
-      Add ("ContentMD5", MD5);
-      Add ("ChecksumAlgorithm", Checksum, Checksum'Length > 0);
-      Add ("MFA", MFA, MFA'Length > 0);
-      Add ("ExpectedBucketOwner", Owner, Owner'Length > 0);
-      return Result : Prepared_Request := Prepare_Model_Request
-        (Model.Put_Bucket_Versioning_Operation, Origin, Style, Values,
-         Payload, True, "", Identity, Region, Timestamp)
+      Headers (1) := SigV4.Pair ("content-md5", MD5);
+      if MFA'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) := SigV4.Pair ("x-amz-mfa", MFA);
+      end if;
+      if Owner'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) :=
+           SigV4.Pair ("x-amz-expected-bucket-owner", Owner);
+      end if;
+      if Checksum'Length > 0 then
+         declare
+            Digest : constant Checksums.Digest_Value :=
+              Checksums.Compute
+                (Algorithm.Value,
+                 Flyology.Bytes.To_Array
+                   (Flyology.Bytes.From_Byte_String (Payload)));
+            Header_Name : constant String :=
+              (case Algorithm.Value is
+                  when S3.Core.CRC32 => "x-amz-checksum-crc32",
+                  when S3.Core.CRC32C => "x-amz-checksum-crc32c",
+                  when S3.Core.CRC64NVME => "x-amz-checksum-crc64nvme",
+                  when S3.Core.SHA1 => "x-amz-checksum-sha1",
+                  when S3.Core.SHA256 => "x-amz-checksum-sha256",
+                  when S3.Core.SHA512 => "x-amz-checksum-sha512",
+                  when S3.Core.MD5 => "x-amz-checksum-md5",
+                  when S3.Core.XXHASH64 => "x-amz-checksum-xxhash64",
+                  when S3.Core.XXHASH3 => "x-amz-checksum-xxhash3",
+                  when S3.Core.XXHASH128 => "x-amz-checksum-xxhash128");
+         begin
+            Last := Last + 1;
+            Headers (Last) :=
+              SigV4.Pair ("x-amz-sdk-checksum-algorithm", Checksum);
+            Last := Last + 1;
+            Headers (Last) :=
+              SigV4.Pair (Header_Name, Checksums.Encode_Base64 (Digest));
+         end;
+      end if;
+      return Result : Prepared_Request := Prepare_Object_Request
+        (Put_Bucket_Versioning_Operation, "PUT", Origin, Style, Bucket, "",
+         Query, Headers, Payload, "", Identity, Region, Timestamp,
+         Object_Resource => False)
       do
          Result.Operation := Put_Bucket_Versioning_Operation;
       end return;

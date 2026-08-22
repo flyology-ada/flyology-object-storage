@@ -977,6 +977,158 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return US.To_String (Document);
       end Read_Document;
 
+      type Document_Checksum_Status is
+        (Document_Checksum_OK,
+         Document_Checksum_Group_Invalid,
+         Document_Checksum_Value_Invalid,
+         Document_Checksum_Mismatch);
+
+      function Checksum_Header_Name
+        (Algorithm : Checksum_Policy.Algorithm) return String is
+        (case Algorithm is
+            when S3.Core.CRC32 => "x-amz-checksum-crc32",
+            when S3.Core.CRC32C => "x-amz-checksum-crc32c",
+            when S3.Core.CRC64NVME => "x-amz-checksum-crc64nvme",
+            when S3.Core.SHA1 => "x-amz-checksum-sha1",
+            when S3.Core.SHA256 => "x-amz-checksum-sha256",
+            when S3.Core.SHA512 => "x-amz-checksum-sha512",
+            when S3.Core.MD5 => "x-amz-checksum-md5",
+            when S3.Core.XXHASH64 => "x-amz-checksum-xxhash64",
+            when S3.Core.XXHASH3 => "x-amz-checksum-xxhash3",
+            when S3.Core.XXHASH128 => "x-amz-checksum-xxhash128");
+
+      function Verify_Document_Checksum
+        (Document : String) return Document_Checksum_Status
+      is
+         SDK_Count : constant Natural := Apps.Request_Header_Count
+           (X, "x-amz-sdk-checksum-algorithm");
+         Trailer_Declaration_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-trailer");
+         CRC32_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-checksum-crc32");
+         CRC32C_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-checksum-crc32c");
+         CRC64_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-checksum-crc64nvme");
+         SHA1_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-checksum-sha1");
+         SHA256_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-checksum-sha256");
+         SHA512_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-checksum-sha512");
+         MD5_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-checksum-md5");
+         XXHASH64_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-checksum-xxhash64");
+         XXHASH3_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-checksum-xxhash3");
+         XXHASH128_Count : constant Natural :=
+           Apps.Request_Header_Count (X, "x-amz-checksum-xxhash128");
+         Checksum_Count : constant Natural :=
+           CRC32_Count + CRC32C_Count + CRC64_Count + SHA1_Count +
+           SHA256_Count + SHA512_Count + MD5_Count + XXHASH64_Count +
+           XXHASH3_Count + XXHASH128_Count;
+
+         function Count_For
+           (Algorithm : Checksum_Policy.Algorithm) return Natural is
+           (case Algorithm is
+               when S3.Core.CRC32 => CRC32_Count,
+               when S3.Core.CRC32C => CRC32C_Count,
+               when S3.Core.CRC64NVME => CRC64_Count,
+               when S3.Core.SHA1 => SHA1_Count,
+               when S3.Core.SHA256 => SHA256_Count,
+               when S3.Core.SHA512 => SHA512_Count,
+               when S3.Core.MD5 => MD5_Count,
+               when S3.Core.XXHASH64 => XXHASH64_Count,
+               when S3.Core.XXHASH3 => XXHASH3_Count,
+               when S3.Core.XXHASH128 => XXHASH128_Count);
+
+         function Concrete_Algorithm return
+           Checksum_Policy.Algorithm_Parse_Result is
+         begin
+            for Algorithm in Checksum_Policy.Algorithm loop
+               if Count_For (Algorithm) = 1 then
+                  return (Valid => True, Value => Algorithm);
+               end if;
+            end loop;
+            return (Valid => False);
+         end Concrete_Algorithm;
+
+         SDK_Algorithm : constant Checksum_Policy.Algorithm_Parse_Result :=
+           (if SDK_Count = 1
+            then Checksum_Policy.Parse_Algorithm
+              (Apps.Request_Header (X, "x-amz-sdk-checksum-algorithm"))
+            else (Valid => False));
+         Concrete : constant Checksum_Policy.Algorithm_Parse_Result :=
+           Concrete_Algorithm;
+         Has_Trailer : constant Boolean := Trailer_Declaration_Count = 1;
+         Selected : Checksum_Policy.Algorithm_Parse_Result :=
+           (Valid => False);
+         Supplied : US.Unbounded_String;
+      begin
+         if SDK_Count > 1 or else Trailer_Declaration_Count > 1
+           or else CRC32_Count > 1 or else CRC32C_Count > 1
+           or else CRC64_Count > 1 or else SHA1_Count > 1
+           or else SHA256_Count > 1 or else SHA512_Count > 1
+           or else MD5_Count > 1 or else XXHASH64_Count > 1
+           or else XXHASH3_Count > 1 or else XXHASH128_Count > 1
+           or else Checksum_Count > 1
+           or else (SDK_Count = 1 and then not SDK_Algorithm.Valid)
+         then
+            return Document_Checksum_Group_Invalid;
+         elsif Has_Trailer then
+            if SDK_Count /= 1 or else Checksum_Count /= 0
+              or else Apps.Request_Trailer_Count (X) /= 1
+              or else Ada.Characters.Handling.To_Lower
+                (Apps.Request_Header (X, "x-amz-trailer")) /=
+                  Checksum_Header_Name (SDK_Algorithm.Value)
+              or else Apps.Request_Trailer_Count
+                (X, Checksum_Header_Name (SDK_Algorithm.Value)) /= 1
+            then
+               return Document_Checksum_Group_Invalid;
+            end if;
+            Selected := SDK_Algorithm;
+            Supplied := US.To_Unbounded_String
+              (Apps.Request_Trailer
+                 (X, Checksum_Header_Name (Selected.Value)));
+         elsif Apps.Request_Trailer_Count (X) > 0
+           or else (SDK_Count = 1 and then Checksum_Count = 0)
+         then
+            return Document_Checksum_Group_Invalid;
+         elsif Checksum_Count = 0 then
+            return Document_Checksum_OK;
+         else
+            --  The operation contract says an individual checksum takes
+            --  precedence over the SDK algorithm selector.
+            Selected := Concrete;
+            Supplied := US.To_Unbounded_String
+              (Apps.Request_Header
+                 (X, Checksum_Header_Name (Selected.Value)));
+         end if;
+
+         declare
+            Decoded : constant Checksums.Decode_Result :=
+              Checksums.Decode_Base64
+                (US.To_String (Supplied), Selected.Value);
+         begin
+            if not Decoded.Valid then
+               return Document_Checksum_Value_Invalid;
+            end if;
+            declare
+               Computed : constant Checksums.Digest_Value :=
+                 Checksums.Compute
+                   (Selected.Value,
+                    Flyology.Bytes.To_Array
+                      (Flyology.Bytes.From_Byte_String (Document)));
+            begin
+               return
+                 (if Checksums.Equivalent (Decoded.Value, Computed)
+                  then Document_Checksum_OK
+                  else Document_Checksum_Mismatch);
+            end;
+         end;
+      end Verify_Document_Checksum;
+
       Auth       : Authentication.Outcome;
       Accepted   : Boolean;
       Length_OK  : Boolean;
@@ -2107,23 +2259,20 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     Apps.Request_Header_Count (X, "content-md5");
                   MFA_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "x-amz-mfa");
-                  Checksum_Count : constant Natural :=
-                    Apps.Request_Header_Count
-                      (X, "x-amz-sdk-checksum-algorithm");
-                  Checksum_Value_Count : constant Natural :=
-                    Apps.Request_Header_Count (X, "x-amz-checksum-crc32") +
-                    Apps.Request_Header_Count (X, "x-amz-checksum-crc32c") +
-                    Apps.Request_Header_Count
-                      (X, "x-amz-checksum-crc64nvme") +
-                    Apps.Request_Header_Count (X, "x-amz-checksum-sha1") +
-                    Apps.Request_Header_Count (X, "x-amz-checksum-sha256");
+                  Checksum_Status : constant Document_Checksum_Status :=
+                    Verify_Document_Checksum (Document);
                   Owner_Accepted : Boolean;
                begin
-                  Configuration := Versioning.Parse (Document);
-                  if MD5_Count /= 1 then
+                  if MD5_Count /= 1
+                    or else not S3.Wire_Core.Valid_Base64
+                      ((if MD5_Count = 1
+                        then Apps.Request_Header (X, "content-md5") else ""),
+                       16)
+                  then
                      Send_Error
                        (X, 400, "InvalidRequest",
-                        "PutBucketVersioning requires one Content-MD5 header",
+                        "PutBucketVersioning requires one valid " &
+                        "Content-MD5 header",
                         Target_Text);
                   elsif Apps.Request_Header (X, "content-md5") /=
                     Content_MD5 (Document)
@@ -2132,10 +2281,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 400, "BadDigest",
                         "The Content-MD5 you specified did not match",
                         Target_Text);
-                  elsif MFA_Count > 1
-                    or else Checksum_Count > 1
-                    or else Checksum_Value_Count > 1
-                  then
+                  elsif MFA_Count > 1 then
                      Send_Error
                        (X, 400, "InvalidRequest",
                         "A PutBucketVersioning control header is duplicated",
@@ -2149,14 +2295,22 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 501, "NotImplemented",
                         "MFA-delete policy enforcement is not implemented",
                         Target_Text);
-                  elsif Checksum_Count = 1
-                    or else Checksum_Value_Count = 1
+                  elsif Checksum_Status in
+                    Document_Checksum_Group_Invalid |
+                    Document_Checksum_Value_Invalid
                   then
                      Send_Error
-                       (X, 501, "NotImplemented",
-                        "SDK checksum negotiation is not implemented",
+                       (X, 400, "InvalidRequest",
+                        "The PutBucketVersioning checksum group is invalid",
+                        Target_Text);
+                  elsif Checksum_Status = Document_Checksum_Mismatch then
+                     Send_Error
+                       (X, 400, "BadDigest",
+                        "The optional checksum does not match the " &
+                        "request body",
                         Target_Text);
                   else
+                     Configuration := Versioning.Parse (Document);
                      Check_Expected_Bucket_Owner
                        (US.To_String (Auth.Principal), Owner_Accepted);
                      if Owner_Accepted then

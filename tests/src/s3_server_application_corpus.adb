@@ -887,6 +887,7 @@ procedure S3_Server_Application_Corpus is
       MFA          : String := "";
       Checksum     : String := "";
       Checksum_Value : String := "";
+      Checksum_Value_Algorithm : Checksum_Policy.Algorithm := Core.CRC32;
       Owner        : String := "";
       Duplicate_MD5 : String := "") return String
    is
@@ -901,6 +902,8 @@ procedure S3_Server_Application_Corpus is
       Last : Natural := 4;
       Query : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("versioning", ""));
+      Checksum_Name : constant String :=
+        Checksum_Header (Checksum_Value_Algorithm);
       Signing : SigV4.Signing_Result;
    begin
       Headers (1) := SigV4.Pair ("content-md5", MD5);
@@ -923,7 +926,7 @@ procedure S3_Server_Application_Corpus is
       if Checksum_Value'Length > 0 then
          Last := Last + 1;
          Headers (Last) :=
-           SigV4.Pair ("x-amz-checksum-crc32", Checksum_Value);
+           SigV4.Pair (Checksum_Name, Checksum_Value);
       end if;
       if Owner'Length > 0 then
          Last := Last + 1;
@@ -945,7 +948,7 @@ procedure S3_Server_Application_Corpus is
         (if Checksum'Length = 0 then ""
          else "x-amz-sdk-checksum-algorithm: " & Checksum & CRLF) &
         (if Checksum_Value'Length = 0 then ""
-         else "x-amz-checksum-crc32: " & Checksum_Value & CRLF) &
+         else Checksum_Name & ": " & Checksum_Value & CRLF) &
         (if Owner'Length = 0 then ""
          else "x-amz-expected-bucket-owner: " & Owner & CRLF) &
         "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
@@ -954,6 +957,54 @@ procedure S3_Server_Application_Corpus is
           (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
         "Connection: close" & CRLF & CRLF & Payload;
    end Signed_Versioning_Request;
+
+   function Signed_Versioning_Trailer_Request
+     (Payload         : String;
+      Algorithm       : Checksum_Policy.Algorithm;
+      Checksum        : String;
+      Include_Trailer : Boolean := True;
+      Duplicate       : Boolean := False) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Algorithm_Name : constant String :=
+        Checksum_Policy.Wire_Name (Algorithm);
+      Checksum_Name : constant String := Checksum_Header (Algorithm);
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("content-md5", Content_MD5 (Payload)),
+         SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp),
+         SigV4.Pair ("x-amz-sdk-checksum-algorithm", Algorithm_Name),
+         SigV4.Pair ("x-amz-trailer", Checksum_Name));
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("versioning", ""));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", "/test-bucket", Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+      Wire_Body : US.Unbounded_String;
+   begin
+      for Value of Payload loop
+         US.Append (Wire_Body, "1" & CRLF & Value & CRLF);
+      end loop;
+      US.Append (Wire_Body, "0" & CRLF);
+      if Include_Trailer then
+         US.Append (Wire_Body, Checksum_Name & ": " & Checksum & CRLF);
+         if Duplicate then
+            US.Append (Wire_Body, Checksum_Name & ": " & Checksum & CRLF);
+         end if;
+      end if;
+      US.Append (Wire_Body, CRLF);
+      return "PUT /test-bucket?versioning= HTTP/1.1" & CRLF &
+        "Host: " & Host & CRLF &
+        "content-md5: " & Content_MD5 (Payload) & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-sdk-checksum-algorithm: " & Algorithm_Name & CRLF &
+        "x-amz-trailer: " & Checksum_Name & CRLF &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Transfer-Encoding: chunked" & CRLF &
+        "Connection: close" & CRLF & CRLF & US.To_String (Wire_Body);
+   end Signed_Versioning_Trailer_Request;
 
    procedure Check_Cancellation_Propagation is
       Wire : aliased Memory_Transport;
@@ -2875,9 +2926,23 @@ begin
         (Has
            (Run
               (Signed_Versioning_Request
-                 (Enabled_Document, String'(1 .. 24 => 'A'))),
+                 (Enabled_Document, Content_MD5 ("different document"))),
             "<Code>BadDigest</Code>"),
          "PutBucketVersioning accepted a mismatched Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Enabled_Document, String'(1 .. 24 => 'A'))),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketVersioning accepted malformed Content-MD5 syntax");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 ("<malformed", Content_MD5 ("different document"))),
+            "<Code>BadDigest</Code>"),
+         "PutBucketVersioning parsed unverified body bytes");
       declare
          Malformed : constant String :=
            "<VersioningConfiguration xmlns=""" &
@@ -2956,16 +3021,85 @@ begin
               (Signed_Versioning_Request
                  (Enabled_Document, Content_MD5 (Enabled_Document),
                   Checksum => "CRC32")),
-            "<Code>NotImplemented</Code>"),
-         "PutBucketVersioning silently ignored checksum negotiation");
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketVersioning accepted an SDK algorithm without a value");
       Require
         (Has
            (Run
               (Signed_Versioning_Request
                  (Enabled_Document, Content_MD5 (Enabled_Document),
                   Checksum_Value => "AAAAAA==")),
-            "<Code>NotImplemented</Code>"),
-         "PutBucketVersioning silently ignored a checksum value");
+            "<Code>BadDigest</Code>"),
+         "PutBucketVersioning accepted a mismatched checksum value");
+      for Algorithm in Checksum_Policy.Algorithm loop
+         Require
+           (Has
+              (Run
+                 (Signed_Versioning_Request
+                    (Enabled_Document, Content_MD5 (Enabled_Document),
+                     Checksum => Checksum_Policy.Wire_Name (Algorithm),
+                     Checksum_Value =>
+                       Checksum_Value (Algorithm, Enabled_Document),
+                     Checksum_Value_Algorithm => Algorithm)),
+               "200 OK"),
+            "PutBucketVersioning rejected " &
+            Checksum_Policy.Wire_Name (Algorithm));
+      end loop;
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Trailer_Request
+                 (Enabled_Document, Core.SHA256,
+                  Checksum_Value (Core.SHA256, Enabled_Document))),
+            "200 OK"),
+         "PutBucketVersioning rejected a physical checksum trailer");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Trailer_Request
+                 (Enabled_Document, Core.SHA256,
+                  Checksum_Value (Core.SHA256, "different document"))),
+            "<Code>BadDigest</Code>"),
+         "PutBucketVersioning accepted a mismatched checksum trailer");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Trailer_Request
+                 (Enabled_Document, Core.SHA256,
+                  Checksum_Value (Core.SHA256, Enabled_Document),
+                  Include_Trailer => False)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketVersioning accepted a missing declared trailer");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Trailer_Request
+                 (Enabled_Document, Core.SHA256,
+                  Checksum_Value (Core.SHA256, Enabled_Document),
+                  Duplicate => True)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketVersioning accepted a duplicate physical trailer");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Enabled_Document, Content_MD5 (Enabled_Document),
+                  Checksum => "SHA256",
+                  Checksum_Value =>
+                    Checksum_Value (Core.CRC32, Enabled_Document))),
+            "200 OK"),
+         "PutBucketVersioning did not give an individual checksum " &
+         "precedence over the SDK selector");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Enabled_Document, Content_MD5 (Enabled_Document),
+                  Checksum => "sha256",
+                  Checksum_Value =>
+                    Checksum_Value (Core.CRC32, Enabled_Document))),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketVersioning accepted an invalid checksum algorithm");
       Require
         (Has
            (Run

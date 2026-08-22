@@ -13102,6 +13102,8 @@ package body Object_Storage_Test_Cases is
       package Files renames Flyology.Object_Storage.Backends.Files;
       package Memory renames Flyology.Object_Storage.Backends.Memory;
       package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+      package Checksum_Policy renames
+        Flyology.Object_Storage.S3.Checksum_Policy;
       package Versioning renames
         Flyology.Object_Storage.S3.Versioning;
       package US renames Ada.Strings.Unbounded;
@@ -13401,6 +13403,73 @@ package body Object_Storage_Test_Cases is
                   "x-amz-expected-bucket-owner") > 0,
                "typed PutBucketVersioning request projection");
          end;
+      end;
+      for Algorithm in Checksum_Policy.Algorithm loop
+         declare
+            Parameters : Low_Level.Put_Bucket_Versioning_Parameters;
+         begin
+            Parameters.Configuration.Status := Versioning_Enabled;
+            Parameters.Checksum_Algorithm := US.To_Unbounded_String
+              (Checksum_Policy.Wire_Name (Algorithm));
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Versioning
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", Parameters,
+                    Identity, "us-east-1", "20130524T000000Z");
+               Canonical : constant String :=
+                 Low_Level.Canonical_Request (Prepared);
+               Header_Name : constant String :=
+                 (case Algorithm is
+                     when S3.Core.CRC32 => "x-amz-checksum-crc32",
+                     when S3.Core.CRC32C => "x-amz-checksum-crc32c",
+                     when S3.Core.CRC64NVME => "x-amz-checksum-crc64nvme",
+                     when S3.Core.SHA1 => "x-amz-checksum-sha1",
+                     when S3.Core.SHA256 => "x-amz-checksum-sha256",
+                     when S3.Core.SHA512 => "x-amz-checksum-sha512",
+                     when S3.Core.MD5 => "x-amz-checksum-md5",
+                     when S3.Core.XXHASH64 => "x-amz-checksum-xxhash64",
+                     when S3.Core.XXHASH3 => "x-amz-checksum-xxhash3",
+                     when S3.Core.XXHASH128 => "x-amz-checksum-xxhash128");
+            begin
+               Assert
+                 (Ada.Strings.Fixed.Index
+                    (Low_Level.Signed_Headers (Prepared), Header_Name) > 0
+                  and then Ada.Strings.Fixed.Index
+                    (Canonical,
+                     "x-amz-sdk-checksum-algorithm:" &
+                     Checksum_Policy.Wire_Name (Algorithm)) > 0
+                  and then Ada.Strings.Fixed.Index
+                    (Canonical, Header_Name & ":") > 0,
+                  "typed PutBucketVersioning omitted " &
+                  Checksum_Policy.Wire_Name (Algorithm) & " checksum");
+            end;
+         end;
+      end loop;
+      declare
+         Parameters : Low_Level.Put_Bucket_Versioning_Parameters;
+         Rejected : Boolean := False;
+      begin
+         Parameters.Configuration.Status := Versioning_Enabled;
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("sha256");
+         begin
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Versioning
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", Parameters,
+                    Identity, "us-east-1", "20130524T000000Z");
+               pragma Unreferenced (Prepared);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Rejected := True;
+         end;
+         Assert
+           (Rejected,
+            "typed PutBucketVersioning accepted invalid checksum enum");
       end;
       declare
          Prepared : constant Low_Level.Prepared_Request :=
