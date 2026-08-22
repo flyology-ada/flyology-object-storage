@@ -15,7 +15,17 @@ package Flyology.Object_Storage.SQLite.Catalogs is
    procedure Close (Item : in out Catalog);
 
    procedure Create_Bucket
-     (Item : in out Catalog; Name : String; Result : out Status);
+     (Item    : in out Catalog;
+      Name    : String;
+      Created : Unix_Time;
+      Result  : out Status);
+
+   procedure List_Buckets
+     (Item    : in out Catalog;
+      Options : Backends.List_Buckets_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Bucket_Page;
+      Result  : out Status);
 
    procedure Head_Bucket
      (Item : in out Catalog; Name : String; Result : out Status);

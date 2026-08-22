@@ -25,6 +25,14 @@ package Flyology.Object_Storage.Backends.Memory is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status);
 
+   overriding procedure List_Buckets
+     (Item     : in out Store;
+      Options  : List_Buckets_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Page;
+      Result   : out Status);
+
    overriding procedure Delete_Bucket
      (Item     : in out Store;
       Bucket   : String;
@@ -204,8 +212,9 @@ private
       return Ada.Streams.Stream_Element;
 
    type Bucket_Slot is record
-      Used : Boolean := False;
-      Name : Ada.Strings.Unbounded.Unbounded_String;
+      Used    : Boolean := False;
+      Name    : Ada.Strings.Unbounded.Unbounded_String;
+      Created : Unix_Time := 0;
    end record;
    type Bucket_Array is array (Positive range <>) of Bucket_Slot;
 
@@ -242,7 +251,12 @@ private
       Object_Limit : Positive;
       Byte_Limit   : Byte_Count)
    is
-      procedure Create_Bucket (Name : String; Result : out Status);
+      procedure Create_Bucket
+        (Name : String; Created : Unix_Time; Result : out Status);
+      procedure List_Buckets
+        (Options : List_Buckets_Options;
+         Page    : out Bucket_Page;
+         Result  : out Status);
       procedure Head_Bucket (Name : String; Result : out Status);
       procedure Delete_Bucket (Name : String; Result : out Status);
       procedure Reserve_Transient

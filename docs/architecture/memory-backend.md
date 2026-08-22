@@ -37,3 +37,9 @@ capacity is freed or the store is replaced with a larger instance.
 These rules make the volatile backend resistant to concurrent body-retention
 exhaustion, but they do not turn it into a durable store. Use the files or
 SQLite backend for restart persistence.
+
+Bucket creation and listing run inside the same protected state. A listing is
+therefore one atomic namespace snapshot, sorted bytewise and bounded to the S3
+`MaxBuckets` ceiling. The exclusive continuation cursor and prefix filter are
+applied before publication of the page. Creation times are captured when the
+bucket slot is committed and remain stable for that slot's lifetime.

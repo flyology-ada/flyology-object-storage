@@ -27,6 +27,14 @@ missing payload, or a payload with the wrong size fails closed. Foreign keys,
 opaque BLOB keys/metadata, bounded metadata, strict statement state, and exact
 64-bit size conversions are enforced at the adapter boundary.
 
+Schema version 3 records bucket creation time transactionally. The version-2
+migration adds the field under an exclusive transaction; existing buckets use
+`0` to mean that the historical creation time is unavailable, while every new
+bucket receives its actual commit-time value. Bucket pages are selected under
+the catalog operation gate with binary ordering, exclusive continuation,
+prefix filtering, and a SQL `MaxBuckets + 1` limit, so no unbounded account
+listing is retained in Ada memory.
+
 Startup reconciliation is mutually exclusive with live access. A system-wide
 root lock rejects a second store or process for the same root. This is an
 explicit deployment constraint, not an advisory convention.

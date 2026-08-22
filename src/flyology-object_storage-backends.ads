@@ -39,6 +39,31 @@ package Flyology.Object_Storage.Backends is
       Next_After      : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Account-level bucket listing is independently bounded by the pinned S3
+   --  MaxBuckets range. After is an exclusive internal lexical cursor; the
+   --  S3 boundary is responsible for opaque continuation tokens.
+   subtype Bucket_List_Limit is Positive range 1 .. 10_000;
+
+   type List_Buckets_Options is record
+      Prefix  : Ada.Strings.Unbounded.Unbounded_String;
+      After   : Ada.Strings.Unbounded.Unbounded_String;
+      Maximum : Bucket_List_Limit := Bucket_List_Limit'Last;
+   end record;
+
+   type Listed_Bucket is record
+      Name    : Ada.Strings.Unbounded.Unbounded_String;
+      Created : Unix_Time := 0;
+   end record;
+
+   package Listed_Bucket_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Listed_Bucket);
+
+   type Bucket_Page is record
+      Buckets      : Listed_Bucket_Vectors.Vector;
+      Is_Truncated : Boolean := False;
+      Next_After   : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  Source validators evaluated against the same immutable snapshot that
    --  is copied. Values use the HTTP entity-tag list syntax.
    type Copy_Conditions is record
@@ -196,6 +221,14 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Result : out Status) is abstract;
+
+   procedure List_Buckets
+     (Item     : in out Backend;
+      Options  : List_Buckets_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Page;
+      Result   : out Status) is abstract;
 
    procedure Head_Bucket
      (Item     : in out Backend;

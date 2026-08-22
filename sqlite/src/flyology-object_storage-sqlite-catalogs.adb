@@ -10,7 +10,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   Schema_Version : constant Long_Long_Integer := 2;
+   Schema_Version : constant Long_Long_Integer := 3;
    Empty_Info : constant Object_Information := (others => <>);
 
    protected body Operation_Gate is
@@ -62,7 +62,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Execute
         (Item.Database,
          "CREATE TABLE buckets (" &
-         "name TEXT PRIMARY KEY COLLATE BINARY NOT NULL" &
+         "name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+         "created INTEGER NOT NULL CHECK(created >= 0)" &
          ") WITHOUT ROWID;" &
          "CREATE TABLE objects (" &
          "bucket_name TEXT NOT NULL COLLATE BINARY," &
@@ -98,7 +99,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "ON DELETE CASCADE" &
          ") WITHOUT ROWID;" &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=2;");
+         "PRAGMA user_version=3;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -137,7 +138,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "FOREIGN KEY(upload_id) REFERENCES multipart_uploads(upload_id) " &
          "ON DELETE CASCADE" &
          ") WITHOUT ROWID;" &
-         "PRAGMA user_version=2;");
+         "ALTER TABLE buckets ADD COLUMN created INTEGER NOT NULL " &
+         "DEFAULT 0 CHECK(created >= 0);" &
+         "PRAGMA user_version=3;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -147,6 +150,26 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Upgrade_From_V1;
+
+   procedure Upgrade_From_V2 (Item : in out Catalog) is
+      In_Transaction : Boolean := False;
+   begin
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         "ALTER TABLE buckets ADD COLUMN created INTEGER NOT NULL " &
+         "DEFAULT 0 CHECK(created >= 0);" &
+         "PRAGMA user_version=3;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V2;
 
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
@@ -175,6 +198,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Create_Schema (Item);
       elsif App_ID = Application_ID and then Version = 1 then
          Upgrade_From_V1 (Item);
+      elsif App_ID = Application_ID and then Version = 2 then
+         Upgrade_From_V2 (Item);
       elsif App_ID /= Application_ID or else Version /= Schema_Version then
          raise Catalog_Error with "unsupported or unrelated SQLite database";
       end if;
@@ -225,7 +250,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    end Close;
 
    procedure Create_Bucket
-     (Item : in out Catalog; Name : String; Result : out Status)
+     (Item    : in out Catalog;
+      Name    : String;
+      Created : Unix_Time;
+      Result  : out Status)
    is
       Insert : DB.Statement;
       Locked : Boolean := False;
@@ -234,8 +262,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Locked := True;
       DB.Prepare
         (Insert, Item.Database,
-         "INSERT OR IGNORE INTO buckets(name) VALUES(?1)");
+         "INSERT OR IGNORE INTO buckets(name,created) VALUES(?1,?2)");
       DB.Bind (Insert, 1, Name);
+      DB.Bind (Insert, 2, Long_Long_Integer (Created));
       if DB.Step (Insert) /= DB.Done then
          raise Catalog_Error with "bucket insert returned a row";
       end if;
@@ -250,6 +279,54 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Create_Bucket;
+
+   procedure List_Buckets
+     (Item    : in out Catalog;
+      Options : Backends.List_Buckets_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.Bucket_Page;
+      Result  : out Status)
+   is
+      Query  : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      Page := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT name,created FROM buckets " &
+         "WHERE name > ?1 AND substr(name,1,length(?2)) = ?2 " &
+         "ORDER BY name COLLATE BINARY LIMIT ?3");
+      DB.Bind (Query, 1, US.To_String (Options.After));
+      DB.Bind (Query, 2, US.To_String (Options.Prefix));
+      DB.Bind
+        (Query, 3, Long_Long_Integer (Options.Maximum) + 1);
+      while DB.Step (Query) = DB.Row loop
+         Check.all;
+         if Page.Buckets.Length <
+           Ada.Containers.Count_Type (Options.Maximum)
+         then
+            Page.Buckets.Append
+              (Backends.Listed_Bucket'
+                 (Name    => US.To_Unbounded_String (DB.Column (Query, 0)),
+                  Created => Unix_Time'(DB.Column (Query, 1))));
+         else
+            Page.Is_Truncated := True;
+            Page.Next_After := Page.Buckets.Last_Element.Name;
+            exit;
+         end if;
+      end loop;
+      Item.Gate.Release;
+      Locked := False;
+      Result := Success;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end List_Buckets;
 
    procedure Head_Bucket
      (Item : in out Catalog; Name : String; Result : out Status)

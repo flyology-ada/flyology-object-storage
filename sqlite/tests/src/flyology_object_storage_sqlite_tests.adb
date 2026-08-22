@@ -33,6 +33,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    SQLite_Upload_ID : US.Unbounded_String;
    SQLite_Part_ETag : US.Unbounded_String;
    SQLite_Abort_ID  : US.Unbounded_String;
+   SQLite_Bucket_Created : Flyology.Object_Storage.Unix_Time := 0;
 
    procedure Assert (Condition : Boolean; Message : String) is
    begin
@@ -53,6 +54,60 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          Ada.Directories.Delete_File (Database_Path & "-shm");
       end if;
    end Delete_Database;
+
+   procedure Create_V2_Database is
+      Legacy : Databases.Database;
+   begin
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "CREATE TABLE buckets (" &
+         "name TEXT PRIMARY KEY COLLATE BINARY NOT NULL" &
+         ") WITHOUT ROWID;" &
+         "CREATE TABLE objects (" &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "payload TEXT NOT NULL UNIQUE," &
+         "size INTEGER NOT NULL CHECK(size >= 0)," &
+         "modified INTEGER NOT NULL CHECK(modified >= 0)," &
+         "entity_tag BLOB NOT NULL," &
+         "content_type BLOB NOT NULL," &
+         "PRIMARY KEY(bucket_name, object_key)," &
+         "FOREIGN KEY(bucket_name) REFERENCES buckets(name) " &
+         "ON DELETE RESTRICT" &
+         ") WITHOUT ROWID;" &
+         "CREATE TABLE multipart_uploads (" &
+         "upload_id TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+         "bucket_name TEXT NOT NULL COLLATE BINARY," &
+         "object_key BLOB NOT NULL," &
+         "content_type BLOB NOT NULL," &
+         "created INTEGER NOT NULL CHECK(created >= 0)," &
+         "FOREIGN KEY(bucket_name) REFERENCES buckets(name) " &
+         "ON DELETE RESTRICT" &
+         ") WITHOUT ROWID;" &
+         "CREATE TABLE multipart_parts (" &
+         "upload_id TEXT NOT NULL COLLATE BINARY," &
+         "part_number INTEGER NOT NULL " &
+         "CHECK(part_number BETWEEN 1 AND 10000)," &
+         "payload TEXT NOT NULL UNIQUE," &
+         "size INTEGER NOT NULL CHECK(size >= 0)," &
+         "modified INTEGER NOT NULL CHECK(modified >= 0)," &
+         "entity_tag BLOB NOT NULL," &
+         "PRIMARY KEY(upload_id,part_number)," &
+         "FOREIGN KEY(upload_id) REFERENCES multipart_uploads(upload_id) " &
+         "ON DELETE CASCADE" &
+         ") WITHOUT ROWID;" &
+         "INSERT INTO buckets(name) VALUES('legacy-bucket');" &
+         "PRAGMA application_id=1179603761;" &
+         "PRAGMA user_version=2;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V2_Database;
 
    type Buffer_Source is new
      Flyology.Object_Storage.Backends.Byte_Source with
@@ -206,7 +261,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Name   : constant String := "worker" & Positive'Image (Identifier);
    begin
       for Iteration in 1 .. 50 loop
-         Catalogs.Create_Bucket (Item.all, Name, Result);
+         Catalogs.Create_Bucket (Item.all, Name, 1, Result);
          if Result /= Flyology.Object_Storage.Success then
             Monitor.Record_Failure;
             exit;
@@ -371,13 +426,13 @@ begin
       Found    : Flyology.Object_Storage.Object_Information;
       Key      : constant String := Character'Val (255) & "/opaque-key";
    begin
-      Catalogs.Create_Bucket (Catalog, "catalog-bucket", Result);
+      Catalogs.Create_Bucket (Catalog, "catalog-bucket", 1_234_500, Result);
       Assert (Result = Flyology.Object_Storage.Success,
               "catalog bucket was not created");
       Catalogs.Head_Bucket (Catalog, "catalog-bucket", Result);
       Assert (Result = Flyology.Object_Storage.Success,
               "catalog bucket was not found by head");
-      Catalogs.Create_Bucket (Catalog, "catalog-bucket", Result);
+      Catalogs.Create_Bucket (Catalog, "catalog-bucket", 9_999_999, Result);
       Assert (Result = Flyology.Object_Storage.Already_Exists,
               "duplicate catalog bucket was accepted");
 
@@ -552,6 +607,47 @@ begin
    Catalogs.Close (Catalog);
    Delete_Database;
 
+   Create_V2_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      Options : List_Buckets_Options;
+      Page    : Bucket_Page;
+      Result  : Status;
+
+      procedure Check is null;
+   begin
+      Catalogs.Create_Bucket (Catalog, "new-bucket", 42, Result);
+      Assert (Result = Success, "post-migration bucket create failed");
+      Catalogs.List_Buckets
+        (Catalog, Options, Check'Access, Page, Result);
+      Assert
+        (Result = Success and then Page.Buckets.Length = 2
+         and then US.To_String (Page.Buckets (1).Name) = "legacy-bucket"
+         and then Page.Buckets (1).Created = 0
+         and then US.To_String (Page.Buckets (2).Name) = "new-bucket"
+         and then Page.Buckets (2).Created = 42,
+         "schema-v2 bucket migration did not preserve timestamps");
+      Catalogs.Delete_Bucket (Catalog, "legacy-bucket", Result);
+      Assert (Result = Success, "legacy bucket cleanup failed");
+      Catalogs.Delete_Bucket (Catalog, "new-bucket", Result);
+      Assert (Result = Success, "post-migration bucket cleanup failed");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 3,
+         "schema-v2 migration did not publish version 3");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
    if Ada.Directories.Exists (Backend_Root) then
       Ada.Directories.Delete_Tree (Backend_Root);
    end if;
@@ -569,6 +665,13 @@ begin
       Info   : Object_Information;
       Result : Status;
       Key    : constant String := Character'Val (255) & "../../opaque/key";
+
+      function Listing_Bucket_Name (Index : Positive) return String is
+        (case Index is
+           when 1 => "list-zeta",
+           when 2 => "list-alpha",
+           when 3 => "unrelated-bucket",
+           when others => raise Program_Error);
    begin
       declare
          Rejected : Boolean := False;
@@ -589,6 +692,73 @@ begin
       Store.Create_Bucket
         ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "SQLite backend bucket create failed");
+      for Index in 1 .. 3 loop
+         Store.Create_Bucket
+           (Listing_Bucket_Name (Index), null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert (Result = Success, "SQLite listing bucket create failed");
+      end loop;
+      declare
+         Options : List_Buckets_Options :=
+           (Prefix  => US.To_Unbounded_String ("list-"),
+            After   => US.Null_Unbounded_String,
+            Maximum => 1);
+         Page : Bucket_Page;
+      begin
+         Store.List_Buckets
+           (Options, null, Ada.Real_Time.Time_Last, Page, Result);
+         Assert
+           (Result = Success and then Page.Buckets.Length = 1
+            and then US.To_String (Page.Buckets.First_Element.Name) =
+              "list-alpha"
+            and then Page.Buckets.First_Element.Created > 0
+            and then Page.Is_Truncated
+            and then US.To_String (Page.Next_After) = "list-alpha",
+            "SQLite backend bucket listing first page failed");
+         Options.After := Page.Next_After;
+         Store.List_Buckets
+           (Options, null, Ada.Real_Time.Time_Last, Page, Result);
+         Assert
+           (Result = Success and then Page.Buckets.Length = 1
+            and then US.To_String (Page.Buckets.First_Element.Name) =
+              "list-zeta"
+            and then not Page.Is_Truncated,
+            "SQLite backend bucket listing continuation failed");
+         declare
+            Cancel : aliased Flyology.Cancellation.Token;
+            Raised : Boolean := False;
+         begin
+            Cancel.Request;
+            begin
+               Store.List_Buckets
+                 (Options, Cancel'Access, Ada.Real_Time.Time_Last,
+                  Page, Result);
+            exception
+               when Flyology.Cancellation.Operation_Cancelled =>
+                  Raised := True;
+            end;
+            Assert (Raised, "SQLite bucket listing ignored cancellation");
+         end;
+      end;
+      for Index in 1 .. 3 loop
+         Store.Delete_Bucket
+           (Listing_Bucket_Name (Index), null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert (Result = Success, "SQLite listing bucket cleanup failed");
+      end loop;
+      declare
+         Options : List_Buckets_Options;
+         Page    : Bucket_Page;
+      begin
+         Store.List_Buckets
+           (Options, null, Ada.Real_Time.Time_Last, Page, Result);
+         Assert
+           (Result = Success and then Page.Buckets.Length = 1
+            and then US.To_String (Page.Buckets.First_Element.Name) =
+              "sqlite-bucket",
+            "SQLite bucket listing cleanup snapshot failed");
+         SQLite_Bucket_Created := Page.Buckets.First_Element.Created;
+      end;
       Store.Head_Bucket
         ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "SQLite backend bucket head failed");
@@ -806,6 +976,18 @@ begin
            (Ada.Directories.Compose
               (Backend_Root & "/staging", "crash.part")),
          "SQLite backend did not remove an incomplete staging file");
+      declare
+         Options : List_Buckets_Options;
+         Page    : Bucket_Page;
+      begin
+         Store.List_Buckets
+           (Options, null, Ada.Real_Time.Time_Last, Page, Result);
+         Assert
+           (Result = Success and then Page.Buckets.Length = 1
+            and then Page.Buckets.First_Element.Created =
+              SQLite_Bucket_Created,
+            "SQLite bucket creation time did not survive reopen");
+      end;
       Store.Head_Object
         ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);
       Assert

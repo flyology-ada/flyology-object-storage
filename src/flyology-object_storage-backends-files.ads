@@ -23,6 +23,14 @@ package Flyology.Object_Storage.Backends.Files is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status);
 
+   overriding procedure List_Buckets
+     (Item     : in out Store;
+      Options  : List_Buckets_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Page;
+      Result   : out Status);
+
    overriding procedure Delete_Bucket
      (Item     : in out Store;
       Bucket   : String;

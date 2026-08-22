@@ -5,6 +5,7 @@ with Ada.Strings;
 with Ada.Strings.Fixed;
 with Ada.Unchecked_Deallocation;
 with Flyology.IO;
+with Flyology.Object_Storage.Backends.Bucket_Listing;
 with Flyology.Object_Storage.Backends.Listing;
 with Flyology.Object_Storage.Backends.Multipart_Listing;
 with GNAT.MD5;
@@ -251,7 +252,9 @@ package body Flyology.Object_Storage.Backends.Memory is
          return 0;
       end Part_Index;
 
-      procedure Create_Bucket (Name : String; Result : out Status) is
+      procedure Create_Bucket
+        (Name : String; Created : Unix_Time; Result : out Status)
+      is
       begin
          if Bucket_Index (Name) /= 0 then
             Result := Already_Exists;
@@ -262,12 +265,33 @@ package body Flyology.Object_Storage.Backends.Memory is
                Buckets (Index).Used := True;
                Buckets (Index).Name :=
                  Ada.Strings.Unbounded.To_Unbounded_String (Name);
+               Buckets (Index).Created := Created;
                Result := Success;
                return;
             end if;
          end loop;
          Result := Capacity_Exceeded;
       end Create_Bucket;
+
+      procedure List_Buckets
+        (Options : List_Buckets_Options;
+         Page    : out Bucket_Page;
+         Result  : out Status)
+      is
+         Builder : Bucket_Listing.Builder;
+      begin
+         Bucket_Listing.Initialize (Builder, Options);
+         for Bucket of Buckets loop
+            if Bucket.Used then
+               Bucket_Listing.Consider
+                 (Builder,
+                  Ada.Strings.Unbounded.To_String (Bucket.Name),
+                  Bucket.Created);
+            end if;
+         end loop;
+         Page := Bucket_Listing.Finish (Builder);
+         Result := Success;
+      end List_Buckets;
 
       procedure Head_Bucket (Name : String; Result : out Status) is
       begin
@@ -1025,9 +1049,23 @@ package body Flyology.Object_Storage.Backends.Memory is
       if not Valid_Bucket_Name (Bucket) then
          Result := Invalid_Request;
       else
-         Item.State.Create_Bucket (Bucket, Result);
+         Item.State.Create_Bucket (Bucket, Current_Unix_Time, Result);
       end if;
    end Create_Bucket;
+
+   overriding procedure List_Buckets
+     (Item     : in out Store;
+      Options  : List_Buckets_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Page;
+      Result   : out Status)
+   is
+   begin
+      Page := (others => <>);
+      Check_Context (Token, Deadline);
+      Item.State.List_Buckets (Options, Page, Result);
+   end List_Buckets;
 
    overriding procedure Head_Bucket
      (Item     : in out Store;

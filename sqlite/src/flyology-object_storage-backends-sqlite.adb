@@ -267,7 +267,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       if not Valid_Bucket_Name (Bucket) then
          Result := Invalid_Request;
       else
-         Catalogs.Create_Bucket (Item.Catalog, Bucket, Result);
+         Catalogs.Create_Bucket
+           (Item.Catalog, Bucket, Unix_Seconds (Ada.Calendar.Clock), Result);
       end if;
    exception
       when Flyology.Cancellation.Operation_Cancelled
@@ -276,6 +277,31 @@ package body Flyology.Object_Storage.Backends.SQLite is
       when others =>
          Result := Backend_Unavailable;
    end Create_Bucket;
+
+   overriding procedure List_Buckets
+     (Item     : in out Store;
+      Options  : List_Buckets_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Page;
+      Result   : out Status)
+   is
+      procedure Check is
+      begin
+         Check_Context (Token, Deadline);
+      end Check;
+   begin
+      Check;
+      Catalogs.List_Buckets
+        (Item.Catalog, Options, Check'Access, Page, Result);
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Page := (others => <>);
+         Result := Backend_Unavailable;
+   end List_Buckets;
 
    overriding procedure Head_Bucket
      (Item     : in out Store;

@@ -108,6 +108,119 @@ package body Object_Storage_Test_Cases is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time);
 
+   procedure Exercise_Bucket_Listing
+     (Store : in out Flyology.Object_Storage.Backends.Backend'Class)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package US renames Ada.Strings.Unbounded;
+      Options : List_Buckets_Options;
+      Page    : Bucket_Page;
+      Result  : Status;
+
+      function Name_At (Index : Positive) return String is
+        (case Index is
+           when 1 => "bucket-zeta",
+           when 2 => "other-bucket",
+           when 3 => "bucket-alpha",
+           when 4 => "bucket-beta",
+           when others => raise Program_Error);
+   begin
+      for Index in 1 .. 4 loop
+         Store.Create_Bucket
+           (Name_At (Index), null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "bucket listing setup create");
+      end loop;
+
+      Options.Prefix := US.To_Unbounded_String ("bucket-");
+      Options.Maximum := 2;
+      Store.List_Buckets
+        (Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success
+         and then Page.Buckets.Length = 2
+         and then US.To_String (Page.Buckets (1).Name) = "bucket-alpha"
+         and then US.To_String (Page.Buckets (2).Name) = "bucket-beta"
+         and then Page.Buckets (1).Created > 0
+         and then Page.Buckets (2).Created > 0
+         and then Page.Is_Truncated
+         and then US.To_String (Page.Next_After) = "bucket-beta",
+         "bucket listing sorted first page");
+
+      Options.After := Page.Next_After;
+      Store.List_Buckets
+        (Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success
+         and then Page.Buckets.Length = 1
+         and then US.To_String (Page.Buckets.First_Element.Name) =
+           "bucket-zeta"
+         and then Page.Buckets.First_Element.Created > 0
+         and then not Page.Is_Truncated
+         and then US.Length (Page.Next_After) = 0,
+         "bucket listing exclusive continuation");
+
+      Options := (others => <>);
+      Options.Prefix := US.To_Unbounded_String ("missing-");
+      Store.List_Buckets
+        (Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Buckets.Is_Empty
+         and then not Page.Is_Truncated,
+         "bucket listing empty prefix");
+
+      Store.Delete_Bucket
+        ("bucket-beta", null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "bucket listing deletion setup");
+      Options := (others => <>);
+      Options.Prefix := US.To_Unbounded_String ("bucket-");
+      Store.List_Buckets
+        (Options, null, Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success
+         and then Page.Buckets.Length = 2
+         and then US.To_String (Page.Buckets (1).Name) = "bucket-alpha"
+         and then US.To_String (Page.Buckets (2).Name) = "bucket-zeta",
+         "bucket listing excludes deleted bucket");
+
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.List_Buckets
+              (Options, Cancel'Access, Ada.Real_Time.Time_Last, Page, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled =>
+               Raised := True;
+         end;
+         Assert (Raised, "bucket listing observes pre-cancellation");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.List_Buckets
+              (Options, null, Ada.Real_Time.Time_First, Page, Result);
+         exception
+            when Flyology.IO.Timeout_Error =>
+               Raised := True;
+         end;
+         Assert (Raised, "bucket listing observes expired deadline");
+      end;
+
+      for Index in 1 .. 4 loop
+         if Name_At (Index) /= "bucket-beta" then
+            Store.Delete_Bucket
+              (Name_At (Index), null, Ada.Real_Time.Time_Last, Result);
+            Assert (Result = Success, "bucket listing cleanup");
+         end if;
+      end loop;
+   end Exercise_Bucket_Listing;
+
    procedure Exercise_Listing
      (Store : in out Flyology.Object_Storage.Backends.Backend'Class;
       Bucket : String)
@@ -1916,6 +2029,7 @@ package body Object_Storage_Test_Cases is
           (Ada.Directories.Compose
              (Ada.Directories.Current_Directory, "obj"),
            "fs-listing-conformance");
+      Persisted_Created : Flyology.Object_Storage.Unix_Time := 0;
 
       procedure Clean is
       begin
@@ -1925,15 +2039,81 @@ package body Object_Storage_Test_Cases is
       end Clean;
    begin
       declare
-         Store : Memory.Store (2, 16, 128);
+         Store : Memory.Store (8, 16, 128);
       begin
+         Exercise_Bucket_Listing (Store);
          Exercise_Listing (Store, "memory-list-bucket");
       end;
       Clean;
       declare
          Store : Files.Store := Files.Open (Root, Maximum_Object_Size => 64);
+         Options : Flyology.Object_Storage.Backends.List_Buckets_Options;
+         Page : Flyology.Object_Storage.Backends.Bucket_Page;
+         Status : Flyology.Object_Storage.Status;
       begin
+         Exercise_Bucket_Listing (Store);
          Exercise_Listing (Store, "files-list-bucket");
+         Store.Create_Bucket
+           ("files-persisted-bucket", null, Ada.Real_Time.Time_Last, Status);
+         AUnit.Assertions.Assert
+           (Status = Flyology.Object_Storage.Success,
+            "files persistent listing bucket create");
+         Store.List_Buckets
+           (Options, null, Ada.Real_Time.Time_Last, Page, Status);
+         AUnit.Assertions.Assert
+           (Status = Flyology.Object_Storage.Success
+            and then Page.Buckets.Length = 1,
+            "files persistent listing first snapshot");
+         Persisted_Created := Page.Buckets.First_Element.Created;
+      end;
+      declare
+         Stale : constant String :=
+           Ada.Directories.Compose
+             (Ada.Directories.Compose (Root, "tmp"), "stale-bucket-stage");
+      begin
+         Ada.Directories.Create_Path
+           (Ada.Directories.Compose (Stale, "objects"));
+      end;
+      declare
+         Store : Files.Store := Files.Open (Root, Maximum_Object_Size => 64);
+         Options : Flyology.Object_Storage.Backends.List_Buckets_Options;
+         Page : Flyology.Object_Storage.Backends.Bucket_Page;
+         Status : Flyology.Object_Storage.Status;
+      begin
+         AUnit.Assertions.Assert
+           (not Ada.Directories.Exists
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose (Root, "tmp"),
+                  "stale-bucket-stage")),
+            "files open retained an interrupted staging directory");
+         Store.List_Buckets
+           (Options, null, Ada.Real_Time.Time_Last, Page, Status);
+         AUnit.Assertions.Assert
+           (Status = Flyology.Object_Storage.Success
+            and then Page.Buckets.Length = 1
+            and then Page.Buckets.First_Element.Created = Persisted_Created,
+            "files bucket creation time survives reopen");
+         Store.Delete_Bucket
+           ("files-persisted-bucket", null, Ada.Real_Time.Time_Last, Status);
+         AUnit.Assertions.Assert
+           (Status = Flyology.Object_Storage.Success,
+            "files persistent listing cleanup");
+         declare
+            Partial : constant String :=
+              Ada.Directories.Compose
+                (Ada.Directories.Compose
+                   (Ada.Directories.Compose (Root, "buckets"),
+                    "partial-bucket"),
+                 "objects");
+         begin
+            Ada.Directories.Create_Path (Partial);
+            Store.List_Buckets
+              (Options, null, Ada.Real_Time.Time_Last, Page, Status);
+            AUnit.Assertions.Assert
+              (Status = Flyology.Object_Storage.Backend_Unavailable
+               and then Page.Buckets.Is_Empty,
+               "files listing accepted a partial bucket artifact");
+         end;
       end;
       Clean;
    exception

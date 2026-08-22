@@ -8,6 +8,7 @@ with Ada.Strings.Fixed;
 with Ada.Streams;
 with Ada.Streams.Stream_IO;
 with Flyology.IO;
+with Flyology.Object_Storage.Backends.Bucket_Listing;
 with Flyology.Object_Storage.Backends.Listing;
 with Flyology.Object_Storage.Backends.Multipart_Listing;
 with GNAT.MD5;
@@ -539,6 +540,9 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Full := US.To_Unbounded_String (Ada.Directories.Full_Name (Root));
       Ada.Directories.Create_Path (Join (US.To_String (Full), "buckets"));
+      if Ada.Directories.Exists (Join (US.To_String (Full), "tmp")) then
+         Ada.Directories.Delete_Tree (Join (US.To_String (Full), "tmp"));
+      end if;
       Ada.Directories.Create_Path (Join (US.To_String (Full), "tmp"));
       return Result : Store do
          Result.Root_Path := Full;
@@ -558,8 +562,11 @@ package body Flyology.Object_Storage.Backends.Files is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status)
    is
-      Path : constant String := Bucket_Path (Item, Bucket);
-      Locked : Boolean := False;
+      Path    : constant String := Bucket_Path (Item, Bucket);
+      Locked  : Boolean := False;
+      Staged  : US.Unbounded_String;
+      Number  : Long_Long_Integer;
+      Renamed : Boolean := False;
    begin
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket) then
@@ -571,9 +578,25 @@ package body Flyology.Object_Storage.Backends.Files is
       if Ada.Directories.Exists (Path) then
          Result := Already_Exists;
       else
-         Ada.Directories.Create_Path (Join (Path, "objects"));
-         Ada.Directories.Create_Path (Join (Path, "multipart"));
-         Result := Success;
+         Item.Temp_Sequence.Next (Number);
+         Staged := US.To_Unbounded_String
+           (Join
+              (Temp_Path (Item),
+               "bucket-" & GNAT.SHA256.Digest
+                 (Bucket & Long_Long_Integer'Image (Number) &
+                  Ada.Calendar.Time'Image (Ada.Calendar.Clock))));
+         Ada.Directories.Create_Path
+           (Join (US.To_String (Staged), "objects"));
+         Ada.Directories.Create_Path
+           (Join (US.To_String (Staged), "multipart"));
+         GNAT.OS_Lib.Rename_File (US.To_String (Staged), Path, Renamed);
+         if Renamed then
+            Result := Success;
+         else
+            Ada.Directories.Delete_Tree (US.To_String (Staged));
+            Staged := US.Null_Unbounded_String;
+            Result := Backend_Unavailable;
+         end if;
       end if;
       Item.Publication.Release;
       Locked := False;
@@ -583,13 +606,113 @@ package body Flyology.Object_Storage.Backends.Files is
          if Locked then
             Item.Publication.Release;
          end if;
+         begin
+            if US.Length (Staged) > 0
+              and then Ada.Directories.Exists (US.To_String (Staged))
+            then
+               Ada.Directories.Delete_Tree (US.To_String (Staged));
+            end if;
+         exception
+            when others => null;
+         end;
          raise;
       when others =>
          if Locked then
             Item.Publication.Release;
          end if;
+         begin
+            if US.Length (Staged) > 0
+              and then Ada.Directories.Exists (US.To_String (Staged))
+            then
+               Ada.Directories.Delete_Tree (US.To_String (Staged));
+            end if;
+         exception
+            when others => null;
+         end;
          Result := Backend_Unavailable;
    end Create_Bucket;
+
+   overriding procedure List_Buckets
+     (Item     : in out Store;
+      Options  : List_Buckets_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out Bucket_Page;
+      Result   : out Status)
+   is
+      Builder        : Bucket_Listing.Builder;
+      Search         : Ada.Directories.Search_Type;
+      Directory_Item : Ada.Directories.Directory_Entry_Type;
+      Searching      : Boolean := False;
+      Locked         : Boolean := False;
+      Filter         : constant Ada.Directories.Filter_Type :=
+        (Ada.Directories.Ordinary_File => False,
+         Ada.Directories.Directory     => True,
+         Ada.Directories.Special_File  => False);
+   begin
+      Page := (others => <>);
+      Check_Context (Token, Deadline);
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      Bucket_Listing.Initialize (Builder, Options);
+      Ada.Directories.Start_Search
+        (Search, Buckets_Path (Item), "*", Filter);
+      Searching := True;
+      while Ada.Directories.More_Entries (Search) loop
+         Check_Context (Token, Deadline);
+         Ada.Directories.Get_Next_Entry (Search, Directory_Item);
+         declare
+            Name : constant String :=
+              Ada.Directories.Simple_Name (Directory_Item);
+            Full : constant String :=
+              Ada.Directories.Full_Name (Directory_Item);
+            Created : constant Long_Long_Integer := Unix_Seconds
+              (Ada.Directories.Modification_Time (Directory_Item));
+         begin
+            if Name /= "." and then Name /= ".." then
+               if not Valid_Bucket_Name (Name)
+                 or else Created < 0
+                 or else not Ada.Directories.Exists (Join (Full, "objects"))
+                 or else Ada.Directories.Kind (Join (Full, "objects")) /=
+                   Ada.Directories.Directory
+                 or else not Ada.Directories.Exists
+                   (Join (Full, "multipart"))
+                 or else Ada.Directories.Kind (Join (Full, "multipart")) /=
+                   Ada.Directories.Directory
+               then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+               Bucket_Listing.Consider
+                 (Builder, Name, Unix_Time (Created));
+            end if;
+         end;
+      end loop;
+      Ada.Directories.End_Search (Search);
+      Searching := False;
+      Page := Bucket_Listing.Finish (Builder);
+      Item.Publication.Release;
+      Locked := False;
+      Result := Success;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Page := (others => <>);
+         Result := Backend_Unavailable;
+   end List_Buckets;
 
    overriding procedure Head_Bucket
      (Item     : in out Store;
