@@ -2366,6 +2366,30 @@ package body Object_Storage_Test_Cases is
          end;
          Assert (Raised, Message);
       end Must_Reject_Result;
+
+      procedure Must_Reject_Document (Document, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Listings.List_Objects_Result :=
+                 Listings.Parse_List_Objects (Document);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Listings.Malformed_Listing =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Must_Reject_Document;
+
+      function Empty_Listing (Extra : String := "") return String is
+        ("<ListBucketResult><Name>bucket</Name><Prefix></Prefix>" &
+         "<Marker></Marker><MaxKeys>3</MaxKeys>" &
+         "<IsTruncated>false</IsTruncated>" & Extra &
+         "</ListBucketResult>");
    begin
       declare
          Empty : constant Listings.List_Objects_Request :=
@@ -2425,6 +2449,8 @@ package body Object_Storage_Test_Cases is
          declare
             Document : constant String :=
               Listings.Serialize_List_Objects (Value);
+            Parsed : constant Listings.List_Objects_Result :=
+              Listings.Parse_List_Objects (Document);
          begin
             Assert
               (Ada.Strings.Fixed.Index
@@ -2436,6 +2462,18 @@ package body Object_Storage_Test_Cases is
                and then Ada.Strings.Fixed.Index
                  (Document, "<CommonPrefixes><Prefix>a&amp;b/</Prefix>") /= 0,
                "ListObjects XML fields and escaping");
+            Assert
+              (US.To_String (Parsed.Name) = "bucket"
+               and then US.To_String (Parsed.Marker) = "before"
+               and then US.To_String (Parsed.Next_Marker) = "a&b/"
+               and then Parsed.Max_Keys = 2
+               and then Parsed.Is_Truncated
+               and then Parsed.Contents.Length = 1
+               and then Parsed.Common_Prefixes.Length = 1
+               and then US.To_String (Parsed.Contents.First_Element.Key) =
+                 "a&b"
+               and then Parsed.Contents.First_Element.Size = 9,
+               "ListObjects serialization round trip");
          end;
 
          Value.Delimiter := US.Null_Unbounded_String;
@@ -2446,6 +2484,82 @@ package body Object_Storage_Test_Cases is
          Must_Reject_Result
            (Value, "truncated zero-sized v1 page was serialized");
       end;
+
+      declare
+         Parsed : constant Listings.List_Objects_Result :=
+           Listings.Parse_List_Objects
+             ("<ListBucketResult><Name>bucket</Name><Prefix>logs/</Prefix>" &
+              "<Marker>before</Marker><MaxKeys>2</MaxKeys>" &
+              "<IsTruncated>false</IsTruncated>" &
+              "<Contents><Key>logs/a</Key><Size>9223372036854775807" &
+              "</Size><Owner><ID>ignored</ID></Owner></Contents>" &
+              "<Future><Nested>ignored</Nested></Future>" &
+              "</ListBucketResult>");
+      begin
+         Assert
+           (not Parsed.Is_Truncated
+            and then US.Length (Parsed.Next_Marker) = 0
+            and then Parsed.Contents.Length = 1
+            and then Parsed.Contents.First_Element.Size =
+              Flyology.Object_Storage.Byte_Count'Last,
+            "ListObjects final page and extension parsing");
+      end;
+
+      Must_Reject_Document
+        ("<Wrong><Name>bucket</Name><MaxKeys>1</MaxKeys>" &
+         "<IsTruncated>false</IsTruncated></Wrong>",
+         "ListObjects wrong root was accepted");
+      Must_Reject_Document
+        (Empty_Listing ("<Name>again</Name>"),
+         "ListObjects duplicate singleton was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult><Name>bucket</Name><MaxKeys>1</MaxKeys>" &
+         "<IsTruncated>True</IsTruncated></ListBucketResult>",
+         "ListObjects invalid boolean was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult><Name>bucket</Name>" &
+         "<MaxKeys>999999999999999999999999</MaxKeys>" &
+         "<IsTruncated>false</IsTruncated></ListBucketResult>",
+         "ListObjects overflowing count was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult><Name>bucket</Name><MaxKeys>1</MaxKeys>" &
+         "<IsTruncated>false</IsTruncated>" &
+         "<Contents><Key>x</Key><Size>9223372036854775808</Size>" &
+         "</Contents></ListBucketResult>",
+         "ListObjects overflowing object size was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult><Name>bucket</Name><MaxKeys>0</MaxKeys>" &
+         "<IsTruncated>false</IsTruncated>" &
+         "<Contents><Key>x</Key><Size>1</Size></Contents>" &
+         "</ListBucketResult>",
+         "ListObjects result exceeding max keys was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult><Name>bucket</Name><Delimiter>/</Delimiter>" &
+         "<MaxKeys>1</MaxKeys><IsTruncated>true</IsTruncated>" &
+         "</ListBucketResult>",
+         "ListObjects truncated delimiter page without marker was accepted");
+      Must_Reject_Document
+        (Empty_Listing ("<NextMarker>unexpected</NextMarker>"),
+         "ListObjects marker on final page was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult><Name>bucket</Name><MaxKeys>1</MaxKeys>" &
+         "<IsTruncated>false</IsTruncated>" &
+         "<Contents><Key>x</Key></Contents></ListBucketResult>",
+         "ListObjects object without size was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult><Name>bucket</Name><MaxKeys>1</MaxKeys>" &
+         "<IsTruncated>false</IsTruncated>" &
+         "<Contents><Key>x</Key><Size>1</Size><Size>2</Size>" &
+         "</Contents></ListBucketResult>",
+         "ListObjects duplicate object field was accepted");
+      Must_Reject_Document
+        (Empty_Listing ("<Name><Nested/></Name>"),
+         "ListObjects nested scalar was accepted");
+      Must_Reject_Document
+        ("<ListBucketResult>non-whitespace<Name>bucket</Name>" &
+         "<MaxKeys>1</MaxKeys><IsTruncated>false</IsTruncated>" &
+         "</ListBucketResult>",
+         "ListObjects root text was accepted");
    end Check_List_Objects_V1_Codec;
 
    procedure Check_List_Objects_V2_Codec (Unused : in out Fixture) is

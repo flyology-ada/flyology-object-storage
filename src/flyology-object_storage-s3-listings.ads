@@ -88,6 +88,14 @@ package Flyology.Object_Storage.S3.Listings is
       Common_Prefixes : Prefix_List;
    end record;
 
+   --  Decode a ListObjects v1 REST/XML response through the bounded shared
+   --  S3 XML boundary. Required scalars, counts, object entries, delimiter
+   --  pagination, and encoding-type semantics are validated before return.
+   function Parse_List_Objects
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return List_Objects_Result;
+
    function Serialize_List_Objects
      (Value : List_Objects_Result) return String;
 

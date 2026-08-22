@@ -39,7 +39,8 @@ The core crate includes:
   member location, enumeration, XML trait, checksum trait, and authentication
   trait in the 116-operation botocore S3 model;
 - AWS-vector-tested SigV4 header signing and bounded, entity-safe REST/XML;
-- strict ListObjects v1 server query/response, typed ListObjectsV2, and
+- strict bounded ListObjects v1 request/response codecs, typed ListObjectsV2,
+  and
   multipart initiation/completion REST/XML codecs;
 - signed, bounded CreateBucket, HeadBucket, GetObject, HeadObject, PutObject,
   ListObjectsV2, DeleteBucket,

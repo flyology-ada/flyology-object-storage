@@ -367,6 +367,8 @@ package body Flyology.Object_Storage.S3.Listings is
       Prefix_Field,
       Delimiter_Field,
       Encoding_Type_Field,
+      Marker_Field,
+      Next_Marker_Field,
       Continuation_Token_Field,
       Next_Continuation_Token_Field,
       Start_After_Field,
@@ -381,9 +383,12 @@ package body Flyology.Object_Storage.S3.Listings is
       Common_Prefix_Field);
 
    type Parse_Context is (Root_Context, Object_Context, Prefix_Context);
+   type Listing_Version is (Version_1, Version_2);
 
-   type Listing_Handler is new XML.Event_Handler with record
-      Value                       : List_Objects_V2_Result;
+   type Listing_Handler (Version : Listing_Version) is
+     new XML.Event_Handler with record
+      V1_Value                    : List_Objects_Result;
+      V2_Value                    : List_Objects_V2_Result;
       Current_Object              : Object_Entry;
       Current_Prefix              : US.Unbounded_String;
       Text_Value                  : US.Unbounded_String;
@@ -395,6 +400,8 @@ package body Flyology.Object_Storage.S3.Listings is
       Seen_Prefix                 : Boolean := False;
       Seen_Delimiter              : Boolean := False;
       Seen_Encoding_Type          : Boolean := False;
+      Seen_Marker                 : Boolean := False;
+      Seen_Next_Marker            : Boolean := False;
       Seen_Continuation_Token     : Boolean := False;
       Seen_Next_Token             : Boolean := False;
       Seen_Start_After            : Boolean := False;
@@ -478,26 +485,54 @@ package body Flyology.Object_Storage.S3.Listings is
    begin
       case Item.Field is
          when Name_Field =>
-            Item.Value.Name := Item.Text_Value;
+            if Item.Version = Version_1 then
+               Item.V1_Value.Name := Item.Text_Value;
+            else
+               Item.V2_Value.Name := Item.Text_Value;
+            end if;
          when Prefix_Field =>
-            Item.Value.Prefix := Item.Text_Value;
+            if Item.Version = Version_1 then
+               Item.V1_Value.Prefix := Item.Text_Value;
+            else
+               Item.V2_Value.Prefix := Item.Text_Value;
+            end if;
          when Delimiter_Field =>
-            Item.Value.Delimiter := Item.Text_Value;
+            if Item.Version = Version_1 then
+               Item.V1_Value.Delimiter := Item.Text_Value;
+            else
+               Item.V2_Value.Delimiter := Item.Text_Value;
+            end if;
          when Encoding_Type_Field =>
-            Item.Value.Encoding_Type := Item.Text_Value;
+            if Item.Version = Version_1 then
+               Item.V1_Value.Encoding_Type := Item.Text_Value;
+            else
+               Item.V2_Value.Encoding_Type := Item.Text_Value;
+            end if;
+         when Marker_Field =>
+            Item.V1_Value.Marker := Item.Text_Value;
+         when Next_Marker_Field =>
+            Item.V1_Value.Next_Marker := Item.Text_Value;
          when Continuation_Token_Field =>
-            Item.Value.Continuation_Token := Item.Text_Value;
-            Item.Value.Has_Continuation_Token := True;
+            Item.V2_Value.Continuation_Token := Item.Text_Value;
+            Item.V2_Value.Has_Continuation_Token := True;
          when Next_Continuation_Token_Field =>
-            Item.Value.Next_Continuation_Token := Item.Text_Value;
+            Item.V2_Value.Next_Continuation_Token := Item.Text_Value;
          when Start_After_Field =>
-            Item.Value.Start_After := Item.Text_Value;
+            Item.V2_Value.Start_After := Item.Text_Value;
          when Key_Count_Field =>
-            Item.Value.Key_Count := Parse_Natural (Value);
+            Item.V2_Value.Key_Count := Parse_Natural (Value);
          when Max_Keys_Field =>
-            Item.Value.Max_Keys := Parse_Natural (Value);
+            if Item.Version = Version_1 then
+               Item.V1_Value.Max_Keys := Parse_Natural (Value);
+            else
+               Item.V2_Value.Max_Keys := Parse_Natural (Value);
+            end if;
          when Is_Truncated_Field =>
-            Item.Value.Is_Truncated := Parse_Boolean (Value);
+            if Item.Version = Version_1 then
+               Item.V1_Value.Is_Truncated := Parse_Boolean (Value);
+            else
+               Item.V2_Value.Is_Truncated := Parse_Boolean (Value);
+            end if;
          when Object_Key_Field =>
             Item.Current_Object.Key := Item.Text_Value;
          when Object_Last_Modified_Field =>
@@ -557,15 +592,25 @@ package body Flyology.Object_Storage.S3.Listings is
             Select_Field (Item, Item.Seen_Delimiter, Delimiter_Field);
          elsif Local_Name = "EncodingType" then
             Select_Field (Item, Item.Seen_Encoding_Type, Encoding_Type_Field);
-         elsif Local_Name = "ContinuationToken" then
+         elsif Item.Version = Version_1 and then Local_Name = "Marker" then
+            Select_Field (Item, Item.Seen_Marker, Marker_Field);
+         elsif Item.Version = Version_1
+           and then Local_Name = "NextMarker"
+         then
+            Select_Field (Item, Item.Seen_Next_Marker, Next_Marker_Field);
+         elsif Item.Version = Version_2
+           and then Local_Name = "ContinuationToken"
+         then
             Select_Field
               (Item, Item.Seen_Continuation_Token, Continuation_Token_Field);
-         elsif Local_Name = "NextContinuationToken" then
+         elsif Item.Version = Version_2
+           and then Local_Name = "NextContinuationToken"
+         then
             Select_Field
               (Item, Item.Seen_Next_Token, Next_Continuation_Token_Field);
-         elsif Local_Name = "StartAfter" then
+         elsif Item.Version = Version_2 and then Local_Name = "StartAfter" then
             Select_Field (Item, Item.Seen_Start_After, Start_After_Field);
-         elsif Local_Name = "KeyCount" then
+         elsif Item.Version = Version_2 and then Local_Name = "KeyCount" then
             Select_Field (Item, Item.Seen_Key_Count, Key_Count_Field);
          elsif Local_Name = "MaxKeys" then
             Select_Field (Item, Item.Seen_Max_Keys, Max_Keys_Field);
@@ -637,7 +682,11 @@ package body Flyology.Object_Storage.S3.Listings is
          then
             raise Malformed_Listing with "incomplete S3 object entry";
          end if;
-         Item.Value.Contents.Append (Item.Current_Object);
+         if Item.Version = Version_1 then
+            Item.V1_Value.Contents.Append (Item.Current_Object);
+         else
+            Item.V2_Value.Contents.Append (Item.Current_Object);
+         end if;
          Item.Context := Root_Context;
       elsif Item.Depth = 2 and then Item.Context = Prefix_Context then
          if not Item.Seen_Common_Prefix
@@ -645,7 +694,11 @@ package body Flyology.Object_Storage.S3.Listings is
          then
             raise Malformed_Listing with "incomplete S3 common prefix";
          end if;
-         Item.Value.Common_Prefixes.Append (Item.Current_Prefix);
+         if Item.Version = Version_1 then
+            Item.V1_Value.Common_Prefixes.Append (Item.Current_Prefix);
+         else
+            Item.V2_Value.Common_Prefixes.Append (Item.Current_Prefix);
+         end if;
          Item.Context := Root_Context;
       end if;
       Item.Depth := Item.Depth - 1;
@@ -692,7 +745,7 @@ package body Flyology.Object_Storage.S3.Listings is
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return List_Objects_V2_Result
    is
-      Handler : aliased Listing_Handler;
+      Handler : aliased Listing_Handler (Version_2);
    begin
       XML.Parse (Document, Handler, Limits);
       if not Handler.Seen_Name
@@ -702,8 +755,8 @@ package body Flyology.Object_Storage.S3.Listings is
       then
          raise Malformed_Listing with "S3 listing lacks required fields";
       end if;
-      Validate (Handler.Value);
-      return Handler.Value;
+      Validate (Handler.V2_Value);
+      return Handler.V2_Value;
    exception
       when XML.XML_Error =>
          raise Malformed_Listing with "malformed S3 listing XML";
@@ -765,6 +818,27 @@ package body Flyology.Object_Storage.S3.Listings is
          end if;
       end loop;
    end Validate;
+
+   function Parse_List_Objects
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return List_Objects_Result
+   is
+      Handler : aliased Listing_Handler (Version_1);
+   begin
+      XML.Parse (Document, Handler, Limits);
+      if not Handler.Seen_Name
+        or else not Handler.Seen_Max_Keys
+        or else not Handler.Seen_Is_Truncated
+      then
+         raise Malformed_Listing with "S3 listing lacks required fields";
+      end if;
+      Validate (Handler.V1_Value);
+      return Handler.V1_Value;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Listing with "malformed S3 listing XML";
+   end Parse_List_Objects;
 
    function Serialize_List_Objects
      (Value : List_Objects_Result) return String
