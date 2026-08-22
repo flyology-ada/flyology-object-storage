@@ -38,10 +38,31 @@ package Flyology.Object_Storage.S3.Deletions is
    package Delete_Error_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Delete_Error);
 
+   type Optional_Boolean is record
+      Is_Set : Boolean := False;
+      Value  : Boolean := False;
+   end record;
+
+   --  Every modeled member of one DeleteObjects Deleted result entry.
+   type Deleted_Object is record
+      Key                      : Ada.Strings.Unbounded.Unbounded_String;
+      Version_ID               : Ada.Strings.Unbounded.Unbounded_String;
+      Delete_Marker            : Optional_Boolean;
+      Delete_Marker_Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   package Deleted_Object_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Deleted_Object);
+
    type Delete_Objects_Result is record
-      Deleted : Object_Vectors.Vector;
+      Deleted : Deleted_Object_Vectors.Vector;
       Errors  : Delete_Error_Vectors.Vector;
    end record;
+
+   function Parse_Result
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Delete_Objects_Result;
 
    function Serialize_Result (Value : Delete_Objects_Result) return String;
 

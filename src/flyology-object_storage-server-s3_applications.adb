@@ -1560,7 +1560,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                               Result);
                            if Result in Success | Not_Found then
                               if not Request.Quiet then
-                                 Response.Deleted.Append (Item);
+                                 Response.Deleted.Append
+                                   (Deletions.Deleted_Object'
+                                      (Key        => Item.Key,
+                                       Version_ID => Item.Version_ID,
+                                       others     => <>));
                               end if;
                            else
                               Response.Errors.Append

@@ -20,6 +20,7 @@ with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Core;
+with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
@@ -3004,6 +3005,114 @@ package body Object_Storage_Test_Cases is
       end;
    end Check_Multipart_Completion_Codec;
 
+   procedure Check_Delete_Objects_Result_Codec
+     (Unused : in out Fixture)
+   is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Deletions renames Flyology.Object_Storage.S3.Deletions;
+      package US renames Ada.Strings.Unbounded;
+
+      procedure Must_Reject (Document, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Deletions.Delete_Objects_Result :=
+                 Deletions.Parse_Result (Document);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Deletions.Malformed_Delete =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Must_Reject;
+   begin
+      declare
+         Parsed : constant Deletions.Delete_Objects_Result :=
+           Deletions.Parse_Result
+             ("<DeleteResult xmlns=""http://s3.amazonaws.com/doc/" &
+              "2006-03-01/"">" &
+              "<Deleted><Key>a&amp;b</Key><VersionId>v1</VersionId>" &
+              "<DeleteMarker>false</DeleteMarker>" &
+              "<DeleteMarkerVersionId>dm1</DeleteMarkerVersionId>" &
+              "<Future>ignored</Future></Deleted>" &
+              "<Error><Key>bad&lt;key</Key><VersionId>v2</VersionId>" &
+              "<Code>AccessDenied</Code><Message>denied &amp; logged" &
+              "</Message></Error><Extension><Nested/></Extension>" &
+              "</DeleteResult>");
+         Round_Trip : constant Deletions.Delete_Objects_Result :=
+           Deletions.Parse_Result (Deletions.Serialize_Result (Parsed));
+      begin
+         Assert
+           (Parsed.Deleted.Length = 1
+            and then Parsed.Errors.Length = 1
+            and then US.To_String (Parsed.Deleted.First_Element.Key) =
+              "a&b"
+            and then Parsed.Deleted.First_Element.Delete_Marker.Is_Set
+            and then not Parsed.Deleted.First_Element.Delete_Marker.Value
+            and then US.To_String
+              (Parsed.Deleted.First_Element.Delete_Marker_Version_ID) =
+                "dm1"
+            and then US.To_String (Parsed.Errors.First_Element.Key) =
+              "bad<key"
+            and then US.To_String (Parsed.Errors.First_Element.Code) =
+              "AccessDenied"
+            and then Round_Trip.Deleted.Length = 1
+            and then Round_Trip.Errors.Length = 1,
+            "DeleteObjects result fields and round trip");
+      end;
+
+      declare
+         Empty : constant Deletions.Delete_Objects_Result :=
+           Deletions.Parse_Result ("<DeleteResult/>");
+      begin
+         Assert
+           (Empty.Deleted.Is_Empty and then Empty.Errors.Is_Empty,
+            "quiet empty DeleteObjects result");
+      end;
+
+      Must_Reject
+        ("<Wrong/>", "DeleteObjects result wrong root was accepted");
+      Must_Reject
+        ("<DeleteResult><Deleted><VersionId>v</VersionId>" &
+         "</Deleted></DeleteResult>",
+         "DeleteObjects deleted entry without key was accepted");
+      Must_Reject
+        ("<DeleteResult><Error><Key>k</Key><Message>m</Message>" &
+         "</Error></DeleteResult>",
+         "DeleteObjects error entry without code was accepted");
+      Must_Reject
+        ("<DeleteResult><Deleted><Key>one</Key><Key>two</Key>" &
+         "</Deleted></DeleteResult>",
+         "duplicate DeleteObjects result field was accepted");
+      Must_Reject
+        ("<DeleteResult><Deleted><Key>k</Key>" &
+         "<DeleteMarker>maybe</DeleteMarker></Deleted></DeleteResult>",
+         "invalid DeleteObjects marker boolean was accepted");
+      Must_Reject
+        ("<DeleteResult><Error><Key><Nested/></Key>" &
+         "<Code>Bad</Code></Error></DeleteResult>",
+         "nested DeleteObjects result scalar was accepted");
+      declare
+         Document : US.Unbounded_String :=
+           US.To_Unbounded_String ("<DeleteResult>");
+      begin
+         for Index in 1 .. Deletions.Maximum_Objects + 1 loop
+            US.Append
+              (Document, "<Deleted><Key>k" & Index'Image &
+               "</Key></Deleted>");
+         end loop;
+         US.Append (Document, "</DeleteResult>");
+         Must_Reject
+           (US.To_String (Document),
+            "DeleteObjects result exceeded the 1,000-entry bound");
+      end;
+   end Check_Delete_Objects_Result_Codec;
+
    procedure Check_Low_Level_List_Request (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
@@ -4854,6 +4963,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.multipart-completion-codec",
             Check_Multipart_Completion_Codec'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.delete-objects-result-codec",
+            Check_Delete_Objects_Result_Codec'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.low-level-list-request",
