@@ -76,7 +76,8 @@ package Flyology.Object_Storage.Backends.SQLite is
       Configuration : Bucket_Versioning_Configuration;
       Token         : access Flyology.Cancellation.Token;
       Deadline      : Ada.Real_Time.Time;
-      Result        : out Status);
+      Result        : out Status;
+      MFA_Validated : Boolean := False);
 
    overriding procedure Get_Bucket_Versioning
      (Item          : in out Store;

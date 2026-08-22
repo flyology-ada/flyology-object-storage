@@ -17,6 +17,7 @@ procedure Files_Crash_Probe is
    use type Flyology.Object_Storage.Status;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type Flyology.Object_Storage.Checksum_Algorithm;
+   use type Flyology.Object_Storage.MFA_Delete_Status;
    package US renames Ada.Strings.Unbounded;
    package Storage renames Flyology.Object_Storage;
    package Backends renames Flyology.Object_Storage.Backends;
@@ -207,8 +208,9 @@ procedure Files_Crash_Probe is
             Store.Put_Bucket_Versioning
               (Bucket,
                (Status     => Storage.Versioning_Enabled,
-                MFA_Delete => Storage.MFA_Delete_Unconfigured),
-               null, Ada.Real_Time.Time_Last, Result);
+                MFA_Delete => Storage.MFA_Delete_Disabled),
+               null, Ada.Real_Time.Time_Last, Result,
+               MFA_Validated => True);
             Require (Result = Storage.Success,
                      "could not prepare versioning configuration");
          elsif Scenario not in "initiate" | "delete-bucket" then
@@ -298,8 +300,9 @@ procedure Files_Crash_Probe is
          Store.Put_Bucket_Versioning
            (Bucket,
             (Status     => Storage.Versioning_Suspended,
-             MFA_Delete => Storage.MFA_Delete_Unconfigured),
-            null, Ada.Real_Time.Time_Last, Result);
+             MFA_Delete => Storage.MFA_Delete_Enabled),
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => True);
       elsif Scenario = "complete" then
          Upload_ID := US.To_Unbounded_String (Only_Upload (Store));
          declare
@@ -452,9 +455,13 @@ procedure Files_Crash_Probe is
             Require
               (Result = Storage.Success
                and then
-                 Configuration.Status in
-                   Storage.Versioning_Enabled |
-                   Storage.Versioning_Suspended,
+                 ((Configuration.Status = Storage.Versioning_Enabled
+                   and then Configuration.MFA_Delete =
+                     Storage.MFA_Delete_Disabled)
+                  or else
+                  (Configuration.Status = Storage.Versioning_Suspended
+                   and then Configuration.MFA_Delete =
+                     Storage.MFA_Delete_Enabled)),
                "crash exposed a partial versioning configuration");
          end;
       else

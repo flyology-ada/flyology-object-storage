@@ -2,6 +2,7 @@ with Ada.Calendar;
 with Flyology.HTTP.Server.Applications;
 with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Server.Authentication;
+with Flyology.Object_Storage.Server.MFA;
 
 --  Binds one pluggable backend and credential provider into an authenticated
 --  path-style S3 application callback. Each Handle call owns its request and
@@ -12,6 +13,7 @@ generic
    type Credential_Provider_Type (<>) is limited new
      Authentication.Credential_Provider with private;
    Credentials : in out Credential_Provider_Type;
+   MFA_Verifier : MFA.Verifier_Access := null;
    Rules       : Authentication.Policy := Authentication.Default_Policy;
    with function Clock return Ada.Calendar.Time is Ada.Calendar.Clock;
 package Flyology.Object_Storage.Server.S3_Applications is

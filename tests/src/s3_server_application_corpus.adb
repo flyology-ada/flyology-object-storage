@@ -30,6 +30,7 @@ with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.Tags;
 with Flyology.Object_Storage.Server.Authentication;
+with Flyology.Object_Storage.Server.MFA;
 with Flyology.Object_Storage.Server.S3_Applications;
 with Flyology.Object_Storage.Server.Static_Credentials;
 
@@ -55,6 +56,7 @@ procedure S3_Server_Application_Corpus is
    package Versioning renames Flyology.Object_Storage.S3.Versioning;
    package Authentication renames
      Flyology.Object_Storage.Server.Authentication;
+   package MFA renames Flyology.Object_Storage.Server.MFA;
    package Static_Credentials renames
      Flyology.Object_Storage.Server.Static_Credentials;
    package US renames Ada.Strings.Unbounded;
@@ -63,6 +65,7 @@ procedure S3_Server_Application_Corpus is
    use type Ada.Calendar.Time;
    use type Flyology.Object_Storage.Status;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
+   use type MFA.Authorization_Status;
    use type Tags.Tag_Vectors.Vector;
 
    CRLF : constant String := Character'Val (13) & Character'Val (10);
@@ -270,6 +273,40 @@ procedure S3_Server_Application_Corpus is
      (Ada.Calendar.Formatting.Time_Of
         (2013, 5, 24, 0, 0, 0, Time_Zone => 0));
 
+   type MFA_Mode is
+     (MFA_Allow_Root, MFA_Reject_Root, MFA_Unavailable, MFA_Raise);
+
+   type Test_MFA_Verifier is limited new MFA.Verifier with record
+      Mode  : MFA_Mode := MFA_Allow_Root;
+      Calls : Natural := 0;
+   end record;
+
+   overriding procedure Verify
+     (Item    : in out Test_MFA_Verifier;
+      Principal : String;
+      Credential : String;
+      Secure_Transport : Boolean;
+      Result  : out MFA.Authorization_Status)
+   is
+   begin
+      Item.Calls := Item.Calls + 1;
+      if Item.Mode = MFA_Raise then
+         raise Program_Error with "MFA verifier sentinel";
+      elsif not Secure_Transport then
+         Result := MFA.Insecure_Transport;
+      elsif Item.Mode = MFA_Unavailable then
+         Result := MFA.Verifier_Unavailable;
+      elsif Item.Mode = MFA_Reject_Root
+        or else Principal /= "test-principal"
+      then
+         Result := MFA.Not_Root_Owner;
+      elsif Credential = "device 123456" then
+         Result := MFA.Authorized;
+      else
+         Result := MFA.Invalid_Credential;
+      end if;
+   end Verify;
+
    Store : Flyology.Object_Storage.Backends.Memory.Store
      (Bucket_Capacity => 8,
       Object_Capacity => 16,
@@ -277,11 +314,22 @@ procedure S3_Server_Application_Corpus is
    Credentials : Static_Credentials.Provider :=
      Static_Credentials.Create
        (Access_Key, Secret_Key, Principal => "test-principal");
+   MFA_Policy : aliased Test_MFA_Verifier;
    Rules : constant Authentication.Policy :=
      (Expected_Region    => US.To_Unbounded_String (Region),
       Maximum_Clock_Skew => 1.0);
 
    package S3_App is new Flyology.Object_Storage.Server.S3_Applications
+     (Backend_Type            =>
+        Flyology.Object_Storage.Backends.Memory.Store,
+      Store                   => Store,
+      Credential_Provider_Type => Static_Credentials.Provider,
+      Credentials             => Credentials,
+      MFA_Verifier            => MFA_Policy'Unchecked_Access,
+      Rules                   => Rules,
+      Clock                   => Fixed_Clock);
+
+   package No_MFA_App is new Flyology.Object_Storage.Server.S3_Applications
      (Backend_Type            =>
         Flyology.Object_Storage.Backends.Memory.Store,
       Store                   => Store,
@@ -829,7 +877,10 @@ procedure S3_Server_Application_Corpus is
 
    function Run_Unbounded
      (Input : US.Unbounded_String;
-      Receive_Max : Natural := Natural'Last) return US.Unbounded_String
+      Receive_Max : Natural := Natural'Last;
+      Scheme      : Flyology.HTTP.Origin_Scheme := Flyology.HTTP.Plain_HTTP;
+      Use_Null_MFA : Boolean := False)
+     return US.Unbounded_String
    is
       Wire : aliased Memory_Transport;
    begin
@@ -844,11 +895,15 @@ procedure S3_Server_Application_Corpus is
          Require (not Closed, "peer closed before S3 request head");
          declare
             X : Apps.Exchange := Apps.Create
-              (Request, Client,
-               Sockets.Network_Endpoint (Sockets.Loopback_IPv4, 12_345),
-               null, HTTP_Server.Request_Deadline (Client));
+               (Request, Client,
+                Sockets.Network_Endpoint (Sockets.Loopback_IPv4, 12_345),
+               null, HTTP_Server.Request_Deadline (Client), Scheme);
          begin
-            S3_App.Handle (X);
+            if Use_Null_MFA then
+               No_MFA_App.Handle (X);
+            else
+               S3_App.Handle (X);
+            end if;
          end;
       end;
       return Wire.Output;
@@ -859,9 +914,15 @@ procedure S3_Server_Application_Corpus is
       Receive_Max : Natural := Natural'Last) return US.Unbounded_String is
      (Run_Unbounded (US.To_Unbounded_String (Input), Receive_Max));
 
-   function Run (Input : String; Receive_Max : Natural := Natural'Last)
-     return String is
-     (US.To_String (Run_Unbounded (Input, Receive_Max)));
+   function Run
+     (Input       : String;
+      Receive_Max : Natural := Natural'Last;
+      Scheme      : Flyology.HTTP.Origin_Scheme := Flyology.HTTP.Plain_HTTP;
+      Use_Null_MFA : Boolean := False) return String
+   is (US.To_String
+         (Run_Unbounded
+            (US.To_Unbounded_String (Input), Receive_Max, Scheme,
+             Use_Null_MFA)));
 
    function Has (Value, Pattern : String) return Boolean is
      (Ada.Strings.Fixed.Index (Value, Pattern) /= 0);
@@ -889,7 +950,8 @@ procedure S3_Server_Application_Corpus is
       Checksum_Value : String := "";
       Checksum_Value_Algorithm : Checksum_Policy.Algorithm := Core.CRC32;
       Owner        : String := "";
-      Duplicate_MD5 : String := "") return String
+      Duplicate_MD5 : String := "";
+      Duplicate_MFA : String := "") return String
    is
       Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
       Header_Count : constant Positive :=
@@ -916,7 +978,10 @@ procedure S3_Server_Application_Corpus is
       end if;
       if MFA'Length > 0 then
          Last := Last + 1;
-         Headers (Last) := SigV4.Pair ("x-amz-mfa", MFA);
+         Headers (Last) := SigV4.Pair
+           ("x-amz-mfa",
+            MFA & (if Duplicate_MFA'Length = 0 then ""
+                   else ", " & Duplicate_MFA));
       end if;
       if Checksum'Length > 0 then
          Last := Last + 1;
@@ -945,6 +1010,8 @@ procedure S3_Server_Application_Corpus is
         "x-amz-content-sha256: " & Payload_Hash & CRLF &
         (if MFA'Length = 0 then ""
          else "x-amz-mfa: " & MFA & CRLF) &
+        (if Duplicate_MFA'Length = 0 then ""
+         else "x-amz-mfa: " & Duplicate_MFA & CRLF) &
         (if Checksum'Length = 0 then ""
          else "x-amz-sdk-checksum-algorithm: " & Checksum & CRLF) &
         (if Checksum_Value'Length = 0 then ""
@@ -2821,6 +2888,7 @@ begin
    end;
 
    declare
+      use Flyology.Object_Storage;
       Query : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("versioning", ""));
       Enabled_Document : constant String :=
@@ -2999,22 +3067,186 @@ begin
                "<Code>EntityTooLarge</Code>"),
             "PutBucketVersioning accepted an oversized document");
       end;
-      Require
-        (Has
-           (Run
-              (Signed_Versioning_Request
-                 (Enabled_Document, Content_MD5 (Enabled_Document),
-                  MFA => "123456 789012")),
-            "<Code>NotImplemented</Code>"),
-         "PutBucketVersioning pretended to enforce MFA");
+      declare
+         Calls : constant Natural := MFA_Policy.Calls;
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Versioning_Request
+                    (Enabled_Document, Content_MD5 (Enabled_Document),
+                     MFA => "device 123456")),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketVersioning accepted MFA over cleartext HTTP");
+         Require
+           (MFA_Policy.Calls = Calls,
+            "insecure MFA credential reached the verifier");
+      end;
+      declare
+         Calls : constant Natural := MFA_Policy.Calls;
+         Overlong : constant String
+           (1 .. MFA.Maximum_Credential_Bytes + 1) := (others => 'x');
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Versioning_Request
+                    (Enabled_Document, Content_MD5 (Enabled_Document),
+                     MFA => Overlong),
+                  Scheme => Flyology.HTTP.Secure_HTTPS),
+               "<Code>AccessDenied</Code>"),
+            "PutBucketVersioning accepted an overlong MFA credential");
+         Require
+           (MFA_Policy.Calls = Calls,
+            "overlong MFA credential reached the verifier");
+      end;
+      declare
+         Calls : constant Natural := MFA_Policy.Calls;
+         Response : constant String :=
+           Run
+             (Signed_Versioning_Request
+                (Enabled_Document, Content_MD5 (Enabled_Document),
+                 MFA => "device 123456",
+                 Duplicate_MFA => "device 123456"),
+              Scheme => Flyology.HTTP.Secure_HTTPS);
+      begin
+         Require
+           (Has (Response, "<Code>InvalidRequest</Code>"),
+            "PutBucketVersioning accepted duplicate MFA headers: " &
+            Response);
+         Require
+           (MFA_Policy.Calls = Calls,
+            "duplicate MFA headers reached the verifier");
+      end;
       Require
         (Has
            (Run
               (Signed_Versioning_Request
                  (MFA_Document, Content_MD5 (MFA_Document),
-                  MFA => "123456 789012")),
-            "<Code>NotImplemented</Code>"),
-         "PutBucketVersioning accepted MFA-delete configuration");
+                  MFA => "device 123456"),
+             Scheme => Flyology.HTTP.Secure_HTTPS),
+            "200 OK"),
+         "PutBucketVersioning rejected verified root MFA Delete enable");
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket", Query));
+         Value : constant Bucket_Versioning_Configuration :=
+           Versioning.Parse_Response (Response_Body (Response));
+      begin
+         Require
+           (Value.Status = Versioning_Enabled
+            and then Value.MFA_Delete = MFA_Delete_Enabled,
+            "GetBucketVersioning lost verified MFA Delete state");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Suspended_Document, Content_MD5 (Suspended_Document))),
+            "<Code>AccessDenied</Code>"),
+         "MFA-enabled versioning changed without a credential");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Suspended_Document, Content_MD5 (Suspended_Document),
+                  MFA => "device 000000"),
+             Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>AccessDenied</Code>"),
+         "MFA-enabled versioning accepted an invalid credential");
+      MFA_Policy.Mode := MFA_Reject_Root;
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Suspended_Document, Content_MD5 (Suspended_Document),
+                  MFA => "device 123456"),
+             Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>AccessDenied</Code>"),
+         "PutBucketVersioning treated an authenticated non-root as owner");
+      MFA_Policy.Mode := MFA_Unavailable;
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Suspended_Document, Content_MD5 (Suspended_Document),
+                  MFA => "device 123456"),
+             Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>AccessDenied</Code>"),
+         "PutBucketVersioning did not fail closed without an MFA verifier");
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Suspended_Document, Content_MD5 (Suspended_Document),
+                  MFA => "device 123456"),
+             Scheme => Flyology.HTTP.Secure_HTTPS,
+             Use_Null_MFA => True),
+            "<Code>AccessDenied</Code>"),
+         "null MFA verifier configuration did not fail closed");
+      MFA_Policy.Mode := MFA_Raise;
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Suspended_Document, Content_MD5 (Suspended_Document),
+                  MFA => "device 123456"),
+             Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>AccessDenied</Code>"),
+         "PutBucketVersioning exposed an MFA verifier exception");
+      MFA_Policy.Mode := MFA_Allow_Root;
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket", Query));
+         Value : constant Bucket_Versioning_Configuration :=
+           Versioning.Parse_Response (Response_Body (Response));
+      begin
+         Require
+           (Value.Status = Versioning_Enabled
+            and then Value.MFA_Delete = MFA_Delete_Enabled,
+            "rejected MFA requests changed versioning configuration");
+      end;
+      declare
+         MFA_Only_Document : constant String :=
+           "<VersioningConfiguration xmlns=""" &
+           "http://s3.amazonaws.com/doc/2006-03-01/"">" &
+           "<MfaDelete>Disabled</MfaDelete>" &
+           "</VersioningConfiguration>";
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Versioning_Request
+                    (MFA_Only_Document, Content_MD5 (MFA_Only_Document),
+                     MFA => "device 123456"),
+                Scheme => Flyology.HTTP.Secure_HTTPS),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketVersioning accepted MfaDelete without Status");
+      end;
+      declare
+         Disable_Document : constant String :=
+           "<VersioningConfiguration xmlns=""" &
+           "http://s3.amazonaws.com/doc/2006-03-01/"">" &
+           "<MfaDelete>Disabled</MfaDelete>" &
+           "<Status>Suspended</Status></VersioningConfiguration>";
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Versioning_Request
+                    (Disable_Document, Content_MD5 (Disable_Document),
+                     MFA => "device 123456"),
+                Scheme => Flyology.HTTP.Secure_HTTPS),
+               "200 OK"),
+            "PutBucketVersioning rejected verified MFA Delete disable");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Versioning_Request
+                 (Enabled_Document, Content_MD5 (Enabled_Document))),
+            "200 OK"),
+         "disabled MFA Delete still required a credential");
       Require
         (Has
            (Run

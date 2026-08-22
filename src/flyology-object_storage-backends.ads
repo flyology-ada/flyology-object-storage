@@ -390,14 +390,18 @@ package Flyology.Object_Storage.Backends is
    --  Atomically apply one bucket's versioning configuration. Unconfigured
    --  fields are left unchanged, allowing status and MFA-delete policy to be
    --  changed independently. This does not create object versions or change
-   --  object mutation semantics.
+   --  object mutation semantics. MFA_Validated is a fail-closed attestation
+   --  from the caller's authorization policy. False rejects any MFA-delete
+   --  change and every status change while current MFA Delete is enabled;
+   --  the check and configuration publication are one atomic boundary.
    procedure Put_Bucket_Versioning
      (Item          : in out Backend;
       Bucket        : String;
       Configuration : Bucket_Versioning_Configuration;
       Token         : access Flyology.Cancellation.Token;
       Deadline      : Ada.Real_Time.Time;
-      Result        : out Status) is abstract;
+      Result        : out Status;
+      MFA_Validated : Boolean := False) is abstract;
 
    --  Return one atomic configuration snapshot. A newly created bucket
    --  returns both fields Unconfigured.

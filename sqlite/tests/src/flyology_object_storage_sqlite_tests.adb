@@ -690,6 +690,89 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       when others =>
          Monitor.Record_Failure;
    end Catalog_Worker;
+
+   protected type Versioning_Race_Control is
+      procedure Ready;
+      entry Start;
+      procedure Record_Result
+        (MFA_Writer : Boolean; Value : Flyology.Object_Storage.Status);
+      entry Wait_Complete;
+      function Outcome
+        (MFA_Writer : Boolean) return Flyology.Object_Storage.Status;
+   private
+      Ready_Count : Natural range 0 .. 2 := 0;
+      Complete_Count : Natural range 0 .. 2 := 0;
+      MFA_Outcome : Flyology.Object_Storage.Status :=
+        Flyology.Object_Storage.Backend_Unavailable;
+      Status_Outcome : Flyology.Object_Storage.Status :=
+        Flyology.Object_Storage.Backend_Unavailable;
+   end Versioning_Race_Control;
+
+   protected body Versioning_Race_Control is
+      procedure Ready is
+      begin
+         Ready_Count := Ready_Count + 1;
+      end Ready;
+
+      entry Start when Ready_Count = 2 is
+      begin
+         null;
+      end Start;
+
+      procedure Record_Result
+        (MFA_Writer : Boolean; Value : Flyology.Object_Storage.Status)
+      is
+      begin
+         if MFA_Writer then
+            MFA_Outcome := Value;
+         else
+            Status_Outcome := Value;
+         end if;
+         Complete_Count := Complete_Count + 1;
+      end Record_Result;
+
+      entry Wait_Complete when Complete_Count = 2 is
+      begin
+         null;
+      end Wait_Complete;
+
+      function Outcome
+        (MFA_Writer : Boolean) return Flyology.Object_Storage.Status
+      is (if MFA_Writer then MFA_Outcome else Status_Outcome);
+   end Versioning_Race_Control;
+
+   type Versioning_Race_Access is access all Versioning_Race_Control;
+
+   task type Versioning_Worker
+     (Item       : Catalog_Access;
+      Control    : Versioning_Race_Access;
+      MFA_Writer : Boolean);
+
+   task body Versioning_Worker is
+      Result : Flyology.Object_Storage.Status :=
+        Flyology.Object_Storage.Backend_Unavailable;
+   begin
+      Control.Ready;
+      Control.Start;
+      if MFA_Writer then
+         Catalogs.Put_Bucket_Versioning
+           (Item.all, "catalog-bucket",
+            (Status => Flyology.Object_Storage.Versioning_Unconfigured,
+             MFA_Delete => Flyology.Object_Storage.MFA_Delete_Enabled),
+            Result, MFA_Validated => True);
+      else
+         Catalogs.Put_Bucket_Versioning
+           (Item.all, "catalog-bucket",
+            (Status => Flyology.Object_Storage.Versioning_Suspended,
+             MFA_Delete => Flyology.Object_Storage.MFA_Delete_Unconfigured),
+            Result, MFA_Validated => False);
+      end if;
+      Control.Record_Result (MFA_Writer, Result);
+   exception
+      when others =>
+         Control.Record_Result
+           (MFA_Writer, Flyology.Object_Storage.Backend_Unavailable);
+   end Versioning_Worker;
 begin
    if Flyology.Object_Storage.SQLite.SQLite_Version /= "3.53.4" then
       raise Program_Error with "unexpected SQLite version";
@@ -904,7 +987,7 @@ begin
         (Catalog, "catalog-bucket",
          (Status => Flyology.Object_Storage.Versioning_Unconfigured,
           MFA_Delete => Flyology.Object_Storage.MFA_Delete_Disabled),
-         Result);
+         Result, MFA_Validated => True);
       Catalogs.Get_Bucket_Versioning
         (Catalog, "catalog-bucket", Versioning, Result);
       Assert
@@ -914,6 +997,80 @@ begin
          and then Versioning.MFA_Delete =
            Flyology.Object_Storage.MFA_Delete_Disabled,
          "catalog versioning fields were not merged atomically");
+      Catalogs.Put_Bucket_Versioning
+        (Catalog, "catalog-bucket",
+         (Status => Flyology.Object_Storage.Versioning_Enabled,
+          MFA_Delete => Flyology.Object_Storage.MFA_Delete_Enabled),
+         Result, MFA_Validated => True);
+      Catalogs.Put_Bucket_Versioning
+        (Catalog, "catalog-bucket",
+         (Status => Flyology.Object_Storage.Versioning_Suspended,
+          MFA_Delete => Flyology.Object_Storage.MFA_Delete_Unconfigured),
+         Result, MFA_Validated => False);
+      Assert
+        (Result = Flyology.Object_Storage.Access_Denied,
+         "catalog gate accepted unverified MFA-protected update");
+      Catalogs.Get_Bucket_Versioning
+        (Catalog, "catalog-bucket", Versioning, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Versioning.Status =
+           Flyology.Object_Storage.Versioning_Enabled
+         and then Versioning.MFA_Delete =
+           Flyology.Object_Storage.MFA_Delete_Enabled,
+         "catalog denied MFA update changed stored state");
+      Catalogs.Put_Bucket_Versioning
+        (Catalog, "catalog-bucket",
+         (Status => Flyology.Object_Storage.Versioning_Enabled,
+          MFA_Delete => Flyology.Object_Storage.MFA_Delete_Disabled),
+         Result, MFA_Validated => True);
+
+      for Round in 1 .. 16 loop
+         Catalogs.Put_Bucket_Versioning
+           (Catalog, "catalog-bucket",
+            (Status => Flyology.Object_Storage.Versioning_Enabled,
+             MFA_Delete => Flyology.Object_Storage.MFA_Delete_Disabled),
+            Result, MFA_Validated => True);
+         Assert
+           (Result = Flyology.Object_Storage.Success,
+            "catalog MFA race setup failed");
+         declare
+            Control : aliased Versioning_Race_Control;
+            MFA_Task : Versioning_Worker
+              (Catalog'Access, Control'Unchecked_Access, True);
+            Status_Task : Versioning_Worker
+              (Catalog'Access, Control'Unchecked_Access, False);
+         begin
+            Control.Wait_Complete;
+            Catalogs.Get_Bucket_Versioning
+              (Catalog, "catalog-bucket", Versioning, Result);
+            Assert
+              (Result = Flyology.Object_Storage.Success
+               and then Control.Outcome (True) =
+                 Flyology.Object_Storage.Success
+               and then
+                 ((Control.Outcome (False) =
+                     Flyology.Object_Storage.Success
+                   and then Versioning.Status =
+                     Flyology.Object_Storage.Versioning_Suspended
+                   and then Versioning.MFA_Delete =
+                     Flyology.Object_Storage.MFA_Delete_Enabled)
+                  or else
+                  (Control.Outcome (False) =
+                     Flyology.Object_Storage.Access_Denied
+                   and then Versioning.Status =
+                     Flyology.Object_Storage.Versioning_Enabled
+                   and then Versioning.MFA_Delete =
+                     Flyology.Object_Storage.MFA_Delete_Enabled)),
+               "catalog MFA publication race was not atomic in round" &
+               Positive'Image (Round));
+         end;
+      end loop;
+      Catalogs.Put_Bucket_Versioning
+        (Catalog, "catalog-bucket",
+         (Status => Flyology.Object_Storage.Versioning_Enabled,
+          MFA_Delete => Flyology.Object_Storage.MFA_Delete_Enabled),
+         Result, MFA_Validated => True);
 
       Info :=
         (Size         => 42,
@@ -1139,7 +1296,7 @@ begin
          and then Versioning.Status =
            Flyology.Object_Storage.Versioning_Enabled
          and then Versioning.MFA_Delete =
-           Flyology.Object_Storage.MFA_Delete_Disabled,
+           Flyology.Object_Storage.MFA_Delete_Enabled,
          "catalog versioning configuration did not survive reopen");
       declare
          use Flyology.Object_Storage.Backends;
@@ -1550,7 +1707,7 @@ begin
         (Catalog, "legacy-bucket",
          (Status => Flyology.Object_Storage.Versioning_Suspended,
           MFA_Delete => Flyology.Object_Storage.MFA_Delete_Disabled),
-         Result);
+         Result, MFA_Validated => True);
       Catalogs.Get_Bucket_Versioning
         (Catalog, "legacy-bucket", Configuration, Result);
       Assert
@@ -2003,7 +2160,8 @@ begin
            ("sqlite-bucket",
             (Status => Versioning_Unconfigured,
              MFA_Delete => MFA_Delete_Disabled),
-            null, Ada.Real_Time.Time_Last, Result);
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => True);
          Store.Get_Bucket_Versioning
            ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
             Configuration, Result);
@@ -2012,6 +2170,35 @@ begin
             and then Configuration.Status = Versioning_Enabled
             and then Configuration.MFA_Delete = MFA_Delete_Disabled,
             "SQLite backend versioning fields did not merge atomically");
+         Store.Put_Bucket_Versioning
+           ("sqlite-bucket",
+            (Status => Versioning_Enabled,
+             MFA_Delete => MFA_Delete_Enabled),
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => True);
+         Store.Put_Bucket_Versioning
+           ("sqlite-bucket",
+            (Status => Versioning_Suspended,
+             MFA_Delete => MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => False);
+         Assert
+           (Result = Access_Denied,
+            "SQLite publication gate accepted unverified MFA update");
+         Store.Get_Bucket_Versioning
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Configuration, Result);
+         Assert
+           (Result = Success
+            and then Configuration.Status = Versioning_Enabled
+            and then Configuration.MFA_Delete = MFA_Delete_Enabled,
+            "SQLite denied MFA update changed stored configuration");
+         Store.Put_Bucket_Versioning
+           ("sqlite-bucket",
+            (Status => Versioning_Enabled,
+             MFA_Delete => MFA_Delete_Enabled),
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => True);
          Store.Get_Bucket_Versioning
            ("missing-bucket", null, Ada.Real_Time.Time_Last,
             Configuration, Result);
@@ -2647,7 +2834,7 @@ begin
          Assert
            (Result = Success
             and then Configuration.Status = Versioning_Enabled
-            and then Configuration.MFA_Delete = MFA_Delete_Disabled,
+            and then Configuration.MFA_Delete = MFA_Delete_Enabled,
             "SQLite backend versioning configuration did not survive reopen");
       end;
       Store.Head_Object

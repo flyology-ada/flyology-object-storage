@@ -77,7 +77,8 @@ package Flyology.Object_Storage.Backends.Memory is
       Configuration : Bucket_Versioning_Configuration;
       Token         : access Flyology.Cancellation.Token;
       Deadline      : Ada.Real_Time.Time;
-      Result        : out Status);
+      Result        : out Status;
+      MFA_Validated : Boolean := False);
 
    overriding procedure Get_Bucket_Versioning
      (Item          : in out Store;
@@ -350,7 +351,8 @@ private
       procedure Put_Bucket_Versioning
         (Name          : String;
          Configuration : Bucket_Versioning_Configuration;
-         Result        : out Status);
+         Result        : out Status;
+         MFA_Validated : Boolean := False);
       procedure Get_Bucket_Versioning
         (Name          : String;
          Configuration : out Bucket_Versioning_Configuration;

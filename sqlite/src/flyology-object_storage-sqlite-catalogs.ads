@@ -35,7 +35,8 @@ package Flyology.Object_Storage.SQLite.Catalogs is
      (Item          : in out Catalog;
       Name          : String;
       Configuration : Bucket_Versioning_Configuration;
-      Result        : out Status);
+      Result        : out Status;
+      MFA_Validated : Boolean := False);
 
    procedure Get_Bucket_Versioning
      (Item          : in out Catalog;

@@ -382,6 +382,39 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Set_Versioning_Outcome;
 
+   --  Apply the complete modeled bucket-versioning configuration. Changing
+   --  MFA Delete requires an explicit versioning status, an MFA credential,
+   --  and a secure HTTPS origin. The credential is retained only while the
+   --  synchronous request is signed and executed. This configures the bucket;
+   --  it does not claim object-version publication or listing support.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact secure origin used to configure and sign requests
+   --  @param Bucket Bucket whose configuration is changed
+   --  @param Configuration Presence-preserving Status and MfaDelete members
+   --  @param Identity Credentials used only while signing this request
+   --  @param MFA Optional physical-device header; required for MFA Delete
+   --  @param Checksum_Algorithm Optional modeled request checksum algorithm
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Completed configuration update or structured S3 rejection
+   function Set_Versioning_Configuration
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Configuration : Bucket_Versioning_Configuration;
+      Identity : Low_Level.Credentials;
+      MFA      : String := "";
+      Checksum_Algorithm : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Set_Versioning_Outcome;
+
    type Get_Versioning_Outcome_Kind is
      (Versioning_Found, Get_Versioning_Rejected);
 

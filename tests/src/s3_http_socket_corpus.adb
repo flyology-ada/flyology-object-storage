@@ -2279,10 +2279,14 @@ procedure S3_HTTP_Socket_Corpus is
          end;
          declare
             Set_Result : constant Client_Buckets.Set_Versioning_Outcome :=
-              Client_Buckets.Set_Versioning
+              Client_Buckets.Set_Versioning_Configuration
                 (HTTP, Origin, "example-bucket",
-                 Flyology.Object_Storage.Versioning_Suspended,
-                 Identity, Timeout => 5.0);
+                 (Status => Flyology.Object_Storage.Versioning_Suspended,
+                  MFA_Delete =>
+                    Flyology.Object_Storage.MFA_Delete_Unconfigured),
+                 Identity, Checksum_Algorithm => "SHA256",
+                 Expected_Bucket_Owner => "123456789012",
+                 Timeout => 5.0);
             Get_Result : constant Client_Buckets.Get_Versioning_Outcome :=
               Client_Buckets.Get_Versioning
                 (HTTP, Origin, "example-bucket", Identity,

@@ -428,7 +428,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Configuration : Bucket_Versioning_Configuration;
       Token         : access Flyology.Cancellation.Token;
       Deadline      : Ada.Real_Time.Time;
-      Result        : out Status)
+      Result        : out Status;
+      MFA_Validated : Boolean := False)
    is
    begin
       Check_Context (Token, Deadline);
@@ -436,7 +437,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Invalid_Request;
       else
          Catalogs.Put_Bucket_Versioning
-           (Item.Catalog, Bucket, Configuration, Result);
+           (Item.Catalog, Bucket, Configuration, Result, MFA_Validated);
       end if;
    exception
       when Flyology.Cancellation.Operation_Cancelled

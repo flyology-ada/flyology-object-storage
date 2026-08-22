@@ -1512,7 +1512,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Configuration : Bucket_Versioning_Configuration;
       Token         : access Flyology.Cancellation.Token;
       Deadline      : Ada.Real_Time.Time;
-      Result        : out Status)
+      Result        : out Status;
+      MFA_Validated : Boolean := False)
    is
       Bucket_Directory : constant String := Bucket_Path (Item, Bucket);
       Target           : constant String := Versioning_Path (Item, Bucket);
@@ -1540,6 +1541,17 @@ package body Flyology.Object_Storage.Backends.Files is
             Value : Bucket_Versioning_Configuration :=
               Read_Versioning (Item, Bucket);
          begin
+            if not MFA_Validated
+              and then
+                (Value.MFA_Delete = MFA_Delete_Enabled
+                 or else
+                   Configuration.MFA_Delete /= MFA_Delete_Unconfigured)
+            then
+               Result := Access_Denied;
+               Item.Publication.Release;
+               Locked := False;
+               return;
+            end if;
             Value := Merge_Bucket_Versioning (Value, Configuration);
             Item.Temp_Sequence.Next (Number);
             Temp := US.To_Unbounded_String

@@ -13115,6 +13115,52 @@ package body Object_Storage_Test_Cases is
       is
          Result : Status;
          Value  : Bucket_Versioning_Configuration;
+
+         protected type Versioning_Race_Control is
+            procedure Ready;
+            entry Start;
+            procedure Record_Result
+              (MFA_Writer : Boolean; Value : Status);
+            entry Wait_Complete;
+            function Outcome (MFA_Writer : Boolean) return Status;
+         private
+            Ready_Count : Natural range 0 .. 2 := 0;
+            Complete_Count : Natural range 0 .. 2 := 0;
+            MFA_Outcome : Status := Backend_Unavailable;
+            Status_Outcome : Status := Backend_Unavailable;
+         end Versioning_Race_Control;
+
+         protected body Versioning_Race_Control is
+            procedure Ready is
+            begin
+               Ready_Count := Ready_Count + 1;
+            end Ready;
+
+            entry Start when Ready_Count = 2 is
+            begin
+               null;
+            end Start;
+
+            procedure Record_Result
+              (MFA_Writer : Boolean; Value : Status)
+            is
+            begin
+               if MFA_Writer then
+                  MFA_Outcome := Value;
+               else
+                  Status_Outcome := Value;
+               end if;
+               Complete_Count := Complete_Count + 1;
+            end Record_Result;
+
+            entry Wait_Complete when Complete_Count = 2 is
+            begin
+               null;
+            end Wait_Complete;
+
+            function Outcome (MFA_Writer : Boolean) return Status is
+              (if MFA_Writer then MFA_Outcome else Status_Outcome);
+         end Versioning_Race_Control;
       begin
          Store.Create_Bucket
            ("versioning-bucket", null, Ada.Real_Time.Time_Last, Result);
@@ -13137,7 +13183,8 @@ package body Object_Storage_Test_Cases is
            ("versioning-bucket",
             (Status => Versioning_Unconfigured,
              MFA_Delete => MFA_Delete_Disabled),
-            null, Ada.Real_Time.Time_Last, Result);
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => True);
          Assert (Result = Success, "MFA-delete update failed");
          Store.Get_Bucket_Versioning
            ("versioning-bucket", null, Ada.Real_Time.Time_Last,
@@ -13160,6 +13207,113 @@ package body Object_Storage_Test_Cases is
             and then Value.Status = Versioning_Suspended
             and then Value.MFA_Delete = MFA_Delete_Disabled,
             "suspension discarded independent MFA-delete state");
+         Store.Put_Bucket_Versioning
+           ("versioning-bucket",
+            (Status => Versioning_Enabled,
+             MFA_Delete => MFA_Delete_Enabled),
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => True);
+         Assert (Result = Success, "verified MFA-delete enable failed");
+         Store.Put_Bucket_Versioning
+           ("versioning-bucket",
+            (Status => Versioning_Suspended,
+             MFA_Delete => MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => False);
+         Assert
+           (Result = Access_Denied,
+            "unverified status change crossed MFA publication gate");
+         Store.Get_Bucket_Versioning
+           ("versioning-bucket", null, Ada.Real_Time.Time_Last,
+            Value, Result);
+         Assert
+           (Result = Success
+            and then Value.Status = Versioning_Enabled
+            and then Value.MFA_Delete = MFA_Delete_Enabled,
+            "denied MFA update partially mutated configuration");
+         Store.Put_Bucket_Versioning
+           ("versioning-bucket",
+            (Status => Versioning_Suspended,
+             MFA_Delete => MFA_Delete_Disabled),
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => True);
+         Assert
+           (Result = Success,
+            "verified MFA-delete disable and suspension failed");
+
+         --  The MFA requirement must be read and enforced inside the same
+         --  publication boundary as the merge. If the unverified status
+         --  writer wins first, both updates succeed. If MFA enablement wins
+         --  first, the status writer is denied. No third state is
+         --  linearizable.
+         for Round in 1 .. 16 loop
+            Store.Put_Bucket_Versioning
+              ("versioning-bucket",
+               (Status => Versioning_Enabled,
+                MFA_Delete => MFA_Delete_Disabled),
+               null, Ada.Real_Time.Time_Last, Result,
+               MFA_Validated => True);
+            Assert (Result = Success, "MFA race setup failed");
+            declare
+               Control : Versioning_Race_Control;
+               task type Writer (MFA_Writer : Boolean);
+
+               task body Writer is
+                  Writer_Result : Status := Backend_Unavailable;
+               begin
+                  Control.Ready;
+                  Control.Start;
+                  if MFA_Writer then
+                     Store.Put_Bucket_Versioning
+                       ("versioning-bucket",
+                        (Status => Versioning_Unconfigured,
+                         MFA_Delete => MFA_Delete_Enabled),
+                        null, Ada.Real_Time.Time_Last, Writer_Result,
+                        MFA_Validated => True);
+                  else
+                     Store.Put_Bucket_Versioning
+                       ("versioning-bucket",
+                        (Status => Versioning_Suspended,
+                         MFA_Delete => MFA_Delete_Unconfigured),
+                        null, Ada.Real_Time.Time_Last, Writer_Result,
+                        MFA_Validated => False);
+                  end if;
+                  Control.Record_Result (MFA_Writer, Writer_Result);
+               exception
+                  when others =>
+                     Control.Record_Result
+                       (MFA_Writer, Backend_Unavailable);
+               end Writer;
+
+               MFA_Task : Writer (True);
+               Status_Task : Writer (False);
+            begin
+               Control.Wait_Complete;
+               Store.Get_Bucket_Versioning
+                 ("versioning-bucket", null, Ada.Real_Time.Time_Last,
+                  Value, Result);
+               Assert
+                 (Result = Success
+                  and then Control.Outcome (True) = Success
+                  and then
+                    ((Control.Outcome (False) = Success
+                      and then Value.Status = Versioning_Suspended
+                      and then Value.MFA_Delete = MFA_Delete_Enabled)
+                     or else
+                     (Control.Outcome (False) = Access_Denied
+                      and then Value.Status = Versioning_Enabled
+                      and then Value.MFA_Delete = MFA_Delete_Enabled)),
+                  "MFA publication race was not atomic in round" &
+                  Positive'Image (Round));
+            end;
+         end loop;
+         Store.Put_Bucket_Versioning
+           ("versioning-bucket",
+            (Status => Versioning_Suspended,
+             MFA_Delete => MFA_Delete_Disabled),
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => True);
+         Assert (Result = Success, "MFA race cleanup failed");
          Store.Get_Bucket_Versioning
            ("missing-bucket", null, Ada.Real_Time.Time_Last,
             Value, Result);
@@ -13346,6 +13500,12 @@ package body Object_Storage_Test_Cases is
             (Status => Versioning_Enabled,
              MFA_Delete => MFA_Delete_Unconfigured),
             null, Ada.Real_Time.Time_Last, Result);
+         Store.Put_Bucket_Versioning
+           ("versioning-bucket",
+            (Status => Versioning_Unconfigured,
+             MFA_Delete => MFA_Delete_Enabled),
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => True);
          Store.List_Buckets
            (Options, null, Ada.Real_Time.Time_Last, After, Result);
          Assert
@@ -13367,7 +13527,7 @@ package body Object_Storage_Test_Cases is
          Assert
            (Result = Success
             and then Value.Status = Versioning_Enabled
-            and then Value.MFA_Delete = MFA_Delete_Disabled,
+            and then Value.MFA_Delete = MFA_Delete_Enabled,
             "files versioning configuration did not persist");
          Store.Delete_Bucket
            ("versioning-bucket", null, Ada.Real_Time.Time_Last, Result);
@@ -13470,6 +13630,69 @@ package body Object_Storage_Test_Cases is
          Assert
            (Rejected,
             "typed PutBucketVersioning accepted invalid checksum enum");
+      end;
+      declare
+         Parameters : Low_Level.Put_Bucket_Versioning_Parameters;
+         Prepared : Low_Level.Prepared_Request;
+      begin
+         Parameters.Configuration :=
+           (Status => Versioning_Enabled,
+            MFA_Delete => MFA_Delete_Enabled);
+         Parameters.MFA := US.To_Unbounded_String ("device 123456");
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("SHA256");
+         Prepared := Low_Level.Prepare_Put_Bucket_Versioning
+           (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+            Low_Level.Path_Style, "example-bucket", Parameters,
+            Identity, "us-east-1", "20130524T000000Z");
+         Assert
+           (Ada.Strings.Fixed.Index
+              (Low_Level.Signed_Headers (Prepared), "x-amz-mfa") > 0
+            and then Ada.Strings.Fixed.Index
+              (Low_Level.Signed_Headers (Prepared),
+               "x-amz-checksum-sha256") > 0,
+            "complete PutBucketVersioning projection omitted controls");
+      end;
+      declare
+         Parameters : Low_Level.Put_Bucket_Versioning_Parameters;
+         Rejected : Boolean;
+
+         procedure Try_Prepare (Origin : String) is
+         begin
+            Rejected := False;
+            begin
+               declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Put_Bucket_Versioning
+                      (Flyology.HTTP.Parse_Origin (Origin),
+                       Low_Level.Path_Style, "example-bucket", Parameters,
+                       Identity, "us-east-1", "20130524T000000Z");
+                  pragma Unreferenced (Prepared);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request =>
+                  Rejected := True;
+            end;
+         end Try_Prepare;
+      begin
+         Parameters.Configuration :=
+           (Status => Versioning_Enabled,
+            MFA_Delete => MFA_Delete_Enabled);
+         Parameters.MFA := US.To_Unbounded_String ("device 123456");
+         Try_Prepare ("http://localhost:9000");
+         Assert (Rejected, "typed MFA request accepted a cleartext origin");
+
+         Parameters.MFA := US.Null_Unbounded_String;
+         Try_Prepare ("https://localhost:9000");
+         Assert
+           (Rejected, "typed MFA-delete update accepted no credential");
+
+         Parameters.Configuration.MFA_Delete := MFA_Delete_Unconfigured;
+         Parameters.MFA := US.To_Unbounded_String
+           ("device" & Character'Val (1) & "123456");
+         Try_Prepare ("https://localhost:9000");
+         Assert (Rejected, "typed MFA request accepted a control byte");
       end;
       declare
          Prepared : constant Low_Level.Prepared_Request :=

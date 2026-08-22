@@ -781,13 +781,43 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      (Item          : in out Catalog;
       Name          : String;
       Configuration : Bucket_Versioning_Configuration;
-      Result        : out Status)
+      Result        : out Status;
+      MFA_Validated : Boolean := False)
    is
+      Query  : DB.Statement;
       Update : DB.Statement;
       Locked : Boolean := False;
+      Step   : DB.Step_Result;
+      Current_MFA : Long_Long_Integer := 0;
    begin
       Item.Gate.Acquire;
       Locked := True;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT mfa_delete_status FROM buckets WHERE name=?1");
+      DB.Bind (Query, 1, Name);
+      Step := DB.Step (Query);
+      if Step /= DB.Row then
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      Current_MFA := DB.Column (Query, 0);
+      if Current_MFA not in 0 .. 2 then
+         raise Catalog_Error with
+           "bucket MFA-delete catalog value is invalid";
+      elsif not MFA_Validated
+        and then
+          (Current_MFA =
+             Long_Long_Integer (MFA_Delete_Status'Pos (MFA_Delete_Enabled))
+           or else Configuration.MFA_Delete /= MFA_Delete_Unconfigured)
+      then
+         Result := Access_Denied;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
       DB.Prepare
         (Update, Item.Database,
          "UPDATE buckets SET " &

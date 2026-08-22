@@ -30,6 +30,7 @@ is
       Precondition_Failed,
       Not_Modified,
       Conflict,
+      Access_Denied,
       Not_Implemented,
       Backend_Unavailable);
 

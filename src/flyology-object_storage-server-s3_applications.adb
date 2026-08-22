@@ -51,6 +51,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    use type Apps.Response_State;
    use type Authentication.Outcome_Status;
    use type Backends.Length_Kind;
+   use type Flyology.HTTP.Origin_Scheme;
+   use type MFA.Authorization_Status;
+   use type MFA.Verifier_Access;
    use type Multipart.Multipart_Query_Kind;
    use type Requests.Target_Kind;
    use type Requests.Target_Status;
@@ -390,6 +393,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Send_Error
               (X, 409, "OperationAborted",
                "A conflicting operation is currently in progress", Resource);
+         when Access_Denied =>
+            Send_Error
+              (X, 403, "AccessDenied", "Access Denied", Resource);
          when Not_Implemented =>
             Send_Error
               (X, 501, "NotImplemented",
@@ -1128,6 +1134,62 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             end;
          end;
       end Verify_Document_Checksum;
+
+      function Verify_MFA_Credential
+        (Principal, Credential : String) return MFA.Authorization_Status
+      is
+         Request : MFA.Authorization_Request;
+         Build   : MFA.Request_Status;
+         Result  : MFA.Authorization_Status := MFA.Verifier_Unavailable;
+      begin
+         MFA.Initialize
+           (Request, Principal, Credential,
+            Apps.Request_Scheme (X) = Flyology.HTTP.Secure_HTTPS, Build);
+         case Build is
+            when MFA.Principal_Invalid =>
+               Result := MFA.Not_Root_Owner;
+            when MFA.Credential_Missing =>
+               Result := MFA.Missing_Credential;
+            when MFA.Credential_Invalid =>
+               Result := MFA.Invalid_Credential;
+            when MFA.Request_Ready =>
+               if Apps.Request_Scheme (X) /= Flyology.HTTP.Secure_HTTPS then
+                  Result := MFA.Insecure_Transport;
+               elsif MFA_Verifier = null then
+                  Result := MFA.Verifier_Unavailable;
+               else
+                  begin
+                     MFA_Verifier.all.Authorize (Request, Result);
+                  exception
+                     when others =>
+                        Result := MFA.Verifier_Unavailable;
+                  end;
+               end if;
+         end case;
+         MFA.Clear (Request);
+         return Result;
+      exception
+         when others =>
+            MFA.Clear (Request);
+            return MFA.Verifier_Unavailable;
+      end Verify_MFA_Credential;
+
+      procedure Send_MFA_Error (Result : MFA.Authorization_Status) is
+      begin
+         if Result = MFA.Insecure_Transport then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               "MFA-protected requests require HTTPS", Target_Text);
+         elsif Result = MFA.Authorized then
+            raise Program_Error with "authorized MFA result mapped as error";
+         else
+            --  Missing devices, invalid one-time credentials, non-root
+            --  principals, and unavailable verifiers are intentionally
+            --  indistinguishable at the S3 boundary.
+            Send_Error
+              (X, 403, "AccessDenied", "Access Denied", Target_Text);
+         end if;
+      end Send_MFA_Error;
 
       Auth       : Authentication.Outcome;
       Accepted   : Boolean;
@@ -2243,25 +2305,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
             when Put_Bucket_Versioning =>
                declare
-                  Source : Request_IO.Request_Source :=
-                    (Length_Value  => Length,
-                     Expected_Hash => Auth.Payload_Hash,
-                     Check_Hash    =>
-                       US.To_String (Auth.Payload_Hash) /=
-                         S3.SigV4.Unsigned_Payload,
-                     Hash      => GNAT.SHA256.Initial_Context,
-                     Observed  => 0,
-                     Maximum   => Maximum_Versioning_Body,
-                     Completed => False);
-                  Document : constant String := Read_Document (Source);
-                  Configuration : Bucket_Versioning_Configuration;
                   MD5_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "content-md5");
                   MFA_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "x-amz-mfa");
-                  Checksum_Status : constant Document_Checksum_Status :=
-                    Verify_Document_Checksum (Document);
-                  Owner_Accepted : Boolean;
+                  Owner_Accepted : Boolean := False;
                begin
                   if MD5_Count /= 1
                     or else not S3.Wire_Core.Valid_Base64
@@ -2274,55 +2322,98 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         "PutBucketVersioning requires one valid " &
                         "Content-MD5 header",
                         Target_Text);
-                  elsif Apps.Request_Header (X, "content-md5") /=
-                    Content_MD5 (Document)
-                  then
-                     Send_Error
-                       (X, 400, "BadDigest",
-                        "The Content-MD5 you specified did not match",
-                        Target_Text);
                   elsif MFA_Count > 1 then
                      Send_Error
                        (X, 400, "InvalidRequest",
                         "A PutBucketVersioning control header is duplicated",
                         Target_Text);
-                  elsif MFA_Count = 1
-                    or else
-                      Configuration.MFA_Delete /=
-                        MFA_Delete_Unconfigured
-                  then
-                     Send_Error
-                       (X, 501, "NotImplemented",
-                        "MFA-delete policy enforcement is not implemented",
-                        Target_Text);
-                  elsif Checksum_Status in
-                    Document_Checksum_Group_Invalid |
-                    Document_Checksum_Value_Invalid
-                  then
-                     Send_Error
-                       (X, 400, "InvalidRequest",
-                        "The PutBucketVersioning checksum group is invalid",
-                        Target_Text);
-                  elsif Checksum_Status = Document_Checksum_Mismatch then
-                     Send_Error
-                       (X, 400, "BadDigest",
-                        "The optional checksum does not match the " &
-                        "request body",
-                        Target_Text);
                   else
-                     Configuration := Versioning.Parse (Document);
                      Check_Expected_Bucket_Owner
                        (US.To_String (Auth.Principal), Owner_Accepted);
                      if Owner_Accepted then
-                        Store.Put_Bucket_Versioning
-                          (Bucket, Configuration, Apps.Cancellation (X),
-                           Apps.Deadline (X), Result);
-                        if Result = Success then
-                           Apps.Respond (X, 200, "", "");
-                        else
-                           Send_Backend_Error
-                             (X, Result, True, Target_Text);
-                        end if;
+                        declare
+                           Source : Request_IO.Request_Source :=
+                             (Length_Value  => Length,
+                              Expected_Hash => Auth.Payload_Hash,
+                              Check_Hash    =>
+                                US.To_String (Auth.Payload_Hash) /=
+                                  S3.SigV4.Unsigned_Payload,
+                              Hash      => GNAT.SHA256.Initial_Context,
+                              Observed  => 0,
+                              Maximum   => Maximum_Versioning_Body,
+                              Completed => False);
+                           Document : constant String :=
+                             Read_Document (Source);
+                           Checksum_Status : constant
+                             Document_Checksum_Status :=
+                               Verify_Document_Checksum (Document);
+                        begin
+                           if Apps.Request_Header (X, "content-md5") /=
+                             Content_MD5 (Document)
+                           then
+                              Send_Error
+                                (X, 400, "BadDigest",
+                                 "The Content-MD5 you specified did not " &
+                                 "match", Target_Text);
+                           elsif Checksum_Status in
+                             Document_Checksum_Group_Invalid |
+                             Document_Checksum_Value_Invalid
+                           then
+                              Send_Error
+                                (X, 400, "InvalidRequest",
+                                 "The PutBucketVersioning checksum group " &
+                                 "is invalid", Target_Text);
+                           elsif Checksum_Status =
+                             Document_Checksum_Mismatch
+                           then
+                              Send_Error
+                                (X, 400, "BadDigest",
+                                 "The optional checksum does not match " &
+                                 "the request body", Target_Text);
+                           else
+                              declare
+                                 Configuration : constant
+                                   Bucket_Versioning_Configuration :=
+                                     Versioning.Parse (Document);
+                                 MFA_Result : constant
+                                   MFA.Authorization_Status :=
+                                     (if MFA_Count = 0
+                                      then MFA.Missing_Credential
+                                      else Verify_MFA_Credential
+                                        (US.To_String (Auth.Principal),
+                                         Apps.Request_Header
+                                           (X, "x-amz-mfa")));
+                              begin
+                                 if Configuration.MFA_Delete /=
+                                     MFA_Delete_Unconfigured
+                                   and then Configuration.Status =
+                                     Versioning_Unconfigured
+                                 then
+                                    Send_Error
+                                      (X, 400, "InvalidRequest",
+                                       "MfaDelete requires an explicit " &
+                                       "Status", Target_Text);
+                                 elsif MFA_Count = 1
+                                   and then MFA_Result /= MFA.Authorized
+                                 then
+                                    Send_MFA_Error (MFA_Result);
+                                 else
+                                    Store.Put_Bucket_Versioning
+                                      (Bucket, Configuration,
+                                       Apps.Cancellation (X),
+                                       Apps.Deadline (X), Result,
+                                       MFA_Validated =>
+                                         MFA_Result = MFA.Authorized);
+                                    if Result = Success then
+                                       Apps.Respond (X, 200, "", "");
+                                    else
+                                       Send_Backend_Error
+                                         (X, Result, True, Target_Text);
+                                    end if;
+                                 end if;
+                              end;
+                           end if;
+                        end;
                      end if;
                   end if;
                exception

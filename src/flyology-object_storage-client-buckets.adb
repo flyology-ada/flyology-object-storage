@@ -353,6 +353,44 @@ package body Flyology.Object_Storage.Client.Buckets is
       end;
    end Set_Versioning;
 
+   function Set_Versioning_Configuration
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Configuration : Bucket_Versioning_Configuration;
+      Identity : Low_Level.Credentials;
+      MFA      : String := "";
+      Checksum_Algorithm : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Set_Versioning_Outcome
+   is
+      Parameters : constant Low_Level.Put_Bucket_Versioning_Parameters :=
+        (Content_MD5           => US.Null_Unbounded_String,
+         Checksum_Algorithm    => US.To_Unbounded_String
+           (Checksum_Algorithm),
+         MFA                   => US.To_Unbounded_String (MFA),
+         Configuration         => Configuration,
+         Expected_Bucket_Owner => US.To_Unbounded_String
+           (Expected_Bucket_Owner));
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Put_Bucket_Versioning
+          (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
+      Outcome : constant Low_Level.Put_Bucket_Versioning_Outcome :=
+        Low_Level.Execute_Put_Bucket_Versioning
+          (Client, Prepared, Timeout, Token);
+   begin
+      if Outcome.Kind = Low_Level.Put_Bucket_Versioning_Rejected then
+         return
+           (Kind => Set_Versioning_Rejected,
+            Status => Outcome.Status, Error => Outcome.Error);
+      end if;
+      return (Kind => Versioning_Updated, Status => Outcome.Status);
+   end Set_Versioning_Configuration;
+
    function Get_Versioning
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;

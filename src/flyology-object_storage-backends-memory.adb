@@ -305,12 +305,19 @@ package body Flyology.Object_Storage.Backends.Memory is
       procedure Put_Bucket_Versioning
         (Name          : String;
          Configuration : Bucket_Versioning_Configuration;
-         Result        : out Status)
+         Result        : out Status;
+         MFA_Validated : Boolean := False)
       is
          Index : constant Natural := Bucket_Index (Name);
       begin
          if Index = 0 then
             Result := Not_Found;
+         elsif not MFA_Validated
+           and then
+             (Buckets (Index).Versioning.MFA_Delete = MFA_Delete_Enabled
+              or else Configuration.MFA_Delete /= MFA_Delete_Unconfigured)
+         then
+            Result := Access_Denied;
          else
             Buckets (Index).Versioning :=
               Merge_Bucket_Versioning
@@ -1569,7 +1576,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       Configuration : Bucket_Versioning_Configuration;
       Token         : access Flyology.Cancellation.Token;
       Deadline      : Ada.Real_Time.Time;
-      Result        : out Status)
+      Result        : out Status;
+      MFA_Validated : Boolean := False)
    is
    begin
       Check_Context (Token, Deadline);
@@ -1577,7 +1585,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result := Invalid_Request;
       else
          Item.State.Put_Bucket_Versioning
-           (Bucket, Configuration, Result);
+           (Bucket, Configuration, Result, MFA_Validated);
       end if;
    end Put_Bucket_Versioning;
 

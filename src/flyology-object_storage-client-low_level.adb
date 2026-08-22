@@ -2583,7 +2583,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
             return False;
          end if;
          for Character_Value of Value loop
-            if Character_Value in ASCII.NUL | ASCII.CR | ASCII.LF then
+            if Character'Pos (Character_Value) < 32
+              or else Character'Pos (Character_Value) = 127
+            then
                return False;
             end if;
          end loop;
@@ -2594,6 +2596,14 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else not Valid_Bounded_Header (MFA)
         or else not Valid_Bounded_Header (Owner)
         or else (Checksum'Length > 0 and then not Algorithm.Valid)
+        or else (MFA'Length > 0
+                 and then Flyology.HTTP.Scheme (Origin) /=
+                   Flyology.HTTP.Secure_HTTPS)
+        or else
+          (Parameters.Configuration.MFA_Delete /= MFA_Delete_Unconfigured
+           and then
+             (Parameters.Configuration.Status = Versioning_Unconfigured
+              or else MFA'Length = 0))
       then
          raise Invalid_Request with
            "invalid PutBucketVersioning header";
