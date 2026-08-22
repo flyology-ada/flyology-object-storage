@@ -11,6 +11,7 @@ with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
+with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.XML;
@@ -1051,6 +1052,69 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Parts_Outcome;
 
+   --  Every non-resource member in the pinned ListMultipartUploads input
+   --  shape.  An upload-id marker without a key marker is preserved exactly;
+   --  S3 defines it as ignored rather than malformed.
+   type List_Multipart_Uploads_Parameters is record
+      Delimiter             : Ada.Strings.Unbounded.Unbounded_String;
+      URL_Encoding          : Boolean := False;
+      Key_Marker            : Ada.Strings.Unbounded.Unbounded_String;
+      Max_Uploads           : S3.Core.Page_Size := 1_000;
+      Prefix                : Ada.Strings.Unbounded.Unbounded_String;
+      Upload_ID_Marker      : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_List_Multipart_Uploads
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : List_Multipart_Uploads_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   --  Every output member in the pinned shape: REST/XML members are grouped
+   --  in Listing and RequestCharged is the sole operation response header.
+   type List_Multipart_Uploads_Result is record
+      Listing : S3.Multipart_Uploads.List_Multipart_Uploads_Result;
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type List_Multipart_Uploads_Outcome_Kind is
+     (Multipart_Uploads_Listed, List_Multipart_Uploads_Rejected);
+
+   type List_Multipart_Uploads_Outcome
+     (Kind : List_Multipart_Uploads_Outcome_Kind :=
+        List_Multipart_Uploads_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Multipart_Uploads_Listed =>
+            Result : List_Multipart_Uploads_Result;
+         when List_Multipart_Uploads_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_List_Multipart_Uploads_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Multipart_Uploads_Outcome;
+
+   function Execute_List_Multipart_Uploads
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Multipart_Uploads_Outcome;
+
    type Upload_Part_Parameters is record
       Part_Number       : S3.Core.Part_Number := S3.Core.Part_Number'First;
       Upload_ID         : Ada.Strings.Unbounded.Unbounded_String;
@@ -1328,6 +1392,7 @@ private
       Complete_Multipart_Operation,
       Abort_Multipart_Operation,
       List_Parts_Operation,
+      List_Multipart_Uploads_Operation,
       Upload_Part_Operation,
       Upload_Part_Copy_Operation,
       Copy_Object_Operation);

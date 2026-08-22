@@ -4238,6 +4238,7 @@ package body Object_Storage_Test_Cases is
       use type Low_Level.Complete_Multipart_Outcome_Kind;
       use type Low_Level.Abort_Multipart_Outcome_Kind;
       use type Low_Level.List_Parts_Outcome_Kind;
+      use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
       use type Low_Level.Upload_Part_Outcome_Kind;
       use type Low_Level.Upload_Part_Copy_Outcome_Kind;
       use type Low_Level.Put_Object_Outcome_Kind;
@@ -4614,6 +4615,165 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "ListParts invalid request-charged was accepted");
+      end;
+
+      declare
+         Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+      begin
+         Parameters.Delimiter := US.To_Unbounded_String ("/");
+         Parameters.URL_Encoding := True;
+         Parameters.Key_Marker := US.To_Unbounded_String ("a+b");
+         Parameters.Max_Uploads := 7;
+         Parameters.Prefix := US.To_Unbounded_String ("photos/Jan &");
+         Parameters.Upload_ID_Marker :=
+           US.To_Unbounded_String ("upload+/=");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_List_Multipart_Uploads
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+            Expected_Query : constant String :=
+              "delimiter=%2F&encoding-type=url&key-marker=a%2Bb&" &
+              "max-uploads=7&prefix=photos%2FJan%20%26&" &
+              "upload-id-marker=upload%2B%2F%3D&uploads";
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket?" & Expected_Query,
+               "ListMultipartUploads exact modeled wire target");
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Low_Level.Canonical_Request (Prepared),
+                  "GET" & LF & "/example-bucket" & LF &
+                  Expected_Query & "=" & LF) = 1
+               and then Low_Level.Signed_Headers (Prepared) =
+                 "host;x-amz-content-sha256;x-amz-date;" &
+                 "x-amz-expected-bucket-owner;x-amz-request-payer",
+               "complete ListMultipartUploads request signing");
+         end;
+      end;
+
+      declare
+         Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+      begin
+         Parameters.Upload_ID_Marker := US.To_Unbounded_String ("ignored");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_List_Multipart_Uploads
+                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket?max-uploads=1000&" &
+                 "upload-id-marker=ignored&uploads",
+               "ignored upload-id marker was not preserved on the wire");
+         end;
+      end;
+
+      declare
+         Outcome : constant Low_Level.List_Multipart_Uploads_Outcome :=
+           Low_Level.Decode_List_Multipart_Uploads_Response
+             (200,
+              "<ListMultipartUploadsResult><Bucket>example-bucket" &
+              "</Bucket><MaxUploads>1</MaxUploads><IsTruncated>false" &
+              "</IsTruncated><Upload><UploadId>upload</UploadId>" &
+              "<Key>key</Key><Initiated>2026-08-21T00:00:00Z" &
+              "</Initiated><StorageClass>STANDARD</StorageClass>" &
+              "</Upload></ListMultipartUploadsResult>",
+              Request_Charged => "requester");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Multipart_Uploads_Listed
+            and then Outcome.Result.Listing.Uploads.Length = 1
+            and then US.To_String
+              (Outcome.Result.Listing.Uploads.First_Element.Upload_ID) =
+                "upload"
+            and then US.To_String (Outcome.Result.Request_Charged) =
+              "requester",
+            "typed ListMultipartUploads complete success response");
+      end;
+
+      declare
+         Outcome : constant Low_Level.List_Multipart_Uploads_Outcome :=
+           Low_Level.Decode_List_Multipart_Uploads_Response
+             (403, "<Error><Code>AccessDenied</Code>" &
+              "<Message>denied</Message></Error>",
+              Request_ID => "list-uploads-request",
+              Host_ID => "list-uploads-host");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.List_Multipart_Uploads_Rejected
+            and then US.To_String (Outcome.Error.Code) = "AccessDenied"
+            and then US.To_String (Outcome.Error.Request_ID) =
+              "list-uploads-request"
+            and then US.To_String (Outcome.Error.Host_ID) =
+              "list-uploads-host",
+            "typed ListMultipartUploads S3 error response");
+      end;
+
+      declare
+         Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+
+         procedure Require_Rejected (Message : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_List_Multipart_Uploads
+                      (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                       Low_Level.Path_Style, "example-bucket", Parameters,
+                       Identity, "us-east-1", "20130524T000000Z");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Require_Rejected;
+      begin
+         Parameters.Max_Uploads := 0;
+         Require_Rejected
+           ("ListMultipartUploads accepted zero max-uploads");
+         Parameters.Max_Uploads := 1;
+         Parameters.Request_Payer := US.To_Unbounded_String ("owner");
+         Require_Rejected
+           ("ListMultipartUploads accepted invalid requester payer");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.List_Multipart_Uploads_Outcome :=
+                 Low_Level.Decode_List_Multipart_Uploads_Response
+                   (200,
+                    "<ListMultipartUploadsResult><Bucket>example-bucket" &
+                    "</Bucket><MaxUploads>1</MaxUploads>" &
+                    "<IsTruncated>false</IsTruncated>" &
+                    "</ListMultipartUploadsResult>",
+                    Request_Charged => "owner");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert
+           (Raised,
+            "ListMultipartUploads invalid request-charged was accepted");
       end;
 
       declare

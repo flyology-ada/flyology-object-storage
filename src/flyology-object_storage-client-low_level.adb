@@ -3377,6 +3377,159 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "ListParts response exceeds XML limit";
    end Execute_List_Parts;
 
+   function Prepare_List_Multipart_Uploads
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : List_Multipart_Uploads_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Optional_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.Delimiter) > 0) +
+        Boolean'Pos (Parameters.URL_Encoding) +
+        Boolean'Pos (US.Length (Parameters.Key_Marker) > 0) +
+        Boolean'Pos (US.Length (Parameters.Prefix) > 0) +
+        Boolean'Pos (US.Length (Parameters.Upload_ID_Marker) > 0) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
+        Boolean'Pos (Request_Payer'Length > 0);
+      Values : Model_Value_Array (1 .. 2 + Optional_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+
+      procedure Add_Optional
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Add (Name, US.To_String (Value));
+         end if;
+      end Add_Optional;
+   begin
+      if not Valid_Bucket_Name (Bucket)
+        or else Parameters.Max_Uploads = 0
+        or else (Request_Payer'Length > 0
+                 and then Request_Payer /= "requester")
+      then
+         raise Invalid_Request with
+           "invalid ListMultipartUploads parameters";
+      end if;
+      Add ("Bucket", Bucket);
+      Add
+        ("MaxUploads",
+         Ada.Strings.Fixed.Trim
+           (S3.Core.Page_Size'Image (Parameters.Max_Uploads),
+            Ada.Strings.Both));
+      Add_Optional ("Delimiter", Parameters.Delimiter);
+      if Parameters.URL_Encoding then
+         Add ("EncodingType", "url");
+      end if;
+      Add_Optional ("KeyMarker", Parameters.Key_Marker);
+      Add_Optional ("Prefix", Parameters.Prefix);
+      Add_Optional ("UploadIdMarker", Parameters.Upload_ID_Marker);
+      Add_Optional
+        ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      Add_Optional ("RequestPayer", Parameters.Request_Payer);
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.List_Multipart_Uploads_Operation, Origin, Style, Values, "",
+         False, SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := List_Multipart_Uploads_Operation;
+      end return;
+   exception
+      when Constraint_Error =>
+         raise Invalid_Request with
+           "invalid ListMultipartUploads parameters";
+   end Prepare_List_Multipart_Uploads;
+
+   function Decode_List_Multipart_Uploads_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Multipart_Uploads_Outcome
+   is
+   begin
+      if Status = 200 then
+         if Request_Charged'Length > 0
+           and then Request_Charged /= "requester"
+         then
+            raise Invalid_Response with
+              "invalid ListMultipartUploads response headers";
+         end if;
+         return
+           (Kind   => Multipart_Uploads_Listed,
+            Status => Status,
+            Result =>
+              (Listing =>
+                 S3.Multipart_Uploads.Parse_List_Multipart_Uploads
+                   (Payload, Limits),
+               Request_Charged =>
+                 US.To_Unbounded_String (Request_Charged)));
+      else
+         return
+           (Kind   => List_Multipart_Uploads_Rejected,
+            Status => Status,
+            Error  => Error_Response
+              (Payload, Request_ID, Host_ID, Limits));
+      end if;
+   exception
+      when S3.Multipart_Uploads.Malformed_Upload_Listing |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed ListMultipartUploads response";
+   end Decode_List_Multipart_Uploads_Response;
+
+   function Execute_List_Multipart_Uploads
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Multipart_Uploads_Outcome
+   is
+   begin
+      if Prepared.Operation /= List_Multipart_Uploads_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Request_Charged : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-charged");
+         Request_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+         Host_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_List_Multipart_Uploads_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload),
+            Request_Charged, Request_ID, Host_ID, Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "ListMultipartUploads response exceeds XML limit";
+   end Execute_List_Multipart_Uploads;
+
    function Valid_Checksum_Algorithm (Value : String) return Boolean is
      (Value = "CRC32"
       or else Value = "CRC32C"

@@ -33,6 +33,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Create_Multipart_Outcome_Kind;
    use type Low_Level.Complete_Multipart_Outcome_Kind;
    use type Low_Level.Abort_Multipart_Outcome_Kind;
+   use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
@@ -407,9 +408,16 @@ procedure S3_HTTP_Socket_Corpus is
                     or else Ada.Strings.Fixed.Index
                       (Lower,
                        "signedheaders=host;x-amz-content-sha256;" &
-                       "x-amz-date;x-amz-expected-bucket-owner;" &
-                       "x-amz-optional-object-attributes;" &
-                       "x-amz-request-payer") = 0
+                       "x-amz-date" &
+                       (if Expected_Bucket_Owner'Length > 0 then
+                           ";x-amz-expected-bucket-owner"
+                        else "") &
+                       (if Expected_Object_Attributes'Length > 0 then
+                           ";x-amz-optional-object-attributes"
+                        else "") &
+                       (if Expected_Request_Payer'Length > 0 then
+                           ";x-amz-request-payer"
+                        else "")) = 0
                  elsif Expected_If_Match'Length > 0
                    or else Expected_Checksum_Mode'Length > 0
                  then
@@ -513,6 +521,15 @@ procedure S3_HTTP_Socket_Corpus is
       Embedded_Error_XML : constant String :=
         "<Error><Code>InternalError</Code>" &
         "<Message>late failure</Message></Error>";
+      List_Uploads_XML : constant String :=
+        "<ListMultipartUploadsResult>" &
+        "<Bucket>example-bucket</Bucket><KeyMarker>before</KeyMarker>" &
+        "<UploadIdMarker>upload-before</UploadIdMarker>" &
+        "<MaxUploads>2</MaxUploads><IsTruncated>false</IsTruncated>" &
+        "<Upload><UploadId>socket-upload</UploadId><Key>socket/key</Key>" &
+        "<Initiated>2026-08-21T00:00:00Z</Initiated>" &
+        "<StorageClass>STANDARD</StorageClass></Upload>" &
+        "</ListMultipartUploadsResult>";
       Copy_XML : constant String :=
         "<CopyObjectResult>" &
         "<LastModified>2026-08-21T17:00:00.000Z</LastModified>" &
@@ -572,6 +589,26 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Request_Payer => "requester",
             Expected_Bucket_Owner => "123456789012",
             Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("200 OK", List_Uploads_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?delimiter=%2F&key-marker=before&" &
+              "max-uploads=2&prefix=socket%2F&" &
+              "upload-id-marker=upload-before&uploads",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: list-uploads-request" & CRLF &
+               "x-amz-id-2: list-uploads-host" & CRLF),
+            "GET", "/example-bucket?delimiter=%2F&key-marker=before&" &
+              "max-uploads=2&prefix=socket%2F&" &
+              "upload-id-marker=upload-before&uploads",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
               ("200 OK", "", Omit_Content_Length => True),
@@ -893,6 +930,65 @@ procedure S3_HTTP_Socket_Corpus is
             if not Raised then
                raise Program_Error with "oversized socket response accepted";
             end if;
+         end;
+         declare
+            List_Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+         begin
+            List_Parameters.Delimiter := US.To_Unbounded_String ("/");
+            List_Parameters.Key_Marker :=
+              US.To_Unbounded_String ("before");
+            List_Parameters.Max_Uploads := 2;
+            List_Parameters.Prefix := US.To_Unbounded_String ("socket/");
+            List_Parameters.Upload_ID_Marker :=
+              US.To_Unbounded_String ("upload-before");
+            List_Parameters.Request_Payer :=
+              US.To_Unbounded_String ("requester");
+            List_Parameters.Expected_Bucket_Owner :=
+              US.To_Unbounded_String ("123456789012");
+            declare
+               Prepared_Uploads : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Multipart_Uploads
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    List_Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Result : constant Low_Level.List_Multipart_Uploads_Outcome :=
+                 Low_Level.Execute_List_Multipart_Uploads
+                   (HTTP, Prepared_Uploads, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Multipart_Uploads_Listed
+                 or else Natural
+                   (Result.Result.Listing.Uploads.Length) /= 1
+                 or else US.To_String
+                   (Result.Result.Listing.Uploads.First_Element.Upload_ID) /=
+                     "socket-upload"
+                 or else US.To_String (Result.Result.Request_Charged) /=
+                   "requester"
+               then
+                  raise Program_Error with
+                    "typed ListMultipartUploads socket success mismatch";
+               end if;
+            end;
+            declare
+               Prepared_Uploads : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Multipart_Uploads
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    List_Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Result : constant Low_Level.List_Multipart_Uploads_Outcome :=
+                 Low_Level.Execute_List_Multipart_Uploads
+                   (HTTP, Prepared_Uploads, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.List_Multipart_Uploads_Rejected
+                 or else US.To_String (Result.Error.Code) /= "AccessDenied"
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "list-uploads-request"
+                 or else US.To_String (Result.Error.Host_ID) /=
+                   "list-uploads-host"
+               then
+                  raise Program_Error with
+                    "typed ListMultipartUploads socket error mismatch";
+               end if;
+            end;
          end;
          declare
             Values : constant Low_Level.Model_Value_Array :=
