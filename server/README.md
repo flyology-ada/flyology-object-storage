@@ -26,7 +26,9 @@ without changing it. Selecting a bucket opens a read-only object inventory
 with exact 64-bit sizes and timestamps, byte-safe URL-encoded keys, and opaque
 pagination capped at 64 objects per browser request. Object mutation remains
 on the signed S3 endpoint rather than being implied by incomplete browser
-controls.
+controls. The five-second health poll updates runtime state without rebuilding
+inventory controls, so keyboard focus and an inline delete confirmation remain
+stable; explicit refresh and successful mutations reconcile the inventory.
 
 The generated 192-bit administrator password is printed once to standard
 error. Only a random 256-bit salt and PBKDF2-HMAC-SHA256 verifier are persisted

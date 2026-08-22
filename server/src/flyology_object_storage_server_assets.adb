@@ -11,7 +11,7 @@ package body Flyology_Object_Storage_Server_Assets is
    CSS_Digest  : constant String :=
      "bd665225ab0a682568e210a69c3e68fb6e00699156062fec5cb50e0271e7f939";
    JS_Digest   : constant String :=
-     "594e245cdc172dce44e6aa6f85f093c23875cbbf1e0fa2e478c4c370aed3311c";
+     "6bde1c8dbbdf67c0010bb210787126b562c11a2b81c6b6e2ef29ae20bfc46daf";
 
    function Root return String is
    begin

@@ -11,6 +11,11 @@ SECRET_KEY=flyology-s3-oracle-secret-key-tests
 RUN_ROOT=$(mktemp -d /tmp/flyology-object-storage-server.XXXXXX)
 SERVER_PID=""
 
+grep -Fq 'refreshStatus(true, false)' "$SERVER_DIR/assets/app.js"
+grep -Fq 'if (refreshInventory) await refreshBuckets();' \
+  "$SERVER_DIR/assets/app.js"
+echo "management polling preserves inventory focus: OK"
+
 cleanup() {
   if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill -TERM "$SERVER_PID" >/dev/null 2>&1 || true

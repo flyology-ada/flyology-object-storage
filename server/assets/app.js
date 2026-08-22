@@ -170,7 +170,9 @@
       `Runtime checked ${new Intl.DateTimeFormat(undefined, { timeStyle: "medium" }).format(new Date())}`;
     setConnection("ready", `${status.backend} backend ready`);
     clearTimeout(pollTimer);
-    pollTimer = setTimeout(() => refreshStatus(true), 5000);
+    //  A health poll must not replace focused inventory controls or discard
+    //  an in-progress inline delete confirmation.
+    pollTimer = setTimeout(() => refreshStatus(true, false), 5000);
   }
 
   function renderBuckets(inventory) {
@@ -307,7 +309,7 @@
     }
   }
 
-  async function refreshStatus(quiet = false) {
+  async function refreshStatus(quiet = false, refreshInventory = true) {
     if (!quiet) {
       refreshButton.disabled = true;
       setConnection("checking", "Refreshing runtime");
@@ -323,7 +325,7 @@
       }
       if (!response.ok) throw new Error(`status ${response.status}`);
       renderStatus(await response.json());
-      await refreshBuckets();
+      if (refreshInventory) await refreshBuckets();
     } catch (_error) {
       clearTimeout(pollTimer);
       setConnection("error", "Server unavailable");
