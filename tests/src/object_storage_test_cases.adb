@@ -666,7 +666,8 @@ package body Object_Storage_Test_Cases is
          "multipart listing prefix filter");
 
       Store.Abort_Multipart_Upload
-        (Bucket, "same", US.To_String (Upload_IDs (2)), null,
+        (Bucket, "same", US.To_String (Upload_IDs (2)),
+         Flyology.Object_Storage.Backends.No_Abort_Multipart_Conditions, null,
          Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "multipart listing abort setup");
       Store.List_Multipart_Uploads
@@ -716,6 +717,7 @@ package body Object_Storage_Test_Cases is
          if Index /= 2 then
             Store.Abort_Multipart_Upload
               (Bucket, Key_At (Index), US.To_String (Upload_IDs (Index)),
+               Flyology.Object_Storage.Backends.No_Abort_Multipart_Conditions,
                null, Ada.Real_Time.Time_Last, Result);
             Assert (Result = Success, "multipart listing cleanup upload");
          end if;
@@ -1288,6 +1290,7 @@ package body Object_Storage_Test_Cases is
             "logical 5 GiB+1 multipart part was read or retained");
          Store.Abort_Multipart_Upload
            ("multipart-bucket", "oversized", US.To_String (Oversized_ID),
+            Flyology.Object_Storage.Backends.No_Abort_Multipart_Conditions,
             null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "oversized multipart cleanup failed");
       end;
@@ -1384,15 +1387,44 @@ package body Object_Storage_Test_Cases is
          Assert
            (Result = Entity_Too_Small,
             "undersized nonfinal multipart part was accepted");
-         Store.Abort_Multipart_Upload
-           ("multipart-bucket", "small", US.To_String (Small_ID), null,
-            Ada.Real_Time.Time_Last, Result);
+         declare
+            Page : Multipart_Upload_Page;
+            Options : constant List_Multipart_Uploads_Options :=
+              (Prefix => US.To_Unbounded_String ("small"), others => <>);
+            Conditions : Abort_Multipart_Conditions;
+         begin
+            Store.List_Multipart_Uploads
+              ("multipart-bucket", Options, null,
+               Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Success and then Page.Uploads.Length = 1
+               and then US.To_String (Page.Uploads.First_Element.Upload_ID) =
+                 US.To_String (Small_ID),
+               "memory abort initiation lookup failed");
+            Conditions :=
+              (Has_Initiated_Time => True,
+               Initiated_Time => Page.Uploads.First_Element.Initiated + 1);
+            Store.Abort_Multipart_Upload
+              ("multipart-bucket", "small", US.To_String (Small_ID),
+               Conditions, null, Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Precondition_Failed
+               and then Store.Bytes_Used = Byte_Count (5 * MiB + 9),
+               "memory failed abort condition retired staged parts");
+            Conditions.Initiated_Time :=
+              Page.Uploads.First_Element.Initiated;
+            Store.Abort_Multipart_Upload
+              ("multipart-bucket", "small", US.To_String (Small_ID),
+               Conditions, null, Ada.Real_Time.Time_Last, Result);
+         end;
          Assert
            (Result = Success
             and then Store.Bytes_Used = Byte_Count (5 * MiB + 4),
             "memory multipart abort did not release staged bytes");
          Store.Abort_Multipart_Upload
-           ("multipart-bucket", "small", US.To_String (Small_ID), null,
+           ("multipart-bucket", "small", US.To_String (Small_ID),
+            Flyology.Object_Storage.Backends.No_Abort_Multipart_Conditions,
+            null,
             Ada.Real_Time.Time_Last, Result);
          Assert (Result = Not_Found, "missing memory upload was not reported");
       end;
@@ -2049,12 +2081,41 @@ package body Object_Storage_Test_Cases is
                and then Flyology.Bytes.To_Byte_String
                  (Multipart_Sink.Data) = "multipart body",
                "files multipart completion body");
-            Store.Abort_Multipart_Upload
-              ("file-bucket", "aborted-target", US.To_String (Abort_ID),
-               null, Ada.Real_Time.Time_Last, Result);
+            declare
+               Page : Multipart_Upload_Page;
+               Options : constant List_Multipart_Uploads_Options :=
+                 (Prefix => US.To_Unbounded_String ("aborted-target"),
+                  others => <>);
+               Conditions : Abort_Multipart_Conditions;
+            begin
+               Store.List_Multipart_Uploads
+                 ("file-bucket", Options, null,
+                  Ada.Real_Time.Time_Last, Page, Result);
+               Assert
+                 (Result = Success and then Page.Uploads.Length = 1
+                  and then US.To_String
+                    (Page.Uploads.First_Element.Upload_ID) =
+                      US.To_String (Abort_ID),
+                  "files abort initiation lookup failed");
+               Conditions :=
+                 (Has_Initiated_Time => True,
+                  Initiated_Time => Page.Uploads.First_Element.Initiated + 1);
+               Store.Abort_Multipart_Upload
+                 ("file-bucket", "aborted-target", US.To_String (Abort_ID),
+                  Conditions, null, Ada.Real_Time.Time_Last, Result);
+               Assert
+                 (Result = Precondition_Failed,
+                  "files failed abort condition retired upload");
+               Conditions.Initiated_Time :=
+                 Page.Uploads.First_Element.Initiated;
+               Store.Abort_Multipart_Upload
+                 ("file-bucket", "aborted-target", US.To_String (Abort_ID),
+                  Conditions, null, Ada.Real_Time.Time_Last, Result);
+            end;
             Assert (Result = Success, "files persisted multipart abort");
             Store.Abort_Multipart_Upload
               ("file-bucket", "aborted-target", US.To_String (Abort_ID),
+               Flyology.Object_Storage.Backends.No_Abort_Multipart_Conditions,
                null, Ada.Real_Time.Time_Last, Result);
             Assert (Result = Not_Found, "files missing multipart upload");
          end;
@@ -2553,6 +2614,7 @@ package body Object_Storage_Test_Cases is
                Faults.Fail_Next_Barrier_After (Point);
                Store.Abort_Multipart_Upload
                  ("durability-bucket", "object", US.To_String (Upload_ID),
+                  (others => <>),
                   null, Ada.Real_Time.Time_Last, Result);
                Faults.Clear_Failure;
             end;

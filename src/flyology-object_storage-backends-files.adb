@@ -576,7 +576,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Bucket    : String;
       Key       : String;
       Upload_ID : String;
-      Options   : out Multipart_Options)
+      Options   : out Multipart_Options;
+      Created   : out Unix_Time)
    is
       File    : SIO.File_Type;
       Info    : Object_Information;
@@ -591,12 +592,25 @@ package body Flyology.Object_Storage.Backends.Files is
          raise Ada.IO_Exceptions.Data_Error;
       end if;
       Options.Content_Type := Info.Content_Type;
+      Created := Info.Modified;
    exception
       when others =>
          if SIO.Is_Open (File) then
             SIO.Close (File);
          end if;
          raise;
+   end Read_Manifest;
+
+   procedure Read_Manifest
+     (Item      : Store;
+      Bucket    : String;
+      Key       : String;
+      Upload_ID : String;
+      Options   : out Multipart_Options)
+   is
+      Created : Unix_Time;
+   begin
+      Read_Manifest (Item, Bucket, Key, Upload_ID, Options, Created);
    end Read_Manifest;
 
    function Has_Objects
@@ -2712,11 +2726,13 @@ package body Flyology.Object_Storage.Backends.Files is
       Bucket    : String;
       Key       : String;
       Upload_ID : String;
+      Conditions : Abort_Multipart_Conditions;
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Result    : out Status)
    is
       Options : Multipart_Options;
+      Created : Unix_Time;
       Locked  : Boolean := False;
    begin
       Check_Context (Token, Deadline);
@@ -2737,7 +2753,15 @@ package body Flyology.Object_Storage.Backends.Files is
          Locked := False;
          return;
       end if;
-      Read_Manifest (Item, Bucket, Key, Upload_ID, Options);
+      Read_Manifest (Item, Bucket, Key, Upload_ID, Options, Created);
+      if Conditions.Has_Initiated_Time
+        and then Created /= Conditions.Initiated_Time
+      then
+         Result := Precondition_Failed;
+         Item.Publication.Release;
+         Locked := False;
+         return;
+      end if;
       Remove_Tree (Item, Upload_Path (Item, Bucket, Upload_ID));
       Item.Publication.Release;
       Locked := False;

@@ -199,6 +199,7 @@ package Flyology.Object_Storage.Backends.Memory is
       Bucket    : String;
       Key       : String;
       Upload_ID : String;
+      Conditions : Abort_Multipart_Conditions;
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Result    : out Status);
@@ -364,6 +365,7 @@ private
         (Bucket    : String;
          Key       : String;
          Upload_ID : String;
+         Conditions : Abort_Multipart_Conditions;
          Result    : out Status);
       function Used_Bytes return Byte_Count;
    private

@@ -195,6 +195,7 @@ package Flyology.Object_Storage.Backends.SQLite is
       Bucket    : String;
       Key       : String;
       Upload_ID : String;
+      Conditions : Abort_Multipart_Conditions;
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Result    : out Status);

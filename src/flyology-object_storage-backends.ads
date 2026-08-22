@@ -189,6 +189,16 @@ package Flyology.Object_Storage.Backends is
 
    Default_Multipart_Options : constant Multipart_Options;
 
+   --  Atomic predicates for retiring an active multipart upload. The
+   --  initiation time is compared with the upload record under the same
+   --  publication boundary that removes its parts.
+   type Abort_Multipart_Conditions is record
+      Has_Initiated_Time : Boolean := False;
+      Initiated_Time     : Unix_Time := 0;
+   end record;
+
+   No_Abort_Multipart_Conditions : constant Abort_Multipart_Conditions;
+
    type Multipart_Part_Reference is record
       Number     : Multipart_Part_Number := Multipart_Part_Number'First;
       Entity_Tag : Ada.Strings.Unbounded.Unbounded_String;
@@ -473,13 +483,15 @@ package Flyology.Object_Storage.Backends is
       Info      : out Object_Information;
       Result    : out Status) is abstract;
 
-   --  Retire an upload and every staged part. A missing upload is reported as
-   --  Not_Found so the S3 boundary can return NoSuchUpload.
+   --  Retire an upload and every staged part atomically with Conditions. A
+   --  missing upload is Not_Found; a mismatched initiation time is
+   --  Precondition_Failed and leaves the upload and all parts unchanged.
    procedure Abort_Multipart_Upload
      (Item      : in out Backend;
       Bucket    : String;
       Key       : String;
       Upload_ID : String;
+      Conditions : Abort_Multipart_Conditions;
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Result    : out Status) is abstract;
@@ -489,6 +501,9 @@ private
      (Content_Type =>
         Ada.Strings.Unbounded.To_Unbounded_String
           ("application/octet-stream"));
+
+   No_Abort_Multipart_Conditions : constant Abort_Multipart_Conditions :=
+     (others => <>);
 
    Default_Copy_Options : constant Copy_Options :=
      (Metadata_Directive => Copy_Metadata,

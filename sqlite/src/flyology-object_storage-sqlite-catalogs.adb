@@ -1410,10 +1410,12 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Bucket           : String;
       Key              : String;
       Upload_ID        : String;
+      Conditions       : Backends.Abort_Multipart_Conditions;
       Retired_Payloads : out Payloads;
       Result           : out Status)
    is
       Content_Type   : US.Unbounded_String;
+      Created_Query  : DB.Statement;
       Delete         : DB.Statement;
       Locked         : Boolean := False;
       In_Transaction : Boolean := False;
@@ -1431,6 +1433,25 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Item.Gate.Release;
          Locked := False;
          return;
+      end if;
+      if Conditions.Has_Initiated_Time then
+         DB.Prepare
+           (Created_Query, Item.Database,
+            "SELECT created FROM multipart_uploads WHERE upload_id=?1");
+         DB.Bind (Created_Query, 1, Upload_ID);
+         if DB.Step (Created_Query) /= DB.Row then
+            raise Catalog_Error with
+              "multipart initiation-time query returned no row";
+         elsif Long_Long_Integer'(DB.Column (Created_Query, 0)) /=
+           Long_Long_Integer (Conditions.Initiated_Time)
+         then
+            DB.Rollback (Item.Database);
+            In_Transaction := False;
+            Result := Precondition_Failed;
+            Item.Gate.Release;
+            Locked := False;
+            return;
+         end if;
       end if;
       Collect_Multipart_Payloads (Item, Upload_ID, Retired_Payloads);
       DB.Prepare

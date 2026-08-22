@@ -167,6 +167,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket           : String;
       Key              : String;
       Upload_ID        : String;
+      Conditions       : Backends.Abort_Multipart_Conditions;
       Retired_Payloads : out Payloads;
       Result           : out Status);
 

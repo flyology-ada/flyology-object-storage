@@ -1393,14 +1393,43 @@ begin
             and then Flyology.Bytes.To_Byte_String
               (Multipart_Sink.Data) = "multipart body",
             "SQLite multipart completion body changed");
-         Store.Abort_Multipart_Upload
-           ("sqlite-bucket", "aborted-target",
-            US.To_String (SQLite_Abort_ID), null,
-            Ada.Real_Time.Time_Last, Result);
+         declare
+            Page : Multipart_Upload_Page;
+            Options : constant List_Multipart_Uploads_Options :=
+              (Prefix => US.To_Unbounded_String ("aborted-target"),
+               others => <>);
+            Conditions : Abort_Multipart_Conditions;
+         begin
+            Store.List_Multipart_Uploads
+              ("sqlite-bucket", Options, null,
+               Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Success and then Page.Uploads.Length = 1
+               and then US.To_String (Page.Uploads.First_Element.Upload_ID) =
+                 US.To_String (SQLite_Abort_ID),
+               "SQLite abort initiation lookup failed");
+            Conditions :=
+              (Has_Initiated_Time => True,
+               Initiated_Time => Page.Uploads.First_Element.Initiated + 1);
+            Store.Abort_Multipart_Upload
+              ("sqlite-bucket", "aborted-target",
+               US.To_String (SQLite_Abort_ID), Conditions, null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Precondition_Failed,
+               "SQLite failed abort condition retired upload");
+            Conditions.Initiated_Time :=
+              Page.Uploads.First_Element.Initiated;
+            Store.Abort_Multipart_Upload
+              ("sqlite-bucket", "aborted-target",
+               US.To_String (SQLite_Abort_ID), Conditions, null,
+               Ada.Real_Time.Time_Last, Result);
+         end;
          Assert (Result = Success, "SQLite persisted multipart abort failed");
          Store.Abort_Multipart_Upload
            ("sqlite-bucket", "aborted-target",
-            US.To_String (SQLite_Abort_ID), null,
+            US.To_String (SQLite_Abort_ID),
+            No_Abort_Multipart_Conditions, null,
             Ada.Real_Time.Time_Last, Result);
          Assert (Result = Not_Found, "SQLite missing upload was not reported");
       end;

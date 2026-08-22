@@ -1020,6 +1020,7 @@ package body Flyology.Object_Storage.Backends.Memory is
         (Bucket    : String;
          Key       : String;
          Upload_ID : String;
+         Conditions : Abort_Multipart_Conditions;
          Result    : out Status)
       is
          Upload_At : constant Natural :=
@@ -1027,6 +1028,11 @@ package body Flyology.Object_Storage.Backends.Memory is
       begin
          if Upload_At = 0 then
             Result := Not_Found;
+            return;
+         elsif Conditions.Has_Initiated_Time
+           and then Uploads (Upload_At).Created /= Conditions.Initiated_Time
+         then
+            Result := Precondition_Failed;
             return;
          end if;
          for Index in 1 .. Highest_Part loop
@@ -1927,6 +1933,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       Bucket    : String;
       Key       : String;
       Upload_ID : String;
+      Conditions : Abort_Multipart_Conditions;
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Result    : out Status)
@@ -1940,7 +1947,8 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result := Invalid_Request;
          return;
       end if;
-      Item.State.Abort_Multipart (Bucket, Key, Upload_ID, Result);
+      Item.State.Abort_Multipart
+        (Bucket, Key, Upload_ID, Conditions, Result);
    end Abort_Multipart_Upload;
 
    function Bytes_Used (Item : Store) return Byte_Count is

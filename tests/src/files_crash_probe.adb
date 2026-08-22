@@ -202,7 +202,8 @@ procedure Files_Crash_Probe is
          Result := Storage.Success;
       elsif Scenario = "abort" then
          Store.Abort_Multipart_Upload
-           (Bucket, Key, Only_Upload (Store), null,
+           (Bucket, Key, Only_Upload (Store),
+            Backends.No_Abort_Multipart_Conditions, null,
             Ada.Real_Time.Time_Last, Result);
       elsif Scenario = "delete-bucket" then
          Store.Delete_Bucket

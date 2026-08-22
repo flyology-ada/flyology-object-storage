@@ -2,9 +2,9 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest post-UploadPartCopy-client-hardening forced six-unit manifest-wide level-0
-proof completed with 405/405 checks proved, warnings as errors, zero justified
-checks, and zero Assume statements.
+The latest post-object-tagging and atomic AbortMultipartUpload forced six-unit
+manifest-wide level-0 proof completed with 411/411 checks proved, warnings as
+errors, zero justified checks, and zero Assume statements.
 
 ## Proved and Finalized
 <!-- Before marking an item complete here, follow the Widen Scope step
@@ -16,6 +16,7 @@ checks, and zero Assume statements.
   - [x] Looks_Like_IPv4
   - [x] Valid_Bucket_Name
   - [x] Valid_Object_Key
+  - [x] Valid_Object_Tag_Set (6 checks after manifest widening)
   - [x] Resolve_Range (23 attributed prover checks)
 - [x] Flyology.Object_Storage.S3.Core (level 0, all)
   - [x] Can_Transition
@@ -58,21 +59,11 @@ checks, and zero Assume statements.
 ## Reviewed
 <!-- Review proved implementations for proof-antipatterns before moving them. -->
 
-- [x] Flyology.Object_Storage.Valid_Object_Tag_Set
-  - scoped warnings-as-errors level-0 run was repeated after rebasing onto
-    `c93e132` and proved 6/6 checks: five run-time checks by CVC5 and one
-    termination check by flow analysis
-  - zero unproved or justified checks, warnings, and pragma Assume statements
-  - reviewed with no suppression, justification, axiom, clamp, or
-    body-level SPARK exclusion
-
 ## In Progress
 <!-- A proof worker executes the tactical loop for the item below. -->
 
 ## Not Started
 <!-- New or discovered proof-bearing subprograms belong here. -->
-
-- [ ] Manifest-wide re-verification after object-tagging integration
 
 ## Discovered Obligations
 
@@ -141,4 +132,7 @@ checks, and zero Assume statements.
 - [x] Proved `Valid_Object_Tag_Set` in a scoped warnings-as-errors level-0
       run: 6/6 checks, zero unproved or justified checks, and zero Assume
       statements.
-- [ ] Widen the forced six-unit manifest after object-tagging integration.
+- [x] Widened the forced six-unit manifest after object-tagging integration and
+      the atomic AbortMultipartUpload backend-contract change; all 411/411
+      checks proved with warnings as errors, zero justified checks, and zero
+      Assume statements.

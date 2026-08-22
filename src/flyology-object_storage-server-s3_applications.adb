@@ -2093,10 +2093,65 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                declare
                   Query : constant Multipart.Multipart_Query :=
                     Multipart.Parse_Query (Query_Text);
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Initiated_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-if-match-initiated-time");
+                  Owner_OK : Boolean := False;
+                  Conditions : Backends.Abort_Multipart_Conditions :=
+                    Backends.No_Abort_Multipart_Conditions;
                begin
+                  if Payer_Count > 1 or else Initiated_Count > 1 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "An AbortMultipartUpload header is duplicated",
+                        Target_Text);
+                     return;
+                  end if;
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer is invalid", Target_Text);
+                     return;
+                  elsif Payer_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Requester Pays is not implemented", Target_Text);
+                     return;
+                  elsif Initiated_Count = 1 then
+                     declare
+                        Parsed : constant
+                          Object_Reads.Conditional_Date_Result :=
+                            Object_Reads.Parse_Conditional_Date
+                              (Apps.Request_Header
+                                 (X, "x-amz-if-match-initiated-time"));
+                     begin
+                        if not Parsed.Valid
+                          or else Parsed.Seconds_Since_Epoch < 0
+                        then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The initiation time is invalid", Target_Text);
+                           return;
+                        end if;
+                        Conditions :=
+                          (Has_Initiated_Time => True,
+                           Initiated_Time => Unix_Time
+                             (Parsed.Seconds_Since_Epoch));
+                     end;
+                  end if;
                   Store.Abort_Multipart_Upload
                     (Bucket, Key,
                      US.To_String (Query.Existing_Upload_ID),
+                     Conditions,
                      Apps.Cancellation (X), Apps.Deadline (X), Result);
                   if Result = Success then
                      Apps.Respond (X, 204, "", "");

@@ -1576,6 +1576,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Bucket    : String;
       Key       : String;
       Upload_ID : String;
+      Conditions : Abort_Multipart_Conditions;
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Result    : out Status)
@@ -1591,7 +1592,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
          return;
       end if;
       Catalogs.Abort_Multipart_Upload
-        (Item.Catalog, Bucket, Key, Upload_ID, Retired, Result);
+        (Item.Catalog, Bucket, Key, Upload_ID, Conditions, Retired, Result);
       if Result = Success then
          for Name of Retired loop
             Delete_Payload_If_Present (Item, US.To_String (Name));

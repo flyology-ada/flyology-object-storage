@@ -11,6 +11,8 @@ with Flyology.HTTP.Server;
 with Flyology.HTTP.Server.Applications;
 with Flyology.IO;
 with Flyology.IO.Sockets;
+with Flyology.Object_Storage;
+with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Deletions;
@@ -33,6 +35,7 @@ procedure S3_Server_Application_Corpus is
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package Multipart_Uploads renames
      Flyology.Object_Storage.S3.Multipart_Uploads;
+   package Backends renames Flyology.Object_Storage.Backends;
    package Authentication renames
      Flyology.Object_Storage.Server.Authentication;
    package Static_Credentials renames
@@ -40,6 +43,8 @@ procedure S3_Server_Application_Corpus is
    package US renames Ada.Strings.Unbounded;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Containers.Count_Type;
+   use type Ada.Calendar.Time;
+   use type Flyology.Object_Storage.Status;
 
    CRLF : constant String := Character'Val (13) & Character'Val (10);
    Access_Key : constant String := "AKIDEXAMPLE";
@@ -64,6 +69,33 @@ procedure S3_Server_Application_Corpus is
          raise Program_Error with Message;
       end if;
    end Require;
+
+   function HTTP_Date
+     (Value : Flyology.Object_Storage.Unix_Time) return String
+   is
+      type Short_Name is new String (1 .. 3);
+      Weekdays : constant array (Natural range 0 .. 6) of Short_Name :=
+        ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun");
+      Months : constant array (Ada.Calendar.Month_Number) of Short_Name :=
+        (1 => "Jan", 2 => "Feb", 3 => "Mar", 4 => "Apr",
+         5 => "May", 6 => "Jun", 7 => "Jul", 8 => "Aug",
+         9 => "Sep", 10 => "Oct", 11 => "Nov", 12 => "Dec");
+      Epoch : constant Ada.Calendar.Time :=
+        Ada.Calendar.Formatting.Time_Of
+          (1970, 1, 1, 0, 0, 0, Time_Zone => 0);
+      Date : constant Ada.Calendar.Time := Epoch + Duration (Value);
+      Image : constant String := Ada.Calendar.Formatting.Image
+        (Date, Include_Time_Fraction => False, Time_Zone => 0);
+      Month : constant Ada.Calendar.Month_Number :=
+        Ada.Calendar.Formatting.Month (Date, Time_Zone => 0);
+   begin
+      return String
+        (Weekdays (Natural ((Value / 86_400 + 3) mod 7))) & ", " &
+        Image (Image'First + 8 .. Image'First + 9) & " " &
+        String (Months (Month)) & " " &
+        Image (Image'First .. Image'First + 3) & " " &
+        Image (Image'First + 11 .. Image'First + 18) & " GMT";
+   end HTTP_Date;
 
    type Memory_Transport is limited new HTTP_Server.Transport with record
       Input       : US.Unbounded_String;
@@ -965,15 +997,86 @@ procedure S3_Server_Application_Corpus is
          Abort_ID : constant String := US.To_String
            (Multipart.Parse_Create_Result
               (Response_Body (Abort_Create)).Upload_ID);
+         function Initiated_HTTP_Date return String is
+            Options : constant Backends.List_Multipart_Uploads_Options :=
+              (Prefix => US.To_Unbounded_String ("abort-object"),
+               others => <>);
+            Page : Backends.Multipart_Upload_Page;
+            Result : Flyology.Object_Storage.Status;
+         begin
+            Store.List_Multipart_Uploads
+              ("test-bucket", Options, null, Ada.Real_Time.Time_Last,
+               Page, Result);
+            Require
+              (Result = Flyology.Object_Storage.Success
+               and then Page.Uploads.Length = 1
+               and then US.To_String (Page.Uploads.First_Element.Upload_ID) =
+                 Abort_ID,
+               "AbortMultipartUpload initiation lookup failed");
+            return HTTP_Date (Page.Uploads.First_Element.Initiated);
+         end Initiated_HTTP_Date;
+         Initiated : constant String := Initiated_HTTP_Date;
          Abort_Query : constant SigV4.Name_Value_Array :=
            (1 => SigV4.Pair ("uploadId", Abort_ID));
+         Invalid_Date : constant String := Run
+           (Signed_Query_Body_Request
+              ("DELETE", "/test-bucket/abort-object", Abort_Query, "",
+               "x-amz-if-match-initiated-time: not-a-date" & CRLF));
+         Wrong_Time : constant String := Run
+           (Signed_Query_Body_Request
+               ("DELETE", "/test-bucket/abort-object", Abort_Query, "",
+                "x-amz-if-match-initiated-time: " &
+               "Thu, 01 Jan 1970 00:00:00 GMT" & CRLF));
+         Wrong_Owner : constant String := Run
+           (Signed_Query_Body_Request
+              ("DELETE", "/test-bucket/abort-object", Abort_Query, "",
+               "x-amz-expected-bucket-owner: another-principal" & CRLF));
+         Invalid_Payer : constant String := Run
+           (Signed_Query_Body_Request
+              ("DELETE", "/test-bucket/abort-object", Abort_Query, "",
+               "x-amz-request-payer: owner" & CRLF));
+         Requester_Pays : constant String := Run
+           (Signed_Query_Body_Request
+              ("DELETE", "/test-bucket/abort-object", Abort_Query, "",
+               "x-amz-request-payer: requester" & CRLF));
+         Duplicate_Time : constant String := Run
+           (Signed_Query_Body_Request
+               ("DELETE", "/test-bucket/abort-object", Abort_Query, "",
+                "x-amz-if-match-initiated-time: " &
+               Initiated & CRLF &
+                "x-amz-if-match-initiated-time: " &
+               Initiated & CRLF));
          Response : constant String := Run
            (Signed_Query_Body_Request
-              ("DELETE", "/test-bucket/abort-object", Abort_Query, ""));
+               ("DELETE", "/test-bucket/abort-object", Abort_Query, "",
+                "x-amz-if-match-initiated-time: " &
+               Initiated & CRLF));
       begin
          Require
+           (Has (Invalid_Date, "400 Bad Request")
+            and then Has (Invalid_Date, "<Code>InvalidArgument</Code>"),
+            "AbortMultipartUpload invalid date mismatch: " & Invalid_Date);
+         Require
+           (Has (Wrong_Time, "HTTP/1.1 412")
+            and then Has (Wrong_Time, "<Code>PreconditionFailed</Code>"),
+            "AbortMultipartUpload wrong time mismatch: " & Wrong_Time);
+         Require
+           (Has (Wrong_Owner, "403 Forbidden"),
+            "AbortMultipartUpload wrong owner mismatch: " & Wrong_Owner);
+         Require
+           (Has (Invalid_Payer, "400 Bad Request"),
+            "AbortMultipartUpload invalid payer mismatch: " & Invalid_Payer);
+         Require
+           (Has (Requester_Pays, "501 Not Implemented"),
+            "AbortMultipartUpload requester-pays mismatch: " &
+            Requester_Pays);
+         Require
+           (Has (Duplicate_Time, "400 Bad Request"),
+            "AbortMultipartUpload duplicate time mismatch: " &
+            Duplicate_Time);
+         Require
            (Has (Response, "204 No Content"),
-            "AbortMultipartUpload server response mismatch");
+            "AbortMultipartUpload success mismatch: " & Response);
          Require
            (Has
               (Run
