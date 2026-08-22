@@ -1382,6 +1382,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Key       : String;
       Upload_ID : String;
       Parts     : Multipart_Part_References;
+      Options   : Complete_Multipart_Options;
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
@@ -1457,6 +1458,12 @@ package body Flyology.Object_Storage.Backends.SQLite is
               (Hash, US.To_String (Record_Value.Info.Entity_Tag));
          end;
       end loop;
+      if Options.Expected_Size.Kind = Known
+        and then Options.Expected_Size.Bytes /= Total
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
       Info :=
         (Size         => Total,
          Modified     => Unix_Seconds (Ada.Calendar.Clock),
@@ -1519,7 +1526,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Sync_Path (Objects_Path (Item), Directory => True);
       Catalogs.Complete_Multipart_Upload
         (Item.Catalog, Bucket, Key, Upload_ID, Records,
-         US.To_String (Payload), Info, Previous, Retired, Result);
+         US.To_String (Payload), Info, Options.Conditions, Previous, Retired,
+         Result);
       if Result /= Success then
          Delete_Payload_If_Present (Item, US.To_String (Payload));
          Published := False;

@@ -833,6 +833,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Key       : String;
          Upload_ID : String;
          Completion : Multipart_Part_References;
+         Options   : Complete_Multipart_Options;
          Modified  : Unix_Time;
          Info      : out Object_Information;
          Result    : out Status)
@@ -910,6 +911,24 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Capacity_Exceeded;
             return;
          end if;
+         if Options.Expected_Size.Kind = Known
+           and then Options.Expected_Size.Bytes /= Final_Size
+         then
+            Result := Invalid_Request;
+            return;
+         end if;
+         declare
+            Condition_Result : constant Status := Evaluate_Write_Conditions
+              (Options.Conditions, Object_At /= 0,
+               (if Object_At = 0 then ""
+                else Ada.Strings.Unbounded.To_String
+                  (Objects (Object_At).Info.Entity_Tag)));
+         begin
+            if Condition_Result /= Success then
+               Result := Condition_Result;
+               return;
+            end if;
+         end;
          if Final_Size > Byte_Limit - Bytes
            or else Reserved_Bytes > Byte_Limit - Bytes - Final_Size
          then
@@ -1909,6 +1928,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       Key       : String;
       Upload_ID : String;
       Parts     : Multipart_Part_References;
+      Options   : Complete_Multipart_Options;
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
@@ -1925,7 +1945,8 @@ package body Flyology.Object_Storage.Backends.Memory is
          return;
       end if;
       Item.State.Complete_Multipart
-        (Bucket, Key, Upload_ID, Parts, Current_Unix_Time, Info, Result);
+        (Bucket, Key, Upload_ID, Parts, Options, Current_Unix_Time, Info,
+         Result);
    end Complete_Multipart_Upload;
 
    overriding procedure Abort_Multipart_Upload

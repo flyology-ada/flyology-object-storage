@@ -85,6 +85,15 @@ package Flyology.Object_Storage.Backends is
    function Copy_Conditions_Accept
      (Conditions : Copy_Conditions; Entity_Tag : String) return Boolean;
 
+   --  Evaluate If-Match and If-None-Match for an atomic object publication.
+   --  A missing destination never satisfies If-Match and always satisfies a
+   --  syntactically valid If-None-Match. Failures are Precondition_Failed;
+   --  malformed entity-tag lists are Invalid_Request.
+   function Evaluate_Write_Conditions
+     (Conditions : Copy_Conditions;
+      Exists     : Boolean;
+      Entity_Tag : String) return Status;
+
    --  Conditional-read timestamps are signed so valid HTTP dates before the
    --  Unix epoch can be compared without lossy clamping.
    type Optional_Condition_Time (Is_Set : Boolean := False) is record
@@ -188,6 +197,15 @@ package Flyology.Object_Storage.Backends is
    end record;
 
    Default_Multipart_Options : constant Multipart_Options;
+
+   --  Predicates and exact assembled size checked in the same publication
+   --  boundary that replaces the destination and retires the upload.
+   type Complete_Multipart_Options is record
+      Conditions    : Copy_Conditions;
+      Expected_Size : Source_Length;
+   end record;
+
+   Default_Complete_Multipart_Options : constant Complete_Multipart_Options;
 
    --  Atomic predicates for retiring an active multipart upload. The
    --  initiation time is compared with the upload record under the same
@@ -478,10 +496,24 @@ package Flyology.Object_Storage.Backends is
       Key       : String;
       Upload_ID : String;
       Parts     : Multipart_Part_References;
+      Options   : Complete_Multipart_Options;
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
       Result    : out Status) is abstract;
+
+   --  Compatibility convenience using no destination predicates and no
+   --  exact assembled-size assertion.
+   procedure Complete_Multipart_Upload
+     (Item      : in out Backend'Class;
+      Bucket    : String;
+      Key       : String;
+      Upload_ID : String;
+      Parts     : Multipart_Part_References;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Info      : out Object_Information;
+      Result    : out Status);
 
    --  Retire an upload and every staged part atomically with Conditions. A
    --  missing upload is Not_Found; a mismatched initiation time is
@@ -501,6 +533,10 @@ private
      (Content_Type =>
         Ada.Strings.Unbounded.To_Unbounded_String
           ("application/octet-stream"));
+
+   Default_Complete_Multipart_Options : constant Complete_Multipart_Options :=
+     (Conditions    => (others => <>),
+      Expected_Size => (Kind => Unknown));
 
    No_Abort_Multipart_Conditions : constant Abort_Multipart_Conditions :=
      (others => <>);

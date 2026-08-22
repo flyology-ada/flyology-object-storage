@@ -2,6 +2,192 @@ package body Flyology.Object_Storage
   with SPARK_Mode => On
 is
 
+   Maximum_Condition_Length : constant := 16_384;
+   Maximum_Entity_Tag_Length : constant := 8_192;
+
+   function Character_At (Value : String; Offset : Positive)
+      return Character
+   with Pre => Offset <= Value'Length;
+
+   function Character_At (Value : String; Offset : Positive)
+      return Character is
+     (Value (Value'First + (Offset - 1)));
+
+   procedure Read_Entity_Tag_List
+     (Value      : String;
+      Entity_Tag : String;
+      Weak_Match : Boolean;
+      Valid      : out Boolean;
+      Matches    : out Boolean)
+   with Always_Terminates
+   is
+      Cursor : Natural := 1;
+      Length : constant Natural := Value'Length;
+      Remaining_Items : Natural;
+
+      procedure Skip_Whitespace
+      with
+        Pre => Length <= Maximum_Condition_Length
+          and then Cursor in 1 .. Maximum_Condition_Length + 1,
+        Post => Cursor in 1 .. Maximum_Condition_Length + 1,
+        Always_Terminates
+      is
+      begin
+         while Cursor <= Length
+           and then Character_At (Value, Positive (Cursor)) in ' ' | ASCII.HT
+         loop
+            pragma Loop_Invariant
+              (Cursor in 1 .. Maximum_Condition_Length);
+            pragma Loop_Variant (Increases => Cursor);
+            Cursor := Cursor + 1;
+         end loop;
+      end Skip_Whitespace;
+
+      function Same_Tag (First, Last : Natural) return Boolean
+      with
+        Pre => Length <= Maximum_Condition_Length
+          and then First >= 1
+          and then First <= Last
+          and then Last <= Length
+      is
+         Tag_Length : constant Natural := Last - First;
+      begin
+         if Tag_Length /= Entity_Tag'Length then
+            return False;
+         elsif Tag_Length = 0 then
+            return True;
+         end if;
+         for Offset in 0 .. Tag_Length - 1 loop
+            pragma Loop_Invariant (First + Offset < Last);
+            if Character_At (Value, Positive (First + Offset)) /=
+              Character_At (Entity_Tag, Offset + 1)
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Same_Tag;
+   begin
+      Valid := False;
+      Matches := False;
+      if Length > Maximum_Condition_Length
+        or else Entity_Tag'Length > Maximum_Entity_Tag_Length
+      then
+         return;
+      end if;
+      Remaining_Items := Length + 1;
+      Skip_Whitespace;
+      if Cursor > Length then
+         return;
+      elsif Character_At (Value, Positive (Cursor)) = '*' then
+         Cursor := Cursor + 1;
+         Skip_Whitespace;
+         Valid := Cursor > Length;
+         Matches := Valid;
+         return;
+      end if;
+
+      loop
+         pragma Loop_Invariant
+           (Length <= Maximum_Condition_Length
+            and then Cursor in 1 .. Maximum_Condition_Length + 1
+            and then Remaining_Items <= Maximum_Condition_Length + 1);
+         pragma Loop_Variant (Decreases => Remaining_Items);
+         Skip_Whitespace;
+         if Cursor > Length then
+            return;
+         end if;
+         declare
+            Weak : Boolean := False;
+            First : Natural;
+         begin
+            if Cursor < Length
+              and then Character_At (Value, Positive (Cursor)) = 'W'
+              and then Character_At (Value, Positive (Cursor + 1)) = '/'
+            then
+               Weak := True;
+               Cursor := Cursor + 2;
+            end if;
+            if Cursor > Length
+              or else Character_At (Value, Positive (Cursor)) /= '"'
+            then
+               return;
+            end if;
+            Cursor := Cursor + 1;
+            First := Cursor;
+            while Cursor <= Length
+              and then Character_At (Value, Positive (Cursor)) /= '"'
+            loop
+               pragma Loop_Invariant
+                 (Cursor in 1 .. Maximum_Condition_Length);
+               pragma Loop_Variant (Increases => Cursor);
+               declare
+                  Item : constant Character :=
+                    Character_At (Value, Positive (Cursor));
+               begin
+                  if Character'Pos (Item) < 16#21#
+                    or else Character'Pos (Item) = 16#7F#
+                  then
+                     return;
+                  end if;
+               end;
+               Cursor := Cursor + 1;
+            end loop;
+            if Cursor > Length then
+               return;
+            end if;
+            if First > Cursor then
+               return;
+            elsif (not Weak or else Weak_Match)
+              and then Same_Tag (First, Cursor)
+            then
+               Matches := True;
+            end if;
+            Cursor := Cursor + 1;
+         end;
+         Skip_Whitespace;
+         if Cursor > Length then
+            Valid := True;
+            return;
+         elsif Character_At (Value, Positive (Cursor)) /= ',' then
+            return;
+         end if;
+         Cursor := Cursor + 1;
+         if Remaining_Items = 0 then
+            return;
+         end if;
+         Remaining_Items := Remaining_Items - 1;
+      end loop;
+   end Read_Entity_Tag_List;
+
+   function Evaluate_Object_Write_Conditions
+     (If_Match, If_None_Match : String;
+      Exists                  : Boolean;
+      Entity_Tag              : String) return Status
+   is
+      Valid, Matches : Boolean;
+   begin
+      if If_Match'Length > 0 then
+         Read_Entity_Tag_List
+           (If_Match, Entity_Tag, False, Valid, Matches);
+         if not Valid then
+            return Invalid_Request;
+         elsif not Exists or else not Matches then
+            return Precondition_Failed;
+         end if;
+      end if;
+      if If_None_Match'Length > 0 then
+         Read_Entity_Tag_List
+           (If_None_Match, Entity_Tag, True, Valid, Matches);
+         if not Valid then
+            return Invalid_Request;
+         elsif Exists and then Matches then
+            return Precondition_Failed;
+         end if;
+      end if;
+      return Success;
+   end Evaluate_Object_Write_Conditions;
+
    function Starts_With (Value, Prefix : String) return Boolean is
      (Value'Length >= Prefix'Length
       and then Value

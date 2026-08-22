@@ -61,6 +61,17 @@ initiation-time preconditions remain optional named arguments; the low-level
 builder signs the complete six-member pinned request shape and validates the
 sole `x-amz-request-charged` success member.
 
+`Client.Low_Level.Prepare_Complete_Multipart_Upload` preserves its compact
+overload and also exposes all 23 pinned request members through typed
+parameters: ten checksum families, checksum type, exact assembled size,
+destination entity-tag predicates, owner/payer policy, and SSE-C material.
+The result retains all 21 modeled body and response-header members. The
+Flyology server evaluates `If-Match`, `If-None-Match`, and exact assembled
+size inside each backend's atomic publication boundary, so a failed predicate
+does not retire the staged upload. Additional-checksum completion and
+encrypted-upload policy remain explicitly unsupported by the server and keep
+the operation's server coverage partial.
+
 ## HeadObject reconciliation
 
 `Head_Object` performs that reconciliation without retaining a response body.

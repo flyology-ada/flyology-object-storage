@@ -183,4 +183,30 @@ package body Flyology.Object_Storage.Backends is
              (None_Match_Value, Entity_Tag));
    end Copy_Conditions_Accept;
 
+   function Evaluate_Write_Conditions
+     (Conditions : Copy_Conditions;
+      Exists     : Boolean;
+      Entity_Tag : String) return Status
+   is
+     (Evaluate_Object_Write_Conditions
+        (Ada.Strings.Unbounded.To_String (Conditions.If_Match),
+         Ada.Strings.Unbounded.To_String (Conditions.If_None_Match),
+         Exists, Entity_Tag));
+
+   procedure Complete_Multipart_Upload
+     (Item      : in out Backend'Class;
+      Bucket    : String;
+      Key       : String;
+      Upload_ID : String;
+      Parts     : Multipart_Part_References;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Info      : out Object_Information;
+      Result    : out Status) is
+   begin
+      Item.Complete_Multipart_Upload
+        (Bucket, Key, Upload_ID, Parts, Default_Complete_Multipart_Options,
+         Token, Deadline, Info, Result);
+   end Complete_Multipart_Upload;
+
 end Flyology.Object_Storage.Backends;

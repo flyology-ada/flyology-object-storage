@@ -689,7 +689,8 @@ begin
             Version      => US.Null_Unbounded_String);
          Catalogs.Complete_Multipart_Upload
            (Catalog, "catalog-bucket", "multipart-key", Upload_ID, Records,
-            "multipart-final-payload", Info, Previous, Retired, Result);
+            "multipart-final-payload", Info, (others => <>), Previous,
+            Retired, Result);
          Assert
            (Result = Success and then Retired.Length = 2
             and then US.Length (Previous) = 0,
@@ -1375,10 +1376,26 @@ begin
          Completion.Append
            (Multipart_Part_Reference'
               (Number => 1, Entity_Tag => SQLite_Part_ETag));
-         Store.Complete_Multipart_Upload
-           ("sqlite-bucket", "multipart-target",
-            US.To_String (SQLite_Upload_ID), Completion, null,
-            Ada.Real_Time.Time_Last, Info, Result);
+         declare
+            Options : Complete_Multipart_Options :=
+              Default_Complete_Multipart_Options;
+         begin
+            Options.Expected_Size := (Kind => Known, Bytes => 15);
+            Store.Complete_Multipart_Upload
+              ("sqlite-bucket", "multipart-target",
+               US.To_String (SQLite_Upload_ID), Completion, Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Invalid_Request,
+               "SQLite wrong multipart object size consumed upload");
+            Options.Expected_Size.Bytes := 14;
+            Options.Conditions.If_None_Match :=
+              US.To_Unbounded_String ("*");
+            Store.Complete_Multipart_Upload
+              ("sqlite-bucket", "multipart-target",
+               US.To_String (SQLite_Upload_ID), Completion, Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+         end;
          Assert
            (Result = Success
             and then Info.Size = 14

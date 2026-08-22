@@ -158,6 +158,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Selected         : Multipart_Part_Records;
       Payload          : String;
       Info             : Object_Information;
+      Conditions       : Backends.Copy_Conditions;
       Previous_Payload : out Ada.Strings.Unbounded.Unbounded_String;
       Retired_Payloads : out Payloads;
       Result           : out Status);

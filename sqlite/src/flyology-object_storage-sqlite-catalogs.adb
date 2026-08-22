@@ -1291,6 +1291,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Selected         : Multipart_Part_Records;
       Payload          : String;
       Info             : Object_Information;
+      Conditions       : Backends.Copy_Conditions;
       Previous_Payload : out US.Unbounded_String;
       Retired_Payloads : out Payloads;
       Result           : out Status)
@@ -1300,6 +1301,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Clear_Tags     : DB.Statement;
       Delete         : DB.Statement;
       Existing       : Object_Information;
+      Existing_Found : Boolean;
       Locked         : Boolean := False;
       In_Transaction : Boolean := False;
    begin
@@ -1354,6 +1356,24 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Collect_Multipart_Payloads (Item, Upload_ID, Retired_Payloads);
       Find_Object_Internal
         (Item, Bucket, Key, Previous_Payload, Existing, Result);
+      Existing_Found := Result = Success;
+      if Result not in Success | Not_Found then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      Result := Backends.Evaluate_Write_Conditions
+        (Conditions, Existing_Found,
+         US.To_String (Existing.Entity_Tag));
+      if Result /= Success then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
       DB.Prepare
         (Upsert, Item.Database,
          "INSERT INTO objects(" &

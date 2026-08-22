@@ -536,6 +536,35 @@ procedure S3_Server_Application_Corpus is
         "Connection: close" & CRLF & CRLF & Payload;
    end Signed_Query_Body_Request;
 
+   function Signed_Query_Body_Header_Request
+     (Method       : String;
+      Target       : String;
+      Query        : SigV4.Name_Value_Array;
+      Payload      : String;
+      Header_Name  : String;
+      Header_Value : String) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair (Header_Name, Header_Value),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        (Method, Target, Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+      Query_Text : constant String := SigV4.Canonical_Query (Query);
+   begin
+      return Method & " " & Target & "?" & Query_Text & " HTTP/1.1" &
+        CRLF & "Host: " & Host & CRLF & "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF & Header_Name &
+        ": " & Header_Value & CRLF & "Authorization: " &
+        US.To_String (Signing.Authorization) & CRLF & "Content-Length: " &
+        Ada.Strings.Fixed.Trim
+          (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
+        "Connection: close" & CRLF & CRLF & Payload;
+   end Signed_Query_Body_Header_Request;
+
    function Run (Input : String; Receive_Max : Natural := Natural'Last)
      return String
    is
@@ -906,13 +935,24 @@ procedure S3_Server_Application_Corpus is
          declare
             Document : constant String :=
               Multipart.Serialize_Complete_Request (Completion);
+            Wrong_Size : constant String := Run
+              (Signed_Query_Body_Header_Request
+                 ("POST", "/test-bucket/multipart-object", Query, Document,
+                  "x-amz-mp-object-size", "15"));
+            Failed_Match : constant String := Run
+              (Signed_Query_Body_Header_Request
+                 ("POST", "/test-bucket/multipart-object", Query, Document,
+                  "If-Match", "*"));
             Response : constant String := Run
-              (Signed_Query_Body_Request
-                 ("POST", "/test-bucket/multipart-object", Query, Document),
+              (Signed_Query_Body_Header_Request
+                 ("POST", "/test-bucket/multipart-object", Query, Document,
+                  "x-amz-mp-object-size", "14"),
                Receive_Max => 2);
          begin
             Require
-              (Has (Response, "200 OK")
+              (Has (Wrong_Size, "InvalidRequest")
+               and then Has (Failed_Match, "PreconditionFailed")
+               and then Has (Response, "200 OK")
                and then Has (Response, "<ETag>""")
                and then Has (Response, "-1""</ETag>"),
                "CompleteMultipartUpload server response mismatch: " &

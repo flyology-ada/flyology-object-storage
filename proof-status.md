@@ -2,8 +2,8 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest post-object-tagging and atomic AbortMultipartUpload forced six-unit
-manifest-wide level-0 proof completed with 411/411 checks proved, warnings as
+The latest atomic CompleteMultipartUpload condition-parser forced six-unit
+manifest-wide level-0 proof completed with 478/478 checks proved, warnings as
 errors, zero justified checks, and zero Assume statements.
 
 ## Proved and Finalized
@@ -17,6 +17,8 @@ errors, zero justified checks, and zero Assume statements.
   - [x] Valid_Bucket_Name
   - [x] Valid_Object_Key
   - [x] Valid_Object_Tag_Set (6 checks after manifest widening)
+  - [x] Evaluate_Object_Write_Conditions
+  - [x] Read_Entity_Tag_List and bounded helper loops (53 checks)
   - [x] Resolve_Range (23 attributed prover checks)
 - [x] Flyology.Object_Storage.S3.Core (level 0, all)
   - [x] Can_Transition
@@ -136,3 +138,7 @@ errors, zero justified checks, and zero Assume statements.
       the atomic AbortMultipartUpload backend-contract change; all 411/411
       checks proved with warnings as errors, zero justified checks, and zero
       Assume statements.
+- [x] Moved atomic object-publication entity-tag conditions into the SPARK
+      domain, proved bounded parsing, matching, loop termination, and all
+      run-time checks, then widened the forced manifest to 478/478 checks with
+      zero justified checks and zero Assume statements.

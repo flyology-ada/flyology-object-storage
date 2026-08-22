@@ -885,6 +885,42 @@ package body Object_Storage_Test_Cases is
       Assert (not Valid_Object_Key (Nul_Key), "NUL key");
       Assert
         (not Valid_Object_Key ((1 .. 1_025 => 'x')), "key over 1,024 bytes");
+      Assert
+        (Evaluate_Object_Write_Conditions
+           ("""etag""", "", True, "etag") = Success,
+         "strong If-Match did not match");
+      Assert
+        (Evaluate_Object_Write_Conditions
+           ("W/""etag""", "", True, "etag") = Precondition_Failed,
+         "weak If-Match incorrectly matched");
+      Assert
+        (Evaluate_Object_Write_Conditions
+           ("*", "", False, "") = Precondition_Failed,
+         "If-Match accepted an absent object");
+      Assert
+        (Evaluate_Object_Write_Conditions
+           ("", "*", False, "") = Success,
+         "If-None-Match rejected an absent object");
+      Assert
+        (Evaluate_Object_Write_Conditions
+           ("", "W/""etag""", True, "etag") = Precondition_Failed,
+         "weak If-None-Match did not match");
+      Assert
+        (Evaluate_Object_Write_Conditions
+           (" ""other"", ""etag"" ", "", True, "etag") = Success,
+         "entity-tag lists or optional whitespace were mishandled");
+      Assert
+        (Evaluate_Object_Write_Conditions
+           ("""unterminated", "", True, "etag") = Invalid_Request,
+         "malformed If-Match was accepted");
+      Assert
+        (Evaluate_Object_Write_Conditions
+           ("", "*, ""etag""", True, "etag") = Invalid_Request,
+         "mixed wildcard If-None-Match was accepted");
+      Assert
+        (Evaluate_Object_Write_Conditions
+           ((1 .. 16_385 => 'x'), "", True, "etag") = Invalid_Request,
+         "oversized condition field was accepted");
    end Check_Validators;
 
    procedure Check_Memory_Lifecycle (Unused : in out Fixture) is
@@ -1252,9 +1288,36 @@ package body Object_Storage_Test_Cases is
          Completion.Replace_Element
            (1, Multipart_Part_Reference'
              (Number => 1, Entity_Tag => First_ETag));
-         Store.Complete_Multipart_Upload
-           ("multipart-bucket", "target", US.To_String (Upload_ID),
-            Completion, null, Ada.Real_Time.Time_Last, Info, Result);
+         declare
+            Options : Complete_Multipart_Options :=
+              Default_Complete_Multipart_Options;
+         begin
+            Options.Expected_Size :=
+              (Kind => Known, Bytes => Byte_Count (5 * MiB + 5));
+            Store.Complete_Multipart_Upload
+              ("multipart-bucket", "target", US.To_String (Upload_ID),
+               Completion, Options, null, Ada.Real_Time.Time_Last, Info,
+               Result);
+            Assert
+              (Result = Invalid_Request,
+               "wrong memory multipart object size consumed the upload");
+            Options.Expected_Size.Bytes := Byte_Count (5 * MiB + 4);
+            Options.Conditions.If_Match := US.To_Unbounded_String ("*");
+            Store.Complete_Multipart_Upload
+              ("multipart-bucket", "target", US.To_String (Upload_ID),
+               Completion, Options, null, Ada.Real_Time.Time_Last, Info,
+               Result);
+            Assert
+              (Result = Precondition_Failed,
+               "memory completion If-Match accepted a missing target");
+            Options.Conditions.If_Match := US.Null_Unbounded_String;
+            Options.Conditions.If_None_Match :=
+              US.To_Unbounded_String ("*");
+            Store.Complete_Multipart_Upload
+              ("multipart-bucket", "target", US.To_String (Upload_ID),
+               Completion, Options, null, Ada.Real_Time.Time_Last, Info,
+               Result);
+         end;
          Assert
            (Result = Success
             and then Info.Size = Byte_Count (5 * MiB + 4)
@@ -2063,10 +2126,26 @@ package body Object_Storage_Test_Cases is
             Completion.Append
               (Multipart_Part_Reference'
                  (Number => 1, Entity_Tag => Part_ETag));
-            Store.Complete_Multipart_Upload
-              ("file-bucket", "multipart-target",
-               US.To_String (Upload_ID), Completion, null,
-               Ada.Real_Time.Time_Last, Info, Result);
+            declare
+               Options : Complete_Multipart_Options :=
+                 Default_Complete_Multipart_Options;
+            begin
+               Options.Expected_Size := (Kind => Known, Bytes => 15);
+               Store.Complete_Multipart_Upload
+                 ("file-bucket", "multipart-target",
+                  US.To_String (Upload_ID), Completion, Options, null,
+                  Ada.Real_Time.Time_Last, Info, Result);
+               Assert
+                 (Result = Invalid_Request,
+                  "files wrong multipart object size consumed upload");
+               Options.Expected_Size.Bytes := 14;
+               Options.Conditions.If_None_Match :=
+                 US.To_Unbounded_String ("*");
+               Store.Complete_Multipart_Upload
+                 ("file-bucket", "multipart-target",
+                  US.To_String (Upload_ID), Completion, Options, null,
+                  Ada.Real_Time.Time_Last, Info, Result);
+            end;
             Assert
               (Result = Success
                and then Info.Size = 14

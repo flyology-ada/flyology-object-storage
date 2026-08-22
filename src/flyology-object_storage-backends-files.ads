@@ -199,6 +199,7 @@ package Flyology.Object_Storage.Backends.Files is
       Key       : String;
       Upload_ID : String;
       Parts     : Multipart_Part_References;
+      Options   : Complete_Multipart_Options;
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;

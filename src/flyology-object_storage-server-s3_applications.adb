@@ -2026,6 +2026,27 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                       Multipart.Parse_Complete_Request
                         (Read_Document (Source));
                   Completion : Backends.Multipart_Part_References;
+                  Options : Backends.Complete_Multipart_Options :=
+                    Backends.Default_Complete_Multipart_Options;
+                  Owner_OK : Boolean := False;
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Size_Count : constant Natural := Apps.Request_Header_Count
+                    (X, "x-amz-mp-object-size");
+                  Match_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "if-match");
+                  None_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "if-none-match");
+                  SSE_Algorithm_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X,
+                       "x-amz-server-side-encryption-customer-algorithm");
+                  SSE_Key_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-key");
+                  SSE_MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-key-md5");
 
                   function Bare_ETag (Value : String) return String is
                     (if Value'Length >= 2
@@ -2047,6 +2068,78 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      or else US.Length (Part.Checksum_XXHASH3) > 0
                      or else US.Length (Part.Checksum_XXHASH128) > 0);
                begin
+                  if Payer_Count > 1
+                    or else Size_Count > 1
+                    or else Match_Count > 1
+                    or else None_Count > 1
+                    or else SSE_Algorithm_Count > 1
+                    or else SSE_Key_Count > 1
+                    or else SSE_MD5_Count > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A CompleteMultipartUpload header is duplicated",
+                        Target_Text);
+                     return;
+                  end if;
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer is invalid", Target_Text);
+                     return;
+                  elsif Payer_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Requester Pays is not implemented", Target_Text);
+                     return;
+                  elsif Has_Checksum_Header then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Multipart completion checksums are not implemented",
+                        Target_Text);
+                     return;
+                  elsif SSE_Algorithm_Count + SSE_Key_Count + SSE_MD5_Count > 0
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The multipart upload does not use SSE-C",
+                        Target_Text);
+                     return;
+                  end if;
+                  if Size_Count = 1 then
+                     declare
+                        Parsed : constant S3.Wire_Core.Byte_Count_Result :=
+                          S3.Wire_Core.Parse_Byte_Count
+                            (Apps.Request_Header
+                               (X, "x-amz-mp-object-size"));
+                     begin
+                        if not Parsed.Valid then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The multipart object size is invalid",
+                              Target_Text);
+                           return;
+                        end if;
+                        Options.Expected_Size :=
+                          (Kind => Backends.Known, Bytes => Parsed.Value);
+                     end;
+                  end if;
+                  if Match_Count = 1 then
+                     Options.Conditions.If_Match := US.To_Unbounded_String
+                       (Apps.Request_Header (X, "if-match"));
+                  end if;
+                  if None_Count = 1 then
+                     Options.Conditions.If_None_Match :=
+                       US.To_Unbounded_String
+                         (Apps.Request_Header (X, "if-none-match"));
+                  end if;
                   for Part of Request.Parts loop
                      if Has_Checksum (Part) then
                         Send_Error
@@ -2065,6 +2158,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Store.Complete_Multipart_Upload
                     (Bucket, Key,
                      US.To_String (Query.Existing_Upload_ID), Completion,
+                     Options,
                      Apps.Cancellation (X), Apps.Deadline (X), Info, Result);
                   if Result = Success then
                      Apps.Respond

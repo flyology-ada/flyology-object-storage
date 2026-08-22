@@ -31,6 +31,14 @@ is
       Not_Implemented,
       Backend_Unavailable);
 
+   --  Evaluate HTTP entity-tag predicates for one atomic object publication.
+   --  Missing objects never satisfy If-Match and always satisfy a valid
+   --  If-None-Match. Malformed or excessively large fields are rejected.
+   function Evaluate_Object_Write_Conditions
+     (If_Match, If_None_Match : String;
+      Exists                  : Boolean;
+      Entity_Tag              : String) return Status;
+
    --  Requested object byte interval. Backends resolve this request against
    --  the same immutable object snapshot that they stream, including suffix
    --  requests, so callers never need a racy Head_Object/Get_Object pair.

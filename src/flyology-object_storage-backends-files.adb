@@ -2506,6 +2506,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Key       : String;
       Upload_ID : String;
       Parts     : Multipart_Part_References;
+      Options   : Complete_Multipart_Options;
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
@@ -2562,6 +2563,29 @@ package body Flyology.Object_Storage.Backends.Files is
          return;
       end if;
       Read_Manifest (Item, Bucket, Key, Upload_ID, Upload_Options);
+      declare
+         Exists : constant Boolean := Ada.Directories.Exists (Target);
+         Existing : Object_Information := Empty_Info;
+         Body_At : SIO.Positive_Count;
+         Condition_Result : Status;
+      begin
+         if Exists then
+            SIO.Open (Part_File, SIO.In_File, Target);
+            Part_Opened := True;
+            Read_Header (Part_File, Key, Existing, Body_At);
+            SIO.Close (Part_File);
+            Part_Opened := False;
+         end if;
+         Condition_Result := Evaluate_Write_Conditions
+           (Options.Conditions, Exists,
+            US.To_String (Existing.Entity_Tag));
+         if Condition_Result /= Success then
+            Result := Condition_Result;
+            Item.Publication.Release;
+            Locked := False;
+            return;
+         end if;
+      end;
       for Index in Parts.First_Index .. Parts.Last_Index loop
          declare
             Reference : constant Multipart_Part_Reference := Parts (Index);
@@ -2608,6 +2632,15 @@ package body Flyology.Object_Storage.Backends.Files is
             First := False;
          end;
       end loop;
+
+      if Options.Expected_Size.Kind = Known
+        and then Options.Expected_Size.Bytes /= Total
+      then
+         Result := Invalid_Request;
+         Item.Publication.Release;
+         Locked := False;
+         return;
+      end if;
 
       Info :=
         (Size         => Total,
