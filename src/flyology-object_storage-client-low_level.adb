@@ -421,8 +421,6 @@ package body Flyology.Object_Storage.Client.Low_Level is
    function Valid_Content_Range
      (Value : String; Length : Optional_Byte_Count) return Boolean;
 
-   No_Headers : constant SigV4.Name_Value_Array (1 .. 0) :=
-     (others => <>);
    No_Query : constant SigV4.Name_Value_Array (1 .. 0) :=
      (others => <>);
 
@@ -1616,13 +1614,71 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Timestamp : String;
       Content_Type : String := "") return Prepared_Request
    is
+      Parameters : constant Create_Multipart_Parameters :=
+        (Content_Type => US.To_Unbounded_String (Content_Type),
+         others => <>);
+   begin
+      return Prepare_Create_Multipart_Upload
+        (Origin, Style, Bucket, Key, Parameters, Identity, Region,
+         Timestamp);
+   end Prepare_Create_Multipart_Upload;
+
+   function Prepare_Create_Multipart_Upload
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Create_Multipart_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Content_Type : constant String :=
+        US.To_String (Parameters.Content_Type);
+      Algorithm : constant String :=
+        US.To_String (Parameters.Checksum_Algorithm);
+      Kind : constant String := US.To_String (Parameters.Checksum_Type);
+      Parsed_Algorithm : constant Checksum_Policy.Algorithm_Parse_Result :=
+        Checksum_Policy.Parse_Algorithm (Algorithm);
+      Parsed_Type : constant Checksum_Policy.Type_Parse_Result :=
+        Checksum_Policy.Parse_Type (Kind);
       Query : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("uploads", ""));
-      Headers : constant SigV4.Name_Value_Array :=
-        (if Content_Type'Length = 0
-         then No_Headers
-         else (1 => SigV4.Pair ("content-type", Content_Type)));
+      Header_Count : constant Natural :=
+        Boolean'Pos (Content_Type'Length > 0) +
+        Boolean'Pos (Algorithm'Length > 0) +
+        Boolean'Pos (Kind'Length > 0);
+      Headers : SigV4.Name_Value_Array (1 .. Header_Count);
+      Last : Natural := 0;
    begin
+      if Algorithm'Length = 0 and then Kind'Length > 0 then
+         raise Invalid_Request with
+           "multipart checksum type requires an algorithm";
+      elsif Algorithm'Length > 0 and then not Parsed_Algorithm.Valid then
+         raise Invalid_Request with
+           "invalid multipart checksum algorithm";
+      elsif Kind'Length > 0
+        and then
+          (not Parsed_Type.Valid
+           or else not Checksum_Policy.Supported
+             (Parsed_Algorithm.Value, Parsed_Type.Value))
+      then
+         raise Invalid_Request with
+           "unsupported multipart checksum algorithm and type";
+      end if;
+      if Content_Type'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) := SigV4.Pair ("content-type", Content_Type);
+      end if;
+      if Algorithm'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) :=
+           SigV4.Pair ("x-amz-checksum-algorithm", Algorithm);
+      end if;
+      if Kind'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) := SigV4.Pair ("x-amz-checksum-type", Kind);
+      end if;
       return Prepare_Object_Request
         (Create_Multipart_Operation, "POST", Origin, Style, Bucket, Key,
          Query, Headers, "", "", Identity, Region, Timestamp);

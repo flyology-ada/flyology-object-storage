@@ -45,9 +45,20 @@ selections because S3 permits them only as composites. The policy follows the
 and the
 [CompleteMultipartUpload API](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html).
 
-The foundation is ready for CreateMultipartUpload, UploadPart, and
-CompleteMultipartUpload integration, but this slice does not yet change
-backend records, wire dispatch, or compatibility claims.
+CreateMultipartUpload persists the selected policy, or AWS's
+CRC64NVME/FULL_OBJECT default when no selection is sent. UploadPart streams and
+stores the configured raw part checksum; CompleteMultipartUpload validates
+consecutive parts and publishes the exact full-object or composite checksum in
+one backend commit. Memory, FOSOBJ04 files, and SQLite schema 8 retain the
+policy and completed metadata across reads and reopen. Older file manifests
+remain backward-readable, and SQLite schema 7 migrates without fabricating
+checksum metadata.
+
+The typed client signs the selection, per-part values, and whole-object
+completion assertion. The high-level `Upload_File` API computes an explicit
+selection in the same pass as its SigV4 hashes, forces a small composite upload
+through multipart, and requires exact checksum echoes before returning
+success.
 
 ## Test and oracle evidence
 
@@ -65,4 +76,3 @@ checksum-of-checksums example and suffix, canonical Base64 rejection cases,
 210 incremental chunk boundaries, direct-versus-linearized CRCs, and
 independently generated 64 GiB logical CRC vectors. It hashes only bounded
 physical buffers for the logical-length case.
-

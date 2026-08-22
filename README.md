@@ -215,6 +215,12 @@ package Transfers renames Flyology.Object_Storage.Client.Transfers;
 
 Uploaded := Transfers.Upload_File
   (Client, Origin, "bucket", "key", "archive.tar", Identity);
+Checksummed := Transfers.Upload_File
+  (Client, Origin, "bucket", "verified", "archive.tar", Identity,
+   Checksum =>
+     (Enabled => True,
+      Algorithm => Transfers.Checksum_Policy.Core.SHA256,
+      Kind => Transfers.Checksum_Policy.Composite));
 Downloaded := Transfers.Download_File
   (Client, Origin, "bucket", "key", "archive.tar", Identity);
 Copied := Transfers.Copy_Object
@@ -228,10 +234,14 @@ Transfers.Transfer_Many
 
 `Upload_File` switches to multipart at 64 MiB by default, streams 16 MiB parts
 from one open descriptor, and exposes both thresholds as trailing policy
-parameters. `Copy_Object` owns copy-source URI encoding and signing, including
-special-character keys, and returns compact copy metadata or the structured
-S3 error. `Head_Object` is the bodyless reconciliation primitive: its common
-fields expose 64-bit size, entity tag, modification/content/version metadata,
+parameters. Its optional checksum policy supports direct full-object values
+and multipart full-object/composite values; a composite selection forces a
+nonempty small file through multipart and a successful outcome retains the
+verified checksum/type. `Copy_Object` owns copy-source URI encoding and
+signing, including special-character keys, and returns compact copy metadata
+or the structured S3 error. `Head_Object` is the bodyless reconciliation
+primitive: its common fields expose 64-bit size, entity tag,
+modification/content/version metadata,
 while `Details` preserves every modeled response member. Trailing named
 arguments cover all modeled conditions, range, response overrides, SSE-C,
 request-payer, part, owner, and checksum controls. A structured rejection

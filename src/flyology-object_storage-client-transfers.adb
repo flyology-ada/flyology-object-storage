@@ -5,10 +5,12 @@ with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Real_Time;
 with Ada.Streams;
+with Ada.Strings.Fixed;
 with Flyology.IO;
 with Flyology.IO.Files;
 with Flyology.HTTP.Client.Request_Bodies.Files;
 with Flyology.Object_Storage.S3.Multipart;
+with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Task_Scopes;
@@ -23,6 +25,7 @@ package body Flyology.Object_Storage.Client.Transfers is
    package File_Bodies renames Flyology.HTTP.Client.Request_Bodies.Files;
    package Core renames Flyology.Object_Storage.S3.Core;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
+   package Checksums renames Flyology.Object_Storage.S3.Checksums;
    package Requests renames Flyology.Object_Storage.S3.Requests;
    package Encoding renames
      Flyology.Object_Storage.S3.SigV4_Encoding;
@@ -30,6 +33,12 @@ package body Flyology.Object_Storage.Client.Transfers is
    package Digest_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => GNAT.SHA256.Message_Digest);
    subtype Digests is Digest_Vectors.Vector;
+
+   package Checksum_Value_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive,
+      Element_Type => US.Unbounded_String,
+      "=" => US."=");
+   subtype Checksum_Values is Checksum_Value_Vectors.Vector;
 
    use type Ada.Real_Time.Time;
    use type Ada.Containers.Count_Type;
@@ -45,6 +54,8 @@ package body Flyology.Object_Storage.Client.Transfers is
    use type Low_Level.Put_Object_Outcome_Kind;
    use type Requests.Target_Kind;
    use type Requests.Target_Status;
+   use type Checksum_Policy.Checksum_Type;
+   use type US.Unbounded_String;
 
    Hash_Buffer_Size : constant := 64 * 1_024;
    Transfer_Buffer_Size : constant := 64 * 1_024;
@@ -334,12 +345,17 @@ package body Flyology.Object_Storage.Client.Transfers is
       Deadline : Ada.Real_Time.Time;
       Token    : access Flyology.Cancellation.Token;
       Part_Size : Byte_Count;
+      Selection : Upload_Checksum_Selection;
       Digest   : out GNAT.SHA256.Message_Digest;
       Part_Digests : out Digests;
+      Part_Checksums : out Checksum_Values;
+      Object_Checksum : out US.Unbounded_String;
       Size     : out Byte_Count)
    is
       Context : GNAT.SHA256.Context := GNAT.SHA256.Initial_Context;
       Part_Context : GNAT.SHA256.Context := GNAT.SHA256.Initial_Context;
+      Object_Checksum_Context : Checksums.Context (Selection.Algorithm);
+      Part_Checksum_Context : Checksums.Context (Selection.Algorithm);
       Buffer  : Ada.Streams.Stream_Element_Array (1 .. Hash_Buffer_Size);
       Last    : Ada.Streams.Stream_Element_Offset;
       Offset  : Files.File_Offset := 0;
@@ -348,6 +364,8 @@ package body Flyology.Object_Storage.Client.Transfers is
    begin
       Size := 0;
       Part_Digests.Clear;
+      Part_Checksums.Clear;
+      Object_Checksum := US.Null_Unbounded_String;
       loop
          Check_Cancelled (Token);
          Files.Read_At
@@ -360,6 +378,10 @@ package body Flyology.Object_Storage.Client.Transfers is
             raise Constraint_Error with "local file exceeds supported size";
          end if;
          GNAT.SHA256.Update (Context, Buffer (Buffer'First .. Last));
+         if Selection.Enabled then
+            Checksums.Update
+              (Object_Checksum_Context, Buffer (Buffer'First .. Last));
+         end if;
          declare
             First : Ada.Streams.Stream_Element_Offset := Buffer'First;
          begin
@@ -375,6 +397,11 @@ package body Flyology.Object_Storage.Client.Transfers is
                   GNAT.SHA256.Update
                     (Part_Context,
                      Buffer (First .. First + Taken_Offset - 1));
+                  if Selection.Enabled then
+                     Checksums.Update
+                       (Part_Checksum_Context,
+                        Buffer (First .. First + Taken_Offset - 1));
+                  end if;
                   Part_Used := Part_Used + Taken;
                   First := First + Taken_Offset;
                   if Part_Used = Part_Size then
@@ -383,6 +410,16 @@ package body Flyology.Object_Storage.Client.Transfers is
                           (GNAT.SHA256.Digest (Part_Context));
                      end if;
                      Part_Context := GNAT.SHA256.Initial_Context;
+                     if Selection.Enabled
+                       and then Part_Checksums.Length < 10_000
+                     then
+                        Part_Checksums.Append
+                          (US.To_Unbounded_String
+                             (Checksums.Encode_Base64
+                                (Checksums.Finish
+                                   (Part_Checksum_Context))));
+                        Checksums.Reset (Part_Checksum_Context);
+                     end if;
                      Part_Used := 0;
                   end if;
                end;
@@ -393,8 +430,47 @@ package body Flyology.Object_Storage.Client.Transfers is
       end loop;
       if Part_Used > 0 and then Part_Digests.Length < 10_000 then
          Part_Digests.Append (GNAT.SHA256.Digest (Part_Context));
+         if Selection.Enabled and then Part_Checksums.Length < 10_000 then
+            Part_Checksums.Append
+              (US.To_Unbounded_String
+                 (Checksums.Encode_Base64
+                    (Checksums.Finish (Part_Checksum_Context))));
+         end if;
       end if;
       Digest := GNAT.SHA256.Digest (Context);
+      if Selection.Enabled then
+         if Selection.Kind = Checksum_Policy.Composite
+           and then not Part_Checksums.Is_Empty
+         then
+            declare
+               Parts : Checksums.Digest_Array
+                 (1 .. Natural (Part_Checksums.Length));
+            begin
+               for Index in Parts'Range loop
+                  declare
+                     Decoded : constant Checksums.Decode_Result :=
+                       Checksums.Decode_Base64
+                         (US.To_String (Part_Checksums (Index)),
+                          Selection.Algorithm);
+                  begin
+                     if not Decoded.Valid then
+                        raise Program_Error with
+                          "invalid locally computed part checksum";
+                     end if;
+                     Parts (Index) := Decoded.Value;
+                  end;
+               end loop;
+               Object_Checksum := US.To_Unbounded_String
+                 (Checksums.Encode_Object
+                    (Checksums.Composite (Selection.Algorithm, Parts),
+                     Selection.Kind, Parts'Length));
+            end;
+         else
+            Object_Checksum := US.To_Unbounded_String
+              (Checksums.Encode_Base64
+                 (Checksums.Finish (Object_Checksum_Context)));
+         end if;
+      end if;
    end Hash_File;
 
    function Upload_Multipart_File
@@ -406,6 +482,9 @@ package body Flyology.Object_Storage.Client.Transfers is
       Size         : Byte_Count;
       Part_Size    : Byte_Count;
       Part_Digests : Digests;
+      Part_Checksums : Checksum_Values;
+      Object_Checksum : US.Unbounded_String;
+      Selection    : Upload_Checksum_Selection;
       Identity     : Low_Level.Credentials;
       Region       : String;
       Style        : Low_Level.Addressing_Style;
@@ -416,6 +495,149 @@ package body Flyology.Object_Storage.Client.Transfers is
    is
       Upload_ID : US.Unbounded_String;
       Initiated : Boolean := False;
+
+      function Create_Parameters return Low_Level.Create_Multipart_Parameters
+      is
+         Result : Low_Level.Create_Multipart_Parameters;
+      begin
+         Result.Content_Type := US.To_Unbounded_String (Content_Type);
+         if Selection.Enabled then
+            Result.Checksum_Algorithm := US.To_Unbounded_String
+              (Checksum_Policy.Wire_Name (Selection.Algorithm));
+            Result.Checksum_Type := US.To_Unbounded_String
+              (Checksum_Policy.Wire_Name (Selection.Kind));
+         end if;
+         return Result;
+      end Create_Parameters;
+
+      function Complete_Parameters
+        return Low_Level.Complete_Multipart_Parameters
+      is
+         Result : Low_Level.Complete_Multipart_Parameters;
+         Text : constant String := US.To_String (Object_Checksum);
+         Dash : constant Natural :=
+           Ada.Strings.Fixed.Index
+             (Text, "-", Going => Ada.Strings.Backward);
+         Completion_Checksum : constant US.Unbounded_String :=
+           (if Selection.Enabled
+              and then Selection.Kind = Checksum_Policy.Composite
+            then
+              (if Dash = 0
+               then raise Program_Error with
+                 "missing composite checksum part-count suffix"
+               else US.To_Unbounded_String (Text (Text'First .. Dash - 1)))
+            else Object_Checksum);
+      begin
+         if not Selection.Enabled then
+            return Result;
+         end if;
+         Result.Mpu_Object_Size := (Is_Set => True, Value => Size);
+         Result.Checksum_Type := US.To_Unbounded_String
+           (Checksum_Policy.Wire_Name (Selection.Kind));
+         case Selection.Algorithm is
+            when Core.CRC32 =>
+               Result.Checksum_CRC32 := Completion_Checksum;
+            when Core.CRC32C =>
+               Result.Checksum_CRC32C := Completion_Checksum;
+            when Core.CRC64NVME =>
+               Result.Checksum_CRC64NVME := Completion_Checksum;
+            when Core.SHA1 =>
+               Result.Checksum_SHA1 := Completion_Checksum;
+            when Core.SHA256 =>
+               Result.Checksum_SHA256 := Completion_Checksum;
+            when Core.SHA512 =>
+               Result.Checksum_SHA512 := Completion_Checksum;
+            when Core.MD5 =>
+               Result.Checksum_MD5 := Completion_Checksum;
+            when Core.XXHASH64 =>
+               Result.Checksum_XXHASH64 := Completion_Checksum;
+            when Core.XXHASH3 =>
+               Result.Checksum_XXHASH3 := Completion_Checksum;
+            when Core.XXHASH128 =>
+               Result.Checksum_XXHASH128 := Completion_Checksum;
+         end case;
+         return Result;
+      end Complete_Parameters;
+
+      procedure Set_Part_Checksum
+        (Value      : US.Unbounded_String;
+         Parameters : in out Low_Level.Upload_Part_Parameters;
+         Completed  : in out Multipart.Completed_Part) is
+      begin
+         if not Selection.Enabled then
+            return;
+         end if;
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String
+           (Checksum_Policy.Wire_Name (Selection.Algorithm));
+         case Selection.Algorithm is
+            when Core.CRC32 =>
+               Parameters.Checksum_CRC32 := Value;
+               Completed.Checksum_CRC32 := Value;
+            when Core.CRC32C =>
+               Parameters.Checksum_CRC32C := Value;
+               Completed.Checksum_CRC32C := Value;
+            when Core.CRC64NVME =>
+               Parameters.Checksum_CRC64NVME := Value;
+               Completed.Checksum_CRC64NVME := Value;
+            when Core.SHA1 =>
+               Parameters.Checksum_SHA1 := Value;
+               Completed.Checksum_SHA1 := Value;
+            when Core.SHA256 =>
+               Parameters.Checksum_SHA256 := Value;
+               Completed.Checksum_SHA256 := Value;
+            when Core.SHA512 =>
+               Parameters.Checksum_SHA512 := Value;
+               Completed.Checksum_SHA512 := Value;
+            when Core.MD5 =>
+               Parameters.Checksum_MD5 := Value;
+               Completed.Checksum_MD5 := Value;
+            when Core.XXHASH64 =>
+               Parameters.Checksum_XXHASH64 := Value;
+               Completed.Checksum_XXHASH64 := Value;
+            when Core.XXHASH3 =>
+               Parameters.Checksum_XXHASH3 := Value;
+               Completed.Checksum_XXHASH3 := Value;
+            when Core.XXHASH128 =>
+               Parameters.Checksum_XXHASH128 := Value;
+               Completed.Checksum_XXHASH128 := Value;
+         end case;
+      end Set_Part_Checksum;
+
+      function Result_Checksum
+        (Value : Low_Level.Complete_Multipart_Result)
+         return US.Unbounded_String is
+      begin
+         case Selection.Algorithm is
+            when Core.CRC32 => return Value.Checksum_CRC32;
+            when Core.CRC32C => return Value.Checksum_CRC32C;
+            when Core.CRC64NVME => return Value.Checksum_CRC64NVME;
+            when Core.SHA1 => return Value.Checksum_SHA1;
+            when Core.SHA256 => return Value.Checksum_SHA256;
+            when Core.SHA512 => return Value.Checksum_SHA512;
+            when Core.MD5 => return Value.Checksum_MD5;
+            when Core.XXHASH64 => return Value.Checksum_XXHASH64;
+            when Core.XXHASH3 => return Value.Checksum_XXHASH3;
+            when Core.XXHASH128 => return Value.Checksum_XXHASH128;
+         end case;
+      end Result_Checksum;
+
+      function Result_Checksum
+        (Value : Low_Level.Upload_Part_Result)
+         return US.Unbounded_String is
+      begin
+         case Selection.Algorithm is
+            when Core.CRC32 => return Value.Checksum_CRC32;
+            when Core.CRC32C => return Value.Checksum_CRC32C;
+            when Core.CRC64NVME => return Value.Checksum_CRC64NVME;
+            when Core.SHA1 => return Value.Checksum_SHA1;
+            when Core.SHA256 => return Value.Checksum_SHA256;
+            when Core.SHA512 => return Value.Checksum_SHA512;
+            when Core.MD5 => return Value.Checksum_MD5;
+            when Core.XXHASH64 => return Value.Checksum_XXHASH64;
+            when Core.XXHASH3 => return Value.Checksum_XXHASH3;
+            when Core.XXHASH128 => return Value.Checksum_XXHASH128;
+         end case;
+      end Result_Checksum;
 
       procedure Abort_Best_Effort is
       begin
@@ -439,11 +661,16 @@ package body Flyology.Object_Storage.Client.Transfers is
             null;
       end Abort_Best_Effort;
    begin
+      if Selection.Enabled
+        and then Part_Checksums.Length /= Part_Digests.Length
+      then
+         raise Program_Error with "multipart checksum plan mismatch";
+      end if;
       declare
          Prepared : constant Low_Level.Prepared_Request :=
            Low_Level.Prepare_Create_Multipart_Upload
-             (Origin, Style, Bucket, Key, Identity, Region,
-              Current_Timestamp, Content_Type);
+             (Origin, Style, Bucket, Key, Create_Parameters, Identity, Region,
+              Current_Timestamp);
          Outcome : constant Low_Level.Create_Multipart_Outcome :=
            Low_Level.Execute_Create_Multipart_Upload
              (Client, Prepared, Remaining (Deadline), Token);
@@ -470,44 +697,58 @@ package body Flyology.Object_Storage.Client.Transfers is
                  Byte_Count'Min (Part_Size, Size - Offset);
                Part_Digest : constant GNAT.SHA256.Message_Digest :=
                  Part_Digests (Index);
-               Parameters : constant Low_Level.Upload_Part_Parameters :=
+               Parameters : Low_Level.Upload_Part_Parameters :=
                  (Part_Number => Core.Part_Number (Index),
                   Upload_ID => Upload_ID,
                   Payload_SHA256 =>
                     US.To_Unbounded_String (String (Part_Digest)),
                   others => <>);
-               Prepared : constant Low_Level.Prepared_Request :=
-                 Low_Level.Prepare_Upload_Part
-                   (Origin, Style, Bucket, Key, Parameters, Identity, Region,
-                    Current_Timestamp);
+               Completed : Multipart.Completed_Part :=
+                 (Number => Core.Part_Number (Index), others => <>);
                Source : File_Bodies.Range_Source
                  (File, Files.File_Offset (Offset),
                   Flyology.HTTP.Body_Size (Count));
-               Outcome : constant Low_Level.Upload_Part_Outcome :=
-                 Low_Level.Execute_Upload_Part
-                   (Client, Prepared, Source, Remaining (Deadline), Token);
             begin
-               if Outcome.Kind = Low_Level.Upload_Rejected then
-                  Abort_Best_Effort;
-                  Initiated := False;
-                  return
-                    (Kind   => Upload_Rejected,
-                     Status => Outcome.Status,
-                     Error  => Outcome.Error);
+               if Selection.Enabled then
+                  Set_Part_Checksum
+                    (Part_Checksums (Index), Parameters, Completed);
                end if;
-               Completion.Parts.Append
-                 (Multipart.Completed_Part'
-                    (Number     => Core.Part_Number (Index),
-                     Entity_Tag => Outcome.Result.Entity_Tag,
-                     others     => <>));
-               Offset := Offset + Count;
+               declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Upload_Part
+                      (Origin, Style, Bucket, Key, Parameters, Identity,
+                       Region, Current_Timestamp);
+                  Outcome : constant Low_Level.Upload_Part_Outcome :=
+                    Low_Level.Execute_Upload_Part
+                      (Client, Prepared, Source, Remaining (Deadline), Token);
+               begin
+                  if Outcome.Kind = Low_Level.Upload_Rejected then
+                     Abort_Best_Effort;
+                     Initiated := False;
+                     return
+                       (Kind   => Upload_Rejected,
+                        Status => Outcome.Status,
+                        Error  => Outcome.Error);
+                  end if;
+                  if Selection.Enabled
+                    and then Result_Checksum (Outcome.Result) /=
+                      Part_Checksums (Index)
+                  then
+                     raise Low_Level.Invalid_Response with
+                       "UploadPart response checksum does not match file";
+                  end if;
+                  Completed.Entity_Tag := Outcome.Result.Entity_Tag;
+                  Completion.Parts.Append (Completed);
+                  Offset := Offset + Count;
+               end;
             end;
          end loop;
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Complete_Multipart_Upload
                 (Origin, Style, Bucket, Key, US.To_String (Upload_ID),
-                 Completion, Identity, Region, Current_Timestamp);
+                 Completion, Complete_Parameters, Identity, Region,
+                 Current_Timestamp);
             Outcome : constant Low_Level.Complete_Multipart_Outcome :=
               Low_Level.Execute_Complete_Multipart_Upload
                 (Client, Prepared, Remaining (Deadline), Token);
@@ -520,12 +761,32 @@ package body Flyology.Object_Storage.Client.Transfers is
                   Status => Outcome.Status,
                   Error  => Outcome.Error);
             end if;
+            if Selection.Enabled
+              and then
+                (Result_Checksum (Outcome.Result) /= Object_Checksum
+                 or else
+                   (US.Length (Outcome.Result.Checksum_Type) > 0
+                    and then US.To_String (Outcome.Result.Checksum_Type) /=
+                      Checksum_Policy.Wire_Name (Selection.Kind)))
+            then
+               raise Low_Level.Invalid_Response with
+                 "CompleteMultipartUpload checksum does not match file";
+            end if;
             Initiated := False;
             return
               (Kind       => File_Uploaded,
                Status     => Outcome.Status,
                Bytes      => Size,
-               Entity_Tag => Outcome.Result.Entity_Tag);
+               Entity_Tag => Outcome.Result.Entity_Tag,
+               Checksum =>
+                 (if Selection.Enabled
+                  then Result_Checksum (Outcome.Result)
+                  else US.Null_Unbounded_String),
+               Checksum_Type =>
+                 (if Selection.Enabled
+                  then US.To_Unbounded_String
+                    (Checksum_Policy.Wire_Name (Selection.Kind))
+                  else US.Null_Unbounded_String));
          end;
       end;
    exception
@@ -548,14 +809,67 @@ package body Flyology.Object_Storage.Client.Transfers is
       Timeout      : Duration := 30.0;
       Token        : access Flyology.Cancellation.Token := null;
       Multipart_Threshold : Byte_Count := Default_Multipart_Threshold;
-      Multipart_Part_Size : Byte_Count := Default_Multipart_Part_Size)
+      Multipart_Part_Size : Byte_Count := Default_Multipart_Part_Size;
+      Checksum : Upload_Checksum_Selection := Default_Upload_Checksum)
       return Upload_Outcome
    is
       Deadline : constant Ada.Real_Time.Time := Deadline_For (Timeout);
       File     : aliased Files.File_Descriptor := Files.Invalid_File;
       Digest   : GNAT.SHA256.Message_Digest;
       Part_Digests : Digests;
+      Part_Checksums : Checksum_Values;
+      Object_Checksum : US.Unbounded_String;
       Size     : Byte_Count;
+
+      procedure Set_Put_Checksum
+        (Parameters : in out Low_Level.Put_Object_Parameters) is
+      begin
+         if not Checksum.Enabled then
+            return;
+         end if;
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String
+           (Checksum_Policy.Wire_Name (Checksum.Algorithm));
+         case Checksum.Algorithm is
+            when Core.CRC32 =>
+               Parameters.Checksum_CRC32 := Object_Checksum;
+            when Core.CRC32C =>
+               Parameters.Checksum_CRC32C := Object_Checksum;
+            when Core.CRC64NVME =>
+               Parameters.Checksum_CRC64NVME := Object_Checksum;
+            when Core.SHA1 =>
+               Parameters.Checksum_SHA1 := Object_Checksum;
+            when Core.SHA256 =>
+               Parameters.Checksum_SHA256 := Object_Checksum;
+            when Core.SHA512 =>
+               Parameters.Checksum_SHA512 := Object_Checksum;
+            when Core.MD5 =>
+               Parameters.Checksum_MD5 := Object_Checksum;
+            when Core.XXHASH64 =>
+               Parameters.Checksum_XXHASH64 := Object_Checksum;
+            when Core.XXHASH3 =>
+               Parameters.Checksum_XXHASH3 := Object_Checksum;
+            when Core.XXHASH128 =>
+               Parameters.Checksum_XXHASH128 := Object_Checksum;
+         end case;
+      end Set_Put_Checksum;
+
+      function Result_Checksum
+        (Value : Low_Level.Put_Object_Result)
+         return US.Unbounded_String is
+      begin
+         case Checksum.Algorithm is
+            when Core.CRC32 => return Value.Checksum_CRC32;
+            when Core.CRC32C => return Value.Checksum_CRC32C;
+            when Core.CRC64NVME => return Value.Checksum_CRC64NVME;
+            when Core.SHA1 => return Value.Checksum_SHA1;
+            when Core.SHA256 => return Value.Checksum_SHA256;
+            when Core.SHA512 => return Value.Checksum_SHA512;
+            when Core.MD5 => return Value.Checksum_MD5;
+            when Core.XXHASH64 => return Value.Checksum_XXHASH64;
+            when Core.XXHASH3 => return Value.Checksum_XXHASH3;
+            when Core.XXHASH128 => return Value.Checksum_XXHASH128;
+         end case;
+      end Result_Checksum;
    begin
       Check_Cancelled (Token);
       if Local_Path'Length = 0 then
@@ -563,12 +877,41 @@ package body Flyology.Object_Storage.Client.Transfers is
       elsif not Core.Valid_Multipart_Part_Size (Multipart_Part_Size)
       then
          raise Constraint_Error with "invalid multipart part size";
+      elsif Checksum.Enabled
+        and then Checksum.Kind = Checksum_Policy.Composite
+        and then not Checksum_Policy.Supported
+          (Checksum.Algorithm, Checksum.Kind)
+      then
+         raise Constraint_Error with
+           "unsupported multipart checksum algorithm and type";
       end if;
       File := Files.Open (Local_Path, Files.Read_Only);
       Hash_File
-        (File, Deadline, Token, Multipart_Part_Size, Digest, Part_Digests,
-         Size);
-      if Size > 0 and then Size >= Multipart_Threshold then
+        (File, Deadline, Token, Multipart_Part_Size, Checksum, Digest,
+         Part_Digests, Part_Checksums, Object_Checksum, Size);
+      if Checksum.Enabled
+        and then Checksum.Kind = Checksum_Policy.Composite
+        and then Size = 0
+      then
+         raise Constraint_Error with
+           "composite checksum requires a nonempty multipart upload";
+      end if;
+      if Size > 0
+        and then Size >= Multipart_Threshold
+        and then Checksum.Enabled
+        and then not Checksum_Policy.Supported
+          (Checksum.Algorithm, Checksum.Kind)
+      then
+         raise Constraint_Error with
+           "checksum policy is not supported for multipart upload";
+      end if;
+      if Size > 0
+        and then
+          (Size >= Multipart_Threshold
+           or else
+             (Checksum.Enabled
+              and then Checksum.Kind = Checksum_Policy.Composite))
+      then
          if not Core.Valid_Multipart_Plan (Size, Multipart_Part_Size)
            or else Byte_Count (Part_Digests.Length) /=
              Core.Multipart_Part_Count (Size, Multipart_Part_Size)
@@ -579,7 +922,8 @@ package body Flyology.Object_Storage.Client.Transfers is
             Outcome : constant Upload_Outcome :=
               Upload_Multipart_File
                 (Client, Origin, Bucket, Key, File'Access, Size,
-                 Multipart_Part_Size, Part_Digests, Identity, Region, Style,
+                 Multipart_Part_Size, Part_Digests, Part_Checksums,
+                 Object_Checksum, Checksum, Identity, Region, Style,
                  Content_Type, Deadline, Token);
          begin
             Files.Close (File);
@@ -590,6 +934,7 @@ package body Flyology.Object_Storage.Client.Transfers is
          Parameters : Low_Level.Put_Object_Parameters;
       begin
          Parameters.Content_Type := US.To_Unbounded_String (Content_Type);
+         Set_Put_Checksum (Parameters);
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Put_Object
@@ -602,12 +947,31 @@ package body Flyology.Object_Storage.Client.Transfers is
                 (Client, Prepared, Source, Remaining (Deadline), Token);
          begin
             if Outcome.Kind = Low_Level.Object_Put then
+               if Checksum.Enabled
+                 and then
+                   (Result_Checksum (Outcome.Result) /= Object_Checksum
+                    or else
+                      (US.Length (Outcome.Result.Checksum_Type) > 0
+                       and then US.To_String (Outcome.Result.Checksum_Type) /=
+                         "FULL_OBJECT"))
+               then
+                  raise Low_Level.Invalid_Response with
+                    "PutObject checksum does not match file";
+               end if;
                Files.Close (File);
                return
                  (Kind       => File_Uploaded,
                   Status     => Outcome.Status,
                   Bytes      => Size,
-                  Entity_Tag => Outcome.Result.Entity_Tag);
+                  Entity_Tag => Outcome.Result.Entity_Tag,
+                  Checksum =>
+                    (if Checksum.Enabled
+                     then Result_Checksum (Outcome.Result)
+                     else US.Null_Unbounded_String),
+                  Checksum_Type =>
+                    (if Checksum.Enabled
+                     then US.To_Unbounded_String ("FULL_OBJECT")
+                     else US.Null_Unbounded_String));
             else
                Files.Close (File);
                return

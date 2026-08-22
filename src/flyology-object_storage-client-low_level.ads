@@ -1394,6 +1394,14 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Objects_Outcome;
 
+   --  Checksum policy subset of the pinned CreateMultipartUpload input.
+   --  Empty algorithm and type preserve AWS's server-selected default.
+   type Create_Multipart_Parameters is record
+      Content_Type       : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Type      : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    function Prepare_Create_Multipart_Upload
      (Origin    : Flyology.HTTP.Origin;
       Style     : Addressing_Style;
@@ -1403,6 +1411,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region    : String;
       Timestamp : String;
       Content_Type : String := "") return Prepared_Request;
+
+   --  Prepare CreateMultipartUpload with explicit modeled checksum policy.
+   function Prepare_Create_Multipart_Upload
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Create_Multipart_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
 
    type Create_Multipart_Outcome_Kind is (Created, Create_Rejected);
 

@@ -17,6 +17,7 @@ with Flyology.Object_Storage.Client.Objects;
 with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.S3.Deletions;
+with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.SigV4;
@@ -31,6 +32,8 @@ procedure S3_HTTP_Socket_Corpus is
      Flyology.Object_Storage.Client.Buckets;
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
+   package Checksums renames Flyology.Object_Storage.S3.Checksums;
+   package Checksum_Policy renames Checksums.Policy;
    package Model renames Flyology.Object_Storage.S3.Model;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
@@ -133,6 +136,37 @@ procedure S3_HTTP_Socket_Corpus is
       end loop;
       return Result;
    end Bytes;
+
+   High_Level_File_Payload : constant String := "high-level file payload";
+   High_Level_CRC32 : constant String :=
+     Checksums.Encode_Base64
+       (Checksums.Compute
+          (Checksum_Policy.Core.CRC32, Bytes (High_Level_File_Payload)));
+   High_Level_SHA256_Digest : constant Checksums.Digest_Value :=
+     Checksums.Compute
+       (Checksum_Policy.Core.SHA256, Bytes (High_Level_File_Payload));
+   High_Level_SHA256 : constant String :=
+     Checksums.Encode_Base64 (High_Level_SHA256_Digest);
+   High_Level_SHA256_Composite_Digest : constant Checksums.Digest_Value :=
+     Checksums.Composite
+       (Checksum_Policy.Core.SHA256,
+        Checksums.Digest_Array'(1 => High_Level_SHA256_Digest));
+   High_Level_SHA256_Composite_Raw : constant String :=
+     Checksums.Encode_Base64 (High_Level_SHA256_Composite_Digest);
+   High_Level_SHA256_Composite : constant String :=
+     Checksums.Encode_Object
+       (High_Level_SHA256_Composite_Digest, Checksum_Policy.Composite, 1);
+   Wrong_SHA256_Digest : constant Checksums.Digest_Value :=
+     Checksums.Compute
+       (Checksum_Policy.Core.SHA256, Bytes ("wrong response"));
+   Wrong_SHA256 : constant String :=
+     Checksums.Encode_Base64 (Wrong_SHA256_Digest);
+   Wrong_SHA256_Composite : constant String :=
+     Checksums.Encode_Object
+       (Checksums.Composite
+          (Checksum_Policy.Core.SHA256,
+           Checksums.Digest_Array'(1 => Wrong_SHA256_Digest)),
+        Checksum_Policy.Composite, 1);
 
    procedure Write_File (Path, Value : String) is
       package SIO renames Ada.Streams.Stream_IO;
@@ -371,6 +405,12 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Get_Object_Attributes : String := "";
          Expected_Max_Parts : String := "";
          Expected_Part_Marker : String := "";
+         Expected_Checksum_Algorithm_Header : String := "";
+         Expected_Checksum_Algorithm : String := "";
+         Expected_Checksum_Header : String := "";
+         Expected_Checksum : String := "";
+         Expected_Checksum_Type : String := "";
+         Expected_Mpu_Object_Size : String := "";
          Fragmented         : Boolean := False)
       is
          Buffer : Stream_Element_Array (1 .. 4_096);
@@ -418,7 +458,59 @@ procedure S3_HTTP_Socket_Corpus is
               or else Ada.Strings.Fixed.Index
                 (Lower, "authorization: aws4-hmac-sha256 credential=") = 0
               or else
-                (if Expected_Get_Object_Attributes'Length > 0 then
+                (if Expected_Checksum_Algorithm_Header'Length > 0
+                   or else Expected_Checksum_Header'Length > 0
+                   or else Expected_Checksum_Type'Length > 0
+                   or else Expected_Mpu_Object_Size'Length > 0
+                 then
+                    (Expected_Checksum_Algorithm_Header'Length > 0
+                     and then Header_Value
+                       (Lower, Expected_Checksum_Algorithm_Header) /=
+                         Ada.Characters.Handling.To_Lower
+                           (Expected_Checksum_Algorithm))
+                    or else
+                      (Expected_Checksum_Header'Length > 0
+                       and then Header_Value
+                         (Header, Expected_Checksum_Header) /=
+                           Expected_Checksum)
+                    or else
+                      (Expected_Checksum_Type'Length > 0
+                       and then Header_Value
+                         (Lower, "x-amz-checksum-type") /=
+                           Ada.Characters.Handling.To_Lower
+                             (Expected_Checksum_Type))
+                    or else
+                      (Expected_Mpu_Object_Size'Length > 0
+                       and then Header_Value
+                         (Lower, "x-amz-mp-object-size") /=
+                           Expected_Mpu_Object_Size)
+                    or else
+                      (Expected_Checksum_Algorithm_Header'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower,
+                          ";" & Expected_Checksum_Algorithm_Header & ";") = 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower,
+                          ";" & Expected_Checksum_Algorithm_Header & ",") = 0)
+                    or else
+                      (Expected_Checksum_Header'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";" & Expected_Checksum_Header & ";") = 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";" & Expected_Checksum_Header & ",") = 0)
+                    or else
+                      (Expected_Checksum_Type'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-checksum-type;") = 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-checksum-type,") = 0)
+                    or else
+                      (Expected_Mpu_Object_Size'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-mp-object-size;") = 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-mp-object-size,") = 0)
+                 elsif Expected_Get_Object_Attributes'Length > 0 then
                     Header_Value (Lower, "x-amz-object-attributes") /=
                       Ada.Characters.Handling.To_Lower
                         (Expected_Get_Object_Attributes)
@@ -1105,7 +1197,137 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("200 OK", "", "ETag: ""high-level""" & CRLF),
             "PUT", "/example-bucket/high%20level%2Bfile%2525",
-            "high-level file payload", "application/test");
+            High_Level_File_Payload, "application/test");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""high-level-full""" & CRLF &
+               "x-amz-checksum-crc32: " & High_Level_CRC32 & CRLF &
+               "x-amz-checksum-type: FULL_OBJECT" & CRLF),
+            "PUT", "/example-bucket/high-level-checksum-full",
+            High_Level_File_Payload,
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-sdk-checksum-algorithm",
+            Expected_Checksum_Algorithm => "CRC32",
+            Expected_Checksum_Header => "x-amz-checksum-crc32",
+            Expected_Checksum => High_Level_CRC32);
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""high-level-sha256""" & CRLF &
+               "x-amz-checksum-sha256: " & High_Level_SHA256 & CRLF),
+            "PUT", "/example-bucket/high-level-checksum-sha256",
+            High_Level_File_Payload,
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-sdk-checksum-algorithm",
+            Expected_Checksum_Algorithm => "SHA256",
+            Expected_Checksum_Header => "x-amz-checksum-sha256",
+            Expected_Checksum => High_Level_SHA256);
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""high-level-put-mismatch""" & CRLF &
+               "x-amz-checksum-sha256: " &
+               (if Round = 1 then Wrong_SHA256 else High_Level_SHA256) &
+               CRLF & "x-amz-checksum-type: " &
+               (if Round = 1 then "FULL_OBJECT" else "COMPOSITE") & CRLF),
+            "PUT", "/example-bucket/high-level-put-mismatch",
+            High_Level_File_Payload,
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-sdk-checksum-algorithm",
+            Expected_Checksum_Algorithm => "SHA256",
+            Expected_Checksum_Header => "x-amz-checksum-sha256",
+            Expected_Checksum => High_Level_SHA256);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<InitiateMultipartUploadResult>" &
+               "<Bucket>example-bucket</Bucket>" &
+               "<Key>high-level-checksum-composite</Key>" &
+               "<UploadId>high-level-checksum-upload</UploadId>" &
+               "</InitiateMultipartUploadResult>"),
+            "POST", "/example-bucket/high-level-checksum-composite?uploads",
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-checksum-algorithm",
+            Expected_Checksum_Algorithm => "SHA256",
+            Expected_Checksum_Type => "COMPOSITE");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""high-level-part""" & CRLF &
+               "x-amz-checksum-sha256: " & High_Level_SHA256 & CRLF),
+            "PUT", "/example-bucket/high-level-checksum-composite?" &
+              "partNumber=1&uploadId=high-level-checksum-upload",
+            High_Level_File_Payload,
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-sdk-checksum-algorithm",
+            Expected_Checksum_Algorithm => "SHA256",
+            Expected_Checksum_Header => "x-amz-checksum-sha256",
+            Expected_Checksum => High_Level_SHA256);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<CompleteMultipartUploadResult>" &
+               "<Bucket>example-bucket</Bucket>" &
+               "<Key>high-level-checksum-composite</Key>" &
+               "<ETag>&quot;high-level-composite&quot;</ETag>" &
+               "<ChecksumSHA256>" & High_Level_SHA256_Composite &
+               "</ChecksumSHA256>" &
+               "</CompleteMultipartUploadResult>"),
+            "POST", "/example-bucket/high-level-checksum-composite?" &
+              "uploadId=high-level-checksum-upload",
+            High_Level_SHA256,
+            Expected_Checksum_Header => "x-amz-checksum-sha256",
+            Expected_Checksum => High_Level_SHA256_Composite_Raw,
+            Expected_Checksum_Type => "COMPOSITE",
+            Expected_Mpu_Object_Size => "23");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<InitiateMultipartUploadResult>" &
+               "<Bucket>example-bucket</Bucket>" &
+               "<Key>high-level-checksum-mismatch</Key>" &
+               "<UploadId>high-level-mismatch-upload</UploadId>" &
+               "</InitiateMultipartUploadResult>"),
+            "POST", "/example-bucket/high-level-checksum-mismatch?uploads",
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-checksum-algorithm",
+            Expected_Checksum_Algorithm => "SHA256",
+            Expected_Checksum_Type => "COMPOSITE");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: ""high-level-part""" & CRLF &
+               "x-amz-checksum-sha256: " & High_Level_SHA256 & CRLF),
+            "PUT", "/example-bucket/high-level-checksum-mismatch?" &
+              "partNumber=1&uploadId=high-level-mismatch-upload",
+            High_Level_File_Payload,
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-sdk-checksum-algorithm",
+            Expected_Checksum_Algorithm => "SHA256",
+            Expected_Checksum_Header => "x-amz-checksum-sha256",
+            Expected_Checksum => High_Level_SHA256);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<CompleteMultipartUploadResult>" &
+               "<Bucket>example-bucket</Bucket>" &
+               "<Key>high-level-checksum-mismatch</Key>" &
+               "<ETag>&quot;high-level-mismatch&quot;</ETag>" &
+               "<ChecksumSHA256>" &
+               (if Round = 1
+                then Wrong_SHA256_Composite
+                else High_Level_SHA256_Composite) &
+               "</ChecksumSHA256><ChecksumType>" &
+               (if Round = 1 then "COMPOSITE" else "FULL_OBJECT") &
+               "</ChecksumType>" &
+               "</CompleteMultipartUploadResult>"),
+            "POST", "/example-bucket/high-level-checksum-mismatch?" &
+              "uploadId=high-level-mismatch-upload",
+            High_Level_SHA256,
+            Expected_Checksum_Header => "x-amz-checksum-sha256",
+            Expected_Checksum => High_Level_SHA256_Composite_Raw,
+            Expected_Checksum_Type => "COMPOSITE",
+            Expected_Mpu_Object_Size => "23");
+         Serve
+           (HTTP_Response ("404 Not Found", Error_XML),
+            "DELETE", "/example-bucket/high-level-checksum-mismatch?" &
+              "uploadId=high-level-mismatch-upload");
          Serve
            (HTTP_Response
               ("200 OK", "", "ETag: ""empty""" & CRLF),
@@ -2441,6 +2663,9 @@ procedure S3_HTTP_Socket_Corpus is
             procedure Check_High_Level_Uploads is
                Cancelled : Boolean := False;
                Timed_Out : Boolean := False;
+               Invalid_Selection : Boolean := False;
+               Empty_Composite : Boolean := False;
+               Unsupported_Multipart : Boolean := False;
                Stop : aliased Flyology.Cancellation.Token;
             begin
                Stop.Request;
@@ -2481,6 +2706,71 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "high-level upload ignored zero timeout";
                end if;
+               begin
+                  declare
+                     Ignored : constant Transfers.Upload_Outcome :=
+                       Transfers.Upload_File
+                         (HTTP, Origin, "example-bucket", "invalid-checksum",
+                          Upload_Path, Identity, Timeout => 5.0,
+                          Checksum =>
+                            (Enabled => True,
+                             Algorithm => Checksum_Policy.Core.CRC64NVME,
+                             Kind => Checksum_Policy.Composite));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Constraint_Error => Invalid_Selection := True;
+               end;
+               if not Invalid_Selection then
+                  raise Program_Error with
+                    "high-level upload accepted unsupported checksum policy";
+               end if;
+               begin
+                  declare
+                     Ignored : constant Transfers.Upload_Outcome :=
+                       Transfers.Upload_File
+                         (HTTP, Origin, "example-bucket", "empty-composite",
+                          Empty_Path, Identity, Timeout => 5.0,
+                          Checksum =>
+                            (Enabled => True,
+                             Algorithm => Checksum_Policy.Core.SHA256,
+                             Kind => Checksum_Policy.Composite));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Constraint_Error => Empty_Composite := True;
+               end;
+               if not Empty_Composite then
+                  raise Program_Error with
+                    "high-level upload accepted empty composite checksum";
+               end if;
+               begin
+                  declare
+                     Ignored : constant Transfers.Upload_Outcome :=
+                       Transfers.Upload_File
+                         (HTTP, Origin, "example-bucket",
+                          "unsupported-multipart-checksum", Upload_Path,
+                          Identity, Timeout => 5.0,
+                          Multipart_Threshold => 1,
+                          Checksum =>
+                            (Enabled => True,
+                             Algorithm => Checksum_Policy.Core.SHA256,
+                             Kind => Checksum_Policy.Full_Object));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Constraint_Error => Unsupported_Multipart := True;
+               end;
+               if not Unsupported_Multipart then
+                  raise Program_Error with
+                    "high-level upload accepted multipart full SHA256";
+               end if;
                declare
                   Result : constant Transfers.Upload_Outcome :=
                     Transfers.Upload_File
@@ -2495,6 +2785,132 @@ procedure S3_HTTP_Socket_Corpus is
                   then
                      raise Program_Error with
                        "high-level file upload result mismatch";
+                  end if;
+               end;
+               declare
+                  Result : constant Transfers.Upload_Outcome :=
+                    Transfers.Upload_File
+                      (HTTP, Origin, "example-bucket",
+                       "high-level-checksum-full", Upload_Path, Identity,
+                       Timeout => 5.0,
+                       Checksum =>
+                         (Enabled => True,
+                          Algorithm => Checksum_Policy.Core.CRC32,
+                          Kind => Checksum_Policy.Full_Object));
+               begin
+                  if Result.Kind /= Transfers.File_Uploaded
+                    or else Result.Bytes /= 23
+                    or else US.To_String (Result.Entity_Tag) /=
+                      """high-level-full"""
+                    or else US.To_String (Result.Checksum) /=
+                      High_Level_CRC32
+                    or else US.To_String (Result.Checksum_Type) /=
+                      "FULL_OBJECT"
+                  then
+                     raise Program_Error with
+                       "high-level full checksum upload mismatch";
+                  end if;
+               end;
+               declare
+                  Result : constant Transfers.Upload_Outcome :=
+                    Transfers.Upload_File
+                      (HTTP, Origin, "example-bucket",
+                       "high-level-checksum-sha256", Upload_Path, Identity,
+                       Timeout => 5.0,
+                       Checksum =>
+                         (Enabled => True,
+                          Algorithm => Checksum_Policy.Core.SHA256,
+                          Kind => Checksum_Policy.Full_Object));
+               begin
+                  if Result.Kind /= Transfers.File_Uploaded
+                    or else Result.Bytes /= 23
+                    or else US.To_String (Result.Entity_Tag) /=
+                      """high-level-sha256"""
+                    or else US.To_String (Result.Checksum) /=
+                      High_Level_SHA256
+                    or else US.To_String (Result.Checksum_Type) /=
+                      "FULL_OBJECT"
+                  then
+                     raise Program_Error with
+                       "high-level direct SHA256 checksum upload mismatch";
+                  end if;
+               end;
+               declare
+                  Rejected_Mismatch : Boolean := False;
+               begin
+                  begin
+                     declare
+                        Ignored : constant Transfers.Upload_Outcome :=
+                          Transfers.Upload_File
+                            (HTTP, Origin, "example-bucket",
+                             "high-level-put-mismatch", Upload_Path,
+                             Identity, Timeout => 5.0,
+                             Checksum =>
+                               (Enabled => True,
+                                Algorithm => Checksum_Policy.Core.SHA256,
+                                Kind => Checksum_Policy.Full_Object));
+                        pragma Unreferenced (Ignored);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Low_Level.Invalid_Response =>
+                        Rejected_Mismatch := True;
+                  end;
+                  if not Rejected_Mismatch then
+                     raise Program_Error with
+                       "high-level PutObject trusted a mismatched checksum";
+                  end if;
+               end;
+               declare
+                  Result : constant Transfers.Upload_Outcome :=
+                    Transfers.Upload_File
+                      (HTTP, Origin, "example-bucket",
+                       "high-level-checksum-composite", Upload_Path,
+                       Identity, Timeout => 5.0,
+                       Checksum =>
+                         (Enabled => True,
+                          Algorithm => Checksum_Policy.Core.SHA256,
+                          Kind => Checksum_Policy.Composite));
+               begin
+                  if Result.Kind /= Transfers.File_Uploaded
+                    or else Result.Bytes /= 23
+                    or else US.To_String (Result.Entity_Tag) /=
+                      """high-level-composite"""
+                    or else US.To_String (Result.Checksum) /=
+                      High_Level_SHA256_Composite
+                    or else US.To_String (Result.Checksum_Type) /=
+                      "COMPOSITE"
+                  then
+                     raise Program_Error with
+                       "high-level composite checksum upload mismatch";
+                  end if;
+               end;
+               declare
+                  Rejected_Mismatch : Boolean := False;
+               begin
+                  begin
+                     declare
+                        Ignored : constant Transfers.Upload_Outcome :=
+                          Transfers.Upload_File
+                            (HTTP, Origin, "example-bucket",
+                             "high-level-checksum-mismatch", Upload_Path,
+                             Identity, Timeout => 5.0,
+                             Checksum =>
+                               (Enabled => True,
+                                Algorithm => Checksum_Policy.Core.SHA256,
+                                Kind => Checksum_Policy.Composite));
+                        pragma Unreferenced (Ignored);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Low_Level.Invalid_Response =>
+                        Rejected_Mismatch := True;
+                  end;
+                  if not Rejected_Mismatch then
+                     raise Program_Error with
+                       "high-level upload trusted a mismatched checksum";
                   end if;
                end;
                declare
@@ -2529,7 +2945,7 @@ procedure S3_HTTP_Socket_Corpus is
                end;
             end Check_High_Level_Uploads;
          begin
-            Write_File (Upload_Path, "high-level file payload");
+            Write_File (Upload_Path, High_Level_File_Payload);
             Write_File (Empty_Path, "");
             begin
                Check_High_Level_Uploads;

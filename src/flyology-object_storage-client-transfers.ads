@@ -5,6 +5,7 @@ with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Core;
+with Flyology.Object_Storage.S3.Checksum_Policy;
 
 --  Defines bounded multi-subject transfer policy shared by convenience client
 --  operations. The execution implementation uses structured Flyology tasks.
@@ -16,6 +17,22 @@ package Flyology.Object_Storage.Client.Transfers is
      Flyology.Object_Storage.S3.Core.Maximum_Part_Size;
    Default_Multipart_Threshold : constant Byte_Count := 64 * 1_024 * 1_024;
    Default_Multipart_Part_Size : constant Byte_Count := 16 * 1_024 * 1_024;
+
+   package Checksum_Policy renames
+     Flyology.Object_Storage.S3.Checksum_Policy;
+
+   --  Optional explicit upload checksum policy. Disabled preserves the
+   --  service default; enabled selections are validated before network I/O.
+   type Upload_Checksum_Selection is record
+      Enabled   : Boolean := False;
+      Algorithm : Checksum_Policy.Algorithm :=
+        Checksum_Policy.Core.CRC64NVME;
+      Kind      : Checksum_Policy.Checksum_Type :=
+        Checksum_Policy.Full_Object;
+   end record;
+
+   Default_Upload_Checksum : constant Upload_Checksum_Selection :=
+     (others => <>);
 
    --  Abort one active multipart upload without constructing a modeled
    --  request record. Optional advanced members map directly to the pinned
@@ -45,6 +62,8 @@ package Flyology.Object_Storage.Client.Transfers is
          when File_Uploaded =>
             Bytes      : Byte_Count := 0;
             Entity_Tag : Ada.Strings.Unbounded.Unbounded_String;
+            Checksum   : Ada.Strings.Unbounded.Unbounded_String;
+            Checksum_Type : Ada.Strings.Unbounded.Unbounded_String;
          when Upload_Rejected =>
             Error : Flyology.Object_Storage.S3.Errors.Error_Response;
       end case;
@@ -86,6 +105,8 @@ package Flyology.Object_Storage.Client.Transfers is
    --     multipart upload
    --  @param Multipart_Part_Size Multipart range size, from 5 MiB through
    --     5 GiB; a plan requiring more than 10,000 parts is rejected
+   --  @param Checksum Optional explicit upload checksum policy; COMPOSITE
+   --     forces a nonempty file through multipart even below the threshold
    --  @return Typed successful upload or S3 rejection
    function Upload_File
      (Client       : aliased in out Flyology.HTTP.Client.Client;
@@ -100,7 +121,8 @@ package Flyology.Object_Storage.Client.Transfers is
       Timeout      : Duration := 30.0;
       Token        : access Flyology.Cancellation.Token := null;
       Multipart_Threshold : Byte_Count := Default_Multipart_Threshold;
-      Multipart_Part_Size : Byte_Count := Default_Multipart_Part_Size)
+      Multipart_Part_Size : Byte_Count := Default_Multipart_Part_Size;
+      Checksum : Upload_Checksum_Selection := Default_Upload_Checksum)
       return Upload_Outcome;
 
    type Copy_Outcome_Kind is (Object_Copied, Copy_Rejected);

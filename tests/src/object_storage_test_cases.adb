@@ -7655,6 +7655,8 @@ package body Object_Storage_Test_Cases is
       use AUnit.Assertions;
       package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
       package Multipart renames Flyology.Object_Storage.S3.Multipart;
+      package Policy renames
+        Flyology.Object_Storage.S3.Checksum_Policy;
       package SigV4 renames Flyology.Object_Storage.S3.SigV4;
       package US renames Ada.Strings.Unbounded;
       use type Low_Level.Create_Multipart_Outcome_Kind;
@@ -7694,6 +7696,61 @@ package body Object_Storage_Test_Cases is
                "/example-bucket/photos/a%20b%2B%25" & LF &
                "uploads=" & LF) = 1,
             "CreateMultipartUpload canonical query retains empty value");
+      end;
+
+      declare
+         Parameters : Low_Level.Create_Multipart_Parameters;
+         Prepared : Low_Level.Prepared_Request;
+      begin
+         Parameters.Content_Type := US.To_Unbounded_String ("text/plain");
+         Parameters.Checksum_Algorithm :=
+           US.To_Unbounded_String (Policy.Wire_Name (Policy.Core.SHA256));
+         Parameters.Checksum_Type :=
+           US.To_Unbounded_String (Policy.Wire_Name (Policy.Composite));
+         Prepared := Low_Level.Prepare_Create_Multipart_Upload
+           (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+            Low_Level.Path_Style, "example-bucket", "checksummed",
+            Parameters, Identity, "us-east-1", "20130524T000000Z");
+         Assert
+           (Low_Level.Signed_Headers (Prepared) =
+              "content-type;host;x-amz-checksum-algorithm;" &
+              "x-amz-checksum-type;x-amz-content-sha256;x-amz-date",
+            "CreateMultipartUpload checksum policy was not signed");
+      end;
+
+      declare
+         procedure Rejects
+           (Algorithm, Kind : String; Message : String) is
+            Parameters : Low_Level.Create_Multipart_Parameters;
+            Raised : Boolean := False;
+         begin
+            Parameters.Checksum_Algorithm :=
+              US.To_Unbounded_String (Algorithm);
+            Parameters.Checksum_Type := US.To_Unbounded_String (Kind);
+            begin
+               declare
+                  Ignored : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Create_Multipart_Upload
+                      (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                       Low_Level.Path_Style, "example-bucket", "key",
+                       Parameters, Identity, "us-east-1",
+                       "20130524T000000Z");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request => Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Rejects;
+      begin
+         Rejects
+           ("", "COMPOSITE",
+            "CreateMultipartUpload accepted checksum type without algorithm");
+         Rejects
+           ("CRC64NVME", "COMPOSITE",
+            "CreateMultipartUpload accepted unsupported checksum policy");
       end;
 
       declare

@@ -28,6 +28,21 @@ requests, and CompleteMultipartUpload. Defaults are a 64 MiB threshold and
 16 MiB parts. Part size must be 5 MiB through 5 GiB, and the proved planner
 rejects plans above 10,000 parts or the supported 50 TiB object bound.
 
+The optional `Checksum` selection requests an explicit algorithm and object
+checksum type. A below-threshold PutObject accepts every modeled checksum
+algorithm as FULL_OBJECT. Multipart FULL_OBJECT is restricted to CRC32,
+CRC32C, and CRC64NVME; multipart COMPOSITE supports CRC32, CRC32C, SHA-1,
+SHA-256, SHA-512, MD5, and the xxHash families. A composite selection forces a
+nonempty small file through multipart. Each part carries its locally computed
+checksum in UploadPart and the completion manifest. Completion also asserts
+the locally computed whole-object checksum, checksum type, and assembled size
+at the server's atomic publication boundary. `Upload_File` requires exact
+checksum echoes before returning the retained checksum/type in its successful
+outcome. A response may omit the model-optional checksum type; the convenience
+result normalizes it to the caller's selected type, while a wrong explicit type
+is rejected. An omitted selection preserves the service's default policy
+without imposing a second checksum calculation.
+
 Parts within one file are sequential. This keeps one file descriptor and one
 bounded request body active, avoids a task per chunk, and leaves protocol
 multiplexing, flow control, cancellation and deadline waiting to Flyology HTTP
@@ -46,6 +61,8 @@ The 22-member result decoder validates the required entity tag, every checksum
 family, modeled enums, optional object size and bucket-key state, and rejects
 an unexpected success body. `Upload_File` uses this typed path for small and
 empty objects; multipart uploads continue through their typed primitives.
+Explicit checksums are computed in the same sequential file pass as the SigV4
+payload and per-part hashes.
 
 After initiation, a rejected part or local exception triggers a best-effort
 AbortMultipartUpload with an independent short cleanup budget. A lost response
@@ -66,11 +83,11 @@ overload and also exposes all 23 pinned request members through typed
 parameters: ten checksum families, checksum type, exact assembled size,
 destination entity-tag predicates, owner/payer policy, and SSE-C material.
 The result retains all 21 modeled body and response-header members. The
-Flyology server evaluates `If-Match`, `If-None-Match`, and exact assembled
-size inside each backend's atomic publication boundary, so a failed predicate
-does not retire the staged upload. Additional-checksum completion and
-encrypted-upload policy remain explicitly unsupported by the server and keep
-the operation's server coverage partial.
+Flyology server evaluates `If-Match`, `If-None-Match`, exact assembled size,
+consecutive parts, configured checksum policy, stored part checksums, and the
+completed-object checksum inside each backend's atomic publication boundary.
+A failed predicate or digest does not retire the staged upload or replace the
+destination. Encrypted-upload policy remains explicitly unsupported.
 
 ## HeadObject reconciliation
 
