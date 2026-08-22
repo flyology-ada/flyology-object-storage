@@ -21,6 +21,7 @@ with GNAT.SHA256;
 package body Flyology.Object_Storage.Backends.Files is
 
    use type Ada.Directories.File_Kind;
+   use type Ada.Directories.File_Size;
    use type Ada.Calendar.Time;
    use type Ada.Real_Time.Time;
    use type Ada.Containers.Count_Type;
@@ -2461,12 +2462,36 @@ package body Flyology.Object_Storage.Backends.Files is
       end Read;
 
       File        : aliased SIO.File_Type;
+      Original    : SIO.File_Type;
+      Snapshot    : SIO.File_Type;
+      Snapshot_Path : US.Unbounded_String;
       Source_Info : Object_Information;
       Body_At     : SIO.Positive_Count;
       Source_Path : US.Unbounded_String;
       Source_Exists : Boolean := False;
       Locked      : Boolean := False;
       Put_Options_Value : Put_Options;
+      Number      : Long_Long_Integer;
+      Remaining   : Byte_Count;
+      Buffer      : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
+
+      procedure Retire_Snapshot is
+      begin
+         if US.Length (Snapshot_Path) > 0
+           and then
+             (Ada.Directories.Exists (US.To_String (Snapshot_Path))
+              or else GNAT.OS_Lib.Is_Symbolic_Link
+                (US.To_String (Snapshot_Path)))
+         then
+            Ada.Directories.Delete_File (US.To_String (Snapshot_Path));
+         end if;
+         Snapshot_Path := US.Null_Unbounded_String;
+      exception
+         when others =>
+            --  The private snapshot is unreachable metadata. Startup cleanup
+            --  retires a file that the platform could not remove immediately.
+            Snapshot_Path := US.Null_Unbounded_String;
+      end Retire_Snapshot;
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
@@ -2474,6 +2499,8 @@ package body Flyology.Object_Storage.Backends.Files is
         or else not Valid_Object_Key (Source_Key)
         or else not Valid_Bucket_Name (Destination_Bucket)
         or else not Valid_Object_Key (Destination_Key)
+        or else not Valid_Copy_Conditions (Options.Conditions)
+        or else not Valid_Write_Conditions (Options.Destination_Conditions)
       then
          Result := Invalid_Request;
          return;
@@ -2489,6 +2516,18 @@ package body Flyology.Object_Storage.Backends.Files is
       Locked := True;
       Source_Path := US.To_Unbounded_String
         (Object_Path (Item, Source_Bucket, Source_Key));
+      if not Ada.Directories.Exists (Bucket_Path (Item, Source_Bucket)) then
+         Item.Publication.Release;
+         Locked := False;
+         Result := Source_Bucket_Not_Found;
+         return;
+      elsif GNAT.OS_Lib.Is_Symbolic_Link
+          (Bucket_Path (Item, Source_Bucket))
+        or else Ada.Directories.Kind (Bucket_Path (Item, Source_Bucket)) /=
+          Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
       Inspect_Object_Path
         (Item, Source_Bucket, Source_Key, Source_Exists);
       if not Source_Exists then
@@ -2498,18 +2537,70 @@ package body Flyology.Object_Storage.Backends.Files is
          return;
       end if;
 
-      SIO.Open (File, SIO.In_File, US.To_String (Source_Path));
-      Read_Header (File, Source_Key, Source_Info, Body_At);
-      Item.Publication.Release;
-      Locked := False;
-      if not Copy_Conditions_Accept
-        (Options.Conditions, US.To_String (Source_Info.Entity_Tag))
-      then
-         SIO.Close (File);
-         Result := Precondition_Failed;
+      SIO.Open (Original, SIO.In_File, US.To_String (Source_Path));
+      Read_Header (Original, Source_Key, Source_Info, Body_At);
+      if not Valid_Copy_Object_Size (Source_Info.Size) then
+         SIO.Close (Original);
+         Item.Publication.Release;
+         Locked := False;
+         Result := Entity_Too_Large;
          return;
       end if;
-      SIO.Set_Index (File, Body_At);
+      Result := Evaluate_Copy_Conditions
+        (Options.Conditions, US.To_String (Source_Info.Entity_Tag),
+         Source_Info.Modified);
+      if Result /= Success then
+         SIO.Close (Original);
+         Item.Publication.Release;
+         Locked := False;
+         return;
+      end if;
+      Item.Temp_Sequence.Next (Number);
+      Snapshot_Path := US.To_Unbounded_String
+        (Join
+           (Temp_Path (Item),
+            GNAT.SHA256.Digest
+              ("copy-snapshot" & Character'Val (0) & Source_Bucket
+               & Character'Val (0) & Source_Key
+               & Long_Long_Integer'Image (Number)
+               & Ada.Calendar.Time'Image (Ada.Calendar.Clock))
+            & ".tmp"));
+      SIO.Create (Snapshot, SIO.Out_File, US.To_String (Snapshot_Path));
+      SIO.Set_Index (Original, Body_At);
+      Remaining := Source_Info.Size;
+      while Remaining > 0 loop
+         Check_Context (Token, Deadline);
+         declare
+            Count : constant Ada.Streams.Stream_Element_Offset :=
+              Ada.Streams.Stream_Element_Offset
+                (Byte_Count'Min (Remaining, Byte_Count (Buffer'Length)));
+            Last : Ada.Streams.Stream_Element_Offset;
+         begin
+            SIO.Read (Original, Buffer (1 .. Count), Last);
+            if Last /= Count then
+               raise Ada.IO_Exceptions.End_Error;
+            end if;
+            SIO.Write (Snapshot, Buffer (1 .. Count));
+            Remaining := Remaining - Byte_Count (Count);
+         end;
+      end loop;
+      SIO.Close (Snapshot);
+      SIO.Close (Original);
+      Item.Publication.Release;
+      Locked := False;
+      if not Ada.Directories.Exists (US.To_String (Snapshot_Path))
+        or else GNAT.OS_Lib.Is_Symbolic_Link
+          (US.To_String (Snapshot_Path))
+        or else Ada.Directories.Kind (US.To_String (Snapshot_Path)) /=
+          Ada.Directories.Ordinary_File
+        or else Ada.Directories.Size (US.To_String (Snapshot_Path)) /=
+          Ada.Directories.File_Size (Source_Info.Size)
+      then
+         Retire_Snapshot;
+         Result := Backend_Unavailable;
+         return;
+      end if;
+      SIO.Open (File, SIO.In_File, US.To_String (Snapshot_Path));
       Put_Options_Value :=
         (Entity_Tag   => US.Null_Unbounded_String,
          Content_Type =>
@@ -2524,26 +2615,42 @@ package body Flyology.Object_Storage.Backends.Files is
       begin
          Item.Put_Object
            (Destination_Bucket, Destination_Key, Source,
-            Put_Options_Value, Token, Deadline, Info, Result);
+            Put_Options_Value, Token, Deadline, Info, Result,
+            Options.Destination_Conditions);
       end;
       SIO.Close (File);
+      Retire_Snapshot;
    exception
       when Flyology.Cancellation.Operation_Cancelled
          | Flyology.IO.Timeout_Error =>
          if SIO.Is_Open (File) then
             SIO.Close (File);
          end if;
+         if SIO.Is_Open (Original) then
+            SIO.Close (Original);
+         end if;
+         if SIO.Is_Open (Snapshot) then
+            SIO.Close (Snapshot);
+         end if;
          if Locked then
             Item.Publication.Release;
          end if;
+         Retire_Snapshot;
          raise;
       when others =>
          if SIO.Is_Open (File) then
             SIO.Close (File);
          end if;
+         if SIO.Is_Open (Original) then
+            SIO.Close (Original);
+         end if;
+         if SIO.Is_Open (Snapshot) then
+            SIO.Close (Snapshot);
+         end if;
          if Locked then
             Item.Publication.Release;
          end if;
+         Retire_Snapshot;
          Info := Empty_Info;
          Result := Backend_Unavailable;
    end Copy_Object;
@@ -4180,6 +4287,7 @@ package body Flyology.Object_Storage.Backends.Files is
         or else not Valid_Bucket_Name (Destination_Bucket)
         or else not Valid_Object_Key (Destination_Key)
         or else Upload_ID'Length not in 1 .. 1_024
+        or else not Valid_Copy_Conditions (Conditions)
       then
          Result := Invalid_Request;
          return;
@@ -4189,6 +4297,18 @@ package body Flyology.Object_Storage.Backends.Files is
       Locked := True;
       Source_Path := US.To_Unbounded_String
         (Object_Path (Item, Source_Bucket, Source_Key));
+      if not Ada.Directories.Exists (Bucket_Path (Item, Source_Bucket)) then
+         Item.Publication.Release;
+         Locked := False;
+         Result := Source_Bucket_Not_Found;
+         return;
+      elsif GNAT.OS_Lib.Is_Symbolic_Link
+          (Bucket_Path (Item, Source_Bucket))
+        or else Ada.Directories.Kind (Bucket_Path (Item, Source_Bucket)) /=
+          Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
       Inspect_Object_Path
         (Item, Source_Bucket, Source_Key, Source_Exists);
       if not Source_Exists then
@@ -4202,11 +4322,11 @@ package body Flyology.Object_Storage.Backends.Files is
       Item.Publication.Release;
       Locked := False;
 
-      if not Copy_Conditions_Accept
-        (Conditions, US.To_String (Source_Info.Entity_Tag))
-      then
+      Result := Evaluate_Copy_Conditions
+        (Conditions, US.To_String (Source_Info.Entity_Tag),
+         Source_Info.Modified);
+      if Result /= Success then
          SIO.Close (File);
-         Result := Precondition_Failed;
          return;
       elsif Requested.Kind not in Whole_Range | Bounded_Range then
          SIO.Close (File);

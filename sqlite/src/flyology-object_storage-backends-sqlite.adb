@@ -765,6 +765,27 @@ package body Flyology.Object_Storage.Backends.SQLite is
       File        : aliased SIO.File_Type;
       Source_Info : Object_Information;
       Put_Options_Value : Put_Options;
+
+      procedure Open_Source
+        (Payload_Name : String; Snapshot : Object_Information)
+      is
+         Path : constant String := Join (Objects_Path (Item), Payload_Name);
+      begin
+         Check_Context (Token, Deadline);
+         if not Is_Payload_Name (Payload_Name)
+           or else not Ada.Directories.Exists (Path)
+           or else GNAT.OS_Lib.Is_Symbolic_Link (Path)
+           or else Ada.Directories.Kind (Path) /=
+             Ada.Directories.Ordinary_File
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         SIO.Open (File, SIO.In_File, Path);
+         if SIO.Size (File) /= SIO.Count (Snapshot.Size) then
+            SIO.Close (File);
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+      end Open_Source;
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
@@ -772,6 +793,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
         or else not Valid_Object_Key (Source_Key)
         or else not Valid_Bucket_Name (Destination_Bucket)
         or else not Valid_Object_Key (Destination_Key)
+        or else not Valid_Copy_Conditions (Options.Conditions)
+        or else not Valid_Write_Conditions (Options.Destination_Conditions)
       then
          Result := Invalid_Request;
          return;
@@ -785,27 +808,28 @@ package body Flyology.Object_Storage.Backends.SQLite is
 
       Catalogs.Find_Object
         (Item.Catalog, Source_Bucket, Source_Key,
-         Payload, Source_Info, Result);
-      if Result = Not_Found then
+         Payload, Source_Info, Result, Open_Source'Access);
+      if Result = Bucket_Not_Found then
+         Result := Source_Bucket_Not_Found;
+         return;
+      elsif Result = Not_Found then
          Result := Source_Not_Found;
          return;
       elsif Result /= Success then
          return;
-      elsif not Is_Payload_Name (US.To_String (Payload)) then
-         raise Ada.IO_Exceptions.Data_Error;
-      elsif not Copy_Conditions_Accept
-        (Options.Conditions, US.To_String (Source_Info.Entity_Tag))
-      then
-         Result := Precondition_Failed;
+      elsif not Valid_Copy_Object_Size (Source_Info.Size) then
+         SIO.Close (File);
+         Result := Entity_Too_Large;
+         return;
+      end if;
+      Result := Evaluate_Copy_Conditions
+        (Options.Conditions, US.To_String (Source_Info.Entity_Tag),
+         Source_Info.Modified);
+      if Result /= Success then
+         SIO.Close (File);
          return;
       end if;
 
-      SIO.Open
-        (File, SIO.In_File,
-         Join (Objects_Path (Item), US.To_String (Payload)));
-      if SIO.Size (File) /= SIO.Count (Source_Info.Size) then
-         raise Ada.IO_Exceptions.Data_Error;
-      end if;
       Put_Options_Value :=
         (Entity_Tag   => US.Null_Unbounded_String,
          Content_Type =>
@@ -820,7 +844,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       begin
          Item.Put_Object
            (Destination_Bucket, Destination_Key, Source,
-            Put_Options_Value, Token, Deadline, Info, Result);
+            Put_Options_Value, Token, Deadline, Info, Result,
+            Options.Destination_Conditions);
       end;
       SIO.Close (File);
    exception
@@ -1628,6 +1653,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
         or else not Valid_Bucket_Name (Destination_Bucket)
         or else not Valid_Object_Key (Destination_Key)
         or else Upload_ID'Length not in 1 .. 1_024
+        or else not Valid_Copy_Conditions (Conditions)
       then
          Result := Invalid_Request;
          return;
@@ -1636,17 +1662,21 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Catalogs.Find_Object
         (Item.Catalog, Source_Bucket, Source_Key,
          Payload, Source_Info, Result);
-      if Result = Not_Found then
+      if Result = Bucket_Not_Found then
+         Result := Source_Bucket_Not_Found;
+         return;
+      elsif Result = Not_Found then
          Result := Source_Not_Found;
          return;
       elsif Result /= Success then
          return;
       elsif not Is_Payload_Name (US.To_String (Payload)) then
          raise Ada.IO_Exceptions.Data_Error;
-      elsif not Copy_Conditions_Accept
-        (Conditions, US.To_String (Source_Info.Entity_Tag))
-      then
-         Result := Precondition_Failed;
+      end if;
+      Result := Evaluate_Copy_Conditions
+        (Conditions, US.To_String (Source_Info.Entity_Tag),
+         Source_Info.Modified);
+      if Result /= Success then
          return;
       elsif Requested.Kind not in Whole_Range | Bounded_Range then
          Result := Invalid_Request;

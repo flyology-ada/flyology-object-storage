@@ -1,6 +1,3 @@
-with Ada.Strings;
-with Ada.Strings.Fixed;
-
 package body Flyology.Object_Storage.Backends is
 
    procedure Put_Multipart_Part
@@ -47,51 +44,34 @@ package body Flyology.Object_Storage.Backends is
          Modified => Modified);
    end Evaluate_Read_Conditions;
 
-   function Entity_Tag_List_Matches
-     (Value : String; Entity_Tag : String) return Boolean
+   function Evaluate_Copy_Conditions
+     (Conditions : Copy_Conditions;
+      Entity_Tag : String;
+      Modified   : Unix_Time) return Status
    is
-      Cursor : Integer := Value'First;
    begin
-      while Cursor <= Value'Last loop
-         declare
-            Separator : constant Natural :=
-              Ada.Strings.Fixed.Index
-                (Value, ",", From => Positive (Cursor));
-            Last : constant Integer :=
-              (if Separator = 0 then Value'Last else Separator - 1);
-            Token : constant String :=
-              Ada.Strings.Fixed.Trim
-                (Value (Cursor .. Last), Ada.Strings.Both);
-         begin
-            if Token = "*"
-              or else Token = Entity_Tag
-              or else Token = '"' & Entity_Tag & '"'
-            then
-               return True;
-            end if;
-            exit when Separator = 0;
-            Cursor := Separator + 1;
-         end;
-      end loop;
-      return False;
-   end Entity_Tag_List_Matches;
+      return Evaluate_Object_Copy_Conditions
+        (If_Match =>
+           Ada.Strings.Unbounded.To_String (Conditions.If_Match),
+         If_None_Match =>
+           Ada.Strings.Unbounded.To_String (Conditions.If_None_Match),
+         Has_If_Modified_Since => Conditions.If_Modified_Since.Is_Set,
+         If_Modified_Since =>
+           (if Conditions.If_Modified_Since.Is_Set
+            then Conditions.If_Modified_Since.Value else 0),
+         Has_If_Unmodified_Since => Conditions.If_Unmodified_Since.Is_Set,
+         If_Unmodified_Since =>
+           (if Conditions.If_Unmodified_Since.Is_Set
+            then Conditions.If_Unmodified_Since.Value else 0),
+         Entity_Tag => Entity_Tag,
+         Modified => Modified);
+   end Evaluate_Copy_Conditions;
 
-   function Copy_Conditions_Accept
-     (Conditions : Copy_Conditions; Entity_Tag : String) return Boolean
-   is
-      Match_Value : constant String :=
-        Ada.Strings.Unbounded.To_String (Conditions.If_Match);
-      None_Match_Value : constant String :=
-        Ada.Strings.Unbounded.To_String (Conditions.If_None_Match);
-   begin
-      return
-        (Match_Value'Length = 0
-         or else Entity_Tag_List_Matches (Match_Value, Entity_Tag))
-        and then
-          (None_Match_Value'Length = 0
-           or else not Entity_Tag_List_Matches
-             (None_Match_Value, Entity_Tag));
-   end Copy_Conditions_Accept;
+   function Valid_Copy_Conditions
+     (Conditions : Copy_Conditions) return Boolean is
+     (Valid_Object_Write_Conditions
+        (Ada.Strings.Unbounded.To_String (Conditions.If_Match),
+         Ada.Strings.Unbounded.To_String (Conditions.If_None_Match)));
 
    function Evaluate_Write_Conditions
      (Conditions : Write_Conditions;
@@ -102,6 +82,12 @@ package body Flyology.Object_Storage.Backends is
         (Ada.Strings.Unbounded.To_String (Conditions.If_Match),
          Ada.Strings.Unbounded.To_String (Conditions.If_None_Match),
          Exists, Entity_Tag));
+
+   function Valid_Write_Conditions
+     (Conditions : Write_Conditions) return Boolean is
+     (Valid_Object_Write_Conditions
+        (Ada.Strings.Unbounded.To_String (Conditions.If_Match),
+         Ada.Strings.Unbounded.To_String (Conditions.If_None_Match)));
 
    function Evaluate_Delete_Object_Conditions
      (Conditions : Delete_Object_Conditions;

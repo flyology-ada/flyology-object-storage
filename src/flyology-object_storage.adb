@@ -288,6 +288,14 @@ is
          Entity_Tag => "",
          Modified => 0) /= Invalid_Request);
 
+   function Valid_Object_Write_Conditions
+     (If_Match, If_None_Match : String) return Boolean is
+     ((If_Match'Length = 0
+       or else Valid_Object_Read_Entity_Tag_Condition (If_Match))
+      and then
+        (If_None_Match'Length = 0
+         or else Valid_Object_Read_Entity_Tag_Condition (If_None_Match)));
+
    function Evaluate_Object_Read_Conditions
      (If_Match, If_None_Match : String;
       Has_If_Modified_Since   : Boolean;
@@ -328,6 +336,31 @@ is
       end if;
       return Success;
    end Evaluate_Object_Read_Conditions;
+
+   function Evaluate_Object_Copy_Conditions
+     (If_Match, If_None_Match : String;
+      Has_If_Modified_Since   : Boolean;
+      If_Modified_Since       : Long_Long_Integer;
+      Has_If_Unmodified_Since : Boolean;
+      If_Unmodified_Since     : Long_Long_Integer;
+      Entity_Tag              : String;
+      Modified                : Unix_Time) return Status
+   is
+      Read_Result : constant Status := Evaluate_Object_Read_Conditions
+        (If_Match,
+         If_None_Match,
+         Has_If_Modified_Since,
+         If_Modified_Since,
+         Has_If_Unmodified_Since,
+         If_Unmodified_Since,
+         Entity_Tag,
+         Modified);
+   begin
+      return
+        (if Read_Result = Not_Modified
+         then Precondition_Failed
+         else Read_Result);
+   end Evaluate_Object_Copy_Conditions;
 
    function Merge_Bucket_Versioning
      (Current, Update : Bucket_Versioning_Configuration)

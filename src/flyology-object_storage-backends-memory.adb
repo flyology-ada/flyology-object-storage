@@ -526,7 +526,9 @@ package body Flyology.Object_Storage.Backends.Memory is
       begin
          Data := (Ada.Finalization.Controlled with others => <>);
          Info := Empty_Info;
-         if Index = 0 then
+         if Bucket_Index (Bucket) = 0 then
+            Result := Bucket_Not_Found;
+         elsif Index = 0 then
             Result := Not_Found;
          else
             Snapshot := Byte_Count (Objects (Index).Data.Length);
@@ -565,7 +567,10 @@ package body Flyology.Object_Storage.Backends.Memory is
       begin
          Data := (Ada.Finalization.Controlled with others => <>);
          Info := Empty_Info;
-         if Index = 0 then
+         if Bucket_Index (Bucket) = 0 then
+            Result := Bucket_Not_Found;
+            return;
+         elsif Index = 0 then
             Result := Not_Found;
             return;
          end if;
@@ -1781,6 +1786,8 @@ package body Flyology.Object_Storage.Backends.Memory is
         or else not Valid_Object_Key (Source_Key)
         or else not Valid_Bucket_Name (Destination_Bucket)
         or else not Valid_Object_Key (Destination_Key)
+        or else not Valid_Copy_Conditions (Options.Conditions)
+        or else not Valid_Write_Conditions (Options.Destination_Conditions)
       then
          Result := Invalid_Request;
          return;
@@ -1794,16 +1801,24 @@ package body Flyology.Object_Storage.Backends.Memory is
 
       Item.State.Fetch
         (Source_Bucket, Source_Key, Snapshot, Source_Info, Result);
-      if Result = Not_Found then
+      if Result = Bucket_Not_Found then
+         Result := Source_Bucket_Not_Found;
+         return;
+      elsif Result = Not_Found then
          Result := Source_Not_Found;
          return;
       elsif Result /= Success then
          return;
-      elsif not Copy_Conditions_Accept
+      elsif not Valid_Copy_Object_Size (Source_Info.Size) then
+         Result := Entity_Too_Large;
+         Release_Buffer (Item.State, Snapshot);
+         return;
+      end if;
+      Result := Evaluate_Copy_Conditions
         (Options.Conditions,
-         Ada.Strings.Unbounded.To_String (Source_Info.Entity_Tag))
-      then
-         Result := Precondition_Failed;
+         Ada.Strings.Unbounded.To_String (Source_Info.Entity_Tag),
+         Source_Info.Modified);
+      if Result /= Success then
          Release_Buffer (Item.State, Snapshot);
          return;
       end if;
@@ -1820,7 +1835,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       begin
          Item.Put_Object
            (Destination_Bucket, Destination_Key, Source,
-            Put_Options_Value, Token, Deadline, Info, Result);
+            Put_Options_Value, Token, Deadline, Info, Result,
+            Options.Destination_Conditions);
       end;
       Release_Buffer (Item.State, Snapshot);
    exception
@@ -2464,6 +2480,7 @@ package body Flyology.Object_Storage.Backends.Memory is
         or else not Valid_Bucket_Name (Destination_Bucket)
         or else not Valid_Object_Key (Destination_Key)
         or else Upload_ID'Length not in 1 .. 1_024
+        or else not Valid_Copy_Conditions (Conditions)
       then
          Result := Invalid_Request;
          return;
@@ -2472,16 +2489,20 @@ package body Flyology.Object_Storage.Backends.Memory is
       Item.State.Fetch_Range
         (Source_Bucket, Source_Key, Requested,
          Snapshot, Source_Info, Result);
-      if Result = Not_Found then
+      if Result = Bucket_Not_Found then
+         Result := Source_Bucket_Not_Found;
+         return;
+      elsif Result = Not_Found then
          Result := Source_Not_Found;
          return;
       elsif Result /= Success then
          return;
-      elsif not Copy_Conditions_Accept
+      end if;
+      Result := Evaluate_Copy_Conditions
         (Conditions,
-         Ada.Strings.Unbounded.To_String (Source_Info.Entity_Tag))
-      then
-         Result := Precondition_Failed;
+         Ada.Strings.Unbounded.To_String (Source_Info.Entity_Tag),
+         Source_Info.Modified);
+      if Result /= Success then
          Release_Buffer (Item.State, Snapshot);
          return;
       end if;

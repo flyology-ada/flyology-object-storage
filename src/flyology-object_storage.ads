@@ -26,6 +26,7 @@ is
       Bad_Digest,
       Entity_Too_Small,
       Entity_Too_Large,
+      Source_Bucket_Not_Found,
       Source_Not_Found,
       Precondition_Failed,
       Not_Modified,
@@ -75,6 +76,11 @@ is
    function Valid_Object_Read_Entity_Tag_Condition
      (Value : String) return Boolean;
 
+   --  Validate both optional entity-tag predicates before an operation
+   --  acquires a snapshot or other bounded backend resources.
+   function Valid_Object_Write_Conditions
+     (If_Match, If_None_Match : String) return Boolean;
+
    --  Evaluate S3 conditional-read precedence against one immutable metadata
    --  snapshot. Entity_Tag is the stored unquoted opaque tag. The two Boolean
    --  arguments distinguish an absent date condition from every signed HTTP
@@ -89,6 +95,21 @@ is
       Modified                : Unix_Time) return Status
    with Post => Evaluate_Object_Read_Conditions'Result in
      Success | Precondition_Failed | Not_Modified | Invalid_Request;
+
+   --  Evaluate CopyObject source validators against one immutable metadata
+   --  snapshot. Entity-tag predicates take precedence over their paired date
+   --  predicates. A failed If-None-Match is a 412 copy precondition rather
+   --  than the 304 result used by GetObject and HeadObject.
+   function Evaluate_Object_Copy_Conditions
+     (If_Match, If_None_Match : String;
+      Has_If_Modified_Since   : Boolean;
+      If_Modified_Since       : Long_Long_Integer;
+      Has_If_Unmodified_Since : Boolean;
+      If_Unmodified_Since     : Long_Long_Integer;
+      Entity_Tag              : String;
+      Modified                : Unix_Time) return Status
+   with Post => Evaluate_Object_Copy_Conditions'Result in
+     Success | Precondition_Failed | Invalid_Request;
 
    --  Validate the S3 DeleteObjects ETag condition. The wildcard, an exact
    --  unquoted opaque tag, and the corresponding quoted form are accepted;

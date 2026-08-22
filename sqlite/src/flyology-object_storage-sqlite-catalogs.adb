@@ -1153,6 +1153,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Result  : out Status)
    is
       Query : DB.Statement;
+      Bucket_Query : DB.Statement;
    begin
       Payload := US.Null_Unbounded_String;
       Info := Empty_Info;
@@ -1166,7 +1167,18 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Bind (Query, 1, Bucket);
       DB.Bind_Bytes (Query, 2, Key);
       if DB.Step (Query) = DB.Done then
-         Result := Not_Found;
+         DB.Prepare
+           (Bucket_Query, Item.Database,
+            "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+         DB.Bind (Bucket_Query, 1, Bucket);
+         if DB.Step (Bucket_Query) /= DB.Row then
+            raise Catalog_Error with
+              "bucket existence query returned no row";
+         elsif DB.Column (Bucket_Query, 0) = 0 then
+            Result := Bucket_Not_Found;
+         else
+            Result := Not_Found;
+         end if;
          return;
       end if;
       Payload := US.To_Unbounded_String (DB.Column (Query, 0));
@@ -2189,7 +2201,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Selected         : Multipart_Part_Records;
       Payload          : String;
       Info             : Object_Information;
-      Conditions       : Backends.Copy_Conditions;
+      Conditions       : Write_Conditions;
       Previous_Payload : out US.Unbounded_String;
       Retired_Payloads : out Payloads;
       Result           : out Status)

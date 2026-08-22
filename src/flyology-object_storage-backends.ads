@@ -65,9 +65,32 @@ package Flyology.Object_Storage.Backends is
       Next_After   : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
-   --  Compatibility name for source validators evaluated against the same
-   --  immutable snapshot that is copied.
-   subtype Copy_Conditions is Write_Conditions;
+   --  Presence of a signed source-condition timestamp. The S3 boundary parses
+   --  HTTP dates before crossing this HTTP-independent contract.
+   type Optional_Copy_Condition_Time (Is_Set : Boolean := False) is record
+      case Is_Set is
+         when True =>
+            Value : Long_Long_Integer;
+         when False =>
+            null;
+      end case;
+   end record;
+
+   --  CopyObject source validators evaluated against the exact immutable
+   --  metadata snapshot whose bytes are copied.
+   type Copy_Conditions is record
+      If_Match             : Ada.Strings.Unbounded.Unbounded_String;
+      If_Modified_Since    : Optional_Copy_Condition_Time;
+      If_None_Match        : Ada.Strings.Unbounded.Unbounded_String;
+      If_Unmodified_Since  : Optional_Copy_Condition_Time;
+   end record;
+
+   Default_Copy_Conditions : constant Copy_Conditions;
+
+   --  Return whether every supplied CopyObject entity-tag field is a
+   --  bounded canonical HTTP entity-tag list. Date fields are already typed.
+   function Valid_Copy_Conditions
+     (Conditions : Copy_Conditions) return Boolean;
 
    type Copy_Metadata_Directive is (Copy_Metadata, Replace_Metadata);
 
@@ -75,13 +98,18 @@ package Flyology.Object_Storage.Backends is
       Metadata_Directive : Copy_Metadata_Directive := Copy_Metadata;
       Content_Type       : Ada.Strings.Unbounded.Unbounded_String;
       Conditions         : Copy_Conditions;
+      Destination_Conditions : Write_Conditions;
    end record;
 
    Default_Copy_Options : constant Copy_Options;
 
-   --  Evaluate If-Match and If-None-Match against an unquoted stored ETag.
-   function Copy_Conditions_Accept
-     (Conditions : Copy_Conditions; Entity_Tag : String) return Boolean;
+   --  Evaluate all source conditions against an exact object snapshot.
+   --  Malformed entity-tag lists are Invalid_Request; every false predicate
+   --  is Precondition_Failed.
+   function Evaluate_Copy_Conditions
+     (Conditions : Copy_Conditions;
+      Entity_Tag : String;
+      Modified   : Unix_Time) return Status;
 
    --  Evaluate If-Match and If-None-Match for an atomic object publication.
    --  A missing destination never satisfies If-Match and always satisfies a
@@ -91,6 +119,11 @@ package Flyology.Object_Storage.Backends is
      (Conditions : Write_Conditions;
       Exists     : Boolean;
       Entity_Tag : String) return Status;
+
+   --  Return whether every supplied destination entity-tag predicate is a
+   --  bounded canonical HTTP entity-tag list.
+   function Valid_Write_Conditions
+     (Conditions : Write_Conditions) return Boolean;
 
    --  HTTP-independent predicates for one DeleteObjects entry. The protocol
    --  adapter parses Last_Modified_Time before crossing this boundary.
@@ -232,6 +265,15 @@ package Flyology.Object_Storage.Backends is
 
    subtype Multipart_Part_Number is Positive range 1 .. 10_000;
 
+   --  Maximum source size accepted by one atomic S3 CopyObject request.
+   Maximum_Copy_Object_Size : constant Byte_Count :=
+     5 * 1_024 * 1_024 * 1_024;
+
+   --  Check the AWS binary 5 GiB single-copy boundary without reading the
+   --  source body.
+   function Valid_Copy_Object_Size (Size : Byte_Count) return Boolean is
+     (Size <= Maximum_Copy_Object_Size);
+
    Maximum_Multipart_Part_Size : constant Byte_Count :=
      5 * 1_024 * 1_024 * 1_024;
 
@@ -245,7 +287,7 @@ package Flyology.Object_Storage.Backends is
    --  Predicates and exact assembled size checked in the same publication
    --  boundary that replaces the destination and retires the upload.
    type Complete_Multipart_Options is record
-      Conditions    : Copy_Conditions;
+      Conditions    : Write_Conditions;
       Expected_Size : Source_Length;
       Expected_Checksum : Checksum_Information;
    end record;
@@ -770,7 +812,10 @@ private
       Content_Type       =>
         Ada.Strings.Unbounded.To_Unbounded_String
           ("application/octet-stream"),
-      Conditions         => (others => <>));
+      Conditions         => (others => <>),
+      Destination_Conditions => (others => <>));
+
+   Default_Copy_Conditions : constant Copy_Conditions := (others => <>);
 
    Default_Read_Conditions : constant Read_Conditions :=
      (If_Match            => Ada.Strings.Unbounded.Null_Unbounded_String,

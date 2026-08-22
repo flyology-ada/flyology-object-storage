@@ -8,6 +8,7 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Conditional_Put_Conformance;
+with Copy_Object_Conformance;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.IO;
@@ -46,6 +47,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    Database_Path : constant String := "obj/database-wrapper.sqlite";
    Backend_Root : constant String := "obj/sqlite-backend";
    Conditional_Root : constant String := "obj/sqlite-conditional-backend";
+   Copy_Root : constant String := "obj/sqlite-copy-object-backend";
    SQLite_Upload_ID : US.Unbounded_String;
    SQLite_Part_ETag : US.Unbounded_String;
    SQLite_Abort_ID  : US.Unbounded_String;
@@ -2282,6 +2284,20 @@ begin
    end;
    Delete_Database;
 
+   if Ada.Directories.Exists (Copy_Root) then
+      Ada.Directories.Delete_Tree (Copy_Root);
+   end if;
+   declare
+      package Backend renames Flyology.Object_Storage.Backends.SQLite;
+      Store : Backend.Store :=
+        Backend.Open
+          (Copy_Root, Maximum_Object_Size => 1 * 1_024 * 1_024);
+   begin
+      Copy_Object_Conformance.Exercise
+        (Store, "sqlite-copy-object-bucket");
+   end;
+   Ada.Directories.Delete_Tree (Copy_Root);
+
    if Ada.Directories.Exists (Backend_Root) then
       Ada.Directories.Delete_Tree (Backend_Root);
    end if;
@@ -3350,7 +3366,8 @@ begin
             and then Flyology.Bytes.To_Byte_String (Copy_Sink.Data) =
               "second body",
             "SQLite copy body mismatch");
-         Options.Conditions.If_Match := US.To_Unbounded_String ("wrong");
+         Options.Conditions.If_Match :=
+           US.To_Unbounded_String ("""wrong""");
          Store.Copy_Object
            ("sqlite-bucket", Key, "sqlite-bucket", "copied", Options,
             null, Ada.Real_Time.Time_Last, Info, Result);
@@ -3696,6 +3713,9 @@ exception
       end if;
       if Ada.Directories.Exists (Conditional_Root) then
          Ada.Directories.Delete_Tree (Conditional_Root);
+      end if;
+      if Ada.Directories.Exists (Copy_Root) then
+         Ada.Directories.Delete_Tree (Copy_Root);
       end if;
       Ada.Text_IO.Put_Line
         (Ada.Text_IO.Standard_Error,

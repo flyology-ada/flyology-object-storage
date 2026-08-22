@@ -11,6 +11,7 @@ with AUnit.Assertions;
 with AUnit.Test_Caller;
 with AUnit.Test_Fixtures;
 with Conditional_Put_Conformance;
+with Copy_Object_Conformance;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP;
@@ -1749,6 +1750,20 @@ package body Object_Storage_Test_Cases is
             Has_If_Modified_Since, If_Modified_Since,
             Has_If_Unmodified_Since, If_Unmodified_Since,
             "etag", 100));
+
+      function Copy_Result
+        (If_Match                 : String := "";
+         If_None_Match            : String := "";
+         Has_If_Modified_Since    : Boolean := False;
+         If_Modified_Since        : Long_Long_Integer := 0;
+         Has_If_Unmodified_Since  : Boolean := False;
+         If_Unmodified_Since      : Long_Long_Integer := 0)
+         return Status is
+        (Evaluate_Object_Copy_Conditions
+           (If_Match, If_None_Match,
+            Has_If_Modified_Since, If_Modified_Since,
+            Has_If_Unmodified_Since, If_Unmodified_Since,
+            "etag", 100));
    begin
       Assert (Valid_Bucket_Name ("abc"), "minimum bucket name");
       Assert (Valid_Bucket_Name ("logs.example-1"), "ordinary bucket name");
@@ -1866,6 +1881,37 @@ package body Object_Storage_Test_Cases is
       Assert
         (Read_Result (If_None_Match => "*, ""etag""") = Invalid_Request,
          "malformed read If-None-Match was accepted");
+      Assert
+        (Copy_Result
+           (If_Match => """etag""",
+            Has_If_Unmodified_Since => True,
+            If_Unmodified_Since => 99) = Success,
+         "copy If-Match did not override If-Unmodified-Since");
+      Assert
+        (Copy_Result
+           (If_None_Match => "W/""etag""",
+            Has_If_Modified_Since => True,
+            If_Modified_Since => 99) = Precondition_Failed,
+         "copy If-None-Match did not map to a failed precondition");
+      Assert
+        (Copy_Result
+           (Has_If_Modified_Since => True,
+            If_Modified_Since => 100) = Precondition_Failed,
+         "equal copy If-Modified-Since was accepted");
+      Assert
+        (Copy_Result
+           (Has_If_Unmodified_Since => True,
+            If_Unmodified_Since => 100) = Success,
+         "equal copy If-Unmodified-Since was rejected");
+      Assert
+        (Copy_Result (If_Match => "bare") = Invalid_Request,
+         "malformed copy source ETag was accepted");
+      Assert
+        (Flyology.Object_Storage.Backends.Valid_Copy_Object_Size
+           (Flyology.Object_Storage.Backends.Maximum_Copy_Object_Size)
+         and then not Flyology.Object_Storage.Backends.Valid_Copy_Object_Size
+           (Flyology.Object_Storage.Backends.Maximum_Copy_Object_Size + 1),
+         "CopyObject 5 GiB exact boundary is off by one");
       Assert
         (Valid_Object_Delete_ETag_Condition ("etag")
          and then Valid_Object_Delete_ETag_Condition ("""etag""")
@@ -2374,7 +2420,7 @@ package body Object_Storage_Test_Cases is
             and then Info.Checksum.Algorithm = Checksum_SHA256
             and then Store.Bytes_Used = Byte_Count (5 * MiB + 8),
             "memory composite copy-part failed or leaked its snapshot");
-         Conditions.If_Match := US.To_Unbounded_String ("wrong");
+         Conditions.If_Match := US.To_Unbounded_String ("""wrong""");
          Store.Copy_Multipart_Part
            ("multipart-bucket", "target", "multipart-bucket",
             "copied-part", US.To_String (Copy_ID), 1, Whole_Object,
@@ -3579,7 +3625,8 @@ package body Object_Storage_Test_Cases is
                and then Flyology.Bytes.To_Byte_String (Copy_Sink.Data) =
                  "second body",
                "files copy body mismatch");
-            Options.Conditions.If_Match := US.To_Unbounded_String ("wrong");
+            Options.Conditions.If_Match :=
+              US.To_Unbounded_String ("""wrong""");
             Store.Copy_Object
               ("file-bucket", Key, "file-bucket", "copied", Options,
                null, Ada.Real_Time.Time_Last, Info, Result);
@@ -4824,6 +4871,51 @@ package body Object_Storage_Test_Cases is
          Clean;
          raise;
    end Check_Backend_Conditional_Put;
+
+   procedure Check_Backend_Copy_Object (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      package Memory renames Flyology.Object_Storage.Backends.Memory;
+      package Files renames Flyology.Object_Storage.Backends.Files;
+      Root : constant String :=
+        Ada.Directories.Compose
+          (Ada.Directories.Compose
+             (Ada.Directories.Current_Directory, "obj"),
+           "fs-copy-object-conformance");
+
+      procedure Clean is
+      begin
+         if Ada.Directories.Exists (Root) then
+            Ada.Directories.Delete_Tree (Root);
+         end if;
+      end Clean;
+   begin
+      declare
+         Store : Memory.Store
+           (Bucket_Capacity => 4,
+            Object_Capacity => 32,
+            Byte_Capacity   => 4 * 1_024 * 1_024);
+      begin
+         Copy_Object_Conformance.Exercise
+           (Store, "memory-copy-object-bucket");
+      end;
+
+      Clean;
+      declare
+         Store : Files.Store :=
+           Files.Open
+             (Root,
+              Maximum_Object_Size => 1 * 1_024 * 1_024,
+              Commit => Files.Power_Loss_Durable);
+      begin
+         Copy_Object_Conformance.Exercise
+           (Store, "files-copy-object-bucket");
+      end;
+      Clean;
+   exception
+      when others =>
+         Clean;
+         raise;
+   end Check_Backend_Copy_Object;
 
    procedure Check_S3_Core_Rules (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
@@ -14376,6 +14468,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("backends.conditional-put-conformance",
             Check_Backend_Conditional_Put'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("backends.copy-object-conformance",
+            Check_Backend_Copy_Object'Access));
       Result.Add_Test
         (Caller.Create
            ("backends.object-tagging-conformance",

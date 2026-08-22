@@ -379,6 +379,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Send_Error
               (X, 400, "BadDigest",
                "The checksum you specified did not match", Resource);
+         when Source_Bucket_Not_Found =>
+            Send_Error
+              (X, 404, "NoSuchBucket",
+               "The specified copy source bucket does not exist", Resource);
          when Source_Not_Found =>
             Send_Error
               (X, 404, "NoSuchKey",
