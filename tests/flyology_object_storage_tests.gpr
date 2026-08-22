@@ -9,6 +9,7 @@ project Flyology_Object_Storage_Tests is
    for Exec_Dir use "bin";
    for Main use
      ("flyology_object_storage_tests.adb",
+      "s3_multipart_listing_benchmark.adb",
       "s3_files_server.adb",
       "s3_http_socket_corpus.adb",
       "s3_transfer_many_corpus.adb",

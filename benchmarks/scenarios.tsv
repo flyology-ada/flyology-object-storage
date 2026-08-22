@@ -7,5 +7,6 @@ large-multipart-put	multipart-put	67108864	64	8	120	20
 large-get	get	67108864	64	8	120	20
 large-copy	copy	67108864	64	8	120	20
 namespace-list	list	4096	10000	16	120	20
+multipart-upload-list	list-multipart-uploads	0	1000	1	120	20
 namespace-delete	delete	4096	10000	32	120	20
 mixed-objects	mixed	0	10000	32	180	30

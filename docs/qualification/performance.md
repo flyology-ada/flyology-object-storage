@@ -22,11 +22,12 @@ performance target set: it remains useful compatibility evidence, but its
 license and implementation lineage make it a poor optimization target for
 this project.
 
-All endpoints are driven by the same digest-pinned s5cmd process for the
-cross-server comparison. A second lane uses the Flyology high-level client to
-measure our complete client/runtime path. Every measured run has a correctness
-preflight and postflight appropriate to its operation. The current common
-slice checks s5cmd's exact success/error counts, heads the first and last
+Data-plane scenarios drive all endpoints through the same digest-pinned s5cmd
+process for the cross-server comparison. ListMultipartUploads uses the shared
+compiled Ada driver described below. A second lane uses the Flyology high-level
+client to measure our complete client/runtime path. Every measured run has a
+correctness preflight and postflight appropriate to its operation. The current
+common slice checks s5cmd's exact success/error counts, heads the first and last
 uploaded object, verifies their fixed-seed hashes, verifies every expected
 download file exists plus endpoint hashes, and requires the first and last
 deleted object to be absent. Exact remote object counts are mandatory before
@@ -36,6 +37,11 @@ pre-populated immutable sources; the destination pair is re-read and checked
 against the source payload hash after every measured repetition.
 Namespace deletion is driven through s5cmd's batched DeleteObjects request,
 not mislabeled as a series of independent DeleteObject requests.
+ListMultipartUploads uses one shared Ada driver because s5cmd does not expose
+that control-plane operation. The driver creates a deterministic active-upload
+set, requires the full page and exact key order on every measured request, and
+aborts every upload after measurement. The metric is upload entries decoded
+per second; the full profile uses an exact 1,000-entry page.
 
 `benchmarks/run-matrix.sh` automates the common endpoint lifecycle and drives
 the two references plus all three Flyology backends sequentially. Its default
@@ -47,15 +53,22 @@ launcher refuses to compare Flyology until the indexed fixed-length HTTP
 response dependency is consumed.
 
 The current common eligibility manifest is
-[`benchmarks/eligibility.tsv`](../../benchmarks/eligibility.tsv). Nine
+[`benchmarks/eligibility.tsv`](../../benchmarks/eligibility.tsv). Ten
 scenarios (small/medium PUT and GET, forced 64 MiB multipart PUT, large GET,
-64 MiB CopyObject, batched namespace delete, and namespace list) are
-executable. Mixed objects
+64 MiB CopyObject, batched namespace delete, namespace list, and active
+multipart-upload list) are executable. Mixed objects
 is emitted as a blocked row until its workload generator and correctness
 postflights exist; it is never silently omitted or timed as a failure.
+[`benchmarks/exclusions.tsv`](../../benchmarks/exclusions.tsv) records the
+narrow endpoint-specific exception: pinned SeaweedFS 4.43 is not measured for
+ListMultipartUploads because its exact-page response has invalid truncation
+markers and omits required initiation metadata. RustFS and all three Flyology
+backends remain in that scenario, so the defect is visible rather than hidden
+by weakening the response oracle.
 
-Each campaign retains `samples.tsv`, digest-pinned s5cmd aggregate JSON logs,
-machine metadata, and `summary.tsv`. The summary reports median aggregate
+Each campaign retains `samples.tsv`, digest-pinned s5cmd aggregate JSON logs
+or the compiled multipart-list driver's checked-page records, machine
+metadata, and `summary.tsv`. The summary reports median aggregate
 operations/second and bytes/second plus same-campaign ratios to RustFS and
 SeaweedFS. It deliberately contains no latency percentiles: s5cmd does not
 emit one sample per request, so p50/p95/p99 remain reserved for the in-process

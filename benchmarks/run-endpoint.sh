@@ -10,6 +10,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 PLAN="$PROJECT_DIR/benchmarks/scenarios.tsv"
 ELIGIBILITY="$PROJECT_DIR/benchmarks/eligibility.tsv"
+EXCLUSIONS="$PROJECT_DIR/benchmarks/exclusions.tsv"
 S5CMD_IMAGE="docker.io/peakcom/s5cmd@sha256:2ff939e2ee3c76adcadd78dbfc3e2569b18a3743ed9dcfccb1ec589af7fb9903"
 ENDPOINT=$1
 BUCKET=$2
@@ -27,6 +28,8 @@ PAYLOAD_ROOT="$WORK_ROOT/payloads"
 DOWNLOAD_ROOT="$WORK_ROOT/downloads"
 COMMAND_ROOT="$WORK_ROOT/commands"
 CLIENT="flyology-bench-client-$$"
+MULTIPART_DRIVER="$PROJECT_DIR/tests/bin/s3_multipart_listing_benchmark"
+HOST_ENDPOINT=${ENDPOINT//host.docker.internal/127.0.0.1}
 
 case "$PROFILE" in
   smoke|full) ;;
@@ -101,6 +104,7 @@ now_ns() {
 }
 
 docker pull "$S5CMD_IMAGE" >/dev/null
+(cd "$PROJECT_DIR/tests" && alr -n build -- -j1)
 docker run --detach --rm --name "$CLIENT" \
   --add-host host.docker.internal:host-gateway \
   --volume "$PAYLOAD_ROOT:/data:ro" \
@@ -122,6 +126,14 @@ s5cmd_batch() {
   docker exec "$CLIENT" /s5cmd --log error --json --stat \
     --retry-count 0 --numworkers "$concurrency" \
     --endpoint-url "$ENDPOINT" run "/commands/$commands"
+}
+
+multipart_driver() {
+  local mode=$1 prefix=$2 count=$3
+  AWS_ACCESS_KEY_ID="$ACCESS_KEY" \
+  AWS_SECRET_ACCESS_KEY="$SECRET_KEY" \
+    "$MULTIPART_DRIVER" "$HOST_ENDPOINT" "$BUCKET" \
+      "$(date -u +%Y%m%dT%H%M%SZ)" "$mode" "$prefix" "$count"
 }
 
 s5cmd mb "s3://$BUCKET" >/dev/null
@@ -329,6 +341,10 @@ run_scenario() {
       byte_factor=0
       verify_list_count "$prefix" "$objects"
       ;;
+    list-multipart-uploads)
+      byte_factor=0
+      multipart_driver setup "$prefix" "$objects"
+      ;;
     *) echo "unsupported eligible benchmark operation: $operation" >&2; exit 1 ;;
   esac
 
@@ -341,7 +357,11 @@ run_scenario() {
       elif [ "$operation" = get ]; then
         clear_downloads
       fi
-      s5cmd_batch "$concurrency" "$commands" >/dev/null
+      if [ "$operation" = list-multipart-uploads ]; then
+        multipart_driver list "$prefix" "$objects" >/dev/null
+      else
+        s5cmd_batch "$concurrency" "$commands" >/dev/null
+      fi
       warm_now=$(now_ns)
       if [ $(((warm_now - warm_start) / 1000000000)) -ge "$warmup" ]; then
         break
@@ -354,7 +374,7 @@ run_scenario() {
   local repetition=1
   while [ "$repetition" -le "$repetitions" ]; do
     local start finish current batches total_operations total_bytes
-    local ops_rate bytes_rate log
+    local ops_rate bytes_rate log note
     log="$OUTPUT_ROOT/raw/$IMPLEMENTATION/$scenario-$repetition.jsonl"
     : >"$log"
     start=$(now_ns)
@@ -365,7 +385,11 @@ run_scenario() {
       elif [ "$operation" = get ]; then
         clear_downloads
       fi
-      s5cmd_batch "$concurrency" "$commands" >>"$log"
+      if [ "$operation" = list-multipart-uploads ]; then
+        multipart_driver list "$prefix" "$objects" >>"$log"
+      else
+        s5cmd_batch "$concurrency" "$commands" >>"$log"
+      fi
       batches=$((batches + 1))
       current=$(now_ns)
       if [ "$duration" -eq 0 ] \
@@ -379,6 +403,7 @@ run_scenario() {
       get) verify_download_pair "$prefix" "$bytes" "$objects" ;;
       delete) verify_deleted_pair "$prefix" "$objects" ;;
       list) verify_list_count "$prefix" "$objects" ;;
+      list-multipart-uploads) multipart_driver list "$prefix" "$objects" ;;
     esac
     total_operations=$((objects * batches))
     total_bytes=$((byte_factor * total_operations))
@@ -386,15 +411,21 @@ run_scenario() {
       'BEGIN { printf "%.6f", n * 1000000000 / d }')
     bytes_rate=$(awk -v n="$total_bytes" -v d="$((finish - start))" \
       'BEGIN { printf "%.6f", n * 1000000000 / d }')
+    note=aggregate-s5cmd-no-latency-percentiles
+    if [ "$operation" = list-multipart-uploads ]; then
+      note=aggregate-ada-list-driver-no-latency-percentiles
+    fi
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
       "$CAMPAIGN" "$IMPLEMENTATION" "$scenario" "$repetition" passed \
       "$objects" "$bytes" "$concurrency" "$batches" "$((finish - start))" \
       "$total_operations" "$total_bytes" "$ops_rate" "$bytes_rate" \
-      "aggregate-s5cmd-no-latency-percentiles" >>"$RESULTS"
+      "$note" >>"$RESULTS"
     repetition=$((repetition + 1))
   done
   if [ "$operation" = list ]; then
     cleanup_objects "$prefix" "$objects" "$concurrency"
+  elif [ "$operation" = list-multipart-uploads ]; then
+    multipart_driver cleanup "$prefix" "$objects"
   fi
   clear_downloads
 }
@@ -405,8 +436,18 @@ while IFS=$'\t' read -r scenario operation bytes objects concurrency duration wa
     continue
   fi
   status=$(awk -F '\t' -v name="$scenario" '$1 == name { print $2 }' "$ELIGIBILITY")
+  excluded=$(awk -F '\t' -v name="$scenario" -v impl="$IMPLEMENTATION" \
+    '$1 == name && $2 == impl { print $3; exit }' "$EXCLUSIONS")
+  if [ -n "$excluded" ]; then
+    status=$excluded
+  fi
   if [ "$status" = blocked ]; then
-    reason=$(awk -F '\t' -v name="$scenario" '$1 == name { print $3 }' "$ELIGIBILITY")
+    reason=$(awk -F '\t' -v name="$scenario" -v impl="$IMPLEMENTATION" \
+      '$1 == name && $2 == impl { print $4; exit }' "$EXCLUSIONS")
+    if [ -z "$reason" ]; then
+      reason=$(awk -F '\t' -v name="$scenario" \
+        '$1 == name { print $3 }' "$ELIGIBILITY")
+    fi
     printf '%s\t%s\t%s\t0\tblocked\t%s\t%s\t%s\t0\t0\t0\t0\t0\t0\t%s\n' \
       "$CAMPAIGN" "$IMPLEMENTATION" "$scenario" "$objects" "$bytes" \
       "$concurrency" "$reason" >>"$RESULTS"
@@ -421,6 +462,7 @@ while IFS=$'\t' read -r scenario operation bytes objects concurrency duration wa
       large-copy) objects=2; concurrency=2 ;;
       namespace-delete) objects=64; concurrency=4 ;;
       namespace-list) objects=64; concurrency=4 ;;
+      multipart-upload-list) objects=32; concurrency=1 ;;
     esac
     warmup=0
   fi

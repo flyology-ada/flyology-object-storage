@@ -58,6 +58,7 @@ fi
   echo "scenario_sha256=$(hash_file "$SCRIPT_DIR/scenarios.tsv")"
   echo "implementation_sha256=$(hash_file "$SCRIPT_DIR/implementations.tsv")"
   echo "eligibility_sha256=$(hash_file "$SCRIPT_DIR/eligibility.tsv")"
+  echo "exclusions_sha256=$(hash_file "$SCRIPT_DIR/exclusions.tsv")"
 } >"$OUTPUT_ROOT/metadata.txt"
 
 run_implementation() {

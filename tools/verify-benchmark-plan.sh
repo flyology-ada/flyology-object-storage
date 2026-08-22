@@ -6,6 +6,7 @@ PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 PLAN="$PROJECT_DIR/benchmarks/scenarios.tsv"
 IMPLEMENTATIONS="$PROJECT_DIR/benchmarks/implementations.tsv"
 ELIGIBILITY="$PROJECT_DIR/benchmarks/eligibility.tsv"
+EXCLUSIONS="$PROJECT_DIR/benchmarks/exclusions.tsv"
 
 awk -F '\t' '
   NR == 1 {
@@ -24,7 +25,7 @@ awk -F '\t' '
     print "duplicate benchmark scenario: " $1 > "/dev/stderr"
     exit 1
   }
-  $2 !~ /^(put|get|copy|multipart-put|list|delete|mixed)$/ {
+  $2 !~ /^(put|get|copy|multipart-put|list|list-multipart-uploads|delete|mixed)$/ {
     print "invalid benchmark operation at line " NR > "/dev/stderr"
     exit 1
   }
@@ -35,14 +36,14 @@ awk -F '\t' '
     exit 1
   }
   END {
-    if (NR != 11) {
-      print "benchmark plan must contain exactly ten scenarios" > "/dev/stderr"
+    if (NR != 12) {
+      print "benchmark plan must contain exactly eleven scenarios" > "/dev/stderr"
       exit 1
     }
   }
 ' "$PLAN"
 
-echo "benchmark plan: 10 deterministic scenarios"
+echo "benchmark plan: 11 deterministic scenarios"
 
 awk -F '\t' '
   NR == 1 {
@@ -109,14 +110,51 @@ awk -F '\t' '
         exit 1
       }
     }
-    if (counts["supported"] != 9 || counts["blocked"] != 1) {
-      print "benchmark eligibility must contain nine supported and one blocked scenario" > "/dev/stderr"
+    if (counts["supported"] != 10 || counts["blocked"] != 1) {
+      print "benchmark eligibility must contain ten supported and one blocked scenario" > "/dev/stderr"
       exit 1
     }
   }
 ' "$PLAN" "$ELIGIBILITY"
 
-echo "benchmark eligibility: 9 supported, 1 explicitly blocked"
+echo "benchmark eligibility: 10 supported, 1 globally blocked"
+
+awk -F '\t' '
+  FILENAME == ARGV[1] {
+    if (FNR > 1) plan[$1] = 1
+    next
+  }
+  FILENAME == ARGV[2] {
+    if (FNR > 1) implementations[$1] = 1
+    next
+  }
+  FNR == 1 {
+    if ($0 != "scenario\timplementation\tstatus\treason") {
+      print "invalid benchmark exclusion header" > "/dev/stderr"
+      exit 1
+    }
+    next
+  }
+  NF != 4 || !($1 in plan) || !($2 in implementations) ||
+  $3 != "blocked" || $4 == "" {
+    print "invalid benchmark exclusion row at line " FNR > "/dev/stderr"
+    exit 1
+  }
+  seen[$1 SUBSEP $2]++ {
+    print "duplicate benchmark exclusion: " $1 " / " $2 > "/dev/stderr"
+    exit 1
+  }
+  { exclusions++ }
+  END {
+    if (exclusions != 1 ||
+        !("multipart-upload-list" SUBSEP "seaweedfs" in seen)) {
+      print "benchmark exclusions must capture the pinned SeaweedFS listing defect" > "/dev/stderr"
+      exit 1
+    }
+  }
+' "$PLAN" "$IMPLEMENTATIONS" "$EXCLUSIONS"
+
+echo "benchmark exclusions: SeaweedFS multipart listing defect is explicit"
 
 test -x "$PROJECT_DIR/benchmarks/run-endpoint.sh"
 test -x "$PROJECT_DIR/benchmarks/run-matrix.sh"

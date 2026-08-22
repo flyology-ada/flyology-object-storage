@@ -1,0 +1,2 @@
+scenario	implementation	status	reason
+multipart-upload-list	seaweedfs	blocked	pinned SeaweedFS 4.43 emits an invalid exact-page truncation result and omits required initiation metadata
