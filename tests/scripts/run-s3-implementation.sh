@@ -16,6 +16,16 @@ BUCKET=$3
 ACCESS_KEY=$4
 SECRET_KEY=$5
 CREATE_BUCKET=$6
+CORPUS_TEMP_DIR=$(mktemp -d \
+  "${TMPDIR:-/tmp}/flyology-object-storage-corpus.XXXXXX")
+
+cleanup_corpus_temp() {
+  rm -rf -- "$CORPUS_TEMP_DIR"
+}
+trap cleanup_corpus_temp EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+export FLYOLOGY_S3_CORPUS_TEMP_DIR="$CORPUS_TEMP_DIR"
 
 command -v docker >/dev/null
 docker pull "$S5CMD_IMAGE"

@@ -39,6 +39,7 @@ procedure S3_Implementation_Corpus is
 
    use Ada.Streams;
    use type Ada.Containers.Count_Type;
+   use type Ada.Directories.File_Kind;
    use type Low_Level.Abort_Multipart_Outcome_Kind;
    use type Low_Level.Complete_Multipart_Outcome_Kind;
    use type Low_Level.Copy_Object_Outcome_Kind;
@@ -80,6 +81,23 @@ procedure S3_Implementation_Corpus is
    Secret_Key : constant String := "flyology-s3-oracle-secret-key-tests";
    Payload    : aliased constant String :=
      String'(1 .. 6 * 1_024 * 1_024 => 'm');
+
+   function Temporary_Path (Name : String) return String is
+      Variable : constant String := "FLYOLOGY_S3_CORPUS_TEMP_DIR";
+      Root : constant String :=
+        (if Ada.Environment_Variables.Exists (Variable)
+         then Ada.Environment_Variables.Value (Variable)
+         else "/tmp");
+   begin
+      if Root'Length = 0
+        or else not Ada.Directories.Exists (Root)
+        or else Ada.Directories.Kind (Root) /= Ada.Directories.Directory
+      then
+         raise Program_Error with
+           "S3 implementation corpus temporary directory is unavailable";
+      end if;
+      return Ada.Directories.Compose (Root, Name);
+   end Temporary_Path;
 
    function Check_List_Multipart_Uploads return Boolean is
       Name : constant String :=
@@ -315,7 +333,8 @@ procedure S3_Implementation_Corpus is
 
       procedure Upload_High_Level_File is
          Local_Path : constant String :=
-           "/tmp/flyology-object-storage-" & Key & ".bin";
+           Temporary_Path
+             ("flyology-object-storage-" & Bucket & "-" & Key & ".bin");
          Download_Path : constant String := Local_Path & ".download";
          File : Stream_IO.File_Type;
          Buffer : constant Stream_Element_Array (1 .. 64 * 1_024) :=
@@ -976,7 +995,8 @@ procedure S3_Implementation_Corpus is
 
       procedure Require_Get_Object is
          Download_Path : constant String :=
-           "/tmp/flyology-object-storage-get-" & Key & ".bin";
+           Temporary_Path
+             ("flyology-object-storage-get-" & Bucket & "-" & Key & ".bin");
          Head : constant Transfers.Head_Outcome :=
            Transfers.Head_Object
              (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
