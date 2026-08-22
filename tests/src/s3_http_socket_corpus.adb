@@ -62,6 +62,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Buckets.Put_Tags_Outcome_Kind;
    use type Buckets.Get_Tags_Outcome_Kind;
+   use type Buckets.Delete_Tags_Outcome_Kind;
    use type Tags.Tag_Vectors.Vector;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
@@ -1323,6 +1324,20 @@ procedure S3_HTTP_Socket_Corpus is
          Serve
            (HTTP_Response ("200 OK", Tagging_XML), "GET",
             "/example-bucket?tagging", Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", Omit_Content_Length => True),
+            "DELETE", "/example-bucket?tagging");
+         Serve
+           (HTTP_Response
+              ("404 Not Found",
+               "<Error><Code>NoSuchTagSet</Code>" &
+               "<Message>The TagSet does not exist</Message></Error>"),
+            "GET", "/example-bucket?tagging", Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", Omit_Content_Length => True),
+            "DELETE", "/example-bucket?tagging");
          Serve
            (HTTP_Response ("200 OK", Create_XML), "POST",
             "/example-bucket/object%20key?uploads", Fragmented => True);
@@ -3142,6 +3157,45 @@ procedure S3_HTTP_Socket_Corpus is
          declare
             Value : Tags.Tag_Set;
          begin
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+               Cancelled : Boolean := False;
+               Timed_Out : Boolean := False;
+            begin
+               Stop.Request;
+               begin
+                  declare
+                     Ignored : constant Buckets.Delete_Tags_Outcome :=
+                       Buckets.Delete_Tags
+                         (HTTP, Origin, "example-bucket", Identity,
+                          Timeout => 5.0, Token => Stop'Access);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled =>
+                     Cancelled := True;
+               end;
+               begin
+                  declare
+                     Ignored : constant Buckets.Delete_Tags_Outcome :=
+                       Buckets.Delete_Tags
+                         (HTTP, Origin, "example-bucket", Identity,
+                          Timeout => 0.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.IO.Timeout_Error =>
+                     Timed_Out := True;
+               end;
+               if not Cancelled or else not Timed_Out then
+                  raise Program_Error with
+                    "DeleteBucketTagging ignored cancellation/deadline";
+               end if;
+            end;
             Value.Append
               (Tags.Tag'
                  (Key   => US.To_Unbounded_String ("project"),
@@ -3162,6 +3216,36 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "high-level bucket tagging socket mismatch";
+               end if;
+            end;
+            declare
+               Delete_Result : constant Buckets.Delete_Tags_Outcome :=
+                 Buckets.Delete_Tags
+                   (HTTP, Origin, "example-bucket", Identity,
+                    Timeout => 5.0);
+               Get_Result : constant Buckets.Get_Tags_Outcome :=
+                 Buckets.Get_Tags
+                   (HTTP, Origin, "example-bucket", Identity,
+                    Timeout => 5.0);
+            begin
+               if Delete_Result.Kind /= Buckets.Tags_Deleted
+                 or else Get_Result.Kind /= Buckets.Get_Tags_Rejected
+                 or else US.To_String (Get_Result.Error.Code) /=
+                   "NoSuchTagSet"
+               then
+                  raise Program_Error with
+                    "high-level bucket tag deletion socket mismatch";
+               end if;
+            end;
+            declare
+               Delete_Result : constant Buckets.Delete_Tags_Outcome :=
+                 Buckets.Delete_Tags
+                   (HTTP, Origin, "example-bucket", Identity,
+                    Timeout => 5.0);
+            begin
+               if Delete_Result.Kind /= Buckets.Tags_Deleted then
+                  raise Program_Error with
+                    "high-level bucket tag deletion was not idempotent";
                end if;
             end;
          end;

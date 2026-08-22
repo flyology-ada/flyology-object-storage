@@ -66,6 +66,7 @@ procedure S3_Implementation_Corpus is
    use type Client_Buckets.List_Outcome_Kind;
    use type Client_Buckets.Put_Tags_Outcome_Kind;
    use type Client_Buckets.Get_Tags_Outcome_Kind;
+   use type Client_Buckets.Delete_Tags_Outcome_Kind;
    use type Tags.Tag_Vectors.Vector;
    use type Client_Objects.Delete_Outcome_Kind;
    use type Client_Objects.List_Outcome_Kind;
@@ -240,11 +241,16 @@ procedure S3_Implementation_Corpus is
 
       procedure Check_Bucket_Tags is
          Value : Tags.Tag_Set;
+         Replacement : Tags.Tag_Set;
       begin
          Value.Append
            (Tags.Tag'
               (Key   => US.To_Unbounded_String ("corpus"),
                Value => US.To_Unbounded_String ("flyology")));
+         Replacement.Append
+           (Tags.Tag'
+              (Key   => US.To_Unbounded_String ("replacement"),
+               Value => US.To_Unbounded_String ("complete")));
          declare
             Put_Result : constant Client_Buckets.Put_Tags_Outcome :=
               Client_Buckets.Put_Tags
@@ -259,6 +265,50 @@ procedure S3_Implementation_Corpus is
             then
                raise Program_Error with
                  "S3 implementation rejected bucket tagging round trip";
+            end if;
+         end;
+         declare
+            Put_Result : constant Client_Buckets.Put_Tags_Outcome :=
+              Client_Buckets.Put_Tags
+                (HTTP, Origin, Bucket, Replacement, Identity,
+                 Timeout => 30.0);
+            Get_Result : constant Client_Buckets.Get_Tags_Outcome :=
+              Client_Buckets.Get_Tags
+                (HTTP, Origin, Bucket, Identity, Timeout => 30.0);
+         begin
+            if Put_Result.Kind /= Client_Buckets.Tags_Replaced
+              or else Get_Result.Kind /= Client_Buckets.Tags_Found
+              or else Get_Result.Value /= Replacement
+            then
+               raise Program_Error with
+                 "S3 implementation did not atomically replace bucket tags";
+            end if;
+         end;
+         declare
+            Delete_Result : constant Client_Buckets.Delete_Tags_Outcome :=
+              Client_Buckets.Delete_Tags
+                (HTTP, Origin, Bucket, Identity, Timeout => 30.0);
+            Get_Result : constant Client_Buckets.Get_Tags_Outcome :=
+              Client_Buckets.Get_Tags
+                (HTTP, Origin, Bucket, Identity, Timeout => 30.0);
+         begin
+            if Delete_Result.Kind /= Client_Buckets.Tags_Deleted
+              or else Get_Result.Kind /= Client_Buckets.Get_Tags_Rejected
+              or else US.To_String (Get_Result.Error.Code) /= "NoSuchTagSet"
+            then
+               raise Program_Error with
+                 "S3 implementation rejected bucket tag deletion lifecycle";
+            end if;
+         end;
+         declare
+            Delete_Result : constant Client_Buckets.Delete_Tags_Outcome :=
+              Client_Buckets.Delete_Tags
+                (HTTP, Origin, Bucket, Identity, Timeout => 30.0);
+         begin
+            if Delete_Result.Kind /= Client_Buckets.Tags_Deleted then
+               raise Program_Error with
+                 "S3 implementation did not make bucket tag deletion " &
+                 "idempotent";
             end if;
          end;
       end Check_Bucket_Tags;

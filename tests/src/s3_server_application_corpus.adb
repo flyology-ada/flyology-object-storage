@@ -675,6 +675,95 @@ procedure S3_Server_Application_Corpus is
         "Connection: close" & CRLF & CRLF & Payload;
    end Signed_Query_Body_Header_Request;
 
+   function Signed_Bucket_Tagging_Checksum_Request
+     (Payload          : String;
+      Algorithm        : Checksum_Policy.Algorithm;
+      Checksum         : String;
+      Algorithm_Header : String := "") return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Algorithm_Name : constant String :=
+        (if Algorithm_Header'Length > 0
+         then Algorithm_Header
+         else Checksum_Policy.Wire_Name (Algorithm));
+      Checksum_Name : constant String := Checksum_Header (Algorithm);
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("content-md5", Content_MD5 (Payload)),
+         SigV4.Pair ("host", Host),
+         SigV4.Pair (Checksum_Name, Checksum),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp),
+         SigV4.Pair ("x-amz-sdk-checksum-algorithm", Algorithm_Name));
+      Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("tagging", ""),
+         SigV4.Pair ("x-id", "PutBucketTagging"));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", "/test-bucket", Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+   begin
+      return "PUT /test-bucket?" & SigV4.Canonical_Query (Query) &
+        " HTTP/1.1" & CRLF & "Host: " & Host & CRLF &
+        "content-md5: " & Content_MD5 (Payload) & CRLF &
+        Checksum_Name & ": " & Checksum & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-sdk-checksum-algorithm: " & Algorithm_Name & CRLF &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Content-Length: " &
+        Ada.Strings.Fixed.Trim
+          (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
+        "Connection: close" & CRLF & CRLF & Payload;
+   end Signed_Bucket_Tagging_Checksum_Request;
+
+   function Signed_Bucket_Tagging_Trailer_Request
+     (Payload         : String;
+      Algorithm       : Checksum_Policy.Algorithm;
+      Checksum        : String;
+      Include_Trailer : Boolean := True;
+      Duplicate       : Boolean := False) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Algorithm_Name : constant String :=
+        Checksum_Policy.Wire_Name (Algorithm);
+      Checksum_Name : constant String := Checksum_Header (Algorithm);
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("content-md5", Content_MD5 (Payload)),
+         SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp),
+         SigV4.Pair ("x-amz-sdk-checksum-algorithm", Algorithm_Name),
+         SigV4.Pair ("x-amz-trailer", Checksum_Name));
+      Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("tagging", ""),
+         SigV4.Pair ("x-id", "PutBucketTagging"));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", "/test-bucket", Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+      Wire_Body : US.Unbounded_String;
+   begin
+      for Value of Payload loop
+         US.Append (Wire_Body, "1" & CRLF & Value & CRLF);
+      end loop;
+      US.Append (Wire_Body, "0" & CRLF);
+      if Include_Trailer then
+         US.Append (Wire_Body, Checksum_Name & ": " & Checksum & CRLF);
+         if Duplicate then
+            US.Append (Wire_Body, Checksum_Name & ": " & Checksum & CRLF);
+         end if;
+      end if;
+      US.Append (Wire_Body, CRLF);
+      return "PUT /test-bucket?" & SigV4.Canonical_Query (Query) &
+        " HTTP/1.1" & CRLF & "Host: " & Host & CRLF &
+        "content-md5: " & Content_MD5 (Payload) & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-sdk-checksum-algorithm: " & Algorithm_Name & CRLF &
+        "x-amz-trailer: " & Checksum_Name & CRLF &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Transfer-Encoding: chunked" & CRLF &
+        "Connection: close" & CRLF & CRLF & US.To_String (Wire_Body);
+   end Signed_Bucket_Tagging_Trailer_Request;
+
    function Run (Input : String; Receive_Max : Natural := Natural'Last)
      return String
    is
@@ -1414,6 +1503,42 @@ begin
    end;
 
    declare
+      type Method_Array is array (Positive range <>) of String (1 .. 6);
+      Methods : constant Method_Array := ("PUT   ", "GET   ", "DELETE");
+   begin
+      for Method of Methods loop
+         declare
+            Verb : constant String :=
+              Ada.Strings.Fixed.Trim (Method, Ada.Strings.Right);
+            Operation_ID : constant String :=
+              (if Verb = "PUT" then "PutBucketTagging"
+               elsif Verb = "GET" then "GetBucketTagging"
+               else "DeleteBucketTagging");
+            Response : constant String := Run
+              (Verb & " /test-bucket?tagging=&tagging= HTTP/1.1" & CRLF &
+               "Host: " & Host & CRLF & "Content-Length: 0" & CRLF &
+               "Connection: close" & CRLF & CRLF);
+            ID_Only_Response : constant String := Run
+              (Verb & " /test-bucket?x-id=" & Operation_ID &
+               " HTTP/1.1" & CRLF & "Host: " & Host & CRLF &
+               "Content-Length: 0" & CRLF & "Connection: close" & CRLF &
+               CRLF);
+         begin
+            Require
+              (Has (Response, "403 Forbidden")
+               and then not Has (Response, "InvalidArgument"),
+               "malformed bucket-tagging query bypassed authentication for " &
+                 Verb);
+            Require
+              (Has (ID_Only_Response, "403 Forbidden")
+               and then not Has (ID_Only_Response, "InvalidArgument"),
+               "x-id-only bucket-tagging query bypassed authentication for " &
+                 Verb);
+         end;
+      end loop;
+   end;
+
+   declare
       Response : constant String := Run
         ("POST /test-bucket/object?uploadId=a&uploadId=b HTTP/1.1" & CRLF &
          "Host: " & Host & CRLF & "Content-Length: 0" & CRLF &
@@ -1915,8 +2040,35 @@ begin
       Get_Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("tagging", ""),
          SigV4.Pair ("x-id", "GetBucketTagging"));
+      Delete_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("tagging", ""),
+         SigV4.Pair ("x-id", "DeleteBucketTagging"));
       Value : Tags.Tag_Set;
    begin
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("PUT", "/test-bucket",
+                  (1 => SigV4.Pair ("x-id", "PutBucketTagging")))),
+            "400 Bad Request"),
+         "PutBucketTagging accepted x-id without tagging subresource");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (1 => SigV4.Pair ("x-id", "GetBucketTagging")))),
+            "400 Bad Request"),
+         "GetBucketTagging accepted x-id without tagging subresource");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket",
+                  (1 => SigV4.Pair ("x-id", "DeleteBucketTagging")))),
+            "400 Bad Request"),
+         "DeleteBucketTagging accepted x-id without tagging subresource");
       Require
         (Has
            (Run
@@ -1980,6 +2132,46 @@ begin
       declare
          Document : constant String := Tagging.Serialize_Bucket (Value);
       begin
+         for Algorithm in Checksum_Policy.Algorithm loop
+            declare
+               Response : constant String := Run
+                 (Signed_Bucket_Tagging_Checksum_Request
+                    (Document, Algorithm,
+                     Checksum_Value (Algorithm, Document)));
+            begin
+               Require
+                 (Has (Response, "200 OK")
+                  and then Response_Body (Response) = "",
+                  "PutBucketTagging rejected " &
+                    Checksum_Policy.Wire_Name (Algorithm) & ": " & Response);
+            end;
+         end loop;
+         Require
+           (Has
+              (Run
+                 (Signed_Bucket_Tagging_Trailer_Request
+                    (Document, Core.SHA256,
+                     Checksum_Value (Core.SHA256, Document))),
+               "200 OK"),
+            "PutBucketTagging rejected a physical checksum trailer");
+         Require
+           (Has
+              (Run
+                 (Signed_Bucket_Tagging_Trailer_Request
+                    (Document, Core.SHA256,
+                     Checksum_Value (Core.SHA256, Document),
+                     Include_Trailer => False)),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketTagging accepted a missing declared trailer");
+         Require
+           (Has
+              (Run
+                 (Signed_Bucket_Tagging_Trailer_Request
+                    (Document, Core.SHA256,
+                     Checksum_Value (Core.SHA256, Document),
+                     Duplicate => True)),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketTagging accepted duplicate physical trailers");
          Require
            (Has
               (Run
@@ -2004,6 +2196,71 @@ begin
                      "Content-MD5: " & Content_MD5 (Document) & CRLF)),
                "<Code>InvalidRequest</Code>"),
             "PutBucketTagging accepted duplicate Content-MD5 fields");
+         Require
+           (Has
+              (Run
+                 (Signed_Bucket_Tagging_Checksum_Request
+                    (Document, Core.SHA256,
+                     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")),
+               "<Code>BadDigest</Code>"),
+            "PutBucketTagging accepted a mismatched optional checksum");
+         Require
+           (Has
+              (Run
+                 (Signed_Bucket_Tagging_Checksum_Request
+                    (Document, Core.SHA256, "not-base64")),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketTagging accepted noncanonical checksum Base64");
+         Require
+           (Has
+              (Run
+                 (Signed_Bucket_Tagging_Checksum_Request
+                    (Document, Core.SHA256,
+                     Checksum_Value (Core.SHA256, Document), "SHA1")),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketTagging accepted an algorithm/header mismatch");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", "/test-bucket", Put_Query, Document,
+                     "Content-MD5: " & Content_MD5 (Document) & CRLF &
+                     "x-amz-sdk-checksum-algorithm: SHA256" & CRLF)),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketTagging accepted an SDK algorithm without a checksum");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", "/test-bucket", Put_Query, Document,
+                     "Content-MD5: " & Content_MD5 (Document) & CRLF &
+                     "x-amz-checksum-sha256: " &
+                     Checksum_Value (Core.SHA256, Document) & CRLF &
+                     "x-amz-checksum-sha256: " &
+                     Checksum_Value (Core.SHA256, Document) & CRLF)),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketTagging accepted a duplicate checksum field");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", "/test-bucket", Put_Query, Document,
+                     "Content-MD5: " & Content_MD5 (Document) & CRLF &
+                     "x-amz-checksum-sha1: " &
+                     Checksum_Value (Core.SHA1, Document) & CRLF &
+                     "x-amz-checksum-sha256: " &
+                     Checksum_Value (Core.SHA256, Document) & CRLF)),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketTagging accepted multiple checksum algorithms");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", "/test-bucket", Put_Query, Document,
+                     "Content-MD5: " & Content_MD5 (Document) & CRLF &
+                     "x-amz-request-payer: requester" & CRLF)),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketTagging accepted non-modeled RequestPayer");
       end;
 
       declare
@@ -2019,6 +2276,21 @@ begin
                      "Content-MD5: " & Content_MD5 (Document) & CRLF)),
                "<Code>MalformedXML</Code>"),
             "PutBucketTagging accepted malformed XML");
+      end;
+      declare
+         Document : constant String :=
+           "<Tagging xmlns=""urn:not-s3""><TagSet><Tag>" &
+           "<Key>project</Key><Value>flyology</Value></Tag>" &
+           "</TagSet></Tagging>";
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", "/test-bucket", Put_Query, Document,
+                     "Content-MD5: " & Content_MD5 (Document) & CRLF)),
+               "<Code>MalformedXML</Code>"),
+            "PutBucketTagging accepted the wrong XML namespace");
       end;
       declare
          Document : constant String :=
@@ -2058,6 +2330,14 @@ begin
       Require
         (Has
            (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Get_Query,
+                  "x-amz-request-payer", "requester")),
+            "<Code>InvalidRequest</Code>"),
+         "GetBucketTagging accepted non-modeled RequestPayer");
+      Require
+        (Has
+           (Run
               (Signed_Query_Body_Request
                  ("GET", "/test-bucket", Get_Query, "unexpected")),
             "400 Bad Request"),
@@ -2070,8 +2350,81 @@ begin
                   (SigV4.Pair ("tagging", ""),
                    SigV4.Pair ("unexpected", "x")), "",
                   "Content-MD5: 1B2M2Y8AsgTpgAmY7PhCfg==" & CRLF)),
-            "501 Not Implemented"),
+            "400 Bad Request"),
          "PutBucketTagging accepted an extra query parameter");
+
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Delete_Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "DeleteBucketTagging ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Delete_Query,
+                  "x-amz-request-payer", "requester")),
+            "<Code>InvalidRequest</Code>"),
+         "DeleteBucketTagging accepted non-modeled RequestPayer");
+      declare
+         Snapshot : constant String := Run
+           (Signed_Query_Request ("GET", "/test-bucket", Get_Query));
+      begin
+         Require
+           (Has (Snapshot, "200 OK")
+            and then Tagging.Parse_Bucket (Response_Body (Snapshot)) = Value,
+            "invalid bucket-tagging requests mutated the stored tag set");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket",
+                  (SigV4.Pair ("tagging", ""),
+                   SigV4.Pair ("unexpected", "x")))),
+            "400 Bad Request"),
+         "DeleteBucketTagging accepted an extra query parameter");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("DELETE", "/test-bucket", Delete_Query, "unexpected")),
+            "400 Bad Request"),
+         "DeleteBucketTagging accepted a request body");
+      declare
+         Response : constant String := Run
+           (Signed_Query_Request
+              ("DELETE", "/test-bucket", Delete_Query));
+      begin
+         Require
+           (Has (Response, "204 No Content")
+            and then Response_Body (Response) = "",
+            "DeleteBucketTagging success mismatch: " & Response);
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Get_Query)),
+            "<Code>NoSuchTagSet</Code>"),
+         "DeleteBucketTagging left a visible tag set");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Delete_Query)),
+            "204 No Content"),
+         "DeleteBucketTagging was not idempotent");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/absent-bucket", Delete_Query)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteBucketTagging did not distinguish an absent bucket");
    end;
 
    declare

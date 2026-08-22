@@ -307,7 +307,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         (Unsupported,
          List_Buckets,
          Create_Bucket, Get_Bucket_Location, Head_Bucket, Delete_Bucket,
-         Put_Bucket_Tagging, Get_Bucket_Tagging,
+         Put_Bucket_Tagging, Get_Bucket_Tagging, Delete_Bucket_Tagging,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
          Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
@@ -390,7 +390,29 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Query_Text = "tagging="
         or else Query_Text = "tagging=&x-id=GetBucketTagging"
         or else Query_Text = "x-id=GetBucketTagging&tagging=";
+      Is_Delete_Bucket_Tagging_Query : constant Boolean :=
+        Query_Text = "tagging"
+        or else Query_Text = "tagging="
+        or else Query_Text = "tagging=&x-id=DeleteBucketTagging"
+        or else Query_Text = "x-id=DeleteBucketTagging&tagging=";
       Padded_Query : constant String := '&' & Query_Text & '&';
+      Has_Bucket_Tagging_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&tagging&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&tagging=") /= 0;
+      Has_Bucket_Tagging_Operation_ID : constant Boolean :=
+        (Method = "PUT"
+         and then Ada.Strings.Fixed.Index
+           (Padded_Query, "&x-id=PutBucketTagging&") /= 0)
+        or else
+          (Method = "GET"
+           and then Ada.Strings.Fixed.Index
+             (Padded_Query, "&x-id=GetBucketTagging&") /= 0)
+        or else
+          (Method = "DELETE"
+           and then Ada.Strings.Fixed.Index
+             (Padded_Query, "&x-id=DeleteBucketTagging&") /= 0);
+      Looks_Like_Bucket_Tagging_Query : constant Boolean :=
+        Has_Bucket_Tagging_Query or else Has_Bucket_Tagging_Operation_ID;
       Has_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging") /= 0
         or else
@@ -437,6 +459,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Delete_Request : Deletions.Delete_Object_Request;
       Object_Read_Query_Invalid : Boolean := False;
       Bucket_Versioning_Query_Invalid : Boolean := False;
+      Bucket_Tagging_Query_Invalid : Boolean := False;
       Object_Read_Request : Object_Reads.Object_Read_Request;
       Tagging_Query_Invalid : Boolean := False;
       Tagging_Request : Tagging.Tagging_Query;
@@ -814,9 +837,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Method = "POST"
            and then Is_Delete_Objects_Query)
         and then not
-          (Parsed.Kind = Requests.Bucket_Target
-           and then Method = "PUT"
-           and then Is_Put_Bucket_Tagging_Query)
+           (Parsed.Kind = Requests.Bucket_Target
+           and then Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Bucket_Tagging_Query)
         and then not
           (Parsed.Kind = Requests.Object_Target
            and then Method = "DELETE"
@@ -848,12 +871,25 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       if Parsed.Kind = Requests.Service_Target then
          Operation := (if Method = "GET" then List_Buckets else Unsupported);
       elsif Parsed.Kind = Requests.Bucket_Target then
+         Bucket_Tagging_Query_Invalid :=
+           Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Bucket_Tagging_Query
+           and then
+             (if Method = "PUT" then not Is_Put_Bucket_Tagging_Query
+              elsif Method = "GET" then not Is_Get_Bucket_Tagging_Query
+              else not Is_Delete_Bucket_Tagging_Query);
          Bucket_Versioning_Query_Invalid :=
            Method in "GET" | "PUT"
            and then Has_Bucket_Versioning_Query
            and then not Is_Bucket_Versioning_Query;
          Operation :=
-           (if Method = "PUT"
+           (if Method = "PUT" and then Looks_Like_Bucket_Tagging_Query
+            then Put_Bucket_Tagging
+            elsif Method = "GET" and then Looks_Like_Bucket_Tagging_Query
+            then Get_Bucket_Tagging
+            elsif Method = "DELETE" and then Looks_Like_Bucket_Tagging_Query
+            then Delete_Bucket_Tagging
+            elsif Method = "PUT"
               and then
                 (not Parsed.Has_Query
                  or else Query_Text = "x-id=CreateBucket")
@@ -872,10 +908,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Delete_Objects
             elsif Method = "GET" and then Is_Get_Bucket_Location_Query
             then Get_Bucket_Location
-            elsif Method = "PUT" and then Is_Put_Bucket_Tagging_Query
-            then Put_Bucket_Tagging
-            elsif Method = "GET" and then Is_Get_Bucket_Tagging_Query
-            then Get_Bucket_Tagging
             elsif Method = "PUT" and then Has_Bucket_Versioning_Query
             then Put_Bucket_Versioning
             elsif Method = "GET" and then Has_Bucket_Versioning_Query
@@ -1061,6 +1093,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Send_Error
            (X, 400, "InvalidArgument",
             "The bucket versioning request query is invalid", Target_Text);
+         return;
+      elsif Bucket_Tagging_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The bucket tagging request query is invalid", Target_Text);
          return;
       elsif Delete_Object_Query_Invalid then
          Send_Error
@@ -1495,30 +1532,51 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     Apps.Request_Header_Count (X, "content-md5");
                   Payer_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "x-amz-request-payer");
-                  SDK_Checksum_Count : constant Natural :=
+                  SDK_Count : constant Natural :=
                     Apps.Request_Header_Count
                       (X, "x-amz-sdk-checksum-algorithm");
+                  Trailer_Declaration_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-trailer");
                   CRC32_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "x-amz-checksum-crc32");
                   CRC32C_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "x-amz-checksum-crc32c");
+                  CRC64_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-checksum-crc64nvme");
                   SHA1_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "x-amz-checksum-sha1");
                   SHA256_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "x-amz-checksum-sha256");
-                  CRC64_Count : constant Natural :=
+                  SHA512_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-sha512");
+                  Checksum_MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-md5");
+                  XXHASH64_Count : constant Natural :=
                     Apps.Request_Header_Count
-                      (X, "x-amz-checksum-crc64nvme");
+                      (X, "x-amz-checksum-xxhash64");
+                  XXHASH3_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-xxhash3");
+                  XXHASH128_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-checksum-xxhash128");
                   Checksum_Count : constant Natural :=
-                    CRC32_Count + CRC32C_Count + SHA1_Count + SHA256_Count +
-                    CRC64_Count;
+                    CRC32_Count + CRC32C_Count + CRC64_Count + SHA1_Count +
+                    SHA256_Count + SHA512_Count + Checksum_MD5_Count +
+                    XXHASH64_Count + XXHASH3_Count + XXHASH128_Count;
                   Owner_Accepted : Boolean;
                begin
                   if MD5_Count > 1 or else Payer_Count > 1
-                    or else SDK_Checksum_Count > 1
+                    or else SDK_Count > 1
+                    or else Trailer_Declaration_Count > 1
                     or else CRC32_Count > 1 or else CRC32C_Count > 1
-                    or else SHA1_Count > 1 or else SHA256_Count > 1
                     or else CRC64_Count > 1
+                    or else SHA1_Count > 1 or else SHA256_Count > 1
+                    or else SHA512_Count > 1
+                    or else Checksum_MD5_Count > 1
+                    or else XXHASH64_Count > 1
+                    or else XXHASH3_Count > 1
+                    or else XXHASH128_Count > 1
                     or else Apps.Request_Header_Count (X, "content-type") > 1
                   then
                      Send_Error
@@ -1533,65 +1591,15 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 400, "InvalidRequest",
                         "PutBucketTagging requires a valid Content-MD5",
                         Target_Text);
-                  elsif Payer_Count = 1
-                    and then Apps.Request_Header
-                      (X, "x-amz-request-payer") /= "requester"
-                  then
+                  elsif Payer_Count > 0 then
                      Send_Error
-                       (X, 400, "InvalidArgument",
-                        "The request payer value is invalid", Target_Text);
-                  elsif SDK_Checksum_Count > 0 or else Checksum_Count > 0 then
-                     declare
-                        Algorithm : constant String :=
-                          (if SDK_Checksum_Count = 1
-                           then Apps.Request_Header
-                             (X, "x-amz-sdk-checksum-algorithm") else "");
-                        Expected_Count : constant Natural :=
-                          (if Algorithm = "CRC32" then CRC32_Count
-                           elsif Algorithm = "CRC32C" then CRC32C_Count
-                           elsif Algorithm = "SHA1" then SHA1_Count
-                           elsif Algorithm = "SHA256" then SHA256_Count
-                           elsif Algorithm = "CRC64NVME" then CRC64_Count
-                           else 0);
-                        Expected_Bytes : constant Positive :=
-                          (if Algorithm in "CRC32" | "CRC32C" then 4
-                           elsif Algorithm = "SHA1" then 20
-                           elsif Algorithm = "SHA256" then 32
-                           else 8);
-                        Header_Name : constant String :=
-                          (if Algorithm = "CRC32" then "x-amz-checksum-crc32"
-                           elsif Algorithm = "CRC32C"
-                           then "x-amz-checksum-crc32c"
-                           elsif Algorithm = "SHA1"
-                           then "x-amz-checksum-sha1"
-                           elsif Algorithm = "SHA256"
-                           then "x-amz-checksum-sha256"
-                           else "x-amz-checksum-crc64nvme");
-                     begin
-                        if SDK_Checksum_Count /= 1 or else Checksum_Count /= 1
-                          or else Expected_Count /= 1
-                          or else Algorithm not in
-                            "CRC32" | "CRC32C" | "SHA1" | "SHA256" |
-                            "CRC64NVME"
-                          or else not S3.Wire_Core.Valid_Base64
-                            (Apps.Request_Header (X, Header_Name),
-                             Expected_Bytes)
-                        then
-                           Send_Error
-                             (X, 400, "InvalidRequest",
-                              "The PutBucketTagging checksum group is " &
-                              "invalid", Target_Text);
-                        else
-                           Send_Error
-                             (X, 501, "NotImplemented",
-                              "PutBucketTagging optional checksums are not " &
-                              "implemented", Target_Text);
-                        end if;
-                     end;
-                  elsif Payer_Count = 1 then
+                       (X, 400, "InvalidRequest",
+                        "PutBucketTagging does not define RequestPayer",
+                        Target_Text);
+                  elsif Checksum_Count > 1 then
                      Send_Error
-                       (X, 501, "NotImplemented",
-                        "Requester-pays bucket tagging is not implemented",
+                       (X, 400, "InvalidRequest",
+                        "The PutBucketTagging checksum group is invalid",
                         Target_Text);
                   elsif Length.Kind = Backends.Known
                     and then Length.Bytes > Maximum_Bucket_Tagging_Body
@@ -1617,6 +1625,188 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                               Completed => False);
                            Document : constant String :=
                              Read_Document (Source);
+
+                           type Checksum_Verification is
+                             (Checksum_OK, Invalid_Checksum_Group,
+                              Invalid_Checksum_Value, Checksum_Mismatch);
+
+                           function Header_Name
+                             (Algorithm : Checksum_Policy.Algorithm)
+                              return String is
+                             (case Algorithm is
+                                 when S3.Core.CRC32 =>
+                                   "x-amz-checksum-crc32",
+                                 when S3.Core.CRC32C =>
+                                   "x-amz-checksum-crc32c",
+                                 when S3.Core.CRC64NVME =>
+                                   "x-amz-checksum-crc64nvme",
+                                 when S3.Core.SHA1 =>
+                                   "x-amz-checksum-sha1",
+                                 when S3.Core.SHA256 =>
+                                   "x-amz-checksum-sha256",
+                                 when S3.Core.SHA512 =>
+                                   "x-amz-checksum-sha512",
+                                 when S3.Core.MD5 =>
+                                   "x-amz-checksum-md5",
+                                 when S3.Core.XXHASH64 =>
+                                   "x-amz-checksum-xxhash64",
+                                 when S3.Core.XXHASH3 =>
+                                   "x-amz-checksum-xxhash3",
+                                 when S3.Core.XXHASH128 =>
+                                   "x-amz-checksum-xxhash128");
+
+                           function Count_For
+                             (Algorithm : Checksum_Policy.Algorithm)
+                              return Natural is
+                             (case Algorithm is
+                                 when S3.Core.CRC32 => CRC32_Count,
+                                 when S3.Core.CRC32C => CRC32C_Count,
+                                 when S3.Core.CRC64NVME => CRC64_Count,
+                                 when S3.Core.SHA1 => SHA1_Count,
+                                 when S3.Core.SHA256 => SHA256_Count,
+                                 when S3.Core.SHA512 => SHA512_Count,
+                                 when S3.Core.MD5 => Checksum_MD5_Count,
+                                 when S3.Core.XXHASH64 => XXHASH64_Count,
+                                 when S3.Core.XXHASH3 => XXHASH3_Count,
+                                 when S3.Core.XXHASH128 => XXHASH128_Count);
+
+                           function Trailer_Count_For
+                             (Algorithm : Checksum_Policy.Algorithm)
+                              return Natural is
+                             (Apps.Request_Trailer_Count
+                                (X, Header_Name (Algorithm)));
+
+                           function Selected_Algorithm return
+                             Checksum_Policy.Algorithm_Parse_Result
+                           is
+                           begin
+                              if SDK_Count = 1 then
+                                 return Checksum_Policy.Parse_Algorithm
+                                   (Apps.Request_Header
+                                      (X,
+                                       "x-amz-sdk-checksum-algorithm"));
+                              elsif CRC32_Count = 1 then
+                                 return
+                                   (Valid => True, Value => S3.Core.CRC32);
+                              elsif CRC32C_Count = 1 then
+                                 return
+                                   (Valid => True, Value => S3.Core.CRC32C);
+                              elsif CRC64_Count = 1 then
+                                 return
+                                   (Valid => True,
+                                    Value => S3.Core.CRC64NVME);
+                              elsif SHA1_Count = 1 then
+                                 return
+                                   (Valid => True, Value => S3.Core.SHA1);
+                              elsif SHA256_Count = 1 then
+                                 return
+                                   (Valid => True, Value => S3.Core.SHA256);
+                              elsif SHA512_Count = 1 then
+                                 return
+                                   (Valid => True, Value => S3.Core.SHA512);
+                              elsif Checksum_MD5_Count = 1 then
+                                 return
+                                   (Valid => True, Value => S3.Core.MD5);
+                              elsif XXHASH64_Count = 1 then
+                                 return
+                                   (Valid => True,
+                                    Value => S3.Core.XXHASH64);
+                              elsif XXHASH3_Count = 1 then
+                                 return
+                                   (Valid => True, Value => S3.Core.XXHASH3);
+                              elsif XXHASH128_Count = 1 then
+                                 return
+                                   (Valid => True,
+                                    Value => S3.Core.XXHASH128);
+                              else
+                                 return (Valid => False);
+                              end if;
+                           end Selected_Algorithm;
+
+                           function Verify_Checksum
+                              return Checksum_Verification
+                           is
+                              Selected : constant
+                                Checksum_Policy.Algorithm_Parse_Result :=
+                                  Selected_Algorithm;
+                              Has_Trailer : constant Boolean :=
+                                Trailer_Declaration_Count = 1;
+                              Actual_Trailer_Count : Natural := 0;
+                           begin
+                              if SDK_Count > 1
+                                or else Trailer_Declaration_Count > 1
+                                or else Checksum_Count > 1
+                                or else Apps.Request_Trailer_Count (X) > 1
+                                or else
+                                  (Has_Trailer
+                                   and then
+                                     (SDK_Count /= 1
+                                      or else not Selected.Valid
+                                      or else Checksum_Count /= 0
+                                      or else
+                                        Ada.Characters.Handling.To_Lower
+                                          (Apps.Request_Header
+                                             (X, "x-amz-trailer")) /=
+                                        Header_Name (Selected.Value)))
+                                or else
+                                  (not Has_Trailer
+                                   and then Apps.Request_Trailer_Count (X) > 0)
+                                or else
+                                  (not Has_Trailer
+                                   and then SDK_Count = 1
+                                   and then
+                                     (not Selected.Valid
+                                      or else Checksum_Count /= 1
+                                      or else
+                                        Count_For (Selected.Value) /= 1))
+                              then
+                                 return Invalid_Checksum_Group;
+                              elsif Has_Trailer then
+                                 Actual_Trailer_Count :=
+                                   Trailer_Count_For (Selected.Value);
+                                 if Actual_Trailer_Count /= 1 then
+                                    return Invalid_Checksum_Group;
+                                 end if;
+                              elsif Checksum_Count = 0 then
+                                 return Checksum_OK;
+                              elsif not Selected.Valid then
+                                 return Invalid_Checksum_Group;
+                              end if;
+                              declare
+                                 Supplied : constant Checksums.Decode_Result :=
+                                   Checksums.Decode_Base64
+                                     ((if Has_Trailer
+                                       then Apps.Request_Trailer
+                                         (X, Header_Name (Selected.Value))
+                                       else Apps.Request_Header
+                                         (X, Header_Name (Selected.Value))),
+                                      Selected.Value);
+                              begin
+                                 if not Supplied.Valid then
+                                    return Invalid_Checksum_Value;
+                                 end if;
+                                 declare
+                                    Computed : constant
+                                      Checksums.Digest_Value :=
+                                        Checksums.Compute
+                                          (Selected.Value,
+                                           Flyology.Bytes.To_Array
+                                             (Flyology.Bytes.From_Byte_String
+                                                (Document)));
+                                 begin
+                                    if Checksums.Equivalent
+                                      (Supplied.Value, Computed)
+                                    then
+                                       return Checksum_OK;
+                                    else
+                                       return Checksum_Mismatch;
+                                    end if;
+                                 end;
+                              end;
+                           end Verify_Checksum;
+
+                           Checksum_Status : constant
+                             Checksum_Verification := Verify_Checksum;
                         begin
                            if Content_MD5 (Document) /=
                              Apps.Request_Header (X, "content-md5")
@@ -1625,6 +1815,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                 (X, 400, "BadDigest",
                                  "The Content-MD5 does not match the body",
                                  Target_Text);
+                           elsif Checksum_Status in
+                             Invalid_Checksum_Group | Invalid_Checksum_Value
+                           then
+                              Send_Error
+                                (X, 400, "InvalidRequest",
+                                 "The PutBucketTagging checksum group is " &
+                                 "invalid", Target_Text);
+                           elsif Checksum_Status = Checksum_Mismatch then
+                              Send_Error
+                                (X, 400, "BadDigest",
+                                 "The optional checksum does not match the " &
+                                 "request body", Target_Text);
                            else
                               declare
                                  Value : constant Tags.Tag_Set :=
@@ -1674,21 +1876,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Owner_Accepted : Boolean;
                   Value : Tags.Tag_Set;
                begin
-                  if Payer_Count > 1 then
+                  if Payer_Count > 0 then
                      Send_Error
                        (X, 400, "InvalidRequest",
-                        "The request payer header is duplicated", Target_Text);
-                  elsif Payer_Count = 1
-                    and then Apps.Request_Header
-                      (X, "x-amz-request-payer") /= "requester"
-                  then
-                     Send_Error
-                       (X, 400, "InvalidArgument",
-                        "The request payer value is invalid", Target_Text);
-                  elsif Payer_Count = 1 then
-                     Send_Error
-                       (X, 501, "NotImplemented",
-                        "Requester-pays bucket tagging is not implemented",
+                        "GetBucketTagging does not define RequestPayer",
                         Target_Text);
                   else
                      Check_Expected_Bucket_Owner
@@ -1701,6 +1892,34 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            Apps.Respond
                              (X, 200, "application/xml",
                               Tagging.Serialize_Bucket (Value));
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Delete_Bucket_Tagging =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "DeleteBucketTagging does not define RequestPayer",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Delete_Bucket_Tags
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Result);
+                        if Result = Success then
+                           Apps.Respond (X, 204, "", "");
                         else
                            Send_Backend_Error
                              (X, Result, True, Target_Text);
