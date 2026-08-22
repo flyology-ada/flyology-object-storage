@@ -2368,6 +2368,178 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Origin, Style, Bucket, Key, Parameters, Identity, Region,
          Timestamp));
 
+   function Prepare_Get_Object_Attributes
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Get_Object_Attributes_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      SSE_Algorithm : constant String :=
+        US.To_String (Parameters.SSE_Customer_Algorithm);
+      SSE_Key : constant String := US.To_String (Parameters.SSE_Customer_Key);
+      SSE_Key_MD5 : constant String :=
+        US.To_String (Parameters.SSE_Customer_Key_MD5);
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Optional_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.Version_ID) > 0) +
+        Boolean'Pos (Parameters.Has_Max_Parts) +
+        Boolean'Pos (Parameters.Has_Part_Number_Marker) +
+        Boolean'Pos (SSE_Algorithm'Length > 0) +
+        Boolean'Pos (SSE_Key'Length > 0) +
+        Boolean'Pos (SSE_Key_MD5'Length > 0) +
+        Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0);
+      Values : Model_Value_Array (1 .. 3 + Optional_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+
+      procedure Add_Optional
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Add (Name, US.To_String (Value));
+         end if;
+      end Add_Optional;
+   begin
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else US.Length (Parameters.Version_ID) > 8_192
+        or else (Request_Payer'Length > 0
+                 and then Request_Payer /= "requester")
+        or else not Valid_SSE_C_Group
+          (SSE_Algorithm, SSE_Key, SSE_Key_MD5)
+        or else (SSE_Key'Length > 0
+                 and then Flyology.HTTP.Scheme (Origin) /=
+                   Flyology.HTTP.Secure_HTTPS)
+      then
+         raise Invalid_Request with "invalid GetObjectAttributes parameters";
+      end if;
+      Add ("Bucket", Bucket);
+      Add ("Key", Key);
+      Add_Optional ("VersionId", Parameters.Version_ID);
+      if Parameters.Has_Max_Parts then
+         Add
+           ("MaxParts",
+            Ada.Strings.Fixed.Trim
+              (S3.Core.Page_Size'Image (Parameters.Max_Parts),
+               Ada.Strings.Both));
+      end if;
+      if Parameters.Has_Part_Number_Marker then
+         Add
+           ("PartNumberMarker",
+            Ada.Strings.Fixed.Trim
+              (S3.Attributes.Part_Marker_Value'Image
+                 (Parameters.Part_Number_Marker),
+               Ada.Strings.Both));
+      end if;
+      Add_Optional
+        ("SSECustomerAlgorithm", Parameters.SSE_Customer_Algorithm);
+      Add_Optional ("SSECustomerKey", Parameters.SSE_Customer_Key);
+      Add_Optional ("SSECustomerKeyMD5", Parameters.SSE_Customer_Key_MD5);
+      Add_Optional ("RequestPayer", Parameters.Request_Payer);
+      Add_Optional
+        ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      Add ("ObjectAttributes", S3.Attributes.Image (Parameters.Attributes));
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Get_Object_Attributes_Operation, Origin, Style, Values, "",
+         False, SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := Get_Object_Attributes_Operation;
+      end return;
+   exception
+      when S3.Attributes.Malformed_Attributes | Constraint_Error =>
+         raise Invalid_Request with "invalid GetObjectAttributes parameters";
+   end Prepare_Get_Object_Attributes;
+
+   function Decode_Get_Object_Attributes_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Delete_Marker   : String := "";
+      Last_Modified   : String := "";
+      Version_ID      : String := "";
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Attributes_Outcome
+   is
+   begin
+      if Status = 200 then
+         if Request_Charged'Length > 0
+           and then Request_Charged /= "requester"
+         then
+            raise Invalid_Response with
+              "invalid GetObjectAttributes response headers";
+         end if;
+         return
+           (Kind   => Object_Attributes_Found,
+            Status => Status,
+            Result =>
+              (Delete_Marker => Optional_Boolean_Header (Delete_Marker),
+               Last_Modified => US.To_Unbounded_String (Last_Modified),
+               Version_ID => US.To_Unbounded_String (Version_ID),
+               Request_Charged => US.To_Unbounded_String (Request_Charged),
+               Attributes => S3.Attributes.Parse_Result (Payload, Limits)));
+      end if;
+      return
+        (Kind   => Get_Object_Attributes_Rejected,
+         Status => Status,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when S3.Attributes.Malformed_Attributes | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed GetObjectAttributes response";
+   end Decode_Get_Object_Attributes_Response;
+
+   function Execute_Get_Object_Attributes
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Attributes_Outcome
+   is
+   begin
+      if Prepared.Operation /= Get_Object_Attributes_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Get_Object_Attributes_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload),
+            Flyology.HTTP.Client.Header (Response, "x-amz-delete-marker"),
+            Flyology.HTTP.Client.Header (Response, "last-modified"),
+            Flyology.HTTP.Client.Header (Response, "x-amz-version-id"),
+            Flyology.HTTP.Client.Header (Response, "x-amz-request-charged"),
+            Flyology.HTTP.Client.Header (Response, "x-amz-request-id"),
+            Flyology.HTTP.Client.Header (Response, "x-amz-id-2"), Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "GetObjectAttributes response exceeds XML limit";
+   end Execute_Get_Object_Attributes;
+
    function Optional_Natural_Header
      (Value : String) return Optional_Natural is
    begin

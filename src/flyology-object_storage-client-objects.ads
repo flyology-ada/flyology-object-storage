@@ -4,6 +4,8 @@ with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.S3.Errors;
+with Flyology.Object_Storage.S3.Attributes;
+with Flyology.Object_Storage.S3.Core;
 
 --  High-level single-object operations over a configured Flyology HTTP client.
 package Flyology.Object_Storage.Client.Objects is
@@ -103,5 +105,51 @@ package Flyology.Object_Storage.Client.Objects is
       Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null)
       return Tagging_Outcome;
+
+   subtype Get_Attributes_Outcome is
+     Low_Level.Get_Object_Attributes_Outcome;
+
+   --  Retrieve selected object metadata without downloading the body. By
+   --  default all five root attribute groups are requested. Numeric presence
+   --  flags allow callers to omit pagination headers independently of their
+   --  values.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket containing the object
+   --  @param Key Exact object key
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Attributes Requested root-level result groups
+   --  @param Version_ID Optional exact object version
+   --  @param Max_Parts Object-parts page size when Has_Max_Parts is true
+   --  @param Part_Number_Marker Exclusive completed-part marker
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester for Requester Pays buckets
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled result or structured S3 rejection
+   function Get_Attributes
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Attributes : S3.Attributes.Attribute_Selection := (others => True);
+      Version_ID : String := "";
+      Max_Parts : S3.Core.Page_Size := 1_000;
+      Has_Max_Parts : Boolean := False;
+      Part_Number_Marker : S3.Attributes.Part_Marker_Value := 0;
+      Has_Part_Number_Marker : Boolean := False;
+      SSE_Customer_Algorithm : String := "";
+      SSE_Customer_Key : String := "";
+      SSE_Customer_Key_MD5 : String := "";
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Get_Attributes_Outcome;
 
 end Flyology.Object_Storage.Client.Objects;

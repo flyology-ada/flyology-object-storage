@@ -4931,8 +4931,18 @@ package body Object_Storage_Test_Cases is
 
       Result_Must_Reject
         ("<Wrong/>", "wrong attributes result root accepted");
-      Result_Must_Reject
-        (Root (""), "empty attributes response accepted");
+      declare
+         Empty : constant Attributes.Get_Object_Attributes_Result :=
+           Attributes.Parse_Result (Root (""));
+      begin
+         Assert
+           (not Empty.Has_Entity_Tag
+            and then not Empty.Has_Checksum
+            and then not Empty.Has_Object_Parts
+            and then not Empty.Has_Storage_Class
+            and then not Empty.Object_Size.Is_Set,
+            "empty selected-attribute response rejected");
+      end;
       Result_Must_Reject
         (Root ("<ETag>a</ETag><ETag>b</ETag>"),
          "duplicate attributes result field accepted");
@@ -7528,6 +7538,7 @@ package body Object_Storage_Test_Cases is
       use type Low_Level.Get_Bucket_Location_Outcome_Kind;
       use type Low_Level.Head_Bucket_Outcome_Kind;
       use type Low_Level.Head_Object_Outcome_Kind;
+      use type Low_Level.Get_Object_Attributes_Outcome_Kind;
       use type Low_Level.List_Buckets_Outcome_Kind;
       Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
         ("AKIAIOSFODNN7EXAMPLE",
@@ -8665,6 +8676,187 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "GetObject accepted a non-AES256 SSE-C algorithm");
+      end;
+
+      declare
+         Parameters : Low_Level.Get_Object_Attributes_Parameters;
+      begin
+         Parameters.Version_ID := US.To_Unbounded_String ("version +/=");
+         Parameters.Has_Max_Parts := True;
+         Parameters.Max_Parts := 17;
+         Parameters.Has_Part_Number_Marker := True;
+         Parameters.Part_Number_Marker := 9;
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         Parameters.Attributes :=
+           (Entity_Tag => True, Checksum => False, Object_Parts => True,
+            Storage_Class => False, Object_Size => True);
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Attributes
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "photos/a b+%",
+                 Parameters, Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket/photos/a%20b%2B%25?attributes&" &
+                 "versionId=version%20%2B%2F%3D",
+               "GetObjectAttributes exact target projection");
+            Assert
+              (Low_Level.Signed_Headers (Prepared) =
+                 "host;x-amz-content-sha256;x-amz-date;" &
+                 "x-amz-expected-bucket-owner;x-amz-max-parts;" &
+                 "x-amz-object-attributes;x-amz-part-number-marker;" &
+                 "x-amz-request-payer;" &
+                 "x-amz-server-side-encryption-customer-algorithm;" &
+                 "x-amz-server-side-encryption-customer-key;" &
+                 "x-amz-server-side-encryption-customer-key-md5",
+               "GetObjectAttributes all modeled headers are signed");
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Low_Level.Canonical_Request (Prepared),
+                  "x-amz-object-attributes:ETag,ObjectParts,ObjectSize") > 0,
+               "GetObjectAttributes selection canonicalization");
+         end;
+      end;
+
+      declare
+         procedure Must_Reject
+           (Parameters : Low_Level.Get_Object_Attributes_Parameters;
+            Origin     : String;
+            Message    : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Get_Object_Attributes
+                      (Flyology.HTTP.Parse_Origin (Origin),
+                       Low_Level.Path_Style, "example-bucket", "key",
+                       Parameters, Identity, "us-east-1",
+                       "20130524T000000Z");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Must_Reject;
+         Empty : Low_Level.Get_Object_Attributes_Parameters;
+         Plaintext : Low_Level.Get_Object_Attributes_Parameters;
+         Bad_Payer : Low_Level.Get_Object_Attributes_Parameters;
+      begin
+         Empty.Attributes := (others => False);
+         Must_Reject
+           (Empty, "https://localhost:9000",
+            "GetObjectAttributes accepted an empty selection");
+         Plaintext.Attributes.Entity_Tag := True;
+         Plaintext.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Plaintext.SSE_Customer_Key := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Plaintext.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Must_Reject
+           (Plaintext, "http://localhost:9000",
+            "GetObjectAttributes allowed an SSE-C key over plaintext");
+         Bad_Payer.Attributes.Object_Size := True;
+         Bad_Payer.Request_Payer := US.To_Unbounded_String ("owner");
+         Must_Reject
+           (Bad_Payer, "https://localhost:9000",
+            "GetObjectAttributes accepted an invalid requester payer");
+      end;
+
+      declare
+         Outcome : constant Low_Level.Get_Object_Attributes_Outcome :=
+           Low_Level.Decode_Get_Object_Attributes_Response
+             (200,
+              "<GetObjectAttributesResponse>" &
+              "<ETag>&quot;etag&quot;</ETag><ObjectSize>42</ObjectSize>" &
+              "</GetObjectAttributesResponse>",
+              Delete_Marker => "true",
+              Last_Modified => "Fri, 24 May 2013 00:00:00 GMT",
+              Version_ID => "version-1", Request_Charged => "requester");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Object_Attributes_Found
+            and then Outcome.Result.Delete_Marker.Is_Set
+            and then Outcome.Result.Delete_Marker.Value
+            and then US.To_String (Outcome.Result.Last_Modified) =
+              "Fri, 24 May 2013 00:00:00 GMT"
+            and then US.To_String (Outcome.Result.Version_ID) = "version-1"
+            and then US.To_String (Outcome.Result.Request_Charged) =
+              "requester"
+            and then Outcome.Result.Attributes.Has_Entity_Tag
+            and then US.To_String
+              (Outcome.Result.Attributes.Entity_Tag) = """etag"""
+            and then Outcome.Result.Attributes.Object_Size.Value = 42,
+            "GetObjectAttributes complete successful response decoding");
+      end;
+
+      declare
+         Outcome : constant Low_Level.Get_Object_Attributes_Outcome :=
+           Low_Level.Decode_Get_Object_Attributes_Response
+             (404, "<Error><Code>NoSuchKey</Code>" &
+              "<Message>missing</Message></Error>",
+              Request_ID => "attributes-request",
+              Host_ID => "attributes-host");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Get_Object_Attributes_Rejected
+            and then US.To_String (Outcome.Error.Code) = "NoSuchKey"
+            and then US.To_String (Outcome.Error.Request_ID) =
+              "attributes-request"
+            and then US.To_String (Outcome.Error.Host_ID) = "attributes-host",
+            "GetObjectAttributes typed rejection and ID fallback");
+      end;
+
+      declare
+         procedure Response_Must_Reject
+           (Payload, Delete_Marker, Request_Charged, Message : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant
+                    Low_Level.Get_Object_Attributes_Outcome :=
+                      Low_Level.Decode_Get_Object_Attributes_Response
+                        (200, Payload, Delete_Marker => Delete_Marker,
+                         Request_Charged => Request_Charged);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Response_Must_Reject;
+         Empty_Root : constant String :=
+           "<GetObjectAttributesResponse/>";
+      begin
+         Response_Must_Reject
+           (Empty_Root, "yes", "",
+            "GetObjectAttributes accepted a malformed delete marker");
+         Response_Must_Reject
+           (Empty_Root, "", "owner",
+            "GetObjectAttributes accepted an invalid request charge");
+         Response_Must_Reject
+           ("<GetObjectAttributesResponse><ObjectSize>-1</ObjectSize>" &
+            "</GetObjectAttributesResponse>", "", "",
+            "GetObjectAttributes accepted a malformed XML member");
       end;
 
       declare

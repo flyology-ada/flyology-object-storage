@@ -5,6 +5,7 @@ with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage.S3.Buckets;
+with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Copies;
 with Flyology.Object_Storage.S3.Deletions;
@@ -679,6 +680,78 @@ package Flyology.Object_Storage.Client.Low_Level is
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
       return Flyology.HTTP.Client.Response;
+
+   --  Every non-resource member in the pinned GetObjectAttributes request.
+   --  Presence flags preserve omission for optional numeric headers.
+   type Get_Object_Attributes_Parameters is record
+      Version_ID               : Ada.Strings.Unbounded.Unbounded_String;
+      Max_Parts                : S3.Core.Page_Size := 1_000;
+      Has_Max_Parts            : Boolean := False;
+      Part_Number_Marker       : S3.Attributes.Part_Marker_Value := 0;
+      Has_Part_Number_Marker   : Boolean := False;
+      SSE_Customer_Algorithm   : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key         : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5     : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer            : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner    : Ada.Strings.Unbounded.Unbounded_String;
+      Attributes               : S3.Attributes.Attribute_Selection;
+   end record;
+
+   function Prepare_Get_Object_Attributes
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Get_Object_Attributes_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   --  Every member in the pinned output shape. REST/XML members are grouped
+   --  in Attributes; the remaining four values are response headers.
+   type Get_Object_Attributes_Result is record
+      Delete_Marker   : Optional_Boolean;
+      Last_Modified   : Ada.Strings.Unbounded.Unbounded_String;
+      Version_ID      : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+      Attributes      : S3.Attributes.Get_Object_Attributes_Result;
+   end record;
+
+   type Get_Object_Attributes_Outcome_Kind is
+     (Object_Attributes_Found, Get_Object_Attributes_Rejected);
+
+   type Get_Object_Attributes_Outcome
+     (Kind : Get_Object_Attributes_Outcome_Kind :=
+        Get_Object_Attributes_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Attributes_Found =>
+            Result : Get_Object_Attributes_Result;
+         when Get_Object_Attributes_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Get_Object_Attributes_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Delete_Marker   : String := "";
+      Last_Modified   : String := "";
+      Version_ID      : String := "";
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Attributes_Outcome;
+
+   function Execute_Get_Object_Attributes
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Attributes_Outcome;
 
    --  Validate all modeled response-head fields. Successful response bodies
    --  remain unread. Rejected responses are consumed within Limits and
@@ -1675,6 +1748,7 @@ private
       Head_Bucket_Operation,
       Head_Object_Operation,
       Get_Object_Operation,
+      Get_Object_Attributes_Operation,
       Put_Object_Operation,
       Delete_Bucket_Operation,
       Delete_Object_Operation,

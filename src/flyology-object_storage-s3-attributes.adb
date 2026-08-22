@@ -663,14 +663,7 @@ package body Flyology.Object_Storage.S3.Attributes is
    procedure Validate (Value : Get_Object_Attributes_Result) is
       Previous : Natural := 0;
    begin
-      if not Value.Has_Entity_Tag
-        and then not Value.Has_Checksum
-        and then not Value.Has_Object_Parts
-        and then not Value.Has_Storage_Class
-        and then not Value.Object_Size.Is_Set
-      then
-         raise Malformed_Attributes with "empty object-attributes response";
-      elsif Value.Has_Entity_Tag and then US.Length (Value.Entity_Tag) = 0
+      if Value.Has_Entity_Tag and then US.Length (Value.Entity_Tag) = 0
       then
          raise Malformed_Attributes with "empty object-attributes ETag";
       elsif Value.Has_Checksum and then not Valid_Checksums (Value.Checksum)

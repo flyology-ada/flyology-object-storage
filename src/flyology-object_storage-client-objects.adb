@@ -177,4 +177,54 @@ package body Flyology.Object_Storage.Client.Objects is
       end;
    end Delete_Tags;
 
+   function Get_Attributes
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Attributes : S3.Attributes.Attribute_Selection := (others => True);
+      Version_ID : String := "";
+      Max_Parts : S3.Core.Page_Size := 1_000;
+      Has_Max_Parts : Boolean := False;
+      Part_Number_Marker : S3.Attributes.Part_Marker_Value := 0;
+      Has_Part_Number_Marker : Boolean := False;
+      SSE_Customer_Algorithm : String := "";
+      SSE_Customer_Key : String := "";
+      SSE_Customer_Key_MD5 : String := "";
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Get_Attributes_Outcome
+   is
+      Parameters : Low_Level.Get_Object_Attributes_Parameters;
+   begin
+      Parameters.Version_ID := US.To_Unbounded_String (Version_ID);
+      Parameters.Max_Parts := Max_Parts;
+      Parameters.Has_Max_Parts := Has_Max_Parts;
+      Parameters.Part_Number_Marker := Part_Number_Marker;
+      Parameters.Has_Part_Number_Marker := Has_Part_Number_Marker;
+      Parameters.SSE_Customer_Algorithm :=
+        US.To_Unbounded_String (SSE_Customer_Algorithm);
+      Parameters.SSE_Customer_Key := US.To_Unbounded_String (SSE_Customer_Key);
+      Parameters.SSE_Customer_Key_MD5 :=
+        US.To_Unbounded_String (SSE_Customer_Key_MD5);
+      Parameters.Expected_Bucket_Owner :=
+        US.To_Unbounded_String (Expected_Bucket_Owner);
+      Parameters.Request_Payer := US.To_Unbounded_String (Request_Payer);
+      Parameters.Attributes := Attributes;
+      declare
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_Get_Object_Attributes
+             (Origin, Style, Bucket, Key, Parameters, Identity, Region,
+              Timestamp);
+      begin
+         return Low_Level.Execute_Get_Object_Attributes
+           (Client, Prepared, Timeout, Token);
+      end;
+   end Get_Attributes;
+
 end Flyology.Object_Storage.Client.Objects;
