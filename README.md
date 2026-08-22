@@ -72,9 +72,11 @@ under Flyology supervision. Its first slice includes bounded connection
 handling, conservative loopback binding, graceful SIGTERM drain, and the same
 independent s5cmd qualification on all three backends. It now creates an
 owner-only, slow-hashed administrator credential and displays the random
-bootstrap password exactly once. The authenticated management API and
-psqlbench-inspired browser workbench are being added in subsequent reviewed
-slices.
+bootstrap password exactly once. A second supervised, loopback-only listener
+serves the authenticated management API and a psqlbench-inspired browser
+workbench. It reports the actual bound S3 endpoint, selected backend and
+dependency-ordered service tree; its external HTML, CSS and JavaScript are
+SHA-256-pinned by the binary so a modified asset set stops startup.
 
 The files backend is persistent, but it is not yet advertised as
 power-loss-durable: an fsync-backed durability mode remains required before

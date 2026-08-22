@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="oklch(97% 0.008 250)">
+  <title>Object Storage · Flyology</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Flyology Object Storage home">
+      <svg class="mark" viewBox="0 0 40 40" aria-hidden="true">
+        <path d="M5 30 18 6l4 14 13-7-12 21-5-13Z"/>
+      </svg>
+      <span>flyology</span><b>/ object storage</b>
+    </a>
+    <div class="product-identity">
+      <strong>S3 operations workbench</strong>
+      <span>local control plane</span>
+    </div>
+    <div class="connection-state" id="connection-state" role="status">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span>Checking server</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="login-shell" id="login-shell" aria-labelledby="login-title" hidden>
+      <div class="login-context">
+        <p class="eyebrow">Administrator access</p>
+        <h1 id="login-title">Open the storage workbench</h1>
+        <p>Use the one-time password printed during the server's first startup.
+          The browser session stays on this loopback listener.</p>
+        <dl class="security-notes">
+          <div><dt>Listener</dt><dd>127.0.0.1 only</dd></div>
+          <div><dt>Session</dt><dd>12 hours, memory only</dd></div>
+          <div><dt>Cookie</dt><dd>HttpOnly · SameSite Strict</dd></div>
+        </dl>
+      </div>
+      <form class="login-form" id="login-form">
+        <label>
+          <span>Username</span>
+          <input name="username" value="admin" autocomplete="username" readonly>
+        </label>
+        <label>
+          <span>Bootstrap password</span>
+          <input name="password" type="password" autocomplete="current-password"
+            minlength="48" maxlength="48" pattern="[0-9a-f]{48}" required autofocus>
+        </label>
+        <p class="form-message" id="login-message" role="alert" aria-live="polite"></p>
+        <button class="button primary" type="submit">Sign in</button>
+      </form>
+    </section>
+
+    <section class="workbench" id="workbench" aria-labelledby="workbench-title" hidden>
+      <nav class="command-bar" aria-label="Workbench commands">
+        <div>
+          <span class="eyebrow">Authenticated workspace</span>
+          <h1 id="workbench-title">Storage runtime</h1>
+        </div>
+        <div class="command-actions">
+          <button class="button secondary" id="refresh" type="button">Refresh</button>
+          <button class="button quiet" id="logout" type="button">Sign out</button>
+        </div>
+      </nav>
+
+      <div class="desktop" aria-live="polite">
+        <section class="panel endpoint-panel" aria-labelledby="endpoint-title">
+          <div class="panel-title">
+            <span>01</span>
+            <div><h2 id="endpoint-title">endpoint</h2><code>S3 / SigV4</code></div>
+          </div>
+          <div class="endpoint-address">
+            <span>Bound endpoint</span>
+            <strong id="s3-endpoint">Loading</strong>
+            <button class="copy-button" id="copy-endpoint" type="button">Copy</button>
+          </div>
+          <dl class="runtime-facts">
+            <div><dt>Backend</dt><dd id="backend">Loading</dd></div>
+            <div><dt>Region</dt><dd id="region">us-east-1</dd></div>
+            <div><dt>Protocol</dt><dd>HTTP/1.1</dd></div>
+            <div><dt>Addressing</dt><dd>Path style</dd></div>
+          </dl>
+        </section>
+
+        <section class="panel supervision-panel" aria-labelledby="supervision-title">
+          <div class="panel-title">
+            <span>02</span>
+            <div><h2 id="supervision-title">supervision.tree</h2><code>static / dependency ordered</code></div>
+          </div>
+          <div class="tree-root">
+            <div class="tree-node root-node">
+              <span class="node-dot ready" aria-hidden="true"></span>
+              <div><strong>object-storage supervisor</strong><small>running</small></div>
+            </div>
+            <div class="tree-children">
+              <div class="tree-node">
+                <span class="node-dot ready" aria-hidden="true"></span>
+                <div><strong>S3 service</strong><small id="s3-service-detail">ready</small></div>
+                <code>restart dependents</code>
+              </div>
+              <div class="tree-node">
+                <span class="node-dot ready" aria-hidden="true"></span>
+                <div><strong>Management service</strong><small id="admin-service-detail">ready</small></div>
+                <code>depends on S3</code>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel backend-panel" aria-labelledby="backend-title">
+          <div class="panel-title">
+            <span>03</span>
+            <div><h2 id="backend-title">storage.backend</h2><code>one interface / three implementations</code></div>
+          </div>
+          <p class="backend-summary" id="backend-summary">Loading backend semantics.</p>
+          <div class="backend-spectrum" role="list" aria-label="Supported storage backends">
+            <div role="listitem" data-backend="memory"><strong>memory</strong><span>bounded · ephemeral</span></div>
+            <div role="listitem" data-backend="files"><strong>files</strong><span>atomic · local root</span></div>
+            <div role="listitem" data-backend="sqlite"><strong>sqlite</strong><span>transactional catalog</span></div>
+          </div>
+        </section>
+
+        <section class="panel session-panel" aria-labelledby="session-title">
+          <div class="panel-title">
+            <span>04</span>
+            <div><h2 id="session-title">admin.session</h2><code>local / bounded / revocable</code></div>
+          </div>
+          <div class="session-state">
+            <span class="node-dot ready" aria-hidden="true"></span>
+            <div><strong>Authenticated as admin</strong><small>No credential is stored in this page.</small></div>
+          </div>
+          <p>The persistent file contains a salted verifier only. Signing keys for the S3 endpoint remain separate from this management session.</p>
+        </section>
+      </div>
+
+      <footer class="workbench-footer">
+        <span id="last-updated">Waiting for runtime state</span>
+        <span>Flyology Object Storage · management preview</span>
+      </footer>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

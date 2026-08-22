@@ -56,10 +56,20 @@ exercise_admin_api() {
 
   code=$(admin_request GET "$base/" "$body" "$headers")
   test "$code" = 200
-  grep -q '<title>Flyology Object Storage</title>' "$body"
+  grep -q '<title>Object Storage · Flyology</title>' "$body"
   grep -qi '^Cache-Control: no-store' "$headers"
-  grep -qi "^Content-Security-Policy: default-src 'self'; frame-ancestors 'none'" \
+  grep -qi "^Content-Security-Policy: default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" \
     "$headers"
+  grep -qi '^Referrer-Policy: no-referrer' "$headers"
+
+  code=$(admin_request GET "$base/assets/app.css" "$body" "$headers")
+  test "$code" = 200
+  grep -qi '^Content-Type: text/css; charset=utf-8' "$headers"
+  cmp "$body" "$SERVER_DIR/assets/app.css"
+  code=$(admin_request GET "$base/assets/app.js" "$body" "$headers")
+  test "$code" = 200
+  grep -qi '^Content-Type: text/javascript; charset=utf-8' "$headers"
+  cmp "$body" "$SERVER_DIR/assets/app.js"
 
   code=$(admin_request GET "$base/" "$body" "$headers" \
     -H 'Host: attacker.invalid')
@@ -98,7 +108,7 @@ exercise_admin_api() {
     -b "$cookies")
   test "$code" = 200
   test "$(tr -d '\r\n' <"$body")" = \
-    "{\"authenticated\":true,\"backend\":\"$backend\",\"s3_port\":$s3_port}"
+    "{\"authenticated\":true,\"backend\":\"$backend\",\"region\":\"us-east-1\",\"s3_address\":\"127.0.0.1\",\"s3_port\":$s3_port}"
 
   code=$(admin_request GET "$base/api/status" "$body" "$headers" \
     -H "Cookie: notflyology_admin=$token")
@@ -140,7 +150,7 @@ verify_persisted_admin() {
     -b "$cookies")
   test "$code" = 200
   test "$(tr -d '\r\n' <"$body")" = \
-    "{\"authenticated\":true,\"backend\":\"$backend\",\"s3_port\":$s3_port}"
+    "{\"authenticated\":true,\"backend\":\"$backend\",\"region\":\"us-east-1\",\"s3_address\":\"127.0.0.1\",\"s3_port\":$s3_port}"
 }
 
 expect_startup_failure() {
@@ -166,6 +176,15 @@ expect_startup_failure hostname-bind \
 expect_startup_failure excessive-capacity \
   FLYOLOGY_OBJECT_STORAGE_BACKEND=memory FLYOLOGY_S3_CAPACITY=4097 \
   AWS_ACCESS_KEY_ID="$ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
+cp -R "$SERVER_DIR/assets" "$RUN_ROOT/tampered-assets"
+printf '\n/* tampered */\n' >>"$RUN_ROOT/tampered-assets/app.css"
+expect_startup_failure tampered-admin-assets \
+  FLYOLOGY_OBJECT_STORAGE_BACKEND=memory \
+  FLYOLOGY_ADMIN_ASSET_ROOT="$RUN_ROOT/tampered-assets" \
+  FLYOLOGY_ADMIN_CREDENTIALS_FILE="$RUN_ROOT/tampered-admin.credentials" \
+  AWS_ACCESS_KEY_ID="$ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
+grep -q 'management asset failed integrity check: app.css' \
+  "$RUN_ROOT/tampered-admin-assets.log"
 echo "server configuration rejection corpus: OK"
 
 credential_path="$RUN_ROOT/credential-corpus/admin.credentials"

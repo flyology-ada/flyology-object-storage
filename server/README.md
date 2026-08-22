@@ -4,12 +4,19 @@ This independent executable crate runs the S3 application with the memory,
 files, or SQLite backend. It consumes indexed `flyology_http=0.1.2`; only the
 two sibling development crates are path-pinned inside this repository.
 
-The first server slice provides a bounded HTTP/1.1 listener under a Flyology
-static supervisor. SIGTERM requests an orderly stop, interrupts accepts and
-active connection handlers, and allows a ten-second drain. It also bootstraps
-an `admin` identity on first start. The management listener and browser
-workbench are the next slices; until they land this binary exposes only the S3
-endpoint.
+The server provides bounded S3 and management HTTP/1.1 listeners under a
+dependency-ordered Flyology static supervisor. SIGTERM requests an orderly
+stop, interrupts accepts and active connection handlers, and allows a
+ten-second S3 drain. The management child depends on the S3 child, so an S3
+generation failure restarts the workbench generation as well.
+
+The management listener is always bound to `127.0.0.1`. Its browser workbench
+uses the psqlbench example's compact instrument-panel structure without
+copying its replication-specific complexity. The current vertical slice signs
+in with the bootstrapped `admin` identity and reports the actual S3 address and
+port, region, selected backend, authenticated session, and supervised service
+relationship. Storage mutation remains on the signed S3 endpoint rather than
+being implied by an incomplete browser control surface.
 
 The generated 192-bit administrator password is printed once to standard
 error. Only a random 256-bit salt and PBKDF2-HMAC-SHA256 verifier are persisted
@@ -18,6 +25,15 @@ created by a racing process. The 600,000-iteration work factor follows the
 current [OWASP password-storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
 Existing credential files with broader permissions, symlinks, malformed
 fields, or an unknown format stop startup.
+
+Successful login creates a random 256-bit, memory-only session with a 12-hour
+maximum lifetime. The cookie is `HttpOnly`, `SameSite=Strict`, path-scoped to
+the management listener, and deliberately lacks `Secure` because this listener
+is hard-bound to loopback HTTP. Host and Origin checks reject DNS-rebinding and
+cross-origin requests; duplicate Cookie headers and duplicate session cookies
+fail closed. The workbench assets are external for straightforward packaging
+but their exact SHA-256 digests are compiled into the binary. Missing or
+modified HTML, CSS, or JavaScript stops startup before either listener starts.
 
 Required environment:
 
@@ -33,8 +49,13 @@ Optional environment:
 - `FLYOLOGY_S3_BIND` defaults to the safe loopback address `127.0.0.1`.
 - `FLYOLOGY_S3_PORT` defaults to `9000`; use `0` for an ephemeral test port.
 - `FLYOLOGY_S3_CAPACITY` defaults to 128 concurrent connection handlers.
+- `FLYOLOGY_ADMIN_PORT` defaults to `9001`; the address is always
+  `127.0.0.1`, and `0` selects an ephemeral test port.
 - `FLYOLOGY_ADMIN_CREDENTIALS_FILE` defaults to `admin.credentials` inside a
   persistent backend root, or `./flyology-admin.credentials` for memory.
+- `FLYOLOGY_ADMIN_ASSET_ROOT` selects the integrity-pinned `index.html`,
+  `app.css`, and `app.js` directory. By default the server finds `assets` from
+  the crate directory or `server/assets` from the repository root.
 
 Build and run:
 
@@ -48,4 +69,7 @@ AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
 ```
 
 `alr test` runs the same digest-pinned s5cmd black-box slice against all three
-backends and verifies invalid configuration plus supervised SIGTERM shutdown.
+backends. It also verifies invalid configuration, asset tamper rejection,
+bootstrap and persisted login, same-origin and Host enforcement, session
+cookie shape and revocation, byte-exact asset delivery, actual endpoint status,
+and supervised SIGTERM shutdown.

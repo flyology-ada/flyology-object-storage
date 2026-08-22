@@ -22,6 +22,7 @@ with Flyology.Supervision;
 with Flyology.Supervision.Children;
 with Flyology.Supervision.Static;
 with Flyology_Object_Storage_Server_Signals;
+with Flyology_Object_Storage_Server_Assets;
 with Flyology_Object_Storage_Server_Credentials;
 with Flyology_Object_Storage_Server_Sessions;
 
@@ -40,6 +41,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
      Flyology_Object_Storage_Server_Credentials;
 
    use type Flyology.Supervision.Supervisor_Outcome;
+   use type Sockets.Port;
 
    function Required_Environment (Name : String) return String is
    begin
@@ -79,26 +81,30 @@ procedure Flyology_Object_Storage_Server_Runtime is
       Rules                    => Rules);
 
    protected type Runtime_Status is
-      procedure Set_S3_Port (Value : Sockets.Port);
+      procedure Set_S3_Endpoint (Value : Sockets.Endpoint);
       procedure Set_Admin_Port (Value : Sockets.Port);
+      function S3_Address return Sockets.IP_Address;
       function S3_Port return Sockets.Port;
       function Admin_Port return Sockets.Port;
    private
       Bound_S3_Port : Sockets.Port := 0;
+      Bound_S3_Address : Sockets.IP_Address := Sockets.Loopback_IPv4;
       Bound_Admin_Port : Sockets.Port := 0;
    end Runtime_Status;
 
    protected body Runtime_Status is
-      procedure Set_S3_Port (Value : Sockets.Port) is
+      procedure Set_S3_Endpoint (Value : Sockets.Endpoint) is
       begin
-         Bound_S3_Port := Value;
-      end Set_S3_Port;
+         Bound_S3_Address := Value.Address;
+         Bound_S3_Port := Value.Port;
+      end Set_S3_Endpoint;
 
       procedure Set_Admin_Port (Value : Sockets.Port) is
       begin
          Bound_Admin_Port := Value;
       end Set_Admin_Port;
 
+      function S3_Address return Sockets.IP_Address is (Bound_S3_Address);
       function S3_Port return Sockets.Port is (Bound_S3_Port);
       function Admin_Port return Sockets.Port is (Bound_Admin_Port);
    end Runtime_Status;
@@ -106,6 +112,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
    type Application_Context is record
       Sessions : access Flyology_Object_Storage_Server_Sessions.Store;
       Status   : access Runtime_Status;
+      Assets   : Flyology_Object_Storage_Server_Assets.Bundle;
    end record;
 
    procedure Run_S3
@@ -185,7 +192,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
            (Configuration.S3_Address, Configuration.S3_Port));
       Sockets.Listen_Socket (Listener, Length => Configuration.Capacity * 2);
       Bound := Sockets.Get_Socket_Name (Listener);
-      Context.Status.Set_S3_Port (Bound.Port);
+      Context.Status.Set_S3_Endpoint (Bound);
       Flyology.Supervision.Mark_Ready (Control.all);
       Ada.Text_IO.Put_Line
         ("READY s3 http://" & Sockets.Image (Bound.Address) & ":" &
@@ -287,7 +294,10 @@ procedure Flyology_Object_Storage_Server_Runtime is
       function Local_Authority
         (State : Application_Context) return String
       is
-        ("127.0.0.1:" & Compact (Natural (State.Status.Admin_Port)));
+        (if State.Status.Admin_Port = 80
+         then "127.0.0.1"
+         else "127.0.0.1:" &
+           Compact (Natural (State.Status.Admin_Port)));
 
       function Local_Request
         (State : Application_Context; X : Apps.Exchange) return Boolean
@@ -304,28 +314,38 @@ procedure Flyology_Object_Storage_Server_Runtime is
              "http://" & Local_Authority (State)));
       end Same_Origin;
 
+      function JSON_Escape (Value : String) return String is
+         Result : US.Unbounded_String;
+      begin
+         for Item of Value loop
+            if Item = '"' or else Item = '\' then
+               US.Append (Result, Character'Val (16#5C#));
+               US.Append (Result, Item);
+            elsif Character'Pos (Item) < 32 then
+               US.Append (Result, '?');
+            else
+               US.Append (Result, Item);
+            end if;
+         end loop;
+         return US.To_String (Result);
+      end JSON_Escape;
+
       procedure No_Store (X : in out Apps.Exchange) is
       begin
          X.Set_Header ("Cache-Control", "no-store");
          X.Set_Header ("X-Content-Type-Options", "nosniff");
-         X.Set_Header ("Content-Security-Policy",
-                       "default-src 'self'; frame-ancestors 'none'");
+         X.Set_Header ("Cross-Origin-Resource-Policy", "same-origin");
+         X.Set_Header ("Referrer-Policy", "no-referrer");
+         X.Set_Header ("X-Frame-Options", "DENY");
+         X.Set_Header
+           ("Content-Security-Policy",
+            "default-src 'self'; object-src 'none'; base-uri 'none'; " &
+            "frame-ancestors 'none'; form-action 'self'");
       end No_Store;
 
       procedure Home
         (State : in out Application_Context; X : in out Apps.Exchange)
       is
-         HTML : constant String :=
-           "<!doctype html><html lang=""en""><head><meta charset=""utf-8"">" &
-           "<meta name=""viewport"" content=""width=device-width"">" &
-           "<title>Flyology Object Storage</title></head><body>" &
-           "<main><h1>Flyology Object Storage</h1>" &
-           "<p>The management workbench is initializing.</p>" &
-           "<form method=""post"" action=""/api/login"">" &
-           "<label>Username <input name=""username"" value=""admin"">" &
-           "</label><label>Password " &
-           "<input name=""password"" type=""password"">" &
-           "</label><button>Sign in</button></form></main></body></html>";
       begin
          No_Store (X);
          if not Local_Request (State, X) then
@@ -333,8 +353,38 @@ procedure Flyology_Object_Storage_Server_Runtime is
               (421, "text/plain; charset=utf-8", "misdirected request");
             return;
          end if;
-         X.Respond (200, "text/html; charset=utf-8", HTML);
+         X.Respond
+           (200, "text/html; charset=utf-8",
+            US.To_String (State.Assets.HTML));
       end Home;
+
+      procedure Stylesheet
+        (State : in out Application_Context; X : in out Apps.Exchange) is
+      begin
+         No_Store (X);
+         if not Local_Request (State, X) then
+            X.Respond
+              (421, "text/plain; charset=utf-8", "misdirected request");
+            return;
+         end if;
+         X.Respond
+           (200, "text/css; charset=utf-8",
+            US.To_String (State.Assets.Stylesheet));
+      end Stylesheet;
+
+      procedure Script
+        (State : in out Application_Context; X : in out Apps.Exchange) is
+      begin
+         No_Store (X);
+         if not Local_Request (State, X) then
+            X.Respond
+              (421, "text/plain; charset=utf-8", "misdirected request");
+            return;
+         end if;
+         X.Respond
+           (200, "text/javascript; charset=utf-8",
+            US.To_String (State.Assets.Script));
+      end Script;
 
       procedure Login
         (State : in out Application_Context; X : in out Apps.Exchange)
@@ -392,7 +442,9 @@ procedure Flyology_Object_Storage_Server_Runtime is
          X.JSON
            (200, "{""authenticated"":true,""backend"":""" &
             Flyology_Object_Storage_Server_Configuration.Image
-              (Configuration.Backend) & """,""s3_port"":" &
+              (Configuration.Backend) & """,""region"":""" &
+            JSON_Escape (Region) & """,""s3_address"":""" &
+            Sockets.Image (State.Status.S3_Address) & """,""s3_port"":" &
             Compact (Natural (State.Status.S3_Port)) & "}");
       end Status;
 
@@ -424,7 +476,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
       type Service_Context is limited record
          Application : aliased Application_Context;
          Routes : aliased Routing.Router
-           (Capacity => 4, Slashes => Routing.Strict_Slashes);
+           (Capacity => 6, Slashes => Routing.Strict_Slashes);
          Budget : aliased HTTP.Ingress_Budget (Limit => 4 * 1_024);
       end record;
 
@@ -469,6 +521,10 @@ procedure Flyology_Object_Storage_Server_Runtime is
    begin
       State.Application := Context;
       State.Routes.Get ("/", Home'Access, Name => "admin.home");
+      State.Routes.Get
+        ("/assets/app.css", Stylesheet'Access, Name => "admin.assets.css");
+      State.Routes.Get
+        ("/assets/app.js", Script'Access, Name => "admin.assets.js");
       State.Routes.Post
         ("/api/login", Login'Access, Name => "admin.login",
          Policy =>
@@ -605,7 +661,8 @@ procedure Flyology_Object_Storage_Server_Runtime is
    Status_State  : aliased Runtime_Status;
    Context       : aliased Application_Context :=
      (Sessions => Session_State'Access,
-      Status   => Status_State'Access);
+      Status   => Status_State'Access,
+      Assets   => (others => <>));
    Supervisor : aliased Supervisors.Supervisor;
    Result     : Flyology.Supervision.Supervisor_Result;
 
@@ -625,6 +682,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
       end loop;
    end Signal_Watcher;
 begin
+   Flyology_Object_Storage_Server_Assets.Load (Context.Assets);
    Supervisors.Run (Supervisor, Context, Result);
    Flyology_Object_Storage_Server_Signals.Complete;
    if Result.Outcome /= Flyology.Supervision.Shutdown_Completed then
