@@ -16,6 +16,13 @@ package Flyology.Object_Storage.S3.XML is
 
    procedure Start_Element
      (Item : in out Event_Handler; Local_Name : String) is abstract;
+   --  Optional structural metadata hook. Handlers that need exact schema
+   --  validation can reject foreign namespaces or unexpected attributes;
+   --  existing forward-compatible codecs inherit the no-op default.
+   procedure Start_Element_Details
+     (Item            : in out Event_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural) is null;
    procedure Text
      (Item : in out Event_Handler; Value : String) is abstract;
    procedure End_Element

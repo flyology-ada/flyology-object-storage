@@ -1,3 +1,4 @@
+with Ada.Containers;
 with Ada.Strings.Fixed;
 with Ada.Strings.UTF_Encoding;
 with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
@@ -9,6 +10,7 @@ package body Flyology.Object_Storage.S3.Tagging is
    package US renames Ada.Strings.Unbounded;
    package UTF8 renames Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
    package Handling renames Ada.Wide_Wide_Characters.Handling;
+   use type Ada.Containers.Count_Type;
 
    type Field_Kind is (No_Field, Key_Field, Value_Field);
 
@@ -341,5 +343,203 @@ package body Flyology.Object_Storage.S3.Tagging is
       end if;
       return Result;
    end Parse_Query;
+
+   type Bucket_Tagging_Handler is new XML.Event_Handler with record
+      Result        : Tags.Tag_Set;
+      Current       : Tags.Tag;
+      Text_Value    : US.Unbounded_String;
+      Depth         : Natural := 0;
+      Field         : Field_Kind := No_Field;
+      Seen_Tag_Set  : Boolean := False;
+      In_Tag        : Boolean := False;
+      Seen_Key      : Boolean := False;
+      Seen_Value    : Boolean := False;
+   end record;
+
+   overriding procedure Start_Element
+     (Item : in out Bucket_Tagging_Handler; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out Bucket_Tagging_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
+   overriding procedure Text
+     (Item : in out Bucket_Tagging_Handler; Value : String);
+   overriding procedure End_Element
+     (Item : in out Bucket_Tagging_Handler; Local_Name : String);
+
+   procedure Require_Bucket_Whitespace (Value : String) is
+   begin
+      for Character_Value of Value loop
+         if Character_Value not in ' ' | Character'Val (9) |
+           Character'Val (10) | Character'Val (13)
+         then
+            raise Malformed_Tagging with "text outside bucket tag fields";
+         end if;
+      end loop;
+   end Require_Bucket_Whitespace;
+
+   overriding procedure Start_Element_Details
+     (Item            : in out Bucket_Tagging_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural)
+   is
+      pragma Unreferenced (Item);
+   begin
+      if Namespace_URI /= "http://s3.amazonaws.com/doc/2006-03-01/"
+        or else Attribute_Count /= 0
+      then
+         raise Malformed_Tagging with
+           "bucket tagging namespace or attributes are invalid";
+      end if;
+   end Start_Element_Details;
+
+   overriding procedure Start_Element
+     (Item : in out Bucket_Tagging_Handler; Local_Name : String) is
+   begin
+      if Item.Depth = Natural'Last then
+         raise Malformed_Tagging with "bucket tagging XML depth overflow";
+      end if;
+      Item.Depth := Item.Depth + 1;
+      case Item.Depth is
+         when 1 =>
+            if Local_Name /= "Tagging" then
+               raise Malformed_Tagging with "wrong bucket tagging root";
+            end if;
+         when 2 =>
+            if Local_Name /= "TagSet" or else Item.Seen_Tag_Set then
+               raise Malformed_Tagging with "invalid bucket TagSet";
+            end if;
+            Item.Seen_Tag_Set := True;
+         when 3 =>
+            if Local_Name /= "Tag"
+              or else not Item.Seen_Tag_Set
+              or else Item.Result.Length >=
+                Ada.Containers.Count_Type (Tags.Maximum_Bucket_Tags)
+            then
+               raise Malformed_Tagging with "invalid bucket Tag entry";
+            end if;
+            Item.Current := (others => <>);
+            Item.In_Tag := True;
+            Item.Seen_Key := False;
+            Item.Seen_Value := False;
+         when 4 =>
+            if not Item.In_Tag then
+               raise Malformed_Tagging with "bucket tag field outside Tag";
+            elsif Local_Name = "Key" and then not Item.Seen_Key then
+               Item.Seen_Key := True;
+               Item.Field := Key_Field;
+            elsif Local_Name = "Value" and then not Item.Seen_Value then
+               Item.Seen_Value := True;
+               Item.Field := Value_Field;
+            else
+               raise Malformed_Tagging with
+                 "unknown or duplicate bucket tag field";
+            end if;
+            US.Set_Unbounded_String (Item.Text_Value, "");
+         when others =>
+            raise Malformed_Tagging with "nested bucket tag field";
+      end case;
+   end Start_Element;
+
+   overriding procedure Text
+     (Item : in out Bucket_Tagging_Handler; Value : String) is
+   begin
+      if Item.Field = No_Field then
+         Require_Bucket_Whitespace (Value);
+      else
+         declare
+            Maximum : constant Natural :=
+              (if Item.Field = Key_Field
+               then 4 * Tags.Maximum_Key_Characters
+               else 4 * Tags.Maximum_Value_Characters);
+         begin
+            if Value'Length > Maximum
+              or else US.Length (Item.Text_Value) > Maximum - Value'Length
+            then
+               raise Invalid_Tag with "bucket tag field is too long";
+            end if;
+            US.Append (Item.Text_Value, Value);
+         end;
+      end if;
+   end Text;
+
+   overriding procedure End_Element
+     (Item : in out Bucket_Tagging_Handler; Local_Name : String)
+   is
+      pragma Unreferenced (Local_Name);
+   begin
+      if Item.Depth = 0 then
+         raise Malformed_Tagging with "bucket tagging XML stack underflow";
+      elsif Item.Depth = 4 then
+         case Item.Field is
+            when Key_Field =>
+               Item.Current.Key := Item.Text_Value;
+            when Value_Field =>
+               Item.Current.Value := Item.Text_Value;
+            when No_Field =>
+               raise Malformed_Tagging with "bucket tag field state lost";
+         end case;
+         Item.Field := No_Field;
+         US.Set_Unbounded_String (Item.Text_Value, "");
+      elsif Item.Depth = 3 then
+         if not Item.In_Tag or else not Item.Seen_Key
+           or else not Item.Seen_Value
+         then
+            raise Malformed_Tagging with "incomplete bucket Tag";
+         end if;
+         Item.Result.Append (Item.Current);
+         Item.In_Tag := False;
+      end if;
+      Item.Depth := Item.Depth - 1;
+   end End_Element;
+
+   function Parse_Bucket
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Tags.Tag_Set
+   is
+      Handler : aliased Bucket_Tagging_Handler;
+   begin
+      if Document'Length > Maximum_Bucket_Document_Bytes then
+         raise Malformed_Tagging with "bucket tagging document is too large";
+      end if;
+      XML.Parse (Document, Handler, Limits);
+      if not Handler.Seen_Tag_Set or else Handler.Depth /= 0 then
+         raise Malformed_Tagging with "bucket tagging document lacks TagSet";
+      elsif not Tags.Valid_Bucket_Tag_Set (Handler.Result) then
+         raise Invalid_Tag with "invalid bucket tag set";
+      end if;
+      return Handler.Result;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Tagging with "malformed bucket tagging XML";
+   end Parse_Bucket;
+
+   function Element (Name, Value : String) return String is
+     ("<" & Name & ">" & XML.Escape_Text (Value) & "</" & Name & ">");
+
+   function Serialize_Bucket (Value : Tags.Tag_Set) return String is
+      Result : US.Unbounded_String;
+   begin
+      if not Tags.Valid_Bucket_Tag_Set (Value) then
+         raise Invalid_Tag with "invalid bucket tag set";
+      end if;
+      US.Append
+        (Result,
+         "<?xml version=""1.0"" encoding=""UTF-8""?>" &
+         "<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+         "<TagSet>");
+      for Item of Value loop
+         US.Append
+           (Result,
+            "<Tag>" & Element ("Key", US.To_String (Item.Key)) &
+            Element ("Value", US.To_String (Item.Value)) & "</Tag>");
+      end loop;
+      US.Append (Result, "</TagSet></Tagging>");
+      if US.Length (Result) > Maximum_Bucket_Document_Bytes then
+         raise Invalid_Tag with "serialized bucket tag set is too large";
+      end if;
+      return US.To_String (Result);
+   end Serialize_Bucket;
 
 end Flyology.Object_Storage.S3.Tagging;

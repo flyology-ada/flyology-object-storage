@@ -5458,6 +5458,151 @@ package body Object_Storage_Test_Cases is
          "duplicate multipart common prefix accepted");
    end Check_List_Multipart_Uploads_Codec;
 
+   procedure Check_Bucket_Tagging_Codec (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Tagging renames Flyology.Object_Storage.S3.Tagging;
+      package Tags renames Flyology.Object_Storage.Tags;
+      package US renames Ada.Strings.Unbounded;
+      use type Tags.Tag_Vectors.Vector;
+
+      procedure Must_Reject_Malformed (Document, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Tags.Tag_Set :=
+                 Tagging.Parse_Bucket (Document);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Tagging.Malformed_Tagging =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Must_Reject_Malformed;
+
+      procedure Must_Reject_Tag (Document, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Tags.Tag_Set :=
+                 Tagging.Parse_Bucket (Document);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Tagging.Invalid_Tag =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Must_Reject_Tag;
+
+      function Root (Content : String) return String is
+        ("<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+         "<TagSet>" & Content & "</TagSet></Tagging>");
+
+      function Tag_XML (Key, Value : String) return String is
+        ("<Tag><Key>" & Key & "</Key><Value>" & Value &
+         "</Value></Tag>");
+   begin
+      declare
+         Parsed : constant Tags.Tag_Set :=
+           Tagging.Parse_Bucket
+             (Root
+                (Tag_XML ("Project", "Flyology Ada") &
+                 Tag_XML ("empty", "")));
+         Round_Trip : constant Tags.Tag_Set :=
+           Tagging.Parse_Bucket (Tagging.Serialize_Bucket (Parsed));
+      begin
+         Assert
+           (Parsed.Length = 2
+            and then US.To_String (Parsed.First_Element.Key) = "Project"
+            and then US.To_String (Parsed.First_Element.Value) =
+              "Flyology Ada"
+            and then US.Length (Parsed.Last_Element.Value) = 0
+            and then Round_Trip = Parsed,
+            "bucket tagging XML did not preserve typed values");
+      end;
+
+      Must_Reject_Malformed
+        ("<Wrong/>", "bucket tagging wrong root was accepted");
+      Must_Reject_Malformed
+        ("<Tagging/>", "bucket tagging document without TagSet was accepted");
+      Must_Reject_Malformed
+        ("<Tagging><TagSet>" & Tag_XML ("a", "b") &
+         "</TagSet></Tagging>",
+         "bucket tagging document without the S3 namespace was accepted");
+      Must_Reject_Malformed
+        (Root ("<Tag extra=""x""><Key>a</Key><Value>b</Value></Tag>"),
+         "bucket tagging attribute was accepted");
+      Must_Reject_Malformed
+        ("<evil:Tagging xmlns:evil=""urn:evil""><evil:TagSet>" &
+         "<evil:Tag><evil:Key>a</evil:Key><evil:Value>b</evil:Value>" &
+         "</evil:Tag></evil:TagSet></evil:Tagging>",
+         "foreign-namespace bucket tagging document was accepted");
+      Must_Reject_Malformed
+        ("<Tagging><TagSet>" & Tag_XML ("a", "b") & "</TagSet>" &
+         "<TagSet>" & Tag_XML ("c", "d") & "</TagSet></Tagging>",
+         "duplicate bucket TagSet was accepted");
+      Must_Reject_Malformed
+        (Root ("<Unknown/>"), "unknown bucket tag entry was accepted");
+      Must_Reject_Malformed
+        (Root ("<Tag><Key>a</Key><Key>b</Key><Value>c</Value></Tag>"),
+         "duplicate bucket tag key was accepted");
+      Must_Reject_Malformed
+        (Root ("<Tag><Key>a</Key></Tag>"),
+         "bucket tag without Value was accepted");
+      Must_Reject_Malformed
+        (Root ("<Tag><Key><Nested/></Key><Value>x</Value></Tag>"),
+         "nested bucket tag scalar was accepted");
+      Must_Reject_Malformed
+        ("<!DOCTYPE Tagging [<!ENTITY x 'value'>]>" &
+         Root (Tag_XML ("key", "&x;")),
+         "bucket tagging DTD was accepted");
+
+      Must_Reject_Tag
+        (Root (Tag_XML ("", "value")),
+         "empty bucket tag key was accepted");
+      Must_Reject_Tag
+        (Root (Tag_XML ("AWS:reserved", "value")),
+         "reserved bucket tag prefix was accepted");
+      Must_Reject_Tag
+        (Root (Tag_XML ("duplicate", "one") &
+               Tag_XML ("duplicate", "two")),
+         "duplicate bucket tag key was accepted");
+      Must_Reject_Tag
+        (Root (Tag_XML ("not!allowed", "value")),
+         "forbidden bucket tag character was accepted");
+      Must_Reject_Tag
+        (Root (Tag_XML (String'(1 .. 129 => 'a'), "value")),
+         "oversized bucket tag key was accepted");
+      Must_Reject_Tag
+        (Root (Tag_XML ("key", String'(1 .. 257 => 'a'))),
+         "oversized bucket tag value was accepted");
+      Must_Reject_Malformed
+        (Root (Tag_XML (Character'Val (16#C0#) & Character'Val (16#80#),
+                       "value")),
+         "noncanonical UTF-8 bucket tag key was accepted");
+      declare
+         Document : US.Unbounded_String :=
+           US.To_Unbounded_String ("<Tagging><TagSet>");
+      begin
+         for Index in 1 .. Tags.Maximum_Bucket_Tags + 1 loop
+            US.Append
+              (Document, Tag_XML ("key" & Index'Image, "value"));
+         end loop;
+         US.Append (Document, "</TagSet></Tagging>");
+         Must_Reject_Malformed
+           (US.To_String (Document),
+            "bucket tagging document exceeded the 50-tag bound");
+      end;
+   end Check_Bucket_Tagging_Codec;
+
    procedure Check_Delete_Objects_Result_Codec
      (Unused : in out Fixture)
    is
@@ -10612,6 +10757,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.list-multipart-uploads-codec",
             Check_List_Multipart_Uploads_Codec'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.bucket-tagging-codec",
+            Check_Bucket_Tagging_Codec'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.delete-objects-result-codec",

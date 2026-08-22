@@ -6,6 +6,7 @@ with Ada.Streams;
 with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
+with GNAT.MD5;
 with Flyology.Cancellation;
 with Flyology.HTTP.Server;
 with Flyology.HTTP.Server.Applications;
@@ -21,6 +22,8 @@ with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.SigV4;
+with Flyology.Object_Storage.S3.Tagging;
+with Flyology.Object_Storage.Tags;
 with Flyology.Object_Storage.Server.Authentication;
 with Flyology.Object_Storage.Server.S3_Applications;
 with Flyology.Object_Storage.Server.Static_Credentials;
@@ -38,6 +41,8 @@ procedure S3_Server_Application_Corpus is
    package Multipart_Uploads renames
      Flyology.Object_Storage.S3.Multipart_Uploads;
    package Backends renames Flyology.Object_Storage.Backends;
+   package Tagging renames Flyology.Object_Storage.S3.Tagging;
+   package Tags renames Flyology.Object_Storage.Tags;
    package Authentication renames
      Flyology.Object_Storage.Server.Authentication;
    package Static_Credentials renames
@@ -47,6 +52,7 @@ procedure S3_Server_Application_Corpus is
    use type Ada.Containers.Count_Type;
    use type Ada.Calendar.Time;
    use type Flyology.Object_Storage.Status;
+   use type Tags.Tag_Vectors.Vector;
 
    CRLF : constant String := Character'Val (13) & Character'Val (10);
    Access_Key : constant String := "AKIDEXAMPLE";
@@ -55,6 +61,49 @@ procedure S3_Server_Application_Corpus is
    Timestamp  : constant String := "20130524T000000Z";
    Region     : constant String := "us-east-1";
    Host       : constant String := "localhost:9000";
+
+   function Content_MD5 (Value : String) return String is
+      Digest : constant GNAT.MD5.Binary_Message_Digest :=
+        GNAT.MD5.Digest (Value);
+      Alphabet : constant String :=
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+      Result : String (1 .. 24);
+      Output : Positive := Result'First;
+
+      function Byte (Index : Ada.Streams.Stream_Element_Offset)
+        return Natural is (Natural (Digest (Index)));
+
+      procedure Encode_Three
+        (First : Ada.Streams.Stream_Element_Offset)
+      is
+         A : constant Natural := Byte (First);
+         B : constant Natural := Byte
+           (Ada.Streams.Stream_Element_Offset'Succ (First));
+         C : constant Natural := Byte
+           (Ada.Streams.Stream_Element_Offset'Succ
+              (Ada.Streams.Stream_Element_Offset'Succ (First)));
+      begin
+         Result (Output) := Alphabet (A / 4 + 1);
+         Result (Output + 1) := Alphabet ((A mod 4) * 16 + B / 16 + 1);
+         Result (Output + 2) := Alphabet ((B mod 16) * 4 + C / 64 + 1);
+         Result (Output + 3) := Alphabet (C mod 64 + 1);
+         Output := Output + 4;
+      end Encode_Three;
+   begin
+      Encode_Three (1);
+      Encode_Three (4);
+      Encode_Three (7);
+      Encode_Three (10);
+      Encode_Three (13);
+      declare
+         A : constant Natural := Byte (16);
+      begin
+         Result (21) := Alphabet (A / 4 + 1);
+         Result (22) := Alphabet ((A mod 4) * 16 + 1);
+         Result (23 .. 24) := "==";
+      end;
+      return Result;
+   end Content_MD5;
    type Key_Array is array (Positive range <>) of US.Unbounded_String;
    Listing_Keys : constant Key_Array :=
      (US.To_Unbounded_String ("list/a"),
@@ -1600,6 +1649,172 @@ begin
                    SigV4.Pair ("location", "")))),
             "400 Bad Request"),
          "GetBucketLocation accepted a duplicate subresource");
+   end;
+
+   declare
+      Put_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("tagging", ""),
+         SigV4.Pair ("x-id", "PutBucketTagging"));
+      Get_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("tagging", ""),
+         SigV4.Pair ("x-id", "GetBucketTagging"));
+      Value : Tags.Tag_Set;
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Get_Query)),
+            "<Code>NoSuchTagSet</Code>"),
+         "GetBucketTagging did not distinguish an absent tag set");
+
+      Value.Append
+        (Tags.Tag'
+           (Key   => US.To_Unbounded_String ("project"),
+            Value => US.To_Unbounded_String ("flyology")));
+      Value.Append
+        (Tags.Tag'
+           (Key   => US.To_Unbounded_String ("environment"),
+            Value => US.To_Unbounded_String ("test")));
+      declare
+         Document : constant String := Tagging.Serialize_Bucket (Value);
+         Response : constant String := Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket", Put_Query, Document,
+               "Content-MD5: " & Content_MD5 (Document) & CRLF),
+            Receive_Max => 1);
+         Get_Response : constant String := Run
+           (Signed_Query_Request ("GET", "/test-bucket", Get_Query));
+         Observed : constant Tags.Tag_Set :=
+           Tagging.Parse_Bucket (Response_Body (Get_Response));
+      begin
+         Require
+           (Has (Response, "200 OK") and then Response_Body (Response) = "",
+            "PutBucketTagging success mismatch: " & Response);
+         Require
+           (Has (Get_Response, "200 OK") and then Observed = Value,
+            "GetBucketTagging snapshot mismatch: " & Get_Response);
+      end;
+
+      Value.Clear;
+      Value.Append
+        (Tags.Tag'
+           (Key   => US.To_Unbounded_String ("replacement"),
+            Value => US.Null_Unbounded_String));
+      declare
+         Document : constant String := Tagging.Serialize_Bucket (Value);
+         Response : constant String := Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket",
+               (1 => SigV4.Pair ("tagging", "")), Document,
+               "Content-MD5: " & Content_MD5 (Document) & CRLF));
+         Get_Response : constant String := Run
+           (Signed_Query_Request
+              ("GET", "/test-bucket",
+               (1 => SigV4.Pair ("tagging", ""))));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Tagging.Parse_Bucket (Response_Body (Get_Response)) =
+              Value,
+            "PutBucketTagging did not replace the complete set");
+      end;
+
+      declare
+         Document : constant String := Tagging.Serialize_Bucket (Value);
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", "/test-bucket", Put_Query, Document)),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketTagging accepted a missing Content-MD5");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", "/test-bucket", Put_Query, Document,
+                     "Content-MD5: AAAAAAAAAAAAAAAAAAAAAA==" & CRLF)),
+               "<Code>BadDigest</Code>"),
+            "PutBucketTagging accepted a mismatched Content-MD5");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", "/test-bucket", Put_Query, Document,
+                     "Content-MD5: " & Content_MD5 (Document) & CRLF &
+                     "Content-MD5: " & Content_MD5 (Document) & CRLF)),
+               "<Code>InvalidRequest</Code>"),
+            "PutBucketTagging accepted duplicate Content-MD5 fields");
+      end;
+
+      declare
+         Document : constant String :=
+           "<Tagging><TagSet><Tag><Key>missing-value</Key></Tag>" &
+           "</TagSet></Tagging>";
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", "/test-bucket", Put_Query, Document,
+                     "Content-MD5: " & Content_MD5 (Document) & CRLF)),
+               "<Code>MalformedXML</Code>"),
+            "PutBucketTagging accepted malformed XML");
+      end;
+      declare
+         Document : constant String :=
+           "<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+           "<TagSet><Tag><Key>aws:reserved</Key>" &
+           "<Value>x</Value></Tag></TagSet></Tagging>";
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", "/test-bucket", Put_Query, Document,
+                     "Content-MD5: " & Content_MD5 (Document) & CRLF)),
+               "<Code>InvalidTag</Code>"),
+            "PutBucketTagging accepted an invalid tag");
+      end;
+      declare
+         Document : constant String := Tagging.Serialize_Bucket (Value);
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("PUT", "/absent-bucket", Put_Query, Document,
+                     "Content-MD5: " & Content_MD5 (Document) & CRLF)),
+               "<Code>NoSuchBucket</Code>"),
+            "PutBucketTagging did not check bucket existence");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Get_Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketTagging ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket", Get_Query, "unexpected")),
+            "400 Bad Request"),
+         "GetBucketTagging accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket",
+                  (SigV4.Pair ("tagging", ""),
+                   SigV4.Pair ("unexpected", "x")), "",
+                  "Content-MD5: 1B2M2Y8AsgTpgAmY7PhCfg==" & CRLF)),
+            "501 Not Implemented"),
+         "PutBucketTagging accepted an extra query parameter");
    end;
 
    for Name of Listing_Buckets loop

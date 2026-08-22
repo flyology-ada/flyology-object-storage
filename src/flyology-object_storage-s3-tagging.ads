@@ -1,13 +1,16 @@
 with Ada.Strings.Unbounded;
 with Flyology.Object_Storage.S3.XML;
+with Flyology.Object_Storage.Tags;
 
---  Strict, bounded REST/XML and query boundary for S3 object tagging.
+--  Strict, bounded REST/XML boundaries for S3 object and bucket tagging.
 package Flyology.Object_Storage.S3.Tagging is
 
    Malformed_Tagging : exception;
    Malformed_Tagging_Query : exception;
+   Invalid_Tag : exception;
 
    Maximum_Document_Bytes : constant := 16 * 1_024;
+   Maximum_Bucket_Document_Bytes : constant := 1_024 * 1_024;
    Maximum_Query_Bytes : constant := 8 * 1_024;
 
    type Tagging_Operation is
@@ -26,6 +29,13 @@ package Flyology.Object_Storage.S3.Tagging is
       Limits   : XML.Parse_Limits := XML.Default_Limits) return Object_Tag_Set;
 
    function Serialize (Tags : Object_Tag_Set) return String;
+
+   function Parse_Bucket
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Tags.Tag_Set;
+
+   function Serialize_Bucket (Value : Tags.Tag_Set) return String;
 
    --  Validate AWS's Unicode-character count and allowed repertoire.
    function Valid_S3_Tags (Tags : Object_Tag_Set) return Boolean;

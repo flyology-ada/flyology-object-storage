@@ -23,6 +23,7 @@ with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Wire_Core;
+with Flyology.Object_Storage.Tags;
 
 package body Flyology.Object_Storage.Server.S3_Applications is
 
@@ -58,6 +59,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
      2 * 1_024 * 1_024;
    Maximum_Object_Tagging_Body : constant Byte_Count :=
      Tagging.Maximum_Document_Bytes;
+   Maximum_Bucket_Tagging_Body : constant Byte_Count :=
+     Tagging.Maximum_Bucket_Document_Bytes;
 
    function Decimal (Value : Byte_Count) return String is
      (Ada.Strings.Fixed.Trim
@@ -294,6 +297,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         (Unsupported,
          List_Buckets,
          Create_Bucket, Get_Bucket_Location, Head_Bucket, Delete_Bucket,
+         Put_Bucket_Tagging, Get_Bucket_Tagging,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
          Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
          Get_Object_Attributes,
@@ -365,6 +369,16 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Query_Text = "location="
         or else Query_Text = "location=&x-id=GetBucketLocation"
         or else Query_Text = "x-id=GetBucketLocation&location=";
+      Is_Put_Bucket_Tagging_Query : constant Boolean :=
+        Query_Text = "tagging"
+        or else Query_Text = "tagging="
+        or else Query_Text = "tagging=&x-id=PutBucketTagging"
+        or else Query_Text = "x-id=PutBucketTagging&tagging=";
+      Is_Get_Bucket_Tagging_Query : constant Boolean :=
+        Query_Text = "tagging"
+        or else Query_Text = "tagging="
+        or else Query_Text = "tagging=&x-id=GetBucketTagging"
+        or else Query_Text = "x-id=GetBucketTagging&tagging=";
       Padded_Query : constant String := '&' & Query_Text & '&';
       Has_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging") /= 0
@@ -771,6 +785,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Method = "POST"
            and then Is_Delete_Objects_Query)
         and then not
+          (Parsed.Kind = Requests.Bucket_Target
+           and then Method = "PUT"
+           and then Is_Put_Bucket_Tagging_Query)
+        and then not
           (Parsed.Kind = Requests.Object_Target
            and then Method = "DELETE"
            and then Requests.Query_String (Target_Text, Parsed) =
@@ -817,6 +835,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Delete_Objects
             elsif Method = "GET" and then Is_Get_Bucket_Location_Query
             then Get_Bucket_Location
+            elsif Method = "PUT" and then Is_Put_Bucket_Tagging_Query
+            then Put_Bucket_Tagging
+            elsif Method = "GET" and then Is_Get_Bucket_Tagging_Query
+            then Get_Bucket_Tagging
             elsif Method = "GET" and then Is_List_Objects_V2_Query
             then List_Objects_V2
             elsif Method = "GET" and then Is_List_Multipart_Uploads_Query
@@ -964,9 +986,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
       Apps.Configure_Route
          (X, "s3", Target_Text,
-         (if Operation in Create_Bucket | Put_Object | Put_Object_Tagging |
-         Delete_Objects |
-         Put_Multipart_Part | Complete_Multipart
+         (if Operation in Create_Bucket | Put_Bucket_Tagging | Put_Object |
+         Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
+         Complete_Multipart
           then Apps.Stream_Body else Apps.Reject_Body),
          Apps.Required_Authentication, 0, 0, 0, Apps.No_Upgrade);
       Apps.Seal_Route (X);
@@ -1015,9 +1037,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return;
       end if;
 
-      if Operation not in Create_Bucket | Put_Object | Put_Object_Tagging |
-        Delete_Objects |
-        Put_Multipart_Part | Complete_Multipart
+      if Operation not in Create_Bucket | Put_Bucket_Tagging | Put_Object |
+        Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
+        Complete_Multipart
       then
          if not Apps.Body_Complete (X) then
             Send_Error
@@ -1415,6 +1437,226 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         end;
                      else
                         Send_Backend_Error (X, Result, True, Target_Text);
+                     end if;
+                  end if;
+               end;
+
+            when Put_Bucket_Tagging =>
+               declare
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  SDK_Checksum_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm");
+                  CRC32_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-crc32");
+                  CRC32C_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-crc32c");
+                  SHA1_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-sha1");
+                  SHA256_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-sha256");
+                  CRC64_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-checksum-crc64nvme");
+                  Checksum_Count : constant Natural :=
+                    CRC32_Count + CRC32C_Count + SHA1_Count + SHA256_Count +
+                    CRC64_Count;
+                  Owner_Accepted : Boolean;
+               begin
+                  if MD5_Count > 1 or else Payer_Count > 1
+                    or else SDK_Checksum_Count > 1
+                    or else CRC32_Count > 1 or else CRC32C_Count > 1
+                    or else SHA1_Count > 1 or else SHA256_Count > 1
+                    or else CRC64_Count > 1
+                    or else Apps.Request_Header_Count (X, "content-type") > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A PutBucketTagging header is duplicated",
+                        Target_Text);
+                  elsif MD5_Count /= 1
+                    or else not S3.Wire_Core.Valid_Base64
+                      (Apps.Request_Header (X, "content-md5"), 16)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "PutBucketTagging requires a valid Content-MD5",
+                        Target_Text);
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer value is invalid", Target_Text);
+                  elsif SDK_Checksum_Count > 0 or else Checksum_Count > 0 then
+                     declare
+                        Algorithm : constant String :=
+                          (if SDK_Checksum_Count = 1
+                           then Apps.Request_Header
+                             (X, "x-amz-sdk-checksum-algorithm") else "");
+                        Expected_Count : constant Natural :=
+                          (if Algorithm = "CRC32" then CRC32_Count
+                           elsif Algorithm = "CRC32C" then CRC32C_Count
+                           elsif Algorithm = "SHA1" then SHA1_Count
+                           elsif Algorithm = "SHA256" then SHA256_Count
+                           elsif Algorithm = "CRC64NVME" then CRC64_Count
+                           else 0);
+                        Expected_Bytes : constant Positive :=
+                          (if Algorithm in "CRC32" | "CRC32C" then 4
+                           elsif Algorithm = "SHA1" then 20
+                           elsif Algorithm = "SHA256" then 32
+                           else 8);
+                        Header_Name : constant String :=
+                          (if Algorithm = "CRC32" then "x-amz-checksum-crc32"
+                           elsif Algorithm = "CRC32C"
+                           then "x-amz-checksum-crc32c"
+                           elsif Algorithm = "SHA1"
+                           then "x-amz-checksum-sha1"
+                           elsif Algorithm = "SHA256"
+                           then "x-amz-checksum-sha256"
+                           else "x-amz-checksum-crc64nvme");
+                     begin
+                        if SDK_Checksum_Count /= 1 or else Checksum_Count /= 1
+                          or else Expected_Count /= 1
+                          or else Algorithm not in
+                            "CRC32" | "CRC32C" | "SHA1" | "SHA256" |
+                            "CRC64NVME"
+                          or else not S3.Wire_Core.Valid_Base64
+                            (Apps.Request_Header (X, Header_Name),
+                             Expected_Bytes)
+                        then
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "The PutBucketTagging checksum group is " &
+                              "invalid", Target_Text);
+                        else
+                           Send_Error
+                             (X, 501, "NotImplemented",
+                              "PutBucketTagging optional checksums are not " &
+                              "implemented", Target_Text);
+                        end if;
+                     end;
+                  elsif Payer_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Requester-pays bucket tagging is not implemented",
+                        Target_Text);
+                  elsif Length.Kind = Backends.Known
+                    and then Length.Bytes > Maximum_Bucket_Tagging_Body
+                  then
+                     Send_Error
+                       (X, 400, "EntityTooLarge",
+                        "Your proposed upload exceeds the maximum allowed " &
+                        "size", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        declare
+                           Source : Request_IO.Request_Source :=
+                             (Length_Value  => Length,
+                              Expected_Hash => Auth.Payload_Hash,
+                              Check_Hash    =>
+                                US.To_String (Auth.Payload_Hash) /=
+                                  S3.SigV4.Unsigned_Payload,
+                              Hash      => GNAT.SHA256.Initial_Context,
+                              Observed  => 0,
+                              Maximum   => Maximum_Bucket_Tagging_Body,
+                              Completed => False);
+                           Document : constant String :=
+                             Read_Document (Source);
+                        begin
+                           if Content_MD5 (Document) /=
+                             Apps.Request_Header (X, "content-md5")
+                           then
+                              Send_Error
+                                (X, 400, "BadDigest",
+                                 "The Content-MD5 does not match the body",
+                                 Target_Text);
+                           else
+                              declare
+                                 Value : constant Tags.Tag_Set :=
+                                   Tagging.Parse_Bucket
+                                     (Document,
+                                      (Maximum_Document_Bytes =>
+                                         Natural
+                                           (Maximum_Bucket_Tagging_Body),
+                                       Maximum_Depth      => 4,
+                                       Maximum_Elements   => 152,
+                                       Maximum_Text_Bytes =>
+                                         Natural
+                                           (Maximum_Bucket_Tagging_Body)));
+                              begin
+                                 Store.Put_Bucket_Tags
+                                   (Bucket, Value, Apps.Cancellation (X),
+                                    Apps.Deadline (X), Result);
+                                 if Result = Success then
+                                    Apps.Respond (X, 200, "", "");
+                                 else
+                                    Send_Backend_Error
+                                      (X, Result, True, Target_Text);
+                                 end if;
+                              end;
+                           end if;
+                        exception
+                           when Tagging.Malformed_Tagging =>
+                              Send_Error
+                                (X, 400, "MalformedXML",
+                                 "The XML provided was not well-formed or " &
+                                 "did not validate against the published " &
+                                 "schema", Target_Text);
+                           when Tagging.Invalid_Tag =>
+                              Send_Error
+                                (X, 400, "InvalidTag",
+                                 "The tag set contains an invalid tag",
+                                 Target_Text);
+                        end;
+                     end if;
+                  end if;
+               end;
+
+            when Get_Bucket_Tagging =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+                  Value : Tags.Tag_Set;
+               begin
+                  if Payer_Count > 1 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The request payer header is duplicated", Target_Text);
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer value is invalid", Target_Text);
+                  elsif Payer_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Requester-pays bucket tagging is not implemented",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Get_Bucket_Tags
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Value, Result);
+                        if Result = Success then
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              Tagging.Serialize_Bucket (Value));
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
                      end if;
                   end if;
                end;
