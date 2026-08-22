@@ -4280,8 +4280,36 @@ package body Flyology.Object_Storage.Client.Low_Level is
      (Value : Upload_Part_Copy_Result) is
       Bucket_Key : constant String := US.To_String (Value.Bucket_Key_Enabled);
       Charged : constant String := US.To_String (Value.Request_Charged);
+      Encryption : constant String :=
+        US.To_String (Value.Server_Side_Encryption);
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.Upload_Part_Copy_Operation));
+      Encryption_Shape : constant Model.Shape_Index :=
+        Model.Member_Shape (Output, 3);
+
+      function Valid_Encryption return Boolean is
+      begin
+         if Encryption'Length = 0 then
+            return True;
+         end if;
+         for Index in 1 .. Model.Enumeration_Count (Encryption_Shape) loop
+            if Encryption =
+              Model.Enumeration_Value (Encryption_Shape, Index)
+            then
+               return True;
+            end if;
+         end loop;
+         return False;
+      end Valid_Encryption;
    begin
-      if (Bucket_Key'Length > 0
+      if not Valid_Encryption
+        or else (US.Length (Value.SSE_Customer_Algorithm) > 0
+                 and then US.To_String (Value.SSE_Customer_Algorithm) /=
+                   "AES256")
+        or else (US.Length (Value.SSE_Customer_Key_MD5) > 0
+                 and then not Wire_Core.Valid_Base64
+                   (US.To_String (Value.SSE_Customer_Key_MD5), 16))
+        or else (Bucket_Key'Length > 0
           and then not Wire_Core.Parse_Boolean (Bucket_Key).Valid)
         or else (Charged'Length > 0 and then Charged /= "requester")
       then

@@ -113,5 +113,5 @@ UpdateBucketMetadataInventoryTableConfiguration	extended	missing	partial	missing
 UpdateBucketMetadataJournalTableConfiguration	extended	missing	partial	missing	missing
 UpdateObjectEncryption	extended	missing	partial	missing	missing
 UploadPart	core	covered	partial	partial	covered
-UploadPartCopy	core	covered	partial	covered	covered
+UploadPartCopy	core	covered	covered	covered	covered
 WriteGetObjectResponse	extended	missing	partial	missing	missing

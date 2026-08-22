@@ -6317,15 +6317,42 @@ package body Object_Storage_Test_Cases is
            US.To_Unbounded_String ("source-bucket/source-key");
          Parameters.Copy_Source_If_Match :=
            US.To_Unbounded_String ("""source-etag""");
+         Parameters.Copy_Source_If_Modified_Since :=
+           US.To_Unbounded_String ("Fri, 21 Aug 2026 17:00:00 GMT");
+         Parameters.Copy_Source_If_None_Match :=
+           US.To_Unbounded_String ("""other-etag""");
+         Parameters.Copy_Source_If_Unmodified_Since :=
+           US.To_Unbounded_String ("Fri, 21 Aug 2026 18:00:00 GMT");
          Parameters.Source_Range :=
            (Is_Set => True, First => 5, Last => 9);
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Parameters.Copy_Source_SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.Copy_Source_SSE_Customer_Key := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.Copy_Source_SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
          Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         Parameters.Expected_Source_Bucket_Owner :=
+           US.To_Unbounded_String ("210987654321");
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Upload_Part_Copy
-                (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
                  Low_Level.Path_Style, "example-bucket", "photos/a b+%",
                  Parameters, Identity, "us-east-1", "20130524T000000Z");
+            Signed : constant String :=
+              ";" & Low_Level.Signed_Headers (Prepared) & ";";
+
+            function Has (Name : String) return Boolean is
+              (Ada.Strings.Fixed.Index (Signed, ";" & Name & ";") > 0);
          begin
             Assert
               (Low_Level.Target (Prepared) =
@@ -6341,7 +6368,17 @@ package body Object_Storage_Test_Cases is
                   "x-amz-copy-source-range:bytes=5-9") > 0
                and then Ada.Strings.Fixed.Index
                  (Low_Level.Signed_Headers (Prepared),
-                  "x-amz-copy-source-if-match") > 0,
+                  "x-amz-copy-source-if-match") > 0
+               and then Has ("x-amz-copy-source-if-modified-since")
+               and then Has ("x-amz-copy-source-if-none-match")
+               and then Has ("x-amz-copy-source-if-unmodified-since")
+               and then Has
+                 ("x-amz-copy-source-server-side-encryption-customer-key")
+               and then Has
+                 ("x-amz-server-side-encryption-customer-key")
+               and then Has ("x-amz-request-payer")
+               and then Has ("x-amz-expected-bucket-owner")
+               and then Has ("x-amz-source-expected-bucket-owner"),
                "UploadPartCopy modeled headers are signed");
          end;
       end;
@@ -6437,6 +6474,13 @@ package body Object_Storage_Test_Cases is
          Headers : Low_Level.Upload_Part_Copy_Result;
       begin
          Headers.Copy_Source_Version_ID := US.To_Unbounded_String ("v1");
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Headers.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Headers.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Headers.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
          Headers.Bucket_Key_Enabled := US.To_Unbounded_String ("true");
          Headers.Request_Charged := US.To_Unbounded_String ("requester");
          declare
@@ -6454,9 +6498,67 @@ package body Object_Storage_Test_Cases is
                and then US.To_String
                  (Outcome.Result.Copy_Part.Entity_Tag) = """copied"""
                and then US.To_String
-                 (Outcome.Result.Copy_Source_Version_ID) = "v1",
+                 (Outcome.Result.Copy_Source_Version_ID) = "v1"
+               and then US.To_String
+                 (Outcome.Result.Server_Side_Encryption) = "aws:kms"
+               and then US.To_String
+                 (Outcome.Result.SSE_Customer_Algorithm) = "AES256"
+               and then US.To_String
+                 (Outcome.Result.SSE_KMS_Key_ID) = "kms-key"
+               and then US.To_String
+                 (Outcome.Result.Request_Charged) = "requester",
                "typed UploadPartCopy success response");
          end;
+      end;
+
+      declare
+         Headers : Low_Level.Upload_Part_Copy_Result;
+
+         procedure Require_Invalid (Message : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Upload_Part_Copy_Outcome :=
+                    Low_Level.Decode_Upload_Part_Copy_Response
+                      (200,
+                       "<CopyPartResult>" &
+                       "<LastModified>2026-08-21T17:00:00Z</LastModified>" &
+                       "<ETag>&quot;copied&quot;</ETag>" &
+                       "</CopyPartResult>", Headers);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Require_Invalid;
+      begin
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("not-an-encryption-mode");
+         Require_Invalid
+           ("UploadPartCopy accepted an invalid encryption result");
+         Headers := (others => <>);
+         Headers.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES512");
+         Require_Invalid
+           ("UploadPartCopy accepted an invalid SSE-C result algorithm");
+         Headers := (others => <>);
+         Headers.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("not-base64");
+         Require_Invalid
+           ("UploadPartCopy accepted an invalid SSE-C result digest");
+         Headers := (others => <>);
+         Headers.Bucket_Key_Enabled := US.To_Unbounded_String ("maybe");
+         Require_Invalid
+           ("UploadPartCopy accepted an invalid bucket-key result");
+         Headers := (others => <>);
+         Headers.Request_Charged := US.To_Unbounded_String ("owner");
+         Require_Invalid
+           ("UploadPartCopy accepted an invalid requester-pays result");
       end;
 
       declare
