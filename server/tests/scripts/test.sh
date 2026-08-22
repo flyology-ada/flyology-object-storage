@@ -355,8 +355,12 @@ expect_startup_failure missing-root \
 expect_startup_failure unknown-backend \
   FLYOLOGY_OBJECT_STORAGE_BACKEND=unknown \
   AWS_ACCESS_KEY_ID="$ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
-expect_startup_failure missing-s3-credentials \
-  FLYOLOGY_OBJECT_STORAGE_BACKEND=memory
+expect_startup_failure partial-s3-access-key \
+  FLYOLOGY_OBJECT_STORAGE_BACKEND=memory AWS_ACCESS_KEY_ID="$ACCESS_KEY"
+expect_startup_failure partial-s3-secret-key \
+  FLYOLOGY_OBJECT_STORAGE_BACKEND=memory AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
+expect_startup_failure session-token-without-keys \
+  FLYOLOGY_OBJECT_STORAGE_BACKEND=memory AWS_SESSION_TOKEN=session
 expect_startup_failure hostname-bind \
   FLYOLOGY_OBJECT_STORAGE_BACKEND=memory FLYOLOGY_S3_BIND=localhost \
   AWS_ACCESS_KEY_ID="$ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
@@ -376,6 +380,67 @@ expect_startup_failure tampered-admin-assets \
 grep -q 'management asset failed integrity check: app.css' \
   "$RUN_ROOT/tampered-admin-assets.log"
 echo "server configuration rejection corpus: OK"
+
+zero_log="$RUN_ROOT/zero-config.log"
+env -i PATH="$PATH" \
+  FLYOLOGY_ADMIN_CREDENTIALS_FILE="$RUN_ROOT/zero-admin.credentials" \
+  FLYOLOGY_S3_PORT=0 \
+  FLYOLOGY_ADMIN_PORT=0 \
+    "$SERVER" >"$zero_log" 2>&1 &
+SERVER_PID=$!
+for attempt in $(seq 1 200)
+do
+  if grep -q '^READY s3 http://127.0.0.1:[0-9][0-9]* backend=memory$' \
+    "$zero_log" && \
+    grep -q '^READY admin http://127.0.0.1:[0-9][0-9]*/$' "$zero_log"
+  then
+    break
+  fi
+  if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+    cat "$zero_log" >&2
+    echo "zero-config server exited before readiness" >&2
+    exit 1
+  fi
+  if [ "$attempt" -eq 200 ]; then
+    cat "$zero_log" >&2
+    echo "zero-config server did not become ready" >&2
+    exit 1
+  fi
+  sleep 0.05
+done
+test "$(grep -c '^BOOTSTRAP S3 access_key=FLYOLOGYLOCAL secret_key=[0-9a-f]*$' \
+  "$zero_log")" = 1
+zero_secret=$(sed -n \
+  's/^BOOTSTRAP S3 access_key=FLYOLOGYLOCAL secret_key=\([0-9a-f]*\)$/\1/p' \
+  "$zero_log")
+case "$zero_secret" in
+  *[!0-9a-f]*|'') echo "invalid bootstrap S3 secret" >&2; exit 1 ;;
+esac
+test "${#zero_secret}" = 64
+test "$(grep -c '^BOOTSTRAP ADMIN username=admin password=' "$zero_log")" = 1
+zero_port=$(sed -n \
+  's/^READY s3 http:\/\/[^:]*:\([0-9][0-9]*\) backend=.*$/\1/p' \
+  "$zero_log" | tail -1)
+zero_admin_port=$(sed -n \
+  's|^READY admin http://127.0.0.1:\([0-9][0-9]*\)/$|\1|p' \
+  "$zero_log" | tail -1)
+zero_admin_password=$(sed -n \
+  's/^BOOTSTRAP ADMIN username=admin password=\([0-9a-f]*\)$/\1/p' \
+  "$zero_log")
+test -n "$zero_port"
+test -n "$zero_admin_port"
+test "${#zero_admin_password}" = 48
+test "$(credential_mode "$RUN_ROOT/zero-admin.credentials")" = 600
+zero_bucket="flyology-zero-config-$$"
+"$PROJECT_DIR/tests/scripts/run-s3-server-slice.sh" \
+  "http://host.docker.internal:$zero_port" \
+  "$zero_bucket" FLYOLOGYLOCAL "$zero_secret"
+verify_bucket_inventory \
+  "$zero_admin_port" "$zero_admin_password" "$zero_bucket"
+kill -TERM "$SERVER_PID"
+wait "$SERVER_PID"
+SERVER_PID=""
+echo "zero-config loopback memory server bootstrap: OK"
 
 credential_path="$RUN_ROOT/credential-corpus/admin.credentials"
 "$CREDENTIAL_CORPUS" "$credential_path"

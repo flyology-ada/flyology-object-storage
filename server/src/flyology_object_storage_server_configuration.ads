@@ -7,7 +7,7 @@ package Flyology_Object_Storage_Server_Configuration is
    subtype Server_Capacity is Positive range 1 .. 4_096;
 
    type Settings is record
-      Backend      : Backend_Kind := Files;
+      Backend      : Backend_Kind := Memory;
       Storage_Root : Ada.Strings.Unbounded.Unbounded_String;
       Admin_Credentials_Path : Ada.Strings.Unbounded.Unbounded_String;
       S3_Address   : Flyology.IO.Sockets.IP_Address :=
@@ -17,8 +17,9 @@ package Flyology_Object_Storage_Server_Configuration is
       Capacity     : Server_Capacity := 128;
    end record;
 
-   --  Read and validate the server environment. Files and SQLite require an
-   --  explicit storage root; memory never creates persistent state.
+   --  Read and validate the server environment. With no overrides, the
+   --  server starts a loopback-only memory store and bootstraps credentials.
+   --  Files and SQLite require an explicit storage root.
    function Load return Settings;
 
    function Image (Value : Backend_Kind) return String;

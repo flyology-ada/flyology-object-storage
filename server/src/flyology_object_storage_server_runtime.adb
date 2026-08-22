@@ -54,17 +54,6 @@ procedure Flyology_Object_Storage_Server_Runtime is
    use type Flyology.Object_Storage.Status;
    use type Sockets.Port;
 
-   function Required_Environment (Name : String) return String is
-   begin
-      if not Ada.Environment_Variables.Exists (Name)
-        or else Ada.Environment_Variables.Value (Name)'Length = 0
-      then
-         raise Constraint_Error with
-           "missing required environment: " & Name;
-      end if;
-      return Ada.Environment_Variables.Value (Name);
-   end Required_Environment;
-
    function Compact (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
@@ -86,10 +75,18 @@ procedure Flyology_Object_Storage_Server_Runtime is
        ((if Ada.Environment_Variables.Exists ("AWS_REGION")
          then Ada.Environment_Variables.Value ("AWS_REGION")
          else "us-east-1"));
+   Bootstrapped_S3 : constant Boolean :=
+     not Ada.Environment_Variables.Exists ("AWS_ACCESS_KEY_ID");
+   S3_Access_Key : constant String :=
+     (if Bootstrapped_S3 then "FLYOLOGYLOCAL"
+      else Ada.Environment_Variables.Value ("AWS_ACCESS_KEY_ID"));
+   S3_Secret_Key : constant String :=
+     (if Bootstrapped_S3 then Admin_Credentials.Random_Token
+      else Ada.Environment_Variables.Value ("AWS_SECRET_ACCESS_KEY"));
    Credentials : Static_Credentials.Provider :=
      Static_Credentials.Create
-       (Required_Environment ("AWS_ACCESS_KEY_ID"),
-        Required_Environment ("AWS_SECRET_ACCESS_KEY"),
+       (S3_Access_Key,
+        S3_Secret_Key,
         (if Ada.Environment_Variables.Exists ("AWS_SESSION_TOKEN")
          then Ada.Environment_Variables.Value ("AWS_SESSION_TOKEN")
          else ""),
@@ -1058,6 +1055,16 @@ procedure Flyology_Object_Storage_Server_Runtime is
       end loop;
    end Signal_Watcher;
 begin
+   if Bootstrapped_S3 then
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error,
+         "BOOTSTRAP S3 access_key=" & S3_Access_Key &
+         " secret_key=" & S3_Secret_Key);
+      Ada.Text_IO.Put_Line
+        (Ada.Text_IO.Standard_Error,
+         "These S3 credentials are ephemeral and change on restart.");
+      Ada.Text_IO.Flush (Ada.Text_IO.Standard_Error);
+   end if;
    Flyology_Object_Storage_Server_Assets.Load (Context.Assets);
    Supervisors.Run (Supervisor, Context, Result);
    Flyology_Object_Storage_Server_Signals.Complete;

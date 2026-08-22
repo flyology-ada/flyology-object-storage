@@ -47,15 +47,20 @@ fail closed. The workbench assets are external for straightforward packaging
 but their exact SHA-256 digests are compiled into the binary. Missing or
 modified HTML, CSS, or JavaScript stops startup before either listener starts.
 
-Required environment:
+With no arguments or environment configuration, the executable starts a
+loopback-only memory store on S3 port 9000 and management port 9001. It prints
+one bootstrapped administrator password and one ephemeral S3 access/secret pair
+to standard error. The S3 credentials change on every restart; the administrator
+credential is stored owner-only in `./flyology-admin.credentials`.
 
-- `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` configure the current S3
-  principal; `AWS_SESSION_TOKEN` is optional.
-- `FLYOLOGY_OBJECT_STORAGE_BACKEND` is `memory`, `files` (default), or
+Optional production environment:
+
+- `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` replace ephemeral S3
+  bootstrap credentials; supply both together. `AWS_SESSION_TOKEN` is optional
+  only with that complete pair.
+- `FLYOLOGY_OBJECT_STORAGE_BACKEND` is `memory` (default), `files`, or
   `sqlite`.
 - `FLYOLOGY_OBJECT_STORAGE_ROOT` is mandatory for files and SQLite.
-
-Optional environment:
 
 - `AWS_REGION` defaults to `us-east-1`.
 - `FLYOLOGY_S3_BIND` defaults to the safe loopback address `127.0.0.1`.
@@ -74,6 +79,12 @@ Build and run:
 ```sh
 cd server
 alr -n build
+./bin/flyology_object_storage_server
+```
+
+For a durable files deployment:
+
+```sh
 FLYOLOGY_OBJECT_STORAGE_BACKEND=files \
 FLYOLOGY_OBJECT_STORAGE_ROOT=/srv/flyology-objects \
 AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \

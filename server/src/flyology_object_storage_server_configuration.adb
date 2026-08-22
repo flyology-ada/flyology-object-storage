@@ -21,7 +21,7 @@ package body Flyology_Object_Storage_Server_Configuration is
    function Load return Settings is
       Backend_Name : constant String :=
         Ada.Characters.Handling.To_Lower
-          (Environment ("FLYOLOGY_OBJECT_STORAGE_BACKEND", "files"));
+          (Environment ("FLYOLOGY_OBJECT_STORAGE_BACKEND", "memory"));
       Root : constant String :=
         Environment ("FLYOLOGY_OBJECT_STORAGE_ROOT");
       Address : constant String :=
@@ -70,16 +70,22 @@ package body Flyology_Object_Storage_Server_Configuration is
         (Environment ("FLYOLOGY_ADMIN_PORT", "9001"));
       Result.Capacity := Server_Capacity'Value
         (Environment ("FLYOLOGY_S3_CAPACITY", "128"));
-      if not Ada.Environment_Variables.Exists ("AWS_ACCESS_KEY_ID")
-        or else Ada.Environment_Variables.Value
-          ("AWS_ACCESS_KEY_ID")'Length = 0
-        or else not Ada.Environment_Variables.Exists
-          ("AWS_SECRET_ACCESS_KEY")
-        or else Ada.Environment_Variables.Value
-          ("AWS_SECRET_ACCESS_KEY")'Length = 0
+      if Ada.Environment_Variables.Exists ("AWS_ACCESS_KEY_ID") /=
+           Ada.Environment_Variables.Exists ("AWS_SECRET_ACCESS_KEY")
+        or else
+          (Ada.Environment_Variables.Exists ("AWS_ACCESS_KEY_ID")
+           and then
+             (Ada.Environment_Variables.Value
+                ("AWS_ACCESS_KEY_ID")'Length = 0
+              or else Ada.Environment_Variables.Value
+                ("AWS_SECRET_ACCESS_KEY")'Length = 0))
+        or else
+          (Ada.Environment_Variables.Exists ("AWS_SESSION_TOKEN")
+           and then not Ada.Environment_Variables.Exists
+             ("AWS_ACCESS_KEY_ID"))
       then
          raise Constraint_Error with
-           "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required";
+           "AWS credentials must be supplied as one complete group";
       end if;
       return Result;
    exception
