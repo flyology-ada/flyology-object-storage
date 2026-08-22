@@ -1944,10 +1944,15 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Upload_Part_Copy_Outcome;
 
-   --  Typed core CopyObject parameters. Advanced ACL, tagging, encryption,
-   --  lock, and user-metadata members remain available through the exhaustive
-   --  generated-model request boundary until their policies are qualified.
+   --  Every modeled CopyObject request member other than the destination
+   --  bucket and key, which are explicit Prepare_Copy_Object parameters.
    type Copy_Object_Parameters is record
+      ACL : Ada.Strings.Unbounded.Unbounded_String;
+      Cache_Control : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Disposition : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Encoding : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Language : Ada.Strings.Unbounded.Unbounded_String;
       Copy_Source : Ada.Strings.Unbounded.Unbounded_String;
       Content_Type : Ada.Strings.Unbounded.Unbounded_String;
       Copy_Source_If_Match : Ada.Strings.Unbounded.Unbounded_String;
@@ -1955,8 +1960,41 @@ package Flyology.Object_Storage.Client.Low_Level is
       Copy_Source_If_None_Match : Ada.Strings.Unbounded.Unbounded_String;
       Copy_Source_If_Unmodified_Since :
         Ada.Strings.Unbounded.Unbounded_String;
+      Expires : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Full_Control : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Read : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Read_ACP : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Write_ACP : Ada.Strings.Unbounded.Unbounded_String;
+      If_Match : Ada.Strings.Unbounded.Unbounded_String;
+      If_None_Match : Ada.Strings.Unbounded.Unbounded_String;
+      Metadata : Metadata_Entry_Vectors.Vector;
       Metadata_Directive : Ada.Strings.Unbounded.Unbounded_String;
+      Tagging_Directive : Ada.Strings.Unbounded.Unbounded_String;
+      Annotation_Directive : Ada.Strings.Unbounded.Unbounded_String;
+      Server_Side_Encryption : Ada.Strings.Unbounded.Unbounded_String;
+      Storage_Class : Ada.Strings.Unbounded.Unbounded_String;
+      Website_Redirect_Location :
+        Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Algorithm : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5 : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Encryption_Context :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled : Optional_Boolean;
+      Copy_Source_SSE_Customer_Algorithm :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_SSE_Customer_Key :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Copy_Source_SSE_Customer_Key_MD5 :
+        Ada.Strings.Unbounded.Unbounded_String;
       Request_Payer : Ada.Strings.Unbounded.Unbounded_String;
+      Tagging : Ada.Strings.Unbounded.Unbounded_String;
+      Object_Lock_Mode : Ada.Strings.Unbounded.Unbounded_String;
+      Object_Lock_Retain_Until_Date :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Object_Lock_Legal_Hold_Status :
+        Ada.Strings.Unbounded.Unbounded_String;
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
       Expected_Source_Bucket_Owner :
         Ada.Strings.Unbounded.Unbounded_String;

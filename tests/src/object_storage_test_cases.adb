@@ -10091,6 +10091,170 @@ package body Object_Storage_Test_Cases is
 
       declare
          Parameters : Low_Level.Copy_Object_Parameters;
+      begin
+         Parameters.Copy_Source :=
+           US.To_Unbounded_String ("source-bucket/source-key");
+         Parameters.ACL := US.To_Unbounded_String ("private");
+         Parameters.Cache_Control := US.To_Unbounded_String ("max-age=60");
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("CRC32");
+         Parameters.Content_Disposition := US.To_Unbounded_String ("inline");
+         Parameters.Content_Encoding := US.To_Unbounded_String ("identity");
+         Parameters.Content_Language := US.To_Unbounded_String ("en");
+         Parameters.Content_Type := US.To_Unbounded_String ("text/plain");
+         Parameters.Copy_Source_If_Match :=
+           US.To_Unbounded_String ("""source""");
+         Parameters.Copy_Source_If_Modified_Since :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
+         Parameters.Copy_Source_If_None_Match :=
+           US.To_Unbounded_String ("""other""");
+         Parameters.Copy_Source_If_Unmodified_Since :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 00:00:01 GMT");
+         Parameters.Expires :=
+           US.To_Unbounded_String ("Sat, 25 May 2013 00:00:00 GMT");
+         Parameters.Grant_Full_Control :=
+           US.To_Unbounded_String ("id=owner");
+         Parameters.Grant_Read := US.To_Unbounded_String ("id=reader");
+         Parameters.Grant_Read_ACP := US.To_Unbounded_String ("id=reader");
+         Parameters.Grant_Write_ACP := US.To_Unbounded_String ("id=writer");
+         Parameters.If_Match := US.To_Unbounded_String ("""destination""");
+         Parameters.If_None_Match := US.To_Unbounded_String ("""absent""");
+         Parameters.Metadata.Append
+           (Low_Level.Metadata_Entry'
+              (Name  => US.To_Unbounded_String ("custom"),
+               Value => US.To_Unbounded_String ("value")));
+         Parameters.Metadata_Directive := US.To_Unbounded_String ("REPLACE");
+         Parameters.Tagging_Directive := US.To_Unbounded_String ("REPLACE");
+         Parameters.Annotation_Directive := US.To_Unbounded_String ("COPY");
+         Parameters.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Parameters.Storage_Class := US.To_Unbounded_String ("STANDARD");
+         Parameters.Website_Redirect_Location :=
+           US.To_Unbounded_String ("/elsewhere");
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key := US.To_Unbounded_String ("key");
+         Parameters.SSE_Customer_Key_MD5 := US.To_Unbounded_String ("md5");
+         Parameters.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Parameters.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String ("context");
+         Parameters.Bucket_Key_Enabled := (Is_Set => True, Value => True);
+         Parameters.Copy_Source_SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.Copy_Source_SSE_Customer_Key :=
+           US.To_Unbounded_String ("source-key");
+         Parameters.Copy_Source_SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("source-md5");
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Tagging := US.To_Unbounded_String ("team=storage");
+         Parameters.Object_Lock_Mode :=
+           US.To_Unbounded_String ("GOVERNANCE");
+         Parameters.Object_Lock_Retain_Until_Date :=
+           US.To_Unbounded_String ("2027-01-01T00:00:00Z");
+         Parameters.Object_Lock_Legal_Hold_Status :=
+           US.To_Unbounded_String ("ON");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("destination-owner");
+         Parameters.Expected_Source_Bucket_Owner :=
+           US.To_Unbounded_String ("source-owner");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Copy_Object
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "complete-copy",
+                 Parameters, Identity, "us-east-1", "20130524T000000Z");
+            Canonical : constant String :=
+              Low_Level.Canonical_Request (Prepared);
+            type Header_Name_Array is array (Positive range <>) of
+              US.Unbounded_String;
+            Expected_Headers : constant Header_Name_Array :=
+              [US.To_Unbounded_String ("x-amz-acl"),
+               US.To_Unbounded_String ("cache-control"),
+               US.To_Unbounded_String ("x-amz-checksum-algorithm"),
+               US.To_Unbounded_String ("content-disposition"),
+               US.To_Unbounded_String ("content-encoding"),
+               US.To_Unbounded_String ("content-language"),
+               US.To_Unbounded_String ("content-type"),
+               US.To_Unbounded_String ("x-amz-copy-source"),
+               US.To_Unbounded_String ("x-amz-copy-source-if-match"),
+               US.To_Unbounded_String
+                 ("x-amz-copy-source-if-modified-since"),
+               US.To_Unbounded_String ("x-amz-copy-source-if-none-match"),
+               US.To_Unbounded_String
+                 ("x-amz-copy-source-if-unmodified-since"),
+               US.To_Unbounded_String ("expires"),
+               US.To_Unbounded_String ("x-amz-grant-full-control"),
+               US.To_Unbounded_String ("x-amz-grant-read"),
+               US.To_Unbounded_String ("x-amz-grant-read-acp"),
+               US.To_Unbounded_String ("x-amz-grant-write-acp"),
+               US.To_Unbounded_String ("if-match"),
+               US.To_Unbounded_String ("if-none-match"),
+               US.To_Unbounded_String ("x-amz-meta-custom"),
+               US.To_Unbounded_String ("x-amz-metadata-directive"),
+               US.To_Unbounded_String ("x-amz-tagging-directive"),
+               US.To_Unbounded_String
+                 ("x-amz-object-annotation-directive"),
+               US.To_Unbounded_String ("x-amz-server-side-encryption"),
+               US.To_Unbounded_String ("x-amz-storage-class"),
+               US.To_Unbounded_String
+                 ("x-amz-website-redirect-location"),
+               US.To_Unbounded_String
+                 ("x-amz-server-side-encryption-customer-algorithm"),
+               US.To_Unbounded_String
+                 ("x-amz-server-side-encryption-customer-key"),
+               US.To_Unbounded_String
+                 ("x-amz-server-side-encryption-customer-key-md5"),
+               US.To_Unbounded_String
+                 ("x-amz-server-side-encryption-aws-kms-key-id"),
+               US.To_Unbounded_String
+                 ("x-amz-server-side-encryption-context"),
+               US.To_Unbounded_String
+                 ("x-amz-server-side-encryption-bucket-key-enabled"),
+               US.To_Unbounded_String
+                 ("x-amz-copy-source-server-side-encryption-" &
+                  "customer-algorithm"),
+               US.To_Unbounded_String
+                 ("x-amz-copy-source-server-side-encryption-customer-key"),
+               US.To_Unbounded_String
+                 ("x-amz-copy-source-server-side-encryption-" &
+                  "customer-key-md5"),
+               US.To_Unbounded_String ("x-amz-request-payer"),
+               US.To_Unbounded_String ("x-amz-tagging"),
+               US.To_Unbounded_String ("x-amz-object-lock-mode"),
+               US.To_Unbounded_String
+                 ("x-amz-object-lock-retain-until-date"),
+               US.To_Unbounded_String ("x-amz-object-lock-legal-hold"),
+               US.To_Unbounded_String ("x-amz-expected-bucket-owner"),
+               US.To_Unbounded_String
+                 ("x-amz-source-expected-bucket-owner")];
+         begin
+            for Header of Expected_Headers loop
+               Assert
+                 (Ada.Strings.Fixed.Index
+                    (Canonical, US.To_String (Header) & ":") > 0,
+                  "CopyObject projection omitted " & US.To_String (Header));
+            end loop;
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Canonical, "cache-control:max-age=60") > 0,
+               "CopyObject projection omitted cache control");
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Canonical, "x-amz-meta-custom:value") > 0,
+               "CopyObject projection omitted user metadata");
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Canonical, "x-amz-tagging:team=storage") > 0,
+               "CopyObject projection omitted tagging");
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Canonical, "x-amz-source-expected-bucket-owner:" &
+                  "source-owner") > 0,
+               "CopyObject projection omitted expected source owner");
+         end;
+      end;
+
+      declare
+         Parameters : Low_Level.Copy_Object_Parameters;
          Raised : Boolean := False;
       begin
          Parameters.Copy_Source :=
@@ -10251,6 +10415,30 @@ package body Object_Storage_Test_Cases is
          Must_Reject
            ("<ChecksumType>FULL_OBJECT</ChecksumType>",
             "CopyObject checksum type without value accepted");
+      end;
+
+      declare
+         Headers : Low_Level.Copy_Object_Result;
+         Raised : Boolean := False;
+      begin
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("ROT13");
+         begin
+            declare
+               Ignored : constant Low_Level.Copy_Object_Outcome :=
+                 Low_Level.Decode_Copy_Object_Response
+                   (200, "<CopyObjectResult>" &
+                    "<LastModified>2026-08-21T17:00:00Z</LastModified>" &
+                    "<ETag>etag</ETag></CopyObjectResult>", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert (Raised, "invalid CopyObject encryption response accepted");
       end;
    end Check_Low_Level_Copy_Object;
 

@@ -69,7 +69,7 @@ Disposition meanings:
 | 41 | `ObjectLockRetainUntilDate` / retention timestamp | Authenticated NotImplemented when supplied. |
 | 42 | `ObjectLockLegalHoldStatus` / legal-hold state | Authenticated NotImplemented when supplied. |
 | 43 | `ExpectedBucketOwner` / destination owner | Validate exactly against the authenticated destination owner; mismatch is 403. |
-| 44 | `ExpectedSourceBucketOwner` / source owner | Validate exactly against the authenticated source owner; mismatch is 403. |
+| 44 | `ExpectedSourceBucketOwner` / `x-amz-source-expected-bucket-owner` | Validate exactly against the authenticated source owner; mismatch is 403. |
 
 ## Output positions (24)
 

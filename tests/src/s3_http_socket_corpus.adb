@@ -3771,27 +3771,38 @@ procedure S3_HTTP_Socket_Corpus is
             Cleanup;
          end;
          declare
-            Result : constant Transfers.Copy_Outcome :=
+            Options : Low_Level.Copy_Object_Parameters;
+         begin
+            Options.Copy_Source_If_Match :=
+              US.To_Unbounded_String ("""source-etag""");
+            declare
+               Result : constant Transfers.Copy_Outcome :=
               Transfers.Copy_Object
                 (HTTP, Origin, "source-bucket", "source key+%25",
-                 "example-bucket", "copied object+%25", Identity,
-                 Source_If_Match => """source-etag""",
+                 "example-bucket", "copied object+%25", Options, Identity,
                  Timeout => 5.0);
-         begin
-            if Result.Kind /= Transfers.Object_Copied
-              or else Result.Status /= 200
-              or else US.To_String (Result.Entity_Tag) /=
-                """high-level-copy"""
-              or else US.To_String (Result.Last_Modified) /=
-                "2026-08-21T17:00:00.000Z"
-              or else US.To_String (Result.Version_ID) /=
-                "destination-version"
-              or else US.To_String (Result.Copy_Source_Version_ID) /=
-                "source-version"
-            then
-               raise Program_Error with
-                 "high-level CopyObject result mismatch";
-            end if;
+            begin
+               if Result.Kind /= Transfers.Object_Copied
+                 or else Result.Status /= 200
+                 or else US.To_String (Result.Entity_Tag) /=
+                   """high-level-copy"""
+                 or else US.To_String (Result.Last_Modified) /=
+                   "2026-08-21T17:00:00.000Z"
+                 or else US.To_String (Result.Version_ID) /=
+                   "destination-version"
+                 or else US.To_String (Result.Copy_Source_Version_ID) /=
+                   "source-version"
+                 or else US.To_String
+                   (Result.Details.Copy_Result.Entity_Tag) /=
+                     """high-level-copy"""
+                 or else US.To_String
+                   (Result.Details.Copy_Source_Version_ID) /=
+                     "source-version"
+               then
+                  raise Program_Error with
+                    "high-level CopyObject result mismatch";
+               end if;
+            end;
          end;
          declare
             Result : constant Transfers.Copy_Outcome :=

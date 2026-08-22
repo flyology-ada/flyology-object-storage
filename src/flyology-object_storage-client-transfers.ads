@@ -132,6 +132,7 @@ package Flyology.Object_Storage.Client.Transfers is
       Status : Flyology.HTTP.Status_Code := 500;
       case Kind is
          when Object_Copied =>
+            Details                : Low_Level.Copy_Object_Result;
             Entity_Tag             : Ada.Strings.Unbounded.Unbounded_String;
             Last_Modified          : Ada.Strings.Unbounded.Unbounded_String;
             Version_ID             : Ada.Strings.Unbounded.Unbounded_String;
@@ -145,8 +146,9 @@ package Flyology.Object_Storage.Client.Transfers is
    --  are raw application strings; this operation owns the required
    --  x-amz-copy-source URI encoding and signs the resulting header. Client
    --  must already be configured for Origin. Advanced metadata, tagging,
-   --  ACL, encryption, lock, and version-selection controls remain available
-   --  through Low_Level.Prepare_Copy_Object.
+   --  ACL, encryption, lock, metadata, tagging, and version-selection
+   --  controls are carried by Options. The successful Details value preserves
+   --  every modeled CopyObject output position.
    --  @param Client Configured, caller-owned Flyology HTTP client
    --  @param Origin Exact origin used to configure Client and sign requests
    --  @param Source_Bucket Source S3 bucket, before URI encoding
@@ -162,6 +164,22 @@ package Flyology.Object_Storage.Client.Transfers is
    --  @return Compact successful copy metadata or the S3 rejection
    --  @exception Low_Level.Invalid_Request if the source bucket/key is
    --     invalid or its encoded representation exceeds the supported bound
+   function Copy_Object
+     (Client             : aliased in out Flyology.HTTP.Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout            : Duration := 30.0;
+      Token              : access Flyology.Cancellation.Token := null)
+      return Copy_Outcome;
+
+   --  Compact compatibility overload for the common conditional source copy.
    function Copy_Object
      (Client             : aliased in out Flyology.HTTP.Client.Client;
       Origin             : Flyology.HTTP.Origin;

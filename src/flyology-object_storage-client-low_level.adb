@@ -6152,6 +6152,12 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Request_Payer : constant String :=
         US.To_String (Parameters.Request_Payer);
       Optional_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.ACL) > 0) +
+        Boolean'Pos (US.Length (Parameters.Cache_Control) > 0) +
+        Boolean'Pos (US.Length (Parameters.Checksum_Algorithm) > 0) +
+        Boolean'Pos (US.Length (Parameters.Content_Disposition) > 0) +
+        Boolean'Pos (US.Length (Parameters.Content_Encoding) > 0) +
+        Boolean'Pos (US.Length (Parameters.Content_Language) > 0) +
         Boolean'Pos (US.Length (Parameters.Content_Type) > 0) +
         Boolean'Pos (US.Length (Parameters.Copy_Source_If_Match) > 0) +
         Boolean'Pos
@@ -6159,20 +6165,54 @@ package body Flyology.Object_Storage.Client.Low_Level is
         Boolean'Pos (US.Length (Parameters.Copy_Source_If_None_Match) > 0) +
         Boolean'Pos
           (US.Length (Parameters.Copy_Source_If_Unmodified_Since) > 0) +
+        Boolean'Pos (US.Length (Parameters.Expires) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Full_Control) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Read) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Read_ACP) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Write_ACP) > 0) +
+        Boolean'Pos (US.Length (Parameters.If_Match) > 0) +
+        Boolean'Pos (US.Length (Parameters.If_None_Match) > 0) +
+        Natural (Parameters.Metadata.Length) +
         Boolean'Pos (Directive'Length > 0) +
+        Boolean'Pos (US.Length (Parameters.Tagging_Directive) > 0) +
+        Boolean'Pos (US.Length (Parameters.Annotation_Directive) > 0) +
+        Boolean'Pos (US.Length (Parameters.Server_Side_Encryption) > 0) +
+        Boolean'Pos (US.Length (Parameters.Storage_Class) > 0) +
+        Boolean'Pos
+          (US.Length (Parameters.Website_Redirect_Location) > 0) +
+        Boolean'Pos (US.Length (Parameters.SSE_Customer_Algorithm) > 0) +
+        Boolean'Pos (US.Length (Parameters.SSE_Customer_Key) > 0) +
+        Boolean'Pos (US.Length (Parameters.SSE_Customer_Key_MD5) > 0) +
+        Boolean'Pos (US.Length (Parameters.SSE_KMS_Key_ID) > 0) +
+        Boolean'Pos
+          (US.Length (Parameters.SSE_KMS_Encryption_Context) > 0) +
+        Boolean'Pos (Parameters.Bucket_Key_Enabled.Is_Set) +
+        Boolean'Pos
+          (US.Length (Parameters.Copy_Source_SSE_Customer_Algorithm) > 0) +
+        Boolean'Pos
+          (US.Length (Parameters.Copy_Source_SSE_Customer_Key) > 0) +
+        Boolean'Pos
+          (US.Length (Parameters.Copy_Source_SSE_Customer_Key_MD5) > 0) +
         Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (US.Length (Parameters.Tagging) > 0) +
+        Boolean'Pos (US.Length (Parameters.Object_Lock_Mode) > 0) +
+        Boolean'Pos
+          (US.Length (Parameters.Object_Lock_Retain_Until_Date) > 0) +
+        Boolean'Pos
+          (US.Length (Parameters.Object_Lock_Legal_Hold_Status) > 0) +
         Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
         Boolean'Pos
           (US.Length (Parameters.Expected_Source_Bucket_Owner) > 0);
       Values : Model_Value_Array (1 .. 3 + Optional_Count);
       Last : Natural := 0;
 
-      procedure Add (Name, Value : String) is
+      procedure Add
+        (Name, Value : String; Map_Key : String := "") is
       begin
          Last := Last + 1;
          Values (Last) :=
            (Member_Name => US.To_Unbounded_String (Name),
-            Map_Key     => US.Null_Unbounded_String,
+            Map_Key     => US.To_Unbounded_String (Map_Key),
             Value       => US.To_Unbounded_String (Value));
       end Add;
 
@@ -6195,6 +6235,12 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Add ("Bucket", Bucket);
       Add ("CopySource", Copy_Source);
       Add ("Key", Key);
+      Add_Optional ("ACL", Parameters.ACL);
+      Add_Optional ("CacheControl", Parameters.Cache_Control);
+      Add_Optional ("ChecksumAlgorithm", Parameters.Checksum_Algorithm);
+      Add_Optional ("ContentDisposition", Parameters.Content_Disposition);
+      Add_Optional ("ContentEncoding", Parameters.Content_Encoding);
+      Add_Optional ("ContentLanguage", Parameters.Content_Language);
       Add_Optional ("ContentType", Parameters.Content_Type);
       Add_Optional ("CopySourceIfMatch", Parameters.Copy_Source_If_Match);
       Add_Optional
@@ -6205,8 +6251,56 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Add_Optional
         ("CopySourceIfUnmodifiedSince",
          Parameters.Copy_Source_If_Unmodified_Since);
+      Add_Optional ("Expires", Parameters.Expires);
+      Add_Optional ("GrantFullControl", Parameters.Grant_Full_Control);
+      Add_Optional ("GrantRead", Parameters.Grant_Read);
+      Add_Optional ("GrantReadACP", Parameters.Grant_Read_ACP);
+      Add_Optional ("GrantWriteACP", Parameters.Grant_Write_ACP);
+      Add_Optional ("IfMatch", Parameters.If_Match);
+      Add_Optional ("IfNoneMatch", Parameters.If_None_Match);
+      for Metadata_Item of Parameters.Metadata loop
+         Add
+           ("Metadata", US.To_String (Metadata_Item.Value),
+            US.To_String (Metadata_Item.Name));
+      end loop;
       Add_Optional ("MetadataDirective", Parameters.Metadata_Directive);
+      Add_Optional ("TaggingDirective", Parameters.Tagging_Directive);
+      Add_Optional ("AnnotationDirective", Parameters.Annotation_Directive);
+      Add_Optional
+        ("ServerSideEncryption", Parameters.Server_Side_Encryption);
+      Add_Optional ("StorageClass", Parameters.Storage_Class);
+      Add_Optional
+        ("WebsiteRedirectLocation", Parameters.Website_Redirect_Location);
+      Add_Optional
+        ("SSECustomerAlgorithm", Parameters.SSE_Customer_Algorithm);
+      Add_Optional ("SSECustomerKey", Parameters.SSE_Customer_Key);
+      Add_Optional ("SSECustomerKeyMD5", Parameters.SSE_Customer_Key_MD5);
+      Add_Optional ("SSEKMSKeyId", Parameters.SSE_KMS_Key_ID);
+      Add_Optional
+        ("SSEKMSEncryptionContext", Parameters.SSE_KMS_Encryption_Context);
+      if Parameters.Bucket_Key_Enabled.Is_Set then
+         Add
+           ("BucketKeyEnabled",
+            (if Parameters.Bucket_Key_Enabled.Value then "true" else "false"));
+      end if;
+      Add_Optional
+        ("CopySourceSSECustomerAlgorithm",
+         Parameters.Copy_Source_SSE_Customer_Algorithm);
+      Add_Optional
+        ("CopySourceSSECustomerKey",
+         Parameters.Copy_Source_SSE_Customer_Key);
+      Add_Optional
+        ("CopySourceSSECustomerKeyMD5",
+         Parameters.Copy_Source_SSE_Customer_Key_MD5);
       Add_Optional ("RequestPayer", Parameters.Request_Payer);
+      Add_Optional ("Tagging", Parameters.Tagging);
+      Add_Optional ("ObjectLockMode", Parameters.Object_Lock_Mode);
+      Add_Optional
+        ("ObjectLockRetainUntilDate",
+         Parameters.Object_Lock_Retain_Until_Date);
+      Add_Optional
+        ("ObjectLockLegalHoldStatus",
+         Parameters.Object_Lock_Legal_Hold_Status);
       Add_Optional
         ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
       Add_Optional
@@ -6221,12 +6315,25 @@ package body Flyology.Object_Storage.Client.Low_Level is
    end Prepare_Copy_Object;
 
    procedure Validate_Copy_Object_Headers (Value : Copy_Object_Result) is
-      Bucket_Key : constant String := US.To_String (Value.Bucket_Key_Enabled);
-      Charged : constant String := US.To_String (Value.Request_Charged);
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.Copy_Object_Operation));
+
+      function Valid
+        (Member : Positive; Text : US.Unbounded_String) return Boolean is
+        (US.Length (Text) = 0
+         or else Valid_Model_Scalar
+           (Model.Member_Shape (Output, Member), US.To_String (Text)));
    begin
-      if (Bucket_Key'Length > 0
-          and then not Wire_Core.Parse_Boolean (Bucket_Key).Valid)
-        or else (Charged'Length > 0 and then Charged /= "requester")
+      if not Valid (2, Value.Expiration)
+        or else not Valid (3, Value.Copy_Source_Version_ID)
+        or else not Valid (4, Value.Version_ID)
+        or else not Valid (5, Value.Server_Side_Encryption)
+        or else not Valid (6, Value.SSE_Customer_Algorithm)
+        or else not Valid (7, Value.SSE_Customer_Key_MD5)
+        or else not Valid (8, Value.SSE_KMS_Key_ID)
+        or else not Valid (9, Value.SSE_KMS_Encryption_Context)
+        or else not Valid (10, Value.Bucket_Key_Enabled)
+        or else not Valid (11, Value.Request_Charged)
       then
          raise Invalid_Response with "invalid CopyObject response headers";
       end if;

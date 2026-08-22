@@ -996,10 +996,10 @@ package body Flyology.Object_Storage.Client.Transfers is
       Source_Key         : String;
       Destination_Bucket : String;
       Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
       Identity           : Low_Level.Credentials;
       Region             : String := "us-east-1";
       Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
-      Source_If_Match    : String := "";
       Timeout            : Duration := 30.0;
       Token              : access Flyology.Cancellation.Token := null)
       return Copy_Outcome
@@ -1030,7 +1030,7 @@ package body Flyology.Object_Storage.Client.Transfers is
             Source_Target : constant String := "/" & Encoded_Source;
             Parsed_Source : constant Requests.Target_Result :=
               Requests.Parse_Target (Source_Target);
-            Parameters : Low_Level.Copy_Object_Parameters;
+            Parameters : Low_Level.Copy_Object_Parameters := Options;
          begin
             if Parsed_Source.Status /= Requests.Target_Parsed
               or else Parsed_Source.Kind /= Requests.Object_Target
@@ -1044,8 +1044,6 @@ package body Flyology.Object_Storage.Client.Transfers is
             end if;
             Parameters.Copy_Source :=
               US.To_Unbounded_String (Encoded_Source);
-            Parameters.Copy_Source_If_Match :=
-              US.To_Unbounded_String (Source_If_Match);
             declare
                Prepared : constant Low_Level.Prepared_Request :=
                  Low_Level.Prepare_Copy_Object
@@ -1064,6 +1062,7 @@ package body Flyology.Object_Storage.Client.Transfers is
                return
                  (Kind                   => Object_Copied,
                   Status                 => Outcome.Status,
+                  Details                => Outcome.Result,
                   Entity_Tag             =>
                     Outcome.Result.Copy_Result.Entity_Tag,
                   Last_Modified          =>
@@ -1074,6 +1073,30 @@ package body Flyology.Object_Storage.Client.Transfers is
             end;
          end;
       end;
+   end Copy_Object;
+
+   function Copy_Object
+     (Client             : aliased in out Flyology.HTTP.Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Identity           : Low_Level.Credentials;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Source_If_Match    : String := "";
+      Timeout            : Duration := 30.0;
+      Token              : access Flyology.Cancellation.Token := null)
+      return Copy_Outcome
+   is
+      Options : Low_Level.Copy_Object_Parameters;
+   begin
+      Options.Copy_Source_If_Match :=
+        US.To_Unbounded_String (Source_If_Match);
+      return Copy_Object
+        (Client, Origin, Source_Bucket, Source_Key, Destination_Bucket,
+         Destination_Key, Options, Identity, Region, Style, Timeout, Token);
    end Copy_Object;
 
    function Head_Object
