@@ -24,6 +24,7 @@ with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
+with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.SigV4;
@@ -3434,6 +3435,235 @@ package body Object_Storage_Test_Cases is
          "ListParts nested scalar was accepted");
    end Check_List_Parts_Codec;
 
+   procedure Check_List_Multipart_Uploads_Codec
+     (Unused : in out Fixture)
+   is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Uploads renames
+        Flyology.Object_Storage.S3.Multipart_Uploads;
+      package US renames Ada.Strings.Unbounded;
+
+      function Root (Content : String; Max_Uploads : Natural := 3)
+         return String
+      is
+        ("<ListMultipartUploadsResult><Bucket>bucket</Bucket>" &
+         "<MaxUploads>" & Ada.Strings.Fixed.Trim
+           (Natural'Image (Max_Uploads), Ada.Strings.Both) &
+         "</MaxUploads><IsTruncated>false</IsTruncated>" & Content &
+         "</ListMultipartUploadsResult>");
+
+      procedure Must_Reject (Document, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Uploads.List_Multipart_Uploads_Result :=
+                 Uploads.Parse_List_Multipart_Uploads (Document);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Uploads.Malformed_Upload_Listing =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Must_Reject;
+
+      function Upload_XML
+        (Key, Upload_ID, Initiated : String;
+         Extra : String := "") return String
+      is
+        ("<Upload><UploadId>" & Upload_ID & "</UploadId><Key>" & Key &
+         "</Key><Initiated>" & Initiated &
+         "</Initiated><StorageClass>STANDARD</StorageClass>" & Extra &
+         "</Upload>");
+   begin
+      declare
+         Parsed : constant Uploads.List_Multipart_Uploads_Result :=
+           Uploads.Parse_List_Multipart_Uploads
+             ("<ListMultipartUploadsResult " &
+              "xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+              "<Bucket>bucket</Bucket><KeyMarker>before</KeyMarker>" &
+              "<UploadIdMarker>upload-before</UploadIdMarker>" &
+              "<NextKeyMarker>logs/b</NextKeyMarker>" &
+              "<NextUploadIdMarker>upload-b</NextUploadIdMarker>" &
+              "<Prefix>logs/</Prefix><Delimiter>/</Delimiter>" &
+              "<MaxUploads>3</MaxUploads><IsTruncated>true" &
+              "</IsTruncated>" &
+              Upload_XML
+                ("logs/a", "upload-a", "2026-08-21T01:00:00.000Z",
+                 "<Owner><ID>owner-id</ID><DisplayName>owner" &
+                 "</DisplayName></Owner><Initiator><ID>init-id</ID>" &
+                 "<DisplayName>initiator</DisplayName></Initiator>" &
+                 "<ChecksumAlgorithm>SHA256</ChecksumAlgorithm>" &
+                 "<ChecksumType>COMPOSITE</ChecksumType>") &
+              Upload_XML
+                ("logs/b", "upload-b", "2026-08-21T02:00:00.000Z") &
+              "<CommonPrefixes><Prefix>logs/archive/</Prefix>" &
+              "</CommonPrefixes><EncodingType>url</EncodingType>" &
+              "<Future><Nested>ignored</Nested></Future>" &
+              "</ListMultipartUploadsResult>");
+         Round_Trip : constant Uploads.List_Multipart_Uploads_Result :=
+           Uploads.Parse_List_Multipart_Uploads
+             (Uploads.Serialize_List_Multipart_Uploads (Parsed));
+      begin
+         Assert
+           (Parsed.Uploads.Length = 2
+            and then Parsed.Common_Prefixes.Length = 1
+            and then Parsed.Is_Truncated
+            and then US.To_String (Parsed.Next_Key_Marker) = "logs/b"
+            and then US.To_String
+              (Parsed.Uploads.First_Element.Owner.ID) = "owner-id"
+            and then Parsed.Uploads.First_Element.Has_Owner
+            and then Parsed.Uploads.First_Element.Has_Initiator
+            and then US.To_String
+              (Parsed.Uploads.First_Element.Checksum_Algorithm) = "SHA256"
+            and then US.To_String
+              (Parsed.Uploads.First_Element.Checksum_Type) = "COMPOSITE",
+            "complete ListMultipartUploads response fields");
+         Assert
+           (Round_Trip.Uploads.Length = 2
+            and then Round_Trip.Common_Prefixes.Length = 1
+            and then US.To_String
+              (Round_Trip.Common_Prefixes.First_Element) = "logs/archive/"
+            and then US.To_String (Round_Trip.Encoding_Type) = "url",
+            "ListMultipartUploads serialization round trip");
+      end;
+
+      declare
+         Empty : constant Uploads.List_Multipart_Uploads_Result :=
+           Uploads.Parse_List_Multipart_Uploads (Root (""));
+      begin
+         Assert
+           (Empty.Uploads.Is_Empty
+            and then Empty.Common_Prefixes.Is_Empty
+            and then not Empty.Is_Truncated,
+            "empty ListMultipartUploads final page");
+      end;
+
+      Must_Reject ("<Wrong/>", "wrong multipart-upload list root accepted");
+      Must_Reject
+        ("<ListMultipartUploadsResult><Bucket>bucket</Bucket>" &
+         "</ListMultipartUploadsResult>",
+         "multipart-upload list missing required fields accepted");
+      Must_Reject
+        (Root ("<Bucket>again</Bucket>"),
+         "duplicate multipart-upload list scalar accepted");
+      Must_Reject
+        (Root ("", 1_001), "oversized max-uploads accepted");
+      Must_Reject
+        ("<ListMultipartUploadsResult><Bucket>bucket</Bucket>" &
+         "<MaxUploads>1</MaxUploads><IsTruncated>True</IsTruncated>" &
+         "</ListMultipartUploadsResult>",
+         "noncanonical multipart-upload list boolean accepted");
+      Must_Reject
+        (Root ("<Upload><UploadId>id</UploadId></Upload>"),
+         "incomplete multipart upload accepted");
+      Must_Reject
+        (Root
+           ("<Upload><UploadId><Nested/></UploadId><Key>key</Key>" &
+            "<Initiated>x</Initiated><StorageClass>STANDARD" &
+            "</StorageClass></Upload>"),
+         "nested multipart upload scalar accepted");
+      Must_Reject
+        (Root
+           ("<Upload><UploadId>id</UploadId><Key>key</Key>" &
+            "<Initiated>x</Initiated><StorageClass>UNKNOWN" &
+            "</StorageClass></Upload>"),
+         "invalid multipart upload storage class accepted");
+      Must_Reject
+        (Root ("<EncodingType>xml</EncodingType>"),
+         "invalid multipart-upload encoding type accepted");
+      Must_Reject
+        (Root
+           (Upload_XML
+              ("key", "id", "x",
+               "<ChecksumAlgorithm>UNKNOWN</ChecksumAlgorithm>")),
+         "invalid multipart upload checksum algorithm accepted");
+      Must_Reject
+        (Root
+           (Upload_XML
+              ("key", "id", "x",
+               "<ChecksumType>UNKNOWN</ChecksumType>")),
+         "invalid multipart upload checksum type accepted");
+      declare
+         Type_Only : constant Uploads.List_Multipart_Uploads_Result :=
+           Uploads.Parse_List_Multipart_Uploads
+             (Root
+                (Upload_XML
+                   ("key", "id", "x",
+                    "<ChecksumType>COMPOSITE</ChecksumType>")));
+      begin
+         Assert
+           (US.To_String
+              (Type_Only.Uploads.First_Element.Checksum_Type) = "COMPOSITE",
+            "independent multipart upload checksum type was rejected");
+      end;
+      declare
+         Directory_Order : constant Uploads.List_Multipart_Uploads_Result :=
+           Uploads.Parse_List_Multipart_Uploads
+             (Root
+                (Upload_XML ("b", "id-b", "x") &
+                 Upload_XML ("a", "id-a", "x")));
+      begin
+         Assert
+           (Directory_Order.Uploads.Length = 2,
+            "directory-bucket multipart upload order was rejected");
+      end;
+      declare
+         Marker_Variance : constant Uploads.List_Multipart_Uploads_Result :=
+           Uploads.Parse_List_Multipart_Uploads
+             ("<ListMultipartUploadsResult><Bucket>bucket</Bucket>" &
+              "<UploadIdMarker>ignored-without-key</UploadIdMarker>" &
+              "<NextKeyMarker>sample.jpg</NextKeyMarker>" &
+              "<NextUploadIdMarker>next-id</NextUploadIdMarker>" &
+              "<MaxUploads>1</MaxUploads><IsTruncated>false" &
+              "</IsTruncated></ListMultipartUploadsResult>");
+      begin
+         Assert
+           (US.To_String (Marker_Variance.Upload_ID_Marker) =
+              "ignored-without-key"
+            and then US.To_String (Marker_Variance.Next_Key_Marker) =
+              "sample.jpg",
+            "valid AWS multipart-upload marker variance was rejected");
+      end;
+      Must_Reject
+        ("<ListMultipartUploadsResult><Bucket>bucket</Bucket>" &
+         "<MaxUploads>1</MaxUploads><IsTruncated>true</IsTruncated>" &
+         "</ListMultipartUploadsResult>",
+         "truncated multipart-upload page without next key accepted");
+      Must_Reject
+        (Root
+           (Upload_XML ("a", "id-a", "x") &
+            Upload_XML ("b", "id-b", "x"), 1),
+         "multipart-upload page exceeding max-uploads accepted");
+      declare
+         Prefixes_Do_Not_Consume_Upload_Limit : constant
+           Uploads.List_Multipart_Uploads_Result :=
+             Uploads.Parse_List_Multipart_Uploads
+               (Root
+                  (Upload_XML ("a", "id-a", "x") &
+                   "<CommonPrefixes><Prefix>b/</Prefix></CommonPrefixes>",
+                   1));
+      begin
+         Assert
+           (Prefixes_Do_Not_Consume_Upload_Limit.Uploads.Length = 1
+            and then
+              Prefixes_Do_Not_Consume_Upload_Limit.Common_Prefixes.Length = 1,
+            "common prefixes incorrectly consumed max-uploads");
+      end;
+      Must_Reject
+        (Root ("<CommonPrefixes></CommonPrefixes>"),
+         "empty multipart common-prefix structure accepted");
+      Must_Reject
+        (Root
+           ("<CommonPrefixes><Prefix>a/</Prefix><Prefix>b/</Prefix>" &
+            "</CommonPrefixes>"),
+         "duplicate multipart common prefix accepted");
+   end Check_List_Multipart_Uploads_Codec;
+
    procedure Check_Delete_Objects_Result_Codec
      (Unused : in out Fixture)
    is
@@ -6606,6 +6836,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.list-parts-codec",
             Check_List_Parts_Codec'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.list-multipart-uploads-codec",
+            Check_List_Multipart_Uploads_Codec'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.delete-objects-result-codec",
