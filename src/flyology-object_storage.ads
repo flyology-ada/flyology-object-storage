@@ -61,6 +61,39 @@ is
    with Post => Evaluate_Object_Read_Conditions'Result in
      Success | Precondition_Failed | Not_Modified | Invalid_Request;
 
+   --  Persisted bucket-versioning state. Unconfigured denotes that no value
+   --  has ever been supplied; it is distinct from Suspended on the S3 wire.
+   type Bucket_Versioning_Status is
+     (Versioning_Unconfigured, Versioning_Enabled, Versioning_Suspended);
+
+   --  Persisted MFA-delete state. The storage contract can preserve this
+   --  value, but an S3 boundary must not accept a change without independently
+   --  enforcing its MFA policy.
+   type MFA_Delete_Status is
+     (MFA_Delete_Unconfigured, MFA_Delete_Enabled, MFA_Delete_Disabled);
+
+   --  Atomic configuration associated with one bucket. This controls only
+   --  configuration reporting until version creation and retrieval are
+   --  implemented separately.
+   type Bucket_Versioning_Configuration is record
+      Status     : Bucket_Versioning_Status := Versioning_Unconfigured;
+      MFA_Delete : MFA_Delete_Status := MFA_Delete_Unconfigured;
+   end record;
+
+   --  Merge independently optional configuration fields. An Unconfigured
+   --  update field preserves the current field.
+   function Merge_Bucket_Versioning
+     (Current, Update : Bucket_Versioning_Configuration)
+      return Bucket_Versioning_Configuration
+   with
+     Post =>
+       Merge_Bucket_Versioning'Result.Status =
+         (if Update.Status = Versioning_Unconfigured
+          then Current.Status else Update.Status)
+       and then Merge_Bucket_Versioning'Result.MFA_Delete =
+         (if Update.MFA_Delete = MFA_Delete_Unconfigured
+          then Current.MFA_Delete else Update.MFA_Delete);
+
    --  Requested object byte interval. Backends resolve this request against
    --  the same immutable object snapshot that they stream, including suffix
    --  requests, so callers never need a racy Head_Object/Get_Object pair.

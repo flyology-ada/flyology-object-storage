@@ -299,6 +299,39 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result := (if Bucket_Index (Name) = 0 then Not_Found else Success);
       end Head_Bucket;
 
+      procedure Put_Bucket_Versioning
+        (Name          : String;
+         Configuration : Bucket_Versioning_Configuration;
+         Result        : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Buckets (Index).Versioning :=
+              Merge_Bucket_Versioning
+                (Buckets (Index).Versioning, Configuration);
+            Result := Success;
+         end if;
+      end Put_Bucket_Versioning;
+
+      procedure Get_Bucket_Versioning
+        (Name          : String;
+         Configuration : out Bucket_Versioning_Configuration;
+         Result        : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Configuration := (others => <>);
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Configuration := Buckets (Index).Versioning;
+            Result := Success;
+         end if;
+      end Get_Bucket_Versioning;
+
       procedure Delete_Bucket (Name : String; Result : out Status) is
          Index : constant Natural := Bucket_Index (Name);
       begin
@@ -1296,6 +1329,43 @@ package body Flyology.Object_Storage.Backends.Memory is
          Item.State.Get_Bucket_Tags (Bucket, Value, Result);
       end if;
    end Get_Bucket_Tags;
+
+   overriding procedure Put_Bucket_Versioning
+     (Item          : in out Store;
+      Bucket        : String;
+      Configuration : Bucket_Versioning_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Put_Bucket_Versioning
+           (Bucket, Configuration, Result);
+      end if;
+   end Put_Bucket_Versioning;
+
+   overriding procedure Get_Bucket_Versioning
+     (Item          : in out Store;
+      Bucket        : String;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Configuration : out Bucket_Versioning_Configuration;
+      Result        : out Status)
+   is
+   begin
+      Configuration := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Versioning
+           (Bucket, Configuration, Result);
+      end if;
+   end Get_Bucket_Versioning;
 
    overriding procedure Put_Object
      (Item     : in out Store;

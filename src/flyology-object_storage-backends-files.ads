@@ -74,6 +74,22 @@ package Flyology.Object_Storage.Backends.Files is
       Value    : out Tags.Tag_Set;
       Result   : out Status);
 
+   overriding procedure Put_Bucket_Versioning
+     (Item          : in out Store;
+      Bucket        : String;
+      Configuration : Bucket_Versioning_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Status);
+
+   overriding procedure Get_Bucket_Versioning
+     (Item          : in out Store;
+      Bucket        : String;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Configuration : out Bucket_Versioning_Configuration;
+      Result        : out Status);
+
    overriding procedure Put_Object
      (Item     : in out Store;
       Bucket   : String;

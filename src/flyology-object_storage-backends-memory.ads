@@ -64,6 +64,22 @@ package Flyology.Object_Storage.Backends.Memory is
       Value    : out Tags.Tag_Set;
       Result   : out Status);
 
+   overriding procedure Put_Bucket_Versioning
+     (Item          : in out Store;
+      Bucket        : String;
+      Configuration : Bucket_Versioning_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Status);
+
+   overriding procedure Get_Bucket_Versioning
+     (Item          : in out Store;
+      Bucket        : String;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Configuration : out Bucket_Versioning_Configuration;
+      Result        : out Status);
+
    overriding procedure Put_Object
      (Item     : in out Store;
       Bucket   : String;
@@ -266,6 +282,7 @@ private
       Name    : Ada.Strings.Unbounded.Unbounded_String;
       Created : Unix_Time := 0;
       Tags    : Flyology.Object_Storage.Tags.Tag_Set;
+      Versioning : Bucket_Versioning_Configuration := (others => <>);
    end record;
    type Bucket_Array is array (Positive range <>) of Bucket_Slot;
 
@@ -311,6 +328,14 @@ private
          Page    : out Bucket_Page;
          Result  : out Status);
       procedure Head_Bucket (Name : String; Result : out Status);
+      procedure Put_Bucket_Versioning
+        (Name          : String;
+         Configuration : Bucket_Versioning_Configuration;
+         Result        : out Status);
+      procedure Get_Bucket_Versioning
+        (Name          : String;
+         Configuration : out Bucket_Versioning_Configuration;
+         Result        : out Status);
       procedure Delete_Bucket (Name : String; Result : out Status);
       procedure Put_Bucket_Tags
         (Name : String; Value : Tags.Tag_Set; Result : out Status);

@@ -10,7 +10,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   Schema_Version : constant Long_Long_Integer := 6;
+   Schema_Version : constant Long_Long_Integer := 7;
    Empty_Info : constant Object_Information := (others => <>);
    Object_Tags_Schema : constant String :=
      "CREATE TABLE object_tags (" &
@@ -45,6 +45,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "UNIQUE(bucket_name,ordinal)," &
      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
      ") WITHOUT ROWID;";
+   Versioning_Columns_Schema : constant String :=
+     "ALTER TABLE buckets ADD COLUMN versioning_status INTEGER NOT NULL " &
+     "DEFAULT 0 CHECK(versioning_status BETWEEN 0 AND 2);" &
+     "ALTER TABLE buckets ADD COLUMN mfa_delete_status INTEGER NOT NULL " &
+     "DEFAULT 0 CHECK(mfa_delete_status BETWEEN 0 AND 2);";
 
    protected body Operation_Gate is
       entry Acquire when not Held is
@@ -96,7 +101,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item.Database,
          "CREATE TABLE buckets (" &
          "name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
-         "created INTEGER NOT NULL CHECK(created >= 0)" &
+         "created INTEGER NOT NULL CHECK(created >= 0)," &
+         "versioning_status INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(versioning_status BETWEEN 0 AND 2)," &
+         "mfa_delete_status INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(mfa_delete_status BETWEEN 0 AND 2)" &
          ") WITHOUT ROWID;" &
          "CREATE TABLE objects (" &
          "bucket_name TEXT NOT NULL COLLATE BINARY," &
@@ -135,7 +144,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Object_Parts_Schema &
          Bucket_Tags_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=6;");
+         "PRAGMA user_version=7;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -179,7 +188,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Object_Tags_Schema &
          Object_Parts_Schema &
          Bucket_Tags_Schema &
-         "PRAGMA user_version=6;");
+         Versioning_Columns_Schema &
+         "PRAGMA user_version=7;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -202,7 +212,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Object_Tags_Schema &
          Object_Parts_Schema &
          Bucket_Tags_Schema &
-         "PRAGMA user_version=6;");
+         Versioning_Columns_Schema &
+         "PRAGMA user_version=7;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -221,7 +232,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Execute
         (Item.Database,
          Object_Tags_Schema & Object_Parts_Schema & Bucket_Tags_Schema &
-         "PRAGMA user_version=6;");
+         Versioning_Columns_Schema & "PRAGMA user_version=7;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -249,11 +260,18 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
           (Item,
            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
            "AND name='object_parts'");
+      Versioning_Columns : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('buckets') " &
+           "WHERE name IN ('versioning_status','mfa_delete_status')");
    begin
       if Object_Tables not in 0 .. 1
         or else Bucket_Tables not in 0 .. 1
         or else Parts_Tables /= 0
-        or else Object_Tables + Bucket_Tables = 0
+        or else Versioning_Columns not in 0 | 2
+        or else
+          (Object_Tables + Bucket_Tables = 0 and then Versioning_Columns = 0)
       then
          raise Catalog_Error with "unsupported SQLite schema version 4";
       end if;
@@ -265,8 +283,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       if Bucket_Tables = 0 then
          DB.Execute (Item.Database, Bucket_Tags_Schema);
       end if;
+      if Versioning_Columns = 0 then
+         DB.Execute (Item.Database, Versioning_Columns_Schema);
+      end if;
       DB.Execute
-        (Item.Database, Object_Parts_Schema & "PRAGMA user_version=6;");
+        (Item.Database, Object_Parts_Schema & "PRAGMA user_version=7;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -294,11 +315,17 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
           (Item,
            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
            "AND name='object_parts'");
+      Versioning_Columns : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('buckets') " &
+           "WHERE name IN ('versioning_status','mfa_delete_status')");
    begin
       if Object_Tables /= 1
         or else Bucket_Tables not in 0 .. 1
         or else Parts_Tables not in 0 .. 1
         or else Bucket_Tables + Parts_Tables = 0
+        or else Versioning_Columns not in 0 | 2
       then
          raise Catalog_Error with "unsupported SQLite schema version 5";
       end if;
@@ -310,7 +337,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       if Parts_Tables = 0 then
          DB.Execute (Item.Database, Object_Parts_Schema);
       end if;
-      DB.Execute (Item.Database, "PRAGMA user_version=6;");
+      if Versioning_Columns = 0 then
+         DB.Execute (Item.Database, Versioning_Columns_Schema);
+      end if;
+      DB.Execute (Item.Database, "PRAGMA user_version=7;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -320,6 +350,37 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Upgrade_From_V5;
+
+   procedure Upgrade_From_V6 (Item : in out Catalog) is
+      In_Transaction : Boolean := False;
+      Existing_Tables : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name IN ('object_tags','object_parts','bucket_tags')");
+      Versioning_Columns : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('buckets') " &
+           "WHERE name IN ('versioning_status','mfa_delete_status')");
+   begin
+      if Existing_Tables /= 3 or else Versioning_Columns /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 6";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Versioning_Columns_Schema & "PRAGMA user_version=7;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V6;
 
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
@@ -356,6 +417,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Upgrade_From_V4 (Item);
       elsif App_ID = Application_ID and then Version = 5 then
          Upgrade_From_V5 (Item);
+      elsif App_ID = Application_ID and then Version = 6 then
+         Upgrade_From_V6 (Item);
       elsif App_ID /= Application_ID or else Version /= Schema_Version then
          raise Catalog_Error with "unsupported or unrelated SQLite database";
       end if;
@@ -372,6 +435,12 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "AND name IN " &
          "('buckets','objects','object_tags','multipart_uploads'," &
          "'multipart_parts','object_parts','bucket_tags')") /= 7
+      then
+         raise Catalog_Error with "SQLite catalog schema is incomplete";
+      elsif Scalar
+        (Item,
+         "SELECT count(*) FROM pragma_table_info('buckets') " &
+         "WHERE name IN ('versioning_status','mfa_delete_status')") /= 2
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif Text_Scalar (Item, "PRAGMA quick_check(1)") /= "ok" then
@@ -510,6 +579,99 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Head_Bucket;
+
+   procedure Put_Bucket_Versioning
+     (Item          : in out Catalog;
+      Name          : String;
+      Configuration : Bucket_Versioning_Configuration;
+      Result        : out Status)
+   is
+      Update : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Update, Item.Database,
+         "UPDATE buckets SET " &
+         "versioning_status=CASE WHEN ?2=0 THEN versioning_status " &
+         "ELSE ?2 END," &
+         "mfa_delete_status=CASE WHEN ?3=0 THEN mfa_delete_status " &
+         "ELSE ?3 END " &
+         "WHERE name=?1");
+      DB.Bind (Update, 1, Name);
+      DB.Bind
+        (Update, 2,
+         Long_Long_Integer
+           (Bucket_Versioning_Status'Pos (Configuration.Status)));
+      DB.Bind
+        (Update, 3,
+         Long_Long_Integer
+           (MFA_Delete_Status'Pos (Configuration.MFA_Delete)));
+      if DB.Step (Update) /= DB.Done then
+         raise Catalog_Error with
+           "bucket versioning update returned a row";
+      end if;
+      Result :=
+        (if DB.Changes (Item.Database) = 1 then Success else Not_Found);
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Put_Bucket_Versioning;
+
+   procedure Get_Bucket_Versioning
+     (Item          : in out Catalog;
+      Name          : String;
+      Configuration : out Bucket_Versioning_Configuration;
+      Result        : out Status)
+   is
+      Query  : DB.Statement;
+      Locked : Boolean := False;
+      Step   : DB.Step_Result;
+      Raw_Status     : Long_Long_Integer;
+      Raw_MFA_Delete : Long_Long_Integer;
+   begin
+      Configuration := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT versioning_status,mfa_delete_status " &
+         "FROM buckets WHERE name=?1");
+      DB.Bind (Query, 1, Name);
+      Step := DB.Step (Query);
+      if Step = DB.Row then
+         Raw_Status := DB.Column (Query, 0);
+         Raw_MFA_Delete := DB.Column (Query, 1);
+         if Raw_Status not in 0 .. 2 or else Raw_MFA_Delete not in 0 .. 2 then
+            raise Catalog_Error with
+              "bucket versioning catalog value is invalid";
+         end if;
+         Configuration :=
+           (Status =>
+              Bucket_Versioning_Status'Val
+                (Natural (Raw_Status)),
+            MFA_Delete =>
+              MFA_Delete_Status'Val
+                (Natural (Raw_MFA_Delete)));
+         Result := Success;
+      else
+         Result := Not_Found;
+      end if;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Get_Bucket_Versioning;
 
    procedure Delete_Bucket
      (Item : in out Catalog; Name : String; Result : out Status)

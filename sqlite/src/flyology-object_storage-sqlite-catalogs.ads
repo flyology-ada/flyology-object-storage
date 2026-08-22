@@ -31,6 +31,18 @@ package Flyology.Object_Storage.SQLite.Catalogs is
    procedure Head_Bucket
      (Item : in out Catalog; Name : String; Result : out Status);
 
+   procedure Put_Bucket_Versioning
+     (Item          : in out Catalog;
+      Name          : String;
+      Configuration : Bucket_Versioning_Configuration;
+      Result        : out Status);
+
+   procedure Get_Bucket_Versioning
+     (Item          : in out Catalog;
+      Name          : String;
+      Configuration : out Bucket_Versioning_Configuration;
+      Result        : out Status);
+
    procedure Delete_Bucket
      (Item : in out Catalog; Name : String; Result : out Status);
 

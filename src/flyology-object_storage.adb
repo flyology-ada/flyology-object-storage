@@ -246,6 +246,16 @@ is
       return Success;
    end Evaluate_Object_Read_Conditions;
 
+   function Merge_Bucket_Versioning
+     (Current, Update : Bucket_Versioning_Configuration)
+      return Bucket_Versioning_Configuration is
+     (Status =>
+        (if Update.Status = Versioning_Unconfigured
+         then Current.Status else Update.Status),
+      MFA_Delete =>
+        (if Update.MFA_Delete = MFA_Delete_Unconfigured
+         then Current.MFA_Delete else Update.MFA_Delete));
+
    function Starts_With (Value, Prefix : String) return Boolean is
      (Value'Length >= Prefix'Length
       and then Value

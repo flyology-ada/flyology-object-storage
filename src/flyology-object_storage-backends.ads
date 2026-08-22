@@ -332,6 +332,28 @@ package Flyology.Object_Storage.Backends is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status) is abstract;
 
+   --  Atomically apply one bucket's versioning configuration. Unconfigured
+   --  fields are left unchanged, allowing status and MFA-delete policy to be
+   --  changed independently. This does not create object versions or change
+   --  object mutation semantics.
+   procedure Put_Bucket_Versioning
+     (Item          : in out Backend;
+      Bucket        : String;
+      Configuration : Bucket_Versioning_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Status) is abstract;
+
+   --  Return one atomic configuration snapshot. A newly created bucket
+   --  returns both fields Unconfigured.
+   procedure Get_Bucket_Versioning
+     (Item          : in out Backend;
+      Bucket        : String;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Configuration : out Bucket_Versioning_Configuration;
+      Result        : out Status) is abstract;
+
    procedure Delete_Bucket
      (Item   : in out Backend;
       Bucket : String;

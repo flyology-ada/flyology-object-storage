@@ -35,6 +35,7 @@ package body Flyology.Object_Storage.Backends.Files is
    Tag_Magic : constant String := "FOSOBJ02";
    Magic : constant String := "FOSOBJ03";
    Bucket_Tag_Magic : constant String := "FOSTAG01";
+   Versioning_Magic : constant String := "FOSVER01";
    Maximum_Metadata_Length : constant Natural := 8 * 1_024;
    Maximum_Tag_Key_Bytes : constant Natural :=
      4 * Tags.Maximum_Key_Characters;
@@ -144,6 +145,9 @@ package body Flyology.Object_Storage.Backends.Files is
 
    function Tags_Path (Item : Store; Bucket : String) return String is
      (Join (Configuration_Path (Item, Bucket), "tags.fos"));
+
+   function Versioning_Path (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "versioning.fos"));
 
    function Upload_Path
      (Item : Store; Bucket : String; Upload_ID : String) return String is
@@ -492,6 +496,55 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
    end Read_Tags;
 
+   function Read_Versioning
+     (Item : Store; Bucket : String) return Bucket_Versioning_Configuration
+   is
+      Path : constant String := Versioning_Path (Item, Bucket);
+      File : SIO.File_Type;
+   begin
+      if not Ada.Directories.Exists (Path) then
+         return (others => <>);
+      elsif GNAT.OS_Lib.Is_Symbolic_Link (Path)
+        or else Ada.Directories.Kind (Path) /= Ada.Directories.Ordinary_File
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      SIO.Open (File, SIO.In_File, Path);
+      if SIO.Size (File) /= SIO.Count (Versioning_Magic'Length + 2)
+        or else Read_String (File, Versioning_Magic'Length) /=
+          Versioning_Magic
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      declare
+         State : constant String := Read_String (File, 2);
+         Value : Bucket_Versioning_Configuration;
+      begin
+         SIO.Close (File);
+         Value.Status :=
+           (case State (1) is
+               when 'U' => Versioning_Unconfigured,
+               when 'E' => Versioning_Enabled,
+               when 'S' => Versioning_Suspended,
+               when others =>
+                  raise Ada.IO_Exceptions.Data_Error);
+         Value.MFA_Delete :=
+           (case State (2) is
+               when 'U' => MFA_Delete_Unconfigured,
+               when 'E' => MFA_Delete_Enabled,
+               when 'D' => MFA_Delete_Disabled,
+               when others =>
+                  raise Ada.IO_Exceptions.Data_Error);
+         return Value;
+      end;
+   exception
+      when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         raise;
+   end Read_Versioning;
+
    function Unix_Seconds
      (Value : Ada.Calendar.Time) return Long_Long_Integer is
      (Long_Long_Integer (Value - Epoch));
@@ -827,6 +880,8 @@ package body Flyology.Object_Storage.Backends.Files is
          Result.Root_Path := Full;
          Result.Maximum_Object_Size := Maximum_Object_Size;
          Ensure_Directory (Result, Join (US.To_String (Full), "buckets"));
+         Ensure_Directory
+           (Result, Join (US.To_String (Full), "bucket-configurations"));
          if Ada.Directories.Exists (Join (US.To_String (Full), "tmp")) then
             if GNAT.OS_Lib.Is_Symbolic_Link
               (Join (US.To_String (Full), "tmp"))
@@ -1035,6 +1090,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Locked := True;
       Result :=
         (if Ada.Directories.Exists (Path)
+           and then not GNAT.OS_Lib.Is_Symbolic_Link (Path)
            and then Ada.Directories.Kind (Path) = Ada.Directories.Directory
          then Success else Not_Found);
       Item.Publication.Release;
@@ -1072,6 +1128,10 @@ package body Flyology.Object_Storage.Backends.Files is
       Locked := True;
       if not Ada.Directories.Exists (Path) then
          Result := Not_Found;
+      elsif GNAT.OS_Lib.Is_Symbolic_Link (Path)
+        or else Ada.Directories.Kind (Path) /= Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
       elsif Has_Objects (Join (Path, "objects"))
         or else Has_Objects (Join (Path, "multipart"))
       then
@@ -1250,6 +1310,169 @@ package body Flyology.Object_Storage.Backends.Files is
          Value.Clear;
          Result := Backend_Unavailable;
    end Get_Bucket_Tags;
+
+   overriding procedure Put_Bucket_Versioning
+     (Item          : in out Store;
+      Bucket        : String;
+      Configuration : Bucket_Versioning_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Status)
+   is
+      Bucket_Directory : constant String := Bucket_Path (Item, Bucket);
+      Target           : constant String := Versioning_Path (Item, Bucket);
+      Temp             : US.Unbounded_String;
+      Number           : Long_Long_Integer;
+      File             : SIO.File_Type;
+      Locked           : Boolean := False;
+      Renamed          : Boolean := False;
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if not Ada.Directories.Exists (Bucket_Directory)
+        or else GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Directory)
+        or else Ada.Directories.Kind (Bucket_Directory) /=
+          Ada.Directories.Directory
+      then
+         Result := Not_Found;
+      else
+         declare
+            Value : Bucket_Versioning_Configuration :=
+              Read_Versioning (Item, Bucket);
+         begin
+            Value := Merge_Bucket_Versioning (Value, Configuration);
+            Item.Temp_Sequence.Next (Number);
+            Temp := US.To_Unbounded_String
+              (Join
+                 (Temp_Path (Item),
+                  "versioning-" & GNAT.SHA256.Digest
+                    (Bucket & Long_Long_Integer'Image (Number) &
+                     Ada.Calendar.Time'Image (Ada.Calendar.Clock))));
+            SIO.Create (File, SIO.Out_File, US.To_String (Temp));
+            Write_String (File, Versioning_Magic);
+            Write_String
+              (File,
+               (case Value.Status is
+                   when Versioning_Unconfigured => "U",
+                   when Versioning_Enabled      => "E",
+                   when Versioning_Suspended    => "S"));
+            Write_String
+              (File,
+               (case Value.MFA_Delete is
+                   when MFA_Delete_Unconfigured => "U",
+                   when MFA_Delete_Enabled      => "E",
+                   when MFA_Delete_Disabled     => "D"));
+            SIO.Close (File);
+            Sync_File (Item, US.To_String (Temp));
+            Ensure_Directory (Item, Configuration_Path (Item, Bucket));
+            GNAT.OS_Lib.Rename_File
+              (US.To_String (Temp), Target, Renamed);
+            if not Renamed then
+               raise Ada.IO_Exceptions.Use_Error;
+            end if;
+            Sync_Directory (Item, Configuration_Path (Item, Bucket));
+            Sync_Directory (Item, Temp_Path (Item));
+            Temp := US.Null_Unbounded_String;
+            Result := Success;
+         end;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         begin
+            if US.Length (Temp) > 0
+              and then Ada.Directories.Exists (US.To_String (Temp))
+            then
+               Ada.Directories.Delete_File (US.To_String (Temp));
+            end if;
+         exception
+            when others => null;
+         end;
+         raise;
+      when others =>
+         if SIO.Is_Open (File) then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         begin
+            if US.Length (Temp) > 0
+              and then Ada.Directories.Exists (US.To_String (Temp))
+            then
+               Ada.Directories.Delete_File (US.To_String (Temp));
+            end if;
+         exception
+            when others => null;
+         end;
+         Result := Backend_Unavailable;
+   end Put_Bucket_Versioning;
+
+   overriding procedure Get_Bucket_Versioning
+     (Item          : in out Store;
+      Bucket        : String;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Configuration : out Bucket_Versioning_Configuration;
+      Result        : out Status)
+   is
+      Path   : constant String := Bucket_Path (Item, Bucket);
+      Locked : Boolean := False;
+   begin
+      Configuration := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if not Ada.Directories.Exists (Path)
+        or else GNAT.OS_Lib.Is_Symbolic_Link (Path)
+        or else Ada.Directories.Kind (Path) /= Ada.Directories.Directory
+      then
+         Result := Not_Found;
+      elsif Ada.Directories.Exists (Configuration_Path (Item, Bucket))
+        and then
+          (GNAT.OS_Lib.Is_Symbolic_Link
+             (Configuration_Path (Item, Bucket))
+           or else Ada.Directories.Kind (Configuration_Path (Item, Bucket)) /=
+             Ada.Directories.Directory)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         Configuration := Read_Versioning (Item, Bucket);
+         Result := Success;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Configuration := (others => <>);
+         Result := Backend_Unavailable;
+   end Get_Bucket_Versioning;
 
    overriding procedure Put_Object
      (Item     : in out Store;
