@@ -244,7 +244,8 @@ procedure Files_Crash_Probe is
                  (Key        => US.To_Unbounded_String ("second-object"),
                   Conditions => Backends.No_Delete_Object_Conditions));
             Store.Delete_Objects
-              (Bucket, Entries, null, Ada.Real_Time.Time_Last,
+              (Bucket, Entries, (others => <>), null,
+               Ada.Real_Time.Time_Last,
                Outcomes, Result);
          end;
       elsif Scenario = "object-tags" then

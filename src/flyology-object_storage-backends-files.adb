@@ -2116,6 +2116,7 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item     : in out Store;
       Bucket   : String;
       Entries  : Delete_Object_Entries;
+      Requirements : Delete_Objects_Requirements;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Outcomes : out Delete_Object_Outcomes;
@@ -2154,6 +2155,32 @@ package body Flyology.Object_Storage.Backends.Files is
          Item.Publication.Release;
          Locked := False;
          return;
+      end if;
+
+      if Requirements.Require_Unversioned then
+         if Ada.Directories.Exists (Configuration_Path (Item, Bucket))
+           and then
+             (GNAT.OS_Lib.Is_Symbolic_Link
+                (Configuration_Path (Item, Bucket))
+              or else Ada.Directories.Kind
+                (Configuration_Path (Item, Bucket)) /=
+                  Ada.Directories.Directory)
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         declare
+            Configuration : constant Bucket_Versioning_Configuration :=
+              Read_Versioning (Item, Bucket);
+         begin
+            if Configuration.Status /= Versioning_Unconfigured
+              or else Configuration.MFA_Delete = MFA_Delete_Enabled
+            then
+               Result := Not_Implemented;
+               Item.Publication.Release;
+               Locked := False;
+               return;
+            end if;
+         end;
       end if;
 
       for Request_Entry of Entries loop

@@ -109,6 +109,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
      (Item     : in out Catalog;
       Bucket   : String;
       Entries  : Backends.Delete_Object_Entries;
+      Requirements : Backends.Delete_Objects_Requirements;
       Retired  : out Payloads;
       Outcomes : out Backends.Delete_Object_Outcomes;
       Result   : out Status);

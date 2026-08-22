@@ -7,10 +7,13 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with GNAT.MD5;
 with GNAT.SHA256;
+with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.IO;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Attributes;
+with Flyology.Object_Storage.S3.Checksum_Policy;
+with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
@@ -33,6 +36,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Requests renames S3.Requests;
    package Buckets renames S3.Buckets;
    package Attributes renames S3.Attributes;
+   package Checksum_Policy renames S3.Checksum_Policy;
+   package Checksums renames S3.Checksums;
    package Encoding renames S3.SigV4_Encoding;
    package Deletions renames S3.Deletions;
    package Listings renames S3.Listings;
@@ -58,7 +63,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    Maximum_Create_Bucket_Body : constant Byte_Count := 64 * 1_024;
    Maximum_Versioning_Body : constant Byte_Count :=
      Versioning.Maximum_Document_Bytes;
-   Maximum_Delete_Objects_Body : constant Byte_Count := 2 * 1_024 * 1_024;
+   Maximum_Delete_Objects_Body : constant Byte_Count :=
+     Deletions.Maximum_Document_Bytes;
    Maximum_Complete_Multipart_Body : constant Byte_Count :=
      2 * 1_024 * 1_024;
    Maximum_Object_Tagging_Body : constant Byte_Count :=
@@ -4068,75 +4074,414 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Observed  => 0,
                      Maximum   => Maximum_Delete_Objects_Body,
                      Completed => False);
+                  Document : constant String := Read_Document (Source);
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  MFA_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-mfa");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Bypass_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-bypass-governance-retention");
+                  SDK_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm");
+                  CRC32_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-crc32");
+                  CRC32C_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-crc32c");
+                  CRC64_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-checksum-crc64nvme");
+                  SHA1_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-sha1");
+                  SHA256_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-sha256");
+                  SHA512_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-sha512");
+                  Checksum_MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-md5");
+                  XXHASH64_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-checksum-xxhash64");
+                  XXHASH3_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-checksum-xxhash3");
+                  XXHASH128_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-checksum-xxhash128");
+                  Checksum_Count : constant Natural :=
+                    CRC32_Count + CRC32C_Count + CRC64_Count + SHA1_Count +
+                    SHA256_Count + SHA512_Count + Checksum_MD5_Count +
+                    XXHASH64_Count + XXHASH3_Count + XXHASH128_Count;
+                  Payer : constant String :=
+                    (if Payer_Count = 1
+                     then Apps.Request_Header (X, "x-amz-request-payer")
+                     else "");
+                  MFA : constant String :=
+                    (if MFA_Count = 1
+                     then Apps.Request_Header (X, "x-amz-mfa") else "");
+                  Bypass : constant S3.Wire_Core.Boolean_Result :=
+                    (if Bypass_Count = 1
+                     then S3.Wire_Core.Parse_Boolean
+                       (Apps.Request_Header
+                          (X, "x-amz-bypass-governance-retention"))
+                     else (Valid => False));
+                  Owner_Accepted : Boolean := False;
+
+                  type Checksum_Verification is
+                    (Checksum_OK, Invalid_Checksum_Group,
+                     Invalid_Checksum_Value, Checksum_Mismatch);
+
+                  function Header_Name
+                    (Algorithm : Checksum_Policy.Algorithm) return String is
+                    (case Algorithm is
+                        when S3.Core.CRC32 => "x-amz-checksum-crc32",
+                        when S3.Core.CRC32C => "x-amz-checksum-crc32c",
+                        when S3.Core.CRC64NVME =>
+                          "x-amz-checksum-crc64nvme",
+                        when S3.Core.SHA1 => "x-amz-checksum-sha1",
+                        when S3.Core.SHA256 => "x-amz-checksum-sha256",
+                        when S3.Core.SHA512 => "x-amz-checksum-sha512",
+                        when S3.Core.MD5 => "x-amz-checksum-md5",
+                        when S3.Core.XXHASH64 => "x-amz-checksum-xxhash64",
+                        when S3.Core.XXHASH3 => "x-amz-checksum-xxhash3",
+                        when S3.Core.XXHASH128 =>
+                          "x-amz-checksum-xxhash128");
+
+                  function Count_For
+                    (Algorithm : Checksum_Policy.Algorithm) return Natural is
+                    (case Algorithm is
+                        when S3.Core.CRC32 => CRC32_Count,
+                        when S3.Core.CRC32C => CRC32C_Count,
+                        when S3.Core.CRC64NVME => CRC64_Count,
+                        when S3.Core.SHA1 => SHA1_Count,
+                        when S3.Core.SHA256 => SHA256_Count,
+                        when S3.Core.SHA512 => SHA512_Count,
+                        when S3.Core.MD5 => Checksum_MD5_Count,
+                        when S3.Core.XXHASH64 => XXHASH64_Count,
+                        when S3.Core.XXHASH3 => XXHASH3_Count,
+                        when S3.Core.XXHASH128 => XXHASH128_Count);
+
+                  function Selected_Algorithm return
+                    Checksum_Policy.Algorithm_Parse_Result
+                  is
+                  begin
+                     if SDK_Count = 1 then
+                        return Checksum_Policy.Parse_Algorithm
+                          (Apps.Request_Header
+                             (X, "x-amz-sdk-checksum-algorithm"));
+                     elsif CRC32_Count = 1 then
+                        return (Valid => True, Value => S3.Core.CRC32);
+                     elsif CRC32C_Count = 1 then
+                        return (Valid => True, Value => S3.Core.CRC32C);
+                     elsif CRC64_Count = 1 then
+                        return (Valid => True, Value => S3.Core.CRC64NVME);
+                     elsif SHA1_Count = 1 then
+                        return (Valid => True, Value => S3.Core.SHA1);
+                     elsif SHA256_Count = 1 then
+                        return (Valid => True, Value => S3.Core.SHA256);
+                     elsif SHA512_Count = 1 then
+                        return (Valid => True, Value => S3.Core.SHA512);
+                     elsif Checksum_MD5_Count = 1 then
+                        return (Valid => True, Value => S3.Core.MD5);
+                     elsif XXHASH64_Count = 1 then
+                        return (Valid => True, Value => S3.Core.XXHASH64);
+                     elsif XXHASH3_Count = 1 then
+                        return (Valid => True, Value => S3.Core.XXHASH3);
+                     elsif XXHASH128_Count = 1 then
+                        return (Valid => True, Value => S3.Core.XXHASH128);
+                     else
+                        return (Valid => False);
+                     end if;
+                  end Selected_Algorithm;
+
+                  function Verify_Checksum return Checksum_Verification is
+                     Selected : constant
+                       Checksum_Policy.Algorithm_Parse_Result :=
+                         Selected_Algorithm;
+                  begin
+                     if SDK_Count > 1 or else Checksum_Count > 1
+                       or else CRC32_Count > 1 or else CRC32C_Count > 1
+                       or else CRC64_Count > 1 or else SHA1_Count > 1
+                       or else SHA256_Count > 1 or else SHA512_Count > 1
+                       or else Checksum_MD5_Count > 1
+                       or else XXHASH64_Count > 1
+                       or else XXHASH3_Count > 1
+                       or else XXHASH128_Count > 1
+                       or else
+                         (SDK_Count = 1
+                          and then
+                            (not Selected.Valid
+                             or else Checksum_Count /= 1
+                             or else Count_For (Selected.Value) /= 1))
+                     then
+                        return Invalid_Checksum_Group;
+                     elsif Checksum_Count = 0 then
+                        return Checksum_OK;
+                     elsif not Selected.Valid then
+                        return Invalid_Checksum_Group;
+                     end if;
+                     declare
+                        Supplied : constant Checksums.Decode_Result :=
+                          Checksums.Decode_Base64
+                            (Apps.Request_Header
+                               (X, Header_Name (Selected.Value)),
+                             Selected.Value);
+                     begin
+                        if not Supplied.Valid then
+                           return Invalid_Checksum_Value;
+                        end if;
+                        declare
+                           Computed : constant Checksums.Digest_Value :=
+                             Checksums.Compute
+                               (Selected.Value,
+                                Flyology.Bytes.To_Array
+                                  (Flyology.Bytes.From_Byte_String
+                                     (Document)));
+                        begin
+                           if Checksums.Equivalent
+                             (Supplied.Value, Computed)
+                           then
+                              return Checksum_OK;
+                           else
+                              return Checksum_Mismatch;
+                           end if;
+                        end;
+                     end;
+                  end Verify_Checksum;
+
+                  Checksum_Status : constant Checksum_Verification :=
+                    Verify_Checksum;
                begin
-                  declare
+                  if MD5_Count /= 1
+                    or else not S3.Wire_Core.Valid_Base64
+                      ((if MD5_Count = 1
+                        then Apps.Request_Header (X, "content-md5") else ""),
+                       16)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "DeleteObjects requires one valid Content-MD5 header",
+                        Target_Text);
+                  elsif Content_MD5 (Document) /=
+                    Apps.Request_Header (X, "content-md5")
+                  then
+                     Send_Error
+                       (X, 400, "BadDigest",
+                        "The Content-MD5 does not match the request body",
+                        Target_Text);
+                  elsif MFA_Count > 1 or else Payer_Count > 1
+                    or else Bypass_Count > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A DeleteObjects control header is duplicated",
+                        Target_Text);
+                  elsif Payer_Count = 1 and then Payer /= "requester" then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer value is invalid", Target_Text);
+                  elsif MFA_Count = 1 and then MFA'Length = 0 then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The MFA value is empty", Target_Text);
+                  elsif Bypass_Count = 1 and then not Bypass.Valid then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The governance bypass value is invalid",
+                        Target_Text);
+                  elsif Checksum_Status in
+                    Invalid_Checksum_Group | Invalid_Checksum_Value
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The DeleteObjects checksum group is invalid",
+                        Target_Text);
+                  elsif Checksum_Status = Checksum_Mismatch then
+                     Send_Error
+                       (X, 400, "BadDigest",
+                        "The optional checksum does not match the request body",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                  end if;
+                  if Owner_Accepted then
+                     declare
                      Request : constant Deletions.Delete_Objects_Request :=
                        Deletions.Parse_Request
-                         (Read_Document (Source),
+                         (Document,
                           (Maximum_Document_Bytes =>
                              Natural (Maximum_Delete_Objects_Body),
                            Maximum_Depth      => 8,
-                           Maximum_Elements   => 3_005,
+                           Maximum_Elements   =>
+                             Deletions.Maximum_Request_Elements,
                            Maximum_Text_Bytes =>
                              Natural (Maximum_Delete_Objects_Body)));
                      Response : Deletions.Delete_Objects_Result;
+                     Entries  : Backends.Delete_Object_Entries;
+                     Outcomes : Backends.Delete_Object_Outcomes;
                   begin
-                     --  Parse and hash the admitted body before consulting
-                     --  the backend, so every response leaves the HTTP
-                     --  connection at the next request boundary.
-                     Store.Head_Bucket
-                       (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
-                        Result);
-                     if Result /= Success then
-                        Send_Backend_Error
-                          (X, Result, True, Target_Text);
-                        return;
-                     end if;
-                     for Item of Request.Objects loop
-                        if US.Length (Item.Version_ID) > 0 then
-                           Response.Errors.Append
-                             (Deletions.Delete_Error'
-                              (Key        => Item.Key,
-                               Version_ID => Item.Version_ID,
-                               Code       => US.To_Unbounded_String
-                                 ("InvalidArgument"),
-                               Message    => US.To_Unbounded_String
-                                 ("Object versioning is not supported")));
-                        else
-                           Store.Delete_Object
-                             (Bucket, US.To_String (Item.Key),
-                              Apps.Cancellation (X), Apps.Deadline (X),
-                              Result);
-                           if Result in Success | Not_Found then
-                              if not Request.Quiet then
-                                 Response.Deleted.Append
-                                   (Deletions.Deleted_Object'
-                                      (Key        => Item.Key,
-                                       Version_ID => Item.Version_ID,
-                                       others     => <>));
-                              end if;
-                           else
-                              Response.Errors.Append
-                                (Deletions.Delete_Error'
-                                 (Key        => Item.Key,
-                                  Version_ID => Item.Version_ID,
-                                  Code       => US.To_Unbounded_String
-                                    (if Result in
-                                         Capacity_Exceeded |
-                                         Backend_Unavailable
-                                     then "SlowDown"
-                                     elsif Result = Conflict
-                                     then "OperationAborted"
-                                     else "InvalidRequest"),
-                                  Message    => US.To_Unbounded_String
-                                    ("The object could not be deleted")));
+                     for Object_Request of Request.Objects loop
+                        declare
+                           ETag_Valid : constant Boolean :=
+                             not Object_Request.Has_ETag
+                             or else Valid_Object_Delete_ETag_Condition
+                               (US.To_String (Object_Request.ETag));
+                        begin
+                           if US.Length (Object_Request.Version_ID) = 0
+                             and then ETag_Valid
+                             and then
+                               not Object_Request.Has_Last_Modified_Time
+                             and then not Object_Request.Has_Size
+                           then
+                              Entries.Append
+                                (Backends.Delete_Object_Entry'
+                                   (Key => Object_Request.Key,
+                                    Conditions =>
+                                      (Has_ETag => Object_Request.Has_ETag,
+                                       ETag => Object_Request.ETag,
+                                       others => <>)));
                            end if;
-                        end if;
+                        end;
                      end loop;
+                     if Entries.Is_Empty then
+                        --  No storage mutation can follow, so a separate
+                        --  existence lookup is sufficient to preserve S3's
+                        --  NoSuchBucket classification without reintroducing
+                        --  the versioning/delete race on actionable entries.
+                        Store.Head_Bucket
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Result);
+                        if Result /= Success then
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                           return;
+                        end if;
+                     else
+                        Store.Delete_Objects
+                          (Bucket, Entries,
+                           (Require_Unversioned => True),
+                           Apps.Cancellation (X), Apps.Deadline (X),
+                           Outcomes, Result);
+                        if Result = Not_Implemented then
+                           Send_Error
+                             (X, 501, "NotImplemented",
+                              "Object versions, delete markers, and MFA " &
+                              "Delete enforcement are not implemented",
+                              Target_Text);
+                           return;
+                        elsif Result /= Success then
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                           return;
+                        end if;
+                     end if;
+                     declare
+                        Outcome_Index : Positive := 1;
+                     begin
+                        for Object_Request of Request.Objects loop
+                           declare
+                              Date_Value : constant
+                                Object_Reads.Conditional_Date_Result :=
+                                  (if Object_Request.Has_Last_Modified_Time
+                                   then Object_Reads.Parse_Conditional_Date
+                                     (US.To_String
+                                        (Object_Request.Last_Modified_Time),
+                                      Clock)
+                                   else (Valid => False));
+                              ETag_Valid : constant Boolean :=
+                                not Object_Request.Has_ETag
+                                or else Valid_Object_Delete_ETag_Condition
+                                  (US.To_String (Object_Request.ETag));
+                              Entry_Result : Status := Invalid_Request;
+                              Error_Code : US.Unbounded_String;
+                              Error_Message : US.Unbounded_String;
+                           begin
+                              if US.Length (Object_Request.Version_ID) > 0 then
+                                 Error_Code := US.To_Unbounded_String
+                                   ("NotImplemented");
+                                 Error_Message := US.To_Unbounded_String
+                                   ("Object version deletion is not supported");
+                              elsif not ETag_Valid then
+                                 Error_Code := US.To_Unbounded_String
+                                   ("InvalidArgument");
+                                 Error_Message := US.To_Unbounded_String
+                                   ("The ETag condition is invalid");
+                              elsif Object_Request.Has_Last_Modified_Time
+                                and then not Date_Value.Valid
+                              then
+                                 Error_Code := US.To_Unbounded_String
+                                   ("InvalidArgument");
+                                 Error_Message := US.To_Unbounded_String
+                                   ("The LastModifiedTime condition is invalid");
+                              elsif Object_Request.Has_Last_Modified_Time
+                                or else Object_Request.Has_Size
+                              then
+                                 Error_Code := US.To_Unbounded_String
+                                   ("InvalidArgument");
+                                 Error_Message := US.To_Unbounded_String
+                                   ("LastModifiedTime and Size require a " &
+                                    "directory bucket");
+                              else
+                                 Entry_Result := Outcomes (Outcome_Index).Result;
+                                 Outcome_Index := Outcome_Index + 1;
+                                 if Entry_Result = Success then
+                                    if not Request.Quiet then
+                                       Response.Deleted.Append
+                                         (Deletions.Deleted_Object'
+                                            (Key => Object_Request.Key,
+                                             Version_ID =>
+                                               Object_Request.Version_ID,
+                                             others => <>));
+                                    end if;
+                                 elsif Entry_Result = Not_Found then
+                                    Error_Code := US.To_Unbounded_String
+                                      ("NoSuchKey");
+                                    Error_Message := US.To_Unbounded_String
+                                      ("The conditioned key does not exist");
+                                 elsif Entry_Result = Precondition_Failed then
+                                    Error_Code := US.To_Unbounded_String
+                                      ("PreconditionFailed");
+                                    Error_Message := US.To_Unbounded_String
+                                      ("A delete condition did not match");
+                                 elsif Entry_Result in
+                                   Capacity_Exceeded | Backend_Unavailable
+                                 then
+                                    Error_Code := US.To_Unbounded_String
+                                      ("SlowDown");
+                                    Error_Message := US.To_Unbounded_String
+                                      ("The object could not be deleted");
+                                 elsif Entry_Result = Conflict then
+                                    Error_Code := US.To_Unbounded_String
+                                      ("OperationAborted");
+                                    Error_Message := US.To_Unbounded_String
+                                      ("The object could not be deleted");
+                                 else
+                                    Error_Code := US.To_Unbounded_String
+                                      ("InvalidRequest");
+                                    Error_Message := US.To_Unbounded_String
+                                      ("The object could not be deleted");
+                                 end if;
+                              end if;
+                              if US.Length (Error_Code) > 0 then
+                                 Response.Errors.Append
+                                   (Deletions.Delete_Error'
+                                      (Key => Object_Request.Key,
+                                       Version_ID =>
+                                         Object_Request.Version_ID,
+                                       Code => Error_Code,
+                                       Message => Error_Message));
+                              end if;
+                           end;
+                        end loop;
+                     end;
                      Apps.Respond
                        (X, 200, "application/xml",
                         Deletions.Serialize_Result (Response));
                   end;
+                  end if;
                exception
                   when Deletions.Malformed_Delete =>
                      Send_Error

@@ -9,6 +9,7 @@ package Flyology.Object_Storage.S3.Deletions is
    Maximum_Objects : constant := 1_000;
    Maximum_Version_ID_Length : constant := 1_024;
    Maximum_Document_Bytes : constant := 2 * 1_024 * 1_024;
+   Maximum_Request_Elements : constant := 2 + 6 * Maximum_Objects;
 
    Malformed_Delete_Object_Request : exception;
 

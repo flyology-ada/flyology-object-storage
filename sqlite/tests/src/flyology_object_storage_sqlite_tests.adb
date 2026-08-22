@@ -1052,7 +1052,7 @@ begin
          Databases.Close (Injector);
          begin
             Catalogs.Delete_Objects
-              (Catalog, "catalog-bucket", Entries,
+              (Catalog, "catalog-bucket", Entries, (others => <>),
                Retired, Outcomes, Result);
          exception
             when others => Raised := True;
@@ -1075,7 +1075,8 @@ begin
          Databases.Execute (Injector, "DROP TRIGGER fail_delete_objects;");
          Databases.Close (Injector);
          Catalogs.Delete_Objects
-           (Catalog, "catalog-bucket", Entries, Retired, Outcomes, Result);
+           (Catalog, "catalog-bucket", Entries, (others => <>), Retired,
+            Outcomes, Result);
          Assert
            (Result = Flyology.Object_Storage.Success
             and then Outcomes.Length = 2
@@ -1118,7 +1119,8 @@ begin
            (Key        => US.To_Unbounded_String ("migration-missing"),
             Conditions => No_Delete_Object_Conditions));
       Catalogs.Delete_Objects
-        (Catalog, "legacy-bucket", Entries, Retired, Outcomes, Result);
+        (Catalog, "legacy-bucket", Entries, (others => <>), Retired,
+         Outcomes, Result);
       Assert
         (Result = Flyology.Object_Storage.Success
          and then Outcomes.Length = 1
@@ -2391,7 +2393,20 @@ begin
                   Conditions => No_Delete_Object_Conditions));
          end loop;
          Store.Delete_Objects
-           ("sqlite-bucket", Entries, null, Ada.Real_Time.Time_Last,
+           ("sqlite-bucket", Entries, (Require_Unversioned => True), null,
+            Ada.Real_Time.Time_Last, Outcomes, Result);
+         Assert
+           (Result = Not_Implemented and then Outcomes.Is_Empty,
+            "SQLite DeleteObjects raced past versioning publication");
+         Store.Head_Object
+           ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last,
+            Info, Result);
+         Assert
+           (Result = Success,
+            "SQLite versioning race removed current object data");
+         Store.Delete_Objects
+           ("sqlite-bucket", Entries, (others => <>), null,
+            Ada.Real_Time.Time_Last,
             Outcomes, Result);
          Assert
            (Result = Success and then Outcomes.Length = Entries.Length

@@ -63,6 +63,9 @@ The core crate includes:
   initiate/upload/complete/abort/ListParts/ListMultipartUploads low-level
   operations over caller-owned `flyology_http` clients, with UploadPart
   bodies borrowed from streaming sources;
+- a bounded ordered DeleteObjects backend batch, with process-atomic memory,
+  transactional SQLite, and explicitly scoped per-file durability semantics
+  (see [DeleteObjects qualification](docs/qualification/delete-objects.md));
 - exhaustive request projection and a raw streaming-response execution
   boundary for all 116 pinned operations, while operation-specific typed
   codecs and interoperability gates remain tracked as incomplete;

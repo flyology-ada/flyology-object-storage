@@ -2,13 +2,13 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest bucket-versioning, HeadObject conditional-read, checksum, and
-strict UTF-8 tag-validation forced eight-unit manifest-wide level-0 proof
-completed with 595/595 checks proved, warnings as errors, zero justified
-checks, and zero Assume statements. The final exact
-`Merge_Bucket_Versioning` scoped run proved 2/2 checks; the earlier authorized
-post-change domain-unit run proved 46/46 checks. Both used warnings as errors
-with zero justified or unproved checks and zero Assume statements.
+The latest DeleteObjects conditional-delete forced eight-unit manifest-wide
+level-0 proof completed with 625/625 checks proved, warnings as errors, zero
+justified checks, and zero Assume statements. Exact scoped level-0 runs proved
+`Valid_Object_Delete_ETag_Condition` with 5/5 checks and
+`Evaluate_Object_Delete_Conditions` with 7/7 checks. All runs used output
+headers and completed with zero justified or unproved checks and zero Assume
+statements.
 
 ## Proved and Finalized
 <!-- Before marking an item complete here, follow the Widen Scope step
@@ -28,6 +28,8 @@ with zero justified or unproved checks and zero Assume statements.
         414/414 aggregate checks in the scoped report)
   - [x] Evaluate_Object_Read_Conditions (1 target-attributed check;
         417/417 aggregate checks in the scoped report)
+  - [x] Valid_Object_Delete_ETag_Condition (5/5 scoped checks)
+  - [x] Evaluate_Object_Delete_Conditions (7/7 scoped checks)
   - [x] Resolve_Range (23 attributed prover checks)
   - [x] Merge_Bucket_Versioning (exact independent-field preservation;
         2/2 focused checks including termination)
@@ -188,3 +190,7 @@ with zero justified or unproved checks and zero Assume statements.
       functional-contract check), zero warnings, justified or unproved checks,
       and zero Assume statements; then widened all eight forced units to
       595/595 checks with the same clean result.
+- [x] Proved the bounded DeleteObjects ETag validator and atomic conditional
+      evaluator in exact scoped warnings-as-errors level-0 runs (5/5 and 7/7),
+      then widened the forced eight-unit manifest to 625/625 checks with zero
+      justified or unproved checks and zero Assume statements.

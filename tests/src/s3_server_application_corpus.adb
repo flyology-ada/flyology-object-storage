@@ -7,6 +7,7 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with GNAT.MD5;
+with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP.Server;
 with Flyology.HTTP.Server.Applications;
@@ -17,6 +18,9 @@ with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Buckets;
+with Flyology.Object_Storage.S3.Checksum_Policy;
+with Flyology.Object_Storage.S3.Checksums;
+with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
@@ -35,6 +39,10 @@ procedure S3_Server_Application_Corpus is
    package Sockets renames Flyology.IO.Sockets;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
    package Buckets renames Flyology.Object_Storage.S3.Buckets;
+   package Checksum_Policy renames
+     Flyology.Object_Storage.S3.Checksum_Policy;
+   package Checksums renames Flyology.Object_Storage.S3.Checksums;
+   package Core renames Flyology.Object_Storage.S3.Core;
    package Attributes renames Flyology.Object_Storage.S3.Attributes;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Listings renames Flyology.Object_Storage.S3.Listings;
@@ -107,6 +115,29 @@ procedure S3_Server_Application_Corpus is
       end;
       return Result;
    end Content_MD5;
+
+   function Checksum_Header
+     (Algorithm : Checksum_Policy.Algorithm) return String is
+     (case Algorithm is
+         when Core.CRC32 => "x-amz-checksum-crc32",
+         when Core.CRC32C => "x-amz-checksum-crc32c",
+         when Core.CRC64NVME => "x-amz-checksum-crc64nvme",
+         when Core.SHA1 => "x-amz-checksum-sha1",
+         when Core.SHA256 => "x-amz-checksum-sha256",
+         when Core.SHA512 => "x-amz-checksum-sha512",
+         when Core.MD5 => "x-amz-checksum-md5",
+         when Core.XXHASH64 => "x-amz-checksum-xxhash64",
+         when Core.XXHASH3 => "x-amz-checksum-xxhash3",
+         when Core.XXHASH128 => "x-amz-checksum-xxhash128");
+
+   function Checksum_Value
+     (Algorithm : Checksum_Policy.Algorithm;
+      Value     : String) return String is
+     (Checksums.Encode_Base64
+        (Checksums.Compute
+           (Algorithm,
+            Flyology.Bytes.To_Array
+              (Flyology.Bytes.From_Byte_String (Value)))));
    type Key_Array is array (Positive range <>) of US.Unbounded_String;
    Listing_Keys : constant Key_Array :=
      (US.To_Unbounded_String ("list/a"),
@@ -291,6 +322,24 @@ procedure S3_Server_Application_Corpus is
              (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF) &
         "Connection: close" & CRLF & CRLF & Wire_Body;
    end Signed_Request;
+
+   function Signed_Delete_Objects_Request
+     (Payload       : String;
+      Include_MD5   : Boolean := True;
+      MD5_Value     : String := "";
+      Extra_Headers : String := "";
+      Bucket        : String := "/delete-bucket") return String
+   is
+      Digest : constant String :=
+        (if MD5_Value'Length = 0 then Content_MD5 (Payload) else MD5_Value);
+   begin
+      return Signed_Request
+        ("POST", Bucket, Payload,
+         Extra_Headers =>
+           (if Include_MD5 then "Content-MD5: " & Digest & CRLF else "") &
+           Extra_Headers,
+         Query_Name => "delete");
+   end Signed_Delete_Objects_Request;
 
    function Signed_Create_Bucket_Request
      (Target       : String;
@@ -3463,12 +3512,16 @@ begin
       Request : Deletions.Delete_Objects_Request;
    begin
       Require
+        (Has (Run (Signed_Request ("PUT", "/delete-bucket", "")),
+              "200 OK"),
+         "DeleteObjects bucket setup failed");
+      Require
         (Has (Run (Signed_Request
-          ("PUT", "/test-bucket/multi-a", "a")), "200 OK"),
+          ("PUT", "/delete-bucket/multi-a", "a")), "200 OK"),
          "DeleteObjects setup A failed");
       Require
         (Has (Run (Signed_Request
-          ("PUT", "/test-bucket/multi-b", "b")), "200 OK"),
+          ("PUT", "/delete-bucket/multi-b", "b")), "200 OK"),
          "DeleteObjects setup B failed");
       Request.Objects.Append
         (Deletions.Object_Identifier'
@@ -3484,10 +3537,14 @@ begin
          Payload : constant String := Deletions.Serialize_Request (Request);
          Response : constant String := Run
            (Signed_Request
-              ("POST", "/test-bucket", Payload,
+              ("POST", "/delete-bucket", Payload,
+               Extra_Headers =>
+                 "Content-MD5: " & Content_MD5 (Payload) & CRLF,
                Query_Name => "delete"));
       begin
-         Require (Has (Response, "200 OK"), "DeleteObjects failed");
+         Require
+           (Has (Response, "200 OK"),
+            "DeleteObjects failed: " & Response);
          Require
            (Has (Response, "<Key>multi-a</Key>")
             and then Has (Response, "<Key>multi-b</Key>"),
@@ -3495,11 +3552,11 @@ begin
       end;
       Require
         (Has (Run (Signed_Request
-          ("HEAD", "/test-bucket/multi-a", "")), "404 Not Found"),
+          ("HEAD", "/delete-bucket/multi-a", "")), "404 Not Found"),
          "DeleteObjects left its first key visible");
       Require
         (Has (Run (Signed_Request
-          ("HEAD", "/test-bucket/multi-b", "")), "404 Not Found"),
+          ("HEAD", "/delete-bucket/multi-b", "")), "404 Not Found"),
          "DeleteObjects left its second key visible");
    end;
 
@@ -3515,14 +3572,28 @@ begin
       declare
          Response : constant String := Run
            (Signed_Request
-              ("POST", "/test-bucket",
+              ("POST", "/delete-bucket",
                Deletions.Serialize_Request (Request),
+               Extra_Headers =>
+                 "Content-MD5: " &
+                 Content_MD5 (Deletions.Serialize_Request (Request)) & CRLF,
                Query_Name => "delete"));
       begin
          Require (Has (Response, "200 OK"), "quiet DeleteObjects failed");
          Require
            (not Has (Response, "<Deleted>"),
             "quiet DeleteObjects emitted a success entry");
+      end;
+      Request.Quiet := False;
+      declare
+         Payload : constant String := Deletions.Serialize_Request (Request);
+         Response : constant String :=
+           Run (Signed_Delete_Objects_Request (Payload));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "<Key>already-absent</Key>"),
+            "DeleteObjects did not report an idempotent missing-key success");
       end;
    end;
 
@@ -3531,28 +3602,68 @@ begin
    begin
       Require
         (Has (Run (Signed_Request
-          ("PUT", "/test-bucket/version-preserved", "v")), "200 OK"),
+          ("PUT", "/delete-bucket/version-preserved", "v")), "200 OK"),
          "versioned DeleteObjects setup failed");
+      Require
+        (Has (Run (Signed_Request
+          ("PUT", "/delete-bucket/version-peer", "p")), "200 OK"),
+         "mixed versioned DeleteObjects setup failed");
       Request.Objects.Append
         (Deletions.Object_Identifier'
          (Key        => US.To_Unbounded_String ("version-preserved"),
           Version_ID => US.To_Unbounded_String ("unsupported-version"),
           others     => <>));
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+         (Key        => US.To_Unbounded_String ("version-peer"),
+          Version_ID => US.Null_Unbounded_String,
+          others     => <>));
       declare
          Response : constant String := Run
            (Signed_Request
-              ("POST", "/test-bucket",
+              ("POST", "/delete-bucket",
                Deletions.Serialize_Request (Request),
+               Extra_Headers =>
+                 "Content-MD5: " &
+                 Content_MD5 (Deletions.Serialize_Request (Request)) & CRLF,
                Query_Name => "delete"));
       begin
          Require
-           (Has (Response, "InvalidArgument"),
-            "versioned DeleteObjects lacked a per-key error");
+           (Has (Response, "NotImplemented")
+            and then Has (Response, "<Key>version-peer</Key>"),
+            "mixed versioned DeleteObjects result mismatch");
       end;
       Require
         (Has (Run (Signed_Request
-          ("GET", "/test-bucket/version-preserved", "")), "v"),
+          ("GET", "/delete-bucket/version-preserved", "")), "v"),
          "versioned DeleteObjects removed the current object");
+      Require
+        (Has (Run (Signed_Request
+          ("HEAD", "/delete-bucket/version-peer", "")), "404 Not Found"),
+         "versioned DeleteObjects blocked an independent current delete");
+   end;
+
+   declare
+      Request : Deletions.Delete_Objects_Request;
+   begin
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("unsupported-version"),
+            Version_ID => US.To_Unbounded_String ("version-id"),
+            others     => <>));
+      declare
+         Payload : constant String := Deletions.Serialize_Request (Request);
+         Response : constant String :=
+           Run
+             (Signed_Delete_Objects_Request
+                (Payload, Bucket => "/missing-delete-objects-bucket"));
+      begin
+         Require
+           (Has (Response, "404 Not Found")
+            and then Has (Response, "<Code>NoSuchBucket</Code>"),
+            "all-unsupported DeleteObjects masked a missing bucket: " &
+            Response);
+      end;
    end;
 
    declare
@@ -3560,13 +3671,444 @@ begin
         "<Delete><Object><VersionId>v</VersionId></Object></Delete>";
       Response : constant String := Run
         (Signed_Request
-           ("POST", "/test-bucket", Malformed,
+           ("POST", "/delete-bucket", Malformed,
+            Extra_Headers =>
+              "Content-MD5: " & Content_MD5 (Malformed) & CRLF,
             Query_Name => "delete"));
    begin
       Require
          (Has (Response, "400 Bad Request")
           and then Has (Response, "MalformedXML"),
          "malformed DeleteObjects XML response mismatch: " & Response);
+   end;
+
+   declare
+      Request : Deletions.Delete_Objects_Request;
+   begin
+      Request.Quiet := True;
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("checksum-absent"),
+            Version_ID => US.Null_Unbounded_String,
+            others     => <>));
+      declare
+         Payload : constant String := Deletions.Serialize_Request (Request);
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Objects_Request
+                    (Payload, Include_MD5 => False)),
+               "<Code>InvalidRequest</Code>"),
+            "DeleteObjects accepted a missing Content-MD5");
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Objects_Request
+                    (Payload, MD5_Value => "not-base64")),
+               "<Code>InvalidRequest</Code>"),
+            "DeleteObjects accepted a malformed Content-MD5");
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Objects_Request
+                    (Payload, MD5_Value => Content_MD5 (Payload & "x"))),
+               "<Code>BadDigest</Code>"),
+            "DeleteObjects misreported a mismatched Content-MD5");
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Objects_Request
+                    (Payload,
+                     Extra_Headers =>
+                       "Content-MD5: " & Content_MD5 (Payload) & CRLF)),
+               "<Code>InvalidRequest</Code>"),
+            "DeleteObjects accepted duplicate Content-MD5 fields");
+
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Objects_Request
+                    (Payload,
+                     Extra_Headers =>
+                       "x-amz-sdk-checksum-algorithm: CRC32" & CRLF)),
+               "<Code>InvalidRequest</Code>"),
+            "DeleteObjects accepted a checksum algorithm without a value");
+
+         for Algorithm in Checksum_Policy.Algorithm loop
+            declare
+               Response : constant String :=
+                 Run
+                   (Signed_Delete_Objects_Request
+                      (Payload,
+                       Extra_Headers =>
+                         "x-amz-sdk-checksum-algorithm: " &
+                         Checksum_Policy.Wire_Name (Algorithm) & CRLF &
+                         Checksum_Header (Algorithm) & ": " &
+                         Checksum_Value (Algorithm, Payload) & CRLF));
+            begin
+               Require
+                 (Has (Response, "200 OK"),
+                  "DeleteObjects rejected " &
+                  Checksum_Policy.Wire_Name (Algorithm) &
+                  " checksum: " & Response);
+            end;
+         end loop;
+
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Objects_Request
+                    (Payload,
+                     Extra_Headers =>
+                       "x-amz-checksum-crc32: " &
+                       Checksum_Value (Core.CRC32, Payload) & CRLF)),
+               "200 OK"),
+            "DeleteObjects rejected an inferred checksum algorithm");
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Objects_Request
+                    (Payload,
+                     Extra_Headers =>
+                       "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                       "x-amz-checksum-crc32: " &
+                       Checksum_Value (Core.CRC32, Payload) & CRLF)),
+               "<Code>InvalidRequest</Code>"),
+            "DeleteObjects accepted an SDK checksum/header mismatch");
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Objects_Request
+                    (Payload,
+                     Extra_Headers =>
+                       "x-amz-sdk-checksum-algorithm: CRC32" & CRLF &
+                       "x-amz-checksum-crc32: not-base64" & CRLF)),
+               "<Code>InvalidRequest</Code>"),
+            "DeleteObjects accepted malformed optional checksum Base64");
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Objects_Request
+                    (Payload,
+                     Extra_Headers =>
+                       "x-amz-sdk-checksum-algorithm: CRC32" & CRLF &
+                       "x-amz-checksum-crc32: " &
+                       Checksum_Value (Core.CRC32, Payload & "x") & CRLF)),
+               "<Code>BadDigest</Code>"),
+            "DeleteObjects misreported an optional checksum mismatch");
+      end;
+   end;
+
+   declare
+      Request : Deletions.Delete_Objects_Request;
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("PUT", "/delete-bucket/integrity-preserved", "keep")),
+            "200 OK"),
+         "DeleteObjects integrity setup failed");
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("integrity-preserved"),
+            Version_ID => US.Null_Unbounded_String,
+            others     => <>));
+      declare
+         Payload : constant String := Deletions.Serialize_Request (Request);
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Objects_Request
+                    (Payload, MD5_Value => Content_MD5 (Payload & "x"))),
+               "<Code>BadDigest</Code>"),
+            "DeleteObjects integrity failure was not rejected");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("GET", "/delete-bucket/integrity-preserved", "")),
+            "keep"),
+         "rejected DeleteObjects integrity check mutated backend state");
+   end;
+
+   declare
+      Request : Deletions.Delete_Objects_Request;
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("PUT", "/delete-bucket/control-key", "controls")),
+            "200 OK"),
+         "DeleteObjects control setup failed");
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("control-key"),
+            Version_ID => US.Null_Unbounded_String,
+            others     => <>));
+      declare
+         Payload : constant String := Deletions.Serialize_Request (Request);
+         Response : constant String :=
+           Run
+             (Signed_Delete_Objects_Request
+                (Payload,
+                 Extra_Headers =>
+                   "x-amz-request-payer: requester" & CRLF &
+                   "x-amz-bypass-governance-retention: true" & CRLF &
+                   "x-amz-mfa: device 123456" & CRLF &
+                   "x-amz-expected-bucket-owner: test-principal" & CRLF));
+      begin
+         Require
+           (Has (Response, "200 OK"),
+            "DeleteObjects rejected inactive valid policy controls: " &
+            Response);
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("HEAD", "/delete-bucket/control-key", "")),
+            "404 Not Found"),
+         "DeleteObjects valid inactive controls prevented deletion");
+
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Objects_Request
+                 (Deletions.Serialize_Request (Request),
+                  Extra_Headers => "x-amz-request-payer: owner" & CRLF)),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObjects accepted an invalid request-payer value");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Objects_Request
+                 (Deletions.Serialize_Request (Request),
+                  Extra_Headers =>
+                    "x-amz-bypass-governance-retention: yes" & CRLF)),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObjects accepted an invalid governance bypass value");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Objects_Request
+                 (Deletions.Serialize_Request (Request),
+                  Extra_Headers =>
+                    "x-amz-expected-bucket-owner: different-owner" & CRLF)),
+            "403 Forbidden"),
+         "DeleteObjects ignored a mismatched expected owner");
+   end;
+
+   declare
+      Request : Deletions.Delete_Objects_Request;
+      Quoted_Tag : constant String :=
+        """18557a5990586964ca9cc6f9869a7b5a""";
+   begin
+      for Key of
+        Key_Array'
+          (US.To_Unbounded_String ("condition-quoted"),
+           US.To_Unbounded_String ("condition-unquoted"),
+           US.To_Unbounded_String ("condition-wildcard"),
+           US.To_Unbounded_String ("condition-mismatch"))
+      loop
+         Require
+           (Has
+              (Run
+                 (Signed_Request
+                    ("PUT", "/delete-bucket/" & US.To_String (Key),
+                     "etag-body")),
+               "200 OK"),
+            "DeleteObjects condition setup failed");
+      end loop;
+      Request.Quiet := True;
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("condition-quoted"),
+            Version_ID => US.Null_Unbounded_String,
+            Has_ETag   => True,
+            ETag       => US.To_Unbounded_String (Quoted_Tag),
+            others     => <>));
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("condition-unquoted"),
+            Version_ID => US.Null_Unbounded_String,
+            Has_ETag   => True,
+            ETag       => US.To_Unbounded_String
+              ("18557a5990586964ca9cc6f9869a7b5a"),
+            others     => <>));
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("condition-wildcard"),
+            Version_ID => US.Null_Unbounded_String,
+            Has_ETag   => True,
+            ETag       => US.To_Unbounded_String ("*"),
+            others     => <>));
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("condition-mismatch"),
+            Version_ID => US.Null_Unbounded_String,
+            Has_ETag   => True,
+            ETag       => US.To_Unbounded_String ("different"),
+            others     => <>));
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("condition-absent"),
+            Version_ID => US.Null_Unbounded_String,
+            Has_ETag   => True,
+            ETag       => US.To_Unbounded_String ("*"),
+            others     => <>));
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("condition-invalid-etag"),
+            Version_ID => US.Null_Unbounded_String,
+            Has_ETag   => True,
+            ETag       => US.To_Unbounded_String ("bad,tag"),
+            others     => <>));
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key                    =>
+              US.To_Unbounded_String ("condition-valid-date"),
+            Version_ID             => US.Null_Unbounded_String,
+            Has_Last_Modified_Time => True,
+            Last_Modified_Time     =>
+              US.To_Unbounded_String ("Wed, 21 Oct 2015 07:28:00 GMT"),
+            others                 => <>));
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key                    =>
+              US.To_Unbounded_String ("condition-invalid-date"),
+            Version_ID             => US.Null_Unbounded_String,
+            Has_Last_Modified_Time => True,
+            Last_Modified_Time     => US.To_Unbounded_String ("not-a-date"),
+            others                 => <>));
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("condition-size"),
+            Version_ID => US.Null_Unbounded_String,
+            Has_Size   => True,
+            Size       => 9,
+            others     => <>));
+      declare
+         Payload : constant String := Deletions.Serialize_Request (Request);
+         Response : constant String :=
+           Run (Signed_Delete_Objects_Request (Payload));
+         Mismatch_Position : constant Natural :=
+           Ada.Strings.Fixed.Index (Response, "condition-mismatch");
+         Absent_Position : constant Natural :=
+           Ada.Strings.Fixed.Index (Response, "condition-absent");
+         Invalid_ETag_Position : constant Natural :=
+           Ada.Strings.Fixed.Index (Response, "condition-invalid-etag");
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then not Has (Response, "<Deleted>")
+            and then Has (Response, "PreconditionFailed")
+            and then Has (Response, "NoSuchKey")
+            and then Has (Response, "The ETag condition is invalid")
+            and then Has
+              (Response, "The LastModifiedTime condition is invalid")
+            and then Has (Response, "directory bucket"),
+            "DeleteObjects conditional result mismatch: " & Response);
+         Require
+           (Mismatch_Position > 0
+            and then Mismatch_Position < Absent_Position
+            and then Absent_Position < Invalid_ETag_Position,
+            "DeleteObjects errors lost request ordering");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("HEAD", "/delete-bucket/condition-quoted", "")),
+            "404 Not Found")
+         and then
+           Has
+             (Run
+                (Signed_Request
+                   ("HEAD", "/delete-bucket/condition-unquoted", "")),
+              "404 Not Found")
+         and then
+           Has
+             (Run
+                (Signed_Request
+                   ("HEAD", "/delete-bucket/condition-wildcard", "")),
+              "404 Not Found"),
+         "DeleteObjects matching conditions did not delete their objects");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("HEAD", "/delete-bucket/condition-mismatch", "")),
+            "200 OK"),
+         "DeleteObjects condition mismatch removed the object");
+   end;
+
+   declare
+      Request : Deletions.Delete_Objects_Request;
+      Configuration : Flyology.Object_Storage.Bucket_Versioning_Configuration;
+      Backend_Result : Flyology.Object_Storage.Status;
+   begin
+      Require
+        (Has
+           (Run (Signed_Request ("PUT", "/delete-race-bucket", "")),
+            "200 OK"),
+         "DeleteObjects server race bucket setup failed");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("PUT", "/delete-race-bucket/object", "race-body")),
+            "200 OK"),
+         "DeleteObjects server race object setup failed");
+      Flyology.Object_Storage.Backends.Memory.Get_Bucket_Versioning
+        (Store, "delete-race-bucket", null, Ada.Real_Time.Time_Last,
+         Configuration, Backend_Result);
+      Require
+        (Backend_Result = Flyology.Object_Storage.Success
+         and then Configuration.Status =
+           Flyology.Object_Storage.Versioning_Unconfigured,
+         "DeleteObjects server race did not begin unversioned");
+      Flyology.Object_Storage.Backends.Memory.Put_Bucket_Versioning
+        (Store, "delete-race-bucket",
+         (Status => Flyology.Object_Storage.Versioning_Enabled,
+          MFA_Delete => Flyology.Object_Storage.MFA_Delete_Unconfigured),
+         null, Ada.Real_Time.Time_Last, Backend_Result);
+      Require
+        (Backend_Result = Flyology.Object_Storage.Success,
+         "DeleteObjects server race did not publish versioning");
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+           (Key        => US.To_Unbounded_String ("object"),
+            Version_ID => US.Null_Unbounded_String,
+            others     => <>));
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Objects_Request
+                 (Deletions.Serialize_Request (Request),
+                  Bucket => "/delete-race-bucket")),
+            "501 Not Implemented"),
+         "DeleteObjects server raced past versioning publication");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("GET", "/delete-race-bucket/object", "")),
+            "race-body"),
+         "DeleteObjects server versioning race mutated backend state");
+      Flyology.Object_Storage.Backends.Memory.Delete_Object
+        (Store, "delete-race-bucket", "object", null,
+         Ada.Real_Time.Time_Last, Backend_Result);
+      Flyology.Object_Storage.Backends.Memory.Delete_Bucket
+        (Store, "delete-race-bucket", null, Ada.Real_Time.Time_Last,
+         Backend_Result);
+      Require
+        (Backend_Result = Flyology.Object_Storage.Success,
+         "DeleteObjects server race cleanup failed");
    end;
 
    for Key of Listing_Keys loop

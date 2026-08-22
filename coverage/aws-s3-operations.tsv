@@ -25,7 +25,7 @@ DeleteBucketWebsite	extended	missing	partial	missing	missing
 DeleteObject	core	covered	covered	partial	covered
 DeleteObjectAnnotation	extended	missing	partial	missing	missing
 DeleteObjectTagging	core	covered	covered	partial	covered
-DeleteObjects	core	partial	partial	partial	covered
+DeleteObjects	core	partial	covered	partial	covered
 DeletePublicAccessBlock	extended	missing	partial	missing	missing
 GetBucketAbac	extended	missing	partial	missing	missing
 GetBucketAccelerateConfiguration	extended	missing	partial	missing	missing

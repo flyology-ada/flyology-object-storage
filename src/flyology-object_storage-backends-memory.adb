@@ -672,13 +672,24 @@ package body Flyology.Object_Storage.Backends.Memory is
       procedure Delete_Many
         (Bucket   : String;
          Entries  : Delete_Object_Entries;
+         Requirements : Delete_Objects_Requirements;
          Outcomes : in out Delete_Object_Outcomes;
          Result   : out Status)
       is
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
       begin
          Outcomes.Clear;
-         if Bucket_Index (Bucket) = 0 then
+         if Bucket_Position = 0 then
             Result := Bucket_Not_Found;
+            return;
+         elsif Requirements.Require_Unversioned
+           and then
+             (Buckets (Bucket_Position).Versioning.Status /=
+                Versioning_Unconfigured
+              or else Buckets (Bucket_Position).Versioning.MFA_Delete =
+                MFA_Delete_Enabled)
+         then
+            Result := Not_Implemented;
             return;
          end if;
          for Request_Entry of Entries loop
@@ -1809,6 +1820,7 @@ package body Flyology.Object_Storage.Backends.Memory is
      (Item     : in out Store;
       Bucket   : String;
       Entries  : Delete_Object_Entries;
+      Requirements : Delete_Objects_Requirements;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Outcomes : out Delete_Object_Outcomes;
@@ -1838,7 +1850,8 @@ package body Flyology.Object_Storage.Backends.Memory is
          end if;
       end loop;
       Outcomes.Reserve_Capacity (Entries.Length);
-      Item.State.Delete_Many (Bucket, Entries, Outcomes, Result);
+      Item.State.Delete_Many
+        (Bucket, Entries, Requirements, Outcomes, Result);
    end Delete_Objects;
 
    overriding procedure Put_Object_Tags

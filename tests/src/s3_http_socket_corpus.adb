@@ -16,6 +16,7 @@ with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Client.Objects;
 with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Transfers;
+with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.SigV4;
@@ -29,6 +30,7 @@ procedure S3_HTTP_Socket_Corpus is
    package Client_Buckets renames
      Flyology.Object_Storage.Client.Buckets;
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
+   package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Model renames Flyology.Object_Storage.S3.Model;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
@@ -46,6 +48,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
+   use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Put_Bucket_Versioning_Outcome_Kind;
    use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
    use type Client_Buckets.Set_Versioning_Outcome_Kind;
@@ -354,6 +357,10 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Checksum_Mode : String := "";
          Expected_Request_Payer : String := "";
          Expected_Bucket_Owner : String := "";
+         Expected_MFA : String := "";
+         Expected_Governance_Bypass : String := "";
+         Expected_SDK_Checksum : String := "";
+         Expected_Checksum_CRC32 : String := "";
          Expected_Object_Attributes : String := "";
          Expected_Get_Object_Attributes : String := "";
          Expected_Max_Parts : String := "";
@@ -453,13 +460,67 @@ procedure S3_HTTP_Socket_Corpus is
                          (Lower, "x-amz-expected-bucket-owner") /=
                            Ada.Characters.Handling.To_Lower
                              (Expected_Bucket_Owner))
+                    or else
+                      (Expected_Request_Payer'Length > 0
+                       and then Header_Value
+                         (Lower, "x-amz-request-payer") /=
+                           Ada.Characters.Handling.To_Lower
+                             (Expected_Request_Payer))
+                    or else
+                      (Expected_MFA'Length > 0
+                       and then Header_Value (Lower, "x-amz-mfa") /=
+                         Ada.Characters.Handling.To_Lower (Expected_MFA))
+                    or else
+                      (Expected_Governance_Bypass'Length > 0
+                       and then Header_Value
+                         (Lower, "x-amz-bypass-governance-retention") /=
+                           Ada.Characters.Handling.To_Lower
+                             (Expected_Governance_Bypass))
+                    or else
+                      (Expected_SDK_Checksum'Length > 0
+                       and then Header_Value
+                         (Lower, "x-amz-sdk-checksum-algorithm") /=
+                           Ada.Characters.Handling.To_Lower
+                             (Expected_SDK_Checksum))
+                    or else
+                      (Expected_Checksum_CRC32'Length > 0
+                       and then
+                         (Header_Value
+                            (Lower, "x-amz-checksum-crc32")'Length = 0
+                          or else
+                            (Expected_Checksum_CRC32 /= "*"
+                             and then Header_Value
+                               (Lower, "x-amz-checksum-crc32") /=
+                                 Ada.Characters.Handling.To_Lower
+                                   (Expected_Checksum_CRC32))))
                     or else Ada.Strings.Fixed.Index
-                      (Lower,
-                       "signedheaders=content-md5;host;" &
-                       "x-amz-content-sha256;x-amz-date" &
-                       (if Expected_Bucket_Owner'Length > 0 then
-                           ";x-amz-expected-bucket-owner"
-                        else "")) = 0
+                      (Lower, "signedheaders=content-md5;host;") = 0
+                    or else Ada.Strings.Fixed.Index
+                      (Lower, ";x-amz-content-sha256;x-amz-date") = 0
+                    or else
+                      (Expected_Bucket_Owner'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-expected-bucket-owner") = 0)
+                    or else
+                      (Expected_Request_Payer'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-request-payer") = 0)
+                    or else
+                      (Expected_MFA'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-mfa") = 0)
+                    or else
+                      (Expected_Governance_Bypass'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-bypass-governance-retention;") = 0)
+                    or else
+                      (Expected_SDK_Checksum'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-sdk-checksum-algorithm") = 0)
+                    or else
+                      (Expected_Checksum_CRC32'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-checksum-crc32;") = 0)
                  elsif Expected_Request_Payer'Length > 0
                    or else Expected_Bucket_Owner'Length > 0
                    or else Expected_Object_Attributes'Length > 0
@@ -698,6 +759,14 @@ procedure S3_HTTP_Socket_Corpus is
         "<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
         "<TagSet><Tag><Key>project</Key><Value>flyology</Value></Tag>" &
         "</TagSet></Tagging>";
+      Delete_Objects_XML : constant String :=
+        "<DeleteResult xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+        "<Deleted><Key>socket-delete-a</Key><VersionId>version-a</VersionId>" &
+        "<DeleteMarker>false</DeleteMarker>" &
+        "<DeleteMarkerVersionId>marker-a</DeleteMarkerVersionId>" &
+        "</Deleted><Error><Key>socket-delete-b</Key>" &
+        "<VersionId>version-b</VersionId><Code>AccessDenied</Code>" &
+        "<Message>denied</Message></Error></DeleteResult>";
    begin
       Sockets.Create_Socket (Listener);
       Sockets.Bind_Socket
@@ -874,6 +943,26 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("204 No Content", "", Omit_Content_Length => True),
             "DELETE", "/example-bucket/convenient-tagged?tagging");
+         Serve
+           (HTTP_Response
+              ("200 OK", Delete_Objects_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "POST", "/example-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_MFA => "device 123456",
+            Expected_Governance_Bypass => "true",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*", Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("404 Not Found",
+               "<Error><Code>NoSuchBucket</Code>" &
+               "<Message>missing bucket</Message></Error>",
+               "x-amz-request-id: delete-missing-request" & CRLF),
+            "POST", "/missing-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*");
          Serve
            (HTTP_Response
               ("200 OK", Attributes_XML,
@@ -1719,6 +1808,110 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "convenient object tagging socket flow mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Request : Deletions.Delete_Objects_Request;
+            Parameters : Low_Level.Delete_Objects_Parameters;
+         begin
+            Request.Quiet := True;
+            Request.Objects.Append
+              (Deletions.Object_Identifier'
+                 (Key                    =>
+                    US.To_Unbounded_String ("socket-delete-a"),
+                  Version_ID             =>
+                    US.To_Unbounded_String ("version-a"),
+                  Has_ETag               => True,
+                  ETag                   => US.To_Unbounded_String ("*"),
+                  Has_Last_Modified_Time => True,
+                  Last_Modified_Time     => US.To_Unbounded_String
+                    ("Wed, 21 Oct 2015 07:28:00 GMT"),
+                  Has_Size               => True,
+                  Size                   => 7));
+            Request.Objects.Append
+              (Deletions.Object_Identifier'
+                 (Key        => US.To_Unbounded_String ("socket-delete-b"),
+                  Version_ID => US.To_Unbounded_String ("version-b"),
+                  others     => <>));
+            Parameters.MFA := US.To_Unbounded_String ("device 123456");
+            Parameters.Request_Payer :=
+              US.To_Unbounded_String ("requester");
+            Parameters.Bypass_Governance_Retention :=
+              (Is_Set => True, Value => True);
+            Parameters.Expected_Bucket_Owner :=
+              US.To_Unbounded_String ("123456789012");
+            Parameters.Checksum_Algorithm :=
+              US.To_Unbounded_String ("CRC32");
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Objects
+                   (Origin, Low_Level.Path_Style, "example-bucket", Request,
+                    Parameters, Identity, "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.Delete_Objects_Outcome :=
+                 Low_Level.Execute_Delete_Objects
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Objects_Deleted
+                 or else Natural (Result.Result.Result.Deleted.Length) /= 1
+                 or else Natural (Result.Result.Result.Errors.Length) /= 1
+                 or else US.To_String (Result.Result.Request_Charged) /=
+                   "requester"
+                 or else US.To_String
+                   (Result.Result.Result.Deleted.First_Element.Key) /=
+                     "socket-delete-a"
+                 or else US.To_String
+                   (Result.Result.Result.Deleted.First_Element.Version_ID) /=
+                     "version-a"
+                 or else not Result.Result.Result.Deleted.First_Element
+                   .Delete_Marker.Is_Set
+                 or else Result.Result.Result.Deleted.First_Element
+                   .Delete_Marker.Value
+                 or else US.To_String
+                   (Result.Result.Result.Deleted.First_Element
+                      .Delete_Marker_Version_ID) /= "marker-a"
+                 or else US.To_String
+                   (Result.Result.Result.Errors.First_Element.Key) /=
+                     "socket-delete-b"
+                 or else US.To_String
+                   (Result.Result.Result.Errors.First_Element.Version_ID) /=
+                     "version-b"
+                 or else US.To_String
+                   (Result.Result.Result.Errors.First_Element.Code) /=
+                     "AccessDenied"
+                 or else US.To_String
+                   (Result.Result.Result.Errors.First_Element.Message) /=
+                     "denied"
+               then
+                  raise Program_Error with
+                    "typed DeleteObjects socket result mismatch";
+               end if;
+            end;
+            Request.Objects.Clear;
+            Request.Quiet := False;
+            Request.Objects.Append
+              (Deletions.Object_Identifier'
+                 (Key        => US.To_Unbounded_String ("unsupported"),
+                  Version_ID => US.To_Unbounded_String ("version-id"),
+                  others     => <>));
+            Parameters := (others => <>);
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Objects
+                   (Origin, Low_Level.Path_Style, "missing-bucket", Request,
+                    Parameters, Identity, "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.Delete_Objects_Outcome :=
+                 Low_Level.Execute_Delete_Objects
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Delete_Objects_Rejected
+                 or else US.To_String (Result.Error.Code) /= "NoSuchBucket"
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "delete-missing-request"
+               then
+                  raise Program_Error with
+                    "all-unsupported DeleteObjects socket classification " &
+                    "mismatch";
                end if;
             end;
          end;

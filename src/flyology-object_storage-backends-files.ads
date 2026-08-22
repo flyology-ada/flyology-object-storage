@@ -158,6 +158,7 @@ package Flyology.Object_Storage.Backends.Files is
      (Item     : in out Store;
       Bucket   : String;
       Entries  : Delete_Object_Entries;
+      Requirements : Delete_Objects_Requirements;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Outcomes : out Delete_Object_Outcomes;

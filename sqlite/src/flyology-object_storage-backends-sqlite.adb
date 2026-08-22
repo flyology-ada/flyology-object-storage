@@ -1014,6 +1014,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
      (Item     : in out Store;
       Bucket   : String;
       Entries  : Delete_Object_Entries;
+      Requirements : Delete_Objects_Requirements;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Outcomes : out Delete_Object_Outcomes;
@@ -1042,7 +1043,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
          end if;
       end loop;
       Catalogs.Delete_Objects
-        (Item.Catalog, Bucket, Entries, Retired, Outcomes, Result);
+        (Item.Catalog, Bucket, Entries, Requirements, Retired, Outcomes,
+         Result);
       if Result = Success then
          for Payload of Retired loop
             Delete_Payload_If_Present (Item, US.To_String (Payload));

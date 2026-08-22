@@ -41,12 +41,13 @@ rename and validation structure. It exists for explicitly labeled comparison
 and deployments whose storage layer supplies a stronger external durability
 contract; it is not the production default. The deterministic fault corpus
 injects a device error at every file/directory barrier across bucket create
-and delete, object replacement and delete, object-tag and bucket-tag
+and delete, object replacement and single/batch delete, object-tag and bucket-tag
 replacement, multipart initiation, part replacement, completion, and abort,
 then reopens the root and requires a
 well-formed old-or-new state. A separate process corpus terminates workers
-without Ada finalization immediately before and after all 38 barriers in those
-same mutation paths, including bucket-versioning publication (76 cases), then
+without Ada finalization immediately before and after all 40 barriers in those
+same mutation paths, including bucket-versioning and DeleteObjects publication
+(80 cases), then
 independently reopens and verifies each store. The adapter uses `F_FULLFSYNC`
 where available and falls back to `fsync`
 on POSIX. Windows remains unqualified until its directory-metadata persistence
@@ -80,3 +81,16 @@ publication gate, synchronize a temporary record, atomically rename it, and
 synchronize both affected directories. DeleteBucket removes both records with
 the bucket tree, and a later bucket with the same name begins unconfigured.
 Symlinked or malformed configuration records fail closed.
+
+DeleteObjects holds the publication gate and performs a complete nonmutating
+preflight before the first removal. Conditions therefore observe one stable
+catalog view, duplicate entries use request order, and a structural or
+conditional failure cannot begin an unrelated removal. A required unversioned
+state is read under that same publication gate, which also serializes
+PutBucketVersioning. Each successful file
+unlink is individually durable before the next entry. A pure filesystem has no
+portable transaction spanning those independent directory entries, so an I/O
+failure, cancellation, deadline, or process/power loss during the removal loop
+can leave a successfully removed prefix applied. Retrying the same request is
+safe because missing unconditioned keys are successes; this backend does not
+claim whole-batch cross-file atomicity.

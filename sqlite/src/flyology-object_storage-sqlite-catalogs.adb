@@ -1182,6 +1182,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      (Item     : in out Catalog;
       Bucket   : String;
       Entries  : Backends.Delete_Object_Entries;
+      Requirements : Backends.Delete_Objects_Requirements;
       Retired  : out Payloads;
       Outcomes : out Backends.Delete_Object_Outcomes;
       Result   : out Status)
@@ -1219,18 +1220,32 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       In_Transaction := True;
       DB.Prepare
         (Bucket_Query, Item.Database,
-         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+         "SELECT versioning_status,mfa_delete_status " &
+         "FROM buckets WHERE name=?1");
       DB.Bind (Bucket_Query, 1, Bucket);
-      if DB.Step (Bucket_Query) /= DB.Row then
-         raise Catalog_Error with "bucket existence query returned no row";
-      elsif DB.Column (Bucket_Query, 0) = 0 then
-         DB.Rollback (Item.Database);
-         In_Transaction := False;
-         Result := Bucket_Not_Found;
-         Item.Gate.Release;
-         Locked := False;
-         return;
-      end if;
+      declare
+         Step : constant DB.Step_Result := DB.Step (Bucket_Query);
+      begin
+         if Step = DB.Done then
+            DB.Rollback (Item.Database);
+            In_Transaction := False;
+            Result := Bucket_Not_Found;
+            Item.Gate.Release;
+            Locked := False;
+            return;
+         elsif Requirements.Require_Unversioned
+           and then
+             (DB.Column (Bucket_Query, 0) /= 0
+              or else DB.Column (Bucket_Query, 1) = 1)
+         then
+            DB.Rollback (Item.Database);
+            In_Transaction := False;
+            Result := Not_Implemented;
+            Item.Gate.Release;
+            Locked := False;
+            return;
+         end if;
+      end;
 
       DB.Prepare
         (Delete, Item.Database,

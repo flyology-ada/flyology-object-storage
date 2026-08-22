@@ -148,6 +148,7 @@ package Flyology.Object_Storage.Backends.Memory is
      (Item     : in out Store;
       Bucket   : String;
       Entries  : Delete_Object_Entries;
+      Requirements : Delete_Objects_Requirements;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Outcomes : out Delete_Object_Outcomes;
@@ -392,6 +393,7 @@ private
       procedure Delete_Many
         (Bucket   : String;
          Entries  : Delete_Object_Entries;
+         Requirements : Delete_Objects_Requirements;
          Outcomes : in out Delete_Object_Outcomes;
          Result   : out Status);
       procedure Put_Tags

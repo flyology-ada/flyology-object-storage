@@ -745,7 +745,8 @@ package body Object_Storage_Test_Cases is
 
       procedure Put
         (Key, Payload : String;
-         Info         : out Object_Information)
+         Info         : out Object_Information;
+         Target_Bucket : String := Bucket)
       is
          Source : Buffer_Source :=
            (Data     => Flyology.Bytes.From_Byte_String (Payload),
@@ -755,7 +756,7 @@ package body Object_Storage_Test_Cases is
             Bad_Last => False);
       begin
          Store.Put_Object
-           (Bucket, Key, Source, Default_Put_Options, null,
+           (Target_Bucket, Key, Source, Default_Put_Options, null,
             Ada.Real_Time.Time_Last, Info, Result);
          Assert (Result = Success, "DeleteObjects conformance put " & Key);
       end Put;
@@ -768,7 +769,7 @@ package body Object_Storage_Test_Cases is
    begin
       Entries.Append (Item ("probe"));
       Store.Delete_Objects
-        ("missing-delete-objects-bucket", Entries, null,
+        ("missing-delete-objects-bucket", Entries, (others => <>), null,
          Ada.Real_Time.Time_Last, Outcomes, Result);
       Assert
         (Result = Bucket_Not_Found and then Outcomes.Is_Empty,
@@ -777,6 +778,52 @@ package body Object_Storage_Test_Cases is
       Store.Create_Bucket
         (Bucket, null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "DeleteObjects conformance bucket create");
+
+      declare
+         Race_Bucket : constant String := "delete-objects-version-race";
+         Configuration : Bucket_Versioning_Configuration;
+      begin
+         Store.Create_Bucket
+           (Race_Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "DeleteObjects race bucket create");
+         Put ("race-object", "keep", Match_Info, Race_Bucket);
+         Store.Get_Bucket_Versioning
+           (Race_Bucket, null, Ada.Real_Time.Time_Last,
+            Configuration, Result);
+         Assert
+           (Result = Success
+            and then Configuration.Status = Versioning_Unconfigured,
+            "DeleteObjects race did not begin unversioned");
+         Store.Put_Bucket_Versioning
+           (Race_Bucket,
+            (Status => Versioning_Enabled,
+             MFA_Delete => MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "DeleteObjects race could not publish versioning");
+         Entries.Clear;
+         Entries.Append (Item ("race-object"));
+         Store.Delete_Objects
+           (Race_Bucket, Entries, (Require_Unversioned => True), null,
+            Ada.Real_Time.Time_Last, Outcomes, Result);
+         Assert
+           (Result = Not_Implemented and then Outcomes.Is_Empty,
+            "DeleteObjects raced past an atomic versioning precondition");
+         Store.Head_Object
+           (Race_Bucket, "race-object", null, Ada.Real_Time.Time_Last,
+            Match_Info, Result);
+         Assert
+           (Result = Success,
+            "DeleteObjects versioning race removed current data");
+         Store.Delete_Object
+           (Race_Bucket, "race-object", null, Ada.Real_Time.Time_Last,
+            Result);
+         Store.Delete_Bucket
+           (Race_Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "DeleteObjects race bucket cleanup");
+      end;
+
       Put ("match", "hello", Match_Info);
       Put ("mismatch", "keep", Size_Info);
       Put ("size", "1234567", Size_Info);
@@ -820,7 +867,8 @@ package body Object_Storage_Test_Cases is
                 then 1 else Long_Long_Integer (Time_Info.Modified) - 1),
              others => <>)));
       Store.Delete_Objects
-        (Bucket, Entries, null, Ada.Real_Time.Time_Last, Outcomes, Result);
+        (Bucket, Entries, (others => <>), null,
+         Ada.Real_Time.Time_Last, Outcomes, Result);
       Assert
         (Result = Success and then Outcomes.Length = Entries.Length,
          "DeleteObjects ordered outcome cardinality");
@@ -858,7 +906,8 @@ package body Object_Storage_Test_Cases is
              ETag => US.To_Unbounded_String ("bad,etag"),
              others => <>)));
       Store.Delete_Objects
-        (Bucket, Entries, null, Ada.Real_Time.Time_Last, Outcomes, Result);
+        (Bucket, Entries, (others => <>), null,
+         Ada.Real_Time.Time_Last, Outcomes, Result);
       Assert
         (Result = Invalid_Request and then Outcomes.Is_Empty,
          "DeleteObjects invalid request was not rejected before publication");
@@ -877,7 +926,8 @@ package body Object_Storage_Test_Cases is
          Cancel.Request;
          begin
             Store.Delete_Objects
-              (Bucket, Entries, Cancel'Access, Ada.Real_Time.Time_Last,
+              (Bucket, Entries, (others => <>), Cancel'Access,
+               Ada.Real_Time.Time_Last,
                Outcomes, Result);
          exception
             when Flyology.Cancellation.Operation_Cancelled => Raised := True;
@@ -889,7 +939,8 @@ package body Object_Storage_Test_Cases is
       begin
          begin
             Store.Delete_Objects
-              (Bucket, Entries, null, Ada.Real_Time.Time_First,
+              (Bucket, Entries, (others => <>), null,
+               Ada.Real_Time.Time_First,
                Outcomes, Result);
          exception
             when Flyology.IO.Timeout_Error => Raised := True;
@@ -901,7 +952,8 @@ package body Object_Storage_Test_Cases is
       Entries.Append (Item ("mismatch"));
       Entries.Append (Item ("timestamp"));
       Store.Delete_Objects
-        (Bucket, Entries, null, Ada.Real_Time.Time_Last, Outcomes, Result);
+        (Bucket, Entries, (others => <>), null,
+         Ada.Real_Time.Time_Last, Outcomes, Result);
       Assert
         (Result = Success
          and then Outcomes.Length = 2
@@ -6226,6 +6278,43 @@ package body Object_Storage_Test_Cases is
             and then Round_Trip.Objects.First_Element.Has_ETag
             and then Round_Trip.Objects.First_Element.Has_Size,
             "DeleteObjects request omitted modeled object conditions");
+      end;
+
+      declare
+         Request : Deletions.Delete_Objects_Request;
+      begin
+         for Index in 1 .. Deletions.Maximum_Objects loop
+            Request.Objects.Append
+              (Deletions.Object_Identifier'
+                 (Key                    => US.To_Unbounded_String
+                    ("all-members-" & Index'Image),
+                  Version_ID             => US.To_Unbounded_String ("v"),
+                  Has_ETag               => True,
+                  ETag                   => US.To_Unbounded_String ("*"),
+                  Has_Last_Modified_Time => True,
+                  Last_Modified_Time     => US.To_Unbounded_String
+                    ("Wed, 21 Oct 2015 07:28:00 GMT"),
+                  Has_Size               => True,
+                  Size                   => 1));
+         end loop;
+         declare
+            Document : constant String :=
+              Deletions.Serialize_Request (Request);
+            Parsed : constant Deletions.Delete_Objects_Request :=
+              Deletions.Parse_Request
+                (Document,
+                 (Maximum_Document_Bytes =>
+                    Deletions.Maximum_Document_Bytes,
+                  Maximum_Depth          => 8,
+                  Maximum_Elements       =>
+                    Deletions.Maximum_Request_Elements,
+                  Maximum_Text_Bytes     =>
+                    Deletions.Maximum_Document_Bytes));
+         begin
+            Assert
+              (Natural (Parsed.Objects.Length) = Deletions.Maximum_Objects,
+               "DeleteObjects all-member maximum exceeded element budget");
+         end;
       end;
 
       Must_Reject_Request

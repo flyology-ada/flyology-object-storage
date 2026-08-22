@@ -116,6 +116,13 @@ package Flyology.Object_Storage.Backends is
 
    Maximum_Delete_Objects : constant := 1_000;
 
+   --  Catalog predicates that must remain true through batch publication.
+   --  Require_Unversioned rejects a bucket whose versioning status is no
+   --  longer Unconfigured, or whose MFA Delete status is Enabled.
+   type Delete_Objects_Requirements is record
+      Require_Unversioned : Boolean := False;
+   end record;
+
    type Delete_Object_Entry is record
       Key        : Ada.Strings.Unbounded.Unbounded_String;
       Conditions : Delete_Object_Conditions;
@@ -505,12 +512,16 @@ package Flyology.Object_Storage.Backends is
    --  boundary. Outcomes align one-for-one with Entries when Result is
    --  Success. Missing unconditioned keys are reported as Success; conditioned
    --  missing keys remain Not_Found. Backends must validate the complete
-   --  request before mutating catalog state. This contract does not promise
-   --  cross-file power-loss atomicity for a pure filesystem implementation.
+   --  request before mutating catalog state. Requirements are evaluated under
+   --  the same protected, locked, or transactional boundary as deletion, so a
+   --  concurrent versioning change cannot race current-object semantics. This
+   --  contract does not promise cross-file power-loss atomicity for a pure
+   --  filesystem implementation.
    procedure Delete_Objects
      (Item     : in out Backend;
       Bucket   : String;
       Entries  : Delete_Object_Entries;
+      Requirements : Delete_Objects_Requirements;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Outcomes : out Delete_Object_Outcomes;

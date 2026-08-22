@@ -21,6 +21,18 @@ catalog, then flushes both directories. Superseded and deleted bodies are
 intentionally retained until that recovery pass so an already-open reader is
 never invalidated by replacement.
 
+DeleteObjects preflights every bounded entry under the catalog gate, evaluates
+conditions and duplicate keys in request order, and performs all successful
+catalog removals in one SQL transaction. A required unversioned state is read
+from the bucket row in that transaction before any removal, so a concurrent
+versioning commit cannot pass between policy and mutation. Any statement or
+commit failure rolls
+back the complete catalog batch. Payload names retired by the commit are
+collected before publication and reclaimed only after the commit; a cleanup
+failure therefore cannot roll back or invalidate the committed result. Startup
+reconciliation removes any such unreferenced payload left by a crash or failed
+post-commit cleanup.
+
 The database carries a fixed application ID and schema version. Schema version
 4 added `object_tags`, keyed by bucket, opaque object key, and a one-based tag
 order. Its composite foreign key cascades object deletion. Complete tag-set
