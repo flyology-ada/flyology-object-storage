@@ -60,6 +60,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
+   use type Low_Level.Delete_Object_Tagging_Outcome_Kind;
    use type Objects.Tagging_Outcome_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
@@ -2433,11 +2434,11 @@ procedure S3_HTTP_Socket_Corpus is
                    (Origin, Low_Level.Path_Style, "example-bucket",
                     "typed-tagged", Delete_Parameters, Identity,
                     "us-east-1", "20130524T000000Z");
-               Result : constant Low_Level.Object_Tagging_Outcome :=
+               Result : constant Low_Level.Delete_Object_Tagging_Outcome :=
                  Low_Level.Execute_Delete_Object_Tagging
                    (HTTP, Prepared_Delete, Timeout => 5.0);
             begin
-               if Result.Kind /= Low_Level.Tags_Deleted
+               if Result.Kind /= Low_Level.Object_Tags_Deleted
                  or else US.To_String (Result.Result.Version_ID) /=
                    "tag-delete-version"
                then

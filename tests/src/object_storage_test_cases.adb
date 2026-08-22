@@ -13064,6 +13064,7 @@ package body Object_Storage_Test_Cases is
       use AUnit.Assertions;
       package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
       package US renames Ada.Strings.Unbounded;
+      use type Low_Level.Delete_Object_Tagging_Outcome_Kind;
       Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
         ("AKIAIOSFODNN7EXAMPLE",
          "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
@@ -13091,6 +13092,126 @@ package body Object_Storage_Test_Cases is
               (Low_Level.Canonical_Request (Prepared),
                "x-amz-expected-bucket-owner:owner") /= 0,
             "typed PutObjectTagging projection and signing");
+      end;
+
+      declare
+         Delete_Parameters : Low_Level.Delete_Object_Tagging_Parameters;
+      begin
+         Delete_Parameters.Version_ID :=
+           US.To_Unbounded_String ("v +/=");
+         Delete_Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Object_Tagging
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "photos/a b+%",
+                 Delete_Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket/photos/a%20b%2B%25?" &
+                 "tagging&versionId=v%20%2B%2F%3D"
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Canonical_Request (Prepared),
+                  "x-amz-expected-bucket-owner:123456789012") /= 0,
+               "typed DeleteObjectTagging complete projection and signing");
+         end;
+      end;
+
+      declare
+         Headers : constant Low_Level.Delete_Object_Tagging_Result :=
+           (Version_ID => US.To_Unbounded_String ("deleted-version"));
+         Outcome : constant Low_Level.Delete_Object_Tagging_Outcome :=
+           Low_Level.Decode_Delete_Object_Tagging_Response
+             (204, "", Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Object_Tags_Deleted
+            and then Outcome.Status = 204
+            and then US.To_String (Outcome.Result.Version_ID) =
+              "deleted-version",
+            "typed DeleteObjectTagging success response");
+      end;
+
+      declare
+         Headers : constant Low_Level.Delete_Object_Tagging_Result :=
+           (Version_ID => US.Null_Unbounded_String);
+         Outcome : constant Low_Level.Delete_Object_Tagging_Outcome :=
+           Low_Level.Decode_Delete_Object_Tagging_Response
+             (404,
+              "<Error><Code>NoSuchKey</Code>" &
+              "<Message>The specified key does not exist</Message></Error>",
+              Headers, "request-id", "host-id");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Delete_Object_Tagging_Rejected
+            and then Outcome.Status = 404
+            and then US.To_String (Outcome.Error.Code) = "NoSuchKey"
+            and then US.To_String (Outcome.Error.Request_ID) = "request-id"
+            and then US.To_String (Outcome.Error.Host_ID) = "host-id",
+            "typed DeleteObjectTagging structured error response");
+      end;
+
+      declare
+         procedure Reject_Success
+           (Payload, Version_ID : String; Label : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Delete_Object_Tagging_Outcome :=
+                    Low_Level.Decode_Delete_Object_Tagging_Response
+                      (204, Payload,
+                       (Version_ID =>
+                          US.To_Unbounded_String (Version_ID)));
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            Assert (Raised, Label);
+         end Reject_Success;
+      begin
+         Reject_Success
+           (" ", "", "DeleteObjectTagging accepted a whitespace body");
+         Reject_Success
+           ("", String'(1 .. 1_025 => 'v'),
+            "DeleteObjectTagging accepted an oversized version id");
+         Reject_Success
+           ("", "bad" & Character'Val (0) & "version",
+            "DeleteObjectTagging accepted a NUL version id");
+      end;
+
+      declare
+         Delete_Parameters : Low_Level.Delete_Object_Tagging_Parameters;
+         Raised : Boolean := False;
+      begin
+         Delete_Parameters.Version_ID :=
+           US.To_Unbounded_String (String'(1 .. 1_025 => 'v'));
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Object_Tagging
+                   (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Delete_Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "DeleteObjectTagging prepared an oversized version id");
       end;
    end Check_Low_Level_Object_Tagging;
 

@@ -5,6 +5,7 @@ package body Flyology.Object_Storage.Client.Objects is
 
    package US renames Ada.Strings.Unbounded;
    use type Low_Level.Delete_Object_Outcome_Kind;
+   use type Low_Level.Delete_Object_Tagging_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
 
@@ -307,18 +308,20 @@ package body Flyology.Object_Storage.Client.Objects is
            Low_Level.Prepare_Delete_Object_Tagging
              (Origin, Style, Bucket, Key, Parameters, Identity, Region,
               Timestamp);
-         Outcome : constant Low_Level.Object_Tagging_Outcome :=
+         Outcome : constant Low_Level.Delete_Object_Tagging_Outcome :=
            Low_Level.Execute_Delete_Object_Tagging
              (Client, Prepared, Timeout, Token);
       begin
-         if Outcome.Kind = Low_Level.Object_Tagging_Rejected then
+         if Outcome.Kind = Low_Level.Delete_Object_Tagging_Rejected then
             return
               (Kind => Tagging_Rejected, Status => Outcome.Status,
                Error => Outcome.Error);
          end if;
          return
            (Kind => Tags_Cleared, Status => Outcome.Status,
-            Result => Outcome.Result);
+            Result =>
+              (Tags       => Empty_Object_Tags,
+               Version_ID => Outcome.Result.Version_ID));
       end;
    end Delete_Tags;
 

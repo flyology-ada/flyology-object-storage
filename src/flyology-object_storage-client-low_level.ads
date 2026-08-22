@@ -1302,18 +1302,68 @@ package Flyology.Object_Storage.Client.Low_Level is
    end record;
 
    type Object_Tagging_Outcome_Kind is
-     (Tags_Put, Tags_Gotten, Tags_Deleted, Object_Tagging_Rejected);
+     (Tags_Put, Tags_Gotten, Object_Tagging_Rejected);
 
    type Object_Tagging_Outcome
      (Kind : Object_Tagging_Outcome_Kind := Object_Tagging_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
       case Kind is
-         when Tags_Put | Tags_Gotten | Tags_Deleted =>
+         when Tags_Put | Tags_Gotten =>
             Result : Object_Tagging_Result;
          when Object_Tagging_Rejected =>
             Error : S3.Errors.Error_Response;
       end case;
    end record;
+
+   --  Every member in the pinned DeleteObjectTagging output shape.
+   --  @field Version_ID Version selected by S3, when one was addressed
+   type Delete_Object_Tagging_Result is record
+      Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Typed DeleteObjectTagging response, including structured S3 errors.
+   --  @enum Object_Tags_Deleted The complete tag set was removed
+   --  @enum Delete_Object_Tagging_Rejected S3 rejected the operation
+   type Delete_Object_Tagging_Outcome_Kind is
+     (Object_Tags_Deleted, Delete_Object_Tagging_Rejected);
+
+   --  Result of decoding or executing DeleteObjectTagging.
+   --  @field Kind Successful deletion or structured rejection
+   --  @field Status Exact HTTP response status
+   --  @field Result Modeled successful response headers
+   --  @field Error Structured S3 error response
+   type Delete_Object_Tagging_Outcome
+     (Kind : Delete_Object_Tagging_Outcome_Kind :=
+        Delete_Object_Tagging_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Tags_Deleted =>
+            Result : Delete_Object_Tagging_Result;
+         when Delete_Object_Tagging_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode one bounded DeleteObjectTagging response without transport I/O.
+   --  A successful response must be an empty 204; Version_ID, when present,
+   --  is validated with the shared opaque S3 version identifier policy.
+   --  @param Status Exact HTTP status
+   --  @param Payload Bounded response body
+   --  @param Headers Every modeled output header
+   --  @param Request_ID Optional S3 request identifier for error fallback
+   --  @param Host_ID Optional S3 host identifier for error fallback
+   --  @param Limits Bounded XML error-response limits
+   --  @return Typed success or structured S3 rejection
+   --  @exception Invalid_Response Malformed success or error response
+   function Decode_Delete_Object_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Delete_Object_Tagging_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Object_Tagging_Outcome;
 
    function Execute_Put_Object_Tagging
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -1329,12 +1379,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Object_Tagging_Outcome;
 
+   --  Execute a prepared DeleteObjectTagging request synchronously.
+   --  Duplicate modeled response headers and transfer-coded 204 responses
+   --  are rejected before returning a typed result.
+   --  @param Client Configured caller-owned HTTP client
+   --  @param Prepared Request produced by Prepare_Delete_Object_Tagging
+   --  @param Timeout Whole-operation timeout budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Bounded XML error-response limits
+   --  @return Typed successful deletion or structured S3 rejection
+   --  @exception Invalid_Request Prepared operation does not match
+   --  @exception Invalid_Response Response framing or content is malformed
    function Execute_Delete_Object_Tagging
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
-      return Object_Tagging_Outcome;
+      return Delete_Object_Tagging_Outcome;
 
    --  Every non-Bucket/Delete member in the pinned DeleteObjects input shape.
    --  Content-MD5 is always generated over the exact serialized document.

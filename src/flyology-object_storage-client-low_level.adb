@@ -4689,6 +4689,12 @@ package body Flyology.Object_Storage.Client.Low_Level is
          end if;
       end Add;
    begin
+      if not S3.Deletions.Valid_Version_ID
+        (US.To_String (Parameters.Version_ID))
+      then
+         raise Invalid_Request with
+           "invalid DeleteObjectTagging version id";
+      end if;
       Values (1) := Model_Value_Of ("Bucket", Bucket);
       Values (2) := Model_Value_Of ("Key", Key);
       Add ("VersionId", Parameters.Version_ID);
@@ -4707,6 +4713,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
    begin
       if Prepared.Operation /= Model_Driven_Operation
         or else Prepared.Modeled_Operation /= Expected
+        or else
+          (Expected /= Model.Put_Object_Tagging_Operation
+           and then Expected /= Model.Get_Object_Tagging_Operation)
       then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
@@ -4754,15 +4763,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
          elsif not Whitespace_Only (Document) then
             raise Invalid_Response with
               "object tagging mutation response contains a body";
-         elsif Expected = Model.Put_Object_Tagging_Operation then
-            return
-              (Kind   => Tags_Put,
-               Status => Status,
-               Result =>
-                 (Tags => Empty_Object_Tags, Version_ID => Version_ID));
          else
             return
-              (Kind   => Tags_Deleted,
+              (Kind   => Tags_Put,
                Status => Status,
                Result =>
                  (Tags => Empty_Object_Tags, Version_ID => Version_ID));
@@ -4795,15 +4798,119 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Client, Prepared, Model.Get_Object_Tagging_Operation, Timeout, Token,
          Limits));
 
+   function Decode_Delete_Object_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Delete_Object_Tagging_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Object_Tagging_Outcome
+   is
+      Version_ID : constant String := US.To_String (Headers.Version_ID);
+   begin
+      if Version_ID'Length > 0
+        and then not S3.Deletions.Valid_Version_ID (Version_ID)
+      then
+         raise Invalid_Response with
+           "DeleteObjectTagging returned an invalid version id";
+      elsif Status = Model.Response_Code
+        (Model.Delete_Object_Tagging_Operation)
+      then
+         if Payload'Length /= 0 then
+            raise Invalid_Response with
+              "DeleteObjectTagging success contains a response body";
+         end if;
+         return
+           (Kind   => Object_Tags_Deleted,
+            Status => Status,
+            Result => Headers);
+      else
+         return
+           (Kind   => Delete_Object_Tagging_Rejected,
+            Status => Status,
+            Error  => Error_Response
+              (Payload, Request_ID, Host_ID, Limits));
+      end if;
+   exception
+      when S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed DeleteObjectTagging error response";
+   end Decode_Delete_Object_Tagging_Response;
+
    function Execute_Delete_Object_Tagging
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
-      return Object_Tagging_Outcome is
-     (Execute_Object_Tagging
-        (Client, Prepared, Model.Delete_Object_Tagging_Operation, Timeout,
-         Token, Limits));
+      return Delete_Object_Tagging_Outcome
+   is
+   begin
+      if Prepared.Operation /= Model_Driven_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Delete_Object_Tagging_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Execute_Model_Request (Client, Prepared, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Version_Count : Natural := 0;
+      begin
+         for Index in 1 .. Flyology.HTTP.Client.Header_Count (Response) loop
+            declare
+               Name : constant String := Ada.Characters.Handling.To_Lower
+                 (Flyology.HTTP.Client.Header_Name (Response, Index));
+            begin
+               if Name = "transfer-encoding"
+                 and then Status = Model.Response_Code
+                   (Model.Delete_Object_Tagging_Operation)
+               then
+                  raise Invalid_Response with
+                    "DeleteObjectTagging response uses transfer coding";
+               elsif Name = "x-amz-version-id" then
+                  Version_Count := Version_Count + 1;
+               end if;
+            end;
+         end loop;
+         if Version_Count > 1 then
+            raise Invalid_Response with
+              "DeleteObjectTagging response duplicates x-amz-version-id";
+         elsif Version_Count = 1
+           and then Flyology.HTTP.Client.Header
+             (Response, "x-amz-version-id")'Length = 0
+         then
+            raise Invalid_Response with
+              "DeleteObjectTagging response has an empty version id";
+         end if;
+         declare
+            Request_ID : constant String :=
+              Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+            Host_ID : constant String :=
+              Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+            Headers : constant Delete_Object_Tagging_Result :=
+              (Version_ID => US.To_Unbounded_String
+                 (Flyology.HTTP.Client.Header
+                    (Response, "x-amz-version-id")));
+            Maximum : constant Positive :=
+              (if Status = Model.Response_Code
+                   (Model.Delete_Object_Tagging_Operation)
+               then 1 else Limits.Maximum_Document_Bytes);
+            Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+              Flyology.HTTP.Client.Read_All (Response, Maximum, Token);
+         begin
+            return Decode_Delete_Object_Tagging_Response
+              (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
+               Request_ID, Host_ID, Limits);
+         end;
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "DeleteObjectTagging response exceeds its body limit";
+   end Execute_Delete_Object_Tagging;
 
    function Prepare_Delete_Objects
      (Origin     : Flyology.HTTP.Origin;
