@@ -1,0 +1,7 @@
+implementation	samples	mean_lifecycles_per_second	mean_operations_per_second	role
+flyology-files	3	42.493216	169.972865	candidate
+flyology-memory	3	1000.932813	4003.731251	candidate
+flyology-sqlite	3	395.749436	1582.997745	candidate
+minio	3	35.496470	141.985881	supplemental-compatibility
+rustfs	3	23.163126	92.652503	permissive-reference
+seaweedfs	3	197.493756	789.975025	permissive-reference

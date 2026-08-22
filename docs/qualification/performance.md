@@ -168,6 +168,18 @@ policy. This is a throughput regression tool for small control-plane requests;
 it does not claim concurrent saturation, tail latency, or durability-equivalent
 configuration between implementations.
 
+The retained
+[`20260822-bucket-tagging-smoke`](../../benchmarks/evidence/20260822-bucket-tagging-smoke/)
+campaign records the clean `3f26be46851328bee394b2c39fde2105bb80e154`
+source revision, all six roles, raw and normalized samples, exact tool and
+container provenance, and artifact hashes. Run
+`./tools/verify-bucket-tagging-benchmark-evidence.sh` to validate the bundle's
+schema, rates, and raw-to-summary derivation. The malformed Alire provenance
+field was the only post-campaign correction: `alr=APPLICATION` became the
+same-host/tool `alr=alr 2.1.1`; measured rows and source revision were not
+regenerated or altered. Its unqualified host, power, and CPU-policy labels keep
+the rates explicitly outside release-threshold evidence.
+
 ## Checksum microbenchmark
 
 Run 'benchmarks/run-checksums.sh [MiB-per-algorithm]' for a focused streaming

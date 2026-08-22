@@ -50,8 +50,20 @@ That driver uses one persistent client, alternates exact tag values, and
 validates every timed Put/Get/Delete/Get-NoSuchTagSet lifecycle. Its negative
 self-oracles reject stale Put, successful-no-op Delete, and mismatched HTTP
 status/error-code observations.
-Development-machine smoke results are tuning evidence only; a
-release threshold requires the full profile's clean revision and host policy
+The retained clean-source smoke campaign is
+[`20260822-bucket-tagging-smoke`](../../benchmarks/evidence/20260822-bucket-tagging-smoke/).
+It contains metadata, normalized and raw samples, the six-role summary, and a
+hash manifest for all retained artifacts. The executable gate
+`./tools/verify-bucket-tagging-benchmark-evidence.sh` checks the artifact
+schema, raw-to-normalized-to-summary derivation, exact six-role population,
+three samples per role, four requests per lifecycle, clean Flyology revision
+ancestry, corpora provenance, rates, and hashes. The launcher initially wrote
+the malformed `alr=APPLICATION` field; only that provenance field was
+corrected post-campaign from `alr --version` on the same host and tool (`alr
+2.1.1`). The measured rows and source revision were not regenerated or
+altered. The host, power, and CPU-policy labels are deliberately unqualified,
+so these development-machine smoke rates are tuning evidence only. A release
+threshold requires the full profile's clean revision and qualified host policy
 metadata.
 
 No new proof result is claimed here. The serialized proof lane remains paused

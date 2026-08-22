@@ -52,7 +52,7 @@ fi
   echo "uname=$(uname -a)"
   echo "docker=$(docker version --format '{{.Client.Version}}/{{.Server.Version}}')"
   echo "list_oracle_client=$(curl --version | head -1)"
-  echo "alr=$(alr version | head -1)"
+  echo "alr=$(alr --version)"
   echo "gnat=$(alr -n exec -- gnatls --version | head -1)"
   echo "source_revision=$SOURCE_REVISION"
   echo "corpora_lock_sha256=$(hash_file "$PROJECT_DIR/coverage/corpora.lock.toml")"

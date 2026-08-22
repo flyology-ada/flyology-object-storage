@@ -1,0 +1,4 @@
+repetition	cycles	operations	seconds	lifecycles_per_second	operations_per_second
+ 1	 64	 256	0.329523	194.220253	776.881014
+ 2	 64	 256	0.328827	194.631343	778.525370
+ 3	 64	 256	0.314296	203.629673	814.518691

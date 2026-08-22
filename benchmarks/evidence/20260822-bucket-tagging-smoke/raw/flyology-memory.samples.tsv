@@ -1,0 +1,3 @@
+20260822Tbucket-tagging-clean	flyology-memory	put-get-delete-get-absent-lifecycle	1	64	256	0.070247	911.067148	3644.268593	3f26be46851328bee394b2c39fde2105bb80e154	persistent-client-sequential-correctness-checked
+20260822Tbucket-tagging-clean	flyology-memory	put-get-delete-get-absent-lifecycle	2	64	256	0.063635	1005.738477	4022.953906	3f26be46851328bee394b2c39fde2105bb80e154	persistent-client-sequential-correctness-checked
+20260822Tbucket-tagging-clean	flyology-memory	put-get-delete-get-absent-lifecycle	3	64	256	0.058932	1085.992814	4343.971255	3f26be46851328bee394b2c39fde2105bb80e154	persistent-client-sequential-correctness-checked

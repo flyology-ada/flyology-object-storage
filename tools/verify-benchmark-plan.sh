@@ -169,6 +169,8 @@ bash -n "$PROJECT_DIR/benchmarks/run-endpoint.sh" \
 
 echo "benchmark launchers: executable and syntax-clean"
 
+"$PROJECT_DIR/tools/verify-bucket-tagging-benchmark-evidence.sh"
+
 # Keep the retained v1 evidence claim executable: an otherwise valid page
 # without its modeled Marker element must not pass the raw XML oracle.
 marker_gate='    && [ "$marker_count" = 1 ] \'

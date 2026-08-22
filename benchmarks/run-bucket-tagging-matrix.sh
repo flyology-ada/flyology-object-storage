@@ -65,7 +65,7 @@ fi
   echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "uname=$(uname -a)"
   echo "docker=$(docker version --format '{{.Client.Version}}/{{.Server.Version}}')"
-  echo "alr=$(alr version | head -1)"
+  echo "alr=$(alr --version)"
   echo "gnat=$(alr -n exec -- gnatls --version | head -1)"
   echo "source_revision=$SOURCE_REVISION"
   echo "cycles=$CYCLES"
