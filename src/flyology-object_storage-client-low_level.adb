@@ -1404,6 +1404,117 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Query, No_Headers, "", "", Identity, Region, Timestamp);
    end Prepare_Abort_Multipart_Upload;
 
+   function Prepare_List_Buckets
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Parameters : List_Buckets_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Optional_Count : constant Natural :=
+        Boolean'Pos (Parameters.Has_Max_Buckets) +
+        Boolean'Pos (US.Length (Parameters.Continuation_Token) > 0) +
+        Boolean'Pos (US.Length (Parameters.Prefix) > 0) +
+        Boolean'Pos (US.Length (Parameters.Bucket_Region) > 0);
+      Values : Model_Value_Array (1 .. Optional_Count);
+      Last   : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         if Value'Length > 0 then
+            Last := Last + 1;
+            Values (Last) :=
+              (Member_Name => US.To_Unbounded_String (Name),
+               Map_Key     => US.Null_Unbounded_String,
+               Value       => US.To_Unbounded_String (Value));
+         end if;
+      end Add;
+   begin
+      if Parameters.Has_Max_Buckets then
+         Add
+           ("MaxBuckets",
+            Ada.Strings.Fixed.Trim
+              (S3.Buckets.Max_Buckets_Value'Image
+                 (Parameters.Max_Buckets),
+               Ada.Strings.Both));
+      end if;
+      Add
+        ("ContinuationToken",
+         US.To_String (Parameters.Continuation_Token));
+      Add ("Prefix", US.To_String (Parameters.Prefix));
+      Add ("BucketRegion", US.To_String (Parameters.Bucket_Region));
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.List_Buckets_Operation, Origin, Style, Values, "", False, "",
+         Identity, Region, Timestamp)
+      do
+         Result.Operation := List_Buckets_Operation;
+      end return;
+   end Prepare_List_Buckets;
+
+   function Decode_List_Buckets_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Buckets_Outcome
+   is
+   begin
+      if Status = 200 then
+         return
+           (Kind   => Buckets_Listed,
+            Status => Status,
+            Result => S3.Buckets.Parse_List_Buckets (Payload, Limits));
+      else
+         return
+           (Kind   => List_Buckets_Rejected,
+            Status => Status,
+            Error  => Error_Response
+              (Payload, Request_ID, Host_ID, Limits));
+      end if;
+   exception
+      when S3.Buckets.Malformed_Bucket_Listing |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed ListBuckets response";
+   end Decode_List_Buckets_Response;
+
+   function Execute_List_Buckets
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Buckets_Outcome
+   is
+   begin
+      if Prepared.Operation /= List_Buckets_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Request_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+         Host_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_List_Buckets_Response
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
+            Host_ID, Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "ListBuckets response exceeds XML limit";
+   end Execute_List_Buckets;
+
    function Whitespace_Only (Value : String) return Boolean is
    begin
       for Item of Value loop

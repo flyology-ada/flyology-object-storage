@@ -1,10 +1,13 @@
 with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
+with Flyology.Object_Storage.S3.XML;
 
 --  Typed CreateBucket REST/XML documents shared by clients and servers.
 package Flyology.Object_Storage.S3.Buckets is
 
    Invalid_Bucket_Configuration : exception;
+
+   subtype Max_Buckets_Value is Positive range 1 .. 10_000;
 
    type Tag is record
       Key   : Ada.Strings.Unbounded.Unbounded_String;
@@ -33,5 +36,44 @@ package Flyology.Object_Storage.S3.Buckets is
    --  emits the namespaced CreateBucketConfiguration document.
    function Serialize_Create_Configuration
      (Value : Create_Bucket_Configuration) return String;
+
+   --  Every member of the pinned ListBuckets Bucket structure. Empty values
+   --  preserve optional-member absence exactly as received.
+   type Bucket_Entry is record
+      Name          : Ada.Strings.Unbounded.Unbounded_String;
+      Creation_Date : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Region : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_ARN    : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   package Bucket_Entry_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Bucket_Entry);
+
+   subtype Bucket_List is Bucket_Entry_Vectors.Vector;
+
+   type Bucket_Owner is record
+      Display_Name : Ada.Strings.Unbounded.Unbounded_String;
+      ID           : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Every member of the pinned ListBuckets output shape. Has_Owner
+   --  distinguishes an absent Owner structure from an empty present one.
+   type List_Buckets_Result is record
+      Buckets            : Bucket_List;
+      Has_Owner          : Boolean := False;
+      Owner              : Bucket_Owner;
+      Continuation_Token : Ada.Strings.Unbounded.Unbounded_String;
+      Prefix             : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   Malformed_Bucket_Listing : exception;
+
+   function Parse_List_Buckets
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return List_Buckets_Result;
+
+   function Serialize_List_Buckets
+     (Value : List_Buckets_Result) return String;
 
 end Flyology.Object_Storage.S3.Buckets;

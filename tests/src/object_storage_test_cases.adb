@@ -6051,10 +6051,197 @@ package body Object_Storage_Test_Cases is
       use type Low_Level.Create_Bucket_Outcome_Kind;
       use type Low_Level.Head_Bucket_Outcome_Kind;
       use type Low_Level.Head_Object_Outcome_Kind;
+      use type Low_Level.List_Buckets_Outcome_Kind;
       Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
         ("AKIAIOSFODNN7EXAMPLE",
          "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
    begin
+      declare
+         Value : Buckets.List_Buckets_Result;
+      begin
+         Value.Has_Owner := True;
+         Value.Owner.Display_Name := US.To_Unbounded_String ("owner&name");
+         Value.Owner.ID := US.To_Unbounded_String ("owner-id");
+         Value.Buckets.Append
+           (Buckets.Bucket_Entry'
+              (Name          => US.To_Unbounded_String ("alpha-bucket"),
+               Creation_Date => US.To_Unbounded_String
+                 ("2026-08-22T01:02:03.000Z"),
+               Bucket_Region => US.To_Unbounded_String ("us-west-2"),
+               Bucket_ARN    => US.To_Unbounded_String
+                 ("arn:aws:s3:::alpha-bucket")));
+         Value.Continuation_Token := US.To_Unbounded_String ("next<&>");
+         Value.Prefix := US.To_Unbounded_String ("alpha-");
+         declare
+            Document : constant String :=
+              Buckets.Serialize_List_Buckets (Value);
+            Parsed : constant Buckets.List_Buckets_Result :=
+              Buckets.Parse_List_Buckets (Document);
+         begin
+            Assert
+              (Parsed.Has_Owner
+               and then US.To_String (Parsed.Owner.Display_Name) =
+                 "owner&name"
+               and then Parsed.Buckets.Length = 1
+               and then US.To_String
+                 (Parsed.Buckets.First_Element.Name) = "alpha-bucket"
+               and then US.To_String
+                 (Parsed.Buckets.First_Element.Creation_Date) =
+                   "2026-08-22T01:02:03.000Z"
+               and then US.To_String
+                 (Parsed.Buckets.First_Element.Bucket_Region) = "us-west-2"
+               and then US.To_String (Parsed.Continuation_Token) = "next<&>"
+               and then Ada.Strings.Fixed.Index
+                 (Document, "<ContinuationToken>next&lt;&amp;&gt;" &
+                  "</ContinuationToken>") > 0,
+               "ListBuckets complete XML round trip");
+         end;
+      end;
+
+      declare
+         Parameters : constant Low_Level.List_Buckets_Parameters :=
+           (Max_Buckets        => 2,
+            Has_Max_Buckets    => True,
+            Continuation_Token => US.To_Unbounded_String ("token +/="),
+            Prefix             => US.To_Unbounded_String ("team/ "),
+            Bucket_Region      => US.To_Unbounded_String ("us-west-2"));
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_List_Buckets
+             (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+              Low_Level.Path_Style, Parameters, Identity, "us-east-1",
+              "20130524T000000Z");
+      begin
+         Assert
+           (Low_Level.Target (Prepared) =
+              "/?bucket-region=us-west-2&continuation-token=" &
+              "token%20%2B%2F%3D&max-buckets=2&prefix=team%2F%20",
+            "ListBuckets exact generated-model query projection");
+      end;
+
+      declare
+         Outcome : constant Low_Level.List_Buckets_Outcome :=
+           Low_Level.Decode_List_Buckets_Response
+             (200,
+              "<ListAllMyBucketsResult>" &
+              "<Owner><ID>owner-id</ID></Owner>" &
+              "<Buckets><Bucket><Name>one</Name>" &
+              "<CreationDate>2026-08-22T01:02:03Z</CreationDate>" &
+              "</Bucket></Buckets><Prefix>o</Prefix>" &
+              "</ListAllMyBucketsResult>");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Buckets_Listed
+            and then Outcome.Result.Has_Owner
+            and then Outcome.Result.Buckets.Length = 1
+            and then US.To_String (Outcome.Result.Prefix) = "o",
+            "typed ListBuckets success response");
+      end;
+
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Buckets.List_Buckets_Result :=
+                 Buckets.Parse_List_Buckets
+                   ("<ListAllMyBucketsResult><Buckets/><Buckets/>" &
+                    "</ListAllMyBucketsResult>");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Buckets.Malformed_Bucket_Listing =>
+               Raised := True;
+         end;
+         Assert (Raised, "duplicate ListBuckets container was accepted");
+      end;
+
+      declare
+         Document : US.Unbounded_String := US.To_Unbounded_String
+           ("<ListAllMyBucketsResult><Buckets>");
+         Raised : Boolean := False;
+      begin
+         for Index in 1 .. 10_001 loop
+            pragma Unreferenced (Index);
+            US.Append (Document, "<Bucket/>");
+         end loop;
+         US.Append (Document, "</Buckets></ListAllMyBucketsResult>");
+         begin
+            declare
+               Ignored : constant Buckets.List_Buckets_Result :=
+                 Buckets.Parse_List_Buckets (US.To_String (Document));
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Buckets.Malformed_Bucket_Listing =>
+               Raised := True;
+         end;
+         Assert (Raised, "ListBuckets accepted more than 10,000 buckets");
+      end;
+
+      declare
+         Value  : Buckets.List_Buckets_Result;
+         Raised : Boolean := False;
+      begin
+         Value.Owner.ID := US.To_Unbounded_String ("owner-without-presence");
+         begin
+            declare
+               Ignored : constant String :=
+                 Buckets.Serialize_List_Buckets (Value);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Buckets.Malformed_Bucket_Listing =>
+               Raised := True;
+         end;
+         Assert (Raised, "ListBuckets serialized owner without presence");
+      end;
+
+      declare
+         Outcome : constant Low_Level.List_Buckets_Outcome :=
+           Low_Level.Decode_List_Buckets_Response
+             (403,
+              "<Error><Code>AccessDenied</Code>" &
+              "<Message>denied</Message></Error>",
+              "request-id", "host-id");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.List_Buckets_Rejected
+            and then US.To_String (Outcome.Error.Code) = "AccessDenied"
+            and then US.To_String (Outcome.Error.Request_ID) = "request-id",
+            "typed ListBuckets error response");
+      end;
+
+      declare
+         HTTP : aliased Flyology.HTTP.Client.Client (Capacity => 1);
+         Parameters : Low_Level.Create_Bucket_Parameters;
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_Create_Bucket
+             (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+              Low_Level.Path_Style, "example-bucket", Parameters, Identity,
+              "us-east-1", "20130524T000000Z");
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.List_Buckets_Outcome :=
+                 Low_Level.Execute_List_Buckets (HTTP, Prepared);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "ListBuckets operation mismatch reached HTTP");
+      end;
+
       declare
          Configuration : Buckets.Create_Bucket_Configuration;
       begin

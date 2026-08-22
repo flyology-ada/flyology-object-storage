@@ -266,6 +266,54 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Objects_V2_Outcome;
 
+   --  Every member of the pinned ListBuckets request shape. Has_Max_Buckets
+   --  preserves omission independently from the default value.
+   type List_Buckets_Parameters is record
+      Max_Buckets        : S3.Buckets.Max_Buckets_Value := 10_000;
+      Has_Max_Buckets    : Boolean := False;
+      Continuation_Token : Ada.Strings.Unbounded.Unbounded_String;
+      Prefix             : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Region      : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Prepare_List_Buckets
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Parameters : List_Buckets_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type List_Buckets_Outcome_Kind is
+     (Buckets_Listed, List_Buckets_Rejected);
+
+   type List_Buckets_Outcome
+     (Kind : List_Buckets_Outcome_Kind := List_Buckets_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Buckets_Listed =>
+            Result : S3.Buckets.List_Buckets_Result;
+         when List_Buckets_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_List_Buckets_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Buckets_Outcome;
+
+   function Execute_List_Buckets
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Buckets_Outcome;
+
    --  Every input member in the pinned CreateBucket request shape.
    type Create_Bucket_Parameters is record
       ACL                     : Ada.Strings.Unbounded.Unbounded_String;
@@ -1379,6 +1427,7 @@ private
    type Operation_Kind is
      (List_Objects_V2_Operation,
       List_Objects_Operation,
+      List_Buckets_Operation,
       Model_Driven_Operation,
       Create_Bucket_Operation,
       Head_Bucket_Operation,
