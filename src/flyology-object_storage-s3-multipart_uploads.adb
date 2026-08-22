@@ -1,4 +1,5 @@
 with Ada.Containers;
+with Ada.Exceptions;
 with Ada.Strings;
 with Ada.Strings.Fixed;
 with Flyology.Object_Storage.S3.Model;
@@ -10,6 +11,167 @@ package body Flyology.Object_Storage.S3.Multipart_Uploads is
    package Model renames Flyology.Object_Storage.S3.Model;
    package Wire_Core renames Flyology.Object_Storage.S3.Wire_Core;
    use type Ada.Containers.Count_Type;
+
+   Maximum_Query_Length : constant := 8 * 1_024;
+
+   function Hex_Value (Value : Character) return Natural is
+     (if Value in '0' .. '9' then
+         Character'Pos (Value) - Character'Pos ('0')
+      elsif Value in 'a' .. 'f' then
+         Character'Pos (Value) - Character'Pos ('a') + 10
+      elsif Value in 'A' .. 'F' then
+         Character'Pos (Value) - Character'Pos ('A') + 10
+      else 16);
+
+   function Decode_Component (Value : String) return String is
+      Raw    : constant String (1 .. Value'Length) := Value;
+      Result : String (1 .. Value'Length);
+      Input  : Natural := 1;
+      Output : Natural := 0;
+   begin
+      while Input <= Raw'Length loop
+         Output := Output + 1;
+         if Raw (Input) = '%' then
+            if Input + 2 > Raw'Length
+              or else Hex_Value (Raw (Input + 1)) > 15
+              or else Hex_Value (Raw (Input + 2)) > 15
+            then
+               raise Malformed_List_Request with
+                 "invalid ListMultipartUploads percent escape";
+            end if;
+            Result (Output) := Character'Val
+              (16 * Hex_Value (Raw (Input + 1)) +
+               Hex_Value (Raw (Input + 2)));
+            Input := Input + 3;
+         else
+            Result (Output) := Raw (Input);
+            Input := Input + 1;
+         end if;
+      end loop;
+      return Result (1 .. Output);
+   end Decode_Component;
+
+   function Parse_List_Multipart_Uploads_Query
+     (Query : String) return List_Multipart_Uploads_Request
+   is
+      Result : List_Multipart_Uploads_Request;
+      Seen_Uploads, Seen_Delimiter, Seen_Encoding, Seen_Key_Marker :
+        Boolean := False;
+      Seen_Max, Seen_Prefix, Seen_Upload_ID_Marker, Seen_X_ID :
+        Boolean := False;
+      Count : Natural := 1;
+   begin
+      if Query'Length = 0 or else Query'Length > Maximum_Query_Length then
+         raise Malformed_List_Request with
+           "invalid ListMultipartUploads query size";
+      end if;
+      for Value of Query loop
+         if Value = '&' then
+            Count := Count + 1;
+         end if;
+      end loop;
+      if Count > 32 then
+         raise Malformed_List_Request with
+           "too many ListMultipartUploads query parameters";
+      end if;
+      declare
+         Raw   : constant String (1 .. Query'Length) := Query;
+         First : Positive := 1;
+      begin
+         for Index in 1 .. Raw'Last + 1 loop
+            if Index = Raw'Last + 1 or else Raw (Index) = '&' then
+               if Index = First then
+                  raise Malformed_List_Request with
+                    "empty ListMultipartUploads query parameter";
+               end if;
+               declare
+                  Pair_Text : constant String := Raw (First .. Index - 1);
+                  Equals : constant Natural :=
+                    Ada.Strings.Fixed.Index (Pair_Text, "=");
+                  Name : constant String := Decode_Component
+                    ((if Equals = 0 then Pair_Text
+                      elsif Equals = Pair_Text'First then ""
+                      else Pair_Text (Pair_Text'First .. Equals - 1)));
+                  Value : constant String := Decode_Component
+                    ((if Equals = 0 or else Equals = Pair_Text'Last then ""
+                      else Pair_Text (Equals + 1 .. Pair_Text'Last)));
+               begin
+                  if Name = "uploads" then
+                     if Seen_Uploads or else Value'Length /= 0 then
+                        raise Malformed_List_Request with
+                          "invalid ListMultipartUploads marker";
+                     end if;
+                     Seen_Uploads := True;
+                  elsif Name = "delimiter" then
+                     if Seen_Delimiter then
+                        raise Malformed_List_Request with
+                          "duplicate ListMultipartUploads delimiter";
+                     end if;
+                     Seen_Delimiter := True;
+                     Result.Delimiter := US.To_Unbounded_String (Value);
+                  elsif Name = "encoding-type" then
+                     if Seen_Encoding or else Value /= "url" then
+                        raise Malformed_List_Request with
+                          "invalid ListMultipartUploads encoding-type";
+                     end if;
+                     Seen_Encoding := True;
+                     Result.URL_Encoding := True;
+                  elsif Name = "key-marker" then
+                     if Seen_Key_Marker then
+                        raise Malformed_List_Request with
+                          "duplicate ListMultipartUploads key marker";
+                     end if;
+                     Seen_Key_Marker := True;
+                     Result.Key_Marker := US.To_Unbounded_String (Value);
+                  elsif Name = "max-uploads" then
+                     declare
+                        Number : constant Wire_Core.Natural_Result :=
+                          Wire_Core.Parse_Natural (Value);
+                     begin
+                        if Seen_Max or else not Number.Valid
+                          or else Number.Value not in 1 .. Core.Page_Size'Last
+                        then
+                           raise Malformed_List_Request with
+                             "invalid ListMultipartUploads page size";
+                        end if;
+                        Seen_Max := True;
+                        Result.Max_Uploads := Core.Page_Size (Number.Value);
+                     end;
+                  elsif Name = "prefix" then
+                     if Seen_Prefix then
+                        raise Malformed_List_Request with
+                          "duplicate ListMultipartUploads prefix";
+                     end if;
+                     Seen_Prefix := True;
+                     Result.Prefix := US.To_Unbounded_String (Value);
+                  elsif Name = "upload-id-marker" then
+                     if Seen_Upload_ID_Marker then
+                        raise Malformed_List_Request with
+                          "duplicate ListMultipartUploads upload ID marker";
+                     end if;
+                     Seen_Upload_ID_Marker := True;
+                     Result.Upload_ID_Marker := US.To_Unbounded_String (Value);
+                  elsif Name = "x-id" then
+                     if Seen_X_ID or else Value /= "ListMultipartUploads" then
+                        raise Malformed_List_Request with
+                          "invalid ListMultipartUploads operation identifier";
+                     end if;
+                     Seen_X_ID := True;
+                  else
+                     raise Malformed_List_Request with
+                       "unsupported ListMultipartUploads query parameter";
+                  end if;
+               end;
+               First := Index + 1;
+            end if;
+         end loop;
+      end;
+      if not Seen_Uploads then
+         raise Malformed_List_Request with
+           "ListMultipartUploads query lacks uploads marker";
+      end if;
+      return Result;
+   end Parse_List_Multipart_Uploads_Query;
 
    type Field_Kind is
      (No_Field, Bucket_Field, Key_Marker_Field, Upload_ID_Marker_Field,
@@ -305,11 +467,9 @@ package body Flyology.Object_Storage.S3.Multipart_Uploads is
          if not Item.Seen (Upload_ID_Field)
            or else not Item.Seen (Key_Field)
            or else not Item.Seen (Initiated_Field)
-           or else not Item.Seen (Storage_Class_Field)
            or else US.Length (Item.Current_Upload.Upload_ID) = 0
            or else US.Length (Item.Current_Upload.Key) = 0
            or else US.Length (Item.Current_Upload.Initiated) = 0
-           or else US.Length (Item.Current_Upload.Storage_Class) = 0
          then
             raise Malformed_Upload_Listing with
               "incomplete multipart upload";
@@ -397,9 +557,10 @@ package body Flyology.Object_Storage.S3.Multipart_Uploads is
          if US.Length (Upload.Upload_ID) = 0
            or else US.Length (Upload.Key) = 0
            or else US.Length (Upload.Initiated) = 0
-           or else US.Length (Upload.Storage_Class) = 0
-           or else not Valid_Enumeration
-             (US.To_String (Upload.Storage_Class), Upload_Member_Shape (4))
+           or else
+             (US.Length (Upload.Storage_Class) > 0
+              and then not Valid_Enumeration
+                (US.To_String (Upload.Storage_Class), Upload_Member_Shape (4)))
            or else not Valid_Identity (Upload.Has_Owner, Upload.Owner)
            or else not Valid_Identity
              (Upload.Has_Initiator, Upload.Initiator)
@@ -445,9 +606,10 @@ package body Flyology.Object_Storage.S3.Multipart_Uploads is
       Validate (Handler.Value);
       return Handler.Value;
    exception
-      when XML.XML_Error =>
+      when Occurrence : XML.XML_Error =>
          raise Malformed_Upload_Listing with
-           "malformed ListMultipartUploads XML";
+           "malformed ListMultipartUploads XML: " &
+           Ada.Exceptions.Exception_Message (Occurrence);
    end Parse_List_Multipart_Uploads;
 
    function Element (Name, Value : String) return String is
@@ -511,8 +673,9 @@ package body Flyology.Object_Storage.S3.Multipart_Uploads is
             "<Upload>" &
             Element ("UploadId", US.To_String (Upload.Upload_ID)) &
             Element ("Key", US.To_String (Upload.Key)) &
-            Element ("Initiated", US.To_String (Upload.Initiated)) &
-            Element ("StorageClass", US.To_String (Upload.Storage_Class)));
+            Element ("Initiated", US.To_String (Upload.Initiated)));
+         Append_Optional
+           (Result, "StorageClass", US.To_String (Upload.Storage_Class));
          if Upload.Has_Owner then
             Append_Identity (Result, "Owner", Upload.Owner);
          end if;

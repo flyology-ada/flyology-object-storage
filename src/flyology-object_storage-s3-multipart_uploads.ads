@@ -10,6 +10,22 @@ with Flyology.Object_Storage.S3.XML;
 package Flyology.Object_Storage.S3.Multipart_Uploads is
 
    Malformed_Upload_Listing : exception;
+   Malformed_List_Request : exception;
+
+   type List_Multipart_Uploads_Request is record
+      Delimiter        : Ada.Strings.Unbounded.Unbounded_String;
+      URL_Encoding     : Boolean := False;
+      Key_Marker       : Ada.Strings.Unbounded.Unbounded_String;
+      Max_Uploads      : Core.Page_Size := Core.Page_Size'Last;
+      Prefix           : Ada.Strings.Unbounded.Unbounded_String;
+      Upload_ID_Marker : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Parse a bucket-level ListMultipartUploads query. The uploads marker is
+   --  required, percent escapes are strict, '+' remains literal, duplicates
+   --  and unknown fields are rejected, and max-uploads is in 1 .. 1_000.
+   function Parse_List_Multipart_Uploads_Query
+     (Query : String) return List_Multipart_Uploads_Request;
 
    type Upload_Entry is record
       Upload_ID          : Ada.Strings.Unbounded.Unbounded_String;

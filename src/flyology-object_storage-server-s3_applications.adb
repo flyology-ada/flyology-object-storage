@@ -13,6 +13,7 @@ with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
+with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
@@ -27,6 +28,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Deletions renames S3.Deletions;
    package Listings renames S3.Listings;
    package Multipart renames S3.Multipart;
+   package Multipart_Uploads renames S3.Multipart_Uploads;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Calendar.Time;
    use type Apps.Response_State;
@@ -224,7 +226,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Create_Bucket, Head_Bucket, Delete_Bucket,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
          Delete_Objects,
-         List_Objects, List_Objects_V2,
+         List_Objects, List_Objects_V2, List_Multipart_Uploads,
          Create_Multipart, Put_Multipart_Part, Copy_Multipart_Part,
          Complete_Multipart, Abort_Multipart, List_Multipart_Parts);
 
@@ -269,6 +271,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else
           Ada.Strings.Fixed.Index
             (Padded_Query, "&x-id=ListObjectsV2&") /= 0;
+      Is_List_Multipart_Uploads_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&uploads&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&uploads=&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=ListMultipartUploads&") /= 0;
       Operation   : Operation_Kind := Unsupported;
       Multipart_Query_Invalid : Boolean := False;
       Has_Copy_Source : constant Boolean :=
@@ -617,6 +624,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Delete_Objects
             elsif Method = "GET" and then Is_List_Objects_V2_Query
             then List_Objects_V2
+            elsif Method = "GET" and then Is_List_Multipart_Uploads_Query
+            then List_Multipart_Uploads
             elsif Method = "GET" then List_Objects
             else Unsupported);
       elsif Parsed.Kind = Requests.Object_Target then
@@ -1007,6 +1016,127 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 400, "InvalidArgument",
                         "The ListObjectsV2 request is invalid", Target_Text);
                end;
+
+            when List_Multipart_Uploads =>
+               if Apps.Request_Header_Count
+                    (X, "x-amz-expected-bucket-owner") > 1
+                 or else Apps.Request_Header_Count
+                   (X, "x-amz-request-payer") > 1
+               then
+                  Send_Error
+                    (X, 400, "InvalidRequest",
+                     "A ListMultipartUploads header is duplicated",
+                     Target_Text);
+               elsif Apps.Request_Header_Count
+                 (X, "x-amz-expected-bucket-owner") = 1
+               then
+                  Send_Error
+                    (X, 501, "NotImplemented",
+                     "Expected bucket owner policy is not implemented",
+                     Target_Text);
+               elsif Apps.Request_Header_Count (X, "x-amz-request-payer") = 1
+               then
+                  Send_Error
+                    (X, 501, "NotImplemented",
+                     "Requester Pays is not implemented", Target_Text);
+               else
+                  begin
+                     declare
+                        Request : constant
+                          Multipart_Uploads.List_Multipart_Uploads_Request :=
+                            Multipart_Uploads.
+                              Parse_List_Multipart_Uploads_Query
+                                (Query_Text);
+                        Options : constant
+                          Backends.List_Multipart_Uploads_Options :=
+                            (Prefix    => Request.Prefix,
+                             Delimiter => Request.Delimiter,
+                             After     =>
+                               (Key       => Request.Key_Marker,
+                                Upload_ID => Request.Upload_ID_Marker),
+                             Maximum   =>
+                               Backends.List_Limit (Request.Max_Uploads));
+                        Page : Backends.Multipart_Upload_Page;
+
+                        function Encoded (Value : String) return String is
+                          (if Request.URL_Encoding
+                           then Encoding.URI_Encode
+                             (Value, Encode_Slash => False)
+                           else Value);
+                     begin
+                        Store.List_Multipart_Uploads
+                          (Bucket, Options, Apps.Cancellation (X),
+                           Apps.Deadline (X), Page, Result);
+                        if Result /= Success then
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                           return;
+                        end if;
+                        declare
+                           Response :
+                             Multipart_Uploads.List_Multipart_Uploads_Result :=
+                               (Bucket => US.To_Unbounded_String (Bucket),
+                                Key_Marker => US.To_Unbounded_String
+                                  (Encoded
+                                     (US.To_String (Request.Key_Marker))),
+                                Upload_ID_Marker =>
+                                  Request.Upload_ID_Marker,
+                                Next_Key_Marker => US.Null_Unbounded_String,
+                                Next_Upload_ID_Marker =>
+                                  US.Null_Unbounded_String,
+                                Prefix => US.To_Unbounded_String
+                                  (Encoded (US.To_String (Request.Prefix))),
+                                Delimiter => US.To_Unbounded_String
+                                  (Encoded
+                                     (US.To_String (Request.Delimiter))),
+                                Max_Uploads => Request.Max_Uploads,
+                                Is_Truncated => Page.Is_Truncated,
+                                Uploads => <>,
+                                Common_Prefixes => <>,
+                                Encoding_Type =>
+                                  (if Request.URL_Encoding
+                                   then US.To_Unbounded_String ("url")
+                                   else US.Null_Unbounded_String));
+                        begin
+                           if Page.Is_Truncated then
+                              Response.Next_Key_Marker :=
+                                US.To_Unbounded_String
+                                  (Encoded
+                                     (US.To_String (Page.Next_After.Key)));
+                              Response.Next_Upload_ID_Marker :=
+                                Page.Next_After.Upload_ID;
+                           end if;
+                           for Upload of Page.Uploads loop
+                              Response.Uploads.Append
+                                (Multipart_Uploads.Upload_Entry'
+                                   (Upload_ID => Upload.Upload_ID,
+                                    Key => US.To_Unbounded_String
+                                      (Encoded (US.To_String (Upload.Key))),
+                                    Initiated => US.To_Unbounded_String
+                                      (Last_Modified (Upload.Initiated)),
+                                    Storage_Class =>
+                                      US.To_Unbounded_String ("STANDARD"),
+                                    others => <>));
+                           end loop;
+                           for Prefix_Value of Page.Common_Prefixes loop
+                              Response.Common_Prefixes.Append
+                                (US.To_Unbounded_String
+                                   (Encoded (US.To_String (Prefix_Value))));
+                           end loop;
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              Multipart_Uploads.
+                                Serialize_List_Multipart_Uploads (Response));
+                        end;
+                     end;
+                  exception
+                     when Multipart_Uploads.Malformed_List_Request =>
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The ListMultipartUploads request is invalid",
+                           Target_Text);
+                  end;
+               end if;
 
             when Create_Multipart =>
                if Apps.Request_Header_Count (X, "content-type") > 1 then

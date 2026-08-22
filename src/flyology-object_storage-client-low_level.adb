@@ -1,4 +1,5 @@
 with Ada.Characters.Handling;
+with Ada.Exceptions;
 with Ada.Streams;
 with Ada.Strings;
 with Ada.Strings.Fixed;
@@ -3486,10 +3487,14 @@ package body Flyology.Object_Storage.Client.Low_Level is
               (Payload, Request_ID, Host_ID, Limits));
       end if;
    exception
-      when S3.Multipart_Uploads.Malformed_Upload_Listing |
-           S3.Errors.Malformed_Error =>
+      when Occurrence : S3.Multipart_Uploads.Malformed_Upload_Listing =>
          raise Invalid_Response with
-           "malformed ListMultipartUploads response";
+           "malformed ListMultipartUploads response: " &
+           Ada.Exceptions.Exception_Message (Occurrence);
+      when Occurrence : S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed ListMultipartUploads error response: " &
+           Ada.Exceptions.Exception_Message (Occurrence);
    end Decode_List_Multipart_Uploads_Response;
 
    function Execute_List_Multipart_Uploads

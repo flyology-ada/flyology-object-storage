@@ -39,12 +39,12 @@ The core crate includes:
   member location, enumeration, XML trait, checksum trait, and authentication
   trait in the 116-operation botocore S3 model;
 - AWS-vector-tested SigV4 header signing and bounded, entity-safe REST/XML;
-- complete typed, bounded ListObjects v1/v2 and multipart
-  initiation/completion/ListParts-result REST/XML codecs;
+- complete typed, bounded ListObjects v1/v2 and multipart initiation,
+  completion, ListParts, and ListMultipartUploads REST/XML codecs;
 - signed, bounded CreateBucket, HeadBucket, GetObject, HeadObject, PutObject,
   ListObjects, ListObjectsV2, DeleteBucket,
   DeleteObject, DeleteObjects REST/XML, and multipart
-  initiate/upload/complete/abort/ListParts low-level
+  initiate/upload/complete/abort/ListParts/ListMultipartUploads low-level
   operations over caller-owned `flyology_http` clients, with UploadPart
   bodies borrowed from streaming sources;
 - exhaustive request projection and a raw streaming-response execution
@@ -52,9 +52,10 @@ The core crate includes:
   codecs and interoperability gates remain tracked as incomplete;
 - an authenticated path-style S3 server application for the initial
   Create/Head/DeleteBucket, ListObjects v1/v2, DeleteObjects,
-  Put/Copy/Get/Head/DeleteObject, and core multipart/ListParts slice, with SigV4
-  admission before body acceptance, streamed payload-hash verification before
-  commit, atomic suffix-range resolution, and typed S3 error responses;
+  Put/Copy/Get/Head/DeleteObject, and core multipart/ListParts/
+  ListMultipartUploads slice, with SigV4 admission before body acceptance,
+  streamed payload-hash verification before commit, atomic suffix-range
+  resolution, and typed S3 error responses;
 - the namespace for the low-level and convenience clients.
 
 The optional `flyology_object_storage_sqlite` subcrate vendors a pinned

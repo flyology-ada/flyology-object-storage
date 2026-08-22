@@ -15,6 +15,7 @@ with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
+with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.Server.Authentication;
 with Flyology.Object_Storage.Server.S3_Applications;
@@ -28,6 +29,8 @@ procedure S3_Server_Application_Corpus is
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Listings renames Flyology.Object_Storage.S3.Listings;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
+   package Multipart_Uploads renames
+     Flyology.Object_Storage.S3.Multipart_Uploads;
    package Authentication renames
      Flyology.Object_Storage.Server.Authentication;
    package Static_Credentials renames
@@ -283,13 +286,21 @@ procedure S3_Server_Application_Corpus is
    function Signed_Query_Request
      (Method : String;
       Target : String;
-      Query  : SigV4.Name_Value_Array) return String
+      Query  : SigV4.Name_Value_Array;
+      Extra_Header_Name  : String := "";
+      Extra_Header_Value : String := "") return String
    is
       Payload_Hash : constant String := SigV4.SHA256_Hex ("");
       Headers : constant SigV4.Name_Value_Array :=
-        (SigV4.Pair ("host", Host),
-         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
-         SigV4.Pair ("x-amz-date", Timestamp));
+        (if Extra_Header_Name'Length = 0 then
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp))
+         else
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair (Extra_Header_Name, Extra_Header_Value),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp)));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
         (Method, Target, Query, Headers, Payload_Hash, Access_Key,
          Secret_Key, Region, Timestamp);
@@ -300,6 +311,8 @@ procedure S3_Server_Application_Corpus is
         "x-amz-date: " & Timestamp & CRLF &
         "x-amz-content-sha256: " & Payload_Hash & CRLF &
         "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        (if Extra_Header_Name'Length = 0 then ""
+         else Extra_Header_Name & ": " & Extra_Header_Value & CRLF) &
         "Content-Length: 0" & CRLF & "Connection: close" & CRLF & CRLF;
    end Signed_Query_Request;
 
@@ -489,6 +502,180 @@ procedure S3_Server_Application_Corpus is
               '"' & Part_ETag & '"'
             and then not Listed.Is_Truncated,
             "ListParts server response mismatch: " & Response);
+      end;
+      declare
+         Z_Create : constant String := Run
+           (Signed_Query_Body_Request
+              ("POST", "/test-bucket/multipart-z", Create_Query, ""));
+         Nested_Create : constant String := Run
+           (Signed_Query_Body_Request
+              ("POST", "/test-bucket/nested/active+key", Create_Query,
+               ""));
+
+         function Created_ID (Response, Name : String) return String is
+         begin
+            Require
+              (Has (Response, "200 OK"),
+               Name & " multipart setup failed: " & Response);
+            return US.To_String
+              (Multipart.Parse_Create_Result
+                 (Response_Body (Response)).Upload_ID);
+         end Created_ID;
+
+         Z_ID : constant String := Created_ID (Z_Create, "z-listing");
+         Nested_ID : constant String :=
+           Created_ID (Nested_Create, "nested-listing");
+         First_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("max-uploads", "1"),
+            SigV4.Pair ("uploads", ""),
+            SigV4.Pair ("x-id", "ListMultipartUploads"));
+         First_Response : constant String := Run
+           (Signed_Query_Request ("GET", "/test-bucket", First_Query));
+         First_Page : constant
+           Multipart_Uploads.List_Multipart_Uploads_Result :=
+             Multipart_Uploads.Parse_List_Multipart_Uploads
+               (Response_Body (First_Response));
+
+         procedure Abort_One (Target, ID : String) is
+            Query : constant SigV4.Name_Value_Array :=
+              (1 => SigV4.Pair ("uploadId", ID));
+         begin
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Body_Request
+                       ("DELETE", Target, Query, "")),
+                  "204 No Content"),
+               "ListMultipartUploads corpus cleanup failed");
+         end Abort_One;
+      begin
+         Require
+           (Has (First_Response, "200 OK")
+            and then First_Page.Uploads.Length = 1
+            and then US.To_String (First_Page.Uploads.First_Element.Key) =
+              "multipart-object"
+            and then US.To_String
+              (First_Page.Uploads.First_Element.Upload_ID) = Upload_ID
+            and then US.To_String
+              (First_Page.Uploads.First_Element.Storage_Class) = "STANDARD"
+            and then US.Length
+              (First_Page.Uploads.First_Element.Initiated) > 0
+            and then First_Page.Is_Truncated
+            and then US.To_String (First_Page.Next_Key_Marker) =
+              "multipart-object"
+            and then US.To_String (First_Page.Next_Upload_ID_Marker) =
+              Upload_ID,
+            "ListMultipartUploads server first page mismatch: " &
+            First_Response);
+         declare
+            Next_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair
+                 ("key-marker", US.To_String (First_Page.Next_Key_Marker)),
+               SigV4.Pair ("max-uploads", "10"),
+               SigV4.Pair
+                 ("upload-id-marker",
+                  US.To_String (First_Page.Next_Upload_ID_Marker)),
+               SigV4.Pair ("uploads", ""));
+            Next_Response : constant String := Run
+              (Signed_Query_Request ("GET", "/test-bucket", Next_Query));
+            Next_Page : constant
+              Multipart_Uploads.List_Multipart_Uploads_Result :=
+                Multipart_Uploads.Parse_List_Multipart_Uploads
+                  (Response_Body (Next_Response));
+         begin
+            Require
+              (Has (Next_Response, "200 OK")
+               and then Next_Page.Uploads.Length = 2
+               and then US.To_String (Next_Page.Uploads (1).Key) =
+                 "multipart-z"
+               and then US.To_String (Next_Page.Uploads (2).Key) =
+                 "nested/active+key"
+               and then not Next_Page.Is_Truncated,
+               "ListMultipartUploads server continuation mismatch: " &
+               Next_Response);
+         end;
+         declare
+            Encoded_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("encoding-type", "url"),
+               SigV4.Pair ("prefix", "nested/"),
+               SigV4.Pair ("uploads", ""));
+            Encoded_Response : constant String := Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Encoded_Query));
+            Encoded_Page : constant
+              Multipart_Uploads.List_Multipart_Uploads_Result :=
+                Multipart_Uploads.Parse_List_Multipart_Uploads
+                  (Response_Body (Encoded_Response));
+         begin
+            Require
+              (Has (Encoded_Response, "200 OK")
+               and then Encoded_Page.Uploads.Length = 1
+               and then US.To_String (Encoded_Page.Uploads.First_Element.Key) =
+                 "nested/active%2Bkey"
+               and then US.To_String (Encoded_Page.Prefix) = "nested/"
+               and then US.To_String (Encoded_Page.Encoding_Type) = "url",
+               "ListMultipartUploads URL encoding mismatch: " &
+               Encoded_Response);
+         end;
+         declare
+            Delimiter_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("delimiter", "/"),
+               SigV4.Pair ("uploads", ""));
+            Delimiter_Page : constant
+              Multipart_Uploads.List_Multipart_Uploads_Result :=
+                Multipart_Uploads.Parse_List_Multipart_Uploads
+                  (Response_Body
+                     (Run
+                        (Signed_Query_Request
+                           ("GET", "/test-bucket", Delimiter_Query))));
+         begin
+            Require
+              (Delimiter_Page.Uploads.Length = 2
+               and then Delimiter_Page.Common_Prefixes.Length = 1
+               and then US.To_String
+                 (Delimiter_Page.Common_Prefixes.First_Element) = "nested/",
+               "ListMultipartUploads delimiter grouping mismatch");
+         end;
+         declare
+            Invalid_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("max-uploads", "0"),
+               SigV4.Pair ("uploads", ""));
+            Missing_Query : constant SigV4.Name_Value_Array :=
+              (1 => SigV4.Pair ("uploads", ""));
+         begin
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Invalid_Query)),
+                  "InvalidArgument"),
+               "ListMultipartUploads zero page was accepted");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/absent-bucket", Missing_Query)),
+                  "NoSuchBucket"),
+               "ListMultipartUploads missing bucket was misreported");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-request-payer", "requester")),
+                  "NotImplemented"),
+               "ListMultipartUploads silently accepted Requester Pays");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-expected-bucket-owner", "123456789012")),
+                  "NotImplemented"),
+               "ListMultipartUploads silently accepted expected owner");
+         end;
+         Abort_One ("/test-bucket/multipart-z", Z_ID);
+         Abort_One ("/test-bucket/nested/active+key", Nested_ID);
       end;
       declare
          Missing : constant SigV4.Name_Value_Array :=

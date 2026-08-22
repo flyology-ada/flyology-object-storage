@@ -1,6 +1,7 @@
 with Ada.Command_Line;
 with Ada.Containers;
 with Ada.Directories;
+with Ada.Environment_Variables;
 with Ada.Exceptions;
 with Ada.Streams;
 with Ada.Streams.Stream_IO;
@@ -40,6 +41,7 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
+   use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
    use type Low_Level.List_Parts_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Upload_Part_Copy_Outcome_Kind;
@@ -52,6 +54,22 @@ procedure S3_Implementation_Corpus is
    Secret_Key : constant String := "flyology-s3-oracle-secret-key-tests";
    Payload    : aliased constant String :=
      String'(1 .. 6 * 1_024 * 1_024 => 'm');
+
+   function Check_List_Multipart_Uploads return Boolean is
+      Name : constant String :=
+        "FLYOLOGY_LIST_MULTIPART_UPLOADS_ORACLE_MODE";
+   begin
+      if not Ada.Environment_Variables.Exists (Name) then
+         return True;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "seaweedfs-4.43-invalid-pagination"
+      then
+         return False;
+      else
+         raise Program_Error with
+           "unknown ListMultipartUploads oracle mode";
+      end if;
+   end Check_List_Multipart_Uploads;
 
    type Upload_Source
      (Value : not null access constant String) is
@@ -390,6 +408,62 @@ procedure S3_Implementation_Corpus is
          end;
       end Require_Listed_Part;
 
+      procedure Require_Listed_Upload
+        (Object_Key, Upload_ID : String; Present : Boolean)
+      is
+         Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+      begin
+         Parameters.Prefix := US.To_Unbounded_String (Object_Key);
+         Parameters.Max_Uploads := 1;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_List_Multipart_Uploads
+                (Origin, Low_Level.Path_Style, Bucket, Parameters, Identity,
+                 "us-east-1", Timestamp);
+            Outcome : constant Low_Level.List_Multipart_Uploads_Outcome :=
+              Low_Level.Execute_List_Multipart_Uploads
+                (HTTP, Prepared, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Low_Level.Multipart_Uploads_Listed then
+               raise Program_Error with
+                 "S3 implementation rejected typed ListMultipartUploads: " &
+                 Outcome.Status'Image & " " &
+                 US.To_String (Outcome.Error.Code) & " " &
+                 US.To_String (Outcome.Error.Message);
+            elsif Present
+              and then
+                (Outcome.Result.Listing.Uploads.Length /= 1
+                 or else US.To_String
+                   (Outcome.Result.Listing.Uploads.First_Element.Key) /=
+                     Object_Key
+                 or else US.To_String
+                   (Outcome.Result.Listing.Uploads.First_Element.Upload_ID) /=
+                     Upload_ID
+                 or else Outcome.Result.Listing.Is_Truncated)
+            then
+               raise Program_Error with
+                 "S3 implementation ListMultipartUploads active value " &
+                 "mismatch: count=" &
+                 Outcome.Result.Listing.Uploads.Length'Image &
+                 (if Outcome.Result.Listing.Uploads.Is_Empty then ""
+                  else " key=" & US.To_String
+                    (Outcome.Result.Listing.Uploads.First_Element.Key) &
+                    " id=" &
+                    US.To_String
+                      (Outcome.Result.Listing.Uploads.First_Element.Upload_ID))
+                 &
+                 " expected-key=" & Object_Key & " expected-id=" &
+                 Upload_ID & " truncated=" &
+                 Outcome.Result.Listing.Is_Truncated'Image;
+            elsif not Present
+              and then not Outcome.Result.Listing.Uploads.Is_Empty
+            then
+               raise Program_Error with
+                 "S3 implementation listed a retired multipart upload";
+            end if;
+         end;
+      end Require_Listed_Upload;
+
       procedure Copy_With_Multipart is
          Copy_Key : constant String := Key & "-copy-part";
          Prepared_Create : constant Low_Level.Prepared_Request :=
@@ -409,6 +483,9 @@ procedure S3_Implementation_Corpus is
               US.To_String (Created.Result.Upload_ID);
             Parameters : Low_Level.Upload_Part_Copy_Parameters;
          begin
+            if Check_List_Multipart_Uploads then
+               Require_Listed_Upload (Copy_Key, Upload_ID, True);
+            end if;
             Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
             Parameters.Copy_Source :=
               US.To_Unbounded_String (Bucket & "/" & Key);
@@ -453,6 +530,9 @@ procedure S3_Implementation_Corpus is
                      then
                         raise Program_Error with
                           "S3 implementation rejected copied-part completion";
+                     end if;
+                     if Check_List_Multipart_Uploads then
+                        Require_Listed_Upload (Copy_Key, Upload_ID, False);
                      end if;
                   end;
                end;
@@ -616,6 +696,9 @@ procedure S3_Implementation_Corpus is
             Parameters : Low_Level.Upload_Part_Parameters;
             Source : Upload_Source (Payload'Access);
          begin
+            if Check_List_Multipart_Uploads then
+               Require_Listed_Upload (Key, Upload_ID, True);
+            end if;
             Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
             Parameters.Payload_SHA256 := US.To_Unbounded_String
               (SigV4.SHA256_Hex (Payload));
@@ -659,6 +742,9 @@ procedure S3_Implementation_Corpus is
                      then
                         raise Program_Error with
                           "S3 implementation rejected CompleteMultipartUpload";
+                     end if;
+                     if Check_List_Multipart_Uploads then
+                        Require_Listed_Upload (Key, Upload_ID, False);
                      end if;
                   end;
                end;

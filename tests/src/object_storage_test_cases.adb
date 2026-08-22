@@ -2475,6 +2475,7 @@ package body Object_Storage_Test_Cases is
          end;
          Assert (Raised, Message);
       end Must_Reject;
+
    begin
       declare
          Recorder : aliased XML_Recorder;
@@ -3698,6 +3699,23 @@ package body Object_Storage_Test_Cases is
          Assert (Raised, Message);
       end Must_Reject;
 
+      procedure Must_Reject_Query (Query, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Uploads.List_Multipart_Uploads_Request :=
+                 Uploads.Parse_List_Multipart_Uploads_Query (Query);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Uploads.Malformed_List_Request => Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Must_Reject_Query;
+
       function Upload_XML
         (Key, Upload_ID, Initiated : String;
          Extra : String := "") return String
@@ -3707,6 +3725,43 @@ package body Object_Storage_Test_Cases is
          "</Initiated><StorageClass>STANDARD</StorageClass>" & Extra &
          "</Upload>");
    begin
+      declare
+         Request : constant Uploads.List_Multipart_Uploads_Request :=
+           Uploads.Parse_List_Multipart_Uploads_Query
+             ("delimiter=%2F&encoding-type=url&key-marker=before%2Bkey&" &
+              "max-uploads=17&prefix=logs%2F&" &
+              "upload-id-marker=ignored-without-policy&uploads&" &
+              "x-id=ListMultipartUploads");
+      begin
+         Assert
+           (US.To_String (Request.Delimiter) = "/"
+            and then Request.URL_Encoding
+            and then US.To_String (Request.Key_Marker) = "before+key"
+            and then Request.Max_Uploads = 17
+            and then US.To_String (Request.Prefix) = "logs/"
+            and then US.To_String (Request.Upload_ID_Marker) =
+              "ignored-without-policy",
+            "ListMultipartUploads complete query parsing");
+      end;
+      Must_Reject_Query
+        ("max-uploads=1", "ListMultipartUploads marker omission accepted");
+      Must_Reject_Query
+        ("uploads=x", "nonempty ListMultipartUploads marker accepted");
+      Must_Reject_Query
+        ("max-uploads=0&uploads", "zero max-uploads accepted");
+      Must_Reject_Query
+        ("max-uploads=1001&uploads", "oversized max-uploads accepted");
+      Must_Reject_Query
+        ("uploads&prefix=a&prefix=b", "duplicate upload prefix accepted");
+      Must_Reject_Query
+        ("uploads&encoding-type=xml", "invalid upload encoding accepted");
+      Must_Reject_Query
+        ("uploads&prefix=%GG", "invalid upload query escape accepted");
+      Must_Reject_Query
+        ("uploads&unknown=x", "unknown upload query field accepted");
+      Must_Reject_Query
+        ("uploads&x-id=ListParts", "wrong upload operation ID accepted");
+
       declare
          Parsed : constant Uploads.List_Multipart_Uploads_Result :=
            Uploads.Parse_List_Multipart_Uploads
@@ -3788,6 +3843,20 @@ package body Object_Storage_Test_Cases is
       Must_Reject
         (Root ("<Upload><UploadId>id</UploadId></Upload>"),
          "incomplete multipart upload accepted");
+      declare
+         Without_Storage : constant Uploads.List_Multipart_Uploads_Result :=
+           Uploads.Parse_List_Multipart_Uploads
+             (Root
+                ("<Upload><UploadId>id</UploadId><Key>key</Key>" &
+                 "<Initiated>2026-08-21T01:00:00.000Z</Initiated>" &
+                 "</Upload>"));
+      begin
+         Assert
+           (Without_Storage.Uploads.Length = 1
+            and then US.Length
+              (Without_Storage.Uploads.First_Element.Storage_Class) = 0,
+            "model-optional multipart storage class was rejected");
+      end;
       Must_Reject
         (Root
            ("<Upload><UploadId><Nested/></UploadId><Key>key</Key>" &
