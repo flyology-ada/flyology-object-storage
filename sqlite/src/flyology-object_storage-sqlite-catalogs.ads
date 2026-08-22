@@ -132,6 +132,15 @@ package Flyology.Object_Storage.SQLite.Catalogs is
    procedure Delete_Object_Tags
      (Item : in out Catalog; Bucket, Key : String; Result : out Status);
 
+   --  Delete all tags atomically, invoking Check after gate acquisition and
+   --  again before commit so a waiting caller can cancel without mutation.
+   procedure Delete_Object_Tags
+     (Item   : in out Catalog;
+      Bucket : String;
+      Key    : String;
+      Check  : not null access procedure;
+      Result : out Status);
+
    procedure List_Objects
      (Item    : in out Catalog;
       Bucket  : String;

@@ -2549,6 +2549,31 @@ package body Flyology.Object_Storage.Backends.Files is
       Buffer    : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
       Last      : Ada.Streams.Stream_Element_Offset;
       Renamed   : Boolean;
+
+      procedure Validate_Directory_Chain
+        (Directory, Boundary : String)
+      is
+         Parent : constant String :=
+           Ada.Directories.Containing_Directory (Directory);
+      begin
+         if Directory /= Boundary then
+            if Parent = Directory or else Parent'Length < Boundary'Length then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+            Validate_Directory_Chain (Parent, Boundary);
+         end if;
+         if GNAT.OS_Lib.Is_Symbolic_Link (Directory)
+           or else
+             (Ada.Directories.Exists (Directory)
+              and then Ada.Directories.Kind (Directory) /=
+                Ada.Directories.Directory)
+           or else
+             (Directory = Boundary
+              and then not Ada.Directories.Exists (Directory))
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+      end Validate_Directory_Chain;
    begin
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
@@ -2559,16 +2584,31 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
-      if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Path (Item, Bucket)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
          Result := Bucket_Not_Found;
          Item.Publication.Release;
          Locked := False;
          return;
+      elsif Ada.Directories.Kind (Bucket_Path (Item, Bucket)) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+
+      Validate_Directory_Chain
+        (Ada.Directories.Containing_Directory (Path),
+         Root_Directory (Item));
+      if GNAT.OS_Lib.Is_Symbolic_Link (Path) then
+         raise Ada.IO_Exceptions.Data_Error;
       elsif not Ada.Directories.Exists (Path) then
          Result := Not_Found;
          Item.Publication.Release;
          Locked := False;
          return;
+      elsif Ada.Directories.Kind (Path) /= Ada.Directories.Ordinary_File then
+         raise Ada.IO_Exceptions.Data_Error;
       end if;
 
       SIO.Open (Source, SIO.In_File, Path);

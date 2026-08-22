@@ -87,7 +87,7 @@ trap 'case "$CONDITIONAL_LINK_ROOT" in /tmp/flyology-files-conditional-link.*) r
 ./bin/files_conditional_symlink_probe "$CONDITIONAL_LINK_ROOT/dangling" dangling
 rm -rf "$CONDITIONAL_LINK_ROOT"
 trap - EXIT INT TERM
-echo "files conditional object-path symlink rejection: live/dangling OK"
+echo "files conditional write and object-tag deletion symlink rejection: live/dangling OK"
 
 CRASH_ROOT=$(mktemp -d /tmp/flyology-files-crash.XXXXXX)
 trap 'case "$CRASH_ROOT" in /tmp/flyology-files-crash.*) rm -rf "$CRASH_ROOT" ;; esac' EXIT INT TERM
@@ -120,6 +120,7 @@ run_crash_cases bucket 10
 run_crash_cases put 3
 run_crash_cases conditional-put 3
 run_crash_cases object-tags 3
+run_crash_cases object-tag-delete 3
 run_crash_cases bucket-tags 3
 run_crash_cases bucket-tag-delete 1
 run_crash_cases delete 1
@@ -132,7 +133,7 @@ run_crash_cases complete 4
 run_crash_cases versioning 3
 rm -rf "$CRASH_ROOT"
 trap - EXIT INT TERM
-echo "files abrupt-crash matrix: 88 pre/post-barrier cases OK"
+echo "files abrupt-crash matrix: 94 pre/post-barrier cases OK"
 
 ./bin/flyology_object_storage_tests
 ./bin/s3_bucket_tagging_benchmark --self-test

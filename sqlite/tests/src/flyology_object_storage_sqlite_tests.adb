@@ -1270,6 +1270,33 @@ begin
       Assert
         (Result = Flyology.Object_Storage.Success and then Tags = Wanted,
          "catalog object tags did not persist across reopen");
+      declare
+         Callback_Count : Natural := 0;
+         Cancelled      : exception;
+
+         procedure Cancel_Before_Commit is
+         begin
+            Callback_Count := Callback_Count + 1;
+            if Callback_Count = 3 then
+               raise Cancelled;
+            end if;
+         end Cancel_Before_Commit;
+      begin
+         begin
+            Catalogs.Delete_Object_Tags
+              (Catalog, "catalog-bucket", Key,
+               Cancel_Before_Commit'Access, Result);
+            Assert (False, "catalog tag delete ignored commit cancellation");
+         exception
+            when Cancelled =>
+               null;
+         end;
+         Catalogs.Get_Object_Tags
+           (Catalog, "catalog-bucket", Key, Tags, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success and then Tags = Wanted,
+            "cancelled catalog tag delete was not rolled back");
+      end;
       Catalogs.Delete_Object_Tags
         (Catalog, "catalog-bucket", Key, Result);
       Catalogs.Get_Object_Tags
@@ -1277,6 +1304,39 @@ begin
       Assert
         (Result = Flyology.Object_Storage.Success and then Tags.Length = 0,
          "catalog tag deletion did not clear the complete set");
+      Catalogs.Close (Catalog);
+      Catalogs.Open (Catalog, Database_Path);
+      Catalogs.Get_Object_Tags
+        (Catalog, "catalog-bucket", Key, Tags, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success and then Tags.Length = 0,
+         "catalog tag deletion did not persist across reopen");
+      Catalogs.Close (Catalog);
+      declare
+         Injector : Databases.Database;
+      begin
+         Databases.Open (Injector, Database_Path);
+         Databases.Execute
+           (Injector,
+            "INSERT INTO object_tags VALUES(" &
+            "'catalog-bucket',X'FF2F6F70617175652D6B6579',2," &
+            "X'7374617465',X'636F7272757074');");
+         Databases.Close (Injector);
+      exception
+         when others =>
+            if Databases.Is_Open (Injector) then
+               Databases.Close (Injector);
+            end if;
+            raise;
+      end;
+      Catalogs.Open (Catalog, Database_Path);
+      Catalogs.Delete_Object_Tags
+        (Catalog, "catalog-bucket", Key, Result);
+      Catalogs.Get_Object_Tags
+        (Catalog, "catalog-bucket", Key, Tags, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success and then Tags.Length = 0,
+         "catalog tag deletion could not clear malformed stored tags");
       declare
          Expected : Storage_Tags.Tag_Set;
          Observed : Storage_Tags.Tag_Set;

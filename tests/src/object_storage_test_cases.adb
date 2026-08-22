@@ -12877,6 +12877,44 @@ package body Object_Storage_Test_Cases is
          "object overwrite retained stale tags");
       Store.Put_Object_Tags
         (Bucket, "tagged/key", Wanted, null, Ada.Real_Time.Time_Last, Result);
+      declare
+         Stop   : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Stop.Request;
+         begin
+            Store.Delete_Object_Tags
+              (Bucket, "tagged/key", Stop'Access,
+               Ada.Real_Time.Time_Last, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled =>
+               Raised := True;
+         end;
+         Assert (Raised, "tagging delete ignored pre-cancellation");
+      end;
+      Store.Get_Object_Tags
+        (Bucket, "tagged/key", null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert
+        (Result = Success and then Tags = Wanted,
+         "cancelled tagging delete changed the tag set");
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Delete_Object_Tags
+              (Bucket, "tagged/key", null, Ada.Real_Time.Time_First,
+               Result);
+         exception
+            when Flyology.IO.Timeout_Error =>
+               Raised := True;
+         end;
+         Assert (Raised, "tagging delete ignored an expired deadline");
+      end;
+      Store.Get_Object_Tags
+        (Bucket, "tagged/key", null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert
+        (Result = Success and then Tags = Wanted,
+         "timed-out tagging delete changed the tag set");
       Store.Delete_Object_Tags
         (Bucket, "tagged/key", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "tagging delete");
@@ -12885,6 +12923,17 @@ package body Object_Storage_Test_Cases is
       Assert
         (Result = Success and then Tags.Length = 0,
          "tagging delete did not clear complete set");
+      Store.Delete_Object_Tags
+        (Bucket, "tagged/key", null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "repeated tagging delete was not idempotent");
+      Store.Delete_Object_Tags
+        (Bucket, "missing", null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Not_Found, "tagging delete missing object status");
+      Store.Delete_Object_Tags
+        ("missing-tag-bucket", "key", null, Ada.Real_Time.Time_Last,
+         Result);
+      Assert
+        (Result = Bucket_Not_Found, "tagging delete missing bucket status");
 
       Wanted.Items (2).Key := Wanted.Items (1).Key;
       Store.Put_Object_Tags

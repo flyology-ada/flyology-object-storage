@@ -1156,7 +1156,12 @@ package body Flyology.Object_Storage.Backends.SQLite is
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result : out Status) is
+      Result : out Status)
+   is
+      procedure Check is
+      begin
+         Check_Context (Token, Deadline);
+      end Check;
    begin
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
@@ -1164,7 +1169,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       then
          Result := Invalid_Request;
       else
-         Catalogs.Delete_Object_Tags (Item.Catalog, Bucket, Key, Result);
+         Catalogs.Delete_Object_Tags
+           (Item.Catalog, Bucket, Key, Check'Access, Result);
       end if;
    exception
       when Flyology.Cancellation.Operation_Cancelled

@@ -188,13 +188,13 @@ procedure Files_Crash_Probe is
          Create_Bucket (Store);
          if Scenario in "put" | "conditional-put" | "delete" |
            "delete-objects" |
-           "object-tags"
+           "object-tags" | "object-tag-delete"
          then
             Put (Store, "old");
             if Scenario = "delete-objects" then
                Put_At (Store, "second-object", "also-old");
             end if;
-            if Scenario = "object-tags" then
+            if Scenario in "object-tags" | "object-tag-delete" then
                Set_Object_Tag (Store, "old");
             end if;
          elsif Scenario in "bucket-tags" | "bucket-tag-delete" then
@@ -282,6 +282,9 @@ procedure Files_Crash_Probe is
       elsif Scenario = "object-tags" then
          Set_Object_Tag (Store, "new");
          Result := Storage.Success;
+      elsif Scenario = "object-tag-delete" then
+         Store.Delete_Object_Tags
+           (Bucket, Key, null, Ada.Real_Time.Time_Last, Result);
       elsif Scenario = "initiate" then
          Create_Upload (Store, Upload_ID);
          Result := Storage.Success;
@@ -379,6 +382,22 @@ procedure Files_Crash_Probe is
                and then US.To_String (Tags.Items (1).Key) = "state"
                and then US.To_String (Tags.Items (1).Value) in "old" | "new",
                "crash exposed a partial object-tag replacement");
+         end;
+      elsif Scenario = "object-tag-delete" then
+         declare
+            Value : Storage.Object_Tag_Set;
+         begin
+            Store.Get_Object_Tags
+              (Bucket, Key, null, Ada.Real_Time.Time_Last, Value, Result);
+            Require
+              (Result = Storage.Success
+               and then
+                 (Value.Length = 0
+                  or else
+                    (Value.Length = 1
+                     and then US.To_String (Value.Items (1).Key) = "state"
+                     and then US.To_String (Value.Items (1).Value) = "old")),
+               "crash exposed a partial object-tag deletion");
          end;
       elsif Scenario = "bucket-tags" then
          declare

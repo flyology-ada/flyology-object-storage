@@ -1755,9 +1755,75 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    procedure Delete_Object_Tags
      (Item : in out Catalog; Bucket, Key : String; Result : out Status)
    is
-      Tags : constant Object_Tag_Set := Empty_Object_Tags;
+      procedure No_Check is null;
    begin
-      Put_Object_Tags (Item, Bucket, Key, Tags, Result);
+      Delete_Object_Tags (Item, Bucket, Key, No_Check'Access, Result);
+   end Delete_Object_Tags;
+
+   procedure Delete_Object_Tags
+     (Item   : in out Catalog;
+      Bucket : String;
+      Key    : String;
+      Check  : not null access procedure;
+      Result : out Status)
+   is
+      Existing       : Object_Information;
+      Payload        : US.Unbounded_String;
+      Delete         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      Check.all;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      Find_Object_Internal (Item, Bucket, Key, Payload, Existing, Result);
+      Check.all;
+      if Result /= Success then
+         declare
+            Bucket_Query : DB.Statement;
+         begin
+            DB.Prepare
+              (Bucket_Query, Item.Database,
+               "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+            DB.Bind (Bucket_Query, 1, Bucket);
+            if DB.Step (Bucket_Query) /= DB.Row then
+               raise Catalog_Error with
+                 "bucket existence query returned no row";
+            elsif DB.Column (Bucket_Query, 0) = 0 then
+               Result := Bucket_Not_Found;
+            end if;
+         end;
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM object_tags WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Delete, 1, Bucket);
+      DB.Bind_Bytes (Delete, 2, Key);
+      if DB.Step (Delete) /= DB.Done then
+         raise Catalog_Error with "object tag delete returned a row";
+      end if;
+      Check.all;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
    end Delete_Object_Tags;
 
    procedure List_Objects
