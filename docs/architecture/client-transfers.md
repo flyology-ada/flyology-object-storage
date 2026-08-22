@@ -34,6 +34,17 @@ multiplexing, flow control, cancellation and deadline waiting to Flyology HTTP
 and the runtime. Parallelism belongs at the subject level unless a future
 measured workload demonstrates that per-object part parallelism is necessary.
 
+`Client.Low_Level.Prepare_Put_Object` is the complete typed preparation path
+for single-request uploads. Its 42-field policy record, explicit bucket/key,
+and the borrowed source's body/declared length account for all 46 members in
+the pinned PutObject input. It signs user metadata and every modeled header,
+requires checksum selectors to have their matching value, validates checksum
+widths and HTTPS-only SSE-C material, and rejects cross-field combinations the
+model shape cannot express: canned plus explicit ACLs, KMS fields without
+SSE-KMS, SSE-C mixed with KMS, and Object Lock without an integrity header.
+The high-level upload will move onto this typed preparation when the matching
+22-member result decoder is complete.
+
 After initiation, a rejected part or local exception triggers a best-effort
 AbortMultipartUpload with an independent short cleanup budget. A lost response
 to CompleteMultipartUpload remains ambiguous: S3 may have committed the object

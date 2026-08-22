@@ -26,6 +26,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    function Wire_Query (Canonical : String) return String;
    function Valid_Optional_Checksum
      (Value : US.Unbounded_String; Bytes : Positive) return Boolean;
+   function Valid_Checksum_Algorithm (Value : String) return Boolean;
 
    No_Headers : constant SigV4.Name_Value_Array (1 .. 0) :=
      (others => <>);
@@ -2182,6 +2183,254 @@ package body Flyology.Object_Storage.Client.Low_Level is
       when S3.Errors.Malformed_Error =>
          raise Invalid_Response with "malformed GetObject error response";
    end Decode_Get_Object_Response_Head;
+
+   function Prepare_Put_Object
+     (Origin         : Flyology.HTTP.Origin;
+      Style          : Addressing_Style;
+      Bucket         : String;
+      Key            : String;
+      Parameters     : Put_Object_Parameters;
+      Payload_SHA256 : String;
+      Identity       : Credentials;
+      Region         : String;
+      Timestamp      : String) return Prepared_Request
+   is
+      Algorithm : constant String :=
+        US.To_String (Parameters.Checksum_Algorithm);
+      SSE_Algorithm : constant String :=
+        US.To_String (Parameters.SSE_Customer_Algorithm);
+      SSE_Key : constant String := US.To_String (Parameters.SSE_Customer_Key);
+      SSE_Key_MD5 : constant String :=
+        US.To_String (Parameters.SSE_Customer_Key_MD5);
+      Server_Encryption : constant String :=
+        US.To_String (Parameters.Server_Side_Encryption);
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Grant_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.Grant_Full_Control) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Read) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Read_ACP) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Write_ACP) > 0);
+      Has_KMS_Configuration : constant Boolean :=
+        US.Length (Parameters.SSE_KMS_Key_ID) > 0
+        or else US.Length (Parameters.SSE_KMS_Encryption_Context) > 0;
+      Has_Object_Lock : constant Boolean :=
+        US.Length (Parameters.Object_Lock_Mode) > 0
+        or else US.Length (Parameters.Object_Lock_Retain_Until_Date) > 0
+        or else US.Length (Parameters.Object_Lock_Legal_Hold_Status) > 0;
+
+      function Present (Value : US.Unbounded_String) return Natural is
+        (Boolean'Pos (US.Length (Value) > 0));
+
+      function Matching_Checksum_Present return Boolean is
+      begin
+         if Algorithm'Length = 0 then
+            return True;
+         elsif Algorithm = "CRC32" then
+            return US.Length (Parameters.Checksum_CRC32) > 0;
+         elsif Algorithm = "CRC32C" then
+            return US.Length (Parameters.Checksum_CRC32C) > 0;
+         elsif Algorithm = "CRC64NVME" then
+            return US.Length (Parameters.Checksum_CRC64NVME) > 0;
+         elsif Algorithm = "SHA1" then
+            return US.Length (Parameters.Checksum_SHA1) > 0;
+         elsif Algorithm = "SHA256" then
+            return US.Length (Parameters.Checksum_SHA256) > 0;
+         elsif Algorithm = "SHA512" then
+            return US.Length (Parameters.Checksum_SHA512) > 0;
+         elsif Algorithm = "MD5" then
+            return US.Length (Parameters.Checksum_MD5) > 0;
+         elsif Algorithm = "XXHASH64" then
+            return US.Length (Parameters.Checksum_XXHASH64) > 0;
+         elsif Algorithm = "XXHASH3" then
+            return US.Length (Parameters.Checksum_XXHASH3) > 0;
+         elsif Algorithm = "XXHASH128" then
+            return US.Length (Parameters.Checksum_XXHASH128) > 0;
+         else
+            return False;
+         end if;
+      end Matching_Checksum_Present;
+
+      Optional_Count : constant Natural :=
+        Present (Parameters.ACL) + Present (Parameters.Cache_Control) +
+        Present (Parameters.Content_Disposition) +
+        Present (Parameters.Content_Encoding) +
+        Present (Parameters.Content_Language) +
+        Present (Parameters.Content_MD5) + Present (Parameters.Content_Type) +
+        Present (Parameters.Checksum_Algorithm) +
+        Present (Parameters.Checksum_CRC32) +
+        Present (Parameters.Checksum_CRC32C) +
+        Present (Parameters.Checksum_CRC64NVME) +
+        Present (Parameters.Checksum_SHA1) +
+        Present (Parameters.Checksum_SHA256) +
+        Present (Parameters.Checksum_SHA512) +
+        Present (Parameters.Checksum_MD5) +
+        Present (Parameters.Checksum_XXHASH64) +
+        Present (Parameters.Checksum_XXHASH3) +
+        Present (Parameters.Checksum_XXHASH128) +
+        Present (Parameters.Expires) +
+        Present (Parameters.If_Match) + Present (Parameters.If_None_Match) +
+        Present (Parameters.Grant_Full_Control) +
+        Present (Parameters.Grant_Read) + Present (Parameters.Grant_Read_ACP) +
+        Present (Parameters.Grant_Write_ACP) +
+        Boolean'Pos (Parameters.Write_Offset_Bytes.Is_Set) +
+        Natural (Parameters.Metadata.Length) +
+        Present (Parameters.Server_Side_Encryption) +
+        Present (Parameters.Storage_Class) +
+        Present (Parameters.Website_Redirect_Location) +
+        Present (Parameters.SSE_Customer_Algorithm) +
+        Present (Parameters.SSE_Customer_Key) +
+        Present (Parameters.SSE_Customer_Key_MD5) +
+        Present (Parameters.SSE_KMS_Key_ID) +
+        Present (Parameters.SSE_KMS_Encryption_Context) +
+        Boolean'Pos (Parameters.Bucket_Key_Enabled.Is_Set) +
+        Present (Parameters.Request_Payer) + Present (Parameters.Tagging) +
+        Present (Parameters.Object_Lock_Mode) +
+        Present (Parameters.Object_Lock_Retain_Until_Date) +
+        Present (Parameters.Object_Lock_Legal_Hold_Status) +
+        Present (Parameters.Expected_Bucket_Owner);
+      Values : Model_Value_Array (1 .. 2 + Optional_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String; Map_Key : String := "") is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.To_Unbounded_String (Map_Key),
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+
+      procedure Add_Optional
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Add (Name, US.To_String (Value));
+         end if;
+      end Add_Optional;
+   begin
+      if (Algorithm'Length > 0
+          and then not Valid_Checksum_Algorithm (Algorithm))
+        or else not Matching_Checksum_Present
+        or else not Valid_Optional_Checksum (Parameters.Content_MD5, 16)
+        or else not Valid_Optional_Checksum (Parameters.Checksum_CRC32, 4)
+        or else not Valid_Optional_Checksum (Parameters.Checksum_CRC32C, 4)
+        or else not Valid_Optional_Checksum
+          (Parameters.Checksum_CRC64NVME, 8)
+        or else not Valid_Optional_Checksum (Parameters.Checksum_SHA1, 20)
+        or else not Valid_Optional_Checksum (Parameters.Checksum_SHA256, 32)
+        or else not Valid_Optional_Checksum (Parameters.Checksum_SHA512, 64)
+        or else not Valid_Optional_Checksum (Parameters.Checksum_MD5, 16)
+        or else not Valid_Optional_Checksum
+          (Parameters.Checksum_XXHASH64, 8)
+        or else not Valid_Optional_Checksum
+          (Parameters.Checksum_XXHASH3, 8)
+        or else not Valid_Optional_Checksum
+          (Parameters.Checksum_XXHASH128, 16)
+        or else not Valid_SSE_C_Group
+          (SSE_Algorithm, SSE_Key, SSE_Key_MD5)
+        or else (SSE_Key'Length > 0
+                 and then Flyology.HTTP.Scheme (Origin) /=
+                   Flyology.HTTP.Secure_HTTPS)
+        or else (SSE_Key'Length > 0
+                 and then
+                   (Server_Encryption'Length > 0
+                    or else US.Length (Parameters.SSE_KMS_Key_ID) > 0
+                    or else
+                      US.Length (Parameters.SSE_KMS_Encryption_Context) > 0
+                    or else Parameters.Bucket_Key_Enabled.Is_Set))
+        or else (US.Length (Parameters.ACL) > 0 and then Grant_Count > 0)
+        or else (Has_KMS_Configuration
+                 and then Server_Encryption not in
+                   "aws:kms" | "aws:kms:dsse")
+        or else (Parameters.Bucket_Key_Enabled.Is_Set
+                 and then Server_Encryption /= "aws:kms")
+        or else (Has_Object_Lock
+                 and then US.Length (Parameters.Content_MD5) = 0
+                 and then Algorithm'Length = 0)
+        or else (Request_Payer'Length > 0
+                 and then Request_Payer /= "requester")
+      then
+         raise Invalid_Request with "invalid PutObject parameters";
+      end if;
+
+      Add ("Bucket", Bucket);
+      Add ("Key", Key);
+      Add_Optional ("ACL", Parameters.ACL);
+      Add_Optional ("CacheControl", Parameters.Cache_Control);
+      Add_Optional ("ContentDisposition", Parameters.Content_Disposition);
+      Add_Optional ("ContentEncoding", Parameters.Content_Encoding);
+      Add_Optional ("ContentLanguage", Parameters.Content_Language);
+      Add_Optional ("ContentMD5", Parameters.Content_MD5);
+      Add_Optional ("ContentType", Parameters.Content_Type);
+      Add_Optional ("ChecksumAlgorithm", Parameters.Checksum_Algorithm);
+      Add_Optional ("ChecksumCRC32", Parameters.Checksum_CRC32);
+      Add_Optional ("ChecksumCRC32C", Parameters.Checksum_CRC32C);
+      Add_Optional ("ChecksumCRC64NVME", Parameters.Checksum_CRC64NVME);
+      Add_Optional ("ChecksumSHA1", Parameters.Checksum_SHA1);
+      Add_Optional ("ChecksumSHA256", Parameters.Checksum_SHA256);
+      Add_Optional ("ChecksumSHA512", Parameters.Checksum_SHA512);
+      Add_Optional ("ChecksumMD5", Parameters.Checksum_MD5);
+      Add_Optional ("ChecksumXXHASH64", Parameters.Checksum_XXHASH64);
+      Add_Optional ("ChecksumXXHASH3", Parameters.Checksum_XXHASH3);
+      Add_Optional ("ChecksumXXHASH128", Parameters.Checksum_XXHASH128);
+      Add_Optional ("Expires", Parameters.Expires);
+      Add_Optional ("IfMatch", Parameters.If_Match);
+      Add_Optional ("IfNoneMatch", Parameters.If_None_Match);
+      Add_Optional ("GrantFullControl", Parameters.Grant_Full_Control);
+      Add_Optional ("GrantRead", Parameters.Grant_Read);
+      Add_Optional ("GrantReadACP", Parameters.Grant_Read_ACP);
+      Add_Optional ("GrantWriteACP", Parameters.Grant_Write_ACP);
+      if Parameters.Write_Offset_Bytes.Is_Set then
+         Add
+           ("WriteOffsetBytes",
+            Ada.Strings.Fixed.Trim
+              (Byte_Count'Image (Parameters.Write_Offset_Bytes.Value),
+               Ada.Strings.Both));
+      end if;
+      for Item of Parameters.Metadata loop
+         Add ("Metadata", US.To_String (Item.Value), US.To_String (Item.Name));
+      end loop;
+      Add_Optional
+        ("ServerSideEncryption", Parameters.Server_Side_Encryption);
+      Add_Optional ("StorageClass", Parameters.Storage_Class);
+      Add_Optional
+        ("WebsiteRedirectLocation", Parameters.Website_Redirect_Location);
+      Add_Optional
+        ("SSECustomerAlgorithm", Parameters.SSE_Customer_Algorithm);
+      Add_Optional ("SSECustomerKey", Parameters.SSE_Customer_Key);
+      Add_Optional ("SSECustomerKeyMD5", Parameters.SSE_Customer_Key_MD5);
+      Add_Optional ("SSEKMSKeyId", Parameters.SSE_KMS_Key_ID);
+      Add_Optional
+        ("SSEKMSEncryptionContext", Parameters.SSE_KMS_Encryption_Context);
+      if Parameters.Bucket_Key_Enabled.Is_Set then
+         Add
+           ("BucketKeyEnabled",
+            (if Parameters.Bucket_Key_Enabled.Value
+             then "true" else "false"));
+      end if;
+      Add_Optional ("RequestPayer", Parameters.Request_Payer);
+      Add_Optional ("Tagging", Parameters.Tagging);
+      Add_Optional ("ObjectLockMode", Parameters.Object_Lock_Mode);
+      Add_Optional
+        ("ObjectLockRetainUntilDate",
+         Parameters.Object_Lock_Retain_Until_Date);
+      Add_Optional
+        ("ObjectLockLegalHoldStatus",
+         Parameters.Object_Lock_Legal_Hold_Status);
+      Add_Optional
+        ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+
+      return Result : Prepared_Request := Prepare_Model_Streaming_Request
+        (Model.Put_Object_Operation, Origin, Style, Values, Payload_SHA256,
+         Identity, Region, Timestamp)
+      do
+         Result.Operation := Put_Object_Operation;
+      end return;
+   exception
+      when Constraint_Error =>
+         raise Invalid_Request with "invalid PutObject parameters";
+   end Prepare_Put_Object;
 
    function Prepare_Delete_Bucket
      (Origin     : Flyology.HTTP.Origin;

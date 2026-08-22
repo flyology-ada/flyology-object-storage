@@ -3546,6 +3546,199 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         Parameters : Low_Level.Put_Object_Parameters;
+      begin
+         Parameters.Cache_Control := US.To_Unbounded_String ("no-cache");
+         Parameters.Content_Disposition :=
+           US.To_Unbounded_String ("attachment");
+         Parameters.Content_Encoding := US.To_Unbounded_String ("gzip");
+         Parameters.Content_Language := US.To_Unbounded_String ("en-CA");
+         Parameters.Content_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Parameters.Content_Type :=
+           US.To_Unbounded_String ("application/test");
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("SHA256");
+         Parameters.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
+         Parameters.Checksum_CRC32C := US.To_Unbounded_String ("AAAAAA==");
+         Parameters.Checksum_CRC64NVME :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Parameters.Checksum_SHA1 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.Checksum_SHA256 := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.Checksum_SHA512 := US.To_Unbounded_String
+           (String'(1 .. 86 => 'A') & "==");
+         Parameters.Checksum_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Parameters.Checksum_XXHASH64 :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Parameters.Checksum_XXHASH3 :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Parameters.Checksum_XXHASH128 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Parameters.Expires :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 01:00:00 GMT");
+         Parameters.If_Match := US.To_Unbounded_String ("""etag""");
+         Parameters.If_None_Match := US.To_Unbounded_String ("*");
+         Parameters.Grant_Full_Control := US.To_Unbounded_String ("id=owner");
+         Parameters.Grant_Read := US.To_Unbounded_String ("id=reader");
+         Parameters.Grant_Read_ACP := US.To_Unbounded_String ("id=reader");
+         Parameters.Grant_Write_ACP := US.To_Unbounded_String ("id=writer");
+         Parameters.Write_Offset_Bytes := (Is_Set => True, Value => 7);
+         Parameters.Metadata.Append
+           (Low_Level.Metadata_Entry'
+              (Name  => US.To_Unbounded_String ("project"),
+               Value => US.To_Unbounded_String ("flyology")));
+         Parameters.Metadata.Append
+           (Low_Level.Metadata_Entry'
+              (Name  => US.To_Unbounded_String ("stage"),
+               Value => US.To_Unbounded_String ("typed")));
+         Parameters.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Parameters.Storage_Class := US.To_Unbounded_String ("STANDARD");
+         Parameters.Website_Redirect_Location :=
+           US.To_Unbounded_String ("/next");
+         Parameters.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Parameters.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String ("e30=");
+         Parameters.Bucket_Key_Enabled := (Is_Set => True, Value => True);
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Tagging := US.To_Unbounded_String ("a=b");
+         Parameters.Object_Lock_Mode :=
+           US.To_Unbounded_String ("GOVERNANCE");
+         Parameters.Object_Lock_Retain_Until_Date :=
+           US.To_Unbounded_String ("2027-08-21T00:00:00Z");
+         Parameters.Object_Lock_Legal_Hold_Status :=
+           US.To_Unbounded_String ("ON");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         declare
+            Digest : constant String := SigV4.SHA256_Hex ("streamed payload");
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Object
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "photos/a b+%",
+                 Parameters, Digest, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Signed : constant String :=
+              ";" & Low_Level.Signed_Headers (Prepared) & ";";
+
+            function Has (Name : String) return Boolean is
+              (Ada.Strings.Fixed.Index (Signed, ";" & Name & ";") > 0);
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket/photos/a%20b%2B%25"
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Canonical_Request (Prepared), Digest) > 0,
+               "PutObject exact target and streaming payload hash");
+            Assert
+              (Has ("content-md5") and then Has ("content-type")
+               and then Has ("if-match") and then Has ("if-none-match")
+               and then Has ("x-amz-checksum-sha256")
+               and then Has ("x-amz-grant-full-control")
+               and then Has ("x-amz-meta-project")
+               and then Has ("x-amz-meta-stage")
+               and then Has ("x-amz-object-lock-mode")
+               and then Has ("x-amz-server-side-encryption")
+               and then Has ("x-amz-server-side-encryption-aws-kms-key-id")
+               and then Has ("x-amz-storage-class")
+               and then Has ("x-amz-tagging")
+               and then Has ("x-amz-write-offset-bytes"),
+               "PutObject modeled header families are signed");
+         end;
+      end;
+
+      declare
+         Parameters : Low_Level.Put_Object_Parameters;
+         Raised : Boolean := False;
+      begin
+         Parameters.ACL := US.To_Unbounded_String ("private");
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Object
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "key", Parameters,
+                 SigV4.SHA256_Hex ("payload"), Identity, "us-east-1",
+                 "20130524T000000Z");
+         begin
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Low_Level.Signed_Headers (Prepared),
+                  "x-amz-server-side-encryption-customer-key") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Signed_Headers (Prepared), "x-amz-acl") > 0,
+               "PutObject SSE-C group is signed over HTTPS");
+         end;
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("CRC32");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Object
+                   (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, SigV4.SHA256_Hex ("payload"), Identity,
+                    "us-east-1", "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert
+           (Raised,
+            "PutObject accepted a checksum algorithm without its value");
+      end;
+
+      declare
+         Parameters : Low_Level.Put_Object_Parameters;
+
+         procedure Require_Rejected (Message : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Put_Object
+                      (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                       Low_Level.Path_Style, "example-bucket", "key",
+                       Parameters, SigV4.SHA256_Hex ("payload"), Identity,
+                       "us-east-1", "20130524T000000Z");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Require_Rejected;
+      begin
+         Parameters.ACL := US.To_Unbounded_String ("private");
+         Parameters.Grant_Read := US.To_Unbounded_String ("id=reader");
+         Require_Rejected ("PutObject combined canned and explicit ACLs");
+
+         Parameters := (others => <>);
+         Parameters.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Require_Rejected ("PutObject accepted a KMS key without SSE-KMS");
+
+         Parameters := (others => <>);
+         Parameters.Object_Lock_Mode :=
+           US.To_Unbounded_String ("GOVERNANCE");
+         Require_Rejected
+           ("PutObject accepted Object Lock without an integrity header");
+      end;
+
+      declare
          Parameters : Low_Level.Upload_Part_Parameters;
       begin
          Parameters.Part_Number := 7;

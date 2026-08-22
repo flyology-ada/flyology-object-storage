@@ -524,6 +524,68 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Head_Outcome;
 
+   --  Every non-body, non-ContentLength member in the pinned PutObject input
+   --  shape. The borrowed request source supplies Body and ContentLength.
+   type Put_Object_Parameters is record
+      ACL                       : Ada.Strings.Unbounded.Unbounded_String;
+      Cache_Control             : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Disposition       : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Encoding          : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Language          : Ada.Strings.Unbounded.Unbounded_String;
+      Content_MD5               : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Type              : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm        : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_CRC32            : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_CRC32C           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_CRC64NVME        : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA1             : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA256           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_SHA512           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_MD5              : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH64         : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH3          : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_XXHASH128        : Ada.Strings.Unbounded.Unbounded_String;
+      Expires                   : Ada.Strings.Unbounded.Unbounded_String;
+      If_Match                  : Ada.Strings.Unbounded.Unbounded_String;
+      If_None_Match             : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Full_Control        : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Read                : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Read_ACP            : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Write_ACP           : Ada.Strings.Unbounded.Unbounded_String;
+      Write_Offset_Bytes        : Optional_Byte_Count;
+      Metadata                  : Metadata_Entry_Vectors.Vector;
+      Server_Side_Encryption    : Ada.Strings.Unbounded.Unbounded_String;
+      Storage_Class             : Ada.Strings.Unbounded.Unbounded_String;
+      Website_Redirect_Location : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key          : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5      : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID            : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Encryption_Context : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled        : Optional_Boolean;
+      Request_Payer             : Ada.Strings.Unbounded.Unbounded_String;
+      Tagging                   : Ada.Strings.Unbounded.Unbounded_String;
+      Object_Lock_Mode          : Ada.Strings.Unbounded.Unbounded_String;
+      Object_Lock_Retain_Until_Date :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Object_Lock_Legal_Hold_Status :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner     : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare all 46 modeled PutObject inputs. Bucket and Key are explicit;
+   --  Body and ContentLength are supplied later by the borrowed source.
+   function Prepare_Put_Object
+     (Origin         : Flyology.HTTP.Origin;
+      Style          : Addressing_Style;
+      Bucket         : String;
+      Key            : String;
+      Parameters     : Put_Object_Parameters;
+      Payload_SHA256 : String;
+      Identity       : Credentials;
+      Region         : String;
+      Timestamp      : String) return Prepared_Request;
+
    --  Modeled DeleteBucket request headers.
    type Delete_Bucket_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
@@ -1072,6 +1134,7 @@ private
       Head_Bucket_Operation,
       Head_Object_Operation,
       Get_Object_Operation,
+      Put_Object_Operation,
       Delete_Bucket_Operation,
       Delete_Object_Operation,
       Delete_Objects_Operation,
