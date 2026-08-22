@@ -57,6 +57,8 @@ procedure S3_Implementation_Corpus is
    use type Client_Buckets.Location_Outcome_Kind;
    use type Client_Buckets.List_Outcome_Kind;
    use type Client_Objects.Delete_Outcome_Kind;
+   use type Client_Objects.Tagging_Outcome_Kind;
+   use type Flyology.Object_Storage.Object_Tag_Set;
 
    Access_Key : constant String := "FLYOLOGYS3ORACLE";
    Secret_Key : constant String := "flyology-s3-oracle-secret-key-tests";
@@ -486,6 +488,64 @@ procedure S3_Implementation_Corpus is
             raise;
       end Require_Get_Object;
 
+      procedure Require_Object_Tagging is
+         Wanted : Flyology.Object_Storage.Object_Tag_Set :=
+           Flyology.Object_Storage.Empty_Object_Tags;
+      begin
+         Wanted.Length := 2;
+         Wanted.Items (1) :=
+           (Key => US.To_Unbounded_String ("environment"),
+            Value => US.To_Unbounded_String ("production"));
+         Wanted.Items (2) :=
+           (Key => US.To_Unbounded_String ("team"),
+            Value => US.To_Unbounded_String ("storage/core"));
+         declare
+            Outcome : constant Client_Objects.Tagging_Outcome :=
+              Client_Objects.Put_Tags
+                (HTTP, Origin, Bucket, Key, Wanted, Identity,
+                 Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Client_Objects.Tags_Replaced then
+               raise Program_Error with
+                 "S3 implementation rejected PutObjectTagging";
+            end if;
+         end;
+         declare
+            Outcome : constant Client_Objects.Tagging_Outcome :=
+              Client_Objects.Get_Tags
+                (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Client_Objects.Tags_Read
+              or else Outcome.Result.Tags /= Wanted
+            then
+               raise Program_Error with
+                 "S3 implementation changed GetObjectTagging values/order";
+            end if;
+         end;
+         declare
+            Outcome : constant Client_Objects.Tagging_Outcome :=
+              Client_Objects.Delete_Tags
+                (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Client_Objects.Tags_Cleared then
+               raise Program_Error with
+                 "S3 implementation rejected DeleteObjectTagging";
+            end if;
+         end;
+         declare
+            Outcome : constant Client_Objects.Tagging_Outcome :=
+              Client_Objects.Get_Tags
+                (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Client_Objects.Tags_Read
+              or else Outcome.Result.Tags.Length /= 0
+            then
+               raise Program_Error with
+                 "S3 implementation retained deleted object tags";
+            end if;
+         end;
+      end Require_Object_Tagging;
+
       procedure Require_Listed_Part
         (Object_Key, Upload_ID, Entity_Tag : String;
          Size : Flyology.Object_Storage.Byte_Count)
@@ -887,6 +947,7 @@ procedure S3_Implementation_Corpus is
       Require_Listed_Object;
       Require_Head_Object;
       Require_Get_Object;
+      Require_Object_Tagging;
       Copy_With_Multipart;
       Upload_High_Level_File;
       Copy_Whole_Object;

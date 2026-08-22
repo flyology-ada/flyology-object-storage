@@ -13,6 +13,7 @@ with Flyology.HTTP.Client;
 with Flyology.IO;
 with Flyology.IO.Sockets;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.Client.Objects;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
@@ -21,6 +22,7 @@ with Flyology.Object_Storage.S3.SigV4;
 procedure S3_HTTP_Socket_Corpus is
    package HTTP_Client renames Flyology.HTTP.Client;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+   package Objects renames Flyology.Object_Storage.Client.Objects;
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
    package Model renames Flyology.Object_Storage.S3.Model;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
@@ -39,6 +41,9 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Put_Object_Outcome_Kind;
    use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.Get_Object_Head_Outcome_Kind;
+   use type Low_Level.Object_Tagging_Outcome_Kind;
+   use type Objects.Tagging_Outcome_Kind;
+   use type Flyology.Object_Storage.Object_Tag_Set;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
    use type Transfers.Copy_Outcome_Kind;
@@ -322,6 +327,7 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Target    : String;
          Expected_Body_Root : String := "";
          Expected_Content_Type : String := "";
+         Expected_Content_MD5 : String := "";
          Expected_Copy_Source : String := "";
          Expected_Copy_If_Match : String := "";
          Expected_If_Match : String := "";
@@ -457,6 +463,14 @@ procedure S3_HTTP_Socket_Corpus is
                          (Lower, ";x-amz-checksum-mode;") = 0)
                     or else Ada.Strings.Fixed.Index
                       (Lower, ";x-amz-content-sha256;x-amz-date") = 0
+                 elsif Expected_Content_MD5'Length > 0 then
+                    Header_Value (Lower, "content-md5") /=
+                      Ada.Characters.Handling.To_Lower
+                        (Expected_Content_MD5)
+                    or else Ada.Strings.Fixed.Index
+                      (Lower,
+                       "signedheaders=content-md5;host;" &
+                       "x-amz-content-sha256;x-amz-date") = 0
                  elsif Expected_Content_Type'Length = 0 then
                     Ada.Strings.Fixed.Index
                       (Lower,
@@ -676,6 +690,41 @@ procedure S3_HTTP_Socket_Corpus is
                CRLF & "x-amz-object-size: 1" & CRLF &
                "x-amz-request-charged: requester" & CRLF),
             "PUT", "/example-bucket/typed-put", "u");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-version-id: tag-put-version" & CRLF),
+            "PUT", "/example-bucket/typed-tagged?tagging", "<Tagging",
+            Expected_Content_MD5 => "FHvgEqWnwx8BYbDb/UMn6Q==");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+               "<TagSet><Tag><Key>team</Key><Value>storage</Value></Tag>" &
+               "</TagSet></Tagging>",
+               "x-amz-version-id: tag-get-version" & CRLF),
+            "GET", "/example-bucket/typed-tagged?tagging",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-version-id: tag-delete-version" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/typed-tagged?tagging");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "PUT", "/example-bucket/convenient-tagged?tagging", "<Tagging",
+            Expected_Content_MD5 => "FHvgEqWnwx8BYbDb/UMn6Q==");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+               "<TagSet><Tag><Key>team</Key><Value>storage</Value></Tag>" &
+               "</TagSet></Tagging>"),
+            "GET", "/example-bucket/convenient-tagged?tagging");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", Omit_Content_Length => True),
+            "DELETE", "/example-bucket/convenient-tagged?tagging");
          Serve
            (HTTP_Response
               ("200 OK", "", "ETag: ""high-level""" & CRLF),
@@ -1208,6 +1257,95 @@ procedure S3_HTTP_Socket_Corpus is
             then
                raise Program_Error with "typed PutObject result mismatch";
             end if;
+         end;
+         declare
+            Tags : Flyology.Object_Storage.Object_Tag_Set;
+            Put_Parameters : Low_Level.Put_Object_Tagging_Parameters;
+            Get_Parameters : Low_Level.Get_Object_Tagging_Parameters;
+            Delete_Parameters : Low_Level.Delete_Object_Tagging_Parameters;
+         begin
+            Tags.Length := 1;
+            Tags.Items (1) :=
+              (Key => US.To_Unbounded_String ("team"),
+               Value => US.To_Unbounded_String ("storage"));
+            declare
+               Prepared_Put : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Object_Tagging
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "typed-tagged", Tags, Put_Parameters, Identity,
+                    "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.Object_Tagging_Outcome :=
+                 Low_Level.Execute_Put_Object_Tagging
+                   (HTTP, Prepared_Put, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Tags_Put
+                 or else US.To_String (Result.Result.Version_ID) /=
+                   "tag-put-version"
+               then
+                  raise Program_Error with
+                    "typed PutObjectTagging socket result mismatch";
+               end if;
+            end;
+            declare
+               Prepared_Get : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object_Tagging
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "typed-tagged", Get_Parameters, Identity,
+                    "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.Object_Tagging_Outcome :=
+                 Low_Level.Execute_Get_Object_Tagging
+                   (HTTP, Prepared_Get, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Tags_Gotten
+                 or else Result.Result.Tags /= Tags
+                 or else US.To_String (Result.Result.Version_ID) /=
+                   "tag-get-version"
+               then
+                  raise Program_Error with
+                    "typed GetObjectTagging socket result mismatch";
+               end if;
+            end;
+            declare
+               Prepared_Delete : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Object_Tagging
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "typed-tagged", Delete_Parameters, Identity,
+                    "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.Object_Tagging_Outcome :=
+                 Low_Level.Execute_Delete_Object_Tagging
+                   (HTTP, Prepared_Delete, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Tags_Deleted
+                 or else US.To_String (Result.Result.Version_ID) /=
+                   "tag-delete-version"
+               then
+                  raise Program_Error with
+                    "typed DeleteObjectTagging socket result mismatch";
+               end if;
+            end;
+            declare
+               Put_Result : constant Objects.Tagging_Outcome :=
+                 Objects.Put_Tags
+                   (HTTP, Origin, "example-bucket", "convenient-tagged",
+                    Tags, Identity, Timeout => 5.0);
+               Get_Result : constant Objects.Tagging_Outcome :=
+                 Objects.Get_Tags
+                   (HTTP, Origin, "example-bucket", "convenient-tagged",
+                    Identity, Timeout => 5.0);
+               Delete_Result : constant Objects.Tagging_Outcome :=
+                 Objects.Delete_Tags
+                   (HTTP, Origin, "example-bucket", "convenient-tagged",
+                    Identity, Timeout => 5.0);
+            begin
+               if Put_Result.Kind /= Objects.Tags_Replaced
+                 or else Get_Result.Kind /= Objects.Tags_Read
+                 or else Get_Result.Result.Tags /= Tags
+                 or else Delete_Result.Kind /= Objects.Tags_Cleared
+               then
+                  raise Program_Error with
+                    "convenient object tagging socket flow mismatch";
+               end if;
+            end;
          end;
          declare
             Upload_Path : constant String :=

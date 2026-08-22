@@ -21,14 +21,24 @@ catalog, then flushes both directories. Superseded and deleted bodies are
 intentionally retained until that recovery pass so an already-open reader is
 never invalidated by replacement.
 
-The database carries a fixed application ID and schema version. Opening a
+The database carries a fixed application ID and schema version. Schema version
+4 adds `object_tags`, keyed by bucket, opaque object key, and a one-based tag
+order. Its composite foreign key cascades object deletion. Complete tag-set
+replacement and deletion run in one catalog transaction, while object PUT and
+multipart completion clear any prior rows in the same transaction that
+publishes the replacement payload. Tag reads and object-existence classification
+remain under the catalog operation gate, so a reader cannot combine tags from
+one version with the body identity of another.
+
+Opening a
 nonempty unrecognized database, an unsupported schema, corrupt metadata, a
 missing payload, or a payload with the wrong size fails closed. Foreign keys,
 opaque BLOB keys/metadata, bounded metadata, strict statement state, and exact
 64-bit size conversions are enforced at the adapter boundary.
 
 Schema version 3 records bucket creation time transactionally. The version-2
-migration adds the field under an exclusive transaction; existing buckets use
+migration adds that field and then the tag table under an exclusive transaction;
+existing buckets use
 `0` to mean that the historical creation time is unavailable, while every new
 bucket receives its actual commit-time value. Bucket pages are selected under
 the catalog operation gate with binary ordering, exclusive continuation,

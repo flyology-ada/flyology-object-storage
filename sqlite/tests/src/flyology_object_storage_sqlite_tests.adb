@@ -23,6 +23,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    use type Ada.Containers.Count_Type;
    use type Ada.Streams.Stream_Element_Offset;
    use type Flyology.Object_Storage.Status;
+   use type Flyology.Object_Storage.Object_Tag_Set;
 
    Expected_Source : constant String :=
      "2026-07-24 19:02:57 " &
@@ -108,6 +109,25 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V2_Database;
+
+   procedure Create_V3_Database is
+      Legacy : Databases.Database;
+   begin
+      Create_V2_Database;
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "ALTER TABLE buckets ADD COLUMN created INTEGER NOT NULL " &
+         "DEFAULT 0 CHECK(created >= 0);" &
+         "PRAGMA user_version=3;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V3_Database;
 
    type Buffer_Source is new
      Flyology.Object_Storage.Backends.Byte_Source with
@@ -507,6 +527,9 @@ begin
       Info     : Flyology.Object_Storage.Object_Information;
       Found    : Flyology.Object_Storage.Object_Information;
       Key      : constant String := Character'Val (255) & "/opaque-key";
+      Wanted   : Flyology.Object_Storage.Object_Tag_Set :=
+        Flyology.Object_Storage.Empty_Object_Tags;
+      Tags     : Flyology.Object_Storage.Object_Tag_Set;
    begin
       Catalogs.Create_Bucket (Catalog, "catalog-bucket", 1_234_500, Result);
       Assert (Result = Flyology.Object_Storage.Success,
@@ -545,6 +568,21 @@ begin
         (US.To_String (Found.Entity_Tag) = US.To_String (Info.Entity_Tag),
          "catalog opaque metadata changed");
 
+      Wanted.Length := 2;
+      Wanted.Items (1) :=
+        (Key => US.To_Unbounded_String ("environment"),
+         Value => US.To_Unbounded_String ("production"));
+      Wanted.Items (2) :=
+        (Key => US.To_Unbounded_String ("team"),
+         Value => US.To_Unbounded_String ("storage/core"));
+      Catalogs.Put_Object_Tags
+        (Catalog, "catalog-bucket", Key, Wanted, Result);
+      Catalogs.Get_Object_Tags
+        (Catalog, "catalog-bucket", Key, Tags, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success and then Tags = Wanted,
+         "catalog object tags did not round-trip atomically");
+
       Catalogs.Delete_Bucket (Catalog, "catalog-bucket", Result);
       Assert (Result = Flyology.Object_Storage.Bucket_Not_Empty,
               "nonempty catalog bucket was deleted");
@@ -557,6 +595,16 @@ begin
         (Result = Flyology.Object_Storage.Success and then
          US.To_String (Previous) = "payload-one",
          "catalog replacement did not return the old payload");
+      Catalogs.Get_Object_Tags
+        (Catalog, "catalog-bucket", Key, Tags, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success and then Tags.Length = 0,
+         "catalog object replacement retained stale tags");
+      Catalogs.Put_Object_Tags
+        (Catalog, "catalog-bucket", Key, Wanted, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success,
+         "catalog persisted tag setup failed");
       declare
          use Flyology.Object_Storage;
          use Flyology.Object_Storage.Backends;
@@ -666,7 +714,29 @@ begin
       Result  : Flyology.Object_Storage.Status;
       Payload : US.Unbounded_String;
       Key     : constant String := Character'Val (255) & "/opaque-key";
+      Wanted  : Flyology.Object_Storage.Object_Tag_Set :=
+        Flyology.Object_Storage.Empty_Object_Tags;
+      Tags    : Flyology.Object_Storage.Object_Tag_Set;
    begin
+      Wanted.Length := 2;
+      Wanted.Items (1) :=
+        (Key => US.To_Unbounded_String ("environment"),
+         Value => US.To_Unbounded_String ("production"));
+      Wanted.Items (2) :=
+        (Key => US.To_Unbounded_String ("team"),
+         Value => US.To_Unbounded_String ("storage/core"));
+      Catalogs.Get_Object_Tags
+        (Catalog, "catalog-bucket", Key, Tags, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success and then Tags = Wanted,
+         "catalog object tags did not persist across reopen");
+      Catalogs.Delete_Object_Tags
+        (Catalog, "catalog-bucket", Key, Result);
+      Catalogs.Get_Object_Tags
+        (Catalog, "catalog-bucket", Key, Tags, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success and then Tags.Length = 0,
+         "catalog tag deletion did not clear the complete set");
       Catalogs.Delete_Object
         (Catalog, "catalog-bucket", Key, Payload, Result);
       Assert
@@ -724,8 +794,45 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 3,
-         "schema-v2 migration did not publish version 3");
+         and then Databases.Column (Version, 0) = 4,
+         "schema-v2 migration did not publish version 4");
+   end;
+   declare
+      Tags_Table : Databases.Statement;
+   begin
+      Databases.Prepare
+        (Tags_Table, Database,
+         "SELECT count(*) FROM sqlite_master WHERE type='table' " &
+         "AND name='object_tags'");
+      Assert
+        (Databases.Step (Tags_Table) = Databases.Row
+         and then Databases.Column (Tags_Table, 0) = 1,
+         "schema-v2 migration did not create object_tags");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V3_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Tags_Table : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 4,
+         "schema-v3 migration did not publish version 4");
+      Databases.Prepare
+        (Tags_Table, Database,
+         "SELECT count(*) FROM sqlite_master WHERE type='table' " &
+         "AND name='object_tags'");
+      Assert
+        (Databases.Step (Tags_Table) = Databases.Row
+         and then Databases.Column (Tags_Table, 0) = 1,
+         "schema-v3 migration did not create object_tags");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -747,6 +854,8 @@ begin
       Info   : Object_Information;
       Result : Status;
       Key    : constant String := Character'Val (255) & "../../opaque/key";
+      Wanted : Object_Tag_Set := Empty_Object_Tags;
+      Tags   : Object_Tag_Set;
 
       function Listing_Bucket_Name (Index : Positive) return String is
         (case Index is
@@ -856,6 +965,32 @@ begin
          null, Ada.Real_Time.Time_Last, Info, Result);
       Assert (Result = Success and then Info.Size = 10,
               "SQLite backend put failed");
+      Store.Get_Object_Tags
+        ("missing-bucket", Key, null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert
+        (Result = Bucket_Not_Found,
+         "SQLite tagging did not distinguish an absent bucket");
+      Store.Get_Object_Tags
+        ("sqlite-bucket", "missing", null, Ada.Real_Time.Time_Last,
+         Tags, Result);
+      Assert
+        (Result = Not_Found,
+         "SQLite tagging did not distinguish an absent object");
+      Wanted.Length := 2;
+      Wanted.Items (1) :=
+        (Key => US.To_Unbounded_String ("environment"),
+         Value => US.To_Unbounded_String ("production"));
+      Wanted.Items (2) :=
+        (Key => US.To_Unbounded_String ("team"),
+         Value => US.To_Unbounded_String ("storage/core"));
+      Store.Put_Object_Tags
+        ("sqlite-bucket", Key, Wanted, null, Ada.Real_Time.Time_Last,
+         Result);
+      Store.Get_Object_Tags
+        ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert
+        (Result = Success and then Tags = Wanted,
+         "SQLite backend object tags did not round-trip");
       declare
          Replacement : Buffer_Source :=
            (Data     => Flyology.Bytes.From_Byte_String ("second body"),
@@ -870,6 +1005,16 @@ begin
             null, Ada.Real_Time.Time_Last, Info, Result);
          Assert (Result = Success, "SQLite backend overwrite failed");
       end;
+      Store.Get_Object_Tags
+        ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert
+        (Result = Success and then Tags.Length = 0,
+         "SQLite backend overwrite retained stale tags");
+      Store.Put_Object_Tags
+        ("sqlite-bucket", Key, Wanted, null, Ada.Real_Time.Time_Last,
+         Result);
+      Assert
+        (Result = Success, "SQLite persisted tag setup failed");
       declare
          Empty_Source : Buffer_Source :=
            (Data     => Flyology.Bytes.Empty,
@@ -1053,6 +1198,8 @@ begin
       Result : Status;
       Sink   : Buffer_Sink;
       Key    : constant String := Character'Val (255) & "../../opaque/key";
+      Wanted : Object_Tag_Set := Empty_Object_Tags;
+      Tags   : Object_Tag_Set;
       Orphan_Path : constant String := Ada.Directories.Compose
         (Backend_Root & "/objects", (1 .. 64 => 'a') & ".blob");
    begin
@@ -1082,6 +1229,25 @@ begin
          US.To_String (Info.Entity_Tag) = "etag-2",
          "SQLite backend metadata did not persist");
       Exercise_Conditional_Read (Store, "sqlite-bucket", Key);
+      Wanted.Length := 2;
+      Wanted.Items (1) :=
+        (Key => US.To_Unbounded_String ("environment"),
+         Value => US.To_Unbounded_String ("production"));
+      Wanted.Items (2) :=
+        (Key => US.To_Unbounded_String ("team"),
+         Value => US.To_Unbounded_String ("storage/core"));
+      Store.Get_Object_Tags
+        ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert
+        (Result = Success and then Tags = Wanted,
+         "SQLite backend object tags did not persist across reopen");
+      Store.Delete_Object_Tags
+        ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Object_Tags
+        ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert
+        (Result = Success and then Tags.Length = 0,
+         "SQLite backend tag deletion did not clear the complete set");
       declare
          Page    : Multipart_Upload_Page;
          Options : List_Multipart_Uploads_Options;

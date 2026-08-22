@@ -1041,6 +1041,29 @@ begin
 
    declare
       Response : constant String := Run
+        ("GET /test-bucket/object?tagging=&unknown=value HTTP/1.1" & CRLF &
+         "Host: " & Host & CRLF & "Content-Length: 0" & CRLF &
+         "Connection: close" & CRLF & CRLF);
+   begin
+      Require
+        (Has (Response, "403 Forbidden")
+         and then not Has (Response, "InvalidArgument"),
+         "malformed object-tagging query bypassed authentication");
+   end;
+
+   declare
+      Response : constant String := Run
+        ("GET /test-bucket/object?%74agging HTTP/1.1" & CRLF &
+         "Host: " & Host & CRLF & "Content-Length: 0" & CRLF &
+         "Connection: close" & CRLF & CRLF);
+   begin
+      Require
+        (Has (Response, "403 Forbidden"),
+         "encoded object-tagging subresource bypassed authentication");
+   end;
+
+   declare
+      Response : constant String := Run
         ("GET /?max-buckets=1&max-buckets=2 HTTP/1.1" & CRLF &
          "Host: " & Host & CRLF & "Content-Length: 0" & CRLF &
          "Connection: close" & CRLF & CRLF);
@@ -1609,6 +1632,159 @@ begin
                  ("/test-bucket/object", "test-bucket/object")),
             "InvalidRequest"),
          "metadata-preserving CopyObject accepted a self copy");
+   end;
+
+   declare
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("tagging", ""));
+      Versioned : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("tagging", ""),
+         SigV4.Pair ("versionId", "unsupported"));
+      Unknown : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("tagging", ""),
+         SigV4.Pair ("unknown", "value"));
+      Duplicate : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("tagging", ""), SigV4.Pair ("tagging", ""));
+      Document : constant String :=
+        "<Tagging><TagSet><Tag><Key>team</Key><Value>storage</Value>" &
+        "</Tag></TagSet></Tagging>";
+      Malformed : constant String :=
+        "<Tagging><TagSet><Tag><Key>broken</Key></Tag></TagSet></Tagging>";
+      Valid_MD5 : constant String := "SLw5gP7IN3lXnRzCSb/wzw==";
+      Malformed_MD5 : constant String := "f++GbNyGMfP1p6OC2Va1xA==";
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/object", Query, Document,
+                  "Content-MD5: " & Valid_MD5 & CRLF &
+                  "Content-Type: application/xml; charset=utf-8" & CRLF)),
+            "200 OK"),
+         "PutObjectTagging rejected a valid tagging document");
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket/object", Query));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "Content-Type: application/xml")
+            and then Has (Response, "<Key>team</Key>")
+            and then Has (Response, "<Value>storage</Value>"),
+            "GetObjectTagging did not return the committed tags");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/object", Query, Document,
+                  "Content-MD5: AAAAAAAAAAAAAAAAAAAAAA==" & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutObjectTagging accepted a mismatched Content-MD5");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("GET", "/test-bucket/object", Query)),
+            "<Key>team</Key>"),
+         "a rejected PutObjectTagging changed existing tags");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/object", Query, Malformed,
+                  "Content-MD5: " & Malformed_MD5 & CRLF)),
+            "<Code>MalformedXML</Code>"),
+         "PutObjectTagging accepted malformed XML with a valid digest");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/object", Query, Document,
+                  "Content-MD5: " & Valid_MD5 & CRLF &
+                  "Content-Type: application/xmlbad" & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutObjectTagging accepted an invalid content type");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/object", Query, Document)),
+            "<Code>InvalidRequest</Code>"),
+         "PutObjectTagging accepted a missing Content-MD5");
+      Require
+        (Has (Run (Signed_Query_Request
+           ("GET", "/test-bucket/object", Unknown)),
+           "<Code>InvalidArgument</Code>"),
+         "GetObjectTagging accepted an unknown query member");
+      Require
+        (Has (Run (Signed_Query_Request
+           ("GET", "/test-bucket/object", Duplicate)),
+           "<Code>InvalidArgument</Code>"),
+         "GetObjectTagging accepted duplicate tagging controls");
+      Require
+        (Has (Run (Signed_Query_Request
+           ("GET", "/test-bucket/object", Versioned)),
+           "501 Not Implemented"),
+         "GetObjectTagging silently accepted versioning");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object", Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetObjectTagging ignored the expected bucket owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object", Query,
+                  "x-amz-request-payer", "requester")),
+            "501 Not Implemented"),
+         "GetObjectTagging silently accepted Requester Pays");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/object", Query, "unexpected")),
+            "400 Bad Request"),
+         "GetObjectTagging accepted a request body");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("GET", "/test-bucket/missing-tagged", Query)),
+            "<Code>NoSuchKey</Code>"),
+         "GetObjectTagging misreported a missing key");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("GET", "/missing-bucket/object", Query)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetObjectTagging misreported a missing bucket");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket/object", Query)),
+            "204 No Content"),
+         "DeleteObjectTagging failed");
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket/object", Query));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "<TagSet></TagSet>")
+            and then not Has (Response, "<Key>"),
+            "DeleteObjectTagging did not atomically clear the tag set");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("DELETE", "/test-bucket/object", Query, "unexpected")),
+            "400 Bad Request"),
+         "DeleteObjectTagging accepted a request body");
    end;
 
    declare

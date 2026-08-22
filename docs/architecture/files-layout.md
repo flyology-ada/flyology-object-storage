@@ -6,10 +6,20 @@ opaque bytes encoded as uppercase hexadecimal and split into bounded path
 components; caller-provided slashes and dot segments are never interpreted.
 
 Each object is one versioned binary record containing a magic value, bounded
-metadata, the original key, and the body. PUT writes a unique temporary record
+metadata, the original key, a complete bounded object-tag set, and the body.
+Version-2 records carry tags; legacy version-1 records remain readable with an
+empty set. PUT writes a unique temporary record
 and publishes it with an operating-system rename, so readers never observe a
 new body paired with old metadata. Reads validate the magic, lengths, key, and
 exact file size before yielding bytes.
+
+Object-tag replacement and deletion use that same publication gate and record
+rename. Because tags and payload form one indivisible record, a tag mutation
+copies the existing body into a new record, flushes it, and atomically publishes
+the complete tags-plus-body snapshot. This intentionally trades write
+amplification proportional to object size for a simple crash-atomic invariant:
+readers can observe only the old complete record or the new complete record.
+Use SQLite when frequent tag-only mutation makes that cost unsuitable.
 
 `Open` defaults to `Power_Loss_Durable`. Temporary object and part records are
 closed and synchronized before publication. Every rename is followed by a
@@ -27,11 +37,11 @@ rename and validation structure. It exists for explicitly labeled comparison
 and deployments whose storage layer supplies a stronger external durability
 contract; it is not the production default. The deterministic fault corpus
 injects a device error at every file/directory barrier across bucket create
-and delete, object replacement and delete, multipart initiation, part
+and delete, object and object-tag replacement and delete, multipart initiation, part
 replacement, completion, and abort, then reopens the root and requires a
 well-formed old-or-new state. A separate process corpus terminates workers
-without Ada finalization immediately before and after all 27 barriers in those
-same mutation paths (54 cases), then independently reopens and verifies each
+without Ada finalization immediately before and after all 30 barriers in those
+same mutation paths (60 cases), then independently reopens and verifies each
 store. The adapter uses `F_FULLFSYNC` where available and falls back to `fsync`
 on POSIX. Windows remains unqualified until its directory-metadata persistence
 path has an independent host-level crash corpus. Cross-process writers remain

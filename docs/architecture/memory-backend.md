@@ -38,6 +38,13 @@ These rules make the volatile backend resistant to concurrent body-retention
 exhaustion, but they do not turn it into a durable store. Use the files or
 SQLite backend for restart persistence.
 
+Each object slot also contains one fixed-capacity complete tag set. The
+protected state replaces, reads, and clears that set atomically with respect to
+object overwrite, delete, and multipart completion. Tags are bounded control
+metadata and are not charged to `Byte_Capacity`; the ten-tag and key/value byte
+limits are enforced before publication. Object replacement always starts with
+an empty set, so tags cannot leak from an older body version.
+
 Bucket creation and listing run inside the same protected state. A listing is
 therefore one atomic namespace snapshot, sorted bytewise and bounded to the S3
 `MaxBuckets` ceiling. The exclusive continuation cursor and prefix filter are

@@ -24,7 +24,7 @@ DeleteBucketTagging	extended	missing	partial	missing	missing
 DeleteBucketWebsite	extended	missing	partial	missing	missing
 DeleteObject	core	covered	covered	partial	covered
 DeleteObjectAnnotation	extended	missing	partial	missing	missing
-DeleteObjectTagging	core	missing	partial	missing	missing
+DeleteObjectTagging	core	covered	covered	partial	covered
 DeleteObjects	core	partial	partial	partial	covered
 DeletePublicAccessBlock	extended	missing	partial	missing	missing
 GetBucketAbac	extended	missing	partial	missing	missing
@@ -59,7 +59,7 @@ GetObjectAttributes	core	missing	partial	missing	missing
 GetObjectLegalHold	extended	missing	partial	missing	missing
 GetObjectLockConfiguration	extended	missing	partial	missing	missing
 GetObjectRetention	extended	missing	partial	missing	missing
-GetObjectTagging	core	missing	partial	missing	missing
+GetObjectTagging	core	covered	covered	partial	covered
 GetObjectTorrent	extended	missing	partial	missing	missing
 GetPublicAccessBlock	extended	missing	partial	missing	missing
 HeadBucket	core	covered	covered	covered	covered
@@ -103,7 +103,7 @@ PutObjectAnnotation	extended	missing	partial	missing	missing
 PutObjectLegalHold	extended	missing	partial	missing	missing
 PutObjectLockConfiguration	extended	missing	partial	missing	missing
 PutObjectRetention	extended	missing	partial	missing	missing
-PutObjectTagging	core	missing	partial	missing	missing
+PutObjectTagging	core	covered	covered	partial	covered
 PutPublicAccessBlock	extended	missing	partial	missing	missing
 RenameObject	extended	missing	partial	missing	missing
 RestoreObject	extended	missing	partial	missing	missing

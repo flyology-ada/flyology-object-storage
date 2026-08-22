@@ -33,6 +33,7 @@ with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.SigV4_Verification;
+with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.XML;
 
 package body Object_Storage_Test_Cases is
@@ -2311,6 +2312,69 @@ package body Object_Storage_Test_Cases is
                              "successful durable put retained old body");
                   end if;
                end;
+            end;
+            Clean (Root);
+         exception
+            when others =>
+               Clean (Root);
+               raise;
+         end;
+      end loop;
+
+      for Point in 0 .. 4 loop
+         declare
+            Root : constant String := Path ("tags", Point);
+            Result : Status;
+         begin
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Old_Tags : Object_Tag_Set := Empty_Object_Tags;
+               New_Tags : Object_Tag_Set := Empty_Object_Tags;
+            begin
+               Create_Bucket (Store, Result);
+               Put (Store, "object", "body", Result);
+               Assert (Result = Success, "tag fault setup object");
+               Old_Tags.Length := 1;
+               Old_Tags.Items (1) :=
+                 (Key => US.To_Unbounded_String ("state"),
+                  Value => US.To_Unbounded_String ("old"));
+               Store.Put_Object_Tags
+                 ("durability-bucket", "object", Old_Tags, null,
+                  Ada.Real_Time.Time_Last, Result);
+               Assert (Result = Success, "tag fault setup old set");
+               New_Tags.Length := 1;
+               New_Tags.Items (1) :=
+                 (Key => US.To_Unbounded_String ("state"),
+                  Value => US.To_Unbounded_String ("new"));
+               Faults.Fail_Next_Barrier_After (Point);
+               Store.Put_Object_Tags
+                 ("durability-bucket", "object", New_Tags, null,
+                  Ada.Real_Time.Time_Last, Result);
+               Faults.Clear_Failure;
+            end;
+            Assert
+              (Result =
+                 (if Point < 3 then Backend_Unavailable else Success),
+               "object-tag publication durability barrier count changed");
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Tags : Object_Tag_Set;
+               Observed : Status;
+            begin
+               Store.Get_Object_Tags
+                 ("durability-bucket", "object", null,
+                  Ada.Real_Time.Time_Last, Tags, Observed);
+               Assert
+                  (Observed = Success and then Tags.Length = 1
+                  and then US.To_String (Tags.Items (1).Key) = "state"
+                  and then US.To_String (Tags.Items (1).Value)
+                    in "old" | "new",
+                  "tag sync fault exposed a partial tag set");
+               if Result = Success then
+                  Assert
+                    (US.To_String (Tags.Items (1).Value) = "new",
+                     "successful durable tag replacement retained old set");
+               end if;
             end;
             Clean (Root);
          exception
@@ -9139,6 +9203,287 @@ package body Object_Storage_Test_Cases is
          "unknown Authorization attribute accepted");
    end Check_SigV4_Verification;
 
+   procedure Exercise_Object_Tagging
+     (Store : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package US renames Ada.Strings.Unbounded;
+      Source : Buffer_Source :=
+        (Data => Flyology.Bytes.From_Byte_String ("tagged body"),
+         Position => 0, Length => (Kind => Known, Bytes => 11),
+         Bad_Last => False);
+      Replacement : Buffer_Source :=
+        (Data => Flyology.Bytes.From_Byte_String ("replacement"),
+         Position => 0, Length => (Kind => Known, Bytes => 11),
+         Bad_Last => False);
+      Info : Object_Information;
+      Result : Status;
+      Tags : Object_Tag_Set;
+      Wanted : Object_Tag_Set;
+   begin
+      Store.Get_Object_Tags
+        ("missing-tag-bucket", "key", null, Ada.Real_Time.Time_Last,
+         Tags, Result);
+      Assert (Result = Bucket_Not_Found, "tagging missing bucket status");
+      Store.Create_Bucket
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "tagging create bucket");
+      Store.Put_Object
+        (Bucket, "tagged/key", Source, Default_Put_Options, null,
+         Ada.Real_Time.Time_Last, Info, Result);
+      Assert (Result = Success, "tagging put object");
+      Store.Get_Object_Tags
+        (Bucket, "tagged/key", null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert
+        (Result = Success and then Tags.Length = 0,
+         "new object did not start with an empty tag set");
+
+      Wanted.Length := 2;
+      Wanted.Items (1) :=
+        (Key => US.To_Unbounded_String ("environment"),
+         Value => US.To_Unbounded_String ("production"));
+      Wanted.Items (2) :=
+        (Key => US.To_Unbounded_String ("team"),
+         Value => US.To_Unbounded_String ("storage/core"));
+      Store.Put_Object_Tags
+        (Bucket, "tagged/key", Wanted, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "tagging atomic replace");
+      Store.Get_Object_Tags
+        (Bucket, "tagged/key", null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert
+        (Result = Success and then Tags = Wanted,
+         "tagging atomic read did not preserve order and values");
+
+      Store.Put_Object
+        (Bucket, "tagged/key", Replacement, Default_Put_Options, null,
+         Ada.Real_Time.Time_Last, Info, Result);
+      Store.Get_Object_Tags
+        (Bucket, "tagged/key", null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert
+        (Result = Success and then Tags.Length = 0,
+         "object overwrite retained stale tags");
+      Store.Put_Object_Tags
+        (Bucket, "tagged/key", Wanted, null, Ada.Real_Time.Time_Last, Result);
+      Store.Delete_Object_Tags
+        (Bucket, "tagged/key", null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "tagging delete");
+      Store.Get_Object_Tags
+        (Bucket, "tagged/key", null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert
+        (Result = Success and then Tags.Length = 0,
+         "tagging delete did not clear complete set");
+
+      Wanted.Items (2).Key := Wanted.Items (1).Key;
+      Store.Put_Object_Tags
+        (Bucket, "tagged/key", Wanted, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Invalid_Request, "duplicate direct backend tag keys");
+      Store.Get_Object_Tags
+        (Bucket, "missing", null, Ada.Real_Time.Time_Last, Tags, Result);
+      Assert (Result = Not_Found, "tagging missing object status");
+      Store.Delete_Object
+        (Bucket, "tagged/key", null, Ada.Real_Time.Time_Last, Result);
+      Store.Delete_Bucket
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "tagging cleanup");
+   end Exercise_Object_Tagging;
+
+   procedure Check_Backend_Object_Tagging (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      package Memory renames Flyology.Object_Storage.Backends.Memory;
+      package Files renames Flyology.Object_Storage.Backends.Files;
+      Root : constant String := Ada.Directories.Compose
+        (Ada.Directories.Compose (Ada.Directories.Current_Directory, "obj"),
+         "files-object-tagging");
+   begin
+      declare
+         Store : Memory.Store (2, 4, 128);
+      begin
+         Exercise_Object_Tagging (Store, "memory-tag-bucket");
+      end;
+      if Ada.Directories.Exists (Root) then
+         Ada.Directories.Delete_Tree (Root);
+      end if;
+      declare
+         Store : Files.Store := Files.Open
+           (Root, Commit => Files.Process_Crash_Atomic);
+      begin
+         Exercise_Object_Tagging (Store, "files-tag-bucket");
+      end;
+      Ada.Directories.Delete_Tree (Root);
+   end Check_Backend_Object_Tagging;
+
+   procedure Check_Object_Tagging_Codec (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Tagging renames Flyology.Object_Storage.S3.Tagging;
+      package US renames Ada.Strings.Unbounded;
+      use type Tagging.Tagging_Operation;
+      use type Flyology.Object_Storage.Object_Tag_Set;
+      Tags : constant Flyology.Object_Storage.Object_Tag_Set :=
+        Tagging.Parse
+          ("<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+           "<TagSet><Tag><Key>a_b</Key><Value>x+y</Value></Tag>" &
+           "<Tag><Key>team</Key><Value>storage/core</Value></Tag>" &
+           "</TagSet></Tagging>");
+
+      procedure Rejects (Document : String; Label : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Flyology.Object_Storage.Object_Tag_Set :=
+                 Tagging.Parse (Document);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Tagging.Malformed_Tagging =>
+               Raised := True;
+         end;
+         Assert (Raised, Label);
+      end Rejects;
+
+      procedure Rejects_Query (Query : String; Label : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Tagging.Tagging_Query :=
+                 Tagging.Parse_Query (Query, Tagging.Get_Object_Tagging);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Tagging.Malformed_Tagging_Query =>
+               Raised := True;
+         end;
+         Assert (Raised, Label);
+      end Rejects_Query;
+   begin
+      Assert
+        (Tags.Length = 2
+         and then US.To_String (Tags.Items (1).Value) = "x+y"
+         and then Tagging.Parse (Tagging.Serialize (Tags)) = Tags,
+         "object tagging XML round trip");
+      declare
+         Query : constant Tagging.Tagging_Query := Tagging.Parse_Query
+           ("versionId=v%20%2B%2F%3D&tagging=&x-id=GetObjectTagging",
+            Tagging.Get_Object_Tagging);
+      begin
+         Assert
+           (Query.Has_Version_ID
+            and then US.To_String (Query.Version_ID) = "v +/=",
+            "object tagging query decode");
+      end;
+      declare
+         Query : constant Tagging.Tagging_Query := Tagging.Parse_Query
+           ("%74agging", Tagging.Get_Object_Tagging);
+      begin
+         Assert
+           (not Query.Has_Version_ID,
+            "percent-encoded tagging subresource was not recognized");
+      end;
+      Rejects ("<Tagging><TagSet><Tag><Key>a</Key></Tag></TagSet></Tagging>",
+               "tag missing Value accepted");
+      Rejects
+        ("<Tagging><TagSet><Tag><Value>x</Value><Key>a</Key></Tag>" &
+         "</TagSet></Tagging>", "reversed tag fields accepted");
+      Rejects
+        ("<Tagging><TagSet><Tag><Key>a</Key><Value>!</Value></Tag>" &
+         "</TagSet></Tagging>", "invalid tag character accepted");
+      Rejects
+        ("<Tagging><TagSet><Tag><Key></Key><Value>x</Value></Tag>" &
+         "</TagSet></Tagging>", "empty tag key accepted");
+      Rejects
+        ("<Tagging><TagSet><Tag><Key>" & String'(1 .. 129 => 'a') &
+         "</Key><Value>x</Value></Tag></TagSet></Tagging>",
+         "overlong Unicode tag key accepted");
+      Rejects
+        ("<Tagging><TagSet><Tag><Key>a" & Character'Val (255) &
+         "</Key><Value>x</Value></Tag></TagSet></Tagging>",
+         "invalid UTF-8 tag key accepted");
+      Rejects
+        ("<Tagging><TagSet><Tag><Key>a</Key><Value>x</Value></Tag>" &
+         "<Tag><Key>a</Key><Value>y</Value></Tag></TagSet></Tagging>",
+         "duplicate tag keys accepted");
+      Rejects
+        ("<Tagging><TagSet>" &
+         "<Tag><Key>a1</Key><Value>x</Value></Tag>" &
+         "<Tag><Key>a2</Key><Value>x</Value></Tag>" &
+         "<Tag><Key>a3</Key><Value>x</Value></Tag>" &
+         "<Tag><Key>a4</Key><Value>x</Value></Tag>" &
+         "<Tag><Key>a5</Key><Value>x</Value></Tag>" &
+         "<Tag><Key>a6</Key><Value>x</Value></Tag>" &
+         "<Tag><Key>a7</Key><Value>x</Value></Tag>" &
+         "<Tag><Key>a8</Key><Value>x</Value></Tag>" &
+         "<Tag><Key>a9</Key><Value>x</Value></Tag>" &
+         "<Tag><Key>a10</Key><Value>x</Value></Tag>" &
+         "<Tag><Key>a11</Key><Value>x</Value></Tag>" &
+         "</TagSet></Tagging>", "eleven object tags accepted");
+      Rejects
+        ("<Tagging><TagSet>" & String'(1 .. 16 * 1_024 => ' ') &
+         "</TagSet></Tagging>", "oversized tagging document accepted");
+      Rejects
+        ("<!DOCTYPE x><Tagging><TagSet/></Tagging>",
+         "object tagging DTD accepted");
+      Rejects
+        ("<Tagging><TagSet><Other/></TagSet></Tagging>",
+         "unknown tagging element accepted");
+      Rejects_Query ("versionId=x", "missing tagging subresource accepted");
+      Rejects_Query ("tagging&tagging=", "duplicate tagging accepted");
+      Rejects_Query ("tagging&unknown=x", "unknown tagging query accepted");
+      Rejects_Query ("tagging&versionId=%GG", "bad tagging escape accepted");
+      Rejects_Query
+        ("tagging&versionId=a&versionId=b",
+         "duplicate tagging version ID accepted");
+      Rejects_Query
+        ("tagging&x-id=GetObjectTagging&x-id=GetObjectTagging",
+         "duplicate tagging operation ID accepted");
+      Rejects_Query
+        ("tagging=" & String'(1 .. 8 * 1_024 => 'x'),
+         "oversized tagging query accepted");
+   end Check_Object_Tagging_Codec;
+
+   procedure Check_Low_Level_Object_Tagging (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+      package US renames Ada.Strings.Unbounded;
+      Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
+        ("AKIAIOSFODNN7EXAMPLE",
+         "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+      Parameters : Low_Level.Put_Object_Tagging_Parameters;
+      Tags : Flyology.Object_Storage.Object_Tag_Set;
+   begin
+      Tags.Length := 1;
+      Tags.Items (1) :=
+        (Key => US.To_Unbounded_String ("team"),
+         Value => US.To_Unbounded_String ("storage"));
+      Parameters.Expected_Bucket_Owner := US.To_Unbounded_String ("owner");
+      declare
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_Put_Object_Tagging
+             (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+              Low_Level.Path_Style, "example-bucket", "key with space", Tags,
+              Parameters, Identity, "us-east-1", "20130524T000000Z");
+      begin
+         Assert
+           (Low_Level.Target (Prepared) =
+              "/example-bucket/key%20with%20space?tagging"
+            and then Ada.Strings.Fixed.Index
+              (Low_Level.Signed_Headers (Prepared), "content-md5") /= 0
+            and then Ada.Strings.Fixed.Index
+              (Low_Level.Canonical_Request (Prepared),
+               "x-amz-expected-bucket-owner:owner") /= 0,
+            "typed PutObjectTagging projection and signing");
+      end;
+   end Check_Low_Level_Object_Tagging;
+
    function Suite return AUnit.Test_Suites.Access_Test_Suite is
       Result : constant AUnit.Test_Suites.Access_Test_Suite :=
         AUnit.Test_Suites.New_Suite;
@@ -9164,6 +9509,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("backends.listing-conformance",
             Check_Backend_Listings'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("backends.object-tagging-conformance",
+            Check_Backend_Object_Tagging'Access));
       Result.Add_Test
         (Caller.Create ("s3.core-rules", Check_S3_Core_Rules'Access));
       Result.Add_Test
@@ -9204,6 +9553,10 @@ package body Object_Storage_Test_Cases is
             Check_Delete_Objects_Result_Codec'Access));
       Result.Add_Test
         (Caller.Create
+           ("s3.object-tagging-codec-adversarial",
+            Check_Object_Tagging_Codec'Access));
+      Result.Add_Test
+        (Caller.Create
            ("s3.low-level-list-request",
             Check_Low_Level_List_Request'Access));
       Result.Add_Test
@@ -9222,6 +9575,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.low-level-delete-requests",
             Check_Low_Level_Delete_Requests'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.low-level-object-tagging",
+            Check_Low_Level_Object_Tagging'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.generated-model-exhaustive",

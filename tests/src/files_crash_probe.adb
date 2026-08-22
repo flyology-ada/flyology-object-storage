@@ -88,6 +88,19 @@ procedure Files_Crash_Probe is
       Require (Result = Storage.Success, "could not put test object");
    end Put;
 
+   procedure Set_Tag (Store : in out Files.Store; Value : String) is
+      Tags : Storage.Object_Tag_Set := Storage.Empty_Object_Tags;
+      Result : Storage.Status;
+   begin
+      Tags.Length := 1;
+      Tags.Items (1) :=
+        (Key => US.To_Unbounded_String ("state"),
+         Value => US.To_Unbounded_String (Value));
+      Store.Put_Object_Tags
+        (Bucket, Key, Tags, null, Ada.Real_Time.Time_Last, Result);
+      Require (Result = Storage.Success, "could not set test object tag");
+   end Set_Tag;
+
    procedure Create_Upload
      (Store : in out Files.Store; Upload_ID : out US.Unbounded_String)
    is
@@ -143,8 +156,11 @@ procedure Files_Crash_Probe is
          null;
       else
          Create_Bucket (Store);
-         if Scenario in "put" | "delete" then
+         if Scenario in "put" | "delete" | "tags" then
             Put (Store, "old");
+            if Scenario = "tags" then
+               Set_Tag (Store, "old");
+            end if;
          elsif Scenario in "part" | "abort" | "complete" then
             Create_Upload (Store, Upload_ID);
             if Scenario in "part" | "complete" then
@@ -174,6 +190,9 @@ procedure Files_Crash_Probe is
       elsif Scenario = "delete" then
          Store.Delete_Object
            (Bucket, Key, null, Ada.Real_Time.Time_Last, Result);
+      elsif Scenario = "tags" then
+         Set_Tag (Store, "new");
+         Result := Storage.Success;
       elsif Scenario = "initiate" then
          Store.Create_Multipart_Upload
            (Bucket, Key, Backends.Default_Multipart_Options,
@@ -240,6 +259,18 @@ procedure Files_Crash_Probe is
               (Result in Storage.Success | Storage.Not_Found,
                "crash exposed malformed object deletion");
          end if;
+      elsif Scenario = "tags" then
+         declare
+            Tags : Storage.Object_Tag_Set;
+         begin
+            Store.Get_Object_Tags
+              (Bucket, Key, null, Ada.Real_Time.Time_Last, Tags, Result);
+            Require
+              (Result = Storage.Success and then Tags.Length = 1
+               and then US.To_String (Tags.Items (1).Key) = "state"
+               and then US.To_String (Tags.Items (1).Value) in "old" | "new",
+               "crash exposed a partial object-tag replacement");
+         end;
       elsif Scenario in "initiate" | "abort" then
          Require
            (Upload_Count (Store) in 0 .. 1,
