@@ -140,6 +140,18 @@ is
    --  @return True for a nonempty key of at most 1,024 bytes without NUL
    function Valid_Object_Key (Value : String) return Boolean;
 
+   subtype Tag_Character_Limit is Positive range 1 .. 256;
+
+   --  Validate one UTF-8 S3 tag scalar using AWS's Unicode character set.
+   --  @param Value UTF-8 encoded tag key or value
+   --  @param Maximum Maximum decoded Unicode scalar count
+   --  @param Empty_Allowed Whether the empty byte string is valid
+   --  @return True for canonical UTF-8 within the AWS L/Z/N and symbol set
+   function Valid_Tag_Text
+     (Value         : String;
+      Maximum       : Tag_Character_Limit;
+      Empty_Allowed : Boolean) return Boolean;
+
 private
    Empty_Object_Tags : constant Object_Tag_Set := (others => <>);
    Default_Put_Options : constant Put_Options :=

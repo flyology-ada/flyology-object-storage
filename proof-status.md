@@ -61,6 +61,8 @@ errors, zero justified checks, and zero Assume statements.
 ## Reviewed
 <!-- Review proved implementations for proof-antipatterns before moving them. -->
 
+- [x] Flyology.Object_Storage.Valid_Tag_Text
+       (scoped level 0, 42/42 checks; forced-manifest widening pending)
 ## In Progress
 <!-- A proof worker executes the tactical loop for the item below. -->
 
@@ -68,6 +70,9 @@ errors, zero justified checks, and zero Assume statements.
 <!-- New or discovered proof-bearing subprograms belong here. -->
 
 ## Discovered Obligations
+
+- [ ] Re-widen the forced manifest after adding the strict UTF-8 S3 tag text
+      validator (owned by the root proof lane after scoped review).
 
 - [x] Proved the bounded escape cursor invariant and increasing variant.
 - [x] Re-verified the `Valid_Escapes` caller after adding its bounded-domain

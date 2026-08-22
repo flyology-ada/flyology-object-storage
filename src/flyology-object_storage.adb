@@ -1,6 +1,10 @@
+with Ada.Wide_Wide_Characters.Unicode;
+
 package body Flyology.Object_Storage
   with SPARK_Mode => On
 is
+
+   package Unicode renames Ada.Wide_Wide_Characters.Unicode;
 
    Maximum_Condition_Length : constant := 16_384;
    Maximum_Entity_Tag_Length : constant := 8_192;
@@ -330,6 +334,106 @@ is
       end loop;
       return True;
    end Valid_Object_Tag_Set;
+
+   function Valid_Tag_Text
+     (Value         : String;
+      Maximum       : Tag_Character_Limit;
+      Empty_Allowed : Boolean) return Boolean
+   is
+      subtype Tag_Character_Count is
+        Natural range 0 .. Tag_Character_Limit'Last;
+
+      Cursor : Integer := Value'First;
+      Count  : Tag_Character_Count := 0;
+
+      function Byte_At (Offset : Natural) return Natural is
+        (Character'Pos (Value (Cursor + Integer (Offset))))
+        with Pre =>
+          Cursor in Value'Range
+          and then Offset <= Natural (Value'Last - Cursor);
+
+      function Continuation (Offset : Natural) return Boolean is
+        (Offset <= Natural (Value'Last - Cursor)
+         and then Byte_At (Offset) in 16#80# .. 16#BF#);
+
+      function Allowed (Code : Natural) return Boolean is
+         Character_Value : constant Wide_Wide_Character :=
+           Wide_Wide_Character'Val (Code);
+         Category : constant Unicode.Category :=
+           Unicode.Get_Category (Character_Value);
+      begin
+         return Category in
+             Unicode.Lu | Unicode.Ll | Unicode.Lt | Unicode.Lm | Unicode.Lo |
+             Unicode.Nd | Unicode.Nl | Unicode.No |
+             Unicode.Zs | Unicode.Zl | Unicode.Zp
+           or else Code in
+             Character'Pos ('_') | Character'Pos ('.') |
+             Character'Pos (':') | Character'Pos ('/') |
+             Character'Pos ('=') | Character'Pos ('+') |
+             Character'Pos ('-') | Character'Pos ('@');
+      end Allowed;
+   begin
+      if Value'Length = 0 then
+         return Empty_Allowed;
+      end if;
+      while Cursor <= Value'Last loop
+         pragma Loop_Invariant (Cursor in Value'Range);
+         pragma Loop_Invariant (Count <= Maximum);
+         pragma Loop_Variant (Decreases => Value'Last - Cursor);
+         declare
+            First : constant Natural := Byte_At (0);
+            Width : Positive;
+            Code  : Natural;
+         begin
+            if First <= 16#7F# then
+               Width := 1;
+               Code := First;
+            elsif First in 16#C2# .. 16#DF# and then Continuation (1) then
+               Width := 2;
+               Code := (First - 16#C0#) * 64 + (Byte_At (1) - 16#80#);
+            elsif First in 16#E0# .. 16#EF#
+              and then Continuation (1) and then Continuation (2)
+              and then (First /= 16#E0# or else Byte_At (1) >= 16#A0#)
+              and then (First /= 16#ED# or else Byte_At (1) <= 16#9F#)
+            then
+               Width := 3;
+               Code := (First - 16#E0#) * 4_096
+                 + (Byte_At (1) - 16#80#) * 64
+                 + (Byte_At (2) - 16#80#);
+            elsif First in 16#F0# .. 16#F4#
+              and then Continuation (1) and then Continuation (2)
+              and then Continuation (3)
+              and then (First /= 16#F0# or else Byte_At (1) >= 16#90#)
+              and then (First /= 16#F4# or else Byte_At (1) <= 16#8F#)
+            then
+               Width := 4;
+               Code := (First - 16#F0#) * 262_144
+                 + (Byte_At (1) - 16#80#) * 4_096
+                 + (Byte_At (2) - 16#80#) * 64
+                 + (Byte_At (3) - 16#80#);
+            else
+               return False;
+            end if;
+
+            pragma Assert
+              (Width - 1 <= Natural (Value'Last - Cursor));
+
+            if Count = Maximum then
+               return False;
+            end if;
+            Count := Count + 1;
+            if not Allowed (Code) then
+               return False;
+            end if;
+
+            if Width - 1 = Natural (Value'Last - Cursor) then
+               return True;
+            end if;
+            Cursor := Cursor + Width;
+         end;
+      end loop;
+      return True;
+   end Valid_Tag_Text;
 
    function Resolve_Range
      (Size : Byte_Count; Request : Byte_Range) return Range_Resolution
