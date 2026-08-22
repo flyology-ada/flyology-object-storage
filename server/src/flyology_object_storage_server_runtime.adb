@@ -18,6 +18,8 @@ with Flyology.IO.Structured_Servers;
 with Flyology.Object_Storage.Server.Authentication;
 with Flyology.Object_Storage.Server.S3_Applications;
 with Flyology.Object_Storage.Server.Static_Credentials;
+with Flyology.Object_Storage.S3.Buckets;
+with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Supervision;
 with Flyology.Supervision.Children;
 with Flyology.Supervision.Static;
@@ -57,10 +59,24 @@ procedure Flyology_Object_Storage_Server_Runtime is
    function Compact (Value : Natural) return String is
      (Ada.Strings.Fixed.Trim (Natural'Image (Value), Ada.Strings.Both));
 
+   function Validated_Region (Value : String) return String is
+   begin
+      if Value'Length >
+        Flyology.Object_Storage.S3.Buckets.Maximum_Bucket_Region_Length
+        or else not
+          Flyology.Object_Storage.S3.SigV4_Encoding.Valid_Scope_Segment
+            (Value)
+      then
+         raise Constraint_Error with "invalid AWS_REGION";
+      end if;
+      return Value;
+   end Validated_Region;
+
    Region : constant String :=
-     (if Ada.Environment_Variables.Exists ("AWS_REGION")
-      then Ada.Environment_Variables.Value ("AWS_REGION")
-      else "us-east-1");
+     Validated_Region
+       ((if Ada.Environment_Variables.Exists ("AWS_REGION")
+         then Ada.Environment_Variables.Value ("AWS_REGION")
+         else "us-east-1"));
    Credentials : Static_Credentials.Provider :=
      Static_Credentials.Create
        (Required_Environment ("AWS_ACCESS_KEY_ID"),

@@ -68,7 +68,7 @@ ListBucketAnalyticsConfigurations	extended	missing	partial	missing	missing
 ListBucketIntelligentTieringConfigurations	extended	missing	partial	missing	missing
 ListBucketInventoryConfigurations	extended	missing	partial	missing	missing
 ListBucketMetricsConfigurations	extended	missing	partial	missing	missing
-ListBuckets	core	covered	partial	missing	partial
+ListBuckets	core	covered	partial	partial	partial
 ListDirectoryBuckets	extended	missing	partial	missing	missing
 ListMultipartUploads	core	covered	partial	partial	covered
 ListObjectAnnotations	extended	missing	partial	missing	missing

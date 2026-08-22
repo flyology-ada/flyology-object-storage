@@ -69,7 +69,8 @@ AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
 ```
 
 `alr test` runs the same digest-pinned s5cmd black-box slice against all three
-backends. It also verifies invalid configuration, asset tamper rejection,
-bootstrap and persisted login, same-origin and Host enforcement, session
-cookie shape and revocation, byte-exact asset delivery, actual endpoint status,
-and supervised SIGTERM shutdown.
+backends, including independent service-level bucket listing immediately
+after bucket creation. It also verifies invalid configuration, asset tamper
+rejection, bootstrap and persisted login, same-origin and Host enforcement,
+session cookie shape and revocation, byte-exact asset delivery, actual endpoint
+status, and supervised SIGTERM shutdown.

@@ -66,6 +66,11 @@ s5cmd() {
 }
 
 s5cmd mb "s3://$BUCKET"
+BUCKET_LIST=$(s5cmd ls)
+case "$BUCKET_LIST" in
+  *"$BUCKET"*) ;;
+  *) echo "ListBuckets did not return the created bucket" >&2; exit 1 ;;
+esac
 s5cmd cp /data/empty.bin "s3://$BUCKET/empty.bin"
 s5cmd cp /data/small.bin "s3://$BUCKET/small.bin"
 s5cmd cp /data/large.bin "s3://$BUCKET/large.bin"

@@ -1,9 +1,233 @@
 with Ada.Containers;
+with Ada.Strings;
+with Ada.Strings.Fixed;
+with Flyology.Object_Storage.S3.SigV4_Encoding;
+with Flyology.Object_Storage.S3.Wire_Core;
+with GNAT.SHA256;
 
 package body Flyology.Object_Storage.S3.Buckets is
 
    package US renames Ada.Strings.Unbounded;
+   package Wire_Core renames Flyology.Object_Storage.S3.Wire_Core;
    use type Ada.Containers.Count_Type;
+
+   Maximum_Query_Length : constant := 8 * 1_024;
+   Token_Prefix : constant String := "fosb1.";
+
+   function Hex_Value (Value : Character) return Natural is
+     (if Value in '0' .. '9' then
+         Character'Pos (Value) - Character'Pos ('0')
+      elsif Value in 'a' .. 'f' then
+         Character'Pos (Value) - Character'Pos ('a') + 10
+      elsif Value in 'A' .. 'F' then
+         Character'Pos (Value) - Character'Pos ('A') + 10
+      else 16);
+
+   function Decode_Component (Value : String) return String is
+      Result : String (1 .. Value'Length);
+      Input  : Natural := 1;
+      Output : Natural := 0;
+      Raw    : constant String (1 .. Value'Length) := Value;
+   begin
+      while Input <= Raw'Length loop
+         Output := Output + 1;
+         if Raw (Input) = '%' then
+            if Input + 2 > Raw'Length
+              or else Hex_Value (Raw (Input + 1)) > 15
+              or else Hex_Value (Raw (Input + 2)) > 15
+            then
+               raise Malformed_List_Buckets_Request with
+                 "invalid ListBuckets percent escape";
+            end if;
+            Result (Output) := Character'Val
+              (16 * Hex_Value (Raw (Input + 1)) +
+               Hex_Value (Raw (Input + 2)));
+            Input := Input + 3;
+         else
+            Result (Output) := Raw (Input);
+            Input := Input + 1;
+         end if;
+      end loop;
+      return Result (1 .. Output);
+   end Decode_Component;
+
+   function Parse_List_Buckets_Query
+     (Query : String) return List_Buckets_Request
+   is
+      Result : List_Buckets_Request;
+      Seen_Max, Seen_Token, Seen_Prefix, Seen_Region, Seen_X_ID : Boolean :=
+        False;
+      Count : Natural := 1;
+   begin
+      if Query'Length = 0 then
+         return Result;
+      elsif Query'Length > Maximum_Query_Length then
+         raise Malformed_List_Buckets_Request with
+           "invalid ListBuckets query size";
+      end if;
+      for Value of Query loop
+         if Value = '&' then
+            Count := Count + 1;
+         end if;
+      end loop;
+      if Count > 16 then
+         raise Malformed_List_Buckets_Request with
+           "too many ListBuckets query parameters";
+      end if;
+      declare
+         Raw   : constant String (1 .. Query'Length) := Query;
+         First : Positive := 1;
+      begin
+         for Index in 1 .. Raw'Last + 1 loop
+            if Index = Raw'Last + 1 or else Raw (Index) = '&' then
+               if Index = First then
+                  raise Malformed_List_Buckets_Request with
+                    "empty ListBuckets query parameter";
+               end if;
+               declare
+                  Pair_Text : constant String := Raw (First .. Index - 1);
+                  Equals : constant Natural :=
+                    Ada.Strings.Fixed.Index (Pair_Text, "=");
+                  Name : constant String := Decode_Component
+                    ((if Equals = 0 then Pair_Text
+                      elsif Equals = Pair_Text'First then ""
+                      else Pair_Text (Pair_Text'First .. Equals - 1)));
+                  Value : constant String := Decode_Component
+                    ((if Equals = 0 or else Equals = Pair_Text'Last then ""
+                      else Pair_Text (Equals + 1 .. Pair_Text'Last)));
+                  Number : Wire_Core.Natural_Result;
+               begin
+                  if Name = "max-buckets" then
+                     Number := Wire_Core.Parse_Natural (Value);
+                     if Seen_Max or else not Number.Valid
+                       or else Number.Value not in Max_Buckets_Value'Range
+                     then
+                        raise Malformed_List_Buckets_Request with
+                          "invalid ListBuckets max-buckets";
+                     end if;
+                     Seen_Max := True;
+                     Result.Has_Max_Buckets := True;
+                     Result.Max_Buckets := Max_Buckets_Value (Number.Value);
+                  elsif Name = "continuation-token" then
+                     if Seen_Token or else Value'Length = 0 then
+                        raise Malformed_List_Buckets_Request with
+                          "invalid ListBuckets continuation token";
+                     end if;
+                     Seen_Token := True;
+                     Result.Has_Continuation_Token := True;
+                     Result.Continuation_Token :=
+                       US.To_Unbounded_String (Value);
+                  elsif Name = "prefix" then
+                     if Seen_Prefix then
+                        raise Malformed_List_Buckets_Request with
+                          "duplicate ListBuckets prefix";
+                     end if;
+                     Seen_Prefix := True;
+                     Result.Prefix := US.To_Unbounded_String (Value);
+                  elsif Name = "bucket-region" then
+                     if Seen_Region
+                       or else Value'Length > Maximum_Bucket_Region_Length
+                       or else not SigV4_Encoding.Valid_Scope_Segment (Value)
+                     then
+                        raise Malformed_List_Buckets_Request with
+                          "invalid ListBuckets bucket region";
+                     end if;
+                     Seen_Region := True;
+                     Result.Bucket_Region := US.To_Unbounded_String (Value);
+                  elsif Name = "x-id" then
+                     if Seen_X_ID or else Value /= "ListBuckets" then
+                        raise Malformed_List_Buckets_Request with
+                          "invalid ListBuckets operation identifier";
+                     end if;
+                     Seen_X_ID := True;
+                  else
+                     raise Malformed_List_Buckets_Request with
+                       "unsupported ListBuckets query parameter";
+                  end if;
+               end;
+               First := Index + 1;
+            end if;
+         end loop;
+      end;
+      return Result;
+   end Parse_List_Buckets_Query;
+
+   function Token_Digest
+     (Prefix, Bucket_Region, After : String) return String is
+     (GNAT.SHA256.Digest
+        ("flyology-list-buckets-v1" & Character'Val (0) & Prefix &
+         Character'Val (0) & Bucket_Region & Character'Val (0) & After));
+
+   function Hex_Encode (Value : String) return String is
+      Hex_Digits : constant String := "0123456789abcdef";
+      Result : String (1 .. Value'Length * 2);
+      Cursor : Positive := 1;
+   begin
+      for Byte of Value loop
+         Result (Cursor) := Hex_Digits (Character'Pos (Byte) / 16 + 1);
+         Result (Cursor + 1) :=
+           Hex_Digits (Character'Pos (Byte) mod 16 + 1);
+         Cursor := Cursor + 2;
+      end loop;
+      return Result;
+   end Hex_Encode;
+
+   function Encode_Continuation
+     (Prefix, Bucket_Region, After : String) return String is
+     (Token_Prefix & Token_Digest (Prefix, Bucket_Region, After) & "." &
+      Hex_Encode (After));
+
+   function Decode_Continuation
+     (Token, Prefix, Bucket_Region : String) return Continuation_Result
+   is
+      Invalid : constant Continuation_Result := (others => <>);
+   begin
+      if Token'Length < Token_Prefix'Length + 65
+        or else Token'Length > Token_Prefix'Length + 65 + 126
+      then
+         return Invalid;
+      end if;
+      declare
+         Raw : constant String (1 .. Token'Length) := Token;
+         Digest_First : constant Positive := Token_Prefix'Length + 1;
+         Digest_Last  : constant Positive := Digest_First + 63;
+         Hex_First    : constant Positive := Digest_Last + 2;
+         Hex_Length   : constant Natural := Raw'Last - Hex_First + 1;
+      begin
+         if Raw (1 .. Token_Prefix'Length) /= Token_Prefix
+           or else Raw (Digest_Last + 1) /= '.'
+           or else Hex_Length mod 2 /= 0
+           or else not SigV4_Encoding.Valid_SHA256_Hex
+             (Raw (Digest_First .. Digest_Last))
+         then
+            return Invalid;
+         end if;
+         declare
+            After : String (1 .. Hex_Length / 2);
+            Cursor : Positive := Hex_First;
+         begin
+            for Index in After'Range loop
+               if Hex_Value (Raw (Cursor)) > 15
+                 or else Hex_Value (Raw (Cursor + 1)) > 15
+               then
+                  return Invalid;
+               end if;
+               After (Index) := Character'Val
+                 (16 * Hex_Value (Raw (Cursor)) +
+                  Hex_Value (Raw (Cursor + 1)));
+               Cursor := Cursor + 2;
+            end loop;
+            if not Valid_Bucket_Name (After)
+              or else Raw (Digest_First .. Digest_Last) /=
+                Token_Digest (Prefix, Bucket_Region, After)
+            then
+               return Invalid;
+            end if;
+            return
+              (Valid => True, After => US.To_Unbounded_String (After));
+         end;
+      end;
+   end Decode_Continuation;
 
    function Is_Empty (Value : Create_Bucket_Configuration) return Boolean is
      (US.Length (Value.Location_Constraint) = 0

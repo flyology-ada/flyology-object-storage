@@ -12,6 +12,7 @@ with Flyology.HTTP.Server.Applications;
 with Flyology.IO;
 with Flyology.IO.Sockets;
 with Flyology.Object_Storage.Backends.Memory;
+with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
@@ -26,6 +27,7 @@ procedure S3_Server_Application_Corpus is
    package Apps renames Flyology.HTTP.Server.Applications;
    package Sockets renames Flyology.IO.Sockets;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
+   package Buckets renames Flyology.Object_Storage.S3.Buckets;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Listings renames Flyology.Object_Storage.S3.Listings;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
@@ -51,6 +53,10 @@ procedure S3_Server_Application_Corpus is
      (US.To_Unbounded_String ("list/a"),
       US.To_Unbounded_String ("list/b"),
       US.To_Unbounded_String ("list/sub/c"));
+   Listing_Buckets : constant Key_Array :=
+     (US.To_Unbounded_String ("list-zeta-bucket"),
+      US.To_Unbounded_String ("unrelated-bucket"),
+      US.To_Unbounded_String ("list-alpha-bucket"));
 
    procedure Require (Condition : Boolean; Message : String) is
    begin
@@ -885,6 +891,102 @@ begin
      (Has (Run (Signed_Request ("HEAD", "/test-bucket", "")), "200 OK"),
       "signed HeadBucket failed");
 
+   for Name of Listing_Buckets loop
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("PUT", "/" & US.To_String (Name), "")),
+            "200 OK"),
+         "ListBuckets setup create failed");
+   end loop;
+
+   declare
+      First_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("max-buckets", "1"),
+         SigV4.Pair ("prefix", "list-"),
+         SigV4.Pair ("bucket-region", Region),
+         SigV4.Pair ("x-id", "ListBuckets"));
+      First_Response : constant String :=
+        Run (Signed_Query_Request ("GET", "/", First_Query));
+      First_Page : constant Buckets.List_Buckets_Result :=
+        Buckets.Parse_List_Buckets (Response_Body (First_Response));
+   begin
+      Require
+        (Has (First_Response, "200 OK")
+         and then First_Page.Has_Owner
+         and then US.To_String (First_Page.Owner.ID) = "test-principal"
+         and then First_Page.Buckets.Length = 1
+         and then US.To_String (First_Page.Buckets.First_Element.Name) =
+           "list-alpha-bucket"
+         and then US.Length
+           (First_Page.Buckets.First_Element.Creation_Date) > 0
+         and then US.To_String
+           (First_Page.Buckets.First_Element.Bucket_Region) = Region
+         and then US.Length (First_Page.Continuation_Token) > 0,
+         "ListBuckets first page metadata mismatch");
+
+      declare
+         Next_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("max-buckets", "1"),
+            SigV4.Pair ("prefix", "list-"),
+            SigV4.Pair ("bucket-region", Region),
+            SigV4.Pair
+              ("continuation-token",
+               US.To_String (First_Page.Continuation_Token)));
+         Next_Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/", Next_Query));
+         Next_Page : constant Buckets.List_Buckets_Result :=
+           Buckets.Parse_List_Buckets (Response_Body (Next_Response));
+      begin
+         Require
+           (Next_Page.Buckets.Length = 1
+            and then US.To_String (Next_Page.Buckets.First_Element.Name) =
+              "list-zeta-bucket"
+            and then US.Length (Next_Page.Continuation_Token) = 0,
+            "ListBuckets continuation page mismatch");
+      end;
+
+      declare
+         Rebound_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("prefix", "other-"),
+            SigV4.Pair
+              ("continuation-token",
+               US.To_String (First_Page.Continuation_Token)));
+      begin
+         Require
+           (Has
+              (Run (Signed_Query_Request ("GET", "/", Rebound_Query)),
+               "400 Bad Request"),
+            "ListBuckets token was not bound to its prefix");
+      end;
+   end;
+
+   declare
+      Duplicate : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("max-buckets", "1"),
+         SigV4.Pair ("max-buckets", "2"));
+      Other_Region : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("bucket-region", "us-west-2"));
+      Region_Response : constant String :=
+        Run (Signed_Query_Request ("GET", "/", Other_Region));
+      Region_Page : constant Buckets.List_Buckets_Result :=
+        Buckets.Parse_List_Buckets (Response_Body (Region_Response));
+   begin
+      Require
+        (Has (Run (Signed_Query_Request ("GET", "/", Duplicate)),
+              "400 Bad Request"),
+         "duplicate ListBuckets parameter was accepted");
+      Require
+        (Has (Region_Response, "200 OK")
+         and then Region_Page.Buckets.Is_Empty,
+         "ListBuckets region filter leaked another region");
+      Require
+        (Has (Run (Signed_Request ("GET", "/", "unexpected")),
+              "400 Bad Request"),
+         "ListBuckets accepted a request body");
+   end;
+
    Check_Cancellation_Propagation;
    Check_Deadline_Propagation;
    Check_Multipart_Server;
@@ -1513,6 +1615,15 @@ begin
                  ("DELETE", "/test-bucket/" & US.To_String (Key), "")),
             "204 No Content"),
          "listing object cleanup failed");
+   end loop;
+   for Name of Listing_Buckets loop
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("DELETE", "/" & US.To_String (Name), "")),
+            "204 No Content"),
+         "ListBuckets setup cleanup failed");
    end loop;
    Require
      (Has (Run (Signed_Request ("DELETE", "/test-bucket", "")),

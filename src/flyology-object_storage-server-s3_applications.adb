@@ -8,6 +8,7 @@ with Ada.Strings.Unbounded;
 with GNAT.SHA256;
 with Flyology.Cancellation;
 with Flyology.IO;
+with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
@@ -24,6 +25,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Apps renames Flyology.HTTP.Server.Applications;
    package US renames Ada.Strings.Unbounded;
    package Requests renames S3.Requests;
+   package Buckets renames S3.Buckets;
    package Encoding renames S3.SigV4_Encoding;
    package Deletions renames S3.Deletions;
    package Listings renames S3.Listings;
@@ -223,6 +225,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    procedure Handle (X : in out Apps.Exchange) is
       type Operation_Kind is
         (Unsupported,
+         List_Buckets,
          Create_Bucket, Head_Bucket, Delete_Bucket,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
          Delete_Objects,
@@ -581,6 +584,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       elsif Parsed.Has_Query
         and then not Is_Ordinary_Operation_Query
         and then not
+          (Parsed.Kind = Requests.Service_Target and then Method = "GET")
+        and then not
           (Parsed.Kind = Requests.Bucket_Target
            and then Method = "POST"
            and then Is_Delete_Objects_Query)
@@ -603,7 +608,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return;
       end if;
 
-      if Parsed.Kind = Requests.Bucket_Target then
+      if Parsed.Kind = Requests.Service_Target then
+         Operation := (if Method = "GET" then List_Buckets else Unsupported);
+      elsif Parsed.Kind = Requests.Bucket_Target then
          Operation :=
            (if Method = "PUT"
               and then
@@ -774,6 +781,114 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Key    : constant String := Requests.Object_Key (Target_Text, Parsed);
       begin
          case Operation is
+            when List_Buckets =>
+               begin
+                  declare
+                     Request : constant Buckets.List_Buckets_Request :=
+                       Buckets.Parse_List_Buckets_Query (Query_Text);
+                     Configured_Region : constant String :=
+                       US.To_String (Rules.Expected_Region);
+                     Requested_Region : constant String :=
+                       US.To_String (Request.Bucket_Region);
+                     Effective_Region : constant String :=
+                       (if Configured_Region'Length > 0
+                        then Configured_Region else Requested_Region);
+                     Region_Mismatch : constant Boolean :=
+                       Configured_Region'Length > 0
+                       and then Requested_Region'Length > 0
+                       and then Requested_Region /= Configured_Region;
+                     Options : Backends.List_Buckets_Options :=
+                       (Prefix  => Request.Prefix,
+                        After   => US.Null_Unbounded_String,
+                        Maximum => Backends.Bucket_List_Limit
+                          (Request.Max_Buckets));
+                     Token : Buckets.Continuation_Result;
+                     Page  : Backends.Bucket_Page;
+                  begin
+                     if Configured_Region'Length >
+                       Buckets.Maximum_Bucket_Region_Length
+                       or else
+                         (Configured_Region'Length > 0
+                          and then not Encoding.Valid_Scope_Segment
+                            (Configured_Region))
+                     then
+                        Send_Error
+                          (X, 500, "InternalError",
+                           "The configured S3 region is invalid",
+                           Target_Text);
+                        return;
+                     end if;
+                     if Request.Has_Continuation_Token then
+                        Token := Buckets.Decode_Continuation
+                          (US.To_String (Request.Continuation_Token),
+                           US.To_String (Request.Prefix), Requested_Region);
+                        if not Token.Valid then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The continuation token provided is incorrect",
+                              Target_Text);
+                           return;
+                        end if;
+                        Options.After := Token.After;
+                     end if;
+                     if Region_Mismatch then
+                        Page := (others => <>);
+                        Result := Success;
+                     else
+                        Store.List_Buckets
+                          (Options, Apps.Cancellation (X), Apps.Deadline (X),
+                           Page, Result);
+                     end if;
+                     if Result /= Success then
+                        Send_Backend_Error (X, Result, True, Target_Text);
+                        return;
+                     end if;
+                     declare
+                        Response : Buckets.List_Buckets_Result :=
+                          (Buckets            => <>,
+                           Has_Owner          => True,
+                           Owner              =>
+                             (Display_Name => US.Null_Unbounded_String,
+                              ID           => Auth.Principal),
+                           Continuation_Token => US.Null_Unbounded_String,
+                           Prefix             => Request.Prefix);
+                     begin
+                        if Page.Is_Truncated then
+                           Response.Continuation_Token :=
+                             US.To_Unbounded_String
+                               (Buckets.Encode_Continuation
+                                  (US.To_String (Request.Prefix),
+                                   Requested_Region,
+                                   US.To_String (Page.Next_After)));
+                        end if;
+                        for Bucket_Value of Page.Buckets loop
+                           Response.Buckets.Append
+                             (Buckets.Bucket_Entry'
+                                (Name => Bucket_Value.Name,
+                                 Creation_Date =>
+                                   (if Bucket_Value.Created = 0
+                                    then US.Null_Unbounded_String
+                                    else US.To_Unbounded_String
+                                      (Last_Modified
+                                         (Bucket_Value.Created))),
+                                 Bucket_Region => US.To_Unbounded_String
+                                   (Effective_Region),
+                                 Bucket_ARN => US.To_Unbounded_String
+                                   ("arn:aws:s3:::" &
+                                    US.To_String (Bucket_Value.Name))));
+                        end loop;
+                        Apps.Respond
+                          (X, 200, "application/xml",
+                           Buckets.Serialize_List_Buckets (Response));
+                     end;
+                  end;
+               exception
+                  when Buckets.Malformed_List_Buckets_Request =>
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The ListBuckets request is invalid", Target_Text);
+               end;
+
             when Create_Bucket =>
                declare
                   Source : Request_IO.Request_Source :=

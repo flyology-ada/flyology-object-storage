@@ -6119,6 +6119,79 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         Request : constant Buckets.List_Buckets_Request :=
+           Buckets.Parse_List_Buckets_Query
+             ("max-buckets=2&prefix=team%2Dbucket&" &
+              "bucket-region=us-east-1&x-id=ListBuckets");
+      begin
+         Assert
+           (Request.Has_Max_Buckets
+            and then Request.Max_Buckets = 2
+            and then not Request.Has_Continuation_Token
+            and then US.To_String (Request.Prefix) = "team-bucket"
+            and then US.To_String (Request.Bucket_Region) = "us-east-1",
+            "strict ListBuckets server query projection");
+      end;
+
+      declare
+         Token : constant String := Buckets.Encode_Continuation
+           ("team-", "us-east-1", "team-alpha-bucket");
+         Decoded : constant Buckets.Continuation_Result :=
+           Buckets.Decode_Continuation
+             (Token, "team-", "us-east-1");
+      begin
+         Assert
+           (Decoded.Valid
+            and then US.To_String (Decoded.After) = "team-alpha-bucket",
+            "ListBuckets continuation token round trip");
+         Assert
+           (not Buckets.Decode_Continuation
+              (Token, "other-", "us-east-1").Valid,
+            "ListBuckets continuation token was not prefix-bound");
+         Assert
+           (not Buckets.Decode_Continuation
+              (Token, "team-", "us-west-2").Valid,
+            "ListBuckets continuation token was not region-bound");
+         Assert
+           (not Buckets.Decode_Continuation
+              (Token & "00", "team-", "us-east-1").Valid,
+            "malformed ListBuckets continuation token was accepted");
+      end;
+
+      declare
+         procedure Expect_Bad_Query (Query : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Buckets.List_Buckets_Request :=
+                    Buckets.Parse_List_Buckets_Query (Query);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Buckets.Malformed_List_Buckets_Request =>
+                  Raised := True;
+            end;
+            Assert
+              (Raised,
+               "invalid ListBuckets query was accepted: " & Query);
+         end Expect_Bad_Query;
+      begin
+         Expect_Bad_Query ("max-buckets=0");
+         Expect_Bad_Query ("max-buckets=10001");
+         Expect_Bad_Query ("max-buckets=1&max-buckets=2");
+         Expect_Bad_Query ("prefix=bad%2");
+         Expect_Bad_Query ("bucket-region=US-EAST-1");
+         Expect_Bad_Query
+           ("bucket-region=" &
+            String'(1 .. Buckets.Maximum_Bucket_Region_Length + 1 => 'a'));
+         Expect_Bad_Query ("unknown=value");
+         Expect_Bad_Query ("x-id=ListObjectsV2");
+      end;
+
+      declare
          Outcome : constant Low_Level.List_Buckets_Outcome :=
            Low_Level.Decode_List_Buckets_Response
              (200,

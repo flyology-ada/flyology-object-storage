@@ -29,6 +29,7 @@ procedure S3_HTTP_Socket_Corpus is
    package US renames Ada.Strings.Unbounded;
 
    use Ada.Streams;
+   use type Low_Level.List_Buckets_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.Create_Multipart_Outcome_Kind;
    use type Low_Level.Complete_Multipart_Outcome_Kind;
@@ -499,6 +500,16 @@ procedure S3_HTTP_Socket_Corpus is
         "<Name>example-bucket</Name><KeyCount>0</KeyCount>" &
         "<MaxKeys>2</MaxKeys><IsTruncated>false</IsTruncated>" &
         "</ListBucketResult>";
+      List_Buckets_XML : constant String :=
+        "<ListAllMyBucketsResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Owner><ID>socket-owner</ID></Owner>" &
+        "<Buckets><Bucket><Name>socket-bucket</Name>" &
+        "<CreationDate>2026-08-22T01:02:03.000Z</CreationDate>" &
+        "<BucketRegion>us-east-1</BucketRegion>" &
+        "<BucketArn>arn:aws:s3:::socket-bucket</BucketArn>" &
+        "</Bucket></Buckets><ContinuationToken>socket-next" &
+        "</ContinuationToken><Prefix>socket-</Prefix>" &
+        "</ListAllMyBucketsResult>";
       V1_Success_XML : constant String :=
         "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
         "2006-03-01/""><Name>example-bucket</Name>" &
@@ -545,6 +556,18 @@ procedure S3_HTTP_Socket_Corpus is
       Port := Sockets.Get_Socket_Name (Listener).Port;
       State.Publish (Port);
       for Round in 1 .. 2 loop
+         Serve
+           (HTTP_Response ("200 OK", List_Buckets_XML),
+            "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
+              "prefix=socket-",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: list-buckets-request" & CRLF &
+               "x-amz-id-2: list-buckets-host" & CRLF),
+            "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
+              "prefix=socket-");
          Serve
            (HTTP_Response
               ("200 OK", V1_Success_XML,
@@ -827,6 +850,62 @@ procedure S3_HTTP_Socket_Corpus is
               Identity, "us-east-1", "20130524T000000Z");
       begin
          HTTP_Client.Configure (HTTP, Origin);
+         declare
+            Bucket_Parameters : constant Low_Level.List_Buckets_Parameters :=
+              (Max_Buckets        => 1,
+               Has_Max_Buckets    => True,
+               Continuation_Token => US.Null_Unbounded_String,
+               Prefix             => US.To_Unbounded_String ("socket-"),
+               Bucket_Region      => US.To_Unbounded_String ("us-east-1"));
+            Bucket_Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_List_Buckets
+                (Origin, Low_Level.Path_Style, Bucket_Parameters, Identity,
+                 "us-east-1", "20130524T000000Z");
+         begin
+            declare
+               Result : constant Low_Level.List_Buckets_Outcome :=
+                 Low_Level.Execute_List_Buckets
+                   (HTTP, Bucket_Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Buckets_Listed
+                 or else not Result.Result.Has_Owner
+                 or else US.To_String (Result.Result.Owner.ID) /=
+                   "socket-owner"
+                 or else Natural (Result.Result.Buckets.Length) /= 1
+                 or else US.To_String
+                   (Result.Result.Buckets.First_Element.Name) /=
+                     "socket-bucket"
+                 or else US.To_String
+                   (Result.Result.Buckets.First_Element.Creation_Date) /=
+                     "2026-08-22T01:02:03.000Z"
+                 or else US.To_String
+                   (Result.Result.Buckets.First_Element.Bucket_Region) /=
+                     "us-east-1"
+                 or else US.To_String
+                   (Result.Result.Continuation_Token) /= "socket-next"
+                 or else US.To_String (Result.Result.Prefix) /= "socket-"
+               then
+                  raise Program_Error with
+                    "typed ListBuckets socket success mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Low_Level.List_Buckets_Outcome :=
+                 Low_Level.Execute_List_Buckets
+                   (HTTP, Bucket_Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.List_Buckets_Rejected
+                 or else US.To_String (Result.Error.Code) /= "AccessDenied"
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "list-buckets-request"
+                 or else US.To_String (Result.Error.Host_ID) /=
+                   "list-buckets-host"
+               then
+                  raise Program_Error with
+                    "typed ListBuckets socket error mismatch";
+               end if;
+            end;
+         end;
          declare
             V1_Parameters : Low_Level.List_Objects_Parameters;
          begin

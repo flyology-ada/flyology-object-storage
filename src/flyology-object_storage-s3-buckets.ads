@@ -8,6 +8,35 @@ package Flyology.Object_Storage.S3.Buckets is
    Invalid_Bucket_Configuration : exception;
 
    subtype Max_Buckets_Value is Positive range 1 .. 10_000;
+   Maximum_Bucket_Region_Length : constant := 63;
+
+   type List_Buckets_Request is record
+      Max_Buckets            : Max_Buckets_Value := Max_Buckets_Value'Last;
+      Has_Max_Buckets        : Boolean := False;
+      Continuation_Token     : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Continuation_Token : Boolean := False;
+      Prefix                 : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Region          : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   Malformed_List_Buckets_Request : exception;
+
+   --  Parse raw query bytes after '?'. Empty is valid; percent escapes are
+   --  strict, '+' stays literal, duplicates/unknowns fail, and x-id is
+   --  accepted only as ListBuckets.
+   function Parse_List_Buckets_Query
+     (Query : String) return List_Buckets_Request;
+
+   type Continuation_Result is record
+      Valid : Boolean := False;
+      After : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   function Encode_Continuation
+     (Prefix, Bucket_Region, After : String) return String;
+
+   function Decode_Continuation
+     (Token, Prefix, Bucket_Region : String) return Continuation_Result;
 
    type Tag is record
       Key   : Ada.Strings.Unbounded.Unbounded_String;

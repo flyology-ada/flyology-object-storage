@@ -176,6 +176,9 @@ expect_startup_failure hostname-bind \
 expect_startup_failure excessive-capacity \
   FLYOLOGY_OBJECT_STORAGE_BACKEND=memory FLYOLOGY_S3_CAPACITY=4097 \
   AWS_ACCESS_KEY_ID="$ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
+expect_startup_failure invalid-region \
+  FLYOLOGY_OBJECT_STORAGE_BACKEND=memory AWS_REGION=US-EAST-1 \
+  AWS_ACCESS_KEY_ID="$ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$SECRET_KEY"
 cp -R "$SERVER_DIR/assets" "$RUN_ROOT/tampered-assets"
 printf '\n/* tampered */\n' >>"$RUN_ROOT/tampered-assets/app.css"
 expect_startup_failure tampered-admin-assets \
