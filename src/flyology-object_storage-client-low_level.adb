@@ -3454,7 +3454,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
            (Flyology.HTTP.Client.Header (Response, "x-amz-version-id"));
          Maximum : constant Positive :=
            (if Status = Model.Response_Code (Expected)
-            then Positive (S3.Tagging.Maximum_Document_Bytes)
+            then Positive'Min
+              (Positive (S3.Tagging.Maximum_Document_Bytes),
+               Limits.Maximum_Document_Bytes)
             else Limits.Maximum_Document_Bytes);
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All

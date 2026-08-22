@@ -58,13 +58,21 @@ checks, and zero Assume statements.
 ## Reviewed
 <!-- Review proved implementations for proof-antipatterns before moving them. -->
 
+- [x] Flyology.Object_Storage.Valid_Object_Tag_Set
+  - scoped warnings-as-errors level-0 run was repeated after rebasing onto
+    `c93e132` and proved 6/6 checks: five run-time checks by CVC5 and one
+    termination check by flow analysis
+  - zero unproved or justified checks, warnings, and pragma Assume statements
+  - reviewed with no suppression, justification, axiom, clamp, or
+    body-level SPARK exclusion
+
 ## In Progress
 <!-- A proof worker executes the tactical loop for the item below. -->
 
 ## Not Started
 <!-- New or discovered proof-bearing subprograms belong here. -->
 
-- [ ] None
+- [ ] Manifest-wide re-verification after object-tagging integration
 
 ## Discovered Obligations
 
@@ -130,3 +138,7 @@ checks, and zero Assume statements.
       request/result validation; all 405/405 checks remain proved with no
       assumptions or justified checks. Generated logs now stay under
       `obj/proof/logs/` instead of cluttering the repository root.
+- [x] Proved `Valid_Object_Tag_Set` in a scoped warnings-as-errors level-0
+      run: 6/6 checks, zero unproved or justified checks, and zero Assume
+      statements.
+- [ ] Widen the forced six-unit manifest after object-tagging integration.

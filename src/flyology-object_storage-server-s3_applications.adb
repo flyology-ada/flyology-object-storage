@@ -2384,7 +2384,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                  Tagging.Maximum_Document_Bytes,
                                Maximum_Depth      => 5,
                                Maximum_Elements   => 34,
-                               Maximum_Text_Bytes => 10 * (128 + 256)));
+                               Maximum_Text_Bytes =>
+                                 Tagging.Maximum_Document_Bytes));
                         begin
                            Store.Put_Object_Tags
                              (Bucket, Key, Tags, Apps.Cancellation (X),
