@@ -3070,7 +3070,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          end if;
       end Add_Header;
    begin
-      if Version_ID'Length > 8_192
+      if not S3.Deletions.Valid_Version_ID (Version_ID)
         or else (Request_Payer'Length > 0
                  and then Request_Payer /= "requester")
       then
@@ -3124,6 +3124,11 @@ package body Flyology.Object_Storage.Client.Low_Level is
          elsif Charged'Length > 0 and then Charged /= "requester" then
             raise Invalid_Response with
               "invalid DeleteObject request-charged header";
+         elsif not S3.Deletions.Valid_Version_ID
+           (US.To_String (Headers.Version_ID))
+         then
+            raise Invalid_Response with
+              "invalid DeleteObject version header";
          end if;
          return
            (Kind => Object_Deleted, Status => Status, Result => Headers);

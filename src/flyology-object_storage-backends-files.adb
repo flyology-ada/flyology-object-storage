@@ -1355,7 +1355,9 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
-      if not Ada.Directories.Exists (Path) then
+      if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Bucket_Not_Found;
+      elsif not Ada.Directories.Exists (Path) then
          Result := Not_Found;
       else
          Ada.Directories.Delete_File (Path);

@@ -44,6 +44,9 @@ The core crate includes:
   ListMultipartUploads REST/XML codecs, with high-level HeadBucket and
   CreateBucket, GetBucketLocation and DeleteBucket convenience APIs (see
   [bucket convenience client](docs/architecture/client-buckets.md));
+- a high-level, idempotent DeleteObject client that preserves version,
+  delete-marker, requester-charged, and structured error outcomes (see
+  [object convenience client](docs/architecture/client-objects.md));
 - signed, bounded CreateBucket, GetBucketLocation, HeadBucket, GetObject,
   HeadObject, PutObject,
   ListBuckets, ListObjects, ListObjectsV2, DeleteBucket,

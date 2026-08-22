@@ -247,6 +247,46 @@ procedure S3_Server_Application_Corpus is
         "Connection: close" & CRLF & CRLF & Payload;
    end Signed_Create_Bucket_Request;
 
+   function Signed_Delete_Object_Request
+     (Target       : String;
+      Query        : SigV4.Name_Value_Array := No_Query;
+      Header_Name  : String := "";
+      Header_Value : String := "";
+      Second_Value : String := "") return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex ("");
+      Headers : constant SigV4.Name_Value_Array :=
+        (if Header_Name'Length = 0 then
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp))
+         else
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp),
+            SigV4.Pair
+              (Header_Name,
+               Header_Value &
+                 (if Second_Value'Length = 0
+                  then "" else ", " & Second_Value))));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("DELETE", Target, Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+      Query_Text : constant String := SigV4.Canonical_Query (Query);
+   begin
+      return "DELETE " & Target &
+        (if Query_Text'Length = 0 then "" else "?" & Query_Text) &
+        " HTTP/1.1" & CRLF & "Host: " & Host & CRLF &
+        "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        (if Header_Name'Length = 0 then ""
+         else Header_Name & ": " & Header_Value & CRLF) &
+        (if Second_Value'Length = 0 then ""
+         else Header_Name & ": " & Second_Value & CRLF) &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Content-Length: 0" & CRLF & "Connection: close" & CRLF & CRLF;
+   end Signed_Delete_Object_Request;
+
    function Signed_Bucket_Request
      (Method         : String;
       Target         : String;
@@ -952,6 +992,18 @@ begin
         (Has (Response, "403 Forbidden")
          and then not Has (Response, "InvalidArgument"),
          "malformed multipart query bypassed authentication");
+   end;
+
+   declare
+      Response : constant String := Run
+        ("DELETE /test-bucket/object?versionId=a&versionId=b HTTP/1.1" &
+         CRLF & "Host: " & Host & CRLF & "Content-Length: 0" & CRLF &
+         "Connection: close" & CRLF & CRLF);
+   begin
+      Require
+        (Has (Response, "403 Forbidden")
+         and then not Has (Response, "InvalidArgument"),
+         "malformed DeleteObject query bypassed authentication");
    end;
 
    declare
@@ -1973,6 +2025,209 @@ begin
                "unsatisfiable range did not return 416: " & Response);
       Require (Has (Response, "Content-Range: bytes */11"),
                "unsatisfiable range omitted the object size");
+   end;
+
+   declare
+      Version : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("versionId", "version-one"));
+      Version_With_ID : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("versionId", "version-one"),
+         SigV4.Pair ("x-id", "DeleteObject"));
+      Duplicate_Version : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("versionId", "one"),
+         SigV4.Pair ("versionId", "two"));
+      Unknown : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("unknown", "value"));
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("PUT", "/test-bucket/delete-policy", "preserve")),
+            "200 OK"),
+         "DeleteObject policy setup failed");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Version)),
+            "501 Not Implemented"),
+         "DeleteObject silently ignored versionId");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Version_With_ID)),
+            "501 Not Implemented"),
+         "DeleteObject misrouted versionId with the SDK operation ID");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Duplicate_Version)),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted duplicate versionId fields");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Unknown)),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted an unknown query field");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Header_Name => "if-match",
+                  Header_Value => """etag""")),
+            "501 Not Implemented"),
+         "DeleteObject silently ignored If-Match");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Header_Name => "if-match",
+                  Header_Value => "")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted an empty If-Match value");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-request-payer",
+                  Header_Value => "owner")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted an invalid request payer");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-request-payer",
+                  Header_Value => "requester")),
+            "501 Not Implemented"),
+         "DeleteObject silently ignored Requester Pays");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-bypass-governance-retention",
+                  Header_Value => "yes")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted an invalid governance bypass value");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-bypass-governance-retention",
+                  Header_Value => "true")),
+            "501 Not Implemented"),
+         "DeleteObject silently ignored governance bypass");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-if-match-size",
+                  Header_Value => "-1")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted an invalid conditional size");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-if-match-size",
+                  Header_Value => "8")),
+            "501 Not Implemented"),
+         "DeleteObject silently ignored the conditional size");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-if-match-last-modified-time",
+                  Header_Value => "Wed, 21 Oct 2015 07:28:00 GMT")),
+            "501 Not Implemented"),
+         "DeleteObject silently ignored the modification-time condition");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Header_Name => "x-amz-mfa",
+                  Header_Value => "device 123456")),
+            "501 Not Implemented"),
+         "DeleteObject silently ignored MFA Delete");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Header_Name => "if-match",
+                  Header_Value => "*", Second_Value => "*")),
+            "<Code>InvalidRequest</Code>"),
+         "DeleteObject accepted duplicate conditional headers");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-expected-bucket-owner",
+                  Header_Value => "test-principal",
+                  Second_Value => "test-principal")),
+            "<Code>InvalidRequest</Code>"),
+         "DeleteObject accepted duplicate expected-owner fields");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-expected-bucket-owner",
+                  Header_Value => "different-owner")),
+            "403 Forbidden"),
+         "DeleteObject ignored a mismatched expected owner");
+      Require
+        (Has
+           (Run (Signed_Request ("HEAD", "/test-bucket/delete-policy", "")),
+            "200 OK"),
+         "rejected DeleteObject controls mutated backend state");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("DELETE", "/test-bucket/delete-policy", "unexpected")),
+            "400 Bad Request"),
+         "DeleteObject accepted a request body");
+      Require
+        (Has
+           (Run (Signed_Request ("HEAD", "/test-bucket/delete-policy", "")),
+            "200 OK"),
+         "rejected DeleteObject body mutated backend state");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-expected-bucket-owner",
+                  Header_Value => "test-principal")),
+            "204 No Content"),
+         "DeleteObject rejected the authenticated bucket owner");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy")),
+            "204 No Content"),
+         "DeleteObject was not idempotent for an absent key");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/absent-bucket/delete-policy")),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteObject misreported an absent bucket as an absent key");
    end;
 
    Require

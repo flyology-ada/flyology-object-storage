@@ -1,4 +1,5 @@
 with Ada.Containers;
+with Ada.Strings.Fixed;
 with Flyology.Object_Storage.S3.Wire_Core;
 
 package body Flyology.Object_Storage.S3.Deletions is
@@ -166,6 +167,116 @@ package body Flyology.Object_Storage.S3.Deletions is
       end loop;
       return True;
    end Valid_Version_ID;
+
+   function Hex_Value (Value : Character) return Natural is
+     (if Value in '0' .. '9' then
+         Character'Pos (Value) - Character'Pos ('0')
+      elsif Value in 'a' .. 'f' then
+         Character'Pos (Value) - Character'Pos ('a') + 10
+      elsif Value in 'A' .. 'F' then
+         Character'Pos (Value) - Character'Pos ('A') + 10
+      else 16);
+
+   function Decode_Query_Component (Value : String) return String is
+      Result : String (1 .. Value'Length);
+      Input  : Natural := 1;
+      Output : Natural := 0;
+      Raw    : constant String (1 .. Value'Length) := Value;
+   begin
+      while Input <= Raw'Length loop
+         Output := Output + 1;
+         if Raw (Input) = '%' then
+            if Input + 2 > Raw'Length
+              or else Hex_Value (Raw (Input + 1)) > 15
+              or else Hex_Value (Raw (Input + 2)) > 15
+            then
+               raise Malformed_Delete_Object_Request with
+                 "invalid DeleteObject percent escape";
+            end if;
+            Result (Output) := Character'Val
+              (16 * Hex_Value (Raw (Input + 1)) +
+               Hex_Value (Raw (Input + 2)));
+            Input := Input + 3;
+         else
+            Result (Output) := Raw (Input);
+            Input := Input + 1;
+         end if;
+      end loop;
+      return Result (1 .. Output);
+   end Decode_Query_Component;
+
+   function Parse_Delete_Object_Query
+     (Query : String) return Delete_Object_Request
+   is
+      Maximum_Query_Length : constant := 8 * 1_024;
+      Result : Delete_Object_Request;
+      Seen_X_ID : Boolean := False;
+      Count : Natural := 1;
+   begin
+      if Query'Length = 0 then
+         return Result;
+      elsif Query'Length > Maximum_Query_Length then
+         raise Malformed_Delete_Object_Request with
+           "invalid DeleteObject query size";
+      end if;
+      for Value of Query loop
+         if Value = '&' then
+            Count := Count + 1;
+         end if;
+      end loop;
+      if Count > 2 then
+         raise Malformed_Delete_Object_Request with
+           "too many DeleteObject query parameters";
+      end if;
+      declare
+         Raw   : constant String (1 .. Query'Length) := Query;
+         First : Positive := 1;
+      begin
+         for Index in 1 .. Raw'Last + 1 loop
+            if Index = Raw'Last + 1 or else Raw (Index) = '&' then
+               if Index = First then
+                  raise Malformed_Delete_Object_Request with
+                    "empty DeleteObject query parameter";
+               end if;
+               declare
+                  Pair_Text : constant String := Raw (First .. Index - 1);
+                  Equals : constant Natural :=
+                    Ada.Strings.Fixed.Index (Pair_Text, "=");
+                  Name : constant String := Decode_Query_Component
+                    ((if Equals = 0 then Pair_Text
+                      elsif Equals = Pair_Text'First then ""
+                      else Pair_Text (Pair_Text'First .. Equals - 1)));
+                  Value : constant String := Decode_Query_Component
+                    ((if Equals = 0 or else Equals = Pair_Text'Last then ""
+                      else Pair_Text (Equals + 1 .. Pair_Text'Last)));
+               begin
+                  if Name = "versionId" then
+                     if Result.Has_Version_ID
+                       or else Value'Length = 0
+                       or else not Valid_Version_ID (Value)
+                     then
+                        raise Malformed_Delete_Object_Request with
+                          "invalid DeleteObject version ID";
+                     end if;
+                     Result.Has_Version_ID := True;
+                     Result.Version_ID := US.To_Unbounded_String (Value);
+                  elsif Name = "x-id" then
+                     if Seen_X_ID or else Value /= "DeleteObject" then
+                        raise Malformed_Delete_Object_Request with
+                          "invalid DeleteObject operation identifier";
+                     end if;
+                     Seen_X_ID := True;
+                  else
+                     raise Malformed_Delete_Object_Request with
+                       "unsupported DeleteObject query parameter";
+                  end if;
+               end;
+               First := Index + 1;
+            end if;
+         end loop;
+      end;
+      return Result;
+   end Parse_Delete_Object_Query;
 
    procedure Validate (Value : Delete_Objects_Request) is
    begin

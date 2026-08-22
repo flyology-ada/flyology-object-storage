@@ -14,6 +14,7 @@ is
    type Status is
      (Success,
       Not_Found,
+      Bucket_Not_Found,
       Already_Exists,
       Bucket_Not_Empty,
       Capacity_Exceeded,

@@ -165,6 +165,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                 then "The specified bucket does not exist"
                 else "The specified key does not exist"),
                Resource);
+         when Bucket_Not_Found =>
+            Send_Error
+              (X, 404, "NoSuchBucket",
+               "The specified bucket does not exist", Resource);
          when Already_Exists =>
             Send_Error
               (X, 409, "BucketAlreadyOwnedByYou",
@@ -286,6 +290,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&x-id=ListMultipartUploads&") /= 0;
       Operation   : Operation_Kind := Unsupported;
       Multipart_Query_Invalid : Boolean := False;
+      Delete_Object_Query_Invalid : Boolean := False;
+      Delete_Request : Deletions.Delete_Object_Request;
       Has_Copy_Source : constant Boolean :=
         Apps.Request_Header_Count (X, "x-amz-copy-source") > 0;
 
@@ -665,9 +671,16 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                elsif Method = "HEAD" then Head_Object
                elsif Method = "DELETE" then Delete_Object
                else Unsupported);
-         elsif Method = "DELETE" and then Query_Text = "x-id=DeleteObject"
-         then
-            Operation := Delete_Object;
+         elsif Method = "DELETE" and then not Has_Upload_ID_Query then
+            begin
+               Delete_Request :=
+                 Deletions.Parse_Delete_Object_Query (Query_Text);
+               Operation := Delete_Object;
+            exception
+               when Deletions.Malformed_Delete_Object_Request =>
+                  Delete_Object_Query_Invalid := True;
+                  Operation := Delete_Object;
+            end;
          elsif Method in "POST" | "PUT" | "DELETE" | "GET" then
             begin
                declare
@@ -759,6 +772,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Send_Error
            (X, 400, "InvalidArgument",
             "The multipart request query is invalid", Target_Text);
+         return;
+      elsif Delete_Object_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The DeleteObject request query is invalid", Target_Text);
          return;
       end if;
 
@@ -2117,14 +2135,113 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                end;
 
             when Delete_Object =>
-               Store.Delete_Object
-                 (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
-                  Result);
-               if Result in Success | Not_Found then
-                  Apps.Respond (X, 204, "", "");
-               else
-                  Send_Backend_Error (X, Result, False, Target_Text);
-               end if;
+               declare
+                  MFA_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-mfa");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Bypass_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-bypass-governance-retention");
+                  Owner_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-expected-bucket-owner");
+                  Match_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "if-match");
+                  Modified_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-if-match-last-modified-time");
+                  Size_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-if-match-size");
+                  Payer : constant String :=
+                    (if Payer_Count = 1
+                     then Apps.Request_Header (X, "x-amz-request-payer")
+                     else "");
+                  MFA : constant String :=
+                    (if MFA_Count = 1
+                     then Apps.Request_Header (X, "x-amz-mfa") else "");
+                  Match : constant String :=
+                    (if Match_Count = 1
+                     then Apps.Request_Header (X, "if-match") else "");
+                  Modified : constant String :=
+                    (if Modified_Count = 1
+                     then Apps.Request_Header
+                       (X, "x-amz-if-match-last-modified-time") else "");
+                  Bypass : constant S3.Wire_Core.Boolean_Result :=
+                    (if Bypass_Count = 1
+                     then S3.Wire_Core.Parse_Boolean
+                       (Apps.Request_Header
+                          (X, "x-amz-bypass-governance-retention"))
+                     else (Valid => False));
+                  Match_Size : constant S3.Wire_Core.Byte_Count_Result :=
+                    (if Size_Count = 1
+                     then S3.Wire_Core.Parse_Byte_Count
+                       (Apps.Request_Header (X, "x-amz-if-match-size"))
+                     else (Valid => False));
+                  Owner_Accepted : Boolean;
+               begin
+                  if MFA_Count > 1 or else Payer_Count > 1
+                    or else Bypass_Count > 1 or else Owner_Count > 1
+                    or else Match_Count > 1 or else Modified_Count > 1
+                    or else Size_Count > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A DeleteObject header is duplicated", Target_Text);
+                  elsif Payer_Count = 1 and then Payer /= "requester" then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer value is invalid", Target_Text);
+                  elsif (MFA_Count = 1 and then MFA'Length = 0)
+                    or else (Match_Count = 1 and then Match'Length = 0)
+                    or else
+                      (Modified_Count = 1 and then Modified'Length = 0)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "A DeleteObject conditional value is empty",
+                        Target_Text);
+                  elsif Bypass_Count = 1 and then not Bypass.Valid then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The governance bypass value is invalid",
+                        Target_Text);
+                  elsif Size_Count = 1 and then not Match_Size.Valid then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The conditional object size is invalid",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        if Delete_Request.Has_Version_ID then
+                           Send_Error
+                             (X, 501, "NotImplemented",
+                              "Object versioning is not implemented",
+                              Target_Text);
+                        elsif MFA_Count > 0 or else Payer_Count > 0
+                          or else Bypass_Count > 0 or else Match_Count > 0
+                          or else Modified_Count > 0 or else Size_Count > 0
+                        then
+                           Send_Error
+                             (X, 501, "NotImplemented",
+                              "The requested DeleteObject controls are not " &
+                              "implemented", Target_Text);
+                        else
+                           Store.Delete_Object
+                             (Bucket, Key, Apps.Cancellation (X),
+                              Apps.Deadline (X), Result);
+                           if Result in Success | Not_Found then
+                              Apps.Respond (X, 204, "", "");
+                           else
+                              Send_Backend_Error
+                                (X, Result, False, Target_Text);
+                           end if;
+                        end if;
+                     end if;
+                  end if;
+               end;
 
             when Delete_Objects =>
                declare

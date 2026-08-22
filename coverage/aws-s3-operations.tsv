@@ -22,7 +22,7 @@ DeleteBucketPolicy	extended	missing	partial	missing	missing
 DeleteBucketReplication	extended	missing	partial	missing	missing
 DeleteBucketTagging	extended	missing	partial	missing	missing
 DeleteBucketWebsite	extended	missing	partial	missing	missing
-DeleteObject	core	partial	partial	partial	partial
+DeleteObject	core	covered	covered	partial	covered
 DeleteObjectAnnotation	extended	missing	partial	missing	missing
 DeleteObjectTagging	core	missing	partial	missing	missing
 DeleteObjects	core	partial	partial	partial	covered

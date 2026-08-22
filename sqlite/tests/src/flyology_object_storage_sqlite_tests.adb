@@ -689,6 +689,11 @@ begin
          end;
          Assert (Rejected, "SQLite backend allowed a second root owner");
       end;
+      Store.Delete_Object
+        ("missing-bucket", "key", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Bucket_Not_Found,
+         "SQLite object delete did not distinguish an absent bucket");
       Store.Create_Bucket
         ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "SQLite backend bucket create failed");

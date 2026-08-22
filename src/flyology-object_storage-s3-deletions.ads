@@ -10,6 +10,23 @@ package Flyology.Object_Storage.S3.Deletions is
    Maximum_Version_ID_Length : constant := 1_024;
    Maximum_Document_Bytes : constant := 2 * 1_024 * 1_024;
 
+   Malformed_Delete_Object_Request : exception;
+
+   type Delete_Object_Request is record
+      Has_Version_ID : Boolean := False;
+      Version_ID     : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Parse the exact DeleteObject query shape. Empty is the ordinary
+   --  unversioned request; versionId and the optional SDK x-id are decoded
+   --  strictly, bounded, unique, and no other parameter is accepted.
+   function Parse_Delete_Object_Query
+     (Query : String) return Delete_Object_Request;
+
+   --  Shared bound for request queries, multi-delete entries, and response
+   --  headers. Empty represents an absent optional version ID.
+   function Valid_Version_ID (Item : String) return Boolean;
+
    type Object_Identifier is record
       Key        : Ada.Strings.Unbounded.Unbounded_String;
       Version_ID : Ada.Strings.Unbounded.Unbounded_String;

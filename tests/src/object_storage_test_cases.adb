@@ -245,6 +245,11 @@ package body Object_Storage_Test_Cases is
            when 6 => "dir/a",
            when others => raise Program_Error);
    begin
+      Store.Delete_Object
+        ("missing-bucket", "key", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Bucket_Not_Found,
+         "object delete did not distinguish an absent bucket");
       Store.List_Objects
         ("missing-bucket", Options, null, Ada.Real_Time.Time_Last,
          Page, Result);
@@ -7737,6 +7742,50 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         procedure Rejects (Query : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Deletions.Delete_Object_Request :=
+                    Deletions.Parse_Delete_Object_Query (Query);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Deletions.Malformed_Delete_Object_Request =>
+                  Raised := True;
+            end;
+            Assert (Raised, "malformed DeleteObject query was accepted");
+         end Rejects;
+         Empty : constant Deletions.Delete_Object_Request :=
+           Deletions.Parse_Delete_Object_Query ("");
+         Versioned : constant Deletions.Delete_Object_Request :=
+           Deletions.Parse_Delete_Object_Query
+             ("versionId=v%20%2B%2F%3D&x-id=DeleteObject");
+         Literal_Plus : constant Deletions.Delete_Object_Request :=
+           Deletions.Parse_Delete_Object_Query ("versionId=a+b");
+      begin
+         Assert
+           (not Empty.Has_Version_ID
+            and then Versioned.Has_Version_ID
+            and then US.To_String (Versioned.Version_ID) = "v +/=",
+            "DeleteObject strict query decoding");
+         Assert
+           (US.To_String (Literal_Plus.Version_ID) = "a+b",
+            "DeleteObject query changed a literal plus into a space");
+         Rejects ("versionId=");
+         Rejects ("versionId=one&versionId=two");
+         Rejects ("versionId=%GG");
+         Rejects ("versionId=" & String'(1 .. 1_025 => 'v'));
+         Rejects ("versionId=v" & Character'Val (0));
+         Rejects ("x-id=WrongOperation");
+         Rejects ("unknown=value");
+         Rejects ("versionId=one&&x-id=DeleteObject");
+      end;
+
+      declare
          Parameters : Low_Level.Delete_Object_Parameters;
       begin
          Parameters.MFA := US.To_Unbounded_String
@@ -7859,6 +7908,26 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         Headers : Low_Level.Delete_Object_Result;
+         Raised  : Boolean := False;
+      begin
+         Headers.Version_ID :=
+           US.To_Unbounded_String (String'(1 .. 1_025 => 'v'));
+         begin
+            declare
+               Ignored : constant Low_Level.Delete_Object_Outcome :=
+                 Low_Level.Decode_Delete_Object_Response (204, "", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "oversized DeleteObject version was accepted");
+      end;
+
+      declare
          Parameters : Low_Level.Delete_Object_Parameters;
          Raised     : Boolean := False;
       begin
@@ -7880,6 +7949,30 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "invalid DeleteObject request payer was accepted");
+      end;
+
+      declare
+         Parameters : Low_Level.Delete_Object_Parameters;
+         Raised     : Boolean := False;
+      begin
+         Parameters.Version_ID :=
+           US.To_Unbounded_String (String'(1 .. 1_025 => 'v'));
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Object
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request => Raised := True;
+         end;
+         Assert (Raised, "oversized DeleteObject version was prepared");
       end;
 
       declare

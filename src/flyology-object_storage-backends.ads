@@ -304,6 +304,9 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Result : out Status) is abstract;
+   --  Not_Found means the bucket exists but the key does not.
+   --  Bucket_Not_Found means the bucket itself does not exist. Backends must
+   --  classify and delete under one namespace-publication boundary.
 
    --  Return at most Options.Maximum combined objects and common prefixes.
    --  Items and the exclusive After cursor use unsigned bytewise lexical

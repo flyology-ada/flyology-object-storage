@@ -542,7 +542,9 @@ package body Flyology.Object_Storage.Backends.Memory is
       is
          Index : constant Natural := Object_Index (Bucket, Key);
       begin
-         if Index = 0 then
+         if Bucket_Index (Bucket) = 0 then
+            Result := Bucket_Not_Found;
+         elsif Index = 0 then
             Result := Not_Found;
          else
             Bytes := Bytes - Byte_Count (Objects (Index).Data.Capacity);

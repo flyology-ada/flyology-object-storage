@@ -2,8 +2,8 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest post-CreateBucket-hardening forced six-unit manifest-wide level-0 proof
-completed with 405/405 checks proved, warnings as errors, zero justified
+The latest post-DeleteObject-hardening forced six-unit manifest-wide level-0
+proof completed with 405/405 checks proved, warnings as errors, zero justified
 checks, and zero Assume statements.
 
 ## Proved and Finalized
@@ -111,3 +111,6 @@ checks, and zero Assume statements.
 - [x] Proved overflow-safe automatic multipart part counting and plan
       validation, then completed a warnings-as-errors 405/405 six-unit
       widening with no assumptions or justified checks.
+- [x] Re-ran the forced six-unit manifest after strict DeleteObject parsing,
+      shared status widening, and atomic absent-bucket classification; all
+      405/405 checks remain proved with no assumptions or justified checks.

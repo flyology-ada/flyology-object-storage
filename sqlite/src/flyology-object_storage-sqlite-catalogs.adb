@@ -545,6 +545,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Result  : out Status)
    is
       Existing : Object_Information;
+      Bucket_Query : DB.Statement;
       Delete : DB.Statement;
       Locked : Boolean := False;
       In_Transaction : Boolean := False;
@@ -553,6 +554,21 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Locked := True;
       DB.Begin_Transaction (Item.Database);
       In_Transaction := True;
+      DB.Prepare
+        (Bucket_Query, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Bucket_Query, 1, Bucket);
+      if DB.Step (Bucket_Query) /= DB.Row then
+         raise Catalog_Error with "bucket existence query returned no row";
+      elsif DB.Column (Bucket_Query, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Payload := US.Null_Unbounded_String;
+         Result := Bucket_Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
       Find_Object_Internal (Item, Bucket, Key, Payload, Existing, Result);
       if Result /= Success then
          DB.Rollback (Item.Database);
