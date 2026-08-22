@@ -1,4 +1,5 @@
 with Ada.Command_Line;
+with Ada.Containers;
 with Ada.Environment_Variables;
 with Ada.Exceptions;
 with Ada.Real_Time;
@@ -10,6 +11,7 @@ with Flyology.HTTP.Server;
 with Flyology.HTTP.Server.Applications;
 with Flyology.HTTP.Server.Connection_Handlers;
 with Flyology.HTTP.Server.Connections;
+with Flyology.HTTP.Server.Requests;
 with Flyology.HTTP.Server.Responses;
 with Flyology.HTTP.Server.Routing;
 with Flyology.IO.Connections;
@@ -21,6 +23,7 @@ with Flyology.Object_Storage.Server.Authentication;
 with Flyology.Object_Storage.Server.S3_Applications;
 with Flyology.Object_Storage.Server.Static_Credentials;
 with Flyology.Object_Storage.S3.Buckets;
+with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Supervision;
 with Flyology.Supervision.Children;
@@ -33,11 +36,13 @@ with Flyology_Object_Storage_Server_Sessions;
 procedure Flyology_Object_Storage_Server_Runtime is
    package HTTP renames Flyology.HTTP.Server;
    package Apps renames Flyology.HTTP.Server.Applications;
+   package Requests renames Flyology.HTTP.Server.Requests;
    package Responses renames Flyology.HTTP.Server.Responses;
    package Owned renames Flyology.IO.Connections;
    package Sockets renames Flyology.IO.Sockets;
    package Authentication renames
      Flyology.Object_Storage.Server.Authentication;
+   package Listings renames Flyology.Object_Storage.S3.Listings;
    package Static_Credentials renames
      Flyology.Object_Storage.Server.Static_Credentials;
    package US renames Ada.Strings.Unbounded;
@@ -45,6 +50,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
      Flyology_Object_Storage_Server_Credentials;
 
    use type Flyology.Supervision.Supervisor_Outcome;
+   use type Ada.Containers.Count_Type;
    use type Flyology.Object_Storage.Status;
    use type Sockets.Port;
 
@@ -526,6 +532,172 @@ procedure Flyology_Object_Storage_Server_Runtime is
          X.JSON (200, US.To_String (Document));
       end Bucket_Inventory;
 
+      procedure Object_Inventory
+        (State : in out Application_Context; X : in out Apps.Exchange)
+      is
+      begin
+         No_Store (X);
+         if not Local_Request (State, X)
+           or else not Authenticated (State, X)
+         then
+            X.JSON (401, "{""authenticated"":false}");
+            return;
+         end if;
+         begin
+            if not Requests.Has_Query (X, "bucket")
+              or else Requests.Has_Query (X, "bucket", 2)
+              or else Requests.Has_Query (X, "token", 2)
+              or else Requests.Has_Query (X, "limit", 2)
+            then
+               X.JSON (400, "{""error"":""invalid_query""}");
+               return;
+            end if;
+            declare
+               Bucket : constant String := Requests.Query (X, "bucket");
+               Has_Token : constant Boolean :=
+                 Requests.Has_Query (X, "token");
+               Token : constant String := Requests.Query (X, "token");
+               Has_Limit : constant Boolean :=
+                 Requests.Has_Query (X, "limit");
+               Limit_Text : constant String := Requests.Query (X, "limit");
+               Maximum : Flyology.Object_Storage.Backends.List_Limit := 64;
+               After : US.Unbounded_String;
+            begin
+               if not Flyology.Object_Storage.Valid_Bucket_Name (Bucket)
+                 or else Token'Length > 2_120
+                 or else (Has_Token and then Token'Length = 0)
+                 or else (Has_Limit
+                   and then Limit_Text'Length not in 1 .. 3)
+               then
+                  X.JSON (400, "{""error"":""invalid_query""}");
+                  return;
+               end if;
+               if Has_Limit then
+                  declare
+                     Value : Natural := 0;
+                  begin
+                     for Digit of Limit_Text loop
+                        if Digit not in '0' .. '9' then
+                           X.JSON
+                             (400, "{""error"":""invalid_query""}");
+                           return;
+                        end if;
+                        Value := 10 * Value +
+                          Character'Pos (Digit) - Character'Pos ('0');
+                     end loop;
+                     if Value not in 1 .. 128 then
+                        X.JSON (400, "{""error"":""invalid_query""}");
+                        return;
+                     end if;
+                     Maximum :=
+                       Flyology.Object_Storage.Backends.List_Limit (Value);
+                  end;
+               end if;
+               if Has_Token then
+                  declare
+                     Decoded : constant Listings.Continuation_Result :=
+                       Listings.Decode_Continuation (Token, Bucket, "", "");
+                  begin
+                     if not Decoded.Valid then
+                        X.JSON (400, "{""error"":""invalid_query""}");
+                        return;
+                     end if;
+                     After := Decoded.After;
+                  end;
+               end if;
+               declare
+                  Options : constant
+                    Flyology.Object_Storage.Backends.List_Options :=
+                    (Prefix    => US.Null_Unbounded_String,
+                     Delimiter => US.Null_Unbounded_String,
+                     After     => After,
+                     Maximum   => Maximum);
+                  Page : Flyology.Object_Storage.Backends.List_Page;
+                  Outcome : Flyology.Object_Storage.Status;
+                  Document : US.Unbounded_String := US.To_Unbounded_String
+                    ("{""bucket"":""" & JSON_Escape (Bucket) &
+                     """,""objects"":[");
+                  First : Boolean := True;
+               begin
+                  Store.List_Objects
+                    (Bucket, Options, X.Cancellation, X.Deadline,
+                     Page, Outcome);
+                  if Outcome = Flyology.Object_Storage.Not_Found then
+                     X.JSON (404, "{""error"":""bucket_not_found""}");
+                     return;
+                  elsif Outcome =
+                    Flyology.Object_Storage.Backend_Unavailable
+                  then
+                     X.JSON (503, "{""error"":""storage_unavailable""}");
+                     return;
+                  elsif Outcome /= Flyology.Object_Storage.Success then
+                     X.JSON (500, "{""error"":""storage_failure""}");
+                     return;
+                  end if;
+                  if Page.Objects.Length >
+                       Ada.Containers.Count_Type (Maximum)
+                    or else not Page.Common_Prefixes.Is_Empty
+                    or else (Page.Is_Truncated
+                      and then US.Length (Page.Next_After) = 0)
+                  then
+                     X.JSON (500, "{""error"":""storage_failure""}");
+                     return;
+                  end if;
+                  for Object_Value of Page.Objects loop
+                     if not Flyology.Object_Storage.Valid_Object_Key
+                       (US.To_String (Object_Value.Key))
+                     then
+                        X.JSON (500, "{""error"":""storage_failure""}");
+                        return;
+                     end if;
+                  end loop;
+                  for Object_Value of Page.Objects loop
+                     if not First then
+                        US.Append (Document, ',');
+                     end if;
+                     First := False;
+                     US.Append
+                       (Document,
+                        "{""key"":""" &
+                        Flyology.Object_Storage.S3.SigV4_Encoding.URI_Encode
+                          (US.To_String (Object_Value.Key),
+                           Encode_Slash => False) &
+                        """,""size"":""" &
+                        Ada.Strings.Fixed.Trim
+                          (Flyology.Object_Storage.Byte_Count'Image
+                             (Object_Value.Info.Size), Ada.Strings.Both) &
+                        """,""modified"":""" &
+                        Ada.Strings.Fixed.Trim
+                          (Flyology.Object_Storage.Unix_Time'Image
+                             (Object_Value.Info.Modified),
+                           Ada.Strings.Both) & """}");
+                  end loop;
+                  US.Append
+                    (Document,
+                     "],""key_encoding"":""url"",""truncated"":" &
+                     (if Page.Is_Truncated then "true" else "false") &
+                     ",""next_token"":""");
+                  if Page.Is_Truncated then
+                     US.Append
+                       (Document,
+                        Listings.Encode_Continuation
+                          (Bucket, "", "", US.To_String (Page.Next_After)));
+                  end if;
+                  US.Append
+                    (Document,
+                     """,""limit"":" &
+                     Ada.Strings.Fixed.Trim
+                       (Flyology.Object_Storage.Backends.List_Limit'Image
+                          (Maximum), Ada.Strings.Both) & "}");
+                  X.JSON (200, US.To_String (Document));
+               end;
+            end;
+         exception
+            when Flyology.HTTP.Protocol_Error =>
+               X.JSON (400, "{""error"":""invalid_query""}");
+         end;
+      end Object_Inventory;
+
       procedure Create_Bucket
         (State : in out Application_Context; X : in out Apps.Exchange)
       is
@@ -656,7 +828,7 @@ procedure Flyology_Object_Storage_Server_Runtime is
       type Service_Context is limited record
          Application : aliased Application_Context;
          Routes : aliased Routing.Router
-           (Capacity => 9, Slashes => Routing.Strict_Slashes);
+           (Capacity => 10, Slashes => Routing.Strict_Slashes);
          Budget : aliased HTTP.Ingress_Budget (Limit => 4 * 1_024);
       end record;
 
@@ -715,6 +887,11 @@ procedure Flyology_Object_Storage_Server_Runtime is
         ("/api/status", Status'Access, Name => "admin.status");
       State.Routes.Get
         ("/api/buckets", Bucket_Inventory'Access, Name => "admin.buckets",
+         Policy =>
+           (Routing.Default_Route_Policy with delta
+              Concurrency => 2, Rate_Per_Second => 4));
+      State.Routes.Get
+        ("/api/objects", Object_Inventory'Access, Name => "admin.objects",
          Policy =>
            (Routing.Default_Route_Policy with delta
               Concurrency => 2, Rate_Per_Second => 4));

@@ -77,6 +77,10 @@ serves the authenticated management API and a psqlbench-inspired browser
 workbench. It reports the actual bound S3 endpoint, selected backend and
 dependency-ordered service tree; its external HTML, CSS and JavaScript are
 SHA-256-pinned by the binary so a modified asset set stops startup.
+Authenticated administrators can create buckets, delete empty buckets through
+an inline confirmation, and browse byte-safe, opaque-token-paginated object
+metadata. Management pages preserve 64-bit sizes and timestamps exactly;
+object mutation remains on the signed S3 endpoint.
 
 The files backend is persistent, but it is not yet advertised as
 power-loss-durable: an fsync-backed durability mode remains required before

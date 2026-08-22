@@ -168,6 +168,34 @@
             complete paginated namespace.
           </p>
         </section>
+
+        <section class="panel inventory-panel object-panel" id="object-panel"
+          aria-labelledby="object-title" hidden>
+          <div class="inventory-heading">
+            <div class="panel-title">
+              <span>06</span>
+              <div><h2 id="object-title" tabindex="-1">object.inventory</h2><code id="object-bucket">no bucket selected</code></div>
+            </div>
+            <div class="object-heading-actions">
+              <div class="inventory-count" aria-live="polite">
+                <strong id="object-count">0</strong><span>visible objects</span>
+              </div>
+              <button class="button quiet" id="object-close" type="button">Close</button>
+            </div>
+          </div>
+          <div class="object-columns" aria-hidden="true">
+            <span>Object key</span><span>Size</span><span>Modified</span>
+          </div>
+          <ul class="object-list" id="object-list" aria-label="Objects in selected bucket"></ul>
+          <div class="inventory-state" id="object-state" role="status">
+            Select Browse beside a bucket to inspect its objects.
+          </div>
+          <button class="button secondary object-more" id="object-more"
+            type="button" hidden>Load next page</button>
+          <p class="inventory-note">Keys are displayed as UTF-8 where possible;
+            arbitrary bytes remain safely URL-encoded. This view is read-only
+            and loads at most 64 objects per page.</p>
+        </section>
       </div>
 
       <footer class="workbench-footer">

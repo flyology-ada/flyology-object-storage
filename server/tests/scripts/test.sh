@@ -81,6 +81,10 @@ exercise_admin_api() {
   code=$(admin_request GET "$base/api/buckets" "$body" "$headers")
   test "$code" = 401
   test "$(tr -d '\r\n' <"$body")" = '{"authenticated":false}'
+  code=$(admin_request GET "$base/api/objects?bucket=unauthorized-bucket" \
+    "$body" "$headers")
+  test "$code" = 401
+  test "$(tr -d '\r\n' <"$body")" = '{"authenticated":false}'
   code=$(admin_request POST "$base/api/buckets" "$body" "$headers" \
     --data-binary 'name=unauthorized-bucket')
   test "$code" = 401
@@ -240,7 +244,7 @@ verify_bucket_inventory() {
   local body="$RUN_ROOT/inventory.body"
   local headers="$RUN_ROOT/inventory.headers"
   local cookies="$RUN_ROOT/inventory.cookies"
-  local code
+  local code next_token
 
   code=$(admin_request POST "$base/api/login" "$body" "$headers" \
     -H "Origin: $base" -c "$cookies" \
@@ -251,6 +255,53 @@ verify_bucket_inventory() {
   test "$code" = 200
   grep -q "\"name\":\"$bucket\"" "$body"
   grep -q '"truncated":false,"limit":256' "$body"
+  code=$(admin_request GET "$base/api/objects" "$body" "$headers" \
+    -b "$cookies")
+  test "$code" = 400
+  test "$(tr -d '\r\n' <"$body")" = '{"error":"invalid_query"}'
+  sleep 1
+  code=$(admin_request GET \
+    "$base/api/objects?bucket=$bucket&bucket=$bucket" \
+    "$body" "$headers" -b "$cookies")
+  test "$code" = 400
+  test "$(tr -d '\r\n' <"$body")" = '{"error":"invalid_query"}'
+  sleep 1
+  code=$(admin_request GET \
+    "$base/api/objects?bucket=$bucket&limit=129" \
+    "$body" "$headers" -b "$cookies")
+  test "$code" = 400
+  test "$(tr -d '\r\n' <"$body")" = '{"error":"invalid_query"}'
+  sleep 1
+  code=$(admin_request GET \
+    "$base/api/objects?bucket=$bucket&token=invalid&limit=2" \
+    "$body" "$headers" -b "$cookies")
+  test "$code" = 400
+  test "$(tr -d '\r\n' <"$body")" = '{"error":"invalid_query"}'
+  sleep 1
+  code=$(admin_request GET "$base/api/objects?bucket=$bucket&limit=2" \
+    "$body" "$headers" -b "$cookies")
+  test "$code" = 200
+  grep -q "\"bucket\":\"$bucket\"" "$body"
+  grep -q '"size":"[0-9][0-9]*"' "$body"
+  grep -q '"modified":"[0-9][0-9]*"' "$body"
+  grep -q '"key_encoding":"url","truncated":true' "$body"
+  next_token=$(sed -n 's/.*"next_token":"\([^"]*\)".*/\1/p' "$body")
+  test -n "$next_token"
+  sleep 1
+  code=$(admin_request GET \
+    "$base/api/objects?bucket=$bucket&token=$next_token&limit=128" \
+    "$body" "$headers" -b "$cookies")
+  test "$code" = 200
+  grep -q '"key":"nested/space%20%2B%20plus-%2525.bin"' "$body"
+  grep -q '"key_encoding":"url","truncated":false' "$body"
+  grep -q '"next_token":"","limit":128' "$body"
+  sleep 1
+  code=$(admin_request GET \
+    "$base/api/objects?bucket=missing-management-bucket&limit=64" \
+    "$body" "$headers" -b "$cookies")
+  test "$code" = 404
+  test "$(tr -d '\r\n' <"$body")" = '{"error":"bucket_not_found"}'
+  sleep 1
   code=$(admin_request POST "$base/api/buckets/delete" "$body" "$headers" \
     -H "Origin: $base" -b "$cookies" --data-binary "name=$bucket")
   test "$code" = 409

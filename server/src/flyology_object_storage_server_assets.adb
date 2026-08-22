@@ -7,11 +7,11 @@ with GNAT.SHA256;
 package body Flyology_Object_Storage_Server_Assets is
 
    HTML_Digest : constant String :=
-     "3d0ee7bfc5d3698ef3b01715b4bcf4081010eca4816e03f67aa8ad098cb37c9c";
+     "26ba9b828a7f20fd3cf68ae1a1cf26e915d1bb67a17b393943b6c0849e921af5";
    CSS_Digest  : constant String :=
-     "9c6c7298f3a1ea0364ba68c89cb65f21aebb140190b35518c3940c805d9f2c74";
+     "bd665225ab0a682568e210a69c3e68fb6e00699156062fec5cb50e0271e7f939";
    JS_Digest   : constant String :=
-     "1254cb64e32ff96d84044df0443fc564365396cd0adba712d1ebdaeb6a17e622";
+     "594e245cdc172dce44e6aa6f85f093c23875cbbf1e0fa2e478c4c370aed3311c";
 
    function Root return String is
    begin
