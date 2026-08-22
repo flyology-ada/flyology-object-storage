@@ -92,9 +92,16 @@ Downloads stream into a same-directory temporary file and atomically replace
 the destination only after a complete response and successful close. Existing
 destinations survive failed transfers. Callers must serialize two subjects
 that target the same local path and must not allow untrusted concurrent writes
-to the destination directory. Because this convenience operation requests the
-whole representation, it accepts only HTTP 200; an unsolicited 206 is a
-protocol failure and cannot publish a partial destination.
+to the destination directory. By default the convenience operation requests
+the whole representation and accepts only HTTP 200. Callers may instead supply
+one S3 `Range` value; that mode accepts only HTTP 206 with a strict, coherent
+single `Content-Range` whose interval length equals `Content-Length` and the
+bytes actually received. Missing, inverted, multipart, unsolicited, or
+length-inconsistent intervals are protocol failures and cannot publish a
+destination. Version selection, all four HTTP entity/date conditions,
+expected-owner, requester-pays, and checksum mode are also available without
+dropping to the low-level API. A 304 or 412 is returned as a typed rejection
+and leaves any existing destination untouched.
 
 The lower-level GetObject path separates response-head validation from body
 consumption. `Prepare_Get_Object` projects all 21 modeled request members,
@@ -102,6 +109,7 @@ consumption. `Prepare_Get_Object` projects all 21 modeled request members,
 `Decode_Get_Object_Response_Head` validates all 42 modeled response-head
 members while leaving a successful body unread. Callers then pull bounded body
 chunks under the original exchange deadline. Rejected responses are consumed
-within the XML limit and decoded as S3 errors; bodyless conditional responses
-use the same request-ID-preserving `HTTP<status>` representation as HeadObject.
+within the XML limit and decoded as S3 errors. Bodyless or non-XML rejection
+responses use the same request-ID-preserving `HTTP<status>` representation as
+HeadObject; malformed successful response heads remain hard protocol failures.
 SSE-C keys are accepted only for HTTPS origins.

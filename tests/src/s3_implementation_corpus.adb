@@ -361,6 +361,131 @@ procedure S3_Implementation_Corpus is
          end;
       end Require_Head_Object;
 
+      procedure Require_Get_Object is
+         Download_Path : constant String :=
+           "/tmp/flyology-object-storage-get-" & Key & ".bin";
+         Head : constant Transfers.Head_Outcome :=
+           Transfers.Head_Object
+             (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
+
+         procedure Write_Marker is
+            Output : Stream_IO.File_Type;
+            Marker : constant Stream_Element_Array :=
+              (1 => Stream_Element (Character'Pos ('p')),
+               2 => Stream_Element (Character'Pos ('p')),
+               3 => Stream_Element (Character'Pos ('p')));
+         begin
+            Stream_IO.Create (Output, Stream_IO.Out_File, Download_Path);
+            Stream_IO.Write (Output, Marker);
+            Stream_IO.Close (Output);
+         exception
+            when others =>
+               if Stream_IO.Is_Open (Output) then
+                  Stream_IO.Close (Output);
+               end if;
+               raise;
+         end Write_Marker;
+
+         procedure Require_File
+           (Expected_Length : Natural; Expected : Character)
+         is
+            Input : Stream_IO.File_Type;
+            Data  : Stream_Element_Array (1 .. 257);
+            Last  : Stream_Element_Offset;
+            Total : Natural := 0;
+         begin
+            Stream_IO.Open (Input, Stream_IO.In_File, Download_Path);
+            loop
+               Stream_IO.Read (Input, Data, Last);
+               exit when Last < Data'First;
+               for Index in Data'First .. Last loop
+                  if Character'Val (Data (Index)) /= Expected then
+                     raise Program_Error with
+                       "GetObject oracle changed selected bytes";
+                  end if;
+               end loop;
+               Total := Total + Natural (Last - Data'First + 1);
+            end loop;
+            Stream_IO.Close (Input);
+            if Total /= Expected_Length then
+               raise Program_Error with
+                 "GetObject oracle returned wrong interval length";
+            end if;
+         exception
+            when others =>
+               if Stream_IO.Is_Open (Input) then
+                  Stream_IO.Close (Input);
+               end if;
+               raise;
+         end Require_File;
+      begin
+         if Head.Kind /= Transfers.Object_Found
+           or else US.Length (Head.Entity_Tag) = 0
+         then
+            raise Program_Error with
+              "GetObject oracle setup did not return an entity tag";
+         end if;
+         declare
+            Result : constant Transfers.Download_Outcome :=
+              Transfers.Download_File
+                (HTTP, Origin, Bucket, Key, Download_Path, Identity,
+                 Timeout => 30.0,
+                 If_Match => US.To_String (Head.Entity_Tag),
+                 If_Unmodified_Since =>
+                   "Thu, 01 Jan 1970 00:00:00 GMT",
+                 Byte_Range_Header => "bytes=1048573-1049600");
+         begin
+            if Result.Kind /= Transfers.File_Downloaded
+              or else Result.Status /= 206
+              or else Result.Bytes /= 1_028
+            then
+               raise Program_Error with
+                 "GetObject oracle rejected a valid conditional range";
+            end if;
+         end;
+         Require_File (1_028, 'm');
+
+         Write_Marker;
+         declare
+            Result : constant Transfers.Download_Outcome :=
+              Transfers.Download_File
+                (HTTP, Origin, Bucket, Key, Download_Path, Identity,
+                 Timeout => 30.0,
+                 If_None_Match => US.To_String (Head.Entity_Tag));
+         begin
+            if Result.Kind /= Transfers.Download_Rejected
+              or else Result.Status /= 304
+            then
+               raise Program_Error with
+                 "GetObject oracle conditional not-modified mismatch";
+            end if;
+         end;
+         Require_File (3, 'p');
+
+         Write_Marker;
+         declare
+            Result : constant Transfers.Download_Outcome :=
+              Transfers.Download_File
+                (HTTP, Origin, Bucket, Key, Download_Path, Identity,
+                 Timeout => 30.0, If_Match => """not-the-etag""");
+         begin
+            if Result.Kind /= Transfers.Download_Rejected
+              or else Result.Status /= 412
+            then
+               raise Program_Error with
+                 "GetObject oracle precondition failure mismatch";
+            end if;
+         end;
+         Require_File (3, 'p');
+         Ada.Directories.Delete_File (Download_Path);
+      exception
+         when others =>
+            if Ada.Directories.Exists (Download_Path) then
+               Ada.Directories.Delete_File (Download_Path);
+            end if;
+            raise;
+      end Require_Get_Object;
+
       procedure Require_Listed_Part
         (Object_Key, Upload_ID, Entity_Tag : String;
          Size : Flyology.Object_Storage.Byte_Count)
@@ -761,6 +886,7 @@ procedure S3_Implementation_Corpus is
       end;
       Require_Listed_Object;
       Require_Head_Object;
+      Require_Get_Object;
       Copy_With_Multipart;
       Upload_High_Level_File;
       Copy_Whole_Object;

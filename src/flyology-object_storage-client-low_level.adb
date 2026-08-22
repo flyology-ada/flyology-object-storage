@@ -2377,9 +2377,62 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return False;
    end Valid_Get_Object_Enum;
 
-   procedure Validate_Get_Object_Headers (Value : Get_Object_Result) is
+   function Valid_Content_Range
+     (Value : String; Length : Optional_Byte_Count) return Boolean
+   is
+      Prefix : constant String := "bytes ";
    begin
-      if not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
+      if Value'Length <= Prefix'Length
+        or else Value (Value'First .. Value'First + Prefix'Length - 1) /=
+          Prefix
+      then
+         return False;
+      end if;
+      declare
+         Interval_First : constant Positive :=
+           Value'First + Prefix'Length;
+         Hyphen : constant Natural := Ada.Strings.Fixed.Index
+           (Value, "-", From => Interval_First);
+         Slash : constant Natural := Ada.Strings.Fixed.Index
+           (Value, "/", From => Interval_First);
+      begin
+         if Hyphen <= Interval_First
+           or else Slash <= Hyphen + 1
+           or else Slash = Value'Last
+           or else Ada.Strings.Fixed.Index
+             (Value, "-", From => Hyphen + 1) /= 0
+           or else Ada.Strings.Fixed.Index
+             (Value, "/", From => Slash + 1) /= 0
+         then
+            return False;
+         end if;
+         declare
+            First_Value : constant Wire_Core.Byte_Count_Result :=
+              Wire_Core.Parse_Byte_Count
+                (Value (Interval_First .. Hyphen - 1));
+            Last_Value : constant Wire_Core.Byte_Count_Result :=
+              Wire_Core.Parse_Byte_Count (Value (Hyphen + 1 .. Slash - 1));
+            Total_Value : constant Wire_Core.Byte_Count_Result :=
+              Wire_Core.Parse_Byte_Count (Value (Slash + 1 .. Value'Last));
+         begin
+            return First_Value.Valid and then Last_Value.Valid
+              and then Total_Value.Valid and then Length.Is_Set
+              and then First_Value.Value <= Last_Value.Value
+              and then Last_Value.Value < Total_Value.Value
+              and then Last_Value.Value - First_Value.Value + 1 =
+                Length.Value;
+         end;
+      end;
+   end Valid_Content_Range;
+
+   procedure Validate_Get_Object_Headers
+     (Value : Get_Object_Result; Status : Flyology.HTTP.Status_Code) is
+   begin
+      if (Status = 206
+          and then not Valid_Content_Range
+            (US.To_String (Value.Content_Range), Value.Content_Length))
+        or else (Status = 200 and then US.Length (Value.Content_Range) > 0)
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
         or else not Valid_Optional_Checksum (Value.Checksum_CRC32C, 4)
         or else not Valid_Optional_Checksum (Value.Checksum_CRC64NVME, 8)
         or else not Valid_Optional_Checksum (Value.Checksum_SHA1, 20)
@@ -2459,11 +2512,24 @@ package body Flyology.Object_Storage.Client.Low_Level is
                   Error  => Head_Error
                     ("GetObject", Status, Request_ID, Host_ID));
             end if;
-            return
-              (Kind   => Get_Object_Rejected,
-               Status => Status,
-               Error  => Error_Response
-                 (Text, Request_ID, Host_ID, Limits));
+            begin
+               return
+                 (Kind   => Get_Object_Rejected,
+                  Status => Status,
+                  Error  => Error_Response
+                    (Text, Request_ID, Host_ID, Limits));
+            exception
+               when S3.Errors.Malformed_Error =>
+                  --  S3 peers and intermediaries may return bodyless or
+                  --  non-XML HTTP errors.  Preserve the typed rejection and
+                  --  wire status instead of turning a valid rejection into
+                  --  a client protocol failure.
+                  return
+                    (Kind   => Get_Object_Rejected,
+                     Status => Status,
+                     Error  => Head_Error
+                       ("GetObject", Status, Request_ID, Host_ID));
+            end;
          end;
       end if;
 
@@ -2556,15 +2622,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
                Object_Lock_Legal_Hold_Status =>
                  H ("x-amz-object-lock-legal-hold"));
          begin
-            Validate_Get_Object_Headers (Result);
+            Validate_Get_Object_Headers (Result, Status);
             return (Kind => Object_Opened, Status => Status, Result => Result);
          end;
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
          raise Invalid_Response with "GetObject error exceeds XML limit";
-      when S3.Errors.Malformed_Error =>
-         raise Invalid_Response with "malformed GetObject error response";
    end Decode_Get_Object_Response_Head;
 
    function Prepare_Put_Object

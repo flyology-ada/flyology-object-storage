@@ -325,6 +325,8 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Copy_Source : String := "";
          Expected_Copy_If_Match : String := "";
          Expected_If_Match : String := "";
+         Expected_If_None_Match : String := "";
+         Expected_Range : String := "";
          Expected_Checksum_Mode : String := "";
          Expected_Request_Payer : String := "";
          Expected_Bucket_Owner : String := "";
@@ -420,19 +422,41 @@ procedure S3_HTTP_Socket_Corpus is
                            ";x-amz-request-payer"
                         else "")) = 0
                  elsif Expected_If_Match'Length > 0
+                   or else Expected_If_None_Match'Length > 0
+                   or else Expected_Range'Length > 0
                    or else Expected_Checksum_Mode'Length > 0
                  then
                     Header_Value (Lower, "if-match") /=
                       Ada.Characters.Handling.To_Lower (Expected_If_Match)
+                    or else Header_Value (Lower, "if-none-match") /=
+                      Ada.Characters.Handling.To_Lower
+                        (Expected_If_None_Match)
+                    or else Header_Value (Lower, "range") /=
+                      Ada.Characters.Handling.To_Lower (Expected_Range)
                     or else Header_Value
                       (Lower, "x-amz-checksum-mode") /=
                         Ada.Characters.Handling.To_Lower
                           (Expected_Checksum_Mode)
                     or else Ada.Strings.Fixed.Index
-                      (Lower,
-                       "signedheaders=host;if-match;" &
-                       "x-amz-checksum-mode;x-amz-content-sha256;" &
-                       "x-amz-date") = 0
+                      (Lower, "signedheaders=host;") = 0
+                    or else
+                      (Expected_If_Match'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";if-match;") = 0)
+                    or else
+                      (Expected_If_None_Match'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";if-none-match;") = 0)
+                    or else
+                      (Expected_Range'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";range;") = 0)
+                    or else
+                      (Expected_Checksum_Mode'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-checksum-mode;") = 0)
+                    or else Ada.Strings.Fixed.Index
+                      (Lower, ";x-amz-content-sha256;x-amz-date") = 0
                  elsif Expected_Content_Type'Length = 0 then
                     Ada.Strings.Fixed.Index
                       (Lower,
@@ -689,6 +713,42 @@ procedure S3_HTTP_Socket_Corpus is
                "Content-Range: bytes 0-6/42" & CRLF &
                "ETag: ""download-partial""" & CRLF),
             "GET", "/example-bucket/download-unexpected-range");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "partial",
+               "Content-Range: bytes 7-13/42" & CRLF &
+               "ETag: ""download-range""" & CRLF),
+            "GET", "/example-bucket/download-range",
+            Expected_Range => "bytes=7-13");
+         Serve
+           (HTTP_Response
+              ("304 Not Modified", "", Omit_Content_Length => True),
+            "GET", "/example-bucket/download-not-modified",
+            Expected_If_None_Match => """download-range""");
+         Serve
+           (HTTP_Response ("412 Precondition Failed", "precondition failed"),
+            "GET", "/example-bucket/download-precondition",
+            Expected_If_Match => """different""");
+         Serve
+           (HTTP_Response ("206 Partial Content", "x"),
+            "GET", "/example-bucket/download-missing-content-range",
+            Expected_Range => "bytes=0-0");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "xx",
+               "Content-Range: bytes 0-0/2" & CRLF),
+            "GET", "/example-bucket/download-length-mismatch",
+            Expected_Range => "bytes=0-0");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "x",
+               "Content-Range: bytes 2-1/3" & CRLF),
+            "GET", "/example-bucket/download-invalid-content-range",
+            Expected_Range => "bytes=0-0");
+         Serve
+           (HTTP_Response
+              ("200 OK", "x", "Content-Range: bytes 0-0/1" & CRLF),
+            "GET", "/example-bucket/download-unsolicited-content-range");
          Serve
            (HTTP_Response
               ("200 OK", Copy_XML,
@@ -1267,6 +1327,12 @@ procedure S3_HTTP_Socket_Corpus is
             Rejected_Path : constant String := Download_Path & ".rejected";
             Truncated_Path : constant String := Download_Path & ".truncated";
             Partial_Path : constant String := Download_Path & ".partial";
+            Range_Path : constant String := Download_Path & ".range";
+            Not_Modified_Path : constant String :=
+              Download_Path & ".not-modified";
+            Precondition_Path : constant String :=
+              Download_Path & ".precondition";
+            Invalid_Path : constant String := Download_Path & ".invalid";
 
             procedure Cleanup is
             begin
@@ -1275,6 +1341,10 @@ procedure S3_HTTP_Socket_Corpus is
                Delete_If_Present (Rejected_Path);
                Delete_If_Present (Truncated_Path);
                Delete_If_Present (Partial_Path);
+               Delete_If_Present (Range_Path);
+               Delete_If_Present (Not_Modified_Path);
+               Delete_If_Present (Precondition_Path);
+               Delete_If_Present (Invalid_Path);
             end Cleanup;
 
             procedure Check_High_Level_Downloads is
@@ -1283,6 +1353,37 @@ procedure S3_HTTP_Socket_Corpus is
                Truncated : Boolean := False;
                Partial   : Boolean := False;
                Stop : aliased Flyology.Cancellation.Token;
+
+               procedure Require_Invalid_Interval
+                 (Key : String; Range_Header : String := "")
+               is
+                  Raised : Boolean := False;
+               begin
+                  Write_File (Invalid_Path, "preserve-invalid-interval");
+                  begin
+                     declare
+                        Ignored : constant Transfers.Download_Outcome :=
+                          Transfers.Download_File
+                            (HTTP, Origin, "example-bucket", Key,
+                             Invalid_Path, Identity, Timeout => 5.0,
+                             Byte_Range_Header => Range_Header);
+                        pragma Unreferenced (Ignored);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Low_Level.Invalid_Response =>
+                        Raised := True;
+                  end;
+                  if not Raised
+                    or else Read_File (Invalid_Path) /=
+                      "preserve-invalid-interval"
+                  then
+                     raise Program_Error with
+                       "invalid GetObject interval was accepted";
+                  end if;
+                  Require_No_Download_Temporary (Invalid_Path);
+               end Require_Invalid_Interval;
             begin
                Write_File (Download_Path, "preserved-before-start");
                Stop.Request;
@@ -1430,6 +1531,77 @@ procedure S3_HTTP_Socket_Corpus is
                     "partial download replaced the whole-file destination";
                end if;
                Require_No_Download_Temporary (Partial_Path);
+
+               Write_File (Range_Path, "replace-range");
+               declare
+                  Result : constant Transfers.Download_Outcome :=
+                    Transfers.Download_File
+                      (HTTP, Origin, "example-bucket", "download-range",
+                       Range_Path, Identity, Timeout => 5.0,
+                       Byte_Range_Header => "bytes=7-13");
+               begin
+                  if Result.Kind /= Transfers.File_Downloaded
+                    or else Result.Status /= 206
+                    or else Result.Bytes /= 7
+                    or else US.To_String (Result.Entity_Tag) /=
+                      """download-range"""
+                    or else Read_File (Range_Path) /= "partial"
+                  then
+                     raise Program_Error with
+                       "high-level ranged download result mismatch";
+                  end if;
+               end;
+               Require_No_Download_Temporary (Range_Path);
+
+               Write_File (Not_Modified_Path, "preserve-not-modified");
+               declare
+                  Result : constant Transfers.Download_Outcome :=
+                    Transfers.Download_File
+                      (HTTP, Origin, "example-bucket",
+                       "download-not-modified", Not_Modified_Path, Identity,
+                       Timeout => 5.0,
+                       If_None_Match => """download-range""");
+               begin
+                  if Result.Kind /= Transfers.Download_Rejected
+                    or else Result.Status /= 304
+                    or else US.To_String (Result.Error.Code) /= "HTTP304"
+                    or else Read_File (Not_Modified_Path) /=
+                      "preserve-not-modified"
+                  then
+                     raise Program_Error with
+                       "high-level conditional 304 download mismatch";
+                  end if;
+               end;
+               Require_No_Download_Temporary (Not_Modified_Path);
+
+               Write_File (Precondition_Path, "preserve-precondition");
+               declare
+                  Result : constant Transfers.Download_Outcome :=
+                    Transfers.Download_File
+                      (HTTP, Origin, "example-bucket",
+                       "download-precondition", Precondition_Path, Identity,
+                       Timeout => 5.0, If_Match => """different""");
+               begin
+                  if Result.Kind /= Transfers.Download_Rejected
+                    or else Result.Status /= 412
+                    or else US.To_String (Result.Error.Code) /= "HTTP412"
+                    or else Read_File (Precondition_Path) /=
+                      "preserve-precondition"
+                  then
+                     raise Program_Error with
+                       "high-level conditional 412 download mismatch";
+                  end if;
+               end;
+               Require_No_Download_Temporary (Precondition_Path);
+
+               Require_Invalid_Interval
+                 ("download-missing-content-range", "bytes=0-0");
+               Require_Invalid_Interval
+                 ("download-length-mismatch", "bytes=0-0");
+               Require_Invalid_Interval
+                 ("download-invalid-content-range", "bytes=0-0");
+               Require_Invalid_Interval
+                 ("download-unsolicited-content-range");
             end Check_High_Level_Downloads;
          begin
             begin

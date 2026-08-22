@@ -85,6 +85,44 @@ package Flyology.Object_Storage.Backends is
    function Copy_Conditions_Accept
      (Conditions : Copy_Conditions; Entity_Tag : String) return Boolean;
 
+   --  Conditional-read timestamps are signed so valid HTTP dates before the
+   --  Unix epoch can be compared without lossy clamping.
+   type Optional_Condition_Time (Is_Set : Boolean := False) is record
+      case Is_Set is
+         when True =>
+            Value : Long_Long_Integer;
+         when False =>
+            null;
+      end case;
+   end record;
+
+   --  Validators evaluated against the exact immutable snapshot streamed by
+   --  Get_Object. Entity-tag values use HTTP list syntax. If-Match takes
+   --  precedence over If-Unmodified-Since, and If-None-Match takes precedence
+   --  over If-Modified-Since, matching S3 conditional-read behavior.
+   type Read_Conditions is record
+      If_Match           : Ada.Strings.Unbounded.Unbounded_String;
+      If_Modified_Since  : Optional_Condition_Time;
+      If_None_Match      : Ada.Strings.Unbounded.Unbounded_String;
+      If_Unmodified_Since : Optional_Condition_Time;
+   end record;
+
+   Default_Read_Conditions : constant Read_Conditions;
+
+   --  Validate one If-Match or If-None-Match field value. Weak tags are valid
+   --  syntax; they never satisfy If-Match and do satisfy If-None-Match by weak
+   --  comparison. Bare, empty, mixed-wildcard, and malformed lists are
+   --  invalid.
+   function Valid_Read_Entity_Tag_Condition
+     (Value : String) return Boolean;
+
+   --  Return only Success, Precondition_Failed, Not_Modified, or
+   --  Invalid_Request. Entity_Tag is the stored unquoted opaque tag.
+   function Evaluate_Read_Conditions
+     (Conditions : Read_Conditions;
+      Entity_Tag : String;
+      Modified   : Unix_Time) return Status;
+
    --  Presence of an exact source length.
    type Length_Kind is (Unknown, Known);
 
@@ -291,7 +329,8 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
-      Result   : out Status) is abstract;
+      Result   : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions) is abstract;
    --  A successful implementation calls Begin_Object exactly once, then
    --  writes exactly its announced Content_Length. When Result is
    --  Invalid_Range, Info is the immutable object snapshot against which
@@ -429,5 +468,11 @@ private
         Ada.Strings.Unbounded.To_Unbounded_String
           ("application/octet-stream"),
       Conditions         => (others => <>));
+
+   Default_Read_Conditions : constant Read_Conditions :=
+     (If_Match            => Ada.Strings.Unbounded.Null_Unbounded_String,
+      If_Modified_Since   => (Is_Set => False),
+      If_None_Match       => Ada.Strings.Unbounded.Null_Unbounded_String,
+      If_Unmodified_Since => (Is_Set => False));
 
 end Flyology.Object_Storage.Backends;

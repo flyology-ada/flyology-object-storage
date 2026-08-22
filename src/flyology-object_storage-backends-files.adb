@@ -1248,7 +1248,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
-      Result    : out Status)
+      Result    : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions)
    is
       File      : SIO.File_Type;
       Body_At   : SIO.Positive_Count;
@@ -1270,6 +1271,12 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       SIO.Open (File, SIO.In_File, Path);
       Read_Header (File, Key, Info, Body_At);
+      Result := Evaluate_Read_Conditions
+        (Conditions, US.To_String (Info.Entity_Tag), Info.Modified);
+      if Result /= Success then
+         SIO.Close (File);
+         return;
+      end if;
       Resolution := Resolve_Range (Info.Size, Requested);
       if Resolution.Kind = Empty_Object_Range then
          SIO.Close (File);

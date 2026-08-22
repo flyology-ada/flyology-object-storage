@@ -1,4 +1,5 @@
 with Ada.Containers;
+with Ada.Calendar.Formatting;
 with Ada.Exceptions;
 with Ada.Real_Time;
 with Ada.Directories;
@@ -109,6 +110,105 @@ package body Object_Storage_Test_Cases is
       Data     : Ada.Streams.Stream_Element_Array;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time);
+
+   procedure Exercise_Conditional_Read
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String;
+      Key    : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package US renames Ada.Strings.Unbounded;
+      use type US.Unbounded_String;
+      Snapshot   : Object_Information;
+      Result     : Status;
+      Conditions : Read_Conditions := Default_Read_Conditions;
+
+      procedure Read_And_Require
+        (Expected : Status; Expected_Begins : Natural; Message : String)
+      is
+         Sink : Buffer_Sink;
+         Info : Object_Information;
+      begin
+         Store.Get_Object
+           (Bucket, Key, Whole_Object, Sink, null,
+            Ada.Real_Time.Time_Last, Info, Result, Conditions);
+         Assert
+           (Result = Expected
+            and then Sink.Begin_Count = Expected_Begins
+            and then (if Expected /= Success
+                      then Info.Size = Snapshot.Size
+                        and then Info.Modified = Snapshot.Modified
+                        and then Info.Entity_Tag = Snapshot.Entity_Tag),
+            Message);
+      end Read_And_Require;
+   begin
+      Store.Head_Object
+        (Bucket, Key, null, Ada.Real_Time.Time_Last, Snapshot, Result);
+      Assert (Result = Success, "conditional-read setup head");
+
+      Conditions.If_Match := US.To_Unbounded_String
+        ('"' & US.To_String (Snapshot.Entity_Tag) & '"');
+      Read_And_Require (Success, 1, "matching If-Match rejected");
+
+      Conditions.If_Unmodified_Since :=
+        (Is_Set => True, Value => Long_Long_Integer (Snapshot.Modified) - 1);
+      Read_And_Require
+        (Success, 1, "If-Match did not override If-Unmodified-Since");
+
+      Conditions := Default_Read_Conditions;
+      Conditions.If_Match := US.To_Unbounded_String ("""wrong""");
+      Read_And_Require
+        (Precondition_Failed, 0,
+         "failed If-Match reached the response sink");
+
+      Conditions.If_Match := US.To_Unbounded_String
+        ("W/""" & US.To_String (Snapshot.Entity_Tag) & """");
+      Read_And_Require
+        (Precondition_Failed, 0,
+         "weak If-Match used a non-strong comparison");
+
+      Conditions := Default_Read_Conditions;
+      Conditions.If_None_Match := US.To_Unbounded_String
+        ("W/""" & US.To_String (Snapshot.Entity_Tag) & """");
+      Read_And_Require
+        (Not_Modified, 0,
+         "weak If-None-Match failed to suppress the body");
+
+      Conditions.If_None_Match := US.To_Unbounded_String
+        (ASCII.HT & """other""," & ASCII.HT &
+         "W/""" & US.To_String (Snapshot.Entity_Tag) & """" & ASCII.HT);
+      Read_And_Require
+        (Not_Modified, 0,
+         "entity-tag list rejected legal optional whitespace");
+
+      Conditions.If_None_Match := US.To_Unbounded_String ("""other""");
+      Conditions.If_Modified_Since :=
+        (Is_Set => True, Value => Long_Long_Integer'Last);
+      Read_And_Require
+        (Success, 1, "If-None-Match did not override If-Modified-Since");
+
+      Conditions := Default_Read_Conditions;
+      Conditions.If_Modified_Since :=
+        (Is_Set => True, Value => Long_Long_Integer (Snapshot.Modified));
+      Read_And_Require
+        (Not_Modified, 0,
+         "equal If-Modified-Since emitted an object body");
+
+      Conditions := Default_Read_Conditions;
+      Conditions.If_Unmodified_Since :=
+        (Is_Set => True, Value => Long_Long_Integer (Snapshot.Modified) - 1);
+      Read_And_Require
+        (Precondition_Failed, 0,
+         "failed If-Unmodified-Since reached the response sink");
+
+      Conditions := Default_Read_Conditions;
+      Conditions.If_None_Match := US.To_Unbounded_String ("*, ""other""");
+      Read_And_Require
+        (Invalid_Request, 0,
+         "mixed wildcard entity-tag list was accepted");
+   end Exercise_Conditional_Read;
 
    procedure Exercise_Bucket_Listing
      (Store : in out Flyology.Object_Storage.Backends.Backend'Class)
@@ -878,6 +978,7 @@ package body Object_Storage_Test_Cases is
         ("test-bucket", "../opaque/key", null,
          Ada.Real_Time.Time_Last, Info, Result);
       Assert (Result = Success and then Info.Size = 11, "head object");
+      Exercise_Conditional_Read (Store, "test-bucket", "../opaque/key");
       Store.Get_Object
         ("test-bucket", "../opaque/key", Whole_Object, Sink,
          null, Ada.Real_Time.Time_Last, Info, Result);
@@ -1815,6 +1916,7 @@ package body Object_Storage_Test_Cases is
             and then Info.Size = 11
             and then US.To_String (Info.Entity_Tag) = "etag-2",
             "files metadata persists across reopen");
+         Exercise_Conditional_Read (Store, "file-bucket", Key);
          declare
             Page : Multipart_Part_Page;
             Options : List_Multipart_Parts_Options :=
@@ -7505,7 +7607,9 @@ package body Object_Storage_Test_Cases is
            (Request.Has_Part_Number and then Request.Part_Number = 7
             and then Request.Has_Version_ID
             and then US.To_String (Request.Version_ID) = "v+1"
-            and then Request.Has_Response_Overrides,
+            and then Request.Has_Response_Overrides
+            and then US.To_String (Request.Response_Content_Type) =
+              "text/plain",
             "strict HeadObject query projection");
          Rejects ("partNumber=0");
          Rejects ("partNumber=10001");
@@ -7514,6 +7618,69 @@ package body Object_Storage_Test_Cases is
          Rejects ("response-content-type=%0DInjected");
          Rejects ("x-id=GetObject");
          Rejects ("unknown=value");
+
+         declare
+            Get_Request : constant Object_Reads.Object_Read_Request :=
+              Object_Reads.Parse_Query
+                ("response-cache-control=no-cache&x-id=GetObject",
+                 Object_Reads.Get_Object);
+         begin
+            Assert
+              (Get_Request.Has_Response_Overrides
+               and then US.To_String
+                 (Get_Request.Response_Cache_Control) = "no-cache",
+               "strict GetObject query projection");
+         end;
+         declare
+            Empty_Override : constant Object_Reads.Object_Read_Request :=
+              Object_Reads.Parse_Query
+                ("response-content-type=&x-id=GetObject",
+                 Object_Reads.Get_Object);
+         begin
+            Assert
+              (Empty_Override.Has_Response_Content_Type
+               and then US.Length
+                 (Empty_Override.Response_Content_Type) = 0,
+               "present-empty GetObject override lost presence");
+         end;
+
+         declare
+            Now : constant Ada.Calendar.Time :=
+              Ada.Calendar.Formatting.Time_Of
+                (2013, 5, 24, 0, 0, 0, Time_Zone => 0);
+            IMF : constant Object_Reads.Conditional_Date_Result :=
+              Object_Reads.Parse_Conditional_Date
+                ("Sun, 06 Nov 1994 08:49:37 GMT", Now);
+            RFC_850 : constant Object_Reads.Conditional_Date_Result :=
+              Object_Reads.Parse_Conditional_Date
+                ("Sunday, 06-Nov-94 08:49:37 GMT", Now);
+            Asctime : constant Object_Reads.Conditional_Date_Result :=
+              Object_Reads.Parse_Conditional_Date
+                ("Sun Nov  6 08:49:37 1994", Now);
+            Before_Epoch : constant Object_Reads.Conditional_Date_Result :=
+              Object_Reads.Parse_Conditional_Date
+                ("Wed, 31 Dec 1969 23:59:59 GMT", Now);
+         begin
+            Assert
+              (IMF.Valid and then RFC_850.Valid and then Asctime.Valid
+               and then IMF.Seconds_Since_Epoch =
+                 RFC_850.Seconds_Since_Epoch
+               and then IMF.Seconds_Since_Epoch =
+                 Asctime.Seconds_Since_Epoch,
+               "HTTP-date formats did not normalize identically");
+            Assert
+              (Before_Epoch.Valid
+               and then Before_Epoch.Seconds_Since_Epoch = -1,
+               "pre-epoch HTTP date was clamped or rejected");
+            Assert
+              (not Object_Reads.Parse_Conditional_Date
+                 ("Sun, 31 Feb 1994 08:49:37 GMT", Now).Valid
+               and then not Object_Reads.Parse_Conditional_Date
+                 ("Sun, 06 Nov 1994 08:49:37 UTC", Now).Valid
+               and then not Object_Reads.Parse_Conditional_Date
+                 ("Sunday, 06-Nov-94 08:49:37 GMT ", Now).Valid,
+               "malformed HTTP conditional date was accepted");
+         end;
       end;
 
       declare

@@ -742,7 +742,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
-      Result    : out Status)
+      Result    : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions)
    is
       Payload   : US.Unbounded_String;
       File      : SIO.File_Type;
@@ -763,6 +764,11 @@ package body Flyology.Object_Storage.Backends.SQLite is
          return;
       elsif not Is_Payload_Name (US.To_String (Payload)) then
          raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Result := Evaluate_Read_Conditions
+        (Conditions, US.To_String (Info.Entity_Tag), Info.Modified);
+      if Result /= Success then
+         return;
       end if;
       SIO.Open
         (File, SIO.In_File,

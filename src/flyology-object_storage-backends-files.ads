@@ -98,7 +98,8 @@ package Flyology.Object_Storage.Backends.Files is
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
-      Result    : out Status);
+      Result    : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions);
 
    overriding procedure Delete_Object
      (Item     : in out Store;

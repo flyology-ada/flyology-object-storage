@@ -52,7 +52,7 @@ GetBucketRequestPayment	extended	missing	partial	missing	missing
 GetBucketTagging	core	missing	partial	missing	missing
 GetBucketVersioning	core	missing	partial	missing	missing
 GetBucketWebsite	extended	missing	partial	missing	missing
-GetObject	core	partial	partial	partial	partial
+GetObject	core	covered	covered	partial	covered
 GetObjectAcl	extended	missing	partial	missing	missing
 GetObjectAnnotation	extended	missing	partial	missing	missing
 GetObjectAttributes	core	missing	partial	missing	missing

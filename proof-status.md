@@ -2,7 +2,7 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest post-HeadObject-header-hardening forced six-unit manifest-wide level-0
+The latest post-GetObject-conditional-hardening forced six-unit manifest-wide level-0
 proof completed with 405/405 checks proved, warnings as errors, zero justified
 checks, and zero Assume statements.
 
@@ -123,3 +123,6 @@ checks, and zero Assume statements.
 - [x] Re-ran the forced six-unit manifest after HeadObject conditional,
       expected-owner, encryption-policy, and range hardening; all 405/405
       checks remain proved with no assumptions or justified checks.
+- [x] Re-ran the forced six-unit manifest after atomic GetObject conditions,
+      strict response-interval validation, and high-level ranged downloads;
+      all 405/405 checks remain proved with no assumptions or justified checks.

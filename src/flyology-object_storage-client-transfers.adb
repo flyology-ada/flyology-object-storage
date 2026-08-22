@@ -744,7 +744,16 @@ package body Flyology.Object_Storage.Client.Transfers is
       Region     : String := "us-east-1";
       Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout    : Duration := 30.0;
-      Token      : access Flyology.Cancellation.Token := null)
+      Token      : access Flyology.Cancellation.Token := null;
+      Version_ID : String := "";
+      If_Match   : String := "";
+      If_Modified_Since : String := "";
+      If_None_Match : String := "";
+      If_Unmodified_Since : String := "";
+      Byte_Range_Header : String := "";
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False)
       return Download_Outcome
    is
       Deadline : constant Ada.Real_Time.Time := Deadline_For (Timeout);
@@ -757,109 +766,135 @@ package body Flyology.Object_Storage.Client.Transfers is
          raise Constraint_Error with "local download path is empty";
       end if;
       declare
-         Parameters : constant Low_Level.Get_Object_Parameters :=
-           (others => <>);
-         Prepared : constant Low_Level.Prepared_Request :=
-           Low_Level.Prepare_Get_Object
-             (Origin, Style, Bucket, Key, Parameters, Identity, Region,
-              Current_Timestamp);
-         Response : HTTP_Client.Response :=
-           Low_Level.Execute_Get_Object
-             (Client, Prepared, Remaining (Deadline), Token);
-         Head : constant Low_Level.Get_Object_Head_Outcome :=
-           Low_Level.Decode_Get_Object_Response_Head
-             (Response, Token);
+         Parameters : Low_Level.Get_Object_Parameters;
       begin
-         if Head.Kind = Low_Level.Get_Object_Rejected then
-            return
-              (Kind   => Download_Rejected,
-               Status => Head.Status,
-               Error  => Head.Error);
-         elsif Head.Status /= 200 then
-            raise Low_Level.Invalid_Response with
-              "whole-file GetObject returned a partial response";
-         end if;
-
-         Temp := US.To_Unbounded_String (New_Temporary_Path (Local_Path));
-         File := Files.Open
-           (US.To_String (Temp), Files.Write_Only,
-            Create => True, Truncate => True);
+         Parameters.Version_ID := US.To_Unbounded_String (Version_ID);
+         Parameters.If_Match := US.To_Unbounded_String (If_Match);
+         Parameters.If_Modified_Since :=
+           US.To_Unbounded_String (If_Modified_Since);
+         Parameters.If_None_Match := US.To_Unbounded_String (If_None_Match);
+         Parameters.If_Unmodified_Since :=
+           US.To_Unbounded_String (If_Unmodified_Since);
+         Parameters.Byte_Range_Header :=
+           US.To_Unbounded_String (Byte_Range_Header);
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String (Expected_Bucket_Owner);
+         Parameters.Request_Payer := US.To_Unbounded_String (Request_Payer);
+         Parameters.Checksum_Mode := Checksum_Mode;
          declare
-            Buffer   : Ada.Streams.Stream_Element_Array
-              (1 .. Transfer_Buffer_Size);
-            Last     : Ada.Streams.Stream_Element_Offset;
-            Finished : Boolean := False;
-            Offset   : Files.File_Offset := 0;
-            Total    : Byte_Count := 0;
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object
+                (Origin, Style, Bucket, Key, Parameters, Identity, Region,
+                 Current_Timestamp);
+            Response : HTTP_Client.Response :=
+              Low_Level.Execute_Get_Object
+                (Client, Prepared, Remaining (Deadline), Token);
+            Head : constant Low_Level.Get_Object_Head_Outcome :=
+              Low_Level.Decode_Get_Object_Response_Head
+                (Response, Token);
          begin
-            while not Finished loop
-               HTTP_Client.Read_Body
-                 (Response, Buffer, Last, Finished, Token);
-               if Last >= Buffer'First then
-                  declare
-                     First : Ada.Streams.Stream_Element_Offset := Buffer'First;
-                  begin
-                     while First <= Last loop
-                        declare
-                           Written_Last : Ada.Streams.Stream_Element_Offset;
-                           Count : Byte_Count;
-                        begin
-                           Files.Write_At
-                             (File, Offset, Buffer (First .. Last),
-                              Written_Last, Token);
-                           if Written_Last < First then
-                              raise Flyology.IO.Device_Error with
-                                "download file write made no progress";
-                           end if;
-                           Count := Byte_Count (Written_Last - First + 1);
-                           if Total > Byte_Count'Last - Count
-                             or else Offset >
-                               Files.File_Offset'Last
-                                 - Files.File_Offset (Count)
-                           then
-                              raise Constraint_Error with
-                                "download exceeds supported size";
-                           end if;
-                           Total := Total + Count;
-                           Offset := Offset + Files.File_Offset (Count);
-                           First := Written_Last + 1;
-                           Check_Cancelled (Token);
+            if Head.Kind = Low_Level.Get_Object_Rejected then
+               return
+                 (Kind   => Download_Rejected,
+                  Status => Head.Status,
+                  Error  => Head.Error);
+            elsif (Byte_Range_Header'Length = 0 and then Head.Status /= 200)
+              or else
+                (Byte_Range_Header'Length > 0 and then Head.Status /= 206)
+            then
+               raise Low_Level.Invalid_Response with
+                 "GetObject returned an unsolicited representation interval";
+            end if;
+
+            Temp := US.To_Unbounded_String (New_Temporary_Path (Local_Path));
+            File := Files.Open
+              (US.To_String (Temp), Files.Write_Only,
+               Create => True, Truncate => True);
+            declare
+               Buffer   : Ada.Streams.Stream_Element_Array
+                 (1 .. Transfer_Buffer_Size);
+               Last     : Ada.Streams.Stream_Element_Offset;
+               Finished : Boolean := False;
+               Offset   : Files.File_Offset := 0;
+               Total    : Byte_Count := 0;
+            begin
+               while not Finished loop
+                  HTTP_Client.Read_Body
+                    (Response, Buffer, Last, Finished, Token);
+                  if Last >= Buffer'First then
+                     declare
+                        First : Ada.Streams.Stream_Element_Offset :=
+                          Buffer'First;
+                     begin
+                        while First <= Last loop
                            declare
-                              Ignored : constant Duration :=
-                                Remaining (Deadline);
-                              pragma Unreferenced (Ignored);
+                              Written_Last :
+                                Ada.Streams.Stream_Element_Offset;
+                              Count : Byte_Count;
                            begin
-                              null;
+                              Files.Write_At
+                                (File, Offset, Buffer (First .. Last),
+                                 Written_Last, Token);
+                              if Written_Last < First then
+                                 raise Flyology.IO.Device_Error with
+                                   "download file write made no progress";
+                              end if;
+                              Count := Byte_Count (Written_Last - First + 1);
+                              if Total > Byte_Count'Last - Count
+                                or else Offset >
+                                  Files.File_Offset'Last
+                                    - Files.File_Offset (Count)
+                              then
+                                 raise Constraint_Error with
+                                   "download exceeds supported size";
+                              end if;
+                              Total := Total + Count;
+                              Offset := Offset + Files.File_Offset (Count);
+                              First := Written_Last + 1;
+                              Check_Cancelled (Token);
+                              declare
+                                 Ignored : constant Duration :=
+                                   Remaining (Deadline);
+                                 pragma Unreferenced (Ignored);
+                              begin
+                                 null;
+                              end;
                            end;
-                        end;
-                     end loop;
-                  end;
+                        end loop;
+                     end;
+                  end if;
+               end loop;
+               Check_Cancelled (Token);
+               if Head.Result.Content_Length.Is_Set
+                 and then Total /= Head.Result.Content_Length.Value
+               then
+                  raise Low_Level.Invalid_Response with
+                    "GetObject body length differs from its response head";
                end if;
-            end loop;
-            Check_Cancelled (Token);
-            declare
-               Ignored : constant Duration := Remaining (Deadline);
-               pragma Unreferenced (Ignored);
-            begin
-               null;
+               declare
+                  Ignored : constant Duration := Remaining (Deadline);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+               Files.Close (File);
+               declare
+                  Renamed : Boolean;
+               begin
+                  GNAT.OS_Lib.Rename_File
+                    (US.To_String (Temp), Local_Path, Renamed);
+                  if not Renamed then
+                     raise Flyology.IO.Device_Error with
+                       "could not publish downloaded file";
+                  end if;
+               end;
+               Published := True;
+               return
+                 (Kind       => File_Downloaded,
+                  Status     => Head.Status,
+                  Bytes      => Total,
+                  Entity_Tag => Head.Result.Entity_Tag);
             end;
-            Files.Close (File);
-            declare
-               Renamed : Boolean;
-            begin
-               GNAT.OS_Lib.Rename_File
-                 (US.To_String (Temp), Local_Path, Renamed);
-               if not Renamed then
-                  raise Flyology.IO.Device_Error with
-                    "could not publish downloaded file";
-               end if;
-            end;
-            Published := True;
-            return
-              (Kind       => File_Downloaded,
-               Status     => Head.Status,
-               Bytes      => Total,
-               Entity_Tag => Head.Result.Entity_Tag);
          end;
       end;
    exception

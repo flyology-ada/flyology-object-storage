@@ -329,7 +329,10 @@ procedure S3_Server_Application_Corpus is
    end Signed_Bucket_Request;
 
    function Signed_Head_SSE_C_Request
-     (Algorithm : String; Key : String; Key_MD5 : String) return String
+     (Algorithm : String;
+      Key       : String;
+      Key_MD5   : String;
+      Method    : String := "HEAD") return String
    is
       Payload_Hash : constant String := SigV4.SHA256_Hex ("");
       Headers : constant SigV4.Name_Value_Array :=
@@ -343,10 +346,10 @@ procedure S3_Server_Application_Corpus is
          SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
          SigV4.Pair ("x-amz-date", Timestamp));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
-        ("HEAD", "/test-bucket/object", No_Query, Headers, Payload_Hash,
+        (Method, "/test-bucket/object", No_Query, Headers, Payload_Hash,
          Access_Key, Secret_Key, Region, Timestamp);
    begin
-      return "HEAD /test-bucket/object HTTP/1.1" & CRLF &
+      return Method & " /test-bucket/object HTTP/1.1" & CRLF &
         "Host: " & Host & CRLF & "x-amz-date: " & Timestamp & CRLF &
         "x-amz-content-sha256: " & Payload_Hash & CRLF &
         "x-amz-server-side-encryption-customer-algorithm: " &
@@ -1639,7 +1642,7 @@ begin
               (Signed_Request
                  ("GET", "/test-bucket/object", "",
                   Query_Name => "x-id", Query_Value => "PutObject")),
-            "501 Not Implemented"),
+            "400 Bad Request"),
          "mismatched AWS SDK x-id operation was accepted");
    end;
 
@@ -1921,6 +1924,230 @@ begin
          and then not Has (Response, "Transfer-Encoding:"),
          "range response did not use exact fixed-length framing");
       Require (Has (Response, "world"), "suffix range body mismatch");
+   end;
+
+   declare
+      ETag : constant String := "5eb63bbbe01eeed093cb22bb8f5acdc3";
+
+      function Get_With (Headers : String) return String is
+        (Run
+           (Signed_Request
+              ("GET", "/test-bucket/object", "",
+               Extra_Headers => Headers)));
+   begin
+      Require
+        (Has
+           (Get_With ("If-Match: """ & ETag & """" & CRLF),
+            "200 OK")
+         and then Has
+           (Get_With ("If-Match: """ & ETag & """" & CRLF),
+            "hello world"),
+         "GetObject rejected a matching If-Match");
+      Require
+        (Has (Get_With ("If-Match: ""wrong""" & CRLF),
+              "HTTP/1.1 412 "),
+         "GetObject accepted a failed If-Match");
+      Require
+        (Has
+           (Get_With ("If-None-Match: W/""" & ETag & """" & CRLF),
+            "HTTP/1.1 304 ")
+         and then not Has
+           (Get_With ("If-None-Match: W/""" & ETag & """" & CRLF),
+            "hello world"),
+         "GetObject weak If-None-Match did not suppress the body");
+      Require
+        (Has (Get_With ("If-None-Match: *" & CRLF), "HTTP/1.1 304 "),
+         "GetObject wildcard If-None-Match did not suppress the body");
+      Require
+        (Has
+           (Get_With
+              ("If-Modified-Since: Fri, 01 Jan 2099 00:00:00 GMT" &
+               CRLF),
+            "HTTP/1.1 304 "),
+         "GetObject ignored a future If-Modified-Since");
+      Require
+        (Has
+           (Get_With
+              ("If-Unmodified-Since: Thu, 01 Jan 1970 00:00:00 GMT" &
+               CRLF),
+            "HTTP/1.1 412 "),
+         "GetObject ignored a failed If-Unmodified-Since");
+      Require
+        (Has
+           (Get_With
+              ("If-Match: """ & ETag & """" & CRLF &
+               "If-Unmodified-Since: Thu, 01 Jan 1970 00:00:00 GMT" &
+               CRLF),
+            "200 OK"),
+         "If-Match did not take precedence over If-Unmodified-Since");
+      Require
+        (Has
+           (Get_With
+              ("If-None-Match: ""other""" & CRLF &
+               "If-Modified-Since: Fri, 01 Jan 2099 00:00:00 GMT" &
+               CRLF),
+            "200 OK"),
+         "If-None-Match did not take precedence over If-Modified-Since");
+      Require
+        (Has
+           (Get_With ("If-Match: *, ""other""" & CRLF),
+            "400 Bad Request"),
+         "GetObject accepted a mixed wildcard entity-tag list");
+      Require
+        (Has
+           (Get_With
+              ("If-Modified-Since: Sun, 31 Feb 1994 08:49:37 GMT" & CRLF),
+            "400 Bad Request"),
+         "GetObject accepted an impossible conditional date");
+      Require
+        (Has
+           (Get_With
+              ("If-Match: """ & ETag & """" & CRLF &
+               "If-Match: """ & ETag & """" & CRLF),
+            "400 Bad Request"),
+         "GetObject accepted duplicate conditional headers");
+
+      Require
+        (Has
+           (Run
+              (Signed_Bucket_Request
+                 ("GET", "/test-bucket/object", "test-principal")),
+            "200 OK"),
+         "GetObject rejected its actual expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Bucket_Request
+                 ("GET", "/test-bucket/object", "another-principal")),
+            "403 Forbidden"),
+         "GetObject ignored an expected-owner mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Bucket_Request
+                 ("GET", "/test-bucket/object", "test-principal",
+                  "test-principal")),
+            "400 Bad Request"),
+         "GetObject accepted duplicate expected-owner headers");
+   end;
+
+   declare
+      X_ID : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("x-id", "GetObject"));
+      Overrides : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("response-cache-control", "no-cache"),
+         SigV4.Pair ("response-content-disposition", "attachment"),
+         SigV4.Pair ("response-content-encoding", "identity"),
+         SigV4.Pair ("response-content-language", "en-CA"),
+         SigV4.Pair ("response-content-type", "text/plain"),
+         SigV4.Pair ("response-expires",
+                     "Fri, 01 Jan 2099 00:00:00 GMT"),
+         SigV4.Pair ("x-id", "GetObject"));
+      Version_Null : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("versionId", "null"));
+      Version_Other : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("versionId", "version-one"));
+      Part : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("partNumber", "1"));
+      Unknown : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("unknown", "value"));
+      Response : constant String := Run
+        (Signed_Query_Request
+           ("GET", "/test-bucket/object", Overrides));
+   begin
+      Require
+        (Has (Response, "200 OK")
+         and then Has (Response, "Cache-Control: no-cache" & CRLF)
+         and then Has (Response, "Content-Disposition: attachment" & CRLF)
+         and then Has (Response, "Content-Encoding: identity" & CRLF)
+         and then Has (Response, "Content-Language: en-CA" & CRLF)
+         and then Has (Response, "Content-Type: text/plain" & CRLF)
+         and then Has
+           (Response, "Expires: Fri, 01 Jan 2099 00:00:00 GMT" & CRLF)
+         and then Has (Response, "hello world"),
+         "GetObject response overrides were not projected exactly");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("GET", "/test-bucket/object", Version_Null)),
+            "200 OK"),
+         "GetObject rejected the null unversioned version ID");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("GET", "/test-bucket/object", Version_Other)),
+            "501 Not Implemented"),
+         "GetObject silently ignored a non-null version ID");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("GET", "/test-bucket/object", Part)),
+            "501 Not Implemented"),
+         "GetObject silently ignored partNumber");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("GET", "/test-bucket/object", Unknown)),
+            "400 Bad Request"),
+         "GetObject accepted an unknown query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object", X_ID,
+                  "x-amz-request-payer", "requester")),
+            "200 OK"),
+         "GetObject rejected valid requester-pays syntax");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object", X_ID,
+                  "x-amz-request-payer", "owner")),
+            "400 Bad Request"),
+         "GetObject accepted an invalid request payer");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object", X_ID,
+                  "x-amz-checksum-mode", "ENABLED")),
+            "200 OK"),
+         "GetObject rejected enabled checksum mode");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object", X_ID,
+                  "x-amz-checksum-mode", "DISABLED")),
+            "400 Bad Request"),
+         "GetObject accepted an invalid checksum mode");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object", X_ID,
+                  "x-amz-server-side-encryption", "AES256")),
+            "400 Bad Request"),
+         "GetObject accepted a write-only encryption method header");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/object", X_ID,
+                  "x-amz-server-side-encryption-customer-algorithm",
+                  "AES256")),
+            "400 Bad Request"),
+         "GetObject accepted an incomplete SSE-C header group");
+      Require
+        (Has
+           (Run
+              (Signed_Head_SSE_C_Request
+                 ("AES256",
+                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                  "AAAAAAAAAAAAAAAAAAAAAA==", Method => "GET")),
+            "501 Not Implemented"),
+         "GetObject silently ignored a valid SSE-C header group");
    end;
 
    declare

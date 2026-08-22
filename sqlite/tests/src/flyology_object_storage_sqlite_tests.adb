@@ -183,6 +183,88 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Item.Snapshot := Info;
    end Begin_Object;
 
+   procedure Exercise_Conditional_Read
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String;
+      Key    : String)
+   is
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      Snapshot   : Object_Information;
+      Result     : Status;
+      Conditions : Read_Conditions := Default_Read_Conditions;
+
+      procedure Read_And_Require
+        (Expected : Status; Expected_Begins : Natural; Message : String)
+      is
+         Sink : Buffer_Sink;
+         Info : Object_Information;
+      begin
+         Store.Get_Object
+           (Bucket, Key, Whole_Object, Sink, null,
+            Ada.Real_Time.Time_Last, Info, Result, Conditions);
+         Assert
+           (Result = Expected
+            and then Sink.Begin_Count = Expected_Begins
+            and then (if Expected /= Success
+                      then Info.Size = Snapshot.Size
+                        and then Info.Modified = Snapshot.Modified
+                        and then US.To_String (Info.Entity_Tag) =
+                          US.To_String (Snapshot.Entity_Tag)),
+            Message);
+      end Read_And_Require;
+   begin
+      Store.Head_Object
+        (Bucket, Key, null, Ada.Real_Time.Time_Last, Snapshot, Result);
+      Assert (Result = Success, "SQLite conditional-read setup head");
+
+      Conditions.If_Match := US.To_Unbounded_String
+        ('"' & US.To_String (Snapshot.Entity_Tag) & '"');
+      Conditions.If_Unmodified_Since :=
+        (Is_Set => True, Value => Long_Long_Integer (Snapshot.Modified) - 1);
+      Read_And_Require
+        (Success, 1, "SQLite If-Match precedence failed");
+
+      Conditions := Default_Read_Conditions;
+      Conditions.If_Match := US.To_Unbounded_String ("""wrong""");
+      Read_And_Require
+        (Precondition_Failed, 0,
+         "SQLite failed If-Match reached the response sink");
+
+      Conditions := Default_Read_Conditions;
+      Conditions.If_None_Match := US.To_Unbounded_String
+        ("W/""" & US.To_String (Snapshot.Entity_Tag) & """");
+      Read_And_Require
+        (Not_Modified, 0,
+         "SQLite weak If-None-Match emitted an object body");
+
+      Conditions.If_None_Match := US.To_Unbounded_String ("""other""");
+      Conditions.If_Modified_Since :=
+        (Is_Set => True, Value => Long_Long_Integer'Last);
+      Read_And_Require
+        (Success, 1, "SQLite If-None-Match precedence failed");
+
+      Conditions := Default_Read_Conditions;
+      Conditions.If_Modified_Since :=
+        (Is_Set => True, Value => Long_Long_Integer (Snapshot.Modified));
+      Read_And_Require
+        (Not_Modified, 0,
+         "SQLite equal If-Modified-Since emitted an object body");
+
+      Conditions := Default_Read_Conditions;
+      Conditions.If_Unmodified_Since :=
+        (Is_Set => True, Value => Long_Long_Integer (Snapshot.Modified) - 1);
+      Read_And_Require
+        (Precondition_Failed, 0,
+         "SQLite failed If-Unmodified-Since reached the response sink");
+
+      Conditions := Default_Read_Conditions;
+      Conditions.If_None_Match := US.To_Unbounded_String ("*, ""other""");
+      Read_And_Require
+        (Invalid_Request, 0,
+         "SQLite accepted a mixed wildcard entity-tag list");
+   end Exercise_Conditional_Read;
+
    overriding procedure Write
      (Item     : in out Buffer_Sink;
       Data     : Ada.Streams.Stream_Element_Array;
@@ -999,6 +1081,7 @@ begin
         (Result = Success and then Info.Size = 11 and then
          US.To_String (Info.Entity_Tag) = "etag-2",
          "SQLite backend metadata did not persist");
+      Exercise_Conditional_Read (Store, "sqlite-bucket", Key);
       declare
          Page    : Multipart_Upload_Page;
          Options : List_Multipart_Uploads_Options;

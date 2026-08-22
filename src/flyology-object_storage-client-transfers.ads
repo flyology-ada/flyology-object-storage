@@ -212,6 +212,17 @@ package Flyology.Object_Storage.Client.Transfers is
    --  @param Style Path or virtual-hosted addressing
    --  @param Timeout Whole-operation budget; local syscalls may delay delivery
    --  @param Token Optional cancellation source
+   --  @param Version_ID Optional exact object version; null addresses the
+   --  unversioned object
+   --  @param If_Match Optional strong entity-tag precondition
+   --  @param If_Modified_Since Optional HTTP-date precondition
+   --  @param If_None_Match Optional weak entity-tag precondition
+   --  @param If_Unmodified_Since Optional HTTP-date precondition
+   --  @param Byte_Range_Header Optional single bytes range; a successful 206
+   --  atomically publishes the selected interval as the destination file
+   --  @param Expected_Bucket_Owner Optional bucket-owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Checksum_Mode Request stored checksum response fields
    --  @return Typed successful download or S3 rejection
    function Download_File
      (Client     : aliased in out Flyology.HTTP.Client.Client;
@@ -223,7 +234,16 @@ package Flyology.Object_Storage.Client.Transfers is
       Region     : String := "us-east-1";
       Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout    : Duration := 30.0;
-      Token      : access Flyology.Cancellation.Token := null)
+      Token      : access Flyology.Cancellation.Token := null;
+      Version_ID : String := "";
+      If_Match   : String := "";
+      If_Modified_Since : String := "";
+      If_None_Match : String := "";
+      If_Unmodified_Since : String := "";
+      Byte_Range_Header : String := "";
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False)
       return Download_Outcome;
 
    type Failure_Mode is (Continue_After_Failure, Cancel_Remaining);

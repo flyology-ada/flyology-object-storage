@@ -26,6 +26,7 @@ is
       Entity_Too_Large,
       Source_Not_Found,
       Precondition_Failed,
+      Not_Modified,
       Conflict,
       Not_Implemented,
       Backend_Unavailable);

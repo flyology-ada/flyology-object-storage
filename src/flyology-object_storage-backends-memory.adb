@@ -1363,7 +1363,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       Token     : access Flyology.Cancellation.Token;
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
-      Result    : out Status)
+      Result    : out Status;
+      Conditions : Read_Conditions := Default_Read_Conditions)
    is
       Data       : Owned_Bytes;
       Resolution : Range_Resolution;
@@ -1382,6 +1383,14 @@ package body Flyology.Object_Storage.Backends.Memory is
       end if;
       Item.State.Fetch (Bucket, Key, Data, Info, Result);
       if Result /= Success then
+         return;
+      end if;
+
+      Result := Evaluate_Read_Conditions
+        (Conditions, Ada.Strings.Unbounded.To_String (Info.Entity_Tag),
+         Info.Modified);
+      if Result /= Success then
+         Release_Buffer (Item.State, Data);
          return;
       end if;
 
