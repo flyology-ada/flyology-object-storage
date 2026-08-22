@@ -1309,6 +1309,71 @@ package body Flyology.Object_Storage.Backends.Files is
          Result := Backend_Unavailable;
    end Get_Bucket_Tags;
 
+   overriding procedure Delete_Bucket_Tags
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+      Locked : Boolean := False;
+      Bucket_Directory : constant String := Bucket_Path (Item, Bucket);
+      Configuration_Directory : constant String :=
+        Configuration_Path (Item, Bucket);
+      Target : constant String := Tags_Path (Item, Bucket);
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Directory) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Directory) then
+         Result := Not_Found;
+      elsif Ada.Directories.Kind (Bucket_Directory) /=
+          Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif GNAT.OS_Lib.Is_Symbolic_Link (Configuration_Directory) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Configuration_Directory) then
+         Result := Success;
+      elsif Ada.Directories.Kind (Configuration_Directory) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif GNAT.OS_Lib.Is_Symbolic_Link (Target) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Target) then
+         Result := Success;
+      elsif Ada.Directories.Kind (Target) /=
+          Ada.Directories.Ordinary_File
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         Ada.Directories.Delete_File (Target);
+         Sync_Directory (Item, Configuration_Directory);
+         Result := Success;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Result := Backend_Unavailable;
+   end Delete_Bucket_Tags;
+
    overriding procedure Put_Bucket_Versioning
      (Item          : in out Store;
       Bucket        : String;

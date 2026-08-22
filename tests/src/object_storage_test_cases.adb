@@ -316,6 +316,25 @@ package body Object_Storage_Test_Cases is
         (Bucket, Value, null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Invalid_Request, "51-tag set was accepted");
 
+      Store.Delete_Bucket_Tags
+        ("missing-tag-bucket", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Not_Found,
+         "bucket tag delete did not distinguish an absent bucket");
+      Store.Delete_Bucket_Tags
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "valid bucket tag deletion failed");
+      Store.Get_Bucket_Tags
+        (Bucket, null, Ada.Real_Time.Time_Last, Snapshot, Result);
+      Assert
+        (Result = Tag_Set_Not_Found and then Snapshot.Is_Empty,
+         "DeleteBucketTagging did not remove the complete set");
+      Store.Delete_Bucket_Tags
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "DeleteBucketTagging was not idempotent for an untagged bucket");
+
       declare
          Cancel : aliased Flyology.Cancellation.Token;
          Raised : Boolean := False;
@@ -331,6 +350,19 @@ package body Object_Storage_Test_Cases is
          Assert (Raised, "bucket tag get ignored cancellation");
       end;
       declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.Delete_Bucket_Tags
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "bucket tag delete ignored cancellation");
+      end;
+      declare
          Raised : Boolean := False;
       begin
          begin
@@ -340,6 +372,17 @@ package body Object_Storage_Test_Cases is
             when Flyology.IO.Timeout_Error => Raised := True;
          end;
          Assert (Raised, "bucket tag get ignored deadline");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Delete_Bucket_Tags
+              (Bucket, null, Ada.Real_Time.Time_First, Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "bucket tag delete ignored deadline");
       end;
    end Exercise_Bucket_Tags;
 

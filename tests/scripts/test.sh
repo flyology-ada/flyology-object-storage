@@ -18,9 +18,66 @@ if ./bin/files_open_probe "$SYMLINK_ROOT/root" >/dev/null 2>&1; then
   exit 1
 fi
 test "$(cat "$SYMLINK_ROOT/outside/sentinel")" = outside-sentinel
+
+check_tag_delete_symlink() {
+  path_kind=$1
+  target_state=$2
+  case_root="$SYMLINK_ROOT/$path_kind-$target_state/root"
+  outside="$SYMLINK_ROOT/$path_kind-$target_state/outside"
+  ./bin/files_open_probe prepare-bucket-tags "$case_root"
+  bucket_path="$case_root/buckets/probe-bucket"
+  configuration_path="$bucket_path/configuration"
+  tags_path="$configuration_path/tags.fos"
+  external_target="$outside/target"
+  mkdir -p "$outside"
+  case "$path_kind" in
+    bucket)
+      internal_path=$bucket_path
+      rm -rf "$internal_path"
+      if [ "$target_state" = live ]; then
+        mkdir -p "$external_target"
+        printf 'outside-sentinel\n' >"$external_target/sentinel"
+      fi
+      ;;
+    configuration)
+      internal_path=$configuration_path
+      rm -rf "$internal_path"
+      if [ "$target_state" = live ]; then
+        mkdir -p "$external_target"
+        printf 'outside-sentinel\n' >"$external_target/sentinel"
+      fi
+      ;;
+    tags)
+      internal_path=$tags_path
+      rm -f "$internal_path"
+      if [ "$target_state" = live ]; then
+        printf 'outside-sentinel\n' >"$external_target"
+      fi
+      ;;
+    *) echo "unknown tag deletion symlink kind" >&2; exit 2 ;;
+  esac
+  ln -s "$external_target" "$internal_path"
+  ./bin/files_open_probe delete-must-fail "$case_root"
+  test -L "$internal_path"
+  if [ "$target_state" = live ]; then
+    if [ "$path_kind" = tags ]; then
+      test "$(cat "$external_target")" = outside-sentinel
+    else
+      test "$(cat "$external_target/sentinel")" = outside-sentinel
+    fi
+  else
+    test ! -e "$external_target"
+  fi
+}
+
+for path_kind in bucket configuration tags
+do
+  check_tag_delete_symlink "$path_kind" live
+  check_tag_delete_symlink "$path_kind" dangling
+done
 rm -rf "$SYMLINK_ROOT"
 trap - EXIT INT TERM
-echo "files staging symlink rejection: OK"
+echo "files staging and bucket-tag deletion symlink rejection: OK"
 
 CONDITIONAL_LINK_ROOT=$(mktemp -d /tmp/flyology-files-conditional-link.XXXXXX)
 trap 'case "$CONDITIONAL_LINK_ROOT" in /tmp/flyology-files-conditional-link.*) rm -rf "$CONDITIONAL_LINK_ROOT" ;; esac' EXIT INT TERM
@@ -62,6 +119,7 @@ run_crash_cases put 3
 run_crash_cases conditional-put 3
 run_crash_cases object-tags 3
 run_crash_cases bucket-tags 3
+run_crash_cases bucket-tag-delete 1
 run_crash_cases delete 1
 run_crash_cases delete-objects 2
 run_crash_cases initiate 6
@@ -72,7 +130,7 @@ run_crash_cases complete 4
 run_crash_cases versioning 3
 rm -rf "$CRASH_ROOT"
 trap - EXIT INT TERM
-echo "files abrupt-crash matrix: 86 pre/post-barrier cases OK"
+echo "files abrupt-crash matrix: 88 pre/post-barrier cases OK"
 
 ./bin/flyology_object_storage_tests
 ./bin/s3_checksum_corpus

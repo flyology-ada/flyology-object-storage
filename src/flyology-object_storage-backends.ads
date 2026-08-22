@@ -422,6 +422,16 @@ package Flyology.Object_Storage.Backends is
       Value    : out Tags.Tag_Set;
       Result   : out Status) is abstract;
 
+   --  Atomically remove the complete tag set of an existing bucket. This is
+   --  idempotent for an existing untagged bucket; an absent bucket remains
+   --  Not_Found.
+   procedure Delete_Bucket_Tags
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
    procedure Put_Object
      (Item     : in out Backend;
       Bucket   : String;

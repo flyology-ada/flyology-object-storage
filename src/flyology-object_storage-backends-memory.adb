@@ -389,6 +389,19 @@ package body Flyology.Object_Storage.Backends.Memory is
          end if;
       end Get_Bucket_Tags;
 
+      procedure Delete_Bucket_Tags
+        (Name : String; Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Buckets (Index).Tags.Clear;
+            Result := Success;
+         end if;
+      end Delete_Bucket_Tags;
+
       procedure Reserve_Transient
         (Amount : Byte_Count; Result : out Status) is
       begin
@@ -1393,6 +1406,22 @@ package body Flyology.Object_Storage.Backends.Memory is
          Item.State.Get_Bucket_Tags (Bucket, Value, Result);
       end if;
    end Get_Bucket_Tags;
+
+   overriding procedure Delete_Bucket_Tags
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Bucket_Tags (Bucket, Result);
+      end if;
+   end Delete_Bucket_Tags;
 
    overriding procedure Put_Bucket_Versioning
      (Item          : in out Store;

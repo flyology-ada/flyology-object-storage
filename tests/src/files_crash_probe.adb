@@ -189,7 +189,7 @@ procedure Files_Crash_Probe is
             if Scenario = "object-tags" then
                Set_Object_Tag (Store, "old");
             end if;
-         elsif Scenario = "bucket-tags" then
+         elsif Scenario in "bucket-tags" | "bucket-tag-delete" then
             Put_Bucket_Tags (Store, "old");
          elsif Scenario in "part" | "abort" | "complete" then
             Create_Upload (Store, Upload_ID);
@@ -246,6 +246,9 @@ procedure Files_Crash_Probe is
       elsif Scenario = "bucket-tags" then
          Put_Bucket_Tags (Store, "replacement");
          Result := Storage.Success;
+      elsif Scenario = "bucket-tag-delete" then
+         Store.Delete_Bucket_Tags
+           (Bucket, null, Ada.Real_Time.Time_Last, Result);
       elsif Scenario = "delete" then
          Store.Delete_Object
            (Bucket, Key, null, Ada.Real_Time.Time_Last, Result);
@@ -378,6 +381,20 @@ procedure Files_Crash_Probe is
                and then US.To_String (Value.First_Element.Value) in
                  "old" | "replacement",
                "crash exposed a partial bucket tag replacement");
+         end;
+      elsif Scenario = "bucket-tag-delete" then
+         declare
+            Value : Tags.Tag_Set;
+         begin
+            Store.Get_Bucket_Tags
+              (Bucket, null, Ada.Real_Time.Time_Last, Value, Result);
+            Require
+              ((Result = Storage.Success and then Value.Length = 1
+                and then US.To_String (Value.First_Element.Value) = "old")
+               or else
+                 (Result = Storage.Tag_Set_Not_Found and then
+                  Value.Is_Empty),
+               "crash exposed malformed bucket tag deletion");
          end;
       elsif Scenario in "initiate" | "abort" then
          Require

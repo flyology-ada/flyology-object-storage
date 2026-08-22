@@ -805,6 +805,58 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Put_Bucket_Tags;
 
+   procedure Delete_Bucket_Tags
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status)
+   is
+      Exists         : DB.Statement;
+      Delete         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with
+           "bucket tag deletion existence query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM bucket_tags WHERE bucket_name=?1");
+      DB.Bind (Delete, 1, Bucket);
+      if DB.Step (Delete) /= DB.Done then
+         raise Catalog_Error with "bucket tag deletion returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Delete_Bucket_Tags;
+
    procedure Get_Bucket_Tags
      (Item   : in out Catalog;
       Bucket : String;
@@ -1291,7 +1343,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                DB.Bind (Delete, 1, Bucket);
                DB.Bind_Bytes (Delete, 2, Key);
                if DB.Step (Delete) /= DB.Done then
-                  raise Catalog_Error with "object batch delete returned a row";
+                  raise Catalog_Error with
+                    "object batch delete returned a row";
                elsif DB.Changes (Item.Database) /= 1 then
                   raise Catalog_Error with
                     "object batch delete changed an unexpected row count";

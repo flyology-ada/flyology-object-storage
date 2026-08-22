@@ -58,6 +58,11 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Value  : out Tags.Tag_Set;
       Result : out Status);
 
+   procedure Delete_Bucket_Tags
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status);
+
    procedure Put_Object
      (Item             : in out Catalog;
       Bucket           : String;

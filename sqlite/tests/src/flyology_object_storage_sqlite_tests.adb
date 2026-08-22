@@ -1216,6 +1216,13 @@ begin
       Assert
         (Result = Success and then Observed = Value,
          "schema-v2 migration did not install the bucket tag table");
+      Catalogs.Delete_Bucket_Tags
+        (Catalog, "legacy-bucket", Result);
+      Catalogs.Get_Bucket_Tags
+        (Catalog, "legacy-bucket", Observed, Result);
+      Assert
+        (Result = Tag_Set_Not_Found and then Observed.Is_Empty,
+         "schema-v2 migration did not support bucket tag deletion");
       Catalogs.Delete_Bucket (Catalog, "legacy-bucket", Result);
       Assert (Result = Success, "legacy bucket cleanup failed");
       Catalogs.Delete_Bucket (Catalog, "new-bucket", Result);
@@ -1620,6 +1627,30 @@ begin
          Assert
            (Result = Success and then Observed = Value,
             "SQLite backend bucket tags were not atomically replaced");
+         Store.Delete_Bucket_Tags
+           ("missing-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite bucket tag delete lost missing-bucket status");
+         Store.Delete_Bucket_Tags
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "SQLite bucket tag deletion failed");
+         Store.Get_Bucket_Tags
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Result);
+         Assert
+           (Result = Tag_Set_Not_Found and then Observed.Is_Empty,
+            "SQLite bucket tag deletion retained rows");
+         Store.Delete_Bucket_Tags
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite bucket tag deletion was not idempotent");
+         Store.Put_Bucket_Tags
+           ("sqlite-bucket", Value, null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite bucket tags could not be restored after deletion");
          Cancel.Request;
          begin
             Store.Get_Bucket_Tags
@@ -1630,6 +1661,25 @@ begin
                Raised := True;
          end;
          Assert (Raised, "SQLite bucket tag get ignored cancellation");
+         Raised := False;
+         begin
+            Store.Delete_Bucket_Tags
+              ("sqlite-bucket", Cancel'Access, Ada.Real_Time.Time_Last,
+               Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled =>
+               Raised := True;
+         end;
+         Assert (Raised, "SQLite bucket tag delete ignored cancellation");
+         Raised := False;
+         begin
+            Store.Delete_Bucket_Tags
+              ("sqlite-bucket", null, Ada.Real_Time.Time_First, Result);
+         exception
+            when Flyology.IO.Timeout_Error =>
+               Raised := True;
+         end;
+         Assert (Raised, "SQLite bucket tag delete ignored deadline");
       end;
       for Index in 1 .. 3 loop
          Store.Create_Bucket

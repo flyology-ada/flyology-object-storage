@@ -64,6 +64,13 @@ package Flyology.Object_Storage.Backends.Memory is
       Value    : out Tags.Tag_Set;
       Result   : out Status);
 
+   overriding procedure Delete_Bucket_Tags
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
    overriding procedure Put_Bucket_Versioning
      (Item          : in out Store;
       Bucket        : String;
@@ -352,6 +359,7 @@ private
         (Name : String; Value : Tags.Tag_Set; Result : out Status);
       procedure Get_Bucket_Tags
         (Name : String; Value : out Tags.Tag_Set; Result : out Status);
+      procedure Delete_Bucket_Tags (Name : String; Result : out Status);
       procedure Reserve_Transient
         (Amount : Byte_Count; Result : out Status);
       procedure Release_Transient (Amount : Byte_Count);
