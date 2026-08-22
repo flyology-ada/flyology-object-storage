@@ -8,6 +8,50 @@ with Flyology.Object_Storage.S3.Errors;
 --  High-level bucket operations over a configured Flyology HTTP client.
 package Flyology.Object_Storage.Client.Buckets is
 
+   type Head_Outcome_Kind is (Bucket_Available, Head_Rejected);
+
+   type Head_Outcome
+     (Kind : Head_Outcome_Kind := Head_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Available =>
+            Bucket_ARN           : Ada.Strings.Unbounded.Unbounded_String;
+            Bucket_Location_Type : Ada.Strings.Unbounded.Unbounded_String;
+            Bucket_Location_Name : Ada.Strings.Unbounded.Unbounded_String;
+            Region               : Ada.Strings.Unbounded.Unbounded_String;
+            Access_Point_Alias   : Low_Level.Optional_Boolean;
+         when Head_Rejected =>
+            Error : Flyology.Object_Storage.S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Probe one bucket without downloading a response body. Successful
+   --  results preserve every modeled HeadBucket response header and expose
+   --  the bucket region under the convenience-level Region name. If a
+   --  compatible server omits the optional response header, Region falls
+   --  back to the region used to sign the request.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose availability and region are requested
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region Region used to sign the HeadBucket request
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled HeadBucket headers or structured bodyless rejection
+   function Head
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Head_Outcome;
+
    type Location_Outcome_Kind is (Location_Found, Location_Rejected);
 
    type Location_Outcome

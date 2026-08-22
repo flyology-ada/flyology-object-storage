@@ -5,6 +5,7 @@ package body Flyology.Object_Storage.Client.Buckets is
 
    package US renames Ada.Strings.Unbounded;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
+   use type Low_Level.Head_Bucket_Outcome_Kind;
 
    function Timestamp return String is
       Image : constant String := Ada.Calendar.Formatting.Image
@@ -17,6 +18,45 @@ package body Flyology.Object_Storage.Client.Buckets is
         & Image (Image'First + 14 .. Image'First + 15)
         & Image (Image'First + 17 .. Image'First + 18) & "Z";
    end Timestamp;
+
+   function Head
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Head_Outcome
+   is
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Head_Bucket
+          (Origin, Style, Bucket,
+           (Expected_Bucket_Owner =>
+              US.To_Unbounded_String (Expected_Bucket_Owner)),
+           Identity, Region, Timestamp);
+      Outcome : constant Low_Level.Head_Bucket_Outcome :=
+        Low_Level.Execute_Head_Bucket (Client, Prepared, Timeout, Token);
+   begin
+      if Outcome.Kind = Low_Level.Head_Bucket_Rejected then
+         return
+           (Kind => Head_Rejected, Status => Outcome.Status,
+            Error => Outcome.Error);
+      end if;
+      return
+        (Kind                 => Bucket_Available,
+         Status               => Outcome.Status,
+         Bucket_ARN           => Outcome.Result.Bucket_ARN,
+         Bucket_Location_Type => Outcome.Result.Bucket_Location_Type,
+         Bucket_Location_Name => Outcome.Result.Bucket_Location_Name,
+         Region               =>
+           (if US.Length (Outcome.Result.Bucket_Region) = 0
+            then US.To_Unbounded_String (Region)
+            else Outcome.Result.Bucket_Region),
+         Access_Point_Alias   => Outcome.Result.Access_Point_Alias);
+   end Head;
 
    function Get_Location
      (Client   : aliased in out Flyology.HTTP.Client.Client;

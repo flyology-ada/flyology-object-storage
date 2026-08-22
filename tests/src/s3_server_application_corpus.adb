@@ -206,6 +206,46 @@ procedure S3_Server_Application_Corpus is
         "Connection: close" & CRLF & CRLF & Wire_Body;
    end Signed_Request;
 
+   function Signed_Head_Bucket_Request
+     (Target         : String;
+      Expected_Owner : String := "";
+      Second_Owner   : String := "") return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex ("");
+      Headers : constant SigV4.Name_Value_Array :=
+        (if Expected_Owner'Length = 0 then
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp))
+         elsif Second_Owner'Length = 0 then
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp),
+            SigV4.Pair
+              ("x-amz-expected-bucket-owner", Expected_Owner))
+         else
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp),
+            SigV4.Pair
+              ("x-amz-expected-bucket-owner",
+               Expected_Owner & ", " & Second_Owner)));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("HEAD", Target, No_Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+   begin
+      return "HEAD " & Target & " HTTP/1.1" & CRLF &
+        "Host: " & Host & CRLF &
+        "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        (if Expected_Owner'Length = 0 then ""
+         else "x-amz-expected-bucket-owner: " & Expected_Owner & CRLF) &
+        (if Second_Owner'Length = 0 then ""
+         else "x-amz-expected-bucket-owner: " & Second_Owner & CRLF) &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Content-Length: 0" & CRLF & "Connection: close" & CRLF & CRLF;
+   end Signed_Head_Bucket_Request;
+
    function Signed_Copy_Request
      (Target       : String;
       Copy_Source  : String;
@@ -887,9 +927,60 @@ begin
      (Has (Run (Signed_Request ("PUT", "/test-bucket", ""), 1),
            "200 OK"),
       "signed choppy CreateBucket failed");
-   Require
-     (Has (Run (Signed_Request ("HEAD", "/test-bucket", "")), "200 OK"),
-      "signed HeadBucket failed");
+   declare
+      Response : constant String :=
+        Run (Signed_Head_Bucket_Request ("/test-bucket"));
+   begin
+      Require
+        (Has (Response, "200 OK")
+         and then Has (Response, "x-amz-bucket-region: us-east-1")
+         and then Response_Body (Response) = "",
+         "signed HeadBucket metadata mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Head_Bucket_Request
+                 ("/test-bucket", "test-principal")),
+            "200 OK"),
+         "HeadBucket rejected the authenticated owner");
+      declare
+         Rejected : constant String :=
+           Run
+             (Signed_Head_Bucket_Request
+                ("/test-bucket", "different-owner"));
+      begin
+         Require
+           (Has (Rejected, "403 Forbidden")
+            and then Has
+              (Rejected, "x-amz-bucket-region: us-east-1")
+            and then Response_Body (Rejected) = "",
+            "HeadBucket ignored the expected owner precondition");
+      end;
+      declare
+         Missing : constant String :=
+           Run (Signed_Head_Bucket_Request ("/absent-bucket"));
+      begin
+         Require
+           (Has (Missing, "404 Not Found")
+            and then Has (Missing, "x-amz-bucket-region: us-east-1")
+            and then Response_Body (Missing) = "",
+            "HeadBucket absent-bucket metadata mismatch");
+      end;
+      declare
+         Duplicate : constant String :=
+           Run
+             (Signed_Head_Bucket_Request
+                ("/test-bucket", "test-principal", "test-principal"));
+      begin
+         Require
+           (Has (Duplicate, "400 Bad Request")
+            and then Has
+              (Duplicate, "x-amz-bucket-region: us-east-1")
+            and then Response_Body (Duplicate) = "",
+            "HeadBucket accepted a duplicate expected owner header: " &
+              Duplicate);
+      end;
+   end;
 
    declare
       Query : constant SigV4.Name_Value_Array :=

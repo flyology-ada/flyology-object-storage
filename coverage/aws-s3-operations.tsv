@@ -62,7 +62,7 @@ GetObjectRetention	extended	missing	partial	missing	missing
 GetObjectTagging	core	missing	partial	missing	missing
 GetObjectTorrent	extended	missing	partial	missing	missing
 GetPublicAccessBlock	extended	missing	partial	missing	missing
-HeadBucket	core	missing	partial	partial	partial
+HeadBucket	core	covered	covered	covered	covered
 HeadObject	core	partial	partial	partial	partial
 ListBucketAnalyticsConfigurations	extended	missing	partial	missing	missing
 ListBucketIntelligentTieringConfigurations	extended	missing	partial	missing	missing

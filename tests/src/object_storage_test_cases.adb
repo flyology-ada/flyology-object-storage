@@ -7119,6 +7119,119 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         Headers : Low_Level.Head_Bucket_Result;
+         Outcome : constant Low_Level.Head_Bucket_Outcome :=
+           Low_Level.Decode_Head_Bucket_Response (200, "", Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Bucket_Found
+            and then US.Length (Outcome.Result.Bucket_Region) = 0,
+            "HeadBucket optional region-header compatibility");
+      end;
+
+      declare
+         Headers : Low_Level.Head_Bucket_Result;
+         Raised  : Boolean := False;
+      begin
+         Headers.Bucket_Region := US.To_Unbounded_String ("US-WEST-2");
+         begin
+            declare
+               Ignored : constant Low_Level.Head_Bucket_Outcome :=
+                 Low_Level.Decode_Head_Bucket_Response (200, "", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "HeadBucket accepted an invalid bucket region");
+      end;
+
+      declare
+         Headers : Low_Level.Head_Bucket_Result;
+         Raised  : Boolean := False;
+      begin
+         Headers.Bucket_Region := US.To_Unbounded_String ("us-west-2");
+         Headers.Bucket_ARN :=
+           US.To_Unbounded_String (String'(1 .. 129 => 'a'));
+         begin
+            declare
+               Ignored : constant Low_Level.Head_Bucket_Outcome :=
+                 Low_Level.Decode_Head_Bucket_Response (200, "", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "HeadBucket accepted an oversized bucket ARN");
+      end;
+
+      declare
+         Headers : Low_Level.Head_Bucket_Result;
+         Raised  : Boolean := False;
+      begin
+         Headers.Bucket_Region := US.To_Unbounded_String ("us-west-2");
+         Headers.Bucket_Location_Type :=
+           US.To_Unbounded_String ("Region");
+         begin
+            declare
+               Ignored : constant Low_Level.Head_Bucket_Outcome :=
+                 Low_Level.Decode_Head_Bucket_Response (200, "", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "HeadBucket accepted an invalid location type");
+      end;
+
+      declare
+         Headers : Low_Level.Head_Bucket_Result;
+         Raised  : Boolean := False;
+      begin
+         Headers.Bucket_Region := US.To_Unbounded_String ("us-west-2");
+         Headers.Bucket_Location_Name :=
+           US.To_Unbounded_String ("USW2-AZ1");
+         begin
+            declare
+               Ignored : constant Low_Level.Head_Bucket_Outcome :=
+                 Low_Level.Decode_Head_Bucket_Response (200, "", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "HeadBucket accepted an invalid location name");
+      end;
+
+      declare
+         Headers : Low_Level.Head_Bucket_Result;
+         Raised  : Boolean := False;
+      begin
+         Headers.Bucket_Region := US.To_Unbounded_String ("us-west-2");
+         begin
+            declare
+               Ignored : constant Low_Level.Head_Bucket_Outcome :=
+                 Low_Level.Decode_Head_Bucket_Response
+                   (200, "unexpected", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "HeadBucket accepted a response body");
+      end;
+
+      declare
          Parameters : Low_Level.Head_Object_Parameters;
       begin
          Parameters.If_Match := US.To_Unbounded_String ("""etag""");

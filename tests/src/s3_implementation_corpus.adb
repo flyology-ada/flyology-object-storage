@@ -53,6 +53,7 @@ procedure S3_Implementation_Corpus is
    use type Transfers.Copy_Outcome_Kind;
    use type Transfers.Head_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
+   use type Client_Buckets.Head_Outcome_Kind;
    use type Client_Buckets.Location_Outcome_Kind;
 
    Access_Key : constant String := "FLYOLOGYS3ORACLE";
@@ -819,8 +820,26 @@ procedure S3_Implementation_Corpus is
            Low_Level.Execute_Head_Bucket
              (HTTP, Prepared, Timeout => 30.0);
       begin
-         if Outcome.Kind /= Low_Level.Bucket_Found then
-            raise Program_Error with "S3 implementation rejected HeadBucket";
+         if Outcome.Kind /= Low_Level.Bucket_Found
+           or else
+             (US.Length (Outcome.Result.Bucket_Region) /= 0
+              and then US.To_String (Outcome.Result.Bucket_Region) /=
+                "us-east-1")
+         then
+            raise Program_Error with
+              "S3 implementation returned invalid HeadBucket metadata";
+         end if;
+      end;
+      declare
+         Outcome : constant Client_Buckets.Head_Outcome :=
+           Client_Buckets.Head
+             (HTTP, Origin, Bucket, Identity, Timeout => 30.0);
+      begin
+         if Outcome.Kind /= Client_Buckets.Bucket_Available
+           or else US.To_String (Outcome.Region) /= "us-east-1"
+         then
+            raise Program_Error with
+              "high-level HeadBucket metadata mismatch";
          end if;
       end;
       HTTP_Client.Shutdown (HTTP);

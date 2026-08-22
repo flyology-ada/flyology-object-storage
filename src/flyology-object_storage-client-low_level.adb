@@ -1829,6 +1829,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Location_Type : constant String :=
         US.To_String (Headers.Bucket_Location_Type);
+      Location_Name : constant String :=
+        US.To_String (Headers.Bucket_Location_Name);
+      Region : constant String := US.To_String (Headers.Bucket_Region);
    begin
       if not Whitespace_Only (Payload) then
          raise Invalid_Response with "HeadBucket contains a response body";
@@ -1836,7 +1839,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
          if (Location_Type'Length > 0
              and then Location_Type /= "AvailabilityZone"
              and then Location_Type /= "LocalZone")
-           or else US.Length (Headers.Bucket_Region) > 20
+           or else US.Length (Headers.Bucket_ARN) > 128
+           or else
+             (Location_Name'Length > 0
+              and then
+                (Location_Name'Length > 63
+                 or else not Encoding.Valid_Scope_Segment (Location_Name)))
+           or else Region'Length > 63
+           or else
+             (Region'Length > 0
+              and then not Encoding.Valid_Scope_Segment (Region))
          then
             raise Invalid_Response with "invalid HeadBucket response headers";
          end if;

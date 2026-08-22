@@ -921,13 +921,50 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                end if;
 
             when Head_Bucket =>
-               Store.Head_Bucket
-                 (Bucket, Apps.Cancellation (X), Apps.Deadline (X), Result);
-               if Result = Success then
-                  Apps.Respond (X, 200, "", "");
-               else
-                  Send_Backend_Error (X, Result, True, Target_Text);
-               end if;
+               declare
+                  Configured : constant String :=
+                    US.To_String (Rules.Expected_Region);
+                  Region : constant String :=
+                    (if Configured'Length = 0
+                     then "us-east-1" else Configured);
+               begin
+                  if Region /= "us-east-1"
+                    and then not Buckets.Valid_Location_Constraint (Region)
+                  then
+                     Send_Error
+                       (X, 500, "InternalError",
+                        "The configured S3 region is invalid", Target_Text);
+                  else
+                     Apps.Set_Header (X, "x-amz-bucket-region", Region);
+                     if Apps.Request_Header_Count
+                       (X, "x-amz-expected-bucket-owner") > 1
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The expected bucket owner header is duplicated",
+                           Target_Text);
+                     elsif Apps.Request_Header_Count
+                       (X, "x-amz-expected-bucket-owner") = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-expected-bucket-owner") /=
+                           US.To_String (Auth.Principal)
+                     then
+                        Send_Error
+                          (X, 403, "AccessDenied", "Access Denied",
+                           Target_Text);
+                     else
+                        Store.Head_Bucket
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Result);
+                        if Result = Success then
+                           Apps.Respond (X, 200, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
 
             when Get_Bucket_Location =>
                if Apps.Request_Header_Count
