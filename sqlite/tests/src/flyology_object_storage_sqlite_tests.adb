@@ -13,6 +13,7 @@ with Flyology.IO;
 with Flyology.Object_Storage.SQLite;
 with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.SQLite;
+with Flyology.Object_Storage.Checksum_Engine;
 with Flyology.Object_Storage.SQLite.Catalogs;
 with Flyology.Object_Storage.SQLite.Databases;
 with Flyology.Object_Storage.Tags;
@@ -24,6 +25,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    use type Databases.Step_Result;
    use type Ada.Containers.Count_Type;
    use type Ada.Streams.Stream_Element_Offset;
+   use type Ada.Strings.Unbounded.Unbounded_String;
    use type Flyology.Object_Storage.Status;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type Flyology.Object_Storage.MFA_Delete_Status;
@@ -46,6 +48,9 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    SQLite_Upload_ID : US.Unbounded_String;
    SQLite_Part_ETag : US.Unbounded_String;
    SQLite_Abort_ID  : US.Unbounded_String;
+   SQLite_Checksum  : Flyology.Object_Storage.Checksum_Information;
+   SQLite_Part_Checksum : Flyology.Object_Storage.Checksum_Information;
+   SQLite_Full_Checksum : Flyology.Object_Storage.Checksum_Information;
    SQLite_Bucket_Created : Flyology.Object_Storage.Unix_Time := 0;
 
    procedure Assert (Condition : Boolean; Message : String) is
@@ -54,6 +59,59 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          raise Program_Error with Message;
       end if;
    end Assert;
+
+   function Digest
+     (Data      : String;
+      Algorithm : Flyology.Object_Storage.Checksum_Algorithm)
+      return US.Unbounded_String
+   is
+      package Engine renames Flyology.Object_Storage.Checksum_Engine;
+      Item : Engine.Context (Engine.Algorithm_Value (Algorithm));
+      Buffer : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
+      Position : Integer := Data'First;
+   begin
+      while Position <= Data'Last loop
+         declare
+            Count : constant Natural := Natural'Min
+              (Natural (Buffer'Length), Data'Last - Position + 1);
+         begin
+            for Offset in 0 .. Count - 1 loop
+               Buffer
+                 (Buffer'First + Ada.Streams.Stream_Element_Offset (Offset)) :=
+                   Ada.Streams.Stream_Element
+                     (Character'Pos (Data (Position + Offset)));
+            end loop;
+            Engine.Update
+              (Item,
+               Buffer
+                 (Buffer'First ..
+                    Buffer'First +
+                      Ada.Streams.Stream_Element_Offset (Count) - 1));
+            Position := Position + Count;
+         end;
+      end loop;
+      return US.To_Unbounded_String (Engine.Finish (Item));
+   end Digest;
+
+   function Ordinary_File_Count (Directory : String) return Natural is
+      Search : Ada.Directories.Search_Type;
+      Directory_Entry : Ada.Directories.Directory_Entry_Type;
+      Result : Natural := 0;
+   begin
+      Ada.Directories.Start_Search
+        (Search, Directory, "*",
+         (Ada.Directories.Ordinary_File => True, others => False));
+      while Ada.Directories.More_Entries (Search) loop
+         Ada.Directories.Get_Next_Entry (Search, Directory_Entry);
+         Result := Result + 1;
+      end loop;
+      Ada.Directories.End_Search (Search);
+      return Result;
+   exception
+      when others =>
+         Ada.Directories.End_Search (Search);
+         raise;
+   end Ordinary_File_Count;
 
    procedure Delete_Database is
    begin
@@ -322,6 +380,34 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V6_Database;
+
+   procedure Create_V7_Database is
+      Legacy : Databases.Database;
+   begin
+      Create_V6_Database;
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "ALTER TABLE buckets ADD COLUMN versioning_status INTEGER " &
+         "NOT NULL DEFAULT 0 CHECK(versioning_status BETWEEN 0 AND 2);" &
+         "ALTER TABLE buckets ADD COLUMN mfa_delete_status INTEGER " &
+         "NOT NULL DEFAULT 0 CHECK(mfa_delete_status BETWEEN 0 AND 2);" &
+         "UPDATE buckets SET versioning_status=1,mfa_delete_status=2 " &
+         "WHERE name='legacy-bucket';" &
+         "INSERT INTO multipart_uploads VALUES" &
+         "('legacy-upload','legacy-bucket',X'6D70'," &
+         "X'746578742F706C61696E',7);" &
+         "INSERT INTO multipart_parts VALUES" &
+         "('legacy-upload',1,'legacy-part-payload',3,8,X'65746167');" &
+         "PRAGMA user_version=7;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V7_Database;
 
    procedure Assert_Unconfigured_Versioning
      (Catalog : in out Catalogs.Catalog;
@@ -913,7 +999,9 @@ begin
       begin
          Catalogs.Create_Multipart_Upload
            (Catalog, "catalog-bucket", "multipart-key", Upload_ID,
-            "application/test", 98, Result);
+            (Content_Type => US.To_Unbounded_String ("application/test"),
+             Checksum => No_Checksum_Information),
+            98, Result);
          Assert (Result = Success, "catalog multipart create failed");
          Catalogs.Put_Multipart_Part
            (Catalog, "catalog-bucket", "multipart-key", Upload_ID, 1,
@@ -1165,8 +1253,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 7,
-         "schema-v1 migration did not publish version 7");
+         and then Databases.Column (Version, 0) = 8,
+         "schema-v1 migration did not publish version 8");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -1241,8 +1329,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 7,
-         "schema-v2 migration did not publish version 7");
+         and then Databases.Column (Version, 0) = 8,
+         "schema-v2 migration did not publish version 8");
    end;
    declare
       Tables : Databases.Statement;
@@ -1278,10 +1366,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 7
+         and then Databases.Column (Version, 0) = 8
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 7 tables");
+         "schema-v3 migration did not publish schema 8 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1352,8 +1440,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 7,
-            "schema-v4 migration did not publish version 7");
+            and then Databases.Column (Version, 0) = 8,
+            "schema-v4 migration did not publish version 8");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -1420,7 +1508,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 7
+            and then Databases.Column (Version, 0) = 8
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -1498,8 +1586,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 7,
-         "schema-v6 migration did not publish version 7");
+         and then Databases.Column (Version, 0) = 8,
+         "schema-v6 migration did not publish version 8");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1544,6 +1632,143 @@ begin
    end;
    Ada.Directories.Delete_Tree (Conditional_Root);
 
+   Create_V7_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      Result : Status;
+      Object_Tags : Object_Tag_Set;
+      Bucket_Tags : Storage_Tags.Tag_Set;
+      Configuration : Bucket_Versioning_Configuration;
+      Upload_Options : Multipart_Options;
+      Page : Multipart_Part_Page;
+      Snapshot : Object_Attribute_Snapshot;
+      procedure Check is null;
+   begin
+      Catalogs.Get_Object_Tags
+        (Catalog, "legacy-bucket", "k", Object_Tags, Result);
+      Assert
+        (Result = Success and then Object_Tags.Length = 1
+         and then US.To_String (Object_Tags.Items (1).Key) = "state",
+         "schema-v7 migration did not preserve object tags");
+      Catalogs.Get_Bucket_Tags
+        (Catalog, "legacy-bucket", Bucket_Tags, Result);
+      Assert
+        (Result = Success and then Bucket_Tags.Length = 1
+         and then US.To_String (Bucket_Tags.First_Element.Key) = "project",
+         "schema-v7 migration did not preserve bucket tags");
+      Catalogs.Get_Bucket_Versioning
+        (Catalog, "legacy-bucket", Configuration, Result);
+      Assert
+        (Result = Success
+         and then Configuration.Status = Versioning_Enabled
+         and then Configuration.MFA_Delete = MFA_Delete_Disabled,
+         "schema-v7 migration did not preserve versioning");
+      Catalogs.Get_Object_Attributes
+        (Catalog, "legacy-bucket", "k", (After => 0, Maximum => 1),
+         (others => <>), Check'Access, Snapshot, Result);
+      Assert
+        (Result = Success and then Snapshot.Parts.Length = 1
+         and then Snapshot.Parts.First_Element.Number = 1
+         and then Snapshot.Parts.First_Element.Checksum =
+           No_Checksum_Information,
+         "schema-v7 migration did not preserve completed parts");
+      Catalogs.Find_Multipart_Upload
+        (Catalog, "legacy-bucket", "mp", "legacy-upload",
+         Upload_Options, Result);
+      Assert
+        (Result = Success
+         and then US.To_String (Upload_Options.Content_Type) = "text/plain"
+         and then Upload_Options.Checksum = No_Checksum_Information,
+         "schema-v7 migration did not preserve multipart configuration");
+      Catalogs.List_Multipart_Parts
+        (Catalog, "legacy-bucket", "mp", "legacy-upload",
+         (After => 0, Maximum => 1), Page, Result);
+      Assert
+        (Result = Success and then Page.Parts.Length = 1
+         and then Page.Parts.First_Element.Info.Size = 3
+         and then Page.Parts.First_Element.Info.Checksum =
+           No_Checksum_Information,
+         "schema-v7 migration did not preserve staged parts");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Defaults : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Defaults, Database,
+         "SELECT " &
+         "(SELECT sum(checksum_algorithm+checksum_method+" &
+         "length(checksum_value)) FROM objects)+" &
+         "(SELECT sum(checksum_algorithm+checksum_method) " &
+         "FROM multipart_uploads)+" &
+         "(SELECT sum(checksum_algorithm+checksum_method+" &
+         "length(checksum_value)) FROM multipart_parts)+" &
+         "(SELECT sum(checksum_algorithm+checksum_method+" &
+         "length(checksum_value)) FROM object_parts)");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 8
+         and then Databases.Step (Defaults) = Databases.Row
+         and then Databases.Column (Defaults, 0) = 0,
+         "schema-v7 checksum migration did not publish safe defaults");
+   end;
+   Databases.Close (Database);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "UPDATE objects SET checksum_method=1 " &
+      "WHERE bucket_name='legacy-bucket' AND object_key=X'6B'");
+   Databases.Close (Database);
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      Payload : US.Unbounded_String;
+      Info : Flyology.Object_Storage.Object_Information;
+      Result : Flyology.Object_Storage.Status;
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Find_Object
+           (Catalog, "legacy-bucket", "k", Payload, Info, Result);
+      exception
+         when Catalogs.Catalog_Error =>
+            Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema-v8 catalog accepted inconsistent checksum metadata");
+   end;
+   Catalogs.Close (Catalog);
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "ALTER TABLE objects DROP COLUMN checksum_value;" &
+      "ALTER TABLE multipart_uploads ADD COLUMN checksum_bogus INTEGER " &
+      "NOT NULL DEFAULT 0;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error =>
+            Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema-v8 accepted redistributed checksum-prefixed columns");
+   end;
+   Delete_Database;
+
    if Ada.Directories.Exists (Backend_Root) then
       Ada.Directories.Delete_Tree (Backend_Root);
    end if;
@@ -1552,7 +1777,8 @@ begin
       use Flyology.Object_Storage;
       use Flyology.Object_Storage.Backends;
       Store : Backend.Store :=
-        Backend.Open (Backend_Root, Maximum_Object_Size => 64);
+        Backend.Open
+          (Backend_Root, Maximum_Object_Size => 6 * 1_024 * 1_024);
       Source : Buffer_Source :=
         (Data     => Flyology.Bytes.From_Byte_String ("first body"),
          Position => 0,
@@ -1576,7 +1802,8 @@ begin
       begin
          begin
             declare
-               Other : Backend.Store := Backend.Open (Backend_Root, 64);
+               Other : Backend.Store := Backend.Open
+                 (Backend_Root, 6 * 1_024 * 1_024);
                pragma Unreferenced (Other);
             begin
                null;
@@ -1861,6 +2088,251 @@ begin
             null, Ada.Real_Time.Time_Last, Info, Result);
          Assert (Result = Success, "SQLite backend empty put failed");
       end;
+      declare
+         package Engine renames Flyology.Object_Storage.Checksum_Engine;
+         Upload_Options : Multipart_Options := Default_Multipart_Options;
+         Part_Options : Multipart_Part_Options;
+         Upload_ID : US.Unbounded_String;
+         Good : constant US.Unbounded_String := US.To_Unbounded_String
+           ("ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=");
+         Replacement_Good : constant US.Unbounded_String :=
+           Digest ("replacement", Checksum_SHA256);
+         Wrong : constant US.Unbounded_String := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Page : Multipart_Part_Page;
+         Completion : Multipart_Part_References;
+         Existing : Buffer_Source :=
+           (Data     => Flyology.Bytes.From_Byte_String ("old"),
+            Position => 0,
+            Length   => (Kind => Known, Bytes => 3));
+      begin
+         Store.Put_Object
+           ("sqlite-bucket", "checksummed", Existing,
+            Default_Put_Options, null, Ada.Real_Time.Time_Last,
+            Info, Result);
+         Assert
+           (Result = Success,
+            "SQLite checksum destination setup failed");
+         Upload_Options.Checksum :=
+           (Algorithm => Checksum_SHA256,
+            Method    => Composite_Checksum,
+            Value     => US.Null_Unbounded_String);
+         Store.Create_Multipart_Upload
+           ("sqlite-bucket", "checksummed", Upload_Options, null,
+            Ada.Real_Time.Time_Last, Upload_ID, Result);
+         Assert
+           (Result = Success,
+            "SQLite checksum multipart create failed");
+         Part_Options.Expected_Checksum := Upload_Options.Checksum;
+         Part_Options.Expected_Checksum.Value := Good;
+         declare
+            Part_Source : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String ("abc"),
+               Position => 0,
+               Length   => (Kind => Known, Bytes => 3));
+         begin
+            Store.Put_Multipart_Part
+              ("sqlite-bucket", "checksummed", US.To_String (Upload_ID),
+               1, Part_Source, Part_Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+         end;
+         Assert
+           (Result = Success and then Info.Checksum.Value = Good,
+            "SQLite valid composite part checksum was not retained");
+         declare
+            Before : constant Natural := Ordinary_File_Count
+              (Backend_Root & "/objects");
+            Replacement : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String ("replacement"),
+               Position => 0,
+               Length   => (Kind => Known, Bytes => 11));
+         begin
+            Part_Options.Expected_Checksum.Value := Replacement_Good;
+            Store.Put_Multipart_Part
+              ("sqlite-bucket", "checksummed", US.To_String (Upload_ID),
+               1, Replacement, Part_Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Success
+               and then Info.Checksum.Value = Replacement_Good
+               and then Ordinary_File_Count (Backend_Root & "/objects") =
+                 Before,
+               "SQLite successful part replacement leaked old payload");
+         end;
+         Part_Options.Expected_Checksum.Value := Wrong;
+         declare
+            Replacement : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String ("bad"),
+               Position => 0,
+               Length   => (Kind => Known, Bytes => 3));
+         begin
+            Store.Put_Multipart_Part
+              ("sqlite-bucket", "checksummed", US.To_String (Upload_ID),
+               1, Replacement, Part_Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+         end;
+         Assert
+           (Result = Bad_Digest,
+            "SQLite accepted a bad replacement part checksum");
+         Store.List_Multipart_Parts
+           ("sqlite-bucket", "checksummed", US.To_String (Upload_ID),
+            (After => 0, Maximum => 1), null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success
+            and then Page.Checksum = Upload_Options.Checksum
+            and then Page.Parts.Length = 1
+            and then Page.Parts.First_Element.Info.Checksum.Value =
+              Replacement_Good
+            and then Page.Parts.First_Element.Info.Size = 11,
+            "SQLite BadDigest replaced the staged part");
+         Completion.Append
+           (Multipart_Part_Reference'
+              (Number => 1,
+               Entity_Tag => Page.Parts.First_Element.Info.Entity_Tag,
+               Checksum => Page.Parts.First_Element.Info.Checksum));
+         declare
+            Values : constant Engine.Part_Value_Array :=
+              (1 => (Value => Page.Parts.First_Element.Info.Checksum,
+                     Length => 11));
+            Expected : constant US.Unbounded_String :=
+              US.To_Unbounded_String
+                (Engine.Multipart_Object_Value
+                   (Checksum_SHA256, Composite_Checksum, Values));
+            Complete_Options : Complete_Multipart_Options :=
+              Default_Complete_Multipart_Options;
+            Old_Body : Buffer_Sink;
+         begin
+            Complete_Options.Expected_Checksum := Upload_Options.Checksum;
+            Complete_Options.Expected_Checksum.Value :=
+              US.To_Unbounded_String (US.To_String (Wrong) & "-1");
+            Store.Complete_Multipart_Upload
+              ("sqlite-bucket", "checksummed", US.To_String (Upload_ID),
+               Completion, Complete_Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Bad_Digest,
+               "SQLite accepted a bad completed-object checksum");
+            Store.Get_Object
+              ("sqlite-bucket", "checksummed", Whole_Object, Old_Body,
+               null, Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Success
+               and then Flyology.Bytes.To_Byte_String (Old_Body.Data) =
+                 "old",
+               "failed SQLite checksum completion changed destination");
+            Store.List_Multipart_Parts
+              ("sqlite-bucket", "checksummed", US.To_String (Upload_ID),
+               (After => 0, Maximum => 1), null,
+               Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Success and then Page.Parts.Length = 1,
+               "failed SQLite checksum completion retired upload");
+            Complete_Options.Expected_Checksum.Value := Expected;
+            Store.Complete_Multipart_Upload
+              ("sqlite-bucket", "checksummed", US.To_String (Upload_ID),
+               Completion, Complete_Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Success and then Info.Checksum.Value = Expected,
+               "SQLite composite checksum completion failed");
+            SQLite_Checksum := Info.Checksum;
+            SQLite_Part_Checksum :=
+              Page.Parts.First_Element.Info.Checksum;
+         end;
+      end;
+      declare
+         package Engine renames Flyology.Object_Storage.Checksum_Engine;
+         Large : constant String (1 .. 5 * 1_024 * 1_024) :=
+           (others => 'a');
+         Small : constant String := "abc";
+         Upload_Options : Multipart_Options := Default_Multipart_Options;
+         Part_Options : Multipart_Part_Options;
+         Upload_ID : US.Unbounded_String;
+         Part_One : Object_Information;
+         Part_Three : Object_Information;
+         Completion : Multipart_Part_References;
+      begin
+         Upload_Options.Checksum :=
+           (Algorithm => Checksum_CRC32C,
+            Method    => Full_Object_Checksum,
+            Value     => US.Null_Unbounded_String);
+         Store.Create_Multipart_Upload
+           ("sqlite-bucket", "full-checksum", Upload_Options, null,
+            Ada.Real_Time.Time_Last, Upload_ID, Result);
+         Assert
+           (Result = Success,
+            "SQLite full-object checksum multipart create failed");
+         Part_Options.Expected_Checksum := Upload_Options.Checksum;
+         Part_Options.Expected_Checksum.Value :=
+           Digest (Large, Checksum_CRC32C);
+         declare
+            Part_Source : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String (Large),
+               Position => 0,
+               Length   => (Kind => Known, Bytes => Large'Length));
+         begin
+            Store.Put_Multipart_Part
+              ("sqlite-bucket", "full-checksum", US.To_String (Upload_ID),
+               1, Part_Source, Part_Options, null,
+               Ada.Real_Time.Time_Last, Part_One, Result);
+         end;
+         Assert
+           (Result = Success
+            and then Part_One.Checksum.Value =
+              Part_Options.Expected_Checksum.Value,
+            "SQLite full-object first part checksum failed");
+         Part_Options.Expected_Checksum.Value :=
+           Digest (Small, Checksum_CRC32C);
+         declare
+            Part_Source : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String (Small),
+               Position => 0,
+               Length   => (Kind => Known, Bytes => Small'Length));
+         begin
+            Store.Put_Multipart_Part
+              ("sqlite-bucket", "full-checksum", US.To_String (Upload_ID),
+               3, Part_Source, Part_Options, null,
+               Ada.Real_Time.Time_Last, Part_Three, Result);
+         end;
+         Assert
+           (Result = Success
+            and then Part_Three.Checksum.Value =
+              Part_Options.Expected_Checksum.Value,
+            "SQLite full-object final part checksum failed");
+         Completion.Append
+           (Multipart_Part_Reference'
+              (Number => 1, Entity_Tag => Part_One.Entity_Tag,
+               Checksum => Part_One.Checksum));
+         Completion.Append
+           (Multipart_Part_Reference'
+              (Number => 3, Entity_Tag => Part_Three.Entity_Tag,
+               Checksum => Part_Three.Checksum));
+         declare
+            Values : constant Engine.Part_Value_Array :=
+              (1 => (Value => Part_One.Checksum, Length => Part_One.Size),
+               2 =>
+                 (Value => Part_Three.Checksum, Length => Part_Three.Size));
+            Expected : constant US.Unbounded_String :=
+              US.To_Unbounded_String
+                (Engine.Multipart_Object_Value
+                   (Checksum_CRC32C, Full_Object_Checksum, Values));
+            Complete_Options : Complete_Multipart_Options :=
+              Default_Complete_Multipart_Options;
+         begin
+            Complete_Options.Expected_Checksum := Upload_Options.Checksum;
+            Complete_Options.Expected_Checksum.Value := Expected;
+            Store.Complete_Multipart_Upload
+              ("sqlite-bucket", "full-checksum", US.To_String (Upload_ID),
+               Completion, Complete_Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Success and then Info.Checksum.Value = Expected
+               and then Info.Size = Large'Length + Small'Length,
+               "SQLite full-object CRC aggregation failed");
+            SQLite_Full_Checksum := Info.Checksum;
+         end;
+      end;
       Store.Create_Multipart_Upload
         ("sqlite-bucket", "multipart-target",
          (Content_Type =>
@@ -1976,15 +2448,16 @@ begin
             Page, Result);
          Assert
            (Result = Success and then Page.Objects.Length = 1
-            and then US.To_String (Page.Objects.First_Element.Key) = "empty"
+            and then US.To_String (Page.Objects.First_Element.Key) =
+              "checksummed"
             and then Page.Is_Truncated
-            and then US.To_String (Page.Next_After) = "empty",
+            and then US.To_String (Page.Next_After) = "checksummed",
             "SQLite ListObjects v1/v2 first page failed");
          declare
             Cursor : constant US.Unbounded_String := Page.Next_After;
          begin
             Put_Listing_Key ("aardvark");
-            Put_Listing_Key ("empty0");
+            Put_Listing_Key ("checksummed0");
             Options.After := Cursor;
             Store.List_Objects
               ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
@@ -1992,12 +2465,31 @@ begin
             Assert
               (Result = Success and then Page.Objects.Length = 1
                and then US.To_String (Page.Objects.First_Element.Key) =
-                 "empty0",
+                 "checksummed0",
                "SQLite ListObjects v1/v2 mutation-safe continuation failed");
             Delete_Listing_Key ("aardvark");
-            Delete_Listing_Key ("empty0");
+            Delete_Listing_Key ("checksummed0");
             Options.After := Cursor;
          end;
+         Store.List_Objects
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Objects.Length = 1
+            and then US.To_String (Page.Objects.First_Element.Key) = "empty"
+            and then Page.Is_Truncated,
+            "SQLite backend listing continuation failed");
+         Options.After := Page.Next_After;
+         Store.List_Objects
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Objects.Length = 1
+            and then US.To_String (Page.Objects.First_Element.Key) =
+              "full-checksum"
+            and then Page.Is_Truncated,
+            "SQLite checksum listing continuation failed");
+         Options.After := Page.Next_After;
          Store.List_Objects
            ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
             Page, Result);
@@ -2012,7 +2504,7 @@ begin
            ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
             Page, Result);
          Assert
-           (Result = Success and then Page.Objects.Length = 1
+           (Result = Success and then Page.Objects.Length = 3
             and then Page.Common_Prefixes.Length = 1
             and then US.To_String (Page.Common_Prefixes.First_Element) =
               Character'Val (255) & "../",
@@ -2103,7 +2595,8 @@ begin
       package Backend renames Flyology.Object_Storage.Backends.SQLite;
       use Flyology.Object_Storage;
       use Flyology.Object_Storage.Backends;
-      Store : Backend.Store := Backend.Open (Backend_Root, 64);
+      Store : Backend.Store :=
+        Backend.Open (Backend_Root, 6 * 1_024 * 1_024);
       Info   : Object_Information;
       Result : Status;
       Sink   : Buffer_Sink;
@@ -2150,6 +2643,48 @@ begin
         (Result = Success and then Info.Size = 11 and then
          US.To_String (Info.Entity_Tag) = "etag-2",
          "SQLite backend metadata did not persist");
+      declare
+         Checksum_Info : Object_Information;
+         Snapshot : Object_Attribute_Snapshot;
+      begin
+         Store.Head_Object
+           ("sqlite-bucket", "checksummed", null,
+            Ada.Real_Time.Time_Last, Checksum_Info, Result);
+         Assert
+           (Result = Success
+            and then Checksum_Info.Checksum = SQLite_Checksum,
+            "SQLite completed checksum did not survive reopen");
+         Store.Get_Object_Attributes
+           ("sqlite-bucket", "checksummed", (After => 0, Maximum => 1),
+            null, Ada.Real_Time.Time_Last, Snapshot, Result);
+         Assert
+           (Result = Success
+            and then Snapshot.Info.Checksum = SQLite_Checksum
+            and then Snapshot.Is_Multipart
+            and then Snapshot.Parts.Length = 1
+            and then Snapshot.Parts.First_Element.Checksum =
+              SQLite_Part_Checksum,
+            "SQLite checksum object parts did not survive reopen");
+      end;
+      declare
+         Full_Info : Object_Information;
+         Snapshot : Object_Attribute_Snapshot;
+      begin
+         Store.Head_Object
+           ("sqlite-bucket", "full-checksum", null,
+            Ada.Real_Time.Time_Last, Full_Info, Result);
+         Store.Get_Object_Attributes
+           ("sqlite-bucket", "full-checksum", (After => 0, Maximum => 2),
+            null, Ada.Real_Time.Time_Last, Snapshot, Result);
+         Assert
+           (Result = Success
+            and then Full_Info.Checksum = SQLite_Full_Checksum
+            and then Snapshot.Info.Checksum = SQLite_Full_Checksum
+            and then Snapshot.Parts.Length = 2
+            and then Snapshot.Parts (1).Number = 1
+            and then Snapshot.Parts (2).Number = 3,
+            "SQLite full-object checksum metadata did not survive reopen");
+      end;
       declare
          Snapshot : Object_Attribute_Snapshot;
       begin
@@ -2274,12 +2809,18 @@ begin
       declare
          Copy_ID : US.Unbounded_String;
          Copy_ETag : US.Unbounded_String;
+         Copy_Checksum : Checksum_Information;
          Completion : Multipart_Part_References;
          Copy_Sink : Buffer_Sink;
+         Upload_Options : Multipart_Options := Default_Multipart_Options;
       begin
+         Upload_Options.Checksum :=
+           (Algorithm => Checksum_SHA256,
+            Method    => Composite_Checksum,
+            Value     => US.Null_Unbounded_String);
          Store.Create_Multipart_Upload
            ("sqlite-bucket", "copy-part-target",
-            Default_Multipart_Options, null,
+            Upload_Options, null,
             Ada.Real_Time.Time_Last, Copy_ID, Result);
          Assert (Result = Success, "SQLite copy-part create failed");
          Store.Copy_Multipart_Part
@@ -2288,9 +2829,11 @@ begin
             (Kind => Bounded_Range, First => 7, Last => 10, Count => 0),
             (others => <>), null, Ada.Real_Time.Time_Last, Info, Result);
          Copy_ETag := Info.Entity_Tag;
+         Copy_Checksum := Info.Checksum;
          Assert
-           (Result = Success and then Info.Size = 4,
-            "SQLite ranged copy-part failed");
+           (Result = Success and then Info.Size = 4
+            and then Info.Checksum.Algorithm = Checksum_SHA256,
+            "SQLite composite ranged copy-part failed");
          Store.Copy_Multipart_Part
            ("sqlite-bucket", "missing", "sqlite-bucket",
             "copy-part-target", US.To_String (Copy_ID), 2, Whole_Object,
@@ -2300,10 +2843,13 @@ begin
          Completion.Append
            (Multipart_Part_Reference'
               (Number => 1, Entity_Tag => Copy_ETag,
-               Checksum => No_Checksum_Information));
+               Checksum => Copy_Checksum));
          Store.Complete_Multipart_Upload
            ("sqlite-bucket", "copy-part-target", US.To_String (Copy_ID),
             Completion, null, Ada.Real_Time.Time_Last, Info, Result);
+         Assert
+           (Result = Success,
+            "SQLite copied-part completion failed: " & Status'Image (Result));
          Store.Get_Object
            ("sqlite-bucket", "copy-part-target", Whole_Object, Copy_Sink,
             null, Ada.Real_Time.Time_Last, Info, Result);
@@ -2499,13 +3045,15 @@ begin
       declare
          Entries  : Delete_Object_Entries;
          Outcomes : Delete_Object_Outcomes;
-         Keys : constant array (Positive range 1 .. 5) of
+         Keys : constant array (Positive range 1 .. 7) of
            US.Unbounded_String :=
              (1 => US.To_Unbounded_String (Key),
               2 => US.To_Unbounded_String ("empty"),
               3 => US.To_Unbounded_String ("multipart-target"),
               4 => US.To_Unbounded_String ("copied"),
-              5 => US.To_Unbounded_String ("already-missing"));
+              5 => US.To_Unbounded_String ("checksummed"),
+              6 => US.To_Unbounded_String ("full-checksum"),
+              7 => US.To_Unbounded_String ("already-missing"));
       begin
          for Object_Key of Keys loop
             Entries.Append

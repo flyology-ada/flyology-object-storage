@@ -1,6 +1,7 @@
 with Ada.Containers;
 with Flyology.Object_Storage.Backends.Listing;
 with Flyology.Object_Storage.Backends.Multipart_Listing;
+with Flyology.Object_Storage.Checksum_Engine;
 
 package body Flyology.Object_Storage.SQLite.Catalogs is
 
@@ -10,7 +11,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   Schema_Version : constant Long_Long_Integer := 7;
+   Schema_Version : constant Long_Long_Integer := 8;
    Empty_Info : constant Object_Information := (others => <>);
    Object_Tags_Schema : constant String :=
      "CREATE TABLE object_tags (" &
@@ -35,6 +36,23 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "FOREIGN KEY(bucket_name,object_key) " &
      "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
      ") WITHOUT ROWID;";
+   Object_Parts_Schema_V8 : constant String :=
+     "CREATE TABLE object_parts (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "object_key BLOB NOT NULL," &
+     "part_number INTEGER NOT NULL " &
+     "CHECK(part_number BETWEEN 1 AND 10000)," &
+     "size INTEGER NOT NULL CHECK(size >= 0)," &
+     "checksum_algorithm INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(checksum_algorithm BETWEEN 0 AND 10)," &
+     "checksum_method INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(checksum_method BETWEEN 0 AND 2)," &
+     "checksum_value BLOB NOT NULL DEFAULT X'' " &
+     "CHECK(length(checksum_value) <= 96)," &
+     "PRIMARY KEY(bucket_name,object_key,part_number)," &
+     "FOREIGN KEY(bucket_name,object_key) " &
+     "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
    Bucket_Tags_Schema : constant String :=
      "CREATE TABLE bucket_tags (" &
      "bucket_name TEXT NOT NULL COLLATE BINARY," &
@@ -50,6 +68,102 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "DEFAULT 0 CHECK(versioning_status BETWEEN 0 AND 2);" &
      "ALTER TABLE buckets ADD COLUMN mfa_delete_status INTEGER NOT NULL " &
      "DEFAULT 0 CHECK(mfa_delete_status BETWEEN 0 AND 2);";
+   Checksum_Columns_Schema : constant String :=
+     "ALTER TABLE objects ADD COLUMN checksum_algorithm INTEGER NOT NULL " &
+     "DEFAULT 0 CHECK(checksum_algorithm BETWEEN 0 AND 10);" &
+     "ALTER TABLE objects ADD COLUMN checksum_method INTEGER NOT NULL " &
+     "DEFAULT 0 CHECK(checksum_method BETWEEN 0 AND 2);" &
+     "ALTER TABLE objects ADD COLUMN checksum_value BLOB NOT NULL " &
+     "DEFAULT X'' CHECK(length(checksum_value) <= 96);" &
+     "ALTER TABLE multipart_uploads ADD COLUMN checksum_algorithm INTEGER " &
+     "NOT NULL DEFAULT 0 CHECK(checksum_algorithm BETWEEN 0 AND 10);" &
+     "ALTER TABLE multipart_uploads ADD COLUMN checksum_method INTEGER " &
+     "NOT NULL DEFAULT 0 CHECK(checksum_method BETWEEN 0 AND 2);" &
+     "ALTER TABLE multipart_parts ADD COLUMN checksum_algorithm INTEGER " &
+     "NOT NULL DEFAULT 0 CHECK(checksum_algorithm BETWEEN 0 AND 10);" &
+     "ALTER TABLE multipart_parts ADD COLUMN checksum_method INTEGER " &
+     "NOT NULL DEFAULT 0 CHECK(checksum_method BETWEEN 0 AND 2);" &
+     "ALTER TABLE multipart_parts ADD COLUMN checksum_value BLOB NOT NULL " &
+     "DEFAULT X'' CHECK(length(checksum_value) <= 96);" &
+     "ALTER TABLE object_parts ADD COLUMN checksum_algorithm INTEGER " &
+     "NOT NULL DEFAULT 0 CHECK(checksum_algorithm BETWEEN 0 AND 10);" &
+     "ALTER TABLE object_parts ADD COLUMN checksum_method INTEGER NOT NULL " &
+     "DEFAULT 0 CHECK(checksum_method BETWEEN 0 AND 2);" &
+     "ALTER TABLE object_parts ADD COLUMN checksum_value BLOB NOT NULL " &
+     "DEFAULT X'' CHECK(length(checksum_value) <= 96);";
+
+   function Checksum_From_Columns
+     (Query        : DB.Statement;
+      First_Column : Natural;
+      Has_Value    : Boolean := True;
+      Is_Object    : Boolean := False;
+      Part_Count   : Natural := 0) return Checksum_Information
+   is
+      Algorithm : constant Long_Long_Integer :=
+        DB.Column (Query, First_Column);
+      Method : constant Long_Long_Integer :=
+        DB.Column (Query, First_Column + 1);
+      Result : Checksum_Information;
+   begin
+      if Algorithm not in 0 .. 10 or else Method not in 0 .. 2 then
+         raise Catalog_Error with "invalid checksum catalog value";
+      end if;
+      Result.Algorithm := Checksum_Algorithm'Val (Natural (Algorithm));
+      Result.Method := Checksum_Method'Val (Natural (Method));
+      if Has_Value then
+         Result.Value :=
+           US.To_Unbounded_String (DB.Column_Bytes (Query, First_Column + 2));
+      end if;
+      if (Result.Algorithm = No_Checksum) /=
+           (Result.Method = No_Checksum_Method)
+        or else
+          (Result.Algorithm = No_Checksum
+           and then US.Length (Result.Value) /= 0)
+      then
+         raise Catalog_Error with "inconsistent checksum catalog value";
+      elsif not Has_Value
+        and then not Checksum_Engine.Valid_Configuration (Result)
+      then
+         raise Catalog_Error with "invalid checksum catalog configuration";
+      elsif Has_Value and then Result.Algorithm /= No_Checksum
+        and then not Is_Object
+        and then not Checksum_Engine.Valid_Digest
+          (US.To_String (Result.Value), Result.Algorithm)
+      then
+         raise Catalog_Error with "invalid part checksum catalog value";
+      elsif Has_Value and then Result.Algorithm /= No_Checksum
+        and then Is_Object
+        and then Result.Method = Composite_Checksum
+        and then Part_Count = 0
+      then
+         raise Catalog_Error with "checksum object has no completed parts";
+      elsif Has_Value and then Result.Algorithm /= No_Checksum
+        and then Is_Object
+        and then not Checksum_Engine.Valid_Object_Digest
+          (US.To_String (Result.Value), Result.Algorithm, Result.Method,
+           Positive'Max (1, Part_Count))
+      then
+         raise Catalog_Error with "invalid object checksum catalog value";
+      end if;
+      return Result;
+   end Checksum_From_Columns;
+
+   procedure Bind_Checksum
+     (Query        : in out DB.Statement;
+      First_Index  : Positive;
+      Value        : Checksum_Information;
+      Include_Value : Boolean := True) is
+   begin
+      DB.Bind
+        (Query, First_Index,
+         Long_Long_Integer (Checksum_Algorithm'Pos (Value.Algorithm)));
+      DB.Bind
+        (Query, First_Index + 1,
+         Long_Long_Integer (Checksum_Method'Pos (Value.Method)));
+      if Include_Value then
+         DB.Bind_Bytes (Query, First_Index + 2, US.To_String (Value.Value));
+      end if;
+   end Bind_Checksum;
 
    protected body Operation_Gate is
       entry Acquire when not Held is
@@ -74,6 +188,26 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       end if;
       return DB.Column (Query, 0);
    end Scalar;
+
+   function Valid_Checksum_Columns
+     (Item      : in out Catalog;
+      Table_Name : String;
+      Has_Value : Boolean) return Boolean
+   is
+      Expected : constant Long_Long_Integer := (if Has_Value then 3 else 2);
+      Prefix : constant String :=
+        "SELECT count(*) FROM pragma_table_info('" & Table_Name & "') ";
+   begin
+      return Scalar (Item, Prefix & "WHERE name LIKE 'checksum_%'") = Expected
+        and then Scalar
+          (Item, Prefix & "WHERE name='checksum_algorithm'") = 1
+        and then Scalar
+          (Item, Prefix & "WHERE name='checksum_method'") = 1
+        and then
+          (if Has_Value
+           then Scalar (Item, Prefix & "WHERE name='checksum_value'") = 1
+           else Scalar (Item, Prefix & "WHERE name='checksum_value'") = 0);
+   end Valid_Checksum_Columns;
 
    function Text_Scalar (Item : in out Catalog; SQL : String) return String is
       Query : DB.Statement;
@@ -115,6 +249,12 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "modified INTEGER NOT NULL CHECK(modified >= 0)," &
          "entity_tag BLOB NOT NULL," &
          "content_type BLOB NOT NULL," &
+         "checksum_algorithm INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(checksum_algorithm BETWEEN 0 AND 10)," &
+         "checksum_method INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(checksum_method BETWEEN 0 AND 2)," &
+         "checksum_value BLOB NOT NULL DEFAULT X'' " &
+         "CHECK(length(checksum_value) <= 96)," &
          "PRIMARY KEY(bucket_name, object_key)," &
          "FOREIGN KEY(bucket_name) REFERENCES buckets(name) " &
          "ON DELETE RESTRICT" &
@@ -125,6 +265,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "object_key BLOB NOT NULL," &
          "content_type BLOB NOT NULL," &
          "created INTEGER NOT NULL CHECK(created >= 0)," &
+         "checksum_algorithm INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(checksum_algorithm BETWEEN 0 AND 10)," &
+         "checksum_method INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(checksum_method BETWEEN 0 AND 2)," &
          "FOREIGN KEY(bucket_name) REFERENCES buckets(name) " &
          "ON DELETE RESTRICT" &
          ") WITHOUT ROWID;" &
@@ -137,14 +281,20 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "size INTEGER NOT NULL CHECK(size >= 0)," &
          "modified INTEGER NOT NULL CHECK(modified >= 0)," &
          "entity_tag BLOB NOT NULL," &
+         "checksum_algorithm INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(checksum_algorithm BETWEEN 0 AND 10)," &
+         "checksum_method INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(checksum_method BETWEEN 0 AND 2)," &
+         "checksum_value BLOB NOT NULL DEFAULT X'' " &
+         "CHECK(length(checksum_value) <= 96)," &
          "PRIMARY KEY(upload_id,part_number)," &
          "FOREIGN KEY(upload_id) REFERENCES multipart_uploads(upload_id) " &
          "ON DELETE CASCADE" &
          ") WITHOUT ROWID;" &
-         Object_Parts_Schema &
+         Object_Parts_Schema_V8 &
          Bucket_Tags_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=7;");
+         "PRAGMA user_version=8;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -382,6 +532,39 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V6;
 
+   procedure Upgrade_From_V7 (Item : in out Catalog) is
+      In_Transaction : Boolean := False;
+      Existing_Columns : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT " &
+           "(SELECT count(*) FROM pragma_table_info('objects') " &
+           " WHERE name LIKE 'checksum_%') + " &
+           "(SELECT count(*) FROM pragma_table_info('multipart_uploads') " &
+           " WHERE name LIKE 'checksum_%') + " &
+           "(SELECT count(*) FROM pragma_table_info('multipart_parts') " &
+           " WHERE name LIKE 'checksum_%') + " &
+           "(SELECT count(*) FROM pragma_table_info('object_parts') " &
+           " WHERE name LIKE 'checksum_%')");
+   begin
+      if Existing_Columns /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 7";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Checksum_Columns_Schema & "PRAGMA user_version=8;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V7;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -407,20 +590,27 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
               "refusing a nonempty unrecognized database";
          end if;
          Create_Schema (Item);
-      elsif App_ID = Application_ID and then Version = 1 then
-         Upgrade_From_V1 (Item);
-      elsif App_ID = Application_ID and then Version = 2 then
-         Upgrade_From_V2 (Item);
-      elsif App_ID = Application_ID and then Version = 3 then
-         Upgrade_From_V3 (Item);
-      elsif App_ID = Application_ID and then Version = 4 then
-         Upgrade_From_V4 (Item);
-      elsif App_ID = Application_ID and then Version = 5 then
-         Upgrade_From_V5 (Item);
-      elsif App_ID = Application_ID and then Version = 6 then
-         Upgrade_From_V6 (Item);
-      elsif App_ID /= Application_ID or else Version /= Schema_Version then
+         Version := Schema_Version;
+      elsif App_ID /= Application_ID then
          raise Catalog_Error with "unsupported or unrelated SQLite database";
+      else
+         case Version is
+            when 1 => Upgrade_From_V1 (Item); Version := 7;
+            when 2 => Upgrade_From_V2 (Item); Version := 7;
+            when 3 => Upgrade_From_V3 (Item); Version := 7;
+            when 4 => Upgrade_From_V4 (Item); Version := 7;
+            when 5 => Upgrade_From_V5 (Item); Version := 7;
+            when 6 => Upgrade_From_V6 (Item); Version := 7;
+            when 7 => null;
+            when 8 => null;
+            when others =>
+               raise Catalog_Error with
+                 "unsupported or unrelated SQLite database";
+         end case;
+         if Version = 7 then
+            Upgrade_From_V7 (Item);
+            Version := 8;
+         end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
       if Text_Scalar (Item, "PRAGMA journal_mode") /= "wal" then
@@ -437,6 +627,13 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'multipart_parts','object_parts','bucket_tags')") /= 7
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
+      elsif not Valid_Checksum_Columns (Item, "objects", True)
+        or else not Valid_Checksum_Columns
+          (Item, "multipart_uploads", False)
+        or else not Valid_Checksum_Columns (Item, "multipart_parts", True)
+        or else not Valid_Checksum_Columns (Item, "object_parts", True)
+      then
+         raise Catalog_Error with "SQLite checksum schema is incomplete";
       elsif Scalar
         (Item,
          "SELECT count(*) FROM pragma_table_info('buckets') " &
@@ -931,7 +1128,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Info := Empty_Info;
       DB.Prepare
         (Query, Item.Database,
-         "SELECT payload,size,modified,entity_tag,content_type " &
+         "SELECT payload,size,modified,entity_tag,content_type," &
+         "checksum_algorithm,checksum_method,checksum_value," &
+         "(SELECT count(*) FROM object_parts WHERE bucket_name=objects." &
+         "bucket_name AND object_key=objects.object_key) " &
          "FROM objects WHERE bucket_name=?1 AND object_key=?2");
       DB.Bind (Query, 1, Bucket);
       DB.Bind_Bytes (Query, 2, Key);
@@ -946,7 +1146,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Entity_Tag   => US.To_Unbounded_String (DB.Column_Bytes (Query, 3)),
          Content_Type => US.To_Unbounded_String (DB.Column_Bytes (Query, 4)),
          Version      => US.Null_Unbounded_String,
-         Checksum     => No_Checksum_Information);
+         Checksum     => Checksum_From_Columns
+           (Query, 5, Is_Object => True,
+            Part_Count =>
+              Natural (Long_Long_Integer'(DB.Column (Query, 8)))));
       Result := Success;
    end Find_Object_Internal;
 
@@ -1030,7 +1233,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       if Options.Maximum > 0 and then Snapshot.Is_Multipart then
          DB.Prepare
            (Parts_Query, Item.Database,
-            "SELECT part_number,size FROM object_parts " &
+            "SELECT part_number,size,checksum_algorithm,checksum_method," &
+            "checksum_value FROM object_parts " &
             "WHERE bucket_name=?1 AND object_key=?2 " &
             "AND part_number>?3 ORDER BY part_number LIMIT ?4");
          DB.Bind (Parts_Query, 1, Bucket);
@@ -1053,7 +1257,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                      Size => Byte_Count
                        (Long_Long_Integer'
                           (DB.Column (Parts_Query, 1))),
-                     Checksum => No_Checksum_Information));
+                     Checksum => Checksum_From_Columns (Parts_Query, 2)));
             else
                Snapshot.Is_Truncated := True;
                Snapshot.Next_After :=
@@ -1136,12 +1340,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Upsert, Item.Database,
          "INSERT INTO objects(" &
          "bucket_name,object_key,payload,size,modified," &
-         "entity_tag,content_type" &
-         ") VALUES(?1,?2,?3,?4,?5,?6,?7) " &
+         "entity_tag,content_type,checksum_algorithm,checksum_method," &
+         "checksum_value" &
+         ") VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) " &
          "ON CONFLICT(bucket_name,object_key) DO UPDATE SET " &
          "payload=excluded.payload,size=excluded.size," &
          "modified=excluded.modified,entity_tag=excluded.entity_tag," &
-         "content_type=excluded.content_type");
+         "content_type=excluded.content_type," &
+         "checksum_algorithm=excluded.checksum_algorithm," &
+         "checksum_method=excluded.checksum_method," &
+         "checksum_value=excluded.checksum_value");
       DB.Bind (Upsert, 1, Bucket);
       DB.Bind_Bytes (Upsert, 2, Key);
       DB.Bind (Upsert, 3, Payload);
@@ -1149,6 +1357,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Bind (Upsert, 5, Long_Long_Integer (Info.Modified));
       DB.Bind_Bytes (Upsert, 6, US.To_String (Info.Entity_Tag));
       DB.Bind_Bytes (Upsert, 7, US.To_String (Info.Content_Type));
+      Bind_Checksum (Upsert, 8, Info.Checksum);
       if DB.Step (Upsert) /= DB.Done then
          raise Catalog_Error with "object upsert returned a row";
       end if;
@@ -1554,7 +1763,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Backends.Listing.Initialize (Builder, Options);
       DB.Prepare
         (Query, Item.Database,
-         "SELECT object_key,size,modified,entity_tag,content_type " &
+         "SELECT object_key,size,modified,entity_tag,content_type," &
+         "checksum_algorithm,checksum_method,checksum_value," &
+         "(SELECT count(*) FROM object_parts WHERE bucket_name=objects." &
+         "bucket_name AND object_key=objects.object_key) " &
          "FROM objects WHERE bucket_name=?1 ORDER BY object_key");
       DB.Bind (Query, 1, Bucket);
       while DB.Step (Query) = DB.Row loop
@@ -1569,7 +1781,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
              Content_Type =>
                US.To_Unbounded_String (DB.Column_Bytes (Query, 4)),
              Version      => US.Null_Unbounded_String,
-             Checksum     => No_Checksum_Information));
+             Checksum     => Checksum_From_Columns
+               (Query, 5, Is_Object => True,
+                Part_Count =>
+                  Natural (Long_Long_Integer'(DB.Column (Query, 8))))));
       end loop;
       Page := Backends.Listing.Finish (Builder);
       Result := Success;
@@ -1588,15 +1803,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Bucket       : String;
       Key          : String;
       Upload_ID    : String;
-      Content_Type : out US.Unbounded_String;
+      Options      : out Backends.Multipart_Options;
       Result       : out Status)
    is
       Query : DB.Statement;
    begin
-      Content_Type := US.Null_Unbounded_String;
+      Options := Backends.Default_Multipart_Options;
       DB.Prepare
         (Query, Item.Database,
-         "SELECT content_type FROM multipart_uploads " &
+         "SELECT content_type,checksum_algorithm,checksum_method " &
+         "FROM multipart_uploads " &
          "WHERE upload_id=?1 AND bucket_name=?2 AND object_key=?3");
       DB.Bind (Query, 1, Upload_ID);
       DB.Bind (Query, 2, Bucket);
@@ -1604,8 +1820,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       if DB.Step (Query) = DB.Done then
          Result := Not_Found;
       else
-         Content_Type :=
+         Options.Content_Type :=
            US.To_Unbounded_String (DB.Column_Bytes (Query, 0));
+         Options.Checksum := Checksum_From_Columns (Query, 1, False);
          Result := Success;
       end if;
    end Find_Multipart_Upload_Internal;
@@ -1615,7 +1832,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Bucket       : String;
       Key          : String;
       Upload_ID    : String;
-      Content_Type : String;
+      Options      : Backends.Multipart_Options;
       Created      : Unix_Time;
       Result       : out Status)
    is
@@ -1640,13 +1857,15 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Prepare
         (Insert, Item.Database,
          "INSERT INTO multipart_uploads(" &
-         "upload_id,bucket_name,object_key,content_type,created" &
-         ") VALUES(?1,?2,?3,?4,?5)");
+         "upload_id,bucket_name,object_key,content_type,created," &
+         "checksum_algorithm,checksum_method" &
+         ") VALUES(?1,?2,?3,?4,?5,?6,?7)");
       DB.Bind (Insert, 1, Upload_ID);
       DB.Bind (Insert, 2, Bucket);
       DB.Bind_Bytes (Insert, 3, Key);
-      DB.Bind_Bytes (Insert, 4, Content_Type);
+      DB.Bind_Bytes (Insert, 4, US.To_String (Options.Content_Type));
       DB.Bind (Insert, 5, Long_Long_Integer (Created));
+      Bind_Checksum (Insert, 6, Options.Checksum, False);
       if DB.Step (Insert) /= DB.Done then
          raise Catalog_Error with "multipart upload insert returned a row";
       end if;
@@ -1666,7 +1885,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Bucket       : String;
       Key          : String;
       Upload_ID    : String;
-      Content_Type : out US.Unbounded_String;
+      Options      : out Backends.Multipart_Options;
       Result       : out Status)
    is
       Locked : Boolean := False;
@@ -1674,7 +1893,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Item.Gate.Acquire;
       Locked := True;
       Find_Multipart_Upload_Internal
-        (Item, Bucket, Key, Upload_ID, Content_Type, Result);
+        (Item, Bucket, Key, Upload_ID, Options, Result);
       Item.Gate.Release;
       Locked := False;
    exception
@@ -1696,7 +1915,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Previous_Payload : out US.Unbounded_String;
       Result           : out Status)
    is
-      Content_Type   : US.Unbounded_String;
+      Upload_Options : Backends.Multipart_Options;
       Existing       : DB.Statement;
       Upsert         : DB.Statement;
       Locked         : Boolean := False;
@@ -1708,7 +1927,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Begin_Transaction (Item.Database);
       In_Transaction := True;
       Find_Multipart_Upload_Internal
-        (Item, Bucket, Key, Upload_ID, Content_Type, Result);
+        (Item, Bucket, Key, Upload_ID, Upload_Options, Result);
       if Result /= Success then
          DB.Rollback (Item.Database);
          In_Transaction := False;
@@ -1729,17 +1948,22 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Prepare
         (Upsert, Item.Database,
          "INSERT INTO multipart_parts(" &
-         "upload_id,part_number,payload,size,modified,entity_tag" &
-         ") VALUES(?1,?2,?3,?4,?5,?6) " &
+         "upload_id,part_number,payload,size,modified,entity_tag," &
+         "checksum_algorithm,checksum_method,checksum_value" &
+         ") VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) " &
          "ON CONFLICT(upload_id,part_number) DO UPDATE SET " &
          "payload=excluded.payload,size=excluded.size," &
-         "modified=excluded.modified,entity_tag=excluded.entity_tag");
+         "modified=excluded.modified,entity_tag=excluded.entity_tag," &
+         "checksum_algorithm=excluded.checksum_algorithm," &
+         "checksum_method=excluded.checksum_method," &
+         "checksum_value=excluded.checksum_value");
       DB.Bind (Upsert, 1, Upload_ID);
       DB.Bind (Upsert, 2, Long_Long_Integer (Part_Number));
       DB.Bind (Upsert, 3, Payload);
       DB.Bind (Upsert, 4, Long_Long_Integer (Info.Size));
       DB.Bind (Upsert, 5, Long_Long_Integer (Info.Modified));
       DB.Bind_Bytes (Upsert, 6, US.To_String (Info.Entity_Tag));
+      Bind_Checksum (Upsert, 7, Info.Checksum);
       if DB.Step (Upsert) /= DB.Done then
          raise Catalog_Error with "multipart part upsert returned a row";
       end if;
@@ -1768,7 +1992,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Page      : out Backends.Multipart_Part_Page;
       Result    : out Status)
    is
-      Content_Type : US.Unbounded_String;
+      Upload_Options : Backends.Multipart_Options;
       Query        : DB.Statement;
       Locked       : Boolean := False;
    begin
@@ -1776,12 +2000,14 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Item.Gate.Acquire;
       Locked := True;
       Find_Multipart_Upload_Internal
-        (Item, Bucket, Key, Upload_ID, Content_Type, Result);
+        (Item, Bucket, Key, Upload_ID, Upload_Options, Result);
       if Result /= Success then
          Item.Gate.Release;
          Locked := False;
          return;
-      elsif Options.Maximum = 0
+      end if;
+      Page.Checksum := Upload_Options.Checksum;
+      if Options.Maximum = 0
         or else Options.After = Backends.Multipart_Part_Marker'Last
       then
          Item.Gate.Release;
@@ -1791,7 +2017,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       end if;
       DB.Prepare
         (Query, Item.Database,
-         "SELECT part_number,size,modified,entity_tag " &
+         "SELECT part_number,size,modified,entity_tag," &
+         "checksum_algorithm,checksum_method,checksum_value " &
          "FROM multipart_parts WHERE upload_id=?1 AND part_number>?2 " &
          "ORDER BY part_number LIMIT ?3");
       DB.Bind (Query, 1, Upload_ID);
@@ -1816,7 +2043,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                             (DB.Column_Bytes (Query, 3)),
                         Content_Type => US.Null_Unbounded_String,
                         Version => US.Null_Unbounded_String,
-                        Checksum => No_Checksum_Information)));
+                        Checksum => Checksum_From_Columns (Query, 4))));
             else
                Page.Is_Truncated := True;
                Page.Next_After := Backends.Multipart_Part_Marker
@@ -1868,7 +2095,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Backends.Multipart_Listing.Initialize (Builder, Options);
       DB.Prepare
         (Query, Item.Database,
-         "SELECT object_key,upload_id,created,content_type " &
+         "SELECT object_key,upload_id,created,content_type," &
+         "checksum_algorithm,checksum_method " &
          "FROM multipart_uploads WHERE bucket_name=?1");
       DB.Bind (Query, 1, Bucket);
       loop
@@ -1884,9 +2112,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                   Unix_Time
                     (Long_Long_Integer'(DB.Column (Query, 2))),
                   Backends.Multipart_Options'
-                    (Content_Type => US.To_Unbounded_String
+                     (Content_Type => US.To_Unbounded_String
                        (DB.Column_Bytes (Query, 3)),
-                     Checksum => No_Checksum_Information));
+                     Checksum => Checksum_From_Columns (Query, 4, False)));
          end case;
       end loop;
       Page := Backends.Multipart_Listing.Finish (Builder);
@@ -1910,14 +2138,14 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Records   : out Multipart_Part_Records;
       Result    : out Status)
    is
-      Content_Type : US.Unbounded_String;
+      Upload_Options : Backends.Multipart_Options;
       Locked       : Boolean := False;
    begin
       Records.Clear;
       Item.Gate.Acquire;
       Locked := True;
       Find_Multipart_Upload_Internal
-        (Item, Bucket, Key, Upload_ID, Content_Type, Result);
+        (Item, Bucket, Key, Upload_ID, Upload_Options, Result);
       if Result /= Success then
          Item.Gate.Release;
          Locked := False;
@@ -1929,7 +2157,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          begin
             DB.Prepare
               (Query, Item.Database,
-               "SELECT payload,size,modified,entity_tag " &
+               "SELECT payload,size,modified,entity_tag," &
+               "checksum_algorithm,checksum_method,checksum_value " &
                "FROM multipart_parts " &
                "WHERE upload_id=?1 AND part_number=?2");
             DB.Bind (Query, 1, Upload_ID);
@@ -1954,7 +2183,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                      US.To_Unbounded_String (DB.Column_Bytes (Query, 3)),
                    Content_Type => US.Null_Unbounded_String,
                    Version      => US.Null_Unbounded_String,
-                   Checksum     => No_Checksum_Information)));
+                   Checksum     => Checksum_From_Columns (Query, 4))));
          end;
       end loop;
       Result := Success;
@@ -1999,7 +2228,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Retired_Payloads : out Payloads;
       Result           : out Status)
    is
-      Content_Type   : US.Unbounded_String;
+      Upload_Options : Backends.Multipart_Options;
       Upsert         : DB.Statement;
       Clear_Tags     : DB.Statement;
       Delete         : DB.Statement;
@@ -2015,7 +2244,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Begin_Transaction (Item.Database);
       In_Transaction := True;
       Find_Multipart_Upload_Internal
-        (Item, Bucket, Key, Upload_ID, Content_Type, Result);
+        (Item, Bucket, Key, Upload_ID, Upload_Options, Result);
       if Result /= Success or else Selected.Is_Empty then
          DB.Rollback (Item.Database);
          In_Transaction := False;
@@ -2032,7 +2261,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          begin
             DB.Prepare
               (Query, Item.Database,
-               "SELECT payload,size,modified,entity_tag " &
+               "SELECT payload,size,modified,entity_tag," &
+               "checksum_algorithm,checksum_method,checksum_value " &
                "FROM multipart_parts " &
                "WHERE upload_id=?1 AND part_number=?2");
             DB.Bind (Query, 1, Upload_ID);
@@ -2046,6 +2276,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                 Long_Long_Integer (Record_Value.Info.Modified)
               or else DB.Column_Bytes (Query, 3) /=
                 US.To_String (Record_Value.Info.Entity_Tag)
+              or else Checksum_From_Columns (Query, 4) /=
+                Record_Value.Info.Checksum
             then
                DB.Rollback (Item.Database);
                In_Transaction := False;
@@ -2081,12 +2313,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Upsert, Item.Database,
          "INSERT INTO objects(" &
          "bucket_name,object_key,payload,size,modified," &
-         "entity_tag,content_type" &
-         ") VALUES(?1,?2,?3,?4,?5,?6,?7) " &
+         "entity_tag,content_type,checksum_algorithm,checksum_method," &
+         "checksum_value" &
+         ") VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) " &
          "ON CONFLICT(bucket_name,object_key) DO UPDATE SET " &
          "payload=excluded.payload,size=excluded.size," &
          "modified=excluded.modified,entity_tag=excluded.entity_tag," &
-         "content_type=excluded.content_type");
+         "content_type=excluded.content_type," &
+         "checksum_algorithm=excluded.checksum_algorithm," &
+         "checksum_method=excluded.checksum_method," &
+         "checksum_value=excluded.checksum_value");
       DB.Bind (Upsert, 1, Bucket);
       DB.Bind_Bytes (Upsert, 2, Key);
       DB.Bind (Upsert, 3, Payload);
@@ -2094,6 +2330,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Bind (Upsert, 5, Long_Long_Integer (Info.Modified));
       DB.Bind_Bytes (Upsert, 6, US.To_String (Info.Entity_Tag));
       DB.Bind_Bytes (Upsert, 7, US.To_String (Info.Content_Type));
+      Bind_Checksum (Upsert, 8, Info.Checksum);
       if DB.Step (Upsert) /= DB.Done then
          raise Catalog_Error with "multipart object upsert returned a row";
       end if;
@@ -2118,8 +2355,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             DB.Prepare
               (Insert_Part, Item.Database,
                "INSERT INTO object_parts(" &
-               "bucket_name,object_key,part_number,size) " &
-               "VALUES(?1,?2,?3,?4)");
+               "bucket_name,object_key,part_number,size," &
+               "checksum_algorithm,checksum_method,checksum_value) " &
+               "VALUES(?1,?2,?3,?4,?5,?6,?7)");
             DB.Bind (Insert_Part, 1, Bucket);
             DB.Bind_Bytes (Insert_Part, 2, Key);
             DB.Bind
@@ -2127,6 +2365,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             DB.Bind
               (Insert_Part, 4,
                Long_Long_Integer (Record_Value.Info.Size));
+            Bind_Checksum (Insert_Part, 5, Record_Value.Info.Checksum);
             if DB.Step (Insert_Part) /= DB.Done then
                raise Catalog_Error with
                  "completed object part insert returned a row";
@@ -2173,7 +2412,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Retired_Payloads : out Payloads;
       Result           : out Status)
    is
-      Content_Type   : US.Unbounded_String;
+      Upload_Options : Backends.Multipart_Options;
       Created_Query  : DB.Statement;
       Delete         : DB.Statement;
       Locked         : Boolean := False;
@@ -2185,7 +2424,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Begin_Transaction (Item.Database);
       In_Transaction := True;
       Find_Multipart_Upload_Internal
-        (Item, Bucket, Key, Upload_ID, Content_Type, Result);
+        (Item, Bucket, Key, Upload_ID, Upload_Options, Result);
       if Result /= Success then
          DB.Rollback (Item.Database);
          In_Transaction := False;

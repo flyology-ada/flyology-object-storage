@@ -48,7 +48,8 @@ files backend conformance; files reopen, bucket-recreation, symlink, and
 convenience clients over fragmented loopback sockets from native and Flyology
 lightweight tasks. The SQLite gate covers atomic independent-field merge,
 catalog reopen, backend dispatch, and every recognized version-1 through
-version-6 migration to schema version 7 without inventing configuration.
+version-7 migration to schema version 8 without inventing configuration or
+checksum metadata.
 
 `tests/src/s3_implementation_corpus.adb` supplies the independent black-box
 oracle. Its setup phase creates a dedicated empty probe bucket, checks initial

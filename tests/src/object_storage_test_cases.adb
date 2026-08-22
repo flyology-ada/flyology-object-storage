@@ -1976,12 +1976,18 @@ package body Object_Storage_Test_Cases is
       declare
          Copy_ID : US.Unbounded_String;
          Copy_ETag : US.Unbounded_String;
+         Copy_Checksum : Checksum_Information;
          Completion : Multipart_Part_References;
          Conditions : Copy_Conditions := (others => <>);
          Copied : Buffer_Sink;
+         Upload_Options : Multipart_Options := Default_Multipart_Options;
       begin
+         Upload_Options.Checksum :=
+           (Algorithm => Checksum_SHA256,
+            Method    => Composite_Checksum,
+            Value     => US.Null_Unbounded_String);
          Store.Create_Multipart_Upload
-           ("multipart-bucket", "copied-part", Default_Multipart_Options,
+           ("multipart-bucket", "copied-part", Upload_Options,
             null, Ada.Real_Time.Time_Last, Copy_ID, Result);
          Assert (Result = Success, "memory copy-part create failed");
          Conditions.If_Match := US.To_Unbounded_String
@@ -1995,10 +2001,12 @@ package body Object_Storage_Test_Cases is
              Count => 0),
             Conditions, null, Ada.Real_Time.Time_Last, Info, Result);
          Copy_ETag := Info.Entity_Tag;
+         Copy_Checksum := Info.Checksum;
          Assert
            (Result = Success and then Info.Size = 4
+            and then Info.Checksum.Algorithm = Checksum_SHA256
             and then Store.Bytes_Used = Byte_Count (5 * MiB + 8),
-            "memory ranged copy-part failed or leaked its snapshot");
+            "memory composite copy-part failed or leaked its snapshot");
          Conditions.If_Match := US.To_Unbounded_String ("wrong");
          Store.Copy_Multipart_Part
            ("multipart-bucket", "target", "multipart-bucket",
@@ -2010,7 +2018,8 @@ package body Object_Storage_Test_Cases is
             "failed memory copy-part condition replaced or leaked a part");
          Completion.Append
            (Multipart_Part_Reference'
-              (Number => 1, Entity_Tag => Copy_ETag, others => <>));
+              (Number => 1, Entity_Tag => Copy_ETag,
+               Checksum => Copy_Checksum));
          Store.Complete_Multipart_Upload
            ("multipart-bucket", "copied-part", US.To_String (Copy_ID),
             Completion, null, Ada.Real_Time.Time_Last, Info, Result);
@@ -3190,12 +3199,18 @@ package body Object_Storage_Test_Cases is
          declare
             Copy_ID : US.Unbounded_String;
             Copy_ETag : US.Unbounded_String;
+            Copy_Checksum : Checksum_Information;
             Completion : Multipart_Part_References;
             Copy_Sink : Buffer_Sink;
+            Upload_Options : Multipart_Options := Default_Multipart_Options;
          begin
+            Upload_Options.Checksum :=
+              (Algorithm => Checksum_SHA256,
+               Method    => Composite_Checksum,
+               Value     => US.Null_Unbounded_String);
             Store.Create_Multipart_Upload
               ("file-bucket", "copy-part-target",
-               Default_Multipart_Options, null,
+               Upload_Options, null,
                Ada.Real_Time.Time_Last, Copy_ID, Result);
             Assert (Result = Success, "files copy-part create failed");
             Store.Copy_Multipart_Part
@@ -3204,9 +3219,11 @@ package body Object_Storage_Test_Cases is
                (Kind => Bounded_Range, First => 7, Last => 10, Count => 0),
                (others => <>), null, Ada.Real_Time.Time_Last, Info, Result);
             Copy_ETag := Info.Entity_Tag;
+            Copy_Checksum := Info.Checksum;
             Assert
-              (Result = Success and then Info.Size = 4,
-               "files ranged copy-part failed");
+              (Result = Success and then Info.Size = 4
+               and then Info.Checksum.Algorithm = Checksum_SHA256,
+               "files composite ranged copy-part failed");
             Store.Copy_Multipart_Part
               ("file-bucket", Key, "file-bucket", "copy-part-target",
                US.To_String (Copy_ID), 2,
@@ -3216,7 +3233,8 @@ package body Object_Storage_Test_Cases is
                     "files copy-part accepted an invalid source range");
             Completion.Append
               (Multipart_Part_Reference'
-                 (Number => 1, Entity_Tag => Copy_ETag, others => <>));
+                 (Number => 1, Entity_Tag => Copy_ETag,
+                  Checksum => Copy_Checksum));
             Store.Complete_Multipart_Upload
               ("file-bucket", "copy-part-target", US.To_String (Copy_ID),
                Completion, null, Ada.Real_Time.Time_Last, Info, Result);

@@ -2203,11 +2203,6 @@ package body Flyology.Object_Storage.Backends.Memory is
       then
          Result := Invalid_Request;
          return;
-      elsif Upload_Options.Checksum.Method = Composite_Checksum
-        and then Options.Expected_Checksum.Algorithm = No_Checksum
-      then
-         Result := Invalid_Request;
-         return;
       end if;
       declare
          Effective_Algorithm : constant Checksum_Algorithm :=

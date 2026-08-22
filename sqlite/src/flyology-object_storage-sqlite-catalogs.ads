@@ -158,7 +158,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket       : String;
       Key          : String;
       Upload_ID    : String;
-      Content_Type : String;
+      Options      : Backends.Multipart_Options;
       Created      : Unix_Time;
       Result       : out Status);
 
@@ -167,7 +167,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket       : String;
       Key          : String;
       Upload_ID    : String;
-      Content_Type : out Ada.Strings.Unbounded.Unbounded_String;
+      Options      : out Backends.Multipart_Options;
       Result       : out Status);
 
    procedure Put_Multipart_Part

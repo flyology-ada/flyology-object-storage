@@ -48,8 +48,10 @@ missing payload, or a payload with the wrong size fails closed. Foreign keys,
 opaque BLOB keys/metadata, bounded metadata, strict statement state, and exact
 64-bit size conversions are enforced at the adapter boundary.
 
-Schema version 7 combines completed-multipart attributes, bucket tags, and
-bucket-versioning configuration.
+Schema version 8 adds checksum algorithm, method, and value columns to object,
+staged-part, and completed-part metadata, plus the configured algorithm and
+method on multipart uploads. Schema version 7 combines completed-multipart
+attributes, bucket tags, and bucket-versioning configuration.
 Completed part numbers and sizes live in an
 `object_parts` child table. Completion replaces the object row and its part
 rows in one transaction; ordinary PUT and COPY remove stale part rows in the
@@ -74,9 +76,11 @@ layout is also recognized. Version 5 existed in two released-development
 layouts: object tags plus `object_parts`, and object tags plus `bucket_tags`.
 The independently developed versioning-only version-4 layout is recognized in
 addition to both tag-table version-4 layouts. Opening any recognized version-1
-through version-6 catalog upgrades it under an exclusive transaction to
-version 7, creates only missing tables and columns, and preserves existing
-object tags, completed-part rows, bucket tags, and versioning values. Existing
+through version-7 catalog upgrades it under exclusive transactions to version
+8, creates only missing tables and columns, and preserves existing object tags,
+staged and completed-part rows, bucket tags, multipart configuration, and
+versioning values. Version-7 checksum columns receive explicit no-checksum
+defaults; no digest is invented for historical bodies. Existing
 buckets use
 `0` to mean that the historical creation time is unavailable, while every new
 bucket receives its actual commit-time value. Versioning and MFA-delete use
