@@ -34,6 +34,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Complete_Multipart_Outcome_Kind;
    use type Low_Level.Abort_Multipart_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
+   use type Low_Level.Head_Object_Outcome_Kind;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
    use type Transfers.Copy_Outcome_Kind;
@@ -589,6 +590,30 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-checksum-sha256: not-base64" & CRLF,
                Omit_Content_Length => True),
             "HEAD", "/example-bucket/head-invalid-checksum");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "",
+               "Content-Length: 7" & CRLF &
+               "x-amz-delete-marker: false" & CRLF &
+               "x-amz-archive-status: ARCHIVE_ACCESS" & CRLF &
+               "x-amz-checksum-crc32: AAAAAA==" & CRLF &
+               "x-amz-checksum-type: FULL_OBJECT" & CRLF &
+               "ETag: ""typed-head""" & CRLF &
+               "x-amz-missing-meta: 2" & CRLF &
+               "x-amz-meta-project: flyology" & CRLF &
+               "x-amz-meta-stage: typed" & CRLF &
+               "x-amz-server-side-encryption: aws:backup" & CRLF &
+               "x-amz-server-side-encryption-customer-algorithm: " &
+               "AES256" & CRLF &
+               "x-amz-storage-class: AWS_BACKUP_WARM" & CRLF &
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-replication-status: COMPLETED" & CRLF &
+               "x-amz-mp-parts-count: 3" & CRLF &
+               "x-amz-tagging-count: 2" & CRLF &
+               "x-amz-object-lock-mode: COMPLIANCE" & CRLF &
+               "x-amz-object-lock-legal-hold: OFF" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/typed-head");
          Serve
            (HTTP_Response ("200 OK", Create_XML), "POST",
             "/example-bucket/object%20key?uploads", Fragmented => True);
@@ -1153,6 +1178,35 @@ procedure S3_HTTP_Socket_Corpus is
             if not Raised then
                raise Program_Error with
                  "invalid HeadObject checksum was accepted";
+            end if;
+         end;
+         declare
+            Parameters : Low_Level.Head_Object_Parameters;
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Head_Object
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 "typed-head", Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant Low_Level.Head_Object_Outcome :=
+              Low_Level.Execute_Head_Object
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Object_Found
+              or else Result.Status /= 206
+              or else Result.Result.Content_Length /= 7
+              or else US.To_String (Result.Result.Entity_Tag) /=
+                """typed-head"""
+              or else Natural (Result.Result.Metadata.Length) /= 2
+              or else US.To_String
+                (Result.Result.Metadata.First_Element.Name) /= "project"
+              or else not Result.Result.Parts_Count.Is_Set
+              or else Result.Result.Parts_Count.Value /= 3
+              or else US.To_String (Result.Result.Server_Side_Encryption) /=
+                "aws:backup"
+              or else US.To_String (Result.Result.Storage_Class) /=
+                "AWS_BACKUP_WARM"
+            then
+               raise Program_Error with "typed HeadObject result mismatch";
             end if;
          end;
          declare

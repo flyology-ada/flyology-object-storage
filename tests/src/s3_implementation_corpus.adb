@@ -38,6 +38,7 @@ procedure S3_Implementation_Corpus is
    use type Low_Level.Delete_Object_Outcome_Kind;
    use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Head_Bucket_Outcome_Kind;
+   use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Upload_Part_Copy_Outcome_Kind;
@@ -256,6 +257,27 @@ procedure S3_Implementation_Corpus is
 
       procedure Require_Head_Object is
       begin
+         declare
+            Parameters : Low_Level.Head_Object_Parameters;
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Head_Object
+                (Origin, Low_Level.Path_Style, Bucket, Key, Parameters,
+                 Identity, "us-east-1", Timestamp);
+            Outcome : constant Low_Level.Head_Object_Outcome :=
+              Low_Level.Execute_Head_Object
+                (HTTP, Prepared, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Low_Level.Object_Found
+              or else Outcome.Result.Content_Length /=
+                Flyology.Object_Storage.Byte_Count (Payload'Length)
+              or else US.Length (Outcome.Result.Entity_Tag) = 0
+              or else US.Length (Outcome.Result.Last_Modified) = 0
+            then
+               raise Program_Error with
+                 "S3 implementation returned invalid typed HeadObject " &
+                 "metadata";
+            end if;
+         end;
          declare
             Outcome : constant Transfers.Head_Outcome :=
               Transfers.Head_Object

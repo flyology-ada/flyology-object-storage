@@ -3604,6 +3604,40 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         Parameters : Low_Level.Upload_Part_Parameters;
+         Raised : Boolean := False;
+      begin
+         Parameters.Upload_ID := US.To_Unbounded_String ("upload");
+         Parameters.Payload_SHA256 :=
+           US.To_Unbounded_String (SigV4.SHA256_Hex ("payload"));
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key :=
+           US.To_Unbounded_String
+             ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Upload_Part
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "UploadPart allowed an SSE-C key over plaintext HTTP");
+      end;
+
+      declare
          Headers : Low_Level.Upload_Part_Result;
       begin
          Headers.Entity_Tag := US.To_Unbounded_String ("""part""");
@@ -3710,6 +3744,41 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "UploadPartCopy accepted a 5 GiB+1 range");
+      end;
+
+      declare
+         Parameters : Low_Level.Upload_Part_Copy_Parameters;
+         Raised : Boolean := False;
+      begin
+         Parameters.Upload_ID := US.To_Unbounded_String ("upload");
+         Parameters.Copy_Source :=
+           US.To_Unbounded_String ("source-bucket/source-key");
+         Parameters.Copy_Source_SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.Copy_Source_SSE_Customer_Key :=
+           US.To_Unbounded_String
+             ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.Copy_Source_SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Upload_Part_Copy
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert
+           (Raised,
+            "UploadPartCopy allowed an SSE-C key over plaintext HTTP");
       end;
 
       declare
@@ -3953,6 +4022,7 @@ package body Object_Storage_Test_Cases is
       package US renames Ada.Strings.Unbounded;
       use type Low_Level.Create_Bucket_Outcome_Kind;
       use type Low_Level.Head_Bucket_Outcome_Kind;
+      use type Low_Level.Head_Object_Outcome_Kind;
       Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
         ("AKIAIOSFODNN7EXAMPLE",
          "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
@@ -4083,6 +4153,227 @@ package body Object_Storage_Test_Cases is
                and then not Outcome.Result.Access_Point_Alias.Value,
                "typed HeadBucket success headers");
          end;
+      end;
+
+      declare
+         Parameters : Low_Level.Head_Object_Parameters;
+      begin
+         Parameters.If_Match := US.To_Unbounded_String ("""etag""");
+         Parameters.If_Modified_Since :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
+         Parameters.If_None_Match := US.To_Unbounded_String ("""other""");
+         Parameters.If_Unmodified_Since :=
+           US.To_Unbounded_String ("Sat, 25 May 2013 00:00:00 GMT");
+         Parameters.Byte_Range_Header :=
+           US.To_Unbounded_String ("bytes=1-9");
+         Parameters.Response_Cache_Control :=
+           US.To_Unbounded_String ("no-cache");
+         Parameters.Response_Content_Disposition :=
+           US.To_Unbounded_String ("attachment; filename=a b.txt");
+         Parameters.Response_Content_Encoding :=
+           US.To_Unbounded_String ("gzip");
+         Parameters.Response_Content_Language :=
+           US.To_Unbounded_String ("en-CA");
+         Parameters.Response_Content_Type :=
+           US.To_Unbounded_String ("application/test");
+         Parameters.Response_Expires :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 01:00:00 GMT");
+         Parameters.Version_ID := US.To_Unbounded_String ("version +/=");
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key :=
+           US.To_Unbounded_String
+             ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Part_Number := (Is_Set => True, Value => 7);
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         Parameters.Checksum_Mode := True;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Head_Object
+                (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                 Low_Level.Path_Style, "example-bucket", "photos/a b+%",
+                 Parameters, Identity, "us-east-1", "20130524T000000Z");
+         begin
+            Assert
+              (Low_Level.Target (Prepared) =
+                 "/example-bucket/photos/a%20b%2B%25?partNumber=7&" &
+                 "response-cache-control=no-cache&" &
+                 "response-content-disposition=attachment%3B%20" &
+                 "filename%3Da%20b.txt&response-content-encoding=gzip&" &
+                 "response-content-language=en-CA&response-content-type=" &
+                 "application%2Ftest&response-expires=Fri%2C%2024%20May%20" &
+                 "2013%2001%3A00%3A00%20GMT&versionId=version%20%2B%2F%3D",
+               "HeadObject exact encoded query projection");
+            Assert
+              (Low_Level.Signed_Headers (Prepared) =
+                 "host;if-match;if-modified-since;if-none-match;" &
+                 "if-unmodified-since;range;x-amz-checksum-mode;" &
+                 "x-amz-content-sha256;x-amz-date;" &
+                 "x-amz-expected-bucket-owner;x-amz-request-payer;" &
+                 "x-amz-server-side-encryption-customer-algorithm;" &
+                 "x-amz-server-side-encryption-customer-key;" &
+                 "x-amz-server-side-encryption-customer-key-md5",
+               "HeadObject every modeled request header is signed");
+         end;
+      end;
+
+      declare
+         Parameters : Low_Level.Head_Object_Parameters;
+         Raised : Boolean := False;
+      begin
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key :=
+           US.To_Unbounded_String
+             ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Head_Object
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert
+           (Raised, "HeadObject allowed an SSE-C key over plaintext HTTP");
+      end;
+
+      declare
+         Parameters : Low_Level.Head_Object_Parameters;
+         Raised : Boolean := False;
+      begin
+         Parameters.Byte_Range_Header :=
+           US.To_Unbounded_String ("bytes=0-1,2-3");
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Head_Object
+                   (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "HeadObject accepted an invalid byte range");
+      end;
+
+      declare
+         Headers : Low_Level.Head_Object_Result;
+      begin
+         Headers.Delete_Marker := (Is_Set => True, Value => False);
+         Headers.Accept_Ranges := US.To_Unbounded_String ("bytes");
+         Headers.Archive_Status := US.To_Unbounded_String ("ARCHIVE_ACCESS");
+         Headers.Last_Modified :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
+         Headers.Content_Length := 9;
+         Headers.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
+         Headers.Checksum_CRC32C := US.To_Unbounded_String ("AAAAAA==");
+         Headers.Checksum_CRC64NVME :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Headers.Checksum_SHA1 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Headers.Checksum_SHA256 := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Headers.Checksum_SHA512 := US.To_Unbounded_String
+           (String'(1 .. 86 => 'A') & "==");
+         Headers.Checksum_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Headers.Checksum_XXHASH64 :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Headers.Checksum_XXHASH3 :=
+           US.To_Unbounded_String ("AAAAAAAAAAA=");
+         Headers.Checksum_XXHASH128 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Headers.Checksum_Type := US.To_Unbounded_String ("FULL_OBJECT");
+         Headers.Entity_Tag := US.To_Unbounded_String ("""etag""");
+         Headers.Missing_Meta := (Is_Set => True, Value => 2);
+         Headers.Version_ID := US.To_Unbounded_String ("version");
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms:dsse");
+         Headers.Metadata.Append
+           (Low_Level.Metadata_Entry'
+              (Name  => US.To_Unbounded_String ("project"),
+               Value => US.To_Unbounded_String ("flyology")));
+         Headers.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Headers.Bucket_Key_Enabled := (Is_Set => True, Value => True);
+         Headers.Storage_Class :=
+           US.To_Unbounded_String ("INTELLIGENT_TIERING");
+         Headers.Request_Charged := US.To_Unbounded_String ("requester");
+         Headers.Replication_Status := US.To_Unbounded_String ("COMPLETE");
+         Headers.Parts_Count := (Is_Set => True, Value => 3);
+         Headers.Tag_Count := (Is_Set => True, Value => 4);
+         Headers.Object_Lock_Mode := US.To_Unbounded_String ("GOVERNANCE");
+         Headers.Object_Lock_Retain_Until_Date :=
+           US.To_Unbounded_String ("2027-08-21T00:00:00Z");
+         Headers.Object_Lock_Legal_Hold_Status :=
+           US.To_Unbounded_String ("ON");
+         declare
+            Outcome : constant Low_Level.Head_Object_Outcome :=
+              Low_Level.Decode_Head_Object_Response (206, "", Headers);
+         begin
+            Assert
+              (Outcome.Kind = Low_Level.Object_Found
+               and then Outcome.Result.Content_Length = 9
+               and then Outcome.Result.Metadata.Length = 1
+               and then Outcome.Result.Parts_Count.Is_Set
+               and then Outcome.Result.Parts_Count.Value = 3,
+               "typed HeadObject complete response headers");
+         end;
+      end;
+
+      declare
+         Headers : Low_Level.Head_Object_Result;
+         Raised : Boolean := False;
+      begin
+         Headers.Checksum_CRC32 := US.To_Unbounded_String ("not-base64");
+         begin
+            declare
+               Ignored : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Decode_Head_Object_Response (200, "", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert (Raised, "HeadObject accepted an invalid checksum header");
+      end;
+
+      declare
+         Headers : Low_Level.Head_Object_Result;
+         Outcome : constant Low_Level.Head_Object_Outcome :=
+           Low_Level.Decode_Head_Object_Response
+             (404, "", Headers, "head-request", "head-host");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Head_Object_Rejected
+            and then US.To_String (Outcome.Error.Code) = "HTTP404"
+            and then US.To_String (Outcome.Error.Request_ID) =
+              "head-request",
+            "typed HeadObject bodyless error preserves request identifiers");
       end;
 
       declare

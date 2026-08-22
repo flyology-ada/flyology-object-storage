@@ -5,7 +5,6 @@ with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Real_Time;
 with Ada.Streams;
-with Ada.Strings.Fixed;
 with Flyology.Bytes;
 with Flyology.IO;
 with Flyology.IO.Files;
@@ -14,7 +13,6 @@ with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
-with Flyology.Object_Storage.S3.Wire_Core;
 with Flyology.Task_Scopes;
 with GNAT.OS_Lib;
 with GNAT.SHA256;
@@ -31,7 +29,6 @@ package body Flyology.Object_Storage.Client.Transfers is
    package Requests renames Flyology.Object_Storage.S3.Requests;
    package Encoding renames
      Flyology.Object_Storage.S3.SigV4_Encoding;
-   package Wire_Core renames Flyology.Object_Storage.S3.Wire_Core;
 
    package Digest_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => GNAT.SHA256.Message_Digest);
@@ -46,6 +43,7 @@ package body Flyology.Object_Storage.Client.Transfers is
    use type Low_Level.Create_Multipart_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Copy_Object_Outcome_Kind;
+   use type Low_Level.Head_Object_Outcome_Kind;
    use type Requests.Target_Kind;
    use type Requests.Target_Status;
 
@@ -748,155 +746,40 @@ package body Flyology.Object_Storage.Client.Transfers is
       return Head_Outcome
    is
       Deadline : constant Ada.Real_Time.Time := Deadline_For (Timeout);
-      Value_Count : constant Positive := 2 +
-        Boolean'Pos (Version_ID'Length > 0) +
-        Boolean'Pos (If_Match'Length > 0) +
-        Boolean'Pos (Checksum_Mode);
-      Values : Low_Level.Model_Value_Array (1 .. Value_Count);
-      Last : Natural := 2;
-
-      procedure Add (Name, Value : String) is
-      begin
-         Last := Last + 1;
-         Values (Last) := Model_Value (Name, Value);
-      end Add;
+      Parameters : Low_Level.Head_Object_Parameters;
    begin
       Check_Cancelled (Token);
-      Values (1) := Model_Value ("Bucket", Bucket);
-      Values (2) := Model_Value ("Key", Key);
-      if Version_ID'Length > 0 then
-         Add ("VersionId", Version_ID);
-      end if;
-      if If_Match'Length > 0 then
-         Add ("IfMatch", If_Match);
-      end if;
-      if Checksum_Mode then
-         Add ("ChecksumMode", "ENABLED");
-      end if;
+      Parameters.Version_ID := US.To_Unbounded_String (Version_ID);
+      Parameters.If_Match := US.To_Unbounded_String (If_Match);
+      Parameters.Checksum_Mode := Checksum_Mode;
       declare
          Prepared : constant Low_Level.Prepared_Request :=
-           Low_Level.Prepare_Model_Request
-             (Model.Head_Object_Operation, Origin, Style, Values, "", False,
-              "", Identity, Region, Current_Timestamp);
-         Response : HTTP_Client.Response :=
-           Low_Level.Execute_Model_Request
+           Low_Level.Prepare_Head_Object
+             (Origin, Style, Bucket, Key, Parameters, Identity, Region,
+              Current_Timestamp);
+         Outcome : constant Low_Level.Head_Object_Outcome :=
+           Low_Level.Execute_Head_Object
              (Client, Prepared, Remaining (Deadline), Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           HTTP_Client.Status (Response);
       begin
-         if Status /= 200 then
-            declare
-               Payload_Data : constant Flyology.Bytes.Unbounded_Bytes :=
-                 HTTP_Client.Read_All (Response, Maximum_Error_Body, Token);
-               Request_ID : constant String :=
-                 HTTP_Client.Header (Response, "x-amz-request-id");
-               Host_ID : constant String :=
-                 HTTP_Client.Header (Response, "x-amz-id-2");
-            begin
-               if Flyology.Bytes.Length (Payload_Data) = 0 then
-                  declare
-                     Status_Text : constant String :=
-                       Ada.Strings.Fixed.Trim
-                         (Flyology.HTTP.Status_Code'Image (Status),
-                          Ada.Strings.Both);
-                  begin
-                     return
-                       (Kind   => Head_Rejected,
-                        Status => Status,
-                        Error  =>
-                          (Code       => US.To_Unbounded_String
-                             ("HTTP" & Status_Text),
-                           Message    => US.To_Unbounded_String
-                             ("HeadObject returned HTTP status " &
-                              Status_Text),
-                           Resource   => US.Null_Unbounded_String,
-                           Request_ID => US.To_Unbounded_String (Request_ID),
-                           Host_ID    => US.To_Unbounded_String (Host_ID)));
-                  end;
-               end if;
-               declare
-                  Error : Flyology.Object_Storage.S3.Errors.Error_Response :=
-                    Flyology.Object_Storage.S3.Errors.Parse
-                      (Flyology.Bytes.To_Byte_String (Payload_Data));
-               begin
-                  if US.Length (Error.Request_ID) = 0 then
-                     Error.Request_ID := US.To_Unbounded_String (Request_ID);
-                  end if;
-                  if US.Length (Error.Host_ID) = 0 then
-                     Error.Host_ID := US.To_Unbounded_String (Host_ID);
-                  end if;
-                  return
-                    (Kind => Head_Rejected, Status => Status, Error => Error);
-               end;
-            exception
-               when Flyology.Object_Storage.S3.Errors.Malformed_Error =>
-                  raise Low_Level.Invalid_Response with
-                    "malformed HeadObject error response";
-            end;
-         end if;
-         declare
-            Parsed_Length : constant Wire_Core.Byte_Count_Result :=
-              Wire_Core.Parse_Byte_Count
-                (HTTP_Client.Header (Response, "content-length"));
-            CRC32 : constant String :=
-              HTTP_Client.Header (Response, "x-amz-checksum-crc32");
-            CRC32C : constant String :=
-              HTTP_Client.Header (Response, "x-amz-checksum-crc32c");
-            SHA1 : constant String :=
-              HTTP_Client.Header (Response, "x-amz-checksum-sha1");
-            SHA256 : constant String :=
-              HTTP_Client.Header (Response, "x-amz-checksum-sha256");
-            Checksum_Type : constant String :=
-              HTTP_Client.Header (Response, "x-amz-checksum-type");
-         begin
-            if not Parsed_Length.Valid then
-               raise Low_Level.Invalid_Response with
-                 "HeadObject lacks a valid Content-Length";
-            elsif CRC32'Length > 0
-              and then not Wire_Core.Valid_Base64 (CRC32, 4)
-            then
-               raise Low_Level.Invalid_Response with
-                 "HeadObject returned an invalid CRC32 checksum";
-            elsif CRC32C'Length > 0
-              and then not Wire_Core.Valid_Base64 (CRC32C, 4)
-            then
-               raise Low_Level.Invalid_Response with
-                 "HeadObject returned an invalid CRC32C checksum";
-            elsif SHA1'Length > 0
-              and then not Wire_Core.Valid_Base64 (SHA1, 20)
-            then
-               raise Low_Level.Invalid_Response with
-                 "HeadObject returned an invalid SHA1 checksum";
-            elsif SHA256'Length > 0
-              and then not Wire_Core.Valid_Base64 (SHA256, 32)
-            then
-               raise Low_Level.Invalid_Response with
-                 "HeadObject returned an invalid SHA256 checksum";
-            elsif Checksum_Type'Length > 0
-              and then Checksum_Type /= "COMPOSITE"
-              and then Checksum_Type /= "FULL_OBJECT"
-            then
-               raise Low_Level.Invalid_Response with
-                 "HeadObject returned an invalid checksum type";
-            end if;
+         if Outcome.Kind = Low_Level.Head_Object_Rejected then
             return
-              (Kind            => Object_Found,
-               Status          => Status,
-               Bytes           => Parsed_Length.Value,
-               Entity_Tag      => US.To_Unbounded_String
-                 (HTTP_Client.Header (Response, "etag")),
-               Last_Modified   => US.To_Unbounded_String
-                 (HTTP_Client.Header (Response, "last-modified")),
-               Content_Type    => US.To_Unbounded_String
-                 (HTTP_Client.Header (Response, "content-type")),
-               Version_ID      => US.To_Unbounded_String
-                 (HTTP_Client.Header (Response, "x-amz-version-id")),
-               Checksum_CRC32  => US.To_Unbounded_String (CRC32),
-               Checksum_CRC32C => US.To_Unbounded_String (CRC32C),
-               Checksum_SHA1   => US.To_Unbounded_String (SHA1),
-               Checksum_SHA256 => US.To_Unbounded_String (SHA256),
-               Checksum_Type   => US.To_Unbounded_String (Checksum_Type));
-         end;
+              (Kind   => Head_Rejected,
+               Status => Outcome.Status,
+               Error  => Outcome.Error);
+         end if;
+         return
+           (Kind            => Object_Found,
+            Status          => Outcome.Status,
+            Bytes           => Outcome.Result.Content_Length,
+            Entity_Tag      => Outcome.Result.Entity_Tag,
+            Last_Modified   => Outcome.Result.Last_Modified,
+            Content_Type    => Outcome.Result.Content_Type,
+            Version_ID      => Outcome.Result.Version_ID,
+            Checksum_CRC32  => Outcome.Result.Checksum_CRC32,
+            Checksum_CRC32C => Outcome.Result.Checksum_CRC32C,
+            Checksum_SHA1   => Outcome.Result.Checksum_SHA1,
+            Checksum_SHA256 => Outcome.Result.Checksum_SHA256,
+            Checksum_Type   => Outcome.Result.Checksum_Type);
       end;
    end Head_Object;
 

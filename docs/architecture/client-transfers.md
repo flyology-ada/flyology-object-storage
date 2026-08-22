@@ -53,9 +53,13 @@ checksum type must be `COMPOSITE` or `FULL_OBJECT`.
 Optional version, entity-tag precondition, and checksum-mode inputs remain
 explicit. A bodyless unsuccessful HEAD response becomes a compact synthetic
 `HTTP<status>` S3 error while retaining `x-amz-request-id` and `x-amz-id-2`.
-This avoids inventing an XML error document that S3 does not send. The generic
-model boundary remains available when callers need the full modeled HeadObject
-header surface rather than this intentionally compact convenience result.
+This avoids inventing an XML error document that S3 does not send. The typed
+`Client.Low_Level.Prepare_Head_Object`/`Execute_Head_Object` path exposes all
+21 pinned request members and 43 response members when callers need the full
+surface rather than this intentionally compact convenience result. User
+metadata is preserved as an ordered entry vector. Checksums, numeric counts,
+and modeled enums are validated before success is returned, and SSE-C request
+keys are rejected on plaintext HTTP.
 
 ## Multi-subject transfers
 

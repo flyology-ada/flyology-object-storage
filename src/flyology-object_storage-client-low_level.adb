@@ -20,9 +20,12 @@ package body Flyology.Object_Storage.Client.Low_Level is
    use type Flyology.HTTP.Port_Number;
    use type Model.Member_Location;
    use type Model.Shape_Kind;
+   use type S3.Core.Range_Parse_Status;
 
    function Authority (Origin : Flyology.HTTP.Origin) return String;
    function Wire_Query (Canonical : String) return String;
+   function Valid_Optional_Checksum
+     (Value : US.Unbounded_String; Bytes : Positive) return Boolean;
 
    No_Headers : constant SigV4.Name_Value_Array (1 .. 0) :=
      (others => <>);
@@ -1464,7 +1467,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
    end Prepare_Head_Bucket;
 
    function Head_Error
-     (Status : Flyology.HTTP.Status_Code; Request_ID, Host_ID : String)
+     (Operation : String;
+      Status : Flyology.HTTP.Status_Code; Request_ID, Host_ID : String)
       return S3.Errors.Error_Response
    is
       Status_Text : constant String :=
@@ -1472,9 +1476,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
           (Flyology.HTTP.Status_Code'Image (Status), Ada.Strings.Both);
    begin
       return
-        (Code       => US.To_Unbounded_String ("HTTP" & Status_Text),
+         (Code       => US.To_Unbounded_String ("HTTP" & Status_Text),
          Message    => US.To_Unbounded_String
-           ("HeadBucket returned HTTP status " & Status_Text),
+           (Operation & " returned HTTP status " & Status_Text),
          Resource   => US.Null_Unbounded_String,
          Request_ID => US.To_Unbounded_String (Request_ID),
          Host_ID    => US.To_Unbounded_String (Host_ID));
@@ -1505,7 +1509,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
          return
            (Kind   => Head_Bucket_Rejected,
             Status => Status,
-            Error  => Head_Error (Status, Request_ID, Host_ID));
+            Error  => Head_Error
+              ("HeadBucket", Status, Request_ID, Host_ID));
       end if;
    end Decode_Head_Bucket_Response;
 
@@ -1555,6 +1560,365 @@ package body Flyology.Object_Storage.Client.Low_Level is
       when Flyology.HTTP.Client.Response_Too_Large =>
          raise Invalid_Response with "HeadBucket response contains a body";
    end Execute_Head_Bucket;
+
+   function Prepare_Head_Object
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Head_Object_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      SSE_Algorithm : constant String :=
+        US.To_String (Parameters.SSE_Customer_Algorithm);
+      SSE_Key : constant String := US.To_String (Parameters.SSE_Customer_Key);
+      SSE_Key_MD5 : constant String :=
+        US.To_String (Parameters.SSE_Customer_Key_MD5);
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Optional_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.If_Match) > 0) +
+        Boolean'Pos (US.Length (Parameters.If_Modified_Since) > 0) +
+        Boolean'Pos (US.Length (Parameters.If_None_Match) > 0) +
+        Boolean'Pos (US.Length (Parameters.If_Unmodified_Since) > 0) +
+        Boolean'Pos (US.Length (Parameters.Byte_Range_Header) > 0) +
+        Boolean'Pos (US.Length (Parameters.Response_Cache_Control) > 0) +
+        Boolean'Pos
+          (US.Length (Parameters.Response_Content_Disposition) > 0) +
+        Boolean'Pos (US.Length (Parameters.Response_Content_Encoding) > 0) +
+        Boolean'Pos (US.Length (Parameters.Response_Content_Language) > 0) +
+        Boolean'Pos (US.Length (Parameters.Response_Content_Type) > 0) +
+        Boolean'Pos (US.Length (Parameters.Response_Expires) > 0) +
+        Boolean'Pos (US.Length (Parameters.Version_ID) > 0) +
+        Boolean'Pos (SSE_Algorithm'Length > 0) +
+        Boolean'Pos (SSE_Key'Length > 0) +
+        Boolean'Pos (SSE_Key_MD5'Length > 0) +
+        Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (Parameters.Part_Number.Is_Set) +
+        Boolean'Pos (US.Length (Parameters.Expected_Bucket_Owner) > 0) +
+        Boolean'Pos (Parameters.Checksum_Mode);
+      Values : Model_Value_Array (1 .. 2 + Optional_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+
+      procedure Add_Optional
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Add (Name, US.To_String (Value));
+         end if;
+      end Add_Optional;
+   begin
+      if US.Length (Parameters.Version_ID) > 8_192
+        or else (US.Length (Parameters.Byte_Range_Header) > 0
+                 and then S3.Core.Parse_Range_Header
+                   (US.To_String (Parameters.Byte_Range_Header)).Status /=
+                     S3.Core.Range_Parsed)
+        or else (Request_Payer'Length > 0
+                 and then Request_Payer /= "requester")
+        or else ((SSE_Algorithm'Length > 0
+                  or else SSE_Key'Length > 0
+                  or else SSE_Key_MD5'Length > 0)
+                 and then (SSE_Algorithm'Length = 0
+                           or else SSE_Key'Length = 0
+                           or else SSE_Key_MD5'Length = 0))
+        or else (SSE_Key_MD5'Length > 0
+                 and then not Wire_Core.Valid_Base64 (SSE_Key_MD5, 16))
+        or else (SSE_Key'Length > 0
+                 and then Flyology.HTTP.Scheme (Origin) /=
+                   Flyology.HTTP.Secure_HTTPS)
+      then
+         raise Invalid_Request with "invalid HeadObject parameters";
+      end if;
+      Add ("Bucket", Bucket);
+      Add ("Key", Key);
+      Add_Optional ("IfMatch", Parameters.If_Match);
+      Add_Optional ("IfModifiedSince", Parameters.If_Modified_Since);
+      Add_Optional ("IfNoneMatch", Parameters.If_None_Match);
+      Add_Optional ("IfUnmodifiedSince", Parameters.If_Unmodified_Since);
+      Add_Optional ("Range", Parameters.Byte_Range_Header);
+      Add_Optional
+        ("ResponseCacheControl", Parameters.Response_Cache_Control);
+      Add_Optional
+        ("ResponseContentDisposition",
+         Parameters.Response_Content_Disposition);
+      Add_Optional
+        ("ResponseContentEncoding", Parameters.Response_Content_Encoding);
+      Add_Optional
+        ("ResponseContentLanguage", Parameters.Response_Content_Language);
+      Add_Optional
+        ("ResponseContentType", Parameters.Response_Content_Type);
+      Add_Optional ("ResponseExpires", Parameters.Response_Expires);
+      Add_Optional ("VersionId", Parameters.Version_ID);
+      Add_Optional ("SSECustomerAlgorithm",
+                    Parameters.SSE_Customer_Algorithm);
+      Add_Optional ("SSECustomerKey", Parameters.SSE_Customer_Key);
+      Add_Optional ("SSECustomerKeyMD5", Parameters.SSE_Customer_Key_MD5);
+      Add_Optional ("RequestPayer", Parameters.Request_Payer);
+      if Parameters.Part_Number.Is_Set then
+         Add
+           ("PartNumber",
+            Ada.Strings.Fixed.Trim
+              (S3.Core.Part_Number'Image (Parameters.Part_Number.Value),
+               Ada.Strings.Both));
+      end if;
+      Add_Optional
+        ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      if Parameters.Checksum_Mode then
+         Add ("ChecksumMode", "ENABLED");
+      end if;
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Head_Object_Operation, Origin, Style, Values, "", False,
+         SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := Head_Object_Operation;
+      end return;
+   end Prepare_Head_Object;
+
+   function Optional_Natural_Header
+     (Value : String) return Optional_Natural is
+   begin
+      if Value'Length = 0 then
+         return (Is_Set => False, Value => 0);
+      end if;
+      declare
+         Parsed : constant Wire_Core.Natural_Result :=
+           Wire_Core.Parse_Natural (Value);
+      begin
+         if not Parsed.Valid then
+            raise Invalid_Response with "invalid S3 natural response header";
+         end if;
+         return (Is_Set => True, Value => Parsed.Value);
+      end;
+   end Optional_Natural_Header;
+
+   function Head_Content_Length
+     (Value : String; Required : Boolean) return Byte_Count is
+      Parsed : constant Wire_Core.Byte_Count_Result :=
+        Wire_Core.Parse_Byte_Count (Value);
+   begin
+      if Value'Length = 0 and then not Required then
+         return 0;
+      elsif not Parsed.Valid then
+         raise Invalid_Response with
+           "HeadObject lacks a valid Content-Length";
+      end if;
+      return Parsed.Value;
+   end Head_Content_Length;
+
+   function Valid_Head_Object_Enum
+     (Value : US.Unbounded_String; Member : Positive) return Boolean
+   is
+      Text : constant String := US.To_String (Value);
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.Head_Object_Operation));
+      Shape : constant Model.Shape_Index :=
+        Model.Member_Shape (Output, Member);
+   begin
+      if Text'Length = 0 then
+         return True;
+      end if;
+      for Index in 1 .. Model.Enumeration_Count (Shape) loop
+         if Text = Model.Enumeration_Value (Shape, Index) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Valid_Head_Object_Enum;
+
+   procedure Validate_Head_Object_Headers (Value : Head_Object_Result) is
+   begin
+      if not Valid_Optional_Checksum (Value.Checksum_CRC32, 4)
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC32C, 4)
+        or else not Valid_Optional_Checksum (Value.Checksum_CRC64NVME, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA1, 20)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA256, 32)
+        or else not Valid_Optional_Checksum (Value.Checksum_SHA512, 64)
+        or else not Valid_Optional_Checksum (Value.Checksum_MD5, 16)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH64, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH3, 8)
+        or else not Valid_Optional_Checksum (Value.Checksum_XXHASH128, 16)
+        or else not Valid_Head_Object_Enum (Value.Archive_Status, 5)
+        or else not Valid_Head_Object_Enum (Value.Checksum_Type, 18)
+        or else (US.Length (Value.SSE_Customer_Key_MD5) > 0
+                 and then not Wire_Core.Valid_Base64
+                   (US.To_String (Value.SSE_Customer_Key_MD5), 16))
+        or else not Valid_Head_Object_Enum
+          (Value.Server_Side_Encryption, 30)
+        or else (US.Length (Value.SSE_Customer_Algorithm) > 0
+                 and then US.To_String (Value.SSE_Customer_Algorithm) /=
+                   "AES256")
+        or else not Valid_Head_Object_Enum (Value.Storage_Class, 36)
+        or else not Valid_Head_Object_Enum (Value.Request_Charged, 37)
+        or else not Valid_Head_Object_Enum (Value.Replication_Status, 38)
+        or else not Valid_Head_Object_Enum (Value.Object_Lock_Mode, 41)
+        or else not Valid_Head_Object_Enum
+          (Value.Object_Lock_Legal_Hold_Status, 43)
+        or else (Value.Parts_Count.Is_Set
+                 and then Value.Parts_Count.Value not in 1 .. 10_000)
+        or else (Value.Tag_Count.Is_Set and then Value.Tag_Count.Value > 10)
+      then
+         raise Invalid_Response with "invalid HeadObject response headers";
+      end if;
+   end Validate_Head_Object_Headers;
+
+   function Decode_Head_Object_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Head_Object_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "") return Head_Object_Outcome
+   is
+   begin
+      if not Whitespace_Only (Payload) then
+         raise Invalid_Response with "HeadObject contains a response body";
+      elsif Status in 200 | 206 then
+         Validate_Head_Object_Headers (Headers);
+         return (Kind => Object_Found, Status => Status, Result => Headers);
+      else
+         return
+           (Kind   => Head_Object_Rejected,
+            Status => Status,
+            Error  => Head_Error
+              ("HeadObject", Status, Request_ID, Host_ID));
+      end if;
+   end Decode_Head_Object_Response;
+
+   function Execute_Head_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Head_Object_Outcome
+   is
+   begin
+      if Prepared.Operation /= Head_Object_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+         Request_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
+         Host_ID : constant String :=
+           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+
+         function H (Name : String) return US.Unbounded_String is
+           (US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header (Response, Name)));
+
+         Metadata : Metadata_Entry_Vectors.Vector;
+      begin
+         for Index in 1 .. Flyology.HTTP.Client.Header_Count (Response) loop
+            declare
+               Name : constant String := Ada.Characters.Handling.To_Lower
+                 (Flyology.HTTP.Client.Header_Name (Response, Index));
+               Prefix : constant String := "x-amz-meta-";
+            begin
+               if Name'Length > Prefix'Length
+                 and then Name (Name'First .. Name'First + Prefix'Length - 1)
+                   = Prefix
+               then
+                  Metadata.Append
+                    (Metadata_Entry'
+                       (Name => US.To_Unbounded_String
+                        (Name (Name'First + Prefix'Length .. Name'Last)),
+                      Value => US.To_Unbounded_String
+                        (Flyology.HTTP.Client.Header_Value
+                           (Response, Index))));
+               end if;
+            end;
+         end loop;
+         declare
+            Headers : constant Head_Object_Result :=
+              (Delete_Marker => Optional_Boolean_Header
+                 (Flyology.HTTP.Client.Header
+                    (Response, "x-amz-delete-marker")),
+               Accept_Ranges => H ("accept-ranges"),
+               Expiration => H ("x-amz-expiration"),
+               Restore => H ("x-amz-restore"),
+               Archive_Status => H ("x-amz-archive-status"),
+               Last_Modified => H ("last-modified"),
+               Content_Length => Head_Content_Length
+                 (Flyology.HTTP.Client.Header (Response, "content-length"),
+                  Status in 200 | 206),
+               Checksum_CRC32 => H ("x-amz-checksum-crc32"),
+               Checksum_CRC32C => H ("x-amz-checksum-crc32c"),
+               Checksum_CRC64NVME => H ("x-amz-checksum-crc64nvme"),
+               Checksum_SHA1 => H ("x-amz-checksum-sha1"),
+               Checksum_SHA256 => H ("x-amz-checksum-sha256"),
+               Checksum_SHA512 => H ("x-amz-checksum-sha512"),
+               Checksum_MD5 => H ("x-amz-checksum-md5"),
+               Checksum_XXHASH64 => H ("x-amz-checksum-xxhash64"),
+               Checksum_XXHASH3 => H ("x-amz-checksum-xxhash3"),
+               Checksum_XXHASH128 => H ("x-amz-checksum-xxhash128"),
+               Checksum_Type => H ("x-amz-checksum-type"),
+               Entity_Tag => H ("etag"),
+               Missing_Meta => Optional_Natural_Header
+                 (Flyology.HTTP.Client.Header
+                    (Response, "x-amz-missing-meta")),
+               Version_ID => H ("x-amz-version-id"),
+               Cache_Control => H ("cache-control"),
+               Content_Disposition => H ("content-disposition"),
+               Content_Encoding => H ("content-encoding"),
+               Content_Language => H ("content-language"),
+               Content_Type => H ("content-type"),
+               Content_Range => H ("content-range"),
+               Expires => H ("expires"),
+               Website_Redirect_Location =>
+                 H ("x-amz-website-redirect-location"),
+               Server_Side_Encryption =>
+                 H ("x-amz-server-side-encryption"),
+               Metadata => Metadata,
+               SSE_Customer_Algorithm => H
+                 ("x-amz-server-side-encryption-customer-algorithm"),
+               SSE_Customer_Key_MD5 => H
+                 ("x-amz-server-side-encryption-customer-key-md5"),
+               SSE_KMS_Key_ID => H
+                 ("x-amz-server-side-encryption-aws-kms-key-id"),
+               Bucket_Key_Enabled => Optional_Boolean_Header
+                 (Flyology.HTTP.Client.Header
+                    (Response,
+                     "x-amz-server-side-encryption-bucket-key-enabled")),
+               Storage_Class => H ("x-amz-storage-class"),
+               Request_Charged => H ("x-amz-request-charged"),
+               Replication_Status => H ("x-amz-replication-status"),
+               Parts_Count => Optional_Natural_Header
+                 (Flyology.HTTP.Client.Header
+                    (Response, "x-amz-mp-parts-count")),
+               Tag_Count => Optional_Natural_Header
+                 (Flyology.HTTP.Client.Header
+                    (Response, "x-amz-tagging-count")),
+               Object_Lock_Mode => H ("x-amz-object-lock-mode"),
+               Object_Lock_Retain_Until_Date =>
+                 H ("x-amz-object-lock-retain-until-date"),
+               Object_Lock_Legal_Hold_Status =>
+                 H ("x-amz-object-lock-legal-hold"));
+            Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+              Flyology.HTTP.Client.Read_All (Response, 1, Token);
+         begin
+            return Decode_Head_Object_Response
+              (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
+               Request_ID, Host_ID);
+         end;
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with "HeadObject response contains a body";
+   end Execute_Head_Object;
 
    function Prepare_Delete_Bucket
      (Origin     : Flyology.HTTP.Origin;
@@ -2149,6 +2513,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
                            or else SSE_Key_MD5'Length = 0))
         or else (SSE_Key_MD5'Length > 0
                  and then not Wire_Core.Valid_Base64 (SSE_Key_MD5, 16))
+        or else (SSE_Key'Length > 0
+                 and then Flyology.HTTP.Scheme (Origin) /=
+                   Flyology.HTTP.Secure_HTTPS)
       then
          raise Invalid_Request with "invalid UploadPart parameters";
       end if;
@@ -2391,6 +2758,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else Copy_Source'Length not in 1 .. 8_192
         or else Destination_SSE_Count not in 0 | 3
         or else Source_SSE_Count not in 0 | 3
+        or else ((Destination_SSE_Count > 0 or else Source_SSE_Count > 0)
+                 and then Flyology.HTTP.Scheme (Origin) /=
+                   Flyology.HTTP.Secure_HTTPS)
         or else (US.Length (Parameters.SSE_Customer_Key_MD5) > 0
                  and then not Wire_Core.Valid_Base64
                    (US.To_String (Parameters.SSE_Customer_Key_MD5), 16))
