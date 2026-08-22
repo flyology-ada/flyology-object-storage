@@ -1,5 +1,6 @@
 with Ada.Calendar;
 with Ada.Calendar.Formatting;
+with Ada.Containers;
 with Ada.Directories;
 with Ada.IO_Exceptions;
 with Ada.Strings;
@@ -17,6 +18,7 @@ package body Flyology.Object_Storage.Backends.Files is
    use type Ada.Directories.File_Kind;
    use type Ada.Calendar.Time;
    use type Ada.Real_Time.Time;
+   use type Ada.Containers.Count_Type;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Streams.Stream_IO.Count;
 
@@ -96,6 +98,46 @@ package body Flyology.Object_Storage.Backends.Files is
          "part-" & Ada.Strings.Fixed.Trim
            (Multipart_Part_Number'Image (Part_Number), Ada.Strings.Both) &
          ".fos"));
+
+   function Part_Number_From_Name
+     (Name : String) return Multipart_Part_Number
+   is
+      Prefix : constant String := "part-";
+      Suffix : constant String := ".fos";
+      First  : constant Integer := Name'First + Prefix'Length;
+      Last   : constant Integer := Name'Last - Suffix'Length;
+      Value  : Natural := 0;
+   begin
+      if Name'Length <= Prefix'Length + Suffix'Length
+        or else Name (Name'First .. First - 1) /= Prefix
+        or else Name (Last + 1 .. Name'Last) /= Suffix
+        or else (Last > First and then Name (First) = '0')
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      for Index in First .. Last loop
+         if Name (Index) not in '0' .. '9'
+           or else Value >
+             (Multipart_Part_Number'Last -
+                (Character'Pos (Name (Index)) - Character'Pos ('0'))) / 10
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         Value := Value * 10 +
+           (Character'Pos (Name (Index)) - Character'Pos ('0'));
+      end loop;
+      if Value not in Multipart_Part_Number'Range then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      return Multipart_Part_Number (Value);
+   end Part_Number_From_Name;
+
+   function Part_Before
+     (Left, Right : Listed_Multipart_Part) return Boolean is
+     (Left.Number < Right.Number);
+
+   package Multipart_Part_Sorting is new
+     Listed_Multipart_Part_Vectors.Generic_Sorting ("<" => Part_Before);
 
    procedure Check_Context
      (Token    : access Flyology.Cancellation.Token;
@@ -1549,6 +1591,131 @@ package body Flyology.Object_Storage.Backends.Files is
             Result := Backend_Unavailable;
          end if;
    end Put_Multipart_Part;
+
+   overriding procedure List_Multipart_Parts
+     (Item      : in out Store;
+      Bucket    : String;
+      Key       : String;
+      Upload_ID : String;
+      Options   : List_Multipart_Parts_Options;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Page      : out Multipart_Part_Page;
+      Result    : out Status)
+   is
+      Upload_Options : Multipart_Options;
+      Search         : Ada.Directories.Search_Type;
+      Directory_Item : Ada.Directories.Directory_Entry_Type;
+      Filter         : constant Ada.Directories.Filter_Type :=
+        (Ada.Directories.Ordinary_File => True,
+         Ada.Directories.Directory     => False,
+         Ada.Directories.Special_File  => False);
+      File      : SIO.File_Type;
+      Opened    : Boolean := False;
+      Searching : Boolean := False;
+      Locked    : Boolean := False;
+   begin
+      Page := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else Upload_ID'Length not in 1 .. 1_024
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if not Ada.Directories.Exists
+        (Manifest_Path (Item, Bucket, Upload_ID))
+      then
+         Item.Publication.Release;
+         Locked := False;
+         Result := Not_Found;
+         return;
+      end if;
+      Read_Manifest (Item, Bucket, Key, Upload_ID, Upload_Options);
+      if Options.Maximum = 0
+        or else Options.After = Multipart_Part_Marker'Last
+      then
+         Item.Publication.Release;
+         Locked := False;
+         Result := Success;
+         return;
+      end if;
+      Ada.Directories.Start_Search
+        (Search, Upload_Path (Item, Bucket, Upload_ID), "part-*.fos", Filter);
+      Searching := True;
+      while Ada.Directories.More_Entries (Search) loop
+         Check_Context (Token, Deadline);
+         Ada.Directories.Get_Next_Entry (Search, Directory_Item);
+         declare
+            Number : constant Multipart_Part_Number :=
+              Part_Number_From_Name
+                (Ada.Directories.Simple_Name (Directory_Item));
+         begin
+            if Number > Options.After then
+               declare
+                  Info    : Object_Information;
+                  Body_At : SIO.Positive_Count;
+               begin
+                  SIO.Open
+                    (File, SIO.In_File,
+                     Ada.Directories.Full_Name (Directory_Item));
+                  Opened := True;
+                  Read_Header (File, Key, Info, Body_At);
+                  SIO.Close (File);
+                  Opened := False;
+                  Page.Parts.Append
+                    (Listed_Multipart_Part'
+                       (Number => Number, Info => Info));
+               end;
+            end if;
+         end;
+      end loop;
+      Ada.Directories.End_Search (Search);
+      Searching := False;
+      Multipart_Part_Sorting.Sort (Page.Parts);
+      if Page.Parts.Length > Ada.Containers.Count_Type (Options.Maximum) then
+         Page.Is_Truncated := True;
+         while Page.Parts.Length >
+           Ada.Containers.Count_Type (Options.Maximum)
+         loop
+            Page.Parts.Delete_Last;
+         end loop;
+         Page.Next_After :=
+           Multipart_Part_Marker (Page.Parts.Last_Element.Number);
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+      Result := Success;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Page := (others => <>);
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Page := (others => <>);
+         Result := Backend_Unavailable;
+   end List_Multipart_Parts;
 
    overriding procedure Copy_Multipart_Part
      (Item               : in out Store;

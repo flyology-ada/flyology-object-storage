@@ -137,6 +137,28 @@ package Flyology.Object_Storage.Backends is
    subtype Multipart_Part_References is
      Multipart_Part_Reference_Vectors.Vector;
 
+   subtype Multipart_Part_Marker is
+     Natural range 0 .. Multipart_Part_Number'Last;
+
+   type List_Multipart_Parts_Options is record
+      After   : Multipart_Part_Marker := 0;
+      Maximum : List_Limit := List_Limit'Last;
+   end record;
+
+   type Listed_Multipart_Part is record
+      Number : Multipart_Part_Number := Multipart_Part_Number'First;
+      Info   : Object_Information;
+   end record;
+
+   package Listed_Multipart_Part_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Listed_Multipart_Part);
+
+   type Multipart_Part_Page is record
+      Parts        : Listed_Multipart_Part_Vectors.Vector;
+      Is_Truncated : Boolean := False;
+      Next_After   : Multipart_Part_Marker := 0;
+   end record;
+
    procedure Create_Bucket
      (Item   : in out Backend;
       Bucket : String;
@@ -257,6 +279,19 @@ package Flyology.Object_Storage.Backends is
       Deadline    : Ada.Real_Time.Time;
       Info        : out Object_Information;
       Result      : out Status) is abstract;
+
+   --  Return committed staged parts strictly after Options.After, ordered by
+   --  part number. A truncated nonempty page resumes from Next_After.
+   procedure List_Multipart_Parts
+     (Item      : in out Backend;
+      Bucket    : String;
+      Key       : String;
+      Upload_ID : String;
+      Options   : List_Multipart_Parts_Options;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Page      : out Multipart_Part_Page;
+      Result    : out Status) is abstract;
 
    --  Copy one immutable source-object interval into a staged part. Source
    --  conditions and range resolution apply to the same snapshot. The

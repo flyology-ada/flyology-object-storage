@@ -1,5 +1,6 @@
 with Ada.Calendar;
 with Ada.Calendar.Formatting;
+with Ada.Containers;
 with Ada.Strings;
 with Ada.Strings.Fixed;
 with Ada.Unchecked_Deallocation;
@@ -12,6 +13,7 @@ package body Flyology.Object_Storage.Backends.Memory is
 
    use type Ada.Calendar.Time;
    use type Ada.Real_Time.Time;
+   use type Ada.Containers.Count_Type;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Strings.Unbounded.Unbounded_String;
 
@@ -660,6 +662,64 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Success;
          end;
       end Commit_Part;
+
+      procedure List_Parts
+        (Bucket    : String;
+         Key       : String;
+         Upload_ID : String;
+         Options   : List_Multipart_Parts_Options;
+         Page      : out Multipart_Part_Page;
+         Result    : out Status)
+      is
+         type Part_Index_Array is
+           array (Multipart_Part_Number) of Natural;
+         Index_By_Number : Part_Index_Array := (others => 0);
+      begin
+         Page := (others => <>);
+         if Upload_Index (Bucket, Key, Upload_ID) = 0 then
+            Result := Not_Found;
+            return;
+         elsif Options.Maximum = 0
+           or else Options.After = Multipart_Part_Marker'Last
+         then
+            Result := Success;
+            return;
+         end if;
+         for Index in 1 .. Highest_Part loop
+            if Parts (Index).Used
+              and then Ada.Strings.Unbounded.To_String
+                (Parts (Index).Upload_ID) = Upload_ID
+              and then Parts (Index).Number > Options.After
+            then
+               Index_By_Number (Parts (Index).Number) := Index;
+            end if;
+         end loop;
+         for Number in
+           Multipart_Part_Number (Options.After + 1) ..
+             Multipart_Part_Number'Last
+         loop
+            if Index_By_Number (Number) /= 0 then
+               if Page.Parts.Length <
+                 Ada.Containers.Count_Type (Options.Maximum)
+               then
+                  declare
+                     Part : constant Part_Slot :=
+                       Parts (Index_By_Number (Number));
+                  begin
+                     Page.Parts.Append
+                       (Listed_Multipart_Part'
+                          (Number => Number, Info => Part.Info));
+                  end;
+               else
+                  Page.Is_Truncated := True;
+                  Page.Next_After :=
+                    Multipart_Part_Marker (Page.Parts.Last_Element.Number);
+                  exit;
+               end if;
+            end if;
+         end loop;
+         Result := Success;
+      end List_Parts;
 
       procedure Complete_Multipart
         (Bucket    : String;
@@ -1509,6 +1569,31 @@ package body Flyology.Object_Storage.Backends.Memory is
          Release_Buffer (Item.State, Data);
          raise;
    end Put_Multipart_Part;
+
+   overriding procedure List_Multipart_Parts
+     (Item      : in out Store;
+      Bucket    : String;
+      Key       : String;
+      Upload_ID : String;
+      Options   : List_Multipart_Parts_Options;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Page      : out Multipart_Part_Page;
+      Result    : out Status)
+   is
+   begin
+      Page := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else Upload_ID'Length not in 1 .. 1_024
+      then
+         Result := Invalid_Request;
+      else
+         Item.State.List_Parts
+           (Bucket, Key, Upload_ID, Options, Page, Result);
+      end if;
+   end List_Multipart_Parts;
 
    overriding procedure Copy_Multipart_Part
      (Item               : in out Store;

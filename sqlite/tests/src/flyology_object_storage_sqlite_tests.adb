@@ -453,6 +453,32 @@ begin
            (Catalog, "catalog-bucket", "multipart-key", Upload_ID, 2,
             "part-payload-two", Part_Info, Part_Previous, Result);
          Assert (Result = Success, "catalog second multipart part failed");
+         declare
+            Page : Multipart_Part_Page;
+            Options : List_Multipart_Parts_Options :=
+              (After => 0, Maximum => 1);
+         begin
+            Catalogs.List_Multipart_Parts
+              (Catalog, "catalog-bucket", "multipart-key", Upload_ID,
+               Options, Page, Result);
+            Assert
+              (Result = Success and then Page.Parts.Length = 1
+               and then Page.Parts.First_Element.Number = 1
+               and then Page.Parts.First_Element.Info.Size =
+                 5 * 1_024 * 1_024
+               and then Page.Is_Truncated and then Page.Next_After = 1,
+               "catalog ListParts first page failed");
+            Options.After := Page.Next_After;
+            Catalogs.List_Multipart_Parts
+              (Catalog, "catalog-bucket", "multipart-key", Upload_ID,
+               Options, Page, Result);
+            Assert
+              (Result = Success and then Page.Parts.Length = 1
+               and then Page.Parts.First_Element.Number = 2
+               and then Page.Parts.First_Element.Info.Size = 4
+               and then not Page.Is_Truncated,
+               "catalog ListParts continuation failed");
+         end;
          References.Append
            (Multipart_Part_Reference'
               (Number => 1,
@@ -620,6 +646,20 @@ begin
            (Result = Success and then Info.Size = 14,
             "SQLite multipart part upload failed");
       end;
+      declare
+         Part_Source : Buffer_Source :=
+           (Data     => Flyology.Bytes.From_Byte_String ("later"),
+            Position => 0,
+            Length   => (Kind => Known, Bytes => 5));
+      begin
+         Store.Put_Multipart_Part
+           ("sqlite-bucket", "multipart-target",
+            US.To_String (SQLite_Upload_ID), 3, Part_Source, null,
+            Ada.Real_Time.Time_Last, Info, Result);
+         Assert
+           (Result = Success and then Info.Size = 5,
+            "SQLite sparse multipart part upload failed");
+      end;
       Store.Create_Multipart_Upload
         ("sqlite-bucket", "aborted-target", Default_Multipart_Options,
          null, Ada.Real_Time.Time_Last, SQLite_Abort_ID, Result);
@@ -732,6 +772,33 @@ begin
         (Result = Success and then Info.Size = 11 and then
          US.To_String (Info.Entity_Tag) = "etag-2",
          "SQLite backend metadata did not persist");
+      declare
+         Page : Multipart_Part_Page;
+         Options : List_Multipart_Parts_Options :=
+           (After => 0, Maximum => 1);
+      begin
+         Store.List_Multipart_Parts
+           ("sqlite-bucket", "multipart-target",
+            US.To_String (SQLite_Upload_ID), Options, null,
+            Ada.Real_Time.Time_Last, Page, Result);
+         Assert
+           (Result = Success and then Page.Parts.Length = 1
+            and then Page.Parts.First_Element.Number = 1
+            and then Page.Parts.First_Element.Info.Size = 14
+            and then Page.Is_Truncated and then Page.Next_After = 1,
+            "SQLite persisted ListParts first page failed");
+         Options.After := Page.Next_After;
+         Store.List_Multipart_Parts
+           ("sqlite-bucket", "multipart-target",
+            US.To_String (SQLite_Upload_ID), Options, null,
+            Ada.Real_Time.Time_Last, Page, Result);
+         Assert
+           (Result = Success and then Page.Parts.Length = 1
+            and then Page.Parts.First_Element.Number = 3
+            and then Page.Parts.First_Element.Info.Size = 5
+            and then not Page.Is_Truncated,
+            "SQLite persisted ListParts continuation failed");
+      end;
       declare
          Options : Copy_Options := Default_Copy_Options;
          Copy_Sink : Buffer_Sink;

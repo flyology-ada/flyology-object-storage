@@ -5,6 +5,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
 
    package DB renames Flyology.Object_Storage.SQLite.Databases;
    package US renames Ada.Strings.Unbounded;
+   use type Ada.Containers.Count_Type;
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
@@ -742,6 +743,83 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Put_Multipart_Part;
+
+   procedure List_Multipart_Parts
+     (Item      : in out Catalog;
+      Bucket    : String;
+      Key       : String;
+      Upload_ID : String;
+      Options   : Backends.List_Multipart_Parts_Options;
+      Page      : out Backends.Multipart_Part_Page;
+      Result    : out Status)
+   is
+      Content_Type : US.Unbounded_String;
+      Query        : DB.Statement;
+      Locked       : Boolean := False;
+   begin
+      Page := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      Find_Multipart_Upload_Internal
+        (Item, Bucket, Key, Upload_ID, Content_Type, Result);
+      if Result /= Success then
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      elsif Options.Maximum = 0
+        or else Options.After = Backends.Multipart_Part_Marker'Last
+      then
+         Item.Gate.Release;
+         Locked := False;
+         Result := Success;
+         return;
+      end if;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT part_number,size,modified,entity_tag " &
+         "FROM multipart_parts WHERE upload_id=?1 AND part_number>?2 " &
+         "ORDER BY part_number LIMIT ?3");
+      DB.Bind (Query, 1, Upload_ID);
+      DB.Bind (Query, 2, Long_Long_Integer (Options.After));
+      DB.Bind (Query, 3, Long_Long_Integer (Options.Maximum) + 1);
+      while DB.Step (Query) = DB.Row loop
+         declare
+            Number_Value : constant Long_Long_Integer := DB.Column (Query, 0);
+         begin
+            if Page.Parts.Length <
+              Ada.Containers.Count_Type (Options.Maximum)
+            then
+               Page.Parts.Append
+                 (Backends.Listed_Multipart_Part'
+                    (Number =>
+                       Backends.Multipart_Part_Number (Number_Value),
+                     Info =>
+                       (Size => Byte_Count'(DB.Column (Query, 1)),
+                        Modified => Unix_Time'(DB.Column (Query, 2)),
+                        Entity_Tag =>
+                          US.To_Unbounded_String
+                            (DB.Column_Bytes (Query, 3)),
+                        Content_Type => US.Null_Unbounded_String,
+                        Version => US.Null_Unbounded_String)));
+            else
+               Page.Is_Truncated := True;
+               Page.Next_After := Backends.Multipart_Part_Marker
+                 (Page.Parts.Last_Element.Number);
+               exit;
+            end if;
+         end;
+      end loop;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Page := (others => <>);
+         raise;
+   end List_Multipart_Parts;
 
    procedure Read_Multipart_Parts
      (Item      : in out Catalog;

@@ -121,6 +121,17 @@ package Flyology.Object_Storage.Backends.Memory is
       Info        : out Object_Information;
       Result      : out Status);
 
+   overriding procedure List_Multipart_Parts
+     (Item      : in out Store;
+      Bucket    : String;
+      Key       : String;
+      Upload_ID : String;
+      Options   : List_Multipart_Parts_Options;
+      Token     : access Flyology.Cancellation.Token;
+      Deadline  : Ada.Real_Time.Time;
+      Page      : out Multipart_Part_Page;
+      Result    : out Status);
+
    overriding procedure Copy_Multipart_Part
      (Item               : in out Store;
       Source_Bucket      : String;
@@ -276,6 +287,13 @@ private
          Info        : Object_Information;
          Stored      : out Object_Information;
          Result      : out Status);
+      procedure List_Parts
+        (Bucket    : String;
+         Key       : String;
+         Upload_ID : String;
+         Options   : List_Multipart_Parts_Options;
+         Page      : out Multipart_Part_Page;
+         Result    : out Status);
       procedure Complete_Multipart
         (Bucket    : String;
          Key       : String;

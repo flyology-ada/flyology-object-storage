@@ -103,6 +103,15 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Previous_Payload : out Ada.Strings.Unbounded.Unbounded_String;
       Result           : out Status);
 
+   procedure List_Multipart_Parts
+     (Item      : in out Catalog;
+      Bucket    : String;
+      Key       : String;
+      Upload_ID : String;
+      Options   : Backends.List_Multipart_Parts_Options;
+      Page      : out Backends.Multipart_Part_Page;
+      Result    : out Status);
+
    procedure Read_Multipart_Parts
      (Item      : in out Catalog;
       Bucket    : String;

@@ -739,6 +739,38 @@ package body Object_Storage_Test_Cases is
          Upload
            (US.To_String (Upload_ID), "target", 2,
             Flyology.Bytes.From_Byte_String ("tail"), Last_ETag);
+         declare
+            Page : Multipart_Part_Page;
+            Options : List_Multipart_Parts_Options :=
+              (After => 0, Maximum => 1);
+         begin
+            Store.List_Multipart_Parts
+              ("multipart-bucket", "target", US.To_String (Upload_ID),
+               Options, null, Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Success and then Page.Parts.Length = 1
+               and then Page.Parts.First_Element.Number = 1
+               and then Page.Parts.First_Element.Info.Size =
+                 Byte_Count (5 * MiB)
+               and then Page.Is_Truncated and then Page.Next_After = 1,
+               "memory ListParts first page failed");
+            Options.After := Page.Next_After;
+            Store.List_Multipart_Parts
+              ("multipart-bucket", "target", US.To_String (Upload_ID),
+               Options, null, Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Success and then Page.Parts.Length = 1
+               and then Page.Parts.First_Element.Number = 2
+               and then Page.Parts.First_Element.Info.Size = 4
+               and then not Page.Is_Truncated and then Page.Next_After = 0,
+               "memory ListParts continuation failed");
+            Store.List_Multipart_Parts
+              ("multipart-bucket", "target", "missing-upload", Options,
+               null, Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Not_Found and then Page.Parts.Is_Empty,
+               "memory ListParts missing upload was ambiguous");
+         end;
          Assert
            (Store.Bytes_Used = Byte_Count (5 * MiB + 4),
             "staged multipart bytes were not accounted");
@@ -1374,6 +1406,21 @@ package body Object_Storage_Test_Cases is
               (Result = Success and then Info.Size = 14,
                "files multipart part upload");
          end;
+         declare
+            Part_Source : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String ("later"),
+               Position => 0,
+               Length   => (Kind => Known, Bytes => 5),
+               Bad_Last => False);
+         begin
+            Store.Put_Multipart_Part
+              ("file-bucket", "multipart-target",
+               US.To_String (Upload_ID), 3, Part_Source, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Success and then Info.Size = 5,
+               "files sparse multipart part upload");
+         end;
          Store.Create_Multipart_Upload
            ("file-bucket", "aborted-target", Default_Multipart_Options,
             null, Ada.Real_Time.Time_Last, Abort_ID, Result);
@@ -1392,6 +1439,31 @@ package body Object_Storage_Test_Cases is
             and then Info.Size = 11
             and then US.To_String (Info.Entity_Tag) = "etag-2",
             "files metadata persists across reopen");
+         declare
+            Page : Multipart_Part_Page;
+            Options : List_Multipart_Parts_Options :=
+              (After => 0, Maximum => 1);
+         begin
+            Store.List_Multipart_Parts
+              ("file-bucket", "multipart-target", US.To_String (Upload_ID),
+               Options, null, Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Success and then Page.Parts.Length = 1
+               and then Page.Parts.First_Element.Number = 1
+               and then Page.Parts.First_Element.Info.Size = 14
+               and then Page.Is_Truncated and then Page.Next_After = 1,
+               "files persisted ListParts first page failed");
+            Options.After := Page.Next_After;
+            Store.List_Multipart_Parts
+              ("file-bucket", "multipart-target", US.To_String (Upload_ID),
+               Options, null, Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Success and then Page.Parts.Length = 1
+               and then Page.Parts.First_Element.Number = 3
+               and then Page.Parts.First_Element.Info.Size = 5
+               and then not Page.Is_Truncated,
+               "files persisted ListParts continuation failed");
+         end;
          declare
             Options : Copy_Options := Default_Copy_Options;
             Copy_Sink : Buffer_Sink;
