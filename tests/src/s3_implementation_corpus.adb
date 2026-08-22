@@ -134,12 +134,14 @@ procedure S3_Implementation_Corpus is
      new HTTP_Client.Request_Body_Source with record
       Position : Natural := 0;
       Chunk    : Positive := 997;
+      First    : Positive := Value'First;
+      Length   : Natural := Value'Length;
    end record;
 
    overriding function Declared_Length
      (Item : Upload_Source) return HTTP_Client.Body_Length is
      (HTTP_Client.Known_Length
-        (HTTP_Client.Body_Size (Item.Value'Length)));
+        (HTTP_Client.Body_Size (Item.Length)));
 
    overriding procedure Read
      (Item     : in out Upload_Source;
@@ -150,7 +152,7 @@ procedure S3_Implementation_Corpus is
       Token    : access Flyology.Cancellation.Token)
    is
       pragma Unreferenced (Timeout, Token);
-      Remaining : constant Natural := Item.Value'Length - Item.Position;
+      Remaining : constant Natural := Item.Length - Item.Position;
       Count : constant Natural := Natural'Min
         (Remaining, Natural'Min (Natural (Data'Length), Item.Chunk));
    begin
@@ -163,12 +165,12 @@ procedure S3_Implementation_Corpus is
               Stream_Element
                 (Character'Pos
                    (Item.Value
-                      (Item.Value'First + Item.Position + Offset)));
+                      (Item.First + Item.Position + Offset)));
          end loop;
          Last := Data'First + Stream_Element_Offset (Count - 1);
          Item.Position := Item.Position + Count;
       end if;
-      Finished := Item.Position = Item.Value'Length;
+      Finished := Item.Position = Item.Length;
    end Read;
 
    procedure Run
@@ -786,7 +788,7 @@ procedure S3_Implementation_Corpus is
                 ((Outcome.Result.Attributes.Object_Parts.
                     Total_Parts_Count.Is_Set
                   and then Outcome.Result.Attributes.Object_Parts.
-                    Total_Parts_Count.Value /= 1)
+                    Total_Parts_Count.Value /= 2)
                  or else Outcome.Result.Attributes.Object_Parts.Parts.Length >
                    1
                  or else
@@ -797,7 +799,7 @@ procedure S3_Implementation_Corpus is
                        or else Outcome.Result.Attributes.Object_Parts.Parts.
                          First_Element.Size.Value /=
                            Flyology.Object_Storage.Byte_Count
-                             (Payload'Length))))
+                             (5 * 1_024 * 1_024))))
             then
                raise Program_Error with
                  "S3 implementation returned invalid completed-part " &
@@ -1189,23 +1191,27 @@ procedure S3_Implementation_Corpus is
          declare
             Upload_ID : constant String :=
               US.To_String (Created.Result.Upload_ID);
-            First_Payload : aliased constant String :=
-              Payload (Payload'First .. Payload'First + 5 * 1_024 * 1_024 - 1);
-            Second_Payload : aliased constant String :=
-              Payload (First_Payload'Last + 1 .. Payload'Last);
+            First_Length : constant Natural := 5 * 1_024 * 1_024;
+            Second_First : constant Positive :=
+              Payload'First + First_Length;
+            Second_Length : constant Natural := Payload'Length - First_Length;
 
             function Upload
               (Number : S3_Core.Part_Number;
-               Value  : not null access constant String)
+               First  : Positive;
+               Length : Natural)
                return US.Unbounded_String
             is
                Parameters : Low_Level.Upload_Part_Parameters;
-               Source : Upload_Source (Value);
+               Source : Upload_Source (Payload'Access);
             begin
+               Source.First := First;
+               Source.Length := Length;
                Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
                Parameters.Part_Number := Number;
                Parameters.Payload_SHA256 := US.To_Unbounded_String
-                 (SigV4.SHA256_Hex (Value.all));
+                 (SigV4.SHA256_Hex
+                    (Payload (First .. First + Length - 1)));
                declare
                   Prepared : constant Low_Level.Prepared_Request :=
                     Low_Level.Prepare_Upload_Part
@@ -1229,14 +1235,14 @@ procedure S3_Implementation_Corpus is
             end if;
             declare
                First_ETag : constant US.Unbounded_String :=
-                 Upload (1, First_Payload'Access);
+                 Upload (1, Payload'First, First_Length);
             begin
                Require_Listed_Part
                  (Key, Upload_ID, US.To_String (First_ETag),
-                  Flyology.Object_Storage.Byte_Count (First_Payload'Length));
+                  Flyology.Object_Storage.Byte_Count (First_Length));
                declare
                   Second_ETag : constant US.Unbounded_String :=
-                    Upload (2, Second_Payload'Access);
+                    Upload (2, Second_First, Second_Length);
                   Completion : Multipart.Complete_Multipart_Upload_Request;
                begin
                   Completion.Parts.Append
