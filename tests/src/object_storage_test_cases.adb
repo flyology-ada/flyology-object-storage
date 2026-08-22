@@ -21,6 +21,7 @@ with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Durability_Testing;
 with Flyology.Object_Storage.S3.Buckets;
+with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
@@ -4671,6 +4672,212 @@ package body Object_Storage_Test_Cases is
                "<Size>1</Size></Part>"),
          "ListParts nested scalar was accepted");
    end Check_List_Parts_Codec;
+
+   procedure Check_Object_Attributes_Codec (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Attributes renames
+        Flyology.Object_Storage.S3.Attributes;
+      package US renames Ada.Strings.Unbounded;
+
+      procedure Selection_Must_Reject (Value, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Attributes.Attribute_Selection :=
+                 Attributes.Parse_Selection (Value);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Attributes.Malformed_Attributes =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Selection_Must_Reject;
+
+      procedure Query_Must_Reject (Value, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Attributes.Attributes_Query :=
+                 Attributes.Parse_Query (Value);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Attributes.Malformed_Attributes =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Query_Must_Reject;
+
+      procedure Result_Must_Reject (Value, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant
+                 Attributes.Get_Object_Attributes_Result :=
+                   Attributes.Parse_Result (Value);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Attributes.Malformed_Attributes =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Result_Must_Reject;
+
+      function Root (Content : String) return String is
+        ("<GetObjectAttributesResponse>" & Content &
+         "</GetObjectAttributesResponse>");
+   begin
+      declare
+         Selection : constant Attributes.Attribute_Selection :=
+           Attributes.Parse_Selection
+             (" ETag," & ASCII.HT & "Checksum,ObjectParts," &
+              "StorageClass,ObjectSize ");
+      begin
+         Assert
+           (Selection.Entity_Tag and then Selection.Checksum
+            and then Selection.Object_Parts
+            and then Selection.Storage_Class
+            and then Selection.Object_Size
+            and then Attributes.Image (Selection) =
+              "ETag,Checksum,ObjectParts,StorageClass,ObjectSize",
+            "object-attributes selection parsing");
+      end;
+      Selection_Must_Reject
+        ("", "empty object-attributes selection accepted");
+      Selection_Must_Reject
+        ("ETag,ETag", "duplicate object attribute accepted");
+      Selection_Must_Reject
+        ("ETag,Future", "unknown object attribute accepted");
+      Selection_Must_Reject
+        ("ETag,,ObjectSize", "empty object attribute accepted");
+      Selection_Must_Reject
+        ("ETag" & ASCII.LF, "control byte in object attributes accepted");
+
+      declare
+         Query : constant Attributes.Attributes_Query :=
+           Attributes.Parse_Query
+             ("attributes&versionId=null&x-id=GetObjectAttributes");
+      begin
+         Assert
+           (Query.Has_Version_ID
+            and then US.To_String (Query.Version_ID) = "null",
+            "attributes query parsing");
+      end;
+      Query_Must_Reject
+        ("versionId=null", "attributes query without marker accepted");
+      Query_Must_Reject
+        ("attributes&attributes", "duplicate attributes marker accepted");
+      Query_Must_Reject
+        ("attributes=1", "valued attributes marker accepted");
+      Query_Must_Reject
+        ("attributes&versionId=%GG", "bad attributes escape accepted");
+      Query_Must_Reject
+        ("attributes&x-id=GetObject", "wrong attributes x-id accepted");
+
+      declare
+         Document : constant String :=
+           "<GetObjectAttributesResponse xmlns=""http://s3.amazonaws.com/" &
+           "doc/2006-03-01/""><ETag>etag&amp;opaque</ETag>" &
+           "<Checksum><ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+           "<ChecksumCRC32C>AAAAAA==</ChecksumCRC32C>" &
+           "<ChecksumCRC64NVME>AAAAAAAAAAA=</ChecksumCRC64NVME>" &
+           "<ChecksumSHA1>AAAAAAAAAAAAAAAAAAAAAAAAAAA=</ChecksumSHA1>" &
+           "<ChecksumSHA256>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
+           "</ChecksumSHA256><ChecksumSHA512>" &
+           String'(1 .. 86 => 'A') & "==</ChecksumSHA512>" &
+           "<ChecksumMD5>AAAAAAAAAAAAAAAAAAAAAA==</ChecksumMD5>" &
+           "<ChecksumXXHASH64>AAAAAAAAAAA=</ChecksumXXHASH64>" &
+           "<ChecksumXXHASH3>AAAAAAAAAAA=</ChecksumXXHASH3>" &
+           "<ChecksumXXHASH128>AAAAAAAAAAAAAAAAAAAAAA==" &
+           "</ChecksumXXHASH128><ChecksumType>COMPOSITE</ChecksumType>" &
+           "</Checksum><ObjectParts><PartsCount>2</PartsCount>" &
+           "<PartNumberMarker>1</PartNumberMarker>" &
+           "<NextPartNumberMarker>2</NextPartNumberMarker>" &
+           "<MaxParts>1</MaxParts><IsTruncated>true</IsTruncated>" &
+           "<Part><ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+           "<PartNumber>2</PartNumber><Size>9223372036854775807</Size>" &
+           "</Part></ObjectParts><StorageClass>STANDARD_IA</StorageClass>" &
+           "<ObjectSize>9223372036854775807</ObjectSize>" &
+           "<Future><Nested>ignored</Nested></Future>" &
+           "</GetObjectAttributesResponse>";
+         Parsed : constant Attributes.Get_Object_Attributes_Result :=
+           Attributes.Parse_Result (Document);
+         Round_Trip : constant Attributes.Get_Object_Attributes_Result :=
+           Attributes.Parse_Result (Attributes.Serialize_Result (Parsed));
+      begin
+         Assert
+           (Parsed.Has_Entity_Tag
+            and then US.To_String (Parsed.Entity_Tag) = "etag&opaque"
+            and then Parsed.Has_Checksum
+            and then US.To_String (Parsed.Checksum.Kind) = "COMPOSITE"
+            and then Parsed.Has_Object_Parts
+            and then Parsed.Object_Parts.Parts.Length = 1
+            and then Parsed.Object_Parts.Parts.First_Element.Number.Value = 2
+            and then Parsed.Object_Parts.Parts.First_Element.Size.Value =
+              Flyology.Object_Storage.Byte_Count'Last
+            and then Parsed.Has_Storage_Class
+            and then Parsed.Object_Size.Value =
+              Flyology.Object_Storage.Byte_Count'Last,
+            "complete GetObjectAttributes response fields");
+         Assert
+           (Round_Trip.Object_Parts.Has_Is_Truncated
+            and then Round_Trip.Object_Parts.Is_Truncated
+            and then Round_Trip.Object_Parts.Next_Part_Number_Marker.Value = 2
+            and then US.To_String (Round_Trip.Checksum.SHA512) =
+              String'(1 .. 86 => 'A') & "==",
+            "GetObjectAttributes serialization round trip");
+      end;
+
+      Result_Must_Reject
+        ("<Wrong/>", "wrong attributes result root accepted");
+      Result_Must_Reject
+        (Root (""), "empty attributes response accepted");
+      Result_Must_Reject
+        (Root ("<ETag>a</ETag><ETag>b</ETag>"),
+         "duplicate attributes result field accepted");
+      Result_Must_Reject
+        (Root ("<StorageClass>UNKNOWN</StorageClass>"),
+         "unknown attributes storage class accepted");
+      Result_Must_Reject
+        (Root ("<ObjectSize>9223372036854775808</ObjectSize>"),
+         "overflowing attributes object size accepted");
+      Result_Must_Reject
+        (Root ("<Checksum><ChecksumCRC32>abc</ChecksumCRC32>" &
+               "</Checksum>"),
+         "malformed attributes checksum accepted");
+      Result_Must_Reject
+        (Root ("<ObjectParts><MaxParts>1001</MaxParts>" &
+               "</ObjectParts>"),
+         "oversized attributes page accepted");
+      Result_Must_Reject
+        (Root ("<ObjectParts><IsTruncated>True</IsTruncated>" &
+               "</ObjectParts>"),
+         "noncanonical attributes boolean accepted");
+      Result_Must_Reject
+        (Root ("<ObjectParts><Part><PartNumber>1</PartNumber>" &
+               "</Part></ObjectParts>"),
+         "attributes part without size accepted");
+      Result_Must_Reject
+        (Root ("<ObjectParts><Part><PartNumber>2</PartNumber>" &
+               "<Size>1</Size></Part><Part><PartNumber>1</PartNumber>" &
+               "<Size>1</Size></Part></ObjectParts>"),
+         "unordered attributes parts accepted");
+      Result_Must_Reject
+        (Root ("<ETag><Nested/></ETag>"),
+         "nested attributes scalar accepted");
+   end Check_Object_Attributes_Codec;
 
    procedure Check_List_Multipart_Uploads_Codec
      (Unused : in out Fixture)
@@ -9933,6 +10140,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.list-parts-codec",
             Check_List_Parts_Codec'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.get-object-attributes-codec",
+            Check_Object_Attributes_Codec'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.list-multipart-uploads-codec",
