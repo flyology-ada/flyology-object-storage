@@ -1,0 +1,18 @@
+case	child_state	event	parent_action	required_observation
+immediate-terminal	terminal-at-start	Start_Operation	Finish-Release-continue	child identity never appears in user completion batch
+pending-success	active	Dependency_Changed	Finish-Release-complete-parent	parent and child use one owner stack
+pending-failure	active	Dependency_Changed	Finish-Release-map-failure	typed child failure does not escape as environmental exception
+cancel-before-admission	active	parent-cancel	cancel-child-await-dependency	buffer and source remain owned until terminal drain
+cancel-after-admission	active	parent-cancel	cancel-child-await-dependency	semantic result is Outcome_Unknown
+deadline-with-child	active	deadline	cancel-child-await-dependency	absolute deadline is not restarted
+finish-wrong-buffer	terminal	Dependency_Changed	leave-terminal-report-contract-error	child result and token remain consumable with correct buffer
+abandon-parent	active	Finalize	cancel-drain-release	no detached task source response stream token or slot remains
+restart-child	consumed-released	Start_Operation	Start-Continue_After	generation changes and stale references are rejected
+gate-race	active	competing-gate	finish-winning-gate-only	member stays retained until all dependent gates terminalize
+client-shutdown	active	Dependency_Changed	Finish-Release-map-unavailable	pool waiter lease and buffer accounting return to baseline
+source-fault	active	Dependency_Changed	Finish-Release-map-certainty	Release_Source occurs exactly once before terminal publication
+source-query-arm-race	source-needs-read	readiness-between-query-and-arm	arm-complete-readiness-set	latched readiness wakes the operation without a lost transition
+source-ready-now	source-needs-write	query-returns-ready-now	reschedule-without-arm	invalid descriptor is never armed and Read_Now is retried once
+source-disarm-before-read	readiness-armed	Dependency_Changed	disarm-complete-set-then-Read_Now	no stale source or transport descriptor remains armed during the source call
+source-release-drain	readiness-armed	parent-cancel	disarm-drain-Release_Source	borrowed readiness descriptor is not retained past drain and release occurs exactly once
+readiness-fan-in-bound	stream-and-transport-blocked	arm-source-transport-close-outbound-shutdown-cancel	arm-complete-readiness-set	every required source is represented or safely coalesced without truncation

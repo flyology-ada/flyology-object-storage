@@ -67,10 +67,12 @@ that includes the required content length.
 An abandoned operation first requests cancellation and drains all HTTP,
 kernel, token, descriptor, source, and response leases. Only after no borrower
 can reference the payload may finalization release the internally owned buffer
-to its pool. No operation retains credentials, secret keys, signed headers, or
-unbounded raw error text. Required request strings are copied into explicit
-bounds or are documented borrows that remain live through typed Finish and
-finalization drain.
+to its pool. No operation retains credentials or secret keys. A signed HTTP
+request necessarily remains an in-flight borrow while a protocol may still
+send or drain it; signed headers are not copied into results or diagnostics and
+are released at terminal completion. Required request strings are copied into
+explicit bounds or are documented borrows that remain live through typed
+Finish and finalization drain.
 
 One absolute monotonic deadline begins at initiation and covers admission,
 name resolution, connection establishment, TLS or QUIC, request transmission,
@@ -85,25 +87,30 @@ Put sends a complete known-length body with exactly one supported write
 condition: create when absent through `If-None-Match: *`, or replace when the
 caller's opaque expected generation/entity tag still matches through
 `If-Match`. It performs no object-level automatic retry. Its non-raising typed
-result distinguishes:
+result has two independent axes. Publication disposition distinguishes:
 
 - `Published`;
 - `Precondition_Failed`;
 - `Definitely_Not_Published`;
 - `Outcome_Unknown`;
-- `Cancelled_Before_Publication`;
-- `Auth_Or_Authorization_Failed`;
-- `Unavailable_Or_Retryable`; and
-- `Corrupt_Or_Invalid_Response`.
+- `Cancelled_Before_Publication`.
+
+A separate bounded failure reason preserves authentication, authorization,
+invalid request, missing destination, cancellation, timeout, client,
+connection, transport, request-source, unavailable/retryable, and
+corrupt/invalid-response causes. A failure reason never substitutes for the
+publication disposition.
 
 Contract and internal-invariant violations remain exceptions. A parsed 200,
-412, or authentication/authorization rejection is conclusive. Cancellation,
-deadline expiry, or transport failure after the request could have reached the
-server is `Outcome_Unknown`, including local cancellation. A failure proven to
-precede possible server admission is definitely unpublished (with the
-special cancellation spelling where applicable). The raw HTTP transmission
-stage exists only as a test seam; application code receives the semantic
-classification.
+`PreconditionFailed`, or modeled authentication/authorization error is
+conclusive. A 400 or 404 is conclusive only when its complete parsed S3 error
+code specifically proves rejection. Cancellation, deadline expiry, transport
+failure, conditional conflict, throttling, 5xx response, or malformed,
+oversized, incomplete response after the request could have reached the server
+retains `Outcome_Unknown`. A failure proven to precede possible server
+admission is definitely unpublished (with the special cancellation spelling
+where applicable). The raw HTTP transmission stage exists only as a test seam;
+application code receives both semantic axes.
 
 The success result retains the complete validated `Put_Object_Result`,
 including opaque entity tag and version ID. Entity tags, checksums, and version
@@ -153,6 +160,85 @@ its slot, and continue response-body work without blocking or moving work to a
 helper task. A synthetic parent regression in HTTP must prove this lifecycle,
 including parent cancellation while the child owns request or response data.
 
+### Candidate alignment
+
+The uncommitted HTTP client candidate inspected on 2026-08-22 is promising but
+is not a dependency or API baseline. It supplies an absolute
+`Monotonic_Deadline`, monotonic `Admission_Certainty`, bounded typed exchange
+results, a candidate set-independent nonblocking request source, immediate
+response sinks, ownership-moving response buffers, and constructor plus
+established `Start` forms across HTTP/1.1, HTTP/2, and HTTP/3.
+
+The request-source contract must use a query-to-arm readiness protocol rather
+than letting the source arm the visible operation itself. After `Read_Now`
+reports that it needs source readiness, HTTP queries for a borrowed readiness
+descriptor and `Ready_Now`. A transition between the query and the complete
+operation arm must remain latched and wake that arm; a true `Ready_Now`
+reschedules without arming an invalid descriptor. The previous complete arm is
+disarmed before another `Read_Now` and before `Release_Source`. Source
+descriptors are retained only through the applicable arm and terminal drain,
+and `Release_Source` remains exactly once for every successfully attached
+source.
+
+HTTP must build one complete readiness set rather than arming source and
+transport separately. Current Flyology main bounds an operation at four
+readiness sources, while a streamed multiplexed exchange can simultaneously
+need source, transport, connection close, protocol outbound, manager shutdown,
+and caller cancellation. The prerequisite must raise the proven bound or
+coalesce sources without losing their distinct wake semantics. It must never
+truncate or silently omit a source when the current bound is insufficient.
+
+The object-storage implementation can derive its visible operations from the
+HTTP exchange operation instead of adding a second scheduling slot. Put owns
+its caller buffer in a detached provider handle and presents a nonblocking
+source component to an HTTP sink exchange; the sink retains only a bounded S3
+error body. Get passes the caller's acquired destination directly to the HTTP
+buffer exchange. Typed object Finish delegates to HTTP Finish first, then maps
+the body-complete response and restores object-level ownership invariants.
+
+The private `Prepared_Request` message remains encapsulated. A low-level scoped
+bridge should start an HTTP exchange from that prepared value; the public
+high-level child must not expose or duplicate signed request fields merely to
+cross the sibling-package privacy boundary.
+
+The candidate still requires a synthetic established-child test before it is
+a usable prerequisite. That test must put the HTTP operation in a parent
+record, invoke `Continue_After`, typed Finish, and `Release` from
+`Dependency_Changed`, restart the same child, and prove parent cancellation
+drains every source and buffer borrow. Constructor-only smoke tests do not
+establish that composition contract.
+
+### Publication mapping oracle
+
+The compile-independent mapping corpus at
+`tests/corpora/composable-client/put-certainty.tsv` is normative for the first
+Put slice. Candidate HTTP names are recorded only as inputs to be checked
+again when a stable release is indexed. The mapping rules are:
+
+- a complete, valid 200 response is `Published`;
+- a complete 412 plus exact `PreconditionFailed` code is
+  `Precondition_Failed`;
+- complete, modeled authentication and authorization errors are definitely
+  unpublished and retain the corresponding failure reason;
+- cancellation before possible admission is
+  `Cancelled_Before_Publication`;
+- other failures known to precede possible admission are
+  `Definitely_Not_Published`;
+- cancellation, deadline, connection, transport, or request-source failure
+  after possible admission is `Outcome_Unknown`;
+- invalid or oversized response data, or a failed bounded response sink,
+  retains `Outcome_Unknown` after possible admission and records
+  `Corrupt_Or_Invalid_Response` as its reason; and
+- parsed conditional conflict, throttling, and 5xx service responses retain
+  `Outcome_Unknown` and record `Unavailable_Or_Retryable`. The convenience
+  operation does not retry them. The caller reconciles before choosing a later
+  retry.
+
+`Response_Observed` alone is not a conclusive publication result. Only a
+complete response whose status and modeled fields validate can establish one
+of the conclusive service outcomes. The raw driver phase is diagnostic test
+input and cannot make admission certainty move backward.
+
 ## Qualification matrix
 
 Every row below is required before the first scoped operation is documented as
@@ -167,6 +253,7 @@ available. A narrow green smoke test does not promote the feature.
 | Conditions | create-if-absent win and collision; replace-if-generation win; stale and missing `If-Match`; malformed validators | exact signed headers; parsed 412 maps only to `Precondition_Failed`; one winner under concurrent races |
 | Publication certainty | validation failure; pre-admission cancellation/deadline/connect failure; post-admission cancellation/deadline; accepted request with lost response; malformed 200; parsed auth and 412; 429 and 5xx | exact typed class; no automatic object retry; raw admission stage visible only to tests |
 | Put body | empty, one byte, block limit, checksum/signature corpus, source exception at every chunk boundary, zero progress, early EOF, declared-length overrun | server never exposes a partial replacement; prior object and generation unchanged on incomplete body |
+| Source readiness | ready during query-to-arm window; `Ready_Now`; read/write direction; simultaneous source, transport, close, outbound, shutdown, and cancellation; cancel/finalize while armed | readiness remains latched; complete arm is disarmed before `Read_Now` or `Release_Source`; no source is dropped at the fan-in bound; descriptor borrow ends after drain |
 | Whole Get | empty, one byte, block limit, missing object, exact version, matching and stale entity tag, malformed/multiple length and checksum fields | bytes and metadata share one response; exact ETag/version/checksum separation; no partial success |
 | Range Get | first, middle, final, one-byte, full-span, suffix/open-ended request as applicable, unsatisfied, unsolicited 206, malformed and multipart ranges | exact resolved interval and total length; body length equals interval; generation-bound validator retained |
 | Head | found, absent, exact version, matching/stale condition, malformed success metadata, bodyful HEAD error | same typed metadata vocabulary; no body lease; ambiguity never implies absence |
