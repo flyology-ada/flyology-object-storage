@@ -31,10 +31,14 @@ common slice checks s5cmd's exact success/error counts, heads the first and last
 uploaded object, verifies their fixed-seed hashes, verifies every expected
 download file exists plus endpoint hashes, and requires the first and last
 deleted object to be absent. Exact remote object sets are mandatory before
-and after namespace-list measurement. The namespace oracle makes one signed
-ListObjectsV2 request and requires the exact ordered unique key sequence,
-matching `KeyCount`, the default `MaxKeys`, `IsTruncated=false`, and no
-continuation token. It does not count s5cmd's human-readable `ls` lines: the
+and after namespace-list measurement. The v2 namespace oracle makes one
+signed ListObjectsV2 request and requires the exact ordered unique key
+sequence, matching `KeyCount`, the default `MaxKeys`,
+`IsTruncated=false`, and no continuation token. The v1 scenario makes a
+separate signed ListObjects request and requires the exact ordered unique key
+sequence, default `MaxKeys`, `IsTruncated=false`, a v1 `Marker`, and no
+`NextMarker`, `KeyCount`, or continuation-token elements. Neither oracle
+counts s5cmd's human-readable `ls` lines: the
 pinned client can receive a complete 64-key response while dropping lines in
 its human-output path. The retained
 [`20260822-listobjects-v2-p1-closure.tsv`](../../benchmarks/evidence/20260822-listobjects-v2-p1-closure.tsv)
@@ -61,10 +65,11 @@ launcher refuses to compare Flyology until the indexed fixed-length HTTP
 response dependency is consumed.
 
 The current common eligibility manifest is
-[`benchmarks/eligibility.tsv`](../../benchmarks/eligibility.tsv). Ten
-scenarios (small/medium PUT and GET, forced 64 MiB multipart PUT, large GET,
-64 MiB CopyObject, batched namespace delete, namespace list, and active
-multipart-upload list) are executable. Mixed objects
+[`benchmarks/eligibility.tsv`](../../benchmarks/eligibility.tsv). Eleven
+scenarios (small/medium PUT and GET,
+forced 64 MiB multipart PUT, large GET, 64 MiB CopyObject, batched namespace
+delete, v1 and v2 namespace list, and active multipart-upload list) are
+executable. Mixed objects
 is emitted as a blocked row until its workload generator and correctness
 postflights exist; it is never silently omitted or timed as a failure.
 [`benchmarks/exclusions.tsv`](../../benchmarks/exclusions.tsv) records the

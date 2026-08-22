@@ -47,7 +47,7 @@ The core crate includes:
   ListObjects v1/v2 and multipart initiation, completion, ListParts, and
   ListMultipartUploads REST/XML codecs, plus the complete GetObjectAttributes
   request/output model, with high-level paginated ListBuckets and
-  ListObjectsV2,
+  ListObjects v1 and ListObjectsV2,
   HeadBucket, CreateBucket, GetBucketLocation, DeleteBucket, and bucket-tag
   convenience
   APIs (see [bucket convenience client](docs/architecture/client-buckets.md));

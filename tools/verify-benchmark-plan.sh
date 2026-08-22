@@ -164,3 +164,21 @@ bash -n "$PROJECT_DIR/benchmarks/run-endpoint.sh" \
   "$PROJECT_DIR/benchmarks/summarize.sh"
 
 echo "benchmark launchers: executable and syntax-clean"
+
+# Keep the retained v1 evidence claim executable: an otherwise valid page
+# without its modeled Marker element must not pass the raw XML oracle.
+marker_gate='    && [ "$marker_count" = 1 ] \'
+endpoint_script="$PROJECT_DIR/benchmarks/run-endpoint.sh"
+if [ "$(grep -Fxc "$marker_gate" "$endpoint_script")" != 1 ]; then
+  echo "ListObjects v1 raw XML oracle must require exactly one Marker" >&2
+  exit 1
+fi
+mutant=$(mktemp "${TMPDIR:-/tmp}/flyology-benchmark-oracle.XXXXXX")
+trap 'rm -f "$mutant"' EXIT INT TERM
+grep -Fvx "$marker_gate" "$endpoint_script" >"$mutant"
+if grep -Fqx "$marker_gate" "$mutant"; then
+  echo "ListObjects v1 Marker negative oracle did not remove its gate" >&2
+  exit 1
+fi
+
+echo "benchmark ListObjects v1 Marker negative oracle: OK"

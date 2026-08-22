@@ -2,9 +2,11 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest DeleteObjects conditional-delete forced eight-unit manifest-wide
+The latest ListObjects v1 qualification forced eight-unit manifest-wide
 level-0 proof completed with 625/625 checks proved, warnings as errors, zero
 justified checks, and zero Assume statements. Exact scoped level-0 runs proved
+`Listing_Matches_Prefix` and `Listing_Follows_Cursor` with one termination
+check each. Earlier exact scoped runs proved
 `Valid_Object_Delete_ETag_Condition` with 5/5 checks and
 `Evaluate_Object_Delete_Conditions` with 7/7 checks. All runs used output
 headers and completed with zero justified or unproved checks and zero Assume
@@ -33,6 +35,8 @@ statements.
   - [x] Resolve_Range (23 attributed prover checks)
   - [x] Merge_Bucket_Versioning (exact independent-field preservation;
         2/2 focused checks including termination)
+  - [x] Listing_Matches_Prefix (1/1 scoped termination check)
+  - [x] Listing_Follows_Cursor (1/1 scoped termination check)
 - [x] Flyology.Object_Storage.S3.Core (level 0, all)
   - [x] Can_Transition
   - [x] Valid_Part_Size
@@ -194,3 +198,7 @@ statements.
       evaluator in exact scoped warnings-as-errors level-0 runs (5/5 and 7/7),
       then widened the forced eight-unit manifest to 625/625 checks with zero
       justified or unproved checks and zero Assume statements.
+- [x] Re-proved both shared ListObjects bytewise prefix/exclusive-cursor
+      predicates in exact scoped warnings-as-errors level-0 runs (1/1 each),
+      then re-widened the forced eight-unit manifest to 625/625 checks with
+      zero justified or unproved checks and zero Assume statements.

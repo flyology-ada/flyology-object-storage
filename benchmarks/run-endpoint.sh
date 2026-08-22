@@ -452,6 +452,7 @@ verify_list_v1_count() {
     && [ "$max_keys" = 1000 ] \
     && [ "$truncated" = false ] \
     && [ "$prefix_value" = "$prefix-" ] \
+    && [ "$marker_count" = 1 ] \
     && [ "$next_marker_count" = 0 ] \
     && [ "$key_count_count" = 0 ] \
     && [ "$next_token_count" = 0 ] \

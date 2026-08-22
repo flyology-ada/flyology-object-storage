@@ -7,6 +7,16 @@ optional cancellation token.
 
 ## List objects
 
+`List_V1_Page` exposes one bounded ListObjects v1 page without requiring
+callers to construct the modeled request or decode XML. It carries prefix,
+delimiter, and an exclusive marker. A truncated delimiter page returns the
+modeled `NextMarker`; a truncated page without a delimiter derives the next
+marker from the last object key, as AWS requires. With `encoding-type=url`,
+the returned wire fields remain encoded but the derived marker is strictly
+decoded before publication, so passing it to the next call cannot
+double-encode the cursor. FetchOwner is not a ListObjects v1 input; owner is
+an optional member of each returned object.
+
 `List_Page` exposes one bounded ListObjectsV2 page without requiring callers
 to assemble modeled parameters or decode XML. It carries prefix and delimiter
 scope, an exclusive `Start_After` for the initial page, and an opaque
@@ -15,10 +25,10 @@ next token unchanged; callers pass it back with the same scope. FetchOwner,
 URL encoding, RestoreStatus selection, expected-owner, and Requester Pays are
 explicit policy inputs.
 
-The call owns one whole-operation timeout and honors the optional cancellation
-token while preparing, exchanging, and decoding. It never retries a rejected
-or truncated page implicitly. This keeps multi-page scheduling with the
-caller while preserving S3's page boundary and structured error result.
+Both calls own one whole-operation timeout and honor the optional cancellation
+token while preparing, exchanging, and decoding. Neither retries a rejected
+or truncated page implicitly. This keeps multi-page scheduling with the caller
+while preserving S3's page boundary and structured error result.
 
 ## Get object attributes
 
