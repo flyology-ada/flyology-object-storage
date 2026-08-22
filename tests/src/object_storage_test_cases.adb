@@ -18,6 +18,7 @@ with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.Files;
 with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.Durability_Testing;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
@@ -1673,6 +1674,34 @@ package body Object_Storage_Test_Cases is
       end Clean;
    begin
       Clean;
+      Assert
+        (Flyology.Object_Storage.Durability_Testing.Missing_File_Is_Rejected
+           (Ada.Directories.Compose (Root, "missing-sync-target")),
+         "durability adapter accepted a missing file");
+      declare
+         Atomic_Root : constant String :=
+           Ada.Directories.Compose
+             (Ada.Directories.Compose (Root, "nested"), "atomic");
+         Store : Files.Store :=
+           Files.Open
+             (Atomic_Root, Maximum_Object_Size => 64,
+              Commit => Files.Process_Crash_Atomic);
+         Result : Status;
+      begin
+         Assert
+           (Ada.Directories.Exists
+              (Ada.Directories.Compose (Atomic_Root, "buckets"))
+            and then Ada.Directories.Exists
+              (Ada.Directories.Compose (Atomic_Root, "tmp")),
+            "atomic commit policy did not initialize a nested root");
+         Store.Create_Bucket
+           ("atomic-policy-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "atomic commit policy create bucket");
+         Store.Delete_Bucket
+           ("atomic-policy-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "atomic commit policy delete bucket");
+      end;
+      Clean;
       declare
          Store : Files.Store := Files.Open (Root, Maximum_Object_Size => 64);
          Source : Buffer_Source :=
@@ -2019,6 +2048,493 @@ package body Object_Storage_Test_Cases is
          Clean;
          raise;
    end Check_Filesystem_Conformance;
+
+   procedure Check_Filesystem_Durability_Faults
+     (Unused : in out Fixture)
+   is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package Files renames Flyology.Object_Storage.Backends.Files;
+      package Faults renames Flyology.Object_Storage.Durability_Testing;
+      package US renames Ada.Strings.Unbounded;
+      Base : constant String :=
+        Ada.Directories.Compose
+          (Ada.Directories.Compose
+             (Ada.Directories.Current_Directory, "obj"),
+           "fs-durability-faults");
+
+      function Path (Name : String; Point : Natural) return String is
+        (Ada.Directories.Compose
+           (Base, Name & "-" & Ada.Strings.Fixed.Trim
+              (Natural'Image (Point), Ada.Strings.Both)));
+
+      procedure Clean (Root : String) is
+      begin
+         Faults.Clear_Failure;
+         if Ada.Directories.Exists (Root) then
+            Ada.Directories.Delete_Tree (Root);
+         end if;
+      end Clean;
+
+      procedure Create_Bucket
+        (Store : in out Files.Store; Result : out Status)
+      is
+      begin
+         Store.Create_Bucket
+           ("durability-bucket", null, Ada.Real_Time.Time_Last, Result);
+      end Create_Bucket;
+
+      procedure Put
+        (Store  : in out Files.Store;
+         Key    : String;
+         Payload : String;
+         Result : out Status)
+      is
+         Source : Buffer_Source :=
+           (Data     => Flyology.Bytes.From_Byte_String (Payload),
+            Position => 0,
+            Length   => (Kind => Known, Bytes => Payload'Length),
+            Bad_Last => False);
+         Info : Object_Information;
+      begin
+         Store.Put_Object
+           ("durability-bucket", Key, Source, Default_Put_Options,
+            null, Ada.Real_Time.Time_Last, Info, Result);
+      end Put;
+
+      procedure Count_Uploads
+        (Store  : in out Files.Store;
+         Count  : out Natural;
+         Result : out Status)
+      is
+         Page : Multipart_Upload_Page;
+      begin
+         Store.List_Multipart_Uploads
+           ("durability-bucket", (others => <>), null,
+            Ada.Real_Time.Time_Last, Page, Result);
+         Count := Natural (Page.Uploads.Length);
+      end Count_Uploads;
+   begin
+      if Ada.Directories.Exists (Base) then
+         Ada.Directories.Delete_Tree (Base);
+      end if;
+
+      for Point in 0 .. 9 loop
+         declare
+            Root : constant String := Path ("bucket", Point);
+            Result : Status;
+         begin
+            declare
+               Store : Files.Store := Files.Open (Root);
+            begin
+               Faults.Fail_Next_Barrier_After (Point);
+               Create_Bucket (Store, Result);
+               Faults.Clear_Failure;
+            end;
+            Assert
+              (Result =
+                 (if Point < 8 then Backend_Unavailable else Success),
+               "bucket creation durability barrier count changed");
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Observed : Status;
+            begin
+               Store.Head_Bucket
+                 ("durability-bucket", null, Ada.Real_Time.Time_Last,
+                  Observed);
+               Assert
+                 (Observed in Success | Not_Found,
+                  "bucket sync fault exposed malformed namespace");
+               if Result = Success then
+                  Assert (Observed = Success,
+                          "successful durable bucket was not observable");
+               end if;
+            end;
+            Clean (Root);
+         exception
+            when others =>
+               Clean (Root);
+               raise;
+         end;
+      end loop;
+
+      for Point in 0 .. 4 loop
+         declare
+            Root : constant String := Path ("put", Point);
+            Result : Status;
+         begin
+            declare
+               Store : Files.Store := Files.Open (Root);
+            begin
+               Create_Bucket (Store, Result);
+               Assert (Result = Success, "put fault setup bucket");
+               Put (Store, "object", "old", Result);
+               Assert (Result = Success, "put fault setup object");
+               Faults.Fail_Next_Barrier_After (Point);
+               Put (Store, "object", "replacement", Result);
+               Faults.Clear_Failure;
+            end;
+            Assert
+              (Result =
+                 (if Point < 3 then Backend_Unavailable else Success),
+               "object publication durability barrier count changed");
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Sink : Buffer_Sink;
+               Info : Object_Information;
+               Observed : Status;
+            begin
+               Store.Get_Object
+                 ("durability-bucket", "object", Whole_Object, Sink, null,
+                  Ada.Real_Time.Time_Last, Info, Observed);
+               declare
+                  Payload : constant String :=
+                    Flyology.Bytes.To_Byte_String (Sink.Data);
+               begin
+                  Assert
+                    (Observed = Success
+                     and then
+                       (Payload = "old" or else Payload = "replacement"),
+                     "put sync fault exposed partial object");
+                  if Result = Success then
+                     Assert (Payload = "replacement",
+                             "successful durable put retained old body");
+                  end if;
+               end;
+            end;
+            Clean (Root);
+         exception
+            when others =>
+               Clean (Root);
+               raise;
+         end;
+      end loop;
+
+      for Point in 0 .. 2 loop
+         declare
+            Root : constant String := Path ("delete", Point);
+            Result : Status;
+         begin
+            declare
+               Store : Files.Store := Files.Open (Root);
+            begin
+               Create_Bucket (Store, Result);
+               Put (Store, "object", "body", Result);
+               Assert (Result = Success, "delete fault setup object");
+               Faults.Fail_Next_Barrier_After (Point);
+               Store.Delete_Object
+                 ("durability-bucket", "object", null,
+                  Ada.Real_Time.Time_Last, Result);
+               Faults.Clear_Failure;
+            end;
+            Assert
+              (Result =
+                 (if Point < 1 then Backend_Unavailable else Success),
+               "object deletion durability barrier count changed");
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Info : Object_Information;
+               Observed : Status;
+            begin
+               Store.Head_Object
+                 ("durability-bucket", "object", null,
+                  Ada.Real_Time.Time_Last, Info, Observed);
+               Assert
+                 (Observed in Success | Not_Found,
+                  "delete sync fault exposed malformed object");
+               if Result = Success then
+                  Assert (Observed = Not_Found,
+                          "successful durable delete remained visible");
+               end if;
+            end;
+            Clean (Root);
+         exception
+            when others =>
+               Clean (Root);
+               raise;
+         end;
+      end loop;
+
+      for Point in 0 .. 7 loop
+         declare
+            Root : constant String := Path ("initiate", Point);
+            Result : Status;
+         begin
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Upload_ID : US.Unbounded_String;
+            begin
+               Create_Bucket (Store, Result);
+               Faults.Fail_Next_Barrier_After (Point);
+               Store.Create_Multipart_Upload
+                 ("durability-bucket", "object", Default_Multipart_Options,
+                  null, Ada.Real_Time.Time_Last, Upload_ID, Result);
+               Faults.Clear_Failure;
+            end;
+            Assert
+              (Result =
+                 (if Point < 6 then Backend_Unavailable else Success),
+               "multipart initiation durability barrier count changed");
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Count : Natural;
+               Observed : Status;
+            begin
+               Count_Uploads (Store, Count, Observed);
+               Assert
+                 (Observed = Success and then Count in 0 .. 1,
+                  "initiation sync fault exposed malformed upload");
+               if Result = Success then
+                  Assert (Count = 1,
+                          "successful durable initiation disappeared");
+               end if;
+            end;
+            Clean (Root);
+         exception
+            when others =>
+               Clean (Root);
+               raise;
+         end;
+      end loop;
+
+      for Point in 0 .. 4 loop
+         declare
+            Root : constant String := Path ("part", Point);
+            Result : Status;
+            Upload_ID : US.Unbounded_String;
+         begin
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Old_Source : Buffer_Source :=
+                 (Data     => Flyology.Bytes.From_Byte_String ("old"),
+                  Position => 0,
+                  Length   => (Kind => Known, Bytes => 3),
+                  Bad_Last => False);
+               New_Source : Buffer_Source :=
+                 (Data     => Flyology.Bytes.From_Byte_String ("new-part"),
+                  Position => 0,
+                  Length   => (Kind => Known, Bytes => 8),
+                  Bad_Last => False);
+               Info : Object_Information;
+            begin
+               Create_Bucket (Store, Result);
+               Store.Create_Multipart_Upload
+                 ("durability-bucket", "object", Default_Multipart_Options,
+                  null, Ada.Real_Time.Time_Last, Upload_ID, Result);
+               Store.Put_Multipart_Part
+                 ("durability-bucket", "object", US.To_String (Upload_ID),
+                  1, Old_Source, null, Ada.Real_Time.Time_Last, Info, Result);
+               Assert (Result = Success, "part fault setup old part");
+               Faults.Fail_Next_Barrier_After (Point);
+               Store.Put_Multipart_Part
+                 ("durability-bucket", "object", US.To_String (Upload_ID),
+                  1, New_Source, null, Ada.Real_Time.Time_Last, Info, Result);
+               Faults.Clear_Failure;
+            end;
+            Assert
+              (Result =
+                 (if Point < 3 then Backend_Unavailable else Success),
+               "multipart part durability barrier count changed");
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Page : Multipart_Part_Page;
+               Observed : Status;
+            begin
+               Store.List_Multipart_Parts
+                 ("durability-bucket", "object", US.To_String (Upload_ID),
+                  (After => 0, Maximum => 2), null,
+                  Ada.Real_Time.Time_Last, Page, Observed);
+               Assert
+                 (Observed = Success
+                  and then Page.Parts.Length = 1
+                  and then Page.Parts.First_Element.Info.Size in 3 | 8,
+                  "part sync fault exposed partial replacement");
+               if Result = Success then
+                  Assert
+                    (Page.Parts.First_Element.Info.Size = 8,
+                     "successful durable part replacement retained old part");
+               end if;
+            end;
+            Clean (Root);
+         exception
+            when others =>
+               Clean (Root);
+               raise;
+         end;
+      end loop;
+
+      for Point in 0 .. 2 loop
+         declare
+            Root : constant String := Path ("abort", Point);
+            Result : Status;
+            Upload_ID : US.Unbounded_String;
+         begin
+            declare
+               Store : Files.Store := Files.Open (Root);
+            begin
+               Create_Bucket (Store, Result);
+               Store.Create_Multipart_Upload
+                 ("durability-bucket", "object", Default_Multipart_Options,
+                  null, Ada.Real_Time.Time_Last, Upload_ID, Result);
+               Faults.Fail_Next_Barrier_After (Point);
+               Store.Abort_Multipart_Upload
+                 ("durability-bucket", "object", US.To_String (Upload_ID),
+                  null, Ada.Real_Time.Time_Last, Result);
+               Faults.Clear_Failure;
+            end;
+            Assert
+              (Result =
+                 (if Point < 1 then Backend_Unavailable else Success),
+               "multipart abort durability barrier count changed");
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Count : Natural;
+               Observed : Status;
+            begin
+               Count_Uploads (Store, Count, Observed);
+               Assert
+                 (Observed = Success and then Count in 0 .. 1,
+                  "abort sync fault exposed malformed upload namespace");
+               if Result = Success then
+                  Assert (Count = 0,
+                          "successful durable abort remained visible");
+               end if;
+            end;
+            Clean (Root);
+         exception
+            when others =>
+               Clean (Root);
+               raise;
+         end;
+      end loop;
+
+      for Point in 0 .. 2 loop
+         declare
+            Root : constant String := Path ("delete-bucket", Point);
+            Result : Status;
+         begin
+            declare
+               Store : Files.Store := Files.Open (Root);
+            begin
+               Create_Bucket (Store, Result);
+               Faults.Fail_Next_Barrier_After (Point);
+               Store.Delete_Bucket
+                 ("durability-bucket", null, Ada.Real_Time.Time_Last,
+                  Result);
+               Faults.Clear_Failure;
+            end;
+            Assert
+              (Result =
+                 (if Point < 1 then Backend_Unavailable else Success),
+               "bucket deletion durability barrier count changed");
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Observed : Status;
+            begin
+               Store.Head_Bucket
+                 ("durability-bucket", null, Ada.Real_Time.Time_Last,
+                  Observed);
+               Assert
+                 (Observed in Success | Not_Found,
+                  "bucket delete sync fault exposed malformed namespace");
+               if Result = Success then
+                  Assert (Observed = Not_Found,
+                          "successful durable bucket delete remained visible");
+               end if;
+            end;
+            Clean (Root);
+         exception
+            when others =>
+               Clean (Root);
+               raise;
+         end;
+      end loop;
+
+      for Point in 0 .. 5 loop
+         declare
+            Root : constant String := Path ("complete", Point);
+            Result : Status;
+            Upload_ID : US.Unbounded_String;
+            Part_ETag : US.Unbounded_String;
+         begin
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Source : Buffer_Source :=
+                 (Data     => Flyology.Bytes.From_Byte_String ("part-body"),
+                  Position => 0,
+                  Length   => (Kind => Known, Bytes => 9),
+                  Bad_Last => False);
+               Info : Object_Information;
+               Parts : Multipart_Part_References;
+            begin
+               Create_Bucket (Store, Result);
+               Store.Create_Multipart_Upload
+                 ("durability-bucket", "object", Default_Multipart_Options,
+                  null, Ada.Real_Time.Time_Last, Upload_ID, Result);
+               Store.Put_Multipart_Part
+                 ("durability-bucket", "object", US.To_String (Upload_ID),
+                  1, Source, null, Ada.Real_Time.Time_Last, Info, Result);
+               Assert (Result = Success, "completion fault setup part");
+               Part_ETag := Info.Entity_Tag;
+               Parts.Append
+                 (Multipart_Part_Reference'
+                    (Number => 1, Entity_Tag => Part_ETag));
+               Faults.Fail_Next_Barrier_After (Point);
+               Store.Complete_Multipart_Upload
+                 ("durability-bucket", "object", US.To_String (Upload_ID),
+                  Parts, null, Ada.Real_Time.Time_Last, Info, Result);
+               Faults.Clear_Failure;
+            end;
+            Assert
+              (Result =
+                 (if Point < 4 then Backend_Unavailable else Success),
+               "multipart completion durability barrier count changed");
+            declare
+               Store : Files.Store := Files.Open (Root);
+               Info : Object_Information;
+               Object_Status : Status;
+               Upload_Status : Status;
+               Upload_Count : Natural;
+            begin
+               Store.Head_Object
+                 ("durability-bucket", "object", null,
+                  Ada.Real_Time.Time_Last, Info, Object_Status);
+               Count_Uploads (Store, Upload_Count, Upload_Status);
+               Assert
+                 (Upload_Status = Success
+                  and then Object_Status in Success | Not_Found
+                  and then Upload_Count in 0 .. 1
+                  and then not
+                    (Object_Status = Not_Found
+                     and then Upload_Count = 0),
+                  "completion sync fault lost both object and upload");
+               if Result = Success then
+                  Assert
+                    (Object_Status = Success and then Upload_Count = 0,
+                     "successful durable completion was not final");
+               end if;
+            end;
+            Clean (Root);
+         exception
+            when others =>
+               Clean (Root);
+               raise;
+         end;
+      end loop;
+
+      if Ada.Directories.Exists (Base) then
+         Ada.Directories.Delete_Tree (Base);
+      end if;
+   exception
+      when others =>
+         Faults.Clear_Failure;
+         if Ada.Directories.Exists (Base) then
+            Ada.Directories.Delete_Tree (Base);
+         end if;
+         raise;
+   end Check_Filesystem_Durability_Faults;
 
    procedure Check_Backend_Listings (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
@@ -7698,6 +8214,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("files.persistence-and-safety",
             Check_Filesystem_Conformance'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("files.durability-fault-barriers",
+            Check_Filesystem_Durability_Faults'Access));
       Result.Add_Test
         (Caller.Create
            ("backends.listing-conformance",

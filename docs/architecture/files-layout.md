@@ -11,10 +11,28 @@ and publishes it with an operating-system rename, so readers never observe a
 new body paired with old metadata. Reads validate the magic, lengths, key, and
 exact file size before yielding bytes.
 
-The current implementation provides process-crash atomic publication on
-platforms where rename replacement is atomic. It does not yet claim
-power-loss durability because directory and file fsync are not exposed as a
-configured commit policy. Cross-process writers are unsupported.
+`Open` defaults to `Power_Loss_Durable`. Temporary object and part records are
+closed and synchronized before publication. Every rename is followed by a
+sync of the destination directory and the staging directory; deletion syncs
+the directory whose entry changed. Directory trees are created one component
+at a time and each child/parent relationship is synchronized. Multipart
+initiation is assembled beneath `tmp/`, including a synchronized manifest,
+before one rename publishes the active upload. Completion makes the assembled
+object durable before durably removing the active-upload tree. A failure after
+publication is intentionally reported as ambiguous rather than rolling back a
+possibly durable object.
+
+`Process_Crash_Atomic` omits persistence barriers while retaining the same
+rename and validation structure. It exists for explicitly labeled comparison
+and deployments whose storage layer supplies a stronger external durability
+contract; it is not the production default. The deterministic fault corpus
+injects a device error at every file/directory barrier across bucket create
+and delete, object replacement and delete, multipart initiation, part
+replacement, completion, and abort, then reopens the root and requires a
+well-formed old-or-new state. The adapter uses `F_FULLFSYNC` where available
+and falls back to `fsync` on POSIX. Windows remains unqualified until its
+directory-metadata persistence path has an independent crash corpus.
+Cross-process writers remain unsupported.
 
 Bucket enumeration holds the backend publication gate used by create and
 delete, so each result is one process-local atomic namespace snapshot. Pages

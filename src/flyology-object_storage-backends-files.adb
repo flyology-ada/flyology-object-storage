@@ -11,6 +11,7 @@ with Flyology.IO;
 with Flyology.Object_Storage.Backends.Bucket_Listing;
 with Flyology.Object_Storage.Backends.Listing;
 with Flyology.Object_Storage.Backends.Multipart_Listing;
+with Flyology.Object_Storage.Durability;
 with GNAT.MD5;
 with GNAT.OS_Lib;
 with GNAT.SHA256;
@@ -63,6 +64,54 @@ package body Flyology.Object_Storage.Backends.Files is
 
    function Join (Left, Right : String) return String is
      (Ada.Directories.Compose (Left, Right));
+
+   procedure Sync_Directory (Item : Store; Path : String) is
+   begin
+      if Item.Commit = Power_Loss_Durable then
+         Durability.Sync_Directory (Path);
+      end if;
+   end Sync_Directory;
+
+   procedure Sync_File (Item : Store; Path : String) is
+   begin
+      if Item.Commit = Power_Loss_Durable then
+         Durability.Sync_File (Path);
+      end if;
+   end Sync_File;
+
+   procedure Ensure_Directory (Item : Store; Path : String) is
+   begin
+      if Ada.Directories.Exists (Path) then
+         if GNAT.OS_Lib.Is_Symbolic_Link (Path)
+           or else Ada.Directories.Kind (Path) /= Ada.Directories.Directory
+         then
+            raise Ada.IO_Exceptions.Name_Error;
+         end if;
+         return;
+      end if;
+      declare
+         Parent : constant String := Ada.Directories.Containing_Directory
+           (Path);
+      begin
+         if Parent = Path or else Parent'Length = 0 then
+            raise Ada.IO_Exceptions.Name_Error;
+         end if;
+         Ensure_Directory (Item, Parent);
+         Ada.Directories.Create_Directory (Path);
+         Sync_Directory (Item, Path);
+         Sync_Directory (Item, Parent);
+      end;
+   end Ensure_Directory;
+
+   procedure Remove_Tree (Item : Store; Path : String) is
+      Parent : constant String := Ada.Directories.Containing_Directory (Path);
+   begin
+      if GNAT.OS_Lib.Is_Symbolic_Link (Path) then
+         raise Ada.IO_Exceptions.Name_Error;
+      end if;
+      Ada.Directories.Delete_Tree (Path);
+      Sync_Directory (Item, Parent);
+   end Remove_Tree;
 
    function Root_Directory (Item : Store) return String is
      (US.To_String (Item.Root_Path));
@@ -526,27 +575,35 @@ package body Flyology.Object_Storage.Backends.Files is
 
    function Open
      (Root                : String;
-      Maximum_Object_Size : Byte_Count := Byte_Count'Last) return Store
+      Maximum_Object_Size : Byte_Count := Byte_Count'Last;
+      Commit              : Commit_Policy := Power_Loss_Durable) return Store
    is
       Full : US.Unbounded_String;
    begin
       if Root'Length = 0 then
          raise Configuration_Error;
       end if;
-      if not Ada.Directories.Exists (Root) then
-         Ada.Directories.Create_Path (Root);
-      elsif Ada.Directories.Kind (Root) /= Ada.Directories.Directory then
-         raise Configuration_Error;
-      end if;
-      Full := US.To_Unbounded_String (Ada.Directories.Full_Name (Root));
-      Ada.Directories.Create_Path (Join (US.To_String (Full), "buckets"));
-      if Ada.Directories.Exists (Join (US.To_String (Full), "tmp")) then
-         Ada.Directories.Delete_Tree (Join (US.To_String (Full), "tmp"));
-      end if;
-      Ada.Directories.Create_Path (Join (US.To_String (Full), "tmp"));
       return Result : Store do
+         Result.Commit := Commit;
+         Ensure_Directory (Result, Root);
+         Full := US.To_Unbounded_String (Ada.Directories.Full_Name (Root));
          Result.Root_Path := Full;
          Result.Maximum_Object_Size := Maximum_Object_Size;
+         Ensure_Directory (Result, Join (US.To_String (Full), "buckets"));
+         if Ada.Directories.Exists (Join (US.To_String (Full), "tmp")) then
+            if GNAT.OS_Lib.Is_Symbolic_Link
+              (Join (US.To_String (Full), "tmp"))
+              or else Ada.Directories.Kind
+                (Join (US.To_String (Full), "tmp")) /=
+                  Ada.Directories.Directory
+            then
+               raise Configuration_Error;
+            end if;
+            Ada.Directories.Delete_Tree (Join (US.To_String (Full), "tmp"));
+            Sync_Directory (Result, US.To_String (Full));
+         end if;
+         Ensure_Directory (Result, Join (US.To_String (Full), "tmp"));
+         Sync_Directory (Result, US.To_String (Full));
       end return;
    exception
       when Configuration_Error =>
@@ -585,15 +642,20 @@ package body Flyology.Object_Storage.Backends.Files is
                "bucket-" & GNAT.SHA256.Digest
                  (Bucket & Long_Long_Integer'Image (Number) &
                   Ada.Calendar.Time'Image (Ada.Calendar.Clock))));
-         Ada.Directories.Create_Path
-           (Join (US.To_String (Staged), "objects"));
-         Ada.Directories.Create_Path
-           (Join (US.To_String (Staged), "multipart"));
+         Ensure_Directory
+           (Item,
+            Join (US.To_String (Staged), "objects"));
+         Ensure_Directory
+           (Item,
+            Join (US.To_String (Staged), "multipart"));
          GNAT.OS_Lib.Rename_File (US.To_String (Staged), Path, Renamed);
          if Renamed then
+            Sync_Directory (Item, Buckets_Path (Item));
+            Sync_Directory (Item, Temp_Path (Item));
             Result := Success;
          else
             Ada.Directories.Delete_Tree (US.To_String (Staged));
+            Sync_Directory (Item, Temp_Path (Item));
             Staged := US.Null_Unbounded_String;
             Result := Backend_Unavailable;
          end if;
@@ -776,6 +838,7 @@ package body Flyology.Object_Storage.Backends.Files is
          Result := Bucket_Not_Empty;
       else
          Ada.Directories.Delete_Tree (Path);
+         Sync_Directory (Item, Buckets_Path (Item));
          Result := Success;
       end if;
       Item.Publication.Release;
@@ -935,6 +998,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Write_U64 (File, Long_Long_Integer (Total));
       SIO.Close (File);
       Opened := False;
+      Sync_File (Item, US.To_String (Temp));
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
       if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
@@ -944,8 +1008,8 @@ package body Flyology.Object_Storage.Backends.Files is
          Result := Not_Found;
          return;
       end if;
-      Ada.Directories.Create_Path
-        (Ada.Directories.Containing_Directory (Target));
+      Ensure_Directory
+        (Item, Ada.Directories.Containing_Directory (Target));
       GNAT.OS_Lib.Rename_File
         (US.To_String (Temp), Target, Rename_Succeeded);
       if not Rename_Succeeded then
@@ -956,6 +1020,9 @@ package body Flyology.Object_Storage.Backends.Files is
          return;
       end if;
       Published := True;
+      Sync_Directory
+        (Item, Ada.Directories.Containing_Directory (Target));
+      Sync_Directory (Item, Temp_Path (Item));
       Item.Publication.Release;
       Locked := False;
       Result := Success;
@@ -1292,6 +1359,8 @@ package body Flyology.Object_Storage.Backends.Files is
          Result := Not_Found;
       else
          Ada.Directories.Delete_File (Path);
+         Sync_Directory
+           (Item, Ada.Directories.Containing_Directory (Path));
          Result := Success;
       end if;
       Item.Publication.Release;
@@ -1439,9 +1508,11 @@ package body Flyology.Object_Storage.Backends.Files is
       File      : SIO.File_Type;
       Opened    : Boolean := False;
       Locked    : Boolean := False;
-      Created   : Boolean := False;
+      Published : Boolean := False;
+      Renamed   : Boolean := False;
       Number    : Long_Long_Integer;
       Directory : US.Unbounded_String;
+      Staged    : US.Unbounded_String;
       Manifest  : US.Unbounded_String;
       Manifest_Info : Object_Information;
    begin
@@ -1462,8 +1533,10 @@ package body Flyology.Object_Storage.Backends.Files is
             Ada.Calendar.Time'Image (Ada.Calendar.Clock)));
       Directory := US.To_Unbounded_String
         (Upload_Path (Item, Bucket, US.To_String (Upload_ID)));
+      Staged := US.To_Unbounded_String
+        (Join (Temp_Path (Item), "upload-" & US.To_String (Upload_ID)));
       Manifest := US.To_Unbounded_String
-        (Manifest_Path (Item, Bucket, US.To_String (Upload_ID)));
+        (Join (US.To_String (Staged), "upload.fos"));
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
       if not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
@@ -1477,8 +1550,7 @@ package body Flyology.Object_Storage.Backends.Files is
          Locked := False;
          return;
       end if;
-      Ada.Directories.Create_Path (US.To_String (Directory));
-      Created := True;
+      Ensure_Directory (Item, US.To_String (Staged));
       Manifest_Info :=
         (Size         => 0,
          Modified     => Unix_Time (Unix_Seconds (Ada.Calendar.Clock)),
@@ -1490,6 +1562,22 @@ package body Flyology.Object_Storage.Backends.Files is
       Write_Header (File, Key, Manifest_Info);
       SIO.Close (File);
       Opened := False;
+      Sync_File (Item, US.To_String (Manifest));
+      Sync_Directory (Item, US.To_String (Staged));
+      GNAT.OS_Lib.Rename_File
+        (US.To_String (Staged), US.To_String (Directory), Renamed);
+      if not Renamed then
+         Item.Publication.Release;
+         Locked := False;
+         Remove_Tree (Item, US.To_String (Staged));
+         Staged := US.Null_Unbounded_String;
+         Upload_ID := US.Null_Unbounded_String;
+         Result := Backend_Unavailable;
+         return;
+      end if;
+      Published := True;
+      Sync_Directory (Item, Multipart_Path (Item, Bucket));
+      Sync_Directory (Item, Temp_Path (Item));
       Item.Publication.Release;
       Locked := False;
       Result := Success;
@@ -1502,9 +1590,10 @@ package body Flyology.Object_Storage.Backends.Files is
          if Locked then
             Item.Publication.Release;
          end if;
-         if Created and then Ada.Directories.Exists (US.To_String (Directory))
+         if not Published and then US.Length (Staged) > 0
+           and then Ada.Directories.Exists (US.To_String (Staged))
          then
-            Ada.Directories.Delete_Tree (US.To_String (Directory));
+            Remove_Tree (Item, US.To_String (Staged));
          end if;
          Upload_ID := US.Null_Unbounded_String;
          raise;
@@ -1515,9 +1604,10 @@ package body Flyology.Object_Storage.Backends.Files is
          if Locked then
             Item.Publication.Release;
          end if;
-         if Created and then Ada.Directories.Exists (US.To_String (Directory))
+         if not Published and then US.Length (Staged) > 0
+           and then Ada.Directories.Exists (US.To_String (Staged))
          then
-            Ada.Directories.Delete_Tree (US.To_String (Directory));
+            Remove_Tree (Item, US.To_String (Staged));
          end if;
          Upload_ID := US.Null_Unbounded_String;
          Result := Backend_Unavailable;
@@ -1655,6 +1745,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Write_U64 (File, Long_Long_Integer (Total));
       SIO.Close (File);
       Opened := False;
+      Sync_File (Item, US.To_String (Temp));
 
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
@@ -1678,6 +1769,9 @@ package body Flyology.Object_Storage.Backends.Files is
          return;
       end if;
       Published := True;
+      Sync_Directory
+        (Item, Ada.Directories.Containing_Directory (US.To_String (Target)));
+      Sync_Directory (Item, Temp_Path (Item));
       Item.Publication.Release;
       Locked := False;
       Result := Success;
@@ -2275,8 +2369,9 @@ package body Flyology.Object_Storage.Backends.Files is
       end loop;
       SIO.Close (File);
       Opened := False;
-      Ada.Directories.Create_Path
-        (Ada.Directories.Containing_Directory (Target));
+      Sync_File (Item, US.To_String (Temp));
+      Ensure_Directory
+        (Item, Ada.Directories.Containing_Directory (Target));
       GNAT.OS_Lib.Rename_File (US.To_String (Temp), Target, Renamed);
       if not Renamed then
          Item.Publication.Release;
@@ -2286,13 +2381,10 @@ package body Flyology.Object_Storage.Backends.Files is
          return;
       end if;
       Published := True;
-      begin
-         Ada.Directories.Delete_Tree
-           (Upload_Path (Item, Bucket, Upload_ID));
-      exception
-         when others =>
-            null;
-      end;
+      Sync_Directory
+        (Item, Ada.Directories.Containing_Directory (Target));
+      Sync_Directory (Item, Temp_Path (Item));
+      Remove_Tree (Item, Upload_Path (Item, Bucket, Upload_ID));
       Item.Publication.Release;
       Locked := False;
       Result := Success;
@@ -2364,7 +2456,7 @@ package body Flyology.Object_Storage.Backends.Files is
          return;
       end if;
       Read_Manifest (Item, Bucket, Key, Upload_ID, Options);
-      Ada.Directories.Delete_Tree (Upload_Path (Item, Bucket, Upload_ID));
+      Remove_Tree (Item, Upload_Path (Item, Bucket, Upload_ID));
       Item.Publication.Release;
       Locked := False;
       Result := Success;

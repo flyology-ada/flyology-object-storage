@@ -102,11 +102,12 @@ its initial population phase.
 ## Backend semantics
 
 Memory, files, and SQLite are separate result series. Memory is non-durable.
-The files backend is labeled atomic/non-power-durable until its fsync mode is
-implemented. SQLite is measured with its production `WAL` and
-`synchronous=FULL` settings; a weaker SQLite durability mode cannot be used to
-claim parity. Results with different durability semantics may guide tuning but
-must not be presented as equivalent.
+The files series uses its production-default `Power_Loss_Durable` policy;
+`Process_Crash_Atomic` results require a distinct implementation label and
+cannot be substituted for the production series. SQLite is measured with its
+production `WAL` and `synchronous=FULL` settings; a weaker SQLite durability
+mode cannot be used to claim parity. Results with different durability
+semantics may guide tuning but must not be presented as equivalent.
 
 ## Regression policy
 

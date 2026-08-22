@@ -82,9 +82,14 @@ an inline confirmation, and browse byte-safe, opaque-token-paginated object
 metadata. Management pages preserve 64-bit sizes and timestamps exactly;
 object mutation remains on the signed S3 endpoint.
 
-The files backend is persistent, but it is not yet advertised as
-power-loss-durable: an fsync-backed durability mode remains required before
-that qualification. Sharing one root between processes is unsupported.
+The files backend defaults to an fsync-backed `Power_Loss_Durable` commit
+policy on qualified POSIX hosts. It synchronizes staged records before rename,
+both namespace sides of publication, deletions, and multipart lifecycle
+changes. A separately labeled `Process_Crash_Atomic` policy omits persistence
+barriers for controlled comparisons. Barrier-by-barrier device-error injection
+requires every reopened namespace to be an intact old-or-new state. Windows
+directory-metadata durability and cross-process root sharing remain
+unsupported.
 
 The server application remains `partial`, but it now consumes indexed
 `flyology_http=0.1.2`: GET, HEAD and range responses use exact stored lengths

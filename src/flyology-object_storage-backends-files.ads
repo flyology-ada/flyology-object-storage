@@ -8,13 +8,25 @@ package Flyology.Object_Storage.Backends.Files is
 
    Configuration_Error : exception;
 
+   type Commit_Policy is (Power_Loss_Durable, Process_Crash_Atomic);
+
    type Store is limited new Backend with private;
 
-   --  Open or create a backend rooted at Root. Maximum_Object_Size is a hard
-   --  per-request resource bound even when a source has no declared length.
+   --  Open or create a backend rooted at Root. Power_Loss_Durable is the
+   --  production default and synchronizes every file and directory mutation;
+   --  Process_Crash_Atomic preserves rename atomicity without persistence
+   --  barriers and must be labeled separately in benchmarks.
+   --  @param Root Exclusively owned filesystem root
+   --  @param Maximum_Object_Size Per-request bound for declared and unknown
+   --  length sources
+   --  @param Commit Persistence policy for every namespace mutation
+   --  @return Opened files backend
+   --  @exception Configuration_Error Root setup or a required initial
+   --  durability barrier failed
    function Open
      (Root                : String;
-      Maximum_Object_Size : Byte_Count := Byte_Count'Last) return Store;
+      Maximum_Object_Size : Byte_Count := Byte_Count'Last;
+      Commit              : Commit_Policy := Power_Loss_Durable) return Store;
 
    overriding procedure Create_Bucket
      (Item     : in out Store;
@@ -201,6 +213,7 @@ private
    type Store is limited new Backend with record
       Root_Path           : Ada.Strings.Unbounded.Unbounded_String;
       Maximum_Object_Size : Byte_Count := Byte_Count'Last;
+      Commit              : Commit_Policy := Power_Loss_Durable;
       Temp_Sequence       : Sequence;
       Publication         : Publication_Gate;
    end record;

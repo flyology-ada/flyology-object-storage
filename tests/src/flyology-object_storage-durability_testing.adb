@@ -1,0 +1,26 @@
+with Ada.IO_Exceptions;
+with Flyology.Object_Storage.Durability;
+
+package body Flyology.Object_Storage.Durability_Testing is
+
+   function Missing_File_Is_Rejected (Path : String) return Boolean is
+   begin
+      Flyology.Object_Storage.Durability.Sync_File (Path);
+      return False;
+   exception
+      when Ada.IO_Exceptions.Device_Error =>
+         return True;
+   end Missing_File_Is_Rejected;
+
+   procedure Fail_Next_Barrier_After (Successful_Barriers : Natural) is
+   begin
+      Flyology.Object_Storage.Durability.Set_Test_Failure
+        (Successful_Barriers);
+   end Fail_Next_Barrier_After;
+
+   procedure Clear_Failure is
+   begin
+      Flyology.Object_Storage.Durability.Clear_Test_Failure;
+   end Clear_Failure;
+
+end Flyology.Object_Storage.Durability_Testing;
