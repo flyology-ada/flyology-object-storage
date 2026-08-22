@@ -11,7 +11,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   Schema_Version : constant Long_Long_Integer := 8;
+   Schema_Version : constant Long_Long_Integer := 9;
    Empty_Info : constant Object_Information := (others => <>);
    Object_Tags_Schema : constant String :=
      "CREATE TABLE object_tags (" &
@@ -25,6 +25,51 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "FOREIGN KEY(bucket_name,object_key) " &
      "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
      ") WITHOUT ROWID;";
+   Object_Metadata_Schema : constant String :=
+     "CREATE TABLE object_metadata (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "object_key BLOB NOT NULL," &
+     "ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 1 AND 64)," &
+     "metadata_key BLOB NOT NULL " &
+     "CHECK(length(metadata_key) BETWEEN 1 AND 117)," &
+     "metadata_value BLOB NOT NULL CHECK(length(metadata_value) <= 2048)," &
+     "PRIMARY KEY(bucket_name,object_key,metadata_key)," &
+     "UNIQUE(bucket_name,object_key,ordinal)," &
+     "FOREIGN KEY(bucket_name,object_key) " &
+     "REFERENCES objects(bucket_name,object_key) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   Metadata_Columns_Schema : constant String :=
+     "ALTER TABLE objects ADD COLUMN cache_control_present INTEGER NOT NULL " &
+     "DEFAULT 0 CHECK(cache_control_present IN (0,1));" &
+     "ALTER TABLE objects ADD COLUMN cache_control BLOB NOT NULL " &
+     "DEFAULT X'' " &
+     "CHECK(length(cache_control) <= 2048);" &
+     "ALTER TABLE objects ADD COLUMN content_disposition_present INTEGER " &
+     "NOT NULL DEFAULT 0 CHECK(content_disposition_present IN (0,1));" &
+     "ALTER TABLE objects ADD COLUMN content_disposition BLOB NOT NULL " &
+     "DEFAULT X'' CHECK(length(content_disposition) <= 2048);" &
+     "ALTER TABLE objects ADD COLUMN content_encoding_present INTEGER " &
+     "NOT NULL " &
+     "DEFAULT 0 CHECK(content_encoding_present IN (0,1));" &
+     "ALTER TABLE objects ADD COLUMN content_encoding BLOB NOT NULL " &
+     "DEFAULT X'' " &
+     "CHECK(length(content_encoding) <= 2048);" &
+     "ALTER TABLE objects ADD COLUMN content_language_present INTEGER " &
+     "NOT NULL " &
+     "DEFAULT 0 CHECK(content_language_present IN (0,1));" &
+     "ALTER TABLE objects ADD COLUMN content_language BLOB NOT NULL " &
+     "DEFAULT X'' " &
+     "CHECK(length(content_language) <= 2048);" &
+     "ALTER TABLE objects ADD COLUMN expires_present INTEGER NOT NULL " &
+     "DEFAULT 0 " &
+     "CHECK(expires_present IN (0,1));" &
+     "ALTER TABLE objects ADD COLUMN expires INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(expires BETWEEN -62135596800 AND 253402300799);" &
+     "ALTER TABLE objects ADD COLUMN redirect_present INTEGER NOT NULL " &
+     "DEFAULT 0 " &
+     "CHECK(redirect_present IN (0,1));" &
+     "ALTER TABLE objects ADD COLUMN redirect BLOB NOT NULL DEFAULT X'' " &
+     "CHECK(length(redirect) <= 2048);";
    Object_Parts_Schema : constant String :=
      "CREATE TABLE object_parts (" &
      "bucket_name TEXT NOT NULL COLLATE BINARY," &
@@ -139,9 +184,15 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise Catalog_Error with "checksum object has no completed parts";
       elsif Has_Value and then Result.Algorithm /= No_Checksum
         and then Is_Object
-        and then not Checksum_Engine.Valid_Object_Digest
-          (US.To_String (Result.Value), Result.Algorithm, Result.Method,
-           Positive'Max (1, Part_Count))
+        and then
+          (if Part_Count = 0
+           then
+             Result.Method /= Full_Object_Checksum
+             or else not Checksum_Engine.Valid_Digest
+               (US.To_String (Result.Value), Result.Algorithm)
+           else not Checksum_Engine.Valid_Object_Digest
+             (US.To_String (Result.Value), Result.Algorithm, Result.Method,
+              Positive (Part_Count)))
       then
          raise Catalog_Error with "invalid object checksum catalog value";
       end if;
@@ -164,6 +215,202 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          DB.Bind_Bytes (Query, First_Index + 2, US.To_String (Value.Value));
       end if;
    end Bind_Checksum;
+
+   function Optional_From_Columns
+     (Query        : DB.Statement;
+      First_Column : Natural) return Optional_Metadata_Value
+   is
+      Present : constant Long_Long_Integer := DB.Column (Query, First_Column);
+      Text    : constant String := DB.Column_Bytes (Query, First_Column + 1);
+   begin
+      if Present not in 0 | 1
+        or else Text'Length > Maximum_System_Metadata_Value_Bytes
+        or else (Present = 0 and then Text'Length /= 0)
+      then
+         raise Catalog_Error with "invalid system metadata catalog value";
+      end if;
+      return
+        (Is_Set => Present = 1,
+         Value  => US.To_Unbounded_String (Text));
+   end Optional_From_Columns;
+
+   procedure Bind_Optional
+     (Query       : in out DB.Statement;
+      First_Index : Positive;
+      Value       : Optional_Metadata_Value) is
+   begin
+      DB.Bind
+        (Query, First_Index,
+         Long_Long_Integer'(if Value.Is_Set then 1 else 0));
+      DB.Bind_Bytes (Query, First_Index + 1, US.To_String (Value.Value));
+   end Bind_Optional;
+
+   function Optional_Time_From_Columns
+     (Query        : DB.Statement;
+      First_Column : Natural) return Optional_Metadata_Time
+   is
+      Present : constant Long_Long_Integer := DB.Column (Query, First_Column);
+      Seconds : constant Long_Long_Integer :=
+        DB.Column (Query, First_Column + 1);
+   begin
+      if Present not in 0 | 1
+        or else Seconds not in Long_Long_Integer (Metadata_Time'First) ..
+          Long_Long_Integer (Metadata_Time'Last)
+        or else (Present = 0 and then Seconds /= 0)
+      then
+         raise Catalog_Error with "invalid expires metadata catalog value";
+      end if;
+      return
+        (Is_Set => Present = 1, Value => Metadata_Time (Seconds));
+   end Optional_Time_From_Columns;
+
+   procedure Bind_Optional_Time
+     (Query       : in out DB.Statement;
+      First_Index : Positive;
+      Value       : Optional_Metadata_Time) is
+   begin
+      DB.Bind
+        (Query, First_Index,
+         Long_Long_Integer'(if Value.Is_Set then 1 else 0));
+      DB.Bind (Query, First_Index + 1, Long_Long_Integer (Value.Value));
+   end Bind_Optional_Time;
+
+   procedure Read_User_Metadata_Internal
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Metadata : in out Object_Metadata)
+   is
+      Query : DB.Statement;
+   begin
+      Metadata.User := Empty_User_Metadata;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT ordinal,metadata_key,metadata_value FROM object_metadata " &
+         "WHERE bucket_name=?1 AND object_key=?2 ORDER BY ordinal");
+      DB.Bind (Query, 1, Bucket);
+      DB.Bind_Bytes (Query, 2, Key);
+      while DB.Step (Query) = DB.Row loop
+         if Metadata.User.Length = Maximum_User_Metadata_Entries
+           or else DB.Column (Query, 0) /=
+             Long_Long_Integer (Metadata.User.Length) + 1
+         then
+            raise Catalog_Error with "invalid user metadata ordinal";
+         end if;
+         Metadata.User.Length := Metadata.User.Length + 1;
+         Metadata.User.Items (Metadata.User.Length) :=
+           (Key => US.To_Unbounded_String (DB.Column_Bytes (Query, 1)),
+            Value => US.To_Unbounded_String (DB.Column_Bytes (Query, 2)));
+      end loop;
+   end Read_User_Metadata_Internal;
+
+   procedure Replace_User_Metadata_Internal
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Metadata : Object_Metadata)
+   is
+      Delete : DB.Statement;
+   begin
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM object_metadata WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Delete, 1, Bucket);
+      DB.Bind_Bytes (Delete, 2, Key);
+      if DB.Step (Delete) /= DB.Done then
+         raise Catalog_Error with "object metadata reset returned a row";
+      end if;
+      for Index in 1 .. Metadata.User.Length loop
+         declare
+            Insert : DB.Statement;
+         begin
+            DB.Prepare
+              (Insert, Item.Database,
+               "INSERT INTO object_metadata(" &
+               "bucket_name,object_key,ordinal,metadata_key,metadata_value) " &
+               "VALUES(?1,?2,?3,?4,?5)");
+            DB.Bind (Insert, 1, Bucket);
+            DB.Bind_Bytes (Insert, 2, Key);
+            DB.Bind (Insert, 3, Long_Long_Integer (Index));
+            DB.Bind_Bytes
+              (Insert, 4, US.To_String (Metadata.User.Items (Index).Key));
+            DB.Bind_Bytes
+              (Insert, 5, US.To_String (Metadata.User.Items (Index).Value));
+            if DB.Step (Insert) /= DB.Done then
+               raise Catalog_Error with
+                 "object metadata insert returned a row";
+            end if;
+         end;
+      end loop;
+   end Replace_User_Metadata_Internal;
+
+   procedure Replace_Object_Tags_Internal
+     (Item   : in out Catalog;
+      Bucket : String;
+      Key    : String;
+      Tags   : Object_Tag_Set)
+   is
+      Delete : DB.Statement;
+   begin
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM object_tags WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Delete, 1, Bucket);
+      DB.Bind_Bytes (Delete, 2, Key);
+      if DB.Step (Delete) /= DB.Done then
+         raise Catalog_Error with "object tag reset returned a row";
+      end if;
+      for Index in 1 .. Tags.Length loop
+         declare
+            Insert : DB.Statement;
+         begin
+            DB.Prepare
+              (Insert, Item.Database,
+               "INSERT INTO object_tags(" &
+               "bucket_name,object_key,tag_index,tag_key,tag_value) " &
+               "VALUES(?1,?2,?3,?4,?5)");
+            DB.Bind (Insert, 1, Bucket);
+            DB.Bind_Bytes (Insert, 2, Key);
+            DB.Bind (Insert, 3, Long_Long_Integer (Index));
+            DB.Bind_Bytes (Insert, 4, US.To_String (Tags.Items (Index).Key));
+            DB.Bind_Bytes (Insert, 5, US.To_String (Tags.Items (Index).Value));
+            if DB.Step (Insert) /= DB.Done then
+               raise Catalog_Error with "object tag insert returned a row";
+            end if;
+         end;
+      end loop;
+   end Replace_Object_Tags_Internal;
+
+   procedure Read_Object_Tags_Internal
+     (Item   : in out Catalog;
+      Bucket : String;
+      Key    : String;
+      Tags   : out Object_Tag_Set)
+   is
+      Query : DB.Statement;
+   begin
+      Tags := Empty_Object_Tags;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT tag_index,tag_key,tag_value FROM object_tags " &
+         "WHERE bucket_name=?1 AND object_key=?2 ORDER BY tag_index");
+      DB.Bind (Query, 1, Bucket);
+      DB.Bind_Bytes (Query, 2, Key);
+      while DB.Step (Query) = DB.Row loop
+         if Tags.Length = Maximum_Object_Tags
+           or else DB.Column (Query, 0) /= Long_Long_Integer (Tags.Length) + 1
+         then
+            raise Catalog_Error with "invalid object tag ordinal";
+         end if;
+         Tags.Length := Tags.Length + 1;
+         Tags.Items (Tags.Length) :=
+           (Key => US.To_Unbounded_String (DB.Column_Bytes (Query, 1)),
+            Value => US.To_Unbounded_String (DB.Column_Bytes (Query, 2)));
+      end loop;
+      if not Valid_Object_Tag_Set (Tags) then
+         raise Catalog_Error with "invalid object tag catalog value";
+      end if;
+   end Read_Object_Tags_Internal;
 
    protected body Operation_Gate is
       entry Acquire when not Held is
@@ -208,6 +455,238 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
            then Scalar (Item, Prefix & "WHERE name='checksum_value'") = 1
            else Scalar (Item, Prefix & "WHERE name='checksum_value'") = 0);
    end Valid_Checksum_Columns;
+
+   function Valid_Column
+     (Item          : in out Catalog;
+      Table_Name    : String;
+      CID           : Natural;
+      Name          : String;
+      Kind          : String;
+      Primary_Order : Natural;
+      Default_Test  : String) return Boolean
+   is
+      Prefix : constant String :=
+        "SELECT count(*) FROM pragma_table_info('" & Table_Name & "') " &
+        "WHERE cid=" & Natural'Image (CID) & " AND name='" & Name &
+        "' AND type='" & Kind & "' AND ""notnull""=1 AND pk=" &
+        Natural'Image (Primary_Order) & " AND ";
+   begin
+      return Scalar (Item, Prefix & Default_Test) = 1;
+   end Valid_Column;
+
+   function Valid_Metadata_Schema (Item : in out Catalog) return Boolean is
+      Object_SQL : constant String :=
+        "lower(replace(replace(replace(replace(sql,' ','')," &
+        "char(9),''),char(10),''),char(13),''))";
+      function Has_Object_SQL (Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='objects' AND instr(" & Object_SQL & ",'" &
+            Fragment & "')>0") = 1);
+      function Has_Metadata_SQL (Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='object_metadata' AND instr(" & Object_SQL & ",'" &
+            Fragment & "')>0") = 1);
+   begin
+      return
+        Scalar (Item, "SELECT count(*) FROM pragma_table_info('objects')") = 22
+        and then Valid_Column
+          (Item, "objects", 0, "bucket_name", "TEXT", 1,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "objects", 1, "object_key", "BLOB", 2,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "objects", 2, "payload", "TEXT", 0,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "objects", 3, "size", "INTEGER", 0,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "objects", 4, "modified", "INTEGER", 0,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "objects", 5, "entity_tag", "BLOB", 0,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "objects", 6, "content_type", "BLOB", 0,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "objects", 7, "checksum_algorithm", "INTEGER", 0,
+           "dflt_value='0'")
+        and then Valid_Column
+          (Item, "objects", 8, "checksum_method", "INTEGER", 0,
+           "dflt_value='0'")
+        and then Valid_Column
+          (Item, "objects", 9, "checksum_value", "BLOB", 0,
+           "dflt_value='X'''''")
+        and then Valid_Column
+          (Item, "objects", 10, "cache_control_present", "INTEGER", 0,
+           "dflt_value='0'")
+        and then Valid_Column
+          (Item, "objects", 11, "cache_control", "BLOB", 0,
+           "dflt_value='X'''''")
+        and then Valid_Column
+          (Item, "objects", 12, "content_disposition_present", "INTEGER", 0,
+           "dflt_value='0'")
+        and then Valid_Column
+          (Item, "objects", 13, "content_disposition", "BLOB", 0,
+           "dflt_value='X'''''")
+        and then Valid_Column
+          (Item, "objects", 14, "content_encoding_present", "INTEGER", 0,
+           "dflt_value='0'")
+        and then Valid_Column
+          (Item, "objects", 15, "content_encoding", "BLOB", 0,
+           "dflt_value='X'''''")
+        and then Valid_Column
+          (Item, "objects", 16, "content_language_present", "INTEGER", 0,
+           "dflt_value='0'")
+        and then Valid_Column
+          (Item, "objects", 17, "content_language", "BLOB", 0,
+           "dflt_value='X'''''")
+        and then Valid_Column
+          (Item, "objects", 18, "expires_present", "INTEGER", 0,
+           "dflt_value='0'")
+        and then Valid_Column
+          (Item, "objects", 19, "expires", "INTEGER", 0,
+           "dflt_value='0'")
+        and then Valid_Column
+          (Item, "objects", 20, "redirect_present", "INTEGER", 0,
+           "dflt_value='0'")
+        and then Valid_Column
+          (Item, "objects", 21, "redirect", "BLOB", 0,
+           "dflt_value='X'''''")
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list('objects') " &
+           "WHERE id=0 AND seq=0 AND ""table""='buckets' " &
+           "AND ""from""='bucket_name' " &
+           "AND ""to""='name' AND on_update='NO ACTION' " &
+           "AND on_delete='RESTRICT' AND match='NONE'") = 1
+        and then Scalar
+          (Item, "SELECT count(*) FROM pragma_foreign_key_list('objects')") = 1
+        and then Scalar
+          (Item, "SELECT count(*) FROM pragma_index_list('objects')") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_index_list('objects') AS l," &
+           "pragma_index_info(l.name) AS i WHERE l.origin='pk' AND " &
+           "((i.seqno=0 AND i.name='bucket_name') OR " &
+           "(i.seqno=1 AND i.name='object_key'))") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_index_list('objects') AS l," &
+           "pragma_index_info(l.name) AS i WHERE l.origin='pk'") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_index_list('objects') AS l," &
+           "pragma_index_info(l.name) AS i WHERE l.origin='u' " &
+           "AND i.seqno=0 AND i.name='payload'") = 1
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_index_list('objects') AS l," &
+           "pragma_index_info(l.name) AS i WHERE l.origin='u'") = 1
+        and then Has_Object_SQL ("check(size>=0)")
+        and then Has_Object_SQL ("check(modified>=0)")
+        and then Has_Object_SQL ("check(checksum_algorithmbetween0and10)")
+        and then Has_Object_SQL ("check(checksum_methodbetween0and2)")
+        and then Has_Object_SQL ("check(length(checksum_value)<=96)")
+        and then Has_Object_SQL
+          ("check(cache_control_presentin(0,1))")
+        and then Has_Object_SQL ("check(length(cache_control)<=2048)")
+        and then Has_Object_SQL
+          ("check(content_disposition_presentin(0,1))")
+        and then Has_Object_SQL
+          ("check(length(content_disposition)<=2048)")
+        and then Has_Object_SQL
+          ("check(content_encoding_presentin(0,1))")
+        and then Has_Object_SQL ("check(length(content_encoding)<=2048)")
+        and then Has_Object_SQL
+          ("check(content_language_presentin(0,1))")
+        and then Has_Object_SQL ("check(length(content_language)<=2048)")
+        and then Has_Object_SQL ("check(expires_presentin(0,1))")
+        and then Has_Object_SQL
+          ("check(expiresbetween-62135596800and253402300799)")
+        and then Has_Object_SQL ("check(redirect_presentin(0,1))")
+        and then Has_Object_SQL ("check(length(redirect)<=2048)")
+        and then Has_Object_SQL
+          ("primarykey(bucket_name,object_key)")
+        and then Has_Object_SQL
+          ("foreignkey(bucket_name)referencesbuckets(name)ondeleterestrict")
+        and then Has_Object_SQL ("withoutrowid")
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('object_metadata')") = 5
+        and then Valid_Column
+          (Item, "object_metadata", 0, "bucket_name", "TEXT", 1,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "object_metadata", 1, "object_key", "BLOB", 2,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "object_metadata", 2, "ordinal", "INTEGER", 0,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "object_metadata", 3, "metadata_key", "BLOB", 3,
+           "dflt_value IS NULL")
+        and then Valid_Column
+          (Item, "object_metadata", 4, "metadata_value", "BLOB", 0,
+           "dflt_value IS NULL")
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list('object_metadata') " &
+           "WHERE id=0 AND ""table""='objects' " &
+           "AND on_update='NO ACTION' " &
+           "AND on_delete='CASCADE' AND match='NONE' AND " &
+           "((seq=0 AND ""from""='bucket_name' " &
+           "AND ""to""='bucket_name') OR " &
+           "(seq=1 AND ""from""='object_key' " &
+           "AND ""to""='object_key'))") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM " &
+           "pragma_foreign_key_list('object_metadata')") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_index_list('object_metadata')") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_index_list('object_metadata') AS l," &
+           "pragma_index_info(l.name) AS i WHERE l.origin='pk' AND " &
+           "((i.seqno=0 AND i.name='bucket_name') OR " &
+           "(i.seqno=1 AND i.name='object_key') OR " &
+           "(i.seqno=2 AND i.name='metadata_key'))") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_index_list('object_metadata') AS l," &
+           "pragma_index_info(l.name) AS i WHERE l.origin='pk'") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_index_list('object_metadata') AS l," &
+           "pragma_index_info(l.name) AS i WHERE l.origin='u' AND " &
+           "((i.seqno=0 AND i.name='bucket_name') OR " &
+           "(i.seqno=1 AND i.name='object_key') OR " &
+           "(i.seqno=2 AND i.name='ordinal'))") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_index_list('object_metadata') AS l," &
+           "pragma_index_info(l.name) AS i WHERE l.origin='u'") = 3
+        and then Has_Metadata_SQL ("check(ordinalbetween1and64)")
+        and then Has_Metadata_SQL
+          ("check(length(metadata_key)between1and117)")
+        and then Has_Metadata_SQL ("check(length(metadata_value)<=2048)")
+        and then Has_Metadata_SQL
+          ("primarykey(bucket_name,object_key,metadata_key)")
+        and then Has_Metadata_SQL
+          ("unique(bucket_name,object_key,ordinal)")
+        and then Has_Metadata_SQL
+          ("foreignkey(bucket_name,object_key)" &
+           "referencesobjects(bucket_name,object_key)ondeletecascade")
+        and then Has_Metadata_SQL ("withoutrowid");
+   end Valid_Metadata_Schema;
 
    function Text_Scalar (Item : in out Catalog; SQL : String) return String is
       Query : DB.Statement;
@@ -255,6 +734,30 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "CHECK(checksum_method BETWEEN 0 AND 2)," &
          "checksum_value BLOB NOT NULL DEFAULT X'' " &
          "CHECK(length(checksum_value) <= 96)," &
+         "cache_control_present INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(cache_control_present IN (0,1))," &
+         "cache_control BLOB NOT NULL DEFAULT X'' " &
+         "CHECK(length(cache_control) <= 2048)," &
+         "content_disposition_present INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(content_disposition_present IN (0,1))," &
+         "content_disposition BLOB NOT NULL DEFAULT X'' " &
+         "CHECK(length(content_disposition) <= 2048)," &
+         "content_encoding_present INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(content_encoding_present IN (0,1))," &
+         "content_encoding BLOB NOT NULL DEFAULT X'' " &
+         "CHECK(length(content_encoding) <= 2048)," &
+         "content_language_present INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(content_language_present IN (0,1))," &
+         "content_language BLOB NOT NULL DEFAULT X'' " &
+         "CHECK(length(content_language) <= 2048)," &
+         "expires_present INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(expires_present IN (0,1))," &
+         "expires INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(expires BETWEEN -62135596800 AND 253402300799)," &
+         "redirect_present INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(redirect_present IN (0,1))," &
+         "redirect BLOB NOT NULL DEFAULT X'' " &
+         "CHECK(length(redirect) <= 2048)," &
          "PRIMARY KEY(bucket_name, object_key)," &
          "FOREIGN KEY(bucket_name) REFERENCES buckets(name) " &
          "ON DELETE RESTRICT" &
@@ -273,6 +776,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "ON DELETE RESTRICT" &
          ") WITHOUT ROWID;" &
          Object_Tags_Schema &
+         Object_Metadata_Schema &
          "CREATE TABLE multipart_parts (" &
          "upload_id TEXT NOT NULL COLLATE BINARY," &
          "part_number INTEGER NOT NULL " &
@@ -294,7 +798,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Object_Parts_Schema_V8 &
          Bucket_Tags_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=8;");
+         "PRAGMA user_version=9;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -565,6 +1069,42 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V7;
 
+   procedure Upgrade_From_V8 (Item : in out Catalog) is
+      In_Transaction : Boolean := False;
+      Existing_Columns : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('objects') " &
+           "WHERE name IN ('cache_control_present','cache_control'," &
+           "'content_disposition_present','content_disposition'," &
+           "'content_encoding_present','content_encoding'," &
+           "'content_language_present','content_language'," &
+           "'expires_present','expires','redirect_present','redirect')");
+      Existing_Table : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name='object_metadata'");
+   begin
+      if Existing_Columns /= 0 or else Existing_Table /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 8";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Metadata_Columns_Schema & Object_Metadata_Schema &
+         "PRAGMA user_version=9;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V8;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -603,6 +1143,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 6 => Upgrade_From_V6 (Item); Version := 7;
             when 7 => null;
             when 8 => null;
+            when 9 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -610,6 +1151,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          if Version = 7 then
             Upgrade_From_V7 (Item);
             Version := 8;
+         end if;
+         if Version = 8 then
+            Upgrade_From_V8 (Item);
+            Version := 9;
          end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
@@ -623,8 +1168,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         (Item,
          "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
          "AND name IN " &
-         "('buckets','objects','object_tags','multipart_uploads'," &
-         "'multipart_parts','object_parts','bucket_tags')") /= 7
+         "('buckets','objects','object_tags','object_metadata'," &
+         "'multipart_uploads','multipart_parts','object_parts'," &
+         "'bucket_tags')") /= 8
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -634,6 +1180,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         or else not Valid_Checksum_Columns (Item, "object_parts", True)
       then
          raise Catalog_Error with "SQLite checksum schema is incomplete";
+      elsif not Valid_Metadata_Schema (Item)
+      then
+         raise Catalog_Error with "SQLite metadata schema is incomplete";
       elsif Scalar
         (Item,
          "SELECT count(*) FROM pragma_table_info('buckets') " &
@@ -1162,7 +1711,12 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "SELECT payload,size,modified,entity_tag,content_type," &
          "checksum_algorithm,checksum_method,checksum_value," &
          "(SELECT count(*) FROM object_parts WHERE bucket_name=objects." &
-         "bucket_name AND object_key=objects.object_key) " &
+         "bucket_name AND object_key=objects.object_key)," &
+         "cache_control_present,cache_control," &
+         "content_disposition_present,content_disposition," &
+         "content_encoding_present,content_encoding," &
+         "content_language_present,content_language," &
+         "expires_present,expires,redirect_present,redirect " &
          "FROM objects WHERE bucket_name=?1 AND object_key=?2");
       DB.Bind (Query, 1, Bucket);
       DB.Bind_Bytes (Query, 2, Key);
@@ -1191,7 +1745,21 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Checksum     => Checksum_From_Columns
            (Query, 5, Is_Object => True,
             Part_Count =>
-              Natural (Long_Long_Integer'(DB.Column (Query, 8)))));
+              Natural (Long_Long_Integer'(DB.Column (Query, 8)))),
+         Metadata     =>
+           (Cache_Control => Optional_From_Columns (Query, 9),
+            Content_Disposition => Optional_From_Columns (Query, 11),
+            Content_Encoding => Optional_From_Columns (Query, 13),
+            Content_Language => Optional_From_Columns (Query, 15),
+            Expires => Optional_Time_From_Columns (Query, 17),
+            Website_Redirect_Location => Optional_From_Columns (Query, 19),
+            User => Empty_User_Metadata));
+      Read_User_Metadata_Internal (Item, Bucket, Key, Info.Metadata);
+      if not Valid_Object_Metadata
+        (Info.Metadata, US.To_String (Info.Content_Type))
+      then
+         raise Catalog_Error with "invalid object metadata catalog value";
+      end if;
       Result := Success;
    end Find_Object_Internal;
 
@@ -1220,6 +1788,42 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          if Locked then
             Item.Gate.Release;
          end if;
+         raise;
+   end Find_Object;
+
+   procedure Find_Object
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Key     : String;
+      Payload : out US.Unbounded_String;
+      Info    : out Object_Information;
+      Tags    : out Object_Tag_Set;
+      Result  : out Status;
+      Check   : access procedure
+        (Payload : String;
+         Info    : Object_Information;
+         Tags    : Object_Tag_Set) := null)
+   is
+      Locked : Boolean := False;
+   begin
+      Tags := Empty_Object_Tags;
+      Item.Gate.Acquire;
+      Locked := True;
+      Find_Object_Internal (Item, Bucket, Key, Payload, Info, Result);
+      if Result = Success then
+         Read_Object_Tags_Internal (Item, Bucket, Key, Tags);
+         if Check /= null then
+            Check.all (US.To_String (Payload), Info, Tags);
+         end if;
+      end if;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Tags := Empty_Object_Tags;
          raise;
    end Find_Object;
 
@@ -1326,6 +1930,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Key              : String;
       Payload          : String;
       Info             : Object_Information;
+      Tags             : Object_Tag_Set;
       Previous_Payload : out US.Unbounded_String;
       Result           : out Status;
       Conditions       : Write_Conditions := Default_Write_Conditions)
@@ -1334,7 +1939,6 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Bucket_Query : DB.Statement;
       Existing : Object_Information;
       Upsert : DB.Statement;
-      Clear_Tags : DB.Statement;
       Locked : Boolean := False;
    begin
       Previous_Payload := US.Null_Unbounded_String;
@@ -1383,15 +1987,32 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "INSERT INTO objects(" &
          "bucket_name,object_key,payload,size,modified," &
          "entity_tag,content_type,checksum_algorithm,checksum_method," &
-         "checksum_value" &
-         ") VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) " &
+         "checksum_value,cache_control_present,cache_control," &
+         "content_disposition_present,content_disposition," &
+         "content_encoding_present,content_encoding," &
+         "content_language_present,content_language," &
+         "expires_present,expires,redirect_present,redirect" &
+         ") VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12," &
+         "?13,?14,?15,?16,?17,?18,?19,?20,?21,?22) " &
          "ON CONFLICT(bucket_name,object_key) DO UPDATE SET " &
          "payload=excluded.payload,size=excluded.size," &
          "modified=excluded.modified,entity_tag=excluded.entity_tag," &
          "content_type=excluded.content_type," &
          "checksum_algorithm=excluded.checksum_algorithm," &
          "checksum_method=excluded.checksum_method," &
-         "checksum_value=excluded.checksum_value");
+         "checksum_value=excluded.checksum_value," &
+         "cache_control_present=excluded.cache_control_present," &
+         "cache_control=excluded.cache_control," &
+         "content_disposition_present=excluded.content_disposition_present," &
+         "content_disposition=excluded.content_disposition," &
+         "content_encoding_present=excluded.content_encoding_present," &
+         "content_encoding=excluded.content_encoding," &
+         "content_language_present=excluded.content_language_present," &
+         "content_language=excluded.content_language," &
+         "expires_present=excluded.expires_present," &
+         "expires=excluded.expires," &
+         "redirect_present=excluded.redirect_present," &
+         "redirect=excluded.redirect");
       DB.Bind (Upsert, 1, Bucket);
       DB.Bind_Bytes (Upsert, 2, Key);
       DB.Bind (Upsert, 3, Payload);
@@ -1400,17 +2021,18 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       DB.Bind_Bytes (Upsert, 6, US.To_String (Info.Entity_Tag));
       DB.Bind_Bytes (Upsert, 7, US.To_String (Info.Content_Type));
       Bind_Checksum (Upsert, 8, Info.Checksum);
+      Bind_Optional (Upsert, 11, Info.Metadata.Cache_Control);
+      Bind_Optional (Upsert, 13, Info.Metadata.Content_Disposition);
+      Bind_Optional (Upsert, 15, Info.Metadata.Content_Encoding);
+      Bind_Optional (Upsert, 17, Info.Metadata.Content_Language);
+      Bind_Optional_Time (Upsert, 19, Info.Metadata.Expires);
+      Bind_Optional
+        (Upsert, 21, Info.Metadata.Website_Redirect_Location);
       if DB.Step (Upsert) /= DB.Done then
          raise Catalog_Error with "object upsert returned a row";
       end if;
-      DB.Prepare
-        (Clear_Tags, Item.Database,
-         "DELETE FROM object_tags WHERE bucket_name=?1 AND object_key=?2");
-      DB.Bind (Clear_Tags, 1, Bucket);
-      DB.Bind_Bytes (Clear_Tags, 2, Key);
-      if DB.Step (Clear_Tags) /= DB.Done then
-         raise Catalog_Error with "object tag reset returned a row";
-      end if;
+      Replace_User_Metadata_Internal (Item, Bucket, Key, Info.Metadata);
+      Replace_Object_Tags_Internal (Item, Bucket, Key, Tags);
       declare
          Delete_Parts : DB.Statement;
       begin
@@ -1762,7 +2384,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
              Checksum     => Checksum_From_Columns
                (Query, 5, Is_Object => True,
                 Part_Count =>
-                  Natural (Long_Long_Integer'(DB.Column (Query, 8))))));
+                  Natural (Long_Long_Integer'(DB.Column (Query, 8)))),
+             Metadata     => Empty_Object_Metadata));
       end loop;
       Page := Backends.Listing.Finish (Builder);
       Result := Success;
@@ -2021,7 +2644,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                             (DB.Column_Bytes (Query, 3)),
                         Content_Type => US.Null_Unbounded_String,
                         Version => US.Null_Unbounded_String,
-                        Checksum => Checksum_From_Columns (Query, 4))));
+                        Checksum => Checksum_From_Columns (Query, 4),
+                        Metadata => Empty_Object_Metadata)));
             else
                Page.Is_Truncated := True;
                Page.Next_After := Backends.Multipart_Part_Marker
@@ -2161,7 +2785,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                      US.To_Unbounded_String (DB.Column_Bytes (Query, 3)),
                    Content_Type => US.Null_Unbounded_String,
                    Version      => US.Null_Unbounded_String,
-                   Checksum     => Checksum_From_Columns (Query, 4))));
+                   Checksum     => Checksum_From_Columns (Query, 4),
+                   Metadata     => Empty_Object_Metadata)));
          end;
       end loop;
       Result := Success;
@@ -2300,7 +2925,12 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "content_type=excluded.content_type," &
          "checksum_algorithm=excluded.checksum_algorithm," &
          "checksum_method=excluded.checksum_method," &
-         "checksum_value=excluded.checksum_value");
+         "checksum_value=excluded.checksum_value," &
+         "cache_control_present=0,cache_control=X''," &
+         "content_disposition_present=0,content_disposition=X''," &
+         "content_encoding_present=0,content_encoding=X''," &
+         "content_language_present=0,content_language=X''," &
+         "expires_present=0,expires=0,redirect_present=0,redirect=X''");
       DB.Bind (Upsert, 1, Bucket);
       DB.Bind_Bytes (Upsert, 2, Key);
       DB.Bind (Upsert, 3, Payload);
@@ -2312,6 +2942,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       if DB.Step (Upsert) /= DB.Done then
          raise Catalog_Error with "multipart object upsert returned a row";
       end if;
+      Replace_User_Metadata_Internal
+        (Item, Bucket, Key, Empty_Object_Metadata);
       declare
          Delete_Parts : DB.Statement;
       begin

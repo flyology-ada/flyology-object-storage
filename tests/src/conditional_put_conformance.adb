@@ -476,7 +476,8 @@ package body Conditional_Put_Conformance is
             Position => 0);
          Options : constant Put_Options :=
            (Entity_Tag   => US.To_Unbounded_String (ETag),
-            Content_Type => US.To_Unbounded_String ("application/test"));
+            Content_Type => US.To_Unbounded_String ("application/test"),
+            others => <>);
       begin
          Store.Put_Object
            (Bucket, Object_Key, Source, Options, null,
@@ -579,7 +580,8 @@ package body Conditional_Put_Conformance is
                  ("race-" &
                   Ada.Strings.Fixed.Trim
                     (Positive'Image (Index), Ada.Strings.Both)),
-               Content_Type => US.To_Unbounded_String ("application/race"));
+               Content_Type => US.To_Unbounded_String ("application/race"),
+               others => <>);
          begin
             Target.Put_Object
               (Bucket, Race_Key (Iteration), Source, Options, null,

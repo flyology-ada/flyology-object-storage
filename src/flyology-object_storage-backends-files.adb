@@ -37,7 +37,8 @@ package body Flyology.Object_Storage.Backends.Files is
    Legacy_Magic : constant String := "FOSOBJ01";
    Tag_Magic : constant String := "FOSOBJ02";
    Part_Magic : constant String := "FOSOBJ03";
-   Magic : constant String := "FOSOBJ04";
+   Checksum_Magic : constant String := "FOSOBJ04";
+   Magic : constant String := "FOSOBJ05";
    Bucket_Tag_Magic : constant String := "FOSTAG01";
    Versioning_Magic : constant String := "FOSVER01";
    Maximum_Metadata_Length : constant Natural := 8 * 1_024;
@@ -705,7 +706,14 @@ package body Flyology.Object_Storage.Backends.Files is
 
    function Valid_Options (Options : Put_Options) return Boolean is
      (US.Length (Options.Entity_Tag) <= Maximum_Metadata_Length
-      and then US.Length (Options.Content_Type) <= Maximum_Metadata_Length);
+      and then US.Length (Options.Content_Type) <= Maximum_Metadata_Length
+      and then Valid_Object_Metadata
+        (Options.Metadata, US.To_String (Options.Content_Type))
+      and then Valid_Object_Tag_Set (Options.Tags)
+      and then
+        (Options.Checksum = No_Checksum_Information
+         or else Checksum_Engine.Valid_Direct_Configuration
+           (Options.Checksum)));
 
    procedure Write_Bytes
      (File : in out SIO.File_Type;
@@ -938,7 +946,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Info : Object_Information;
       Tags : Object_Tag_Set := Empty_Object_Tags;
       Parts : Completed_Object_Part_List :=
-        Completed_Object_Part_Vectors.Empty_Vector)
+        Completed_Object_Part_Vectors.Empty_Vector;
+      Checksum_Value_At : access SIO.Positive_Count := null)
    is
       ETag : constant String := US.To_String (Info.Entity_Tag);
       Kind : constant String := US.To_String (Info.Content_Type);
@@ -970,9 +979,44 @@ package body Flyology.Object_Storage.Backends.Files is
          Write_String (File, String'(1 => Algorithm_Code));
          Write_String (File, String'(1 => Method_Code));
          Write_U32 (File, Text'Length);
+         if Checksum_Value_At /= null then
+            Checksum_Value_At.all := SIO.Index (File);
+         end if;
          Write_String (File, Text);
       end Write_Checksum;
+
+      procedure Write_Optional (Value : Optional_Metadata_Value) is
+         Text : constant String := US.To_String (Value.Value);
+      begin
+         if Text'Length > Maximum_System_Metadata_Value_Bytes
+           or else (not Value.Is_Set and then Text'Length /= 0)
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         Write_String
+           (File, String'(1 => (if Value.Is_Set then 'P' else 'A')));
+         Write_U32 (File, Text'Length);
+         Write_String (File, Text);
+      end Write_Optional;
+
+      procedure Write_Optional_Time (Value : Optional_Metadata_Time) is
+      begin
+         if not Value.Is_Set and then Value.Value /= 0 then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         Write_String
+           (File, String'(1 => (if Value.Is_Set then 'P' else 'A')));
+         Write_U64
+           (File,
+            Long_Long_Integer (Value.Value) -
+              Long_Long_Integer (Metadata_Time'First));
+      end Write_Optional_Time;
    begin
+      if not Valid_Object_Metadata (Info.Metadata, Kind)
+        or else not Valid_Object_Tag_Set (Tags)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
       Write_String (File, Magic);
       Write_U32 (File, Key'Length);
       Write_U32 (File, ETag'Length);
@@ -1002,6 +1046,26 @@ package body Flyology.Object_Storage.Backends.Files is
          Write_Checksum (Part.Checksum);
       end loop;
       Write_Checksum (Info.Checksum);
+      Write_Optional (Info.Metadata.Cache_Control);
+      Write_Optional (Info.Metadata.Content_Disposition);
+      Write_Optional (Info.Metadata.Content_Encoding);
+      Write_Optional (Info.Metadata.Content_Language);
+      Write_Optional_Time (Info.Metadata.Expires);
+      Write_Optional (Info.Metadata.Website_Redirect_Location);
+      Write_U32 (File, Natural (Info.Metadata.User.Length));
+      for Index in 1 .. Info.Metadata.User.Length loop
+         declare
+            User_Key : constant String :=
+              US.To_String (Info.Metadata.User.Items (Index).Key);
+            User_Value : constant String :=
+              US.To_String (Info.Metadata.User.Items (Index).Value);
+         begin
+            Write_U32 (File, User_Key'Length);
+            Write_U32 (File, User_Value'Length);
+            Write_String (File, User_Key);
+            Write_String (File, User_Value);
+         end;
+      end loop;
    end Write_Header;
 
    procedure Read_Header_Any_With_Metadata
@@ -1010,7 +1074,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Info      : out Object_Information;
       Tags      : out Object_Tag_Set;
       Parts     : out Completed_Object_Part_List;
-      Body_At   : out SIO.Positive_Count)
+      Body_At   : out SIO.Positive_Count;
+      Allow_Staged_Part : Boolean := False)
    is
       File_Magic : constant String := Read_String (File, Magic'Length);
       Key_Length : constant Natural := Read_U32 (File);
@@ -1058,10 +1123,46 @@ package body Flyology.Object_Storage.Backends.Files is
          end if;
          return Value;
       end Read_Checksum;
+
+      function Read_Optional return Optional_Metadata_Value is
+         Presence : constant Character := Read_String (File, 1) (1);
+         Length   : constant Natural := Read_U32 (File);
+      begin
+         if Presence not in 'A' | 'P'
+           or else Length > Maximum_System_Metadata_Value_Bytes
+           or else (Presence = 'A' and then Length /= 0)
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         return
+           (Is_Set => Presence = 'P',
+            Value  => US.To_Unbounded_String (Read_String (File, Length)));
+      end Read_Optional;
+
+      function Read_Optional_Time return Optional_Metadata_Time is
+         Presence : constant Character := Read_String (File, 1) (1);
+         Encoded  : constant Long_Long_Integer := Read_U64 (File);
+         Seconds  : constant Long_Long_Integer :=
+           Encoded + Long_Long_Integer (Metadata_Time'First);
+      begin
+         if Encoded >
+             Long_Long_Integer (Metadata_Time'Last) -
+               Long_Long_Integer (Metadata_Time'First)
+           or else Presence not in 'A' | 'P'
+           or else Seconds not in Long_Long_Integer (Metadata_Time'First) ..
+             Long_Long_Integer (Metadata_Time'Last)
+           or else (Presence = 'A' and then Seconds /= 0)
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         return
+           (Is_Set => Presence = 'P', Value => Metadata_Time (Seconds));
+      end Read_Optional_Time;
    begin
       Tags := Empty_Object_Tags;
       Parts.Clear;
-      if File_Magic not in Magic | Part_Magic | Tag_Magic | Legacy_Magic
+      if File_Magic not in
+          Magic | Checksum_Magic | Part_Magic | Tag_Magic | Legacy_Magic
         or else Key_Length not in 1 .. 1_024
         or else ETag_Length > Maximum_Metadata_Length
         or else Kind_Length > Maximum_Metadata_Length
@@ -1080,7 +1181,8 @@ package body Flyology.Object_Storage.Backends.Files is
             Entity_Tag   => US.To_Unbounded_String (ETag),
             Content_Type => US.To_Unbounded_String (Kind),
             Version      => US.Null_Unbounded_String,
-            Checksum     => (others => <>));
+            Checksum     => (others => <>),
+            Metadata     => (others => <>));
          if File_Magic /= Legacy_Magic then
             declare
                Tag_Count : constant Natural := Read_U32 (File);
@@ -1111,7 +1213,7 @@ package body Flyology.Object_Storage.Backends.Files is
                end if;
             end;
          end if;
-         if File_Magic in Magic | Part_Magic then
+         if File_Magic in Magic | Checksum_Magic | Part_Magic then
             declare
                Count : constant Natural := Read_U32 (File);
                Previous : Multipart_Part_Marker := 0;
@@ -1136,7 +1238,8 @@ package body Flyology.Object_Storage.Backends.Files is
                      end if;
                      declare
                         Checksum : constant Checksum_Information :=
-                          (if File_Magic = Magic then Read_Checksum
+                          (if File_Magic in Magic | Checksum_Magic
+                           then Read_Checksum
                            else No_Checksum_Information);
                      begin
                         if Checksum.Algorithm /= No_Checksum
@@ -1163,7 +1266,7 @@ package body Flyology.Object_Storage.Backends.Files is
                end if;
             end;
          end if;
-         if File_Magic = Magic then
+         if File_Magic in Magic | Checksum_Magic then
             Info.Checksum := Read_Checksum;
             if Info.Checksum.Algorithm /= No_Checksum then
                if Parts.Length > 0 then
@@ -1180,9 +1283,12 @@ package body Flyology.Object_Storage.Backends.Files is
                   then
                      raise Ada.IO_Exceptions.Data_Error;
                   end if;
-               elsif not Checksum_Engine.Valid_Digest
-                 (US.To_String (Info.Checksum.Value),
-                  Info.Checksum.Algorithm)
+               elsif
+                 (not Allow_Staged_Part
+                  and then Info.Checksum.Method /= Full_Object_Checksum)
+                 or else not Checksum_Engine.Valid_Digest
+                   (US.To_String (Info.Checksum.Value),
+                    Info.Checksum.Algorithm)
                then
                   raise Ada.IO_Exceptions.Data_Error;
                end if;
@@ -1200,6 +1306,44 @@ package body Flyology.Object_Storage.Backends.Files is
                   raise Ada.IO_Exceptions.Data_Error;
                end if;
             end loop;
+         end if;
+         if File_Magic = Magic then
+            Info.Metadata.Cache_Control := Read_Optional;
+            Info.Metadata.Content_Disposition := Read_Optional;
+            Info.Metadata.Content_Encoding := Read_Optional;
+            Info.Metadata.Content_Language := Read_Optional;
+            Info.Metadata.Expires := Read_Optional_Time;
+            Info.Metadata.Website_Redirect_Location := Read_Optional;
+            declare
+               Count : constant Natural := Read_U32 (File);
+            begin
+               if Count > Maximum_User_Metadata_Entries then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+               Info.Metadata.User.Length := User_Metadata_Count (Count);
+               for Index in 1 .. Info.Metadata.User.Length loop
+                  declare
+                     Key_Size : constant Natural := Read_U32 (File);
+                     Value_Size : constant Natural := Read_U32 (File);
+                  begin
+                     if Key_Size not in 1 .. Maximum_User_Metadata_Key_Bytes
+                       or else Value_Size > Maximum_User_Metadata_Bytes
+                     then
+                        raise Ada.IO_Exceptions.Data_Error;
+                     end if;
+                     Info.Metadata.User.Items (Index) :=
+                       (Key => US.To_Unbounded_String
+                          (Read_String (File, Key_Size)),
+                        Value => US.To_Unbounded_String
+                          (Read_String (File, Value_Size)));
+                  end;
+               end loop;
+            end;
+         end if;
+         if not Valid_Object_Metadata
+           (Info.Metadata, US.To_String (Info.Content_Type))
+         then
+            raise Ada.IO_Exceptions.Data_Error;
          end if;
          Body_At := SIO.Index (File);
          if SIO.Count (Info.Size) > SIO.Count'Last - (Body_At - 1)
@@ -1261,11 +1405,35 @@ package body Flyology.Object_Storage.Backends.Files is
    is
       Key : US.Unbounded_String;
    begin
-      Read_Header_Any (File, Key, Info, Body_At);
+      declare
+         Tags : Object_Tag_Set;
+         Parts : Completed_Object_Part_List;
+      begin
+         Read_Header_Any_With_Metadata
+           (File, Key, Info, Tags, Parts, Body_At);
+      end;
       if US.To_String (Key) /= Expected then
          raise Ada.IO_Exceptions.Data_Error;
       end if;
    end Read_Header;
+
+   procedure Read_Staged_Part_Header
+     (File      : in out SIO.File_Type;
+      Expected  : String;
+      Info      : out Object_Information;
+      Body_At   : out SIO.Positive_Count)
+   is
+      Key : US.Unbounded_String;
+      Tags : Object_Tag_Set;
+      Parts : Completed_Object_Part_List;
+   begin
+      Read_Header_Any_With_Metadata
+        (File, Key, Info, Tags, Parts, Body_At,
+         Allow_Staged_Part => True);
+      if US.To_String (Key) /= Expected then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+   end Read_Staged_Part_Header;
 
    procedure Read_Header_With_Parts
      (File      : in out SIO.File_Type;
@@ -2182,6 +2350,14 @@ package body Flyology.Object_Storage.Backends.Files is
       In_Callback : Boolean := False;
       Generate_ETag : constant Boolean := US.Length (Options.Entity_Tag) = 0;
       Hash : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
+      Direct_Hash : Checksum_Engine.Context
+        (Checksum_Engine.Algorithm_Value
+           (if Options.Checksum.Algorithm = No_Checksum
+            then Checksum_CRC64NVME else Options.Checksum.Algorithm));
+      Checksum_Position : aliased SIO.Positive_Count := 1;
+      Initial_Checksum : constant String :=
+        (if Options.Checksum.Algorithm = No_Checksum then ""
+         else Checksum_Engine.Finish (Direct_Hash));
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
@@ -2246,8 +2422,17 @@ package body Flyology.Object_Storage.Backends.Files is
             else Options.Entity_Tag),
          Content_Type => Options.Content_Type,
          Version      => US.Null_Unbounded_String,
-         Checksum     => (others => <>));
-      Write_Header (File, Key, Info);
+         Checksum     =>
+           (if Options.Checksum.Algorithm = No_Checksum
+            then No_Checksum_Information
+            else
+              (Algorithm => Options.Checksum.Algorithm,
+               Method    => Full_Object_Checksum,
+               Value     => US.To_Unbounded_String (Initial_Checksum))),
+         Metadata     => Options.Metadata);
+      Write_Header
+        (File, Key, Info, Tags => Options.Tags,
+         Checksum_Value_At => Checksum_Position'Access);
 
       while not Finished loop
          Check_Context (Token, Deadline);
@@ -2285,6 +2470,10 @@ package body Flyology.Object_Storage.Backends.Files is
                end if;
                SIO.Write (File, Buffer (Buffer'First .. Last));
                GNAT.MD5.Update (Hash, Buffer (Buffer'First .. Last));
+               if Options.Checksum.Algorithm /= No_Checksum then
+                  Checksum_Engine.Update
+                    (Direct_Hash, Buffer (Buffer'First .. Last));
+               end if;
                Total := Total + Count;
             end;
          elsif not Finished then
@@ -2309,6 +2498,18 @@ package body Flyology.Object_Storage.Backends.Files is
          SIO.Set_Index
            (File, Metadata_Position + SIO.Count (Key'Length));
          Write_String (File, US.To_String (Info.Entity_Tag));
+      end if;
+      if Options.Checksum.Algorithm /= No_Checksum then
+         declare
+            Digest : constant String := Checksum_Engine.Finish (Direct_Hash);
+         begin
+            if Digest'Length /= Initial_Checksum'Length then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+            Info.Checksum.Value := US.To_Unbounded_String (Digest);
+            SIO.Set_Index (File, Checksum_Position);
+            Write_String (File, Digest);
+         end;
       end if;
       SIO.Set_Index (File, Body_Size_Position);
       Write_U64 (File, Long_Long_Integer (Total));
@@ -2466,6 +2667,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Snapshot    : SIO.File_Type;
       Snapshot_Path : US.Unbounded_String;
       Source_Info : Object_Information;
+      Source_Tags : Object_Tag_Set;
+      Source_Parts : Completed_Object_Part_List;
       Body_At     : SIO.Positive_Count;
       Source_Path : US.Unbounded_String;
       Source_Exists : Boolean := False;
@@ -2501,12 +2704,18 @@ package body Flyology.Object_Storage.Backends.Files is
         or else not Valid_Object_Key (Destination_Key)
         or else not Valid_Copy_Conditions (Options.Conditions)
         or else not Valid_Write_Conditions (Options.Destination_Conditions)
+        or else not Valid_Object_Metadata
+          (Options.Metadata, US.To_String (Options.Content_Type))
+        or else not Valid_Object_Tag_Set (Options.Tags)
       then
          Result := Invalid_Request;
          return;
       elsif Source_Bucket = Destination_Bucket
         and then Source_Key = Destination_Key
         and then Options.Metadata_Directive = Copy_Metadata
+        and then Options.Tagging_Directive = Copy_Tags
+        and then Options.Selected_Checksum = No_Checksum
+        and then not Options.Metadata.Website_Redirect_Location.Is_Set
       then
          Result := Invalid_Request;
          return;
@@ -2538,7 +2747,9 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
 
       SIO.Open (Original, SIO.In_File, US.To_String (Source_Path));
-      Read_Header (Original, Source_Key, Source_Info, Body_At);
+      Read_Header_With_Tags
+        (Original, Source_Key, Source_Info, Source_Tags, Source_Parts,
+         Body_At);
       if not Valid_Copy_Object_Size (Source_Info.Size) then
          SIO.Close (Original);
          Item.Publication.Release;
@@ -2606,7 +2817,26 @@ package body Flyology.Object_Storage.Backends.Files is
          Content_Type =>
            (if Options.Metadata_Directive = Copy_Metadata
             then Source_Info.Content_Type
-            else Options.Content_Type));
+            else Options.Content_Type),
+         Metadata =>
+           (if Options.Metadata_Directive = Copy_Metadata
+            then Source_Info.Metadata else Options.Metadata),
+         Tags     =>
+           (if Options.Tagging_Directive = Copy_Tags
+            then Source_Tags else Options.Tags),
+         Checksum =>
+           (Algorithm =>
+              (if Options.Selected_Checksum /= No_Checksum
+               then Options.Selected_Checksum
+               elsif Source_Info.Checksum.Algorithm /= No_Checksum
+               then Source_Info.Checksum.Algorithm
+               else Checksum_CRC64NVME),
+            Method => Full_Object_Checksum,
+            Value  => US.Null_Unbounded_String));
+      if Options.Metadata_Directive = Copy_Metadata then
+         Put_Options_Value.Metadata.Website_Redirect_Location :=
+           Options.Metadata.Website_Redirect_Location;
+      end if;
       declare
          Source : File_Source :=
            (File      => File'Access,
@@ -3584,7 +3814,8 @@ package body Flyology.Object_Storage.Backends.Files is
          Entity_Tag   => Upload_ID,
          Content_Type => Options.Content_Type,
          Version      => US.Null_Unbounded_String,
-         Checksum     => Options.Checksum);
+         Checksum     => Options.Checksum,
+         Metadata     => (others => <>));
       SIO.Create (File, SIO.Out_File, US.To_String (Manifest));
       Opened := True;
       Write_Header (File, Key, Manifest_Info);
@@ -3754,7 +3985,8 @@ package body Flyology.Object_Storage.Backends.Files is
                  (Algorithm => Upload_Options.Checksum.Algorithm,
                   Method    => Upload_Options.Checksum.Method,
                   Value     => US.To_Unbounded_String
-                    (Checksum_Engine.Finish (Digest_Hash)))));
+                    (Checksum_Engine.Finish (Digest_Hash)))),
+            Metadata     => (others => <>));
          Write_Header (File, Key, Info);
          while not Finished loop
             Check_Context (Token, Deadline);
@@ -4000,7 +4232,7 @@ package body Flyology.Object_Storage.Backends.Files is
                   begin
                      SIO.Open (File, SIO.In_File, Full);
                      Opened := True;
-                     Read_Header (File, Key, Info, Body_At);
+                     Read_Staged_Part_Header (File, Key, Info, Body_At);
                      SIO.Close (File);
                      Opened := False;
                      if
@@ -4510,7 +4742,8 @@ package body Flyology.Object_Storage.Backends.Files is
             end if;
             SIO.Open (Part_File, SIO.In_File, Path);
             Part_Opened := True;
-            Read_Header (Part_File, Key, Part_Info, Body_At);
+            Read_Staged_Part_Header
+              (Part_File, Key, Part_Info, Body_At);
             SIO.Close (Part_File);
             Part_Opened := False;
             if
@@ -4630,7 +4863,8 @@ package body Flyology.Object_Storage.Backends.Files is
               (Natural'Image (Natural (Parts.Length)), Ada.Strings.Both)),
          Content_Type => Upload_Options.Content_Type,
          Version      => US.Null_Unbounded_String,
-         Checksum     => Completed_Checksum);
+         Checksum     => Completed_Checksum,
+         Metadata     => (others => <>));
       Item.Temp_Sequence.Next (Number);
       Temp := US.To_Unbounded_String
         (Join
@@ -4652,7 +4886,8 @@ package body Flyology.Object_Storage.Backends.Files is
               (Part_File, SIO.In_File,
                Part_Path (Item, Bucket, Upload_ID, Reference.Number));
             Part_Opened := True;
-            Read_Header (Part_File, Key, Part_Info, Body_At);
+            Read_Staged_Part_Header
+              (Part_File, Key, Part_Info, Body_At);
             SIO.Set_Index (Part_File, Body_At);
             Remaining := Part_Info.Size;
             while Remaining > 0 loop

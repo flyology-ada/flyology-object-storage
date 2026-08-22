@@ -32,6 +32,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type Flyology.Object_Storage.MFA_Delete_Status;
    use type Flyology.Object_Storage.Object_Tag_Set;
+   use type Flyology.Object_Storage.Optional_Metadata_Time;
    use type Flyology.Object_Storage.Tags.Tag_Vectors.Vector;
 
    package Storage_Tags renames Flyology.Object_Storage.Tags;
@@ -411,6 +412,47 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V7_Database;
+
+   procedure Create_V8_Database is
+      Legacy : Databases.Database;
+   begin
+      Create_V7_Database;
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "ALTER TABLE objects ADD COLUMN checksum_algorithm INTEGER " &
+         "NOT NULL DEFAULT 0 CHECK(checksum_algorithm BETWEEN 0 AND 10);" &
+         "ALTER TABLE objects ADD COLUMN checksum_method INTEGER " &
+         "NOT NULL DEFAULT 0 CHECK(checksum_method BETWEEN 0 AND 2);" &
+         "ALTER TABLE objects ADD COLUMN checksum_value BLOB NOT NULL " &
+         "DEFAULT X'' CHECK(length(checksum_value) <= 96);" &
+         "ALTER TABLE multipart_uploads ADD COLUMN checksum_algorithm " &
+         "INTEGER NOT NULL DEFAULT 0 " &
+         "CHECK(checksum_algorithm BETWEEN 0 AND 10);" &
+         "ALTER TABLE multipart_uploads ADD COLUMN checksum_method INTEGER " &
+         "NOT NULL DEFAULT 0 CHECK(checksum_method BETWEEN 0 AND 2);" &
+         "ALTER TABLE multipart_parts ADD COLUMN checksum_algorithm INTEGER " &
+         "NOT NULL DEFAULT 0 CHECK(checksum_algorithm BETWEEN 0 AND 10);" &
+         "ALTER TABLE multipart_parts ADD COLUMN checksum_method INTEGER " &
+         "NOT NULL DEFAULT 0 CHECK(checksum_method BETWEEN 0 AND 2);" &
+         "ALTER TABLE multipart_parts ADD COLUMN checksum_value BLOB " &
+         "NOT NULL " &
+         "DEFAULT X'' CHECK(length(checksum_value) <= 96);" &
+         "ALTER TABLE object_parts ADD COLUMN checksum_algorithm INTEGER " &
+         "NOT NULL DEFAULT 0 CHECK(checksum_algorithm BETWEEN 0 AND 10);" &
+         "ALTER TABLE object_parts ADD COLUMN checksum_method INTEGER " &
+         "NOT NULL DEFAULT 0 CHECK(checksum_method BETWEEN 0 AND 2);" &
+         "ALTER TABLE object_parts ADD COLUMN checksum_value BLOB NOT NULL " &
+         "DEFAULT X'' CHECK(length(checksum_value) <= 96);" &
+         "PRAGMA user_version=8;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V8_Database;
 
    procedure Assert_Unconfigured_Versioning
      (Catalog : in out Catalogs.Catalog;
@@ -1273,6 +1315,74 @@ begin
    Delete_Database;
 
    Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "ALTER TABLE object_metadata " &
+      "RENAME COLUMN metadata_value TO metadata_bogus;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema9 accepted a same-count object_metadata column rename");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "PRAGMA writable_schema=ON;" &
+      "UPDATE sqlite_schema SET sql=replace(sql," &
+      "'CHECK(length(metadata_value) <= 2048)'," &
+      "'CHECK(length(metadata_value) <= 4096)') " &
+      "WHERE type='table' AND name='object_metadata';" &
+      "PRAGMA writable_schema=OFF;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema9 accepted a weakened object_metadata value constraint");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "ALTER TABLE objects RENAME COLUMN expires TO expires_bogus;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected, "schema9 accepted a same-count objects column rename");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
    declare
       Result   : Flyology.Object_Storage.Status;
       Payload  : US.Unbounded_String;
@@ -1437,10 +1547,11 @@ begin
            (Character'Val (0) & Character'Val (255) & "etag"),
          Content_Type => US.To_Unbounded_String ("application/test"),
          Version      => US.Null_Unbounded_String,
-         Checksum     => Flyology.Object_Storage.No_Checksum_Information);
+         Checksum     => Flyology.Object_Storage.No_Checksum_Information,
+         Metadata     => Flyology.Object_Storage.Empty_Object_Metadata);
       Catalogs.Put_Object
         (Catalog, "catalog-bucket", Key, "payload-one", Info,
-         Previous, Result);
+         Flyology.Object_Storage.Empty_Object_Tags, Previous, Result);
       Assert (Result = Flyology.Object_Storage.Success,
               "catalog object was not inserted");
       Assert (US.Length (Previous) = 0,
@@ -1480,7 +1591,7 @@ begin
       Info.Size := 7;
       Catalogs.Put_Object
         (Catalog, "catalog-bucket", Key, "payload-two", Info,
-         Previous, Result);
+         Flyology.Object_Storage.Empty_Object_Tags, Previous, Result);
       Assert
         (Result = Flyology.Object_Storage.Success and then
          US.To_String (Previous) = "payload-one",
@@ -1506,7 +1617,8 @@ begin
               ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
             Content_Type => US.Null_Unbounded_String,
             Version      => US.Null_Unbounded_String,
-            Checksum     => No_Checksum_Information);
+            Checksum     => No_Checksum_Information,
+            Metadata     => Empty_Object_Metadata);
          Part_Previous : US.Unbounded_String;
          References : Multipart_Part_References;
          Records : Catalogs.Multipart_Part_Records;
@@ -1582,7 +1694,8 @@ begin
               ("cccccccccccccccccccccccccccccccc-2"),
             Content_Type => US.To_Unbounded_String ("application/test"),
             Version      => US.Null_Unbounded_String,
-            Checksum     => No_Checksum_Information);
+            Checksum     => No_Checksum_Information,
+            Metadata     => Empty_Object_Metadata);
          Catalogs.Complete_Multipart_Upload
            (Catalog, "catalog-bucket", "multipart-key", Upload_ID, Records,
             "multipart-final-payload", Info, (others => <>), Previous,
@@ -1768,17 +1881,17 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 8,
-         "schema-v1 migration did not publish version 8");
+         and then Databases.Column (Version, 0) = 9,
+         "schema-v1 migration did not publish version 9");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
-         "AND name IN ('buckets','objects','object_tags'," &
+         "AND name IN ('buckets','objects','object_tags','object_metadata'," &
          "'multipart_uploads','multipart_parts','object_parts'," &
          "'bucket_tags')");
       Assert
         (Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 7,
+         and then Databases.Column (Tables, 0) = 8,
          "schema-v1 migration did not create the complete schema");
    end;
    Databases.Close (Database);
@@ -1844,8 +1957,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 8,
-         "schema-v2 migration did not publish version 8");
+         and then Databases.Column (Version, 0) = 9,
+         "schema-v2 migration did not publish version 9");
    end;
    declare
       Tables : Databases.Statement;
@@ -1881,10 +1994,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 8
+         and then Databases.Column (Version, 0) = 9
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 8 tables");
+         "schema-v3 migration did not publish schema 9 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1955,8 +2068,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 8,
-            "schema-v4 migration did not publish version 8");
+            and then Databases.Column (Version, 0) = 9,
+            "schema-v4 migration did not publish version 9");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -2023,7 +2136,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 8
+            and then Databases.Column (Version, 0) = 9
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -2101,8 +2214,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 8,
-         "schema-v6 migration did not publish version 8");
+         and then Databases.Column (Version, 0) = 9,
+         "schema-v6 migration did not publish version 9");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2227,7 +2340,7 @@ begin
          "length(checksum_value)) FROM object_parts)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 8
+         and then Databases.Column (Version, 0) = 9
          and then Databases.Step (Defaults) = Databases.Row
          and then Databases.Column (Defaults, 0) = 0,
          "schema-v7 checksum migration did not publish safe defaults");
@@ -2258,6 +2371,73 @@ begin
          "schema-v8 catalog accepted inconsistent checksum metadata");
    end;
    Catalogs.Close (Catalog);
+   Delete_Database;
+
+   Create_V8_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use type Flyology.Object_Storage.Object_Metadata;
+      use type Flyology.Object_Storage.Checksum_Information;
+      Payload : US.Unbounded_String;
+      Info : Flyology.Object_Storage.Object_Information;
+      Result : Flyology.Object_Storage.Status;
+   begin
+      Catalogs.Find_Object
+        (Catalog, "legacy-bucket", "k", Payload, Info, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Info.Metadata = Flyology.Object_Storage.Empty_Object_Metadata
+         and then Info.Checksum =
+           Flyology.Object_Storage.No_Checksum_Information,
+         "schema-v8 migration did not default bounded object metadata");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Topology : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Topology, Database,
+         "SELECT " &
+         "(SELECT count(*) FROM pragma_table_info('objects') WHERE name IN " &
+         "('cache_control_present','cache_control'," &
+         "'content_disposition_present','content_disposition'," &
+         "'content_encoding_present','content_encoding'," &
+         "'content_language_present','content_language'," &
+         "'expires_present','expires','redirect_present','redirect')) + " &
+         "(SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+         "AND name='object_metadata')");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 9
+         and then Databases.Step (Topology) = Databases.Row
+         and then Databases.Column (Topology, 0) = 13,
+         "schema-v8 migration did not atomically publish schema9 topology");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V8_Database;
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "ALTER TABLE objects ADD COLUMN cache_control_present INTEGER " &
+      "NOT NULL DEFAULT 0;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema-v8 migration accepted a partial schema9 publication");
+   end;
    Delete_Database;
 
    Catalogs.Open (Catalog, Database_Path);
@@ -2295,6 +2475,36 @@ begin
    begin
       Copy_Object_Conformance.Exercise
         (Store, "sqlite-copy-object-bucket");
+   end;
+   declare
+      package Backend renames Flyology.Object_Storage.Backends.SQLite;
+      Store : Backend.Store :=
+        Backend.Open
+          (Copy_Root, Maximum_Object_Size => 1 * 1_024 * 1_024);
+      Info : Flyology.Object_Storage.Object_Information;
+      Result : Flyology.Object_Storage.Status;
+   begin
+      Store.Head_Object
+        ("sqlite-copy-object-bucket", "copy-tuple-destination", null,
+         Ada.Real_Time.Time_Last, Info, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Info.Metadata.Expires =
+           Flyology.Object_Storage.Optional_Metadata_Time'
+             (Is_Set => True,
+              Value => Flyology.Object_Storage.Metadata_Time
+                (-315_619_200)),
+         "schema9 pre-epoch Expires did not survive backend reopen");
+      Store.Head_Object
+        ("sqlite-copy-object-bucket", "copy-max-expires", null,
+         Ada.Real_Time.Time_Last, Info, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success
+         and then Info.Metadata.Expires =
+           Flyology.Object_Storage.Optional_Metadata_Time'
+             (Is_Set => True,
+              Value => Flyology.Object_Storage.Metadata_Time'Last),
+         "schema9 maximum Expires did not survive backend reopen");
    end;
    Ada.Directories.Delete_Tree (Copy_Root);
 
@@ -2581,7 +2791,8 @@ begin
       Store.Put_Object
         ("sqlite-bucket", Key, Source,
          (Entity_Tag   => US.To_Unbounded_String ("etag-1"),
-          Content_Type => US.To_Unbounded_String ("text/plain")),
+          Content_Type => US.To_Unbounded_String ("text/plain"),
+          others => <>),
          null, Ada.Real_Time.Time_Last, Info, Result);
       Assert (Result = Success and then Info.Size = 10,
               "SQLite backend put failed");
@@ -2621,7 +2832,8 @@ begin
          Store.Put_Object
            ("sqlite-bucket", Key, Replacement,
             (Entity_Tag   => US.To_Unbounded_String ("etag-2"),
-             Content_Type => US.To_Unbounded_String ("text/plain")),
+             Content_Type => US.To_Unbounded_String ("text/plain"),
+             others => <>),
             null, Ada.Real_Time.Time_Last, Info, Result);
          Assert (Result = Success, "SQLite backend overwrite failed");
       end;

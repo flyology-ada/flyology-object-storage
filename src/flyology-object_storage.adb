@@ -489,6 +489,173 @@ is
       return True;
    end Valid_Object_Key;
 
+   function Valid_Object_Metadata
+     (Metadata : Object_Metadata; Content_Type : String) return Boolean
+   is
+      System_Bytes : Natural := 0;
+      User_Bytes   : Natural := 0;
+
+      function Valid_UTF8_Header_Value (Value : String) return Boolean is
+         Cursor : Integer := Value'First;
+
+         function Byte_At (Offset : Natural) return Natural is
+           (Character'Pos (Value (Cursor + Integer (Offset))))
+         with Pre =>
+           Cursor in Value'Range
+           and then Offset <= Natural (Value'Last - Cursor);
+
+         function Continuation (Offset : Natural) return Boolean is
+           (Offset <= Natural (Value'Last - Cursor)
+            and then Byte_At (Offset) in 16#80# .. 16#BF#)
+         with Pre => Cursor in Value'Range;
+      begin
+         while Cursor <= Value'Last loop
+            pragma Loop_Invariant (Cursor in Value'Range);
+            pragma Loop_Variant (Decreases => Value'Last - Cursor);
+            declare
+               First : constant Natural := Byte_At (0);
+               Width : Positive;
+            begin
+               if First in 16#20# .. 16#7E# then
+                  Width := 1;
+               elsif First in 16#C2# .. 16#DF#
+                 and then Continuation (1)
+               then
+                  Width := 2;
+               elsif First in 16#E0# .. 16#EF#
+                 and then Continuation (1) and then Continuation (2)
+                 and then (First /= 16#E0# or else Byte_At (1) >= 16#A0#)
+                 and then (First /= 16#ED# or else Byte_At (1) <= 16#9F#)
+               then
+                  Width := 3;
+               elsif First in 16#F0# .. 16#F4#
+                 and then Continuation (1) and then Continuation (2)
+                 and then Continuation (3)
+                 and then (First /= 16#F0# or else Byte_At (1) >= 16#90#)
+                 and then (First /= 16#F4# or else Byte_At (1) <= 16#8F#)
+               then
+                  Width := 4;
+               else
+                  return False;
+               end if;
+               pragma Assert
+                 (Width - 1 <= Natural (Value'Last - Cursor));
+               if Width - 1 = Natural (Value'Last - Cursor) then
+                  return True;
+               end if;
+               Cursor := Cursor + Width;
+            end;
+         end loop;
+         return True;
+      end Valid_UTF8_Header_Value;
+
+      function Valid_System
+        (Item : Optional_Metadata_Value; Name : String) return Boolean
+      is
+         Value : constant String :=
+           Ada.Strings.Unbounded.To_String (Item.Value);
+      begin
+         if not Item.Is_Set then
+            return Value'Length = 0;
+         elsif Value'Length > Maximum_System_Metadata_Value_Bytes then
+            return False;
+         end if;
+         for Character_Value of Value loop
+            if Character'Pos (Character_Value) not in 16#20# .. 16#7E# then
+               return False;
+            end if;
+         end loop;
+         System_Bytes := System_Bytes + Name'Length + Value'Length;
+         return System_Bytes <= Maximum_System_Metadata_Bytes;
+      end Valid_System;
+
+      function Valid_User_Key (Value : String) return Boolean is
+      begin
+         if Value'Length not in 1 .. Maximum_User_Metadata_Key_Bytes then
+            return False;
+         end if;
+         for Character_Value of Value loop
+            if not (Character_Value in 'a' .. 'z' | '0' .. '9'
+                    or else Character_Value in
+                      '!' | '#' | '$' | '%' | '&' | ''' | '*' | '+' | '-' |
+                      '.' | '^' | '_' | '`' | '|' | '~')
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Valid_User_Key;
+   begin
+      if Content_Type'Length > Maximum_System_Metadata_Value_Bytes then
+         return False;
+      end if;
+      for Character_Value of Content_Type loop
+         if Character'Pos (Character_Value) not in 16#20# .. 16#7E# then
+            return False;
+         end if;
+      end loop;
+      if Content_Type'Length > 0 then
+         System_Bytes := 12 + Content_Type'Length;
+      end if;
+      if not Valid_System (Metadata.Cache_Control, "Cache-Control")
+        or else not Valid_System
+          (Metadata.Content_Disposition, "Content-Disposition")
+        or else not Valid_System
+          (Metadata.Content_Encoding, "Content-Encoding")
+        or else not Valid_System
+          (Metadata.Content_Language, "Content-Language")
+        or else not Valid_System
+          (Metadata.Website_Redirect_Location,
+           "x-amz-website-redirect-location")
+      then
+         return False;
+      end if;
+
+      --  IMF-fixdate is always 29 US-ASCII bytes.  An absent typed value must
+      --  retain no hidden timestamp, matching Optional_Metadata_Value.
+      if not Metadata.Expires.Is_Set and then Metadata.Expires.Value /= 0 then
+         return False;
+      elsif Metadata.Expires.Is_Set then
+         if System_Bytes > Maximum_System_Metadata_Bytes - 36 then
+            return False;
+         end if;
+         System_Bytes := System_Bytes + 36;
+      end if;
+
+      for Index in User_Metadata_Index loop
+         declare
+            Key : constant String := Ada.Strings.Unbounded.To_String
+              (Metadata.User.Items (Index).Key);
+            Value : constant String := Ada.Strings.Unbounded.To_String
+              (Metadata.User.Items (Index).Value);
+         begin
+            if Index <= Metadata.User.Length then
+               if not Valid_User_Key (Key)
+                 or else Key'Length >
+                   Maximum_User_Metadata_Bytes - User_Bytes
+                 or else Value'Length >
+                   Maximum_User_Metadata_Bytes - User_Bytes - Key'Length
+                 or else not Valid_UTF8_Header_Value (Value)
+               then
+                  return False;
+               end if;
+               for Previous in 1 .. Index - 1 loop
+                  if Ada.Strings.Unbounded."="
+                    (Metadata.User.Items (Previous).Key,
+                     Metadata.User.Items (Index).Key)
+                  then
+                     return False;
+                  end if;
+               end loop;
+               User_Bytes := User_Bytes + Key'Length + Value'Length;
+            elsif Key'Length /= 0 or else Value'Length /= 0 then
+               return False;
+            end if;
+         end;
+      end loop;
+      return True;
+   end Valid_Object_Metadata;
+
    function Valid_Object_Tag_Set (Tags : Object_Tag_Set) return Boolean is
    begin
       for Index in 1 .. Tags.Length loop

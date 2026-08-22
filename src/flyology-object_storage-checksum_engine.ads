@@ -12,6 +12,11 @@ package Flyology.Object_Storage.Checksum_Engine is
    function Valid_Configuration
      (Value : Checksum_Information) return Boolean;
 
+   --  Validate a direct whole-body checksum selection. Unlike the multipart
+   --  policy, every checksum algorithm modeled by CopyObject is permitted.
+   function Valid_Direct_Configuration
+     (Value : Checksum_Information) return Boolean;
+
    --  Return whether Value is the canonical raw Base64 digest for Algorithm.
    function Valid_Digest
      (Value : String; Algorithm : Checksum_Algorithm) return Boolean;

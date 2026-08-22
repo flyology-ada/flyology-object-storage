@@ -31,6 +31,7 @@ with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
+with Flyology.Object_Storage.S3.IMF_Dates;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
@@ -43,6 +44,7 @@ with Flyology.Object_Storage.S3.SigV4_Verification;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.S3.XML;
+with GNAT.SHA256;
 with Flyology.Object_Storage.Tags;
 
 package body Object_Storage_Test_Cases is
@@ -1735,6 +1737,8 @@ package body Object_Storage_Test_Cases is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
       use Flyology.Object_Storage;
+      package Engine renames Flyology.Object_Storage.Checksum_Engine;
+      package US renames Ada.Strings.Unbounded;
       Nul_Key : constant String := "a" & Character'Val (0) & "b";
 
       function Read_Result
@@ -1946,6 +1950,99 @@ package body Object_Storage_Test_Cases is
            (False, "", False, 0, True, 4,
             True, "etag", 100, 5) = Precondition_Failed,
          "DeleteObjects metadata mismatch was accepted");
+
+      declare
+         Metadata : Object_Metadata;
+      begin
+         Assert
+           (Valid_Object_Metadata (Metadata, "application/octet-stream"),
+            "empty object metadata was rejected");
+         Metadata.Cache_Control :=
+           (Is_Set => True,
+            Value  => US.To_Unbounded_String
+              (String'(1 .. Maximum_System_Metadata_Bytes - 13 => 'x')));
+         Assert
+           (Valid_Object_Metadata (Metadata, ""),
+            "exact system metadata byte budget was rejected");
+         US.Append (Metadata.Cache_Control.Value, "x");
+         Assert
+           (not Valid_Object_Metadata (Metadata, ""),
+            "system metadata byte budget +1 was accepted");
+      end;
+
+      declare
+         Metadata : Object_Metadata;
+      begin
+         Metadata.User.Length := 1;
+         Metadata.User.Items (1) :=
+           (Key   => US.To_Unbounded_String ("k"),
+            Value => US.To_Unbounded_String
+              (String'(1 .. Maximum_User_Metadata_Bytes - 1 => 'x')));
+         Assert
+           (Valid_Object_Metadata (Metadata, ""),
+            "exact user metadata byte budget was rejected");
+         US.Append (Metadata.User.Items (1).Value, "x");
+         Assert
+           (not Valid_Object_Metadata (Metadata, ""),
+            "user metadata byte budget +1 was accepted");
+         Metadata.User.Items (1).Value :=
+           US.To_Unbounded_String (String'(1 .. 64 * 1_024 => 'x'));
+         Assert
+           (not Valid_Object_Metadata (Metadata, ""),
+            "large direct metadata value bypassed bounded preflight");
+         Metadata := (others => <>);
+         Metadata.User.Length := 2;
+         Metadata.User.Items (1).Key := US.To_Unbounded_String ("same");
+         Metadata.User.Items (2).Key := US.To_Unbounded_String ("same");
+         Assert
+           (not Valid_Object_Metadata (Metadata, ""),
+            "duplicate user metadata key was accepted");
+         Metadata := (others => <>);
+         Metadata.User.Length := 1;
+         Metadata.User.Items (1).Key := US.To_Unbounded_String ("Upper");
+         Assert
+           (not Valid_Object_Metadata (Metadata, ""),
+            "noncanonical user metadata key was accepted");
+         Metadata := (others => <>);
+         Metadata.User.Items (2).Key := US.To_Unbounded_String ("hidden");
+         Assert
+           (not Valid_Object_Metadata (Metadata, ""),
+            "inactive user metadata retained hidden bytes");
+      end;
+
+      declare
+         Metadata : Object_Metadata;
+      begin
+         Metadata.Expires := (Is_Set => False, Value => 1);
+         Assert
+           (not Valid_Object_Metadata (Metadata, ""),
+            "absent typed Expires retained a hidden timestamp");
+         Metadata.Expires :=
+           (Is_Set => True, Value => Metadata_Time'Last);
+         Assert
+           (Valid_Object_Metadata (Metadata, ""),
+            "typed upper-bound Expires timestamp was rejected");
+      end;
+
+      for Algorithm in Checksum_Algorithm loop
+         declare
+            Selection : constant Checksum_Information :=
+              (Algorithm => Algorithm,
+               Method    => Full_Object_Checksum,
+               Value     => US.Null_Unbounded_String);
+         begin
+            Assert
+              (Engine.Valid_Direct_Configuration (Selection) =
+                 (Algorithm /= No_Checksum),
+               "direct checksum policy rejected a CopyObject algorithm");
+         end;
+      end loop;
+      Assert
+        (not Engine.Valid_Direct_Configuration
+           ((Algorithm => Checksum_SHA256,
+             Method    => Composite_Checksum,
+             Value     => US.Null_Unbounded_String)),
+         "direct checksum policy reused multipart composite semantics");
    end Check_Validators;
 
    procedure Check_Memory_Lifecycle (Unused : in out Fixture) is
@@ -3156,18 +3253,80 @@ package body Object_Storage_Test_Cases is
       Part_ETag : US.Unbounded_String;
       Abort_ID  : US.Unbounded_String;
       Checksum_Upload_ID : US.Unbounded_String;
+      Full_Checksum_Upload_ID : US.Unbounded_String;
       Checksum_Part_ETag : US.Unbounded_String;
       Checksum_Part_Value : US.Unbounded_String;
 
-      procedure Install_FOSOBJ03 is
+      function Staged_Part_Path (ID : String) return String is
+        (Ada.Directories.Compose
+           (Ada.Directories.Compose
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose
+                    (Ada.Directories.Compose (Root, "buckets"),
+                     "file-bucket"),
+                  "multipart"),
+               GNAT.SHA256.Digest (ID)),
+            "part-1.fos"));
+
+      procedure Exchange_Staged_Byte
+        (Path     : String;
+         Position : Ada.Streams.Stream_IO.Positive_Count;
+         Value    : Ada.Streams.Stream_Element;
+         Previous : out Ada.Streams.Stream_Element)
+      is
          package SIO renames Ada.Streams.Stream_IO;
          File : SIO.File_Type;
-         Path : constant String := Ada.Directories.Compose
+         Data : Ada.Streams.Stream_Element_Array (1 .. 1);
+         Last : Ada.Streams.Stream_Element_Offset;
+      begin
+         SIO.Open (File, SIO.In_File, Path);
+         SIO.Set_Index (File, Position);
+         SIO.Read (File, Data, Last);
+         if Last /= Data'Last then
+            raise Program_Error with "staged checksum byte was absent";
+         end if;
+         Previous := Data (Data'First);
+         SIO.Close (File);
+         Data (Data'First) := Value;
+         SIO.Open (File, SIO.Out_File, Path);
+         SIO.Set_Index (File, Position);
+         SIO.Write (File, Data);
+         SIO.Close (File);
+      exception
+         when others =>
+            if SIO.Is_Open (File) then
+               SIO.Close (File);
+            end if;
+            raise;
+      end Exchange_Staged_Byte;
+
+      procedure Install_Legacy_Objects is
+         package SIO renames Ada.Streams.Stream_IO;
+         File : SIO.File_Type;
+         Path_03 : constant String := Ada.Directories.Compose
            (Ada.Directories.Compose
               (Ada.Directories.Compose
                  (Ada.Directories.Compose (Root, "buckets"), "file-bucket"),
                "objects"),
             "6C6567616379.fos");
+         Path_04 : constant String := Ada.Directories.Compose
+           (Ada.Directories.Compose
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose (Root, "buckets"), "file-bucket"),
+               "objects"),
+            "6C656761637934.fos");
+         Bad_Path : constant String := Ada.Directories.Compose
+           (Ada.Directories.Compose
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose (Root, "buckets"), "file-bucket"),
+               "objects"),
+            "6C6567616379626164.fos");
+         Bad_05_Path : constant String := Ada.Directories.Compose
+           (Ada.Directories.Compose
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose (Root, "buckets"), "file-bucket"),
+               "objects"),
+            "6C656761637962616435.fos");
 
          procedure Write_String (Value : String) is
             Data : Ada.Streams.Stream_Element_Array
@@ -3204,7 +3363,7 @@ package body Object_Storage_Test_Cases is
             SIO.Write (File, Data);
          end Write_U64;
       begin
-         SIO.Create (File, SIO.Out_File, Path);
+         SIO.Create (File, SIO.Out_File, Path_03);
          Write_String ("FOSOBJ03");
          Write_U32 (6);
          Write_U32 (32);
@@ -3224,13 +3383,79 @@ package body Object_Storage_Test_Cases is
          Write_U64 (6);
          Write_String ("legacy");
          SIO.Close (File);
+
+         SIO.Create (File, SIO.Out_File, Path_04);
+         Write_String ("FOSOBJ04");
+         Write_U32 (7);
+         Write_U32 (32);
+         Write_U32 (10);
+         Write_U64 (124);
+         Write_U64 (7);
+         Write_String ("legacy4");
+         Write_String (String'(1 .. 32 => '4'));
+         Write_String ("text/plain");
+         Write_U32 (0);
+         Write_U32 (0);
+         Write_String ("E");
+         Write_String ("F");
+         Write_U32 (44);
+         Write_String ("Ax6M/MWECCq8jHTaOELiPrKoDsxvWRgC2CAkYDFytf0=");
+         Write_String ("legacy4");
+         SIO.Close (File);
+
+         SIO.Create (File, SIO.Out_File, Bad_Path);
+         Write_String ("FOSOBJ04");
+         Write_U32 (9);
+         Write_U32 (32);
+         Write_U32 (10);
+         Write_U64 (124);
+         Write_U64 (7);
+         Write_String ("legacybad");
+         Write_String (String'(1 .. 32 => '4'));
+         Write_String ("text/plain");
+         Write_U32 (0);
+         Write_U32 (0);
+         Write_String ("E");
+         Write_String ("C");
+         Write_U32 (44);
+         Write_String ("Ax6M/MWECCq8jHTaOELiPrKoDsxvWRgC2CAkYDFytf0=");
+         Write_String ("legacy4");
+         SIO.Close (File);
+
+         SIO.Create (File, SIO.Out_File, Bad_05_Path);
+         Write_String ("FOSOBJ05");
+         Write_U32 (10);
+         Write_U32 (32);
+         Write_U32 (10);
+         Write_U64 (125);
+         Write_U64 (7);
+         Write_String ("legacybad5");
+         Write_String (String'(1 .. 32 => '5'));
+         Write_String ("text/plain");
+         Write_U32 (0);
+         Write_U32 (0);
+         Write_String ("E");
+         Write_String ("C");
+         Write_U32 (44);
+         Write_String ("Ax6M/MWECCq8jHTaOELiPrKoDsxvWRgC2CAkYDFytf0=");
+         for Field in 1 .. 4 loop
+            Write_String ("A");
+            Write_U32 (0);
+         end loop;
+         Write_String ("A");
+         Write_U64 (62_135_596_800);
+         Write_String ("A");
+         Write_U32 (0);
+         Write_U32 (0);
+         Write_String ("legacy5");
+         SIO.Close (File);
       exception
          when others =>
             if SIO.Is_Open (File) then
                SIO.Close (File);
             end if;
             raise;
-      end Install_FOSOBJ03;
+      end Install_Legacy_Objects;
 
       procedure Clean is
       begin
@@ -3282,7 +3507,7 @@ package body Object_Storage_Test_Cases is
          Store.Create_Bucket
            ("file-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "files create bucket");
-         Install_FOSOBJ03;
+         Install_Legacy_Objects;
          Store.Head_Object
            ("file-bucket", "legacy", null, Ada.Real_Time.Time_Last,
             Info, Result);
@@ -3290,6 +3515,28 @@ package body Object_Storage_Test_Cases is
            (Result = Success and then Info.Size = 6
             and then Info.Checksum = No_Checksum_Information,
             "FOSOBJ03 fixture did not open with empty checksum metadata");
+         Store.Head_Object
+           ("file-bucket", "legacy4", null, Ada.Real_Time.Time_Last,
+            Info, Result);
+         Assert
+           (Result = Success and then Info.Size = 7
+            and then Info.Checksum.Algorithm = Checksum_SHA256
+            and then US.To_String (Info.Checksum.Value) =
+              "Ax6M/MWECCq8jHTaOELiPrKoDsxvWRgC2CAkYDFytf0="
+            and then Info.Metadata = Empty_Object_Metadata,
+            "FOSOBJ04 fixture did not open with default metadata");
+         Store.Head_Object
+           ("file-bucket", "legacybad", null, Ada.Real_Time.Time_Last,
+            Info, Result);
+         Assert
+           (Result = Backend_Unavailable,
+            "FOSOBJ04 accepted a composite checksum without parts");
+         Store.Head_Object
+           ("file-bucket", "legacybad5", null, Ada.Real_Time.Time_Last,
+            Info, Result);
+         Assert
+           (Result = Backend_Unavailable,
+            "FOSOBJ05 accepted a composite checksum without parts");
          Store.Head_Bucket
            ("file-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "head existing files bucket");
@@ -3297,7 +3544,8 @@ package body Object_Storage_Test_Cases is
          Store.Put_Object
            ("file-bucket", Key, Source,
             (Entity_Tag   => US.To_Unbounded_String ("etag-1"),
-             Content_Type => US.To_Unbounded_String ("text/plain")),
+             Content_Type => US.To_Unbounded_String ("text/plain"),
+             others => <>),
             null, Ada.Real_Time.Time_Last, Info, Result);
          Assert
            (Result = Success and then Info.Size = 10,
@@ -3312,7 +3560,8 @@ package body Object_Storage_Test_Cases is
             Store.Put_Object
               ("file-bucket", Key, Replacement,
                (Entity_Tag   => US.To_Unbounded_String ("etag-2"),
-                Content_Type => US.To_Unbounded_String ("text/plain")),
+                Content_Type => US.To_Unbounded_String ("text/plain"),
+                others => <>),
                null, Ada.Real_Time.Time_Last, Info, Result);
             Assert (Result = Success, "files atomic overwrite");
          end;
@@ -3418,6 +3667,33 @@ package body Object_Storage_Test_Cases is
               (Result = Bad_Digest,
                "files bad checksum replaced a staged part");
          end;
+         declare
+            Configured : Multipart_Options := Default_Multipart_Options;
+            Full_Source : Buffer_Source :=
+              (Data => Flyology.Bytes.From_Byte_String ("full"),
+               Position => 0, Length => (Kind => Known, Bytes => 4),
+               Bad_Last => False);
+         begin
+            Configured.Checksum :=
+              (Algorithm => Checksum_CRC32C,
+               Method    => Full_Object_Checksum,
+               Value     => US.Null_Unbounded_String);
+            Store.Create_Multipart_Upload
+              ("file-bucket", "checksummed-full", Configured, null,
+               Ada.Real_Time.Time_Last, Full_Checksum_Upload_ID, Result);
+            Assert
+              (Result = Success,
+               "files full checksum multipart create failed");
+            Store.Put_Multipart_Part
+              ("file-bucket", "checksummed-full",
+               US.To_String (Full_Checksum_Upload_ID), 1, Full_Source, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Success
+               and then Info.Checksum.Algorithm = Checksum_CRC32C
+               and then Info.Checksum.Method = Full_Object_Checksum,
+               "files full checksum staged part failed");
+         end;
       end;
       declare
          Store : Files.Store := Files.Open (Root, Maximum_Object_Size => 64);
@@ -3430,7 +3706,9 @@ package body Object_Storage_Test_Cases is
          Assert
            (Result = Success
             and then Info.Size = 11
-            and then US.To_String (Info.Entity_Tag) = "etag-2",
+            and then US.To_String (Info.Entity_Tag) = "etag-2"
+            and then Info.Metadata.Expires =
+              Optional_Metadata_Time'(Is_Set => False, Value => 0),
             "files metadata persists across reopen");
          declare
             Snapshot : Object_Attribute_Snapshot;
@@ -3454,7 +3732,7 @@ package body Object_Storage_Test_Cases is
             Legacy_Tags.Length := 1;
             Legacy_Tags.Items (1) :=
               (Key => US.To_Unbounded_String ("migrated"),
-               Value => US.To_Unbounded_String ("FOSOBJ04"));
+               Value => US.To_Unbounded_String ("FOSOBJ05"));
             Store.Put_Object_Tags
               ("file-bucket", "legacy", Legacy_Tags, null,
                Ada.Real_Time.Time_Last, Result);
@@ -3472,7 +3750,7 @@ package body Object_Storage_Test_Cases is
                   and then Legacy_Info.Checksum = No_Checksum_Information
                   and then Flyology.Bytes.To_Byte_String
                     (Legacy_Sink.Data) = "legacy",
-                  "FOSOBJ03 to FOSOBJ04 rewrite lost body or metadata");
+                  "FOSOBJ03 to FOSOBJ05 rewrite lost body or metadata");
                Reopened.Get_Object_Attributes
                  ("file-bucket", "legacy", (others => <>), null,
                   Ada.Real_Time.Time_Last, Snapshot, Result);
@@ -3484,6 +3762,30 @@ package body Object_Storage_Test_Cases is
                   and then Snapshot.Parts.First_Element.Size = 6,
                   "FOSOBJ03 migration lost completed-part metadata");
             end;
+         end;
+         declare
+            Page : Multipart_Part_Page;
+         begin
+            Store.List_Multipart_Parts
+              ("file-bucket", "checksummed-full",
+               US.To_String (Full_Checksum_Upload_ID),
+               (After => 0, Maximum => 1), null,
+               Ada.Real_Time.Time_Last, Page, Result);
+            Assert
+              (Result = Success and then Page.Parts.Length = 1
+               and then Page.Checksum.Algorithm = Checksum_CRC32C
+               and then Page.Checksum.Method = Full_Object_Checksum
+               and then Page.Parts.First_Element.Info.Checksum.Method =
+                 Full_Object_Checksum,
+               "files staged FULL_OBJECT checksum did not survive reopen");
+            Store.Abort_Multipart_Upload
+              ("file-bucket", "checksummed-full",
+               US.To_String (Full_Checksum_Upload_ID),
+               No_Abort_Multipart_Conditions, null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "files staged FULL_OBJECT fixture cleanup failed");
          end;
          declare
             Page : Multipart_Part_Page;
@@ -3508,6 +3810,46 @@ package body Object_Storage_Test_Cases is
                  (Page.Parts.First_Element.Info.Checksum.Value) =
                    US.To_String (Checksum_Part_Value),
                "files checksum metadata did not survive reopen");
+            declare
+               Path : constant String := Staged_Part_Path
+                 (US.To_String (Checksum_Upload_ID));
+               Original : Ada.Streams.Stream_Element;
+               Ignored  : Ada.Streams.Stream_Element;
+            begin
+               Exchange_Staged_Byte
+                 (Path, 89, Ada.Streams.Stream_Element
+                    (Character'Pos ('N')), Original);
+               Store.List_Multipart_Parts
+                 ("file-bucket", "checksummed",
+                  US.To_String (Checksum_Upload_ID),
+                  (After => 0, Maximum => 1), null,
+                  Ada.Real_Time.Time_Last, Page, Result);
+               Assert
+                 (Result = Backend_Unavailable,
+                  "staged composite checksum method corruption was accepted");
+               Exchange_Staged_Byte (Path, 89, Original, Ignored);
+
+               Exchange_Staged_Byte
+                 (Path, 94, Ada.Streams.Stream_Element
+                    (Character'Pos ('!')), Original);
+               Store.List_Multipart_Parts
+                 ("file-bucket", "checksummed",
+                  US.To_String (Checksum_Upload_ID),
+                  (After => 0, Maximum => 1), null,
+                  Ada.Real_Time.Time_Last, Page, Result);
+               Assert
+                 (Result = Backend_Unavailable,
+                  "staged composite checksum digest corruption was accepted");
+               Exchange_Staged_Byte (Path, 94, Original, Ignored);
+               Store.List_Multipart_Parts
+                 ("file-bucket", "checksummed",
+                  US.To_String (Checksum_Upload_ID),
+                  (After => 0, Maximum => 1), null,
+                  Ada.Real_Time.Time_Last, Page, Result);
+               Assert
+                 (Result = Success and then Page.Parts.Length = 1,
+                  "restored staged composite checksum did not reopen");
+            end;
             Completion.Append
               (Multipart_Part_Reference'
                  (Number => 1,
@@ -3574,7 +3916,7 @@ package body Object_Storage_Test_Cases is
                   and then US.To_String
                     (Snapshot.Parts.First_Element.Checksum.Value) =
                       US.To_String (Checksum_Part_Value),
-                  "FOSOBJ04 completed checksum metadata did not reopen");
+                  "FOSOBJ05 completed checksum metadata did not reopen");
             end;
          end;
          declare
@@ -3897,6 +4239,26 @@ package body Object_Storage_Test_Cases is
            ("file-bucket", "legacy", null,
             Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "files delete migrated legacy object");
+         Store.Delete_Object
+           ("file-bucket", "legacy4", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files delete FOSOBJ04 fixture");
+         Ada.Directories.Delete_File
+           (Ada.Directories.Compose
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose
+                    (Ada.Directories.Compose (Root, "buckets"),
+                     "file-bucket"),
+                  "objects"),
+               "6C6567616379626164.fos"));
+         Ada.Directories.Delete_File
+           (Ada.Directories.Compose
+              (Ada.Directories.Compose
+                 (Ada.Directories.Compose
+                    (Ada.Directories.Compose (Root, "buckets"),
+                     "file-bucket"),
+                  "objects"),
+               "6C656761637962616435.fos"));
          Store.Delete_Bucket
            ("file-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "files delete bucket");
@@ -4874,8 +5236,11 @@ package body Object_Storage_Test_Cases is
 
    procedure Check_Backend_Copy_Object (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
       package Memory renames Flyology.Object_Storage.Backends.Memory;
       package Files renames Flyology.Object_Storage.Backends.Files;
+      package US renames Ada.Strings.Unbounded;
       Root : constant String :=
         Ada.Directories.Compose
           (Ada.Directories.Compose
@@ -4910,6 +5275,49 @@ package body Object_Storage_Test_Cases is
          Copy_Object_Conformance.Exercise
            (Store, "files-copy-object-bucket");
       end;
+      declare
+         Store : Files.Store :=
+           Files.Open
+             (Root,
+              Maximum_Object_Size => 1 * 1_024 * 1_024,
+              Commit => Files.Power_Loss_Durable);
+         Info : Object_Information;
+         Tags : Object_Tag_Set;
+         Result : Status;
+         Head_Result : Status;
+      begin
+         Store.Head_Object
+           ("files-copy-object-bucket", "copy-tuple-destination", null,
+            Ada.Real_Time.Time_Last, Info, Head_Result);
+         Store.Get_Object_Tags
+           ("files-copy-object-bucket", "copy-tuple-destination", null,
+            Ada.Real_Time.Time_Last, Tags, Result);
+         Assert
+           (Head_Result = Success and then Result = Success
+            and then Info.Checksum.Algorithm = Checksum_XXHASH128
+            and then Info.Checksum.Method = Full_Object_Checksum
+            and then Info.Metadata.Cache_Control.Is_Set
+            and then US.To_String (Info.Metadata.Cache_Control.Value) =
+              "max-age=source/tuple"
+            and then Info.Metadata.Expires =
+              Optional_Metadata_Time'
+                (Is_Set => True, Value => -315_619_200)
+            and then
+              not Info.Metadata.Website_Redirect_Location.Is_Set
+            and then Info.Metadata.User.Length = 2
+            and then Tags.Length = 2
+            and then US.To_String (Tags.Items (1).Value) = "source",
+            "FOSOBJ05 metadata, tags, or direct checksum did not reopen");
+         Store.Head_Object
+           ("files-copy-object-bucket", "copy-max-expires", null,
+            Ada.Real_Time.Time_Last, Info, Result);
+         Assert
+           (Result = Success
+            and then Info.Metadata.Expires =
+              Optional_Metadata_Time'
+                (Is_Set => True, Value => Metadata_Time'Last),
+            "FOSOBJ05 maximum Expires did not survive reopen");
+      end;
       Clean;
    exception
       when others =>
@@ -4920,11 +5328,11 @@ package body Object_Storage_Test_Cases is
    procedure Check_S3_Core_Rules (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
+      use Flyology.Object_Storage;
       package Core renames Flyology.Object_Storage.S3.Core;
+      package IMF_Dates renames Flyology.Object_Storage.S3.IMF_Dates;
       use type Core.Multipart_State;
       use type Core.Range_Parse_Status;
-      use type Core.Range_Request_Kind;
-      use type Core.Range_Resolution_Kind;
 
       procedure Check_Range
         (Size     : Flyology.Object_Storage.Byte_Count;
@@ -4948,6 +5356,56 @@ package body Object_Storage_Test_Cases is
          end if;
       end Check_Range;
    begin
+      declare
+         Earliest : constant IMF_Dates.Metadata_Time_Result :=
+           IMF_Dates.Parse ("Mon, 01 Jan 0001 00:00:00 GMT");
+         Pre_Epoch : constant IMF_Dates.Metadata_Time_Result :=
+           IMF_Dates.Parse ("Fri, 01 Jan 1960 00:00:00 GMT");
+         Latest : constant IMF_Dates.Metadata_Time_Result :=
+           IMF_Dates.Parse ("Fri, 31 Dec 9999 23:59:59 GMT");
+         Midday_Leap : constant IMF_Dates.Metadata_Time_Result :=
+           IMF_Dates.Parse ("Fri, 01 Jan 1960 12:34:60 GMT");
+         Day_End_Leap : constant IMF_Dates.Metadata_Time_Result :=
+           IMF_Dates.Parse ("Fri, 01 Jan 1960 23:59:60 GMT");
+      begin
+         Assert
+           (Earliest.Valid
+            and then Earliest.Value = Metadata_Time'First
+            and then IMF_Dates.Image (Earliest.Value) =
+              "Mon, 01 Jan 0001 00:00:00 GMT",
+            "earliest canonical Expires did not round trip");
+         Assert
+           (Pre_Epoch.Valid
+            and then Pre_Epoch.Value = -315_619_200
+            and then IMF_Dates.Image (Pre_Epoch.Value) =
+              "Fri, 01 Jan 1960 00:00:00 GMT",
+            "pre-epoch canonical Expires did not round trip");
+         Assert
+           (Latest.Valid
+            and then Latest.Value = Metadata_Time'Last
+            and then IMF_Dates.Image (Latest.Value) =
+              "Fri, 31 Dec 9999 23:59:59 GMT",
+            "latest canonical Expires did not round trip");
+         Assert
+           (Midday_Leap.Valid
+            and then IMF_Dates.Image (Midday_Leap.Value) =
+              "Fri, 01 Jan 1960 12:35:00 GMT"
+            and then Day_End_Leap.Valid
+            and then IMF_Dates.Image (Day_End_Leap.Value) =
+              "Sat, 02 Jan 1960 00:00:00 GMT",
+            "canonical Expires leap second was not normalized");
+         Assert
+           (not IMF_Dates.Parse
+              ("Thu, 31 Dec 9999 23:59:59 GMT").Valid
+            and then not IMF_Dates.Parse
+              ("Mon, 29 Feb 1900 00:00:00 GMT").Valid,
+            "malformed canonical Expires was accepted");
+         Assert
+           (not IMF_Dates.Parse
+              ("Fri, 31 Dec 9999 23:59:60 GMT").Valid,
+            "terminal year-9999 leap second exceeded typed Expires range");
+      end;
+
       Assert
         (not Core.Valid_Part_Size (Core.Minimum_Part_Size - 1, False),
          "nonfinal part below minimum");

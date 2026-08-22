@@ -70,6 +70,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Key              : String;
       Payload          : String;
       Info             : Object_Information;
+      Tags             : Object_Tag_Set;
       Previous_Payload : out Ada.Strings.Unbounded.Unbounded_String;
       Result           : out Status;
       Conditions       : Write_Conditions := Default_Write_Conditions);
@@ -86,6 +87,22 @@ package Flyology.Object_Storage.SQLite.Catalogs is
    --  When present, Check runs after a successful lookup while the catalog
    --  operation gate is still held. It may validate the immutable external
    --  payload before a concurrent publication retires the previous file.
+
+   procedure Find_Object
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Key     : String;
+      Payload : out Ada.Strings.Unbounded.Unbounded_String;
+      Info    : out Object_Information;
+      Tags    : out Object_Tag_Set;
+      Result  : out Status;
+      Check   : access procedure
+        (Payload : String;
+         Info    : Object_Information;
+         Tags    : Object_Tag_Set) := null);
+   --  Return tags from the same protected catalog snapshot as Info. When
+   --  present, Check runs while that snapshot and external payload lifetime
+   --  remain protected by the catalog operation gate.
 
    procedure Get_Object_Attributes
      (Item     : in out Catalog;

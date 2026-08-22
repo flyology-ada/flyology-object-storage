@@ -84,7 +84,8 @@ procedure Files_Copy_Benchmark is
    Source : Generated_Source := (Total => Bytes, Remaining => Bytes);
    Options : constant Storage.Put_Options :=
      (Entity_Tag => US.To_Unbounded_String ("benchmark-source"),
-      Content_Type => US.To_Unbounded_String ("application/octet-stream"));
+      Content_Type => US.To_Unbounded_String ("application/octet-stream"),
+      others => <>);
    Copy_Options : constant Backends.Copy_Options :=
      Backends.Default_Copy_Options;
    Info : Storage.Object_Information;

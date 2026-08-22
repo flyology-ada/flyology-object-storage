@@ -112,7 +112,14 @@ package body Flyology.Object_Storage.Backends.SQLite is
 
    function Valid_Options (Options : Put_Options) return Boolean is
      (US.Length (Options.Entity_Tag) <= Maximum_Metadata_Length
-      and then US.Length (Options.Content_Type) <= Maximum_Metadata_Length);
+      and then US.Length (Options.Content_Type) <= Maximum_Metadata_Length
+      and then Valid_Object_Metadata
+        (Options.Metadata, US.To_String (Options.Content_Type))
+      and then Valid_Object_Tag_Set (Options.Tags)
+      and then
+        (Options.Checksum = No_Checksum_Information
+         or else Checksum_Engine.Valid_Direct_Configuration
+           (Options.Checksum)));
 
    procedure Check_Context
      (Token    : access Flyology.Cancellation.Token;
@@ -539,6 +546,10 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Previous  : US.Unbounded_String;
       Renamed   : Boolean;
       Hash      : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
+      Direct_Hash : Checksum_Engine.Context
+        (Checksum_Engine.Algorithm_Value
+           (if Options.Checksum.Algorithm = No_Checksum
+            then Checksum_CRC64NVME else Options.Checksum.Algorithm));
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
@@ -608,6 +619,10 @@ package body Flyology.Object_Storage.Backends.SQLite is
                end if;
                SIO.Write (File, Buffer (Buffer'First .. Last));
                GNAT.MD5.Update (Hash, Buffer (Buffer'First .. Last));
+               if Options.Checksum.Algorithm /= No_Checksum then
+                  Checksum_Engine.Update
+                    (Direct_Hash, Buffer (Buffer'First .. Last));
+               end if;
                Total := Total + Count;
             end;
          elsif not Finished then
@@ -635,7 +650,15 @@ package body Flyology.Object_Storage.Backends.SQLite is
             else US.To_Unbounded_String (GNAT.MD5.Digest (Hash))),
          Content_Type => Options.Content_Type,
          Version      => US.Null_Unbounded_String,
-         Checksum     => No_Checksum_Information);
+         Checksum     =>
+           (if Options.Checksum.Algorithm = No_Checksum
+            then No_Checksum_Information
+            else
+              (Algorithm => Options.Checksum.Algorithm,
+               Method    => Full_Object_Checksum,
+               Value     => US.To_Unbounded_String
+                 (Checksum_Engine.Finish (Direct_Hash)))),
+         Metadata     => Options.Metadata);
       Check_Context (Token, Deadline);
       GNAT.OS_Lib.Rename_File
         (US.To_String (Staging),
@@ -649,7 +672,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Published := True;
       Sync_Path (Objects_Path (Item), Directory => True);
       Catalogs.Put_Object
-        (Item.Catalog, Bucket, Key, US.To_String (Payload), Info,
+        (Item.Catalog, Bucket, Key, US.To_String (Payload), Info, Options.Tags,
          Previous, Result, Conditions);
       if Result /= Success then
          Ada.Directories.Delete_File
@@ -764,11 +787,15 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Payload     : US.Unbounded_String;
       File        : aliased SIO.File_Type;
       Source_Info : Object_Information;
+      Source_Tags : Object_Tag_Set;
       Put_Options_Value : Put_Options;
 
       procedure Open_Source
-        (Payload_Name : String; Snapshot : Object_Information)
+        (Payload_Name : String;
+         Snapshot     : Object_Information;
+         Tags         : Object_Tag_Set)
       is
+         pragma Unreferenced (Tags);
          Path : constant String := Join (Objects_Path (Item), Payload_Name);
       begin
          Check_Context (Token, Deadline);
@@ -795,12 +822,18 @@ package body Flyology.Object_Storage.Backends.SQLite is
         or else not Valid_Object_Key (Destination_Key)
         or else not Valid_Copy_Conditions (Options.Conditions)
         or else not Valid_Write_Conditions (Options.Destination_Conditions)
+        or else not Valid_Object_Metadata
+          (Options.Metadata, US.To_String (Options.Content_Type))
+        or else not Valid_Object_Tag_Set (Options.Tags)
       then
          Result := Invalid_Request;
          return;
       elsif Source_Bucket = Destination_Bucket
         and then Source_Key = Destination_Key
         and then Options.Metadata_Directive = Copy_Metadata
+        and then Options.Tagging_Directive = Copy_Tags
+        and then Options.Selected_Checksum = No_Checksum
+        and then not Options.Metadata.Website_Redirect_Location.Is_Set
       then
          Result := Invalid_Request;
          return;
@@ -808,7 +841,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
 
       Catalogs.Find_Object
         (Item.Catalog, Source_Bucket, Source_Key,
-         Payload, Source_Info, Result, Open_Source'Access);
+         Payload, Source_Info, Source_Tags, Result, Open_Source'Access);
       if Result = Bucket_Not_Found then
          Result := Source_Bucket_Not_Found;
          return;
@@ -835,7 +868,26 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Content_Type =>
            (if Options.Metadata_Directive = Copy_Metadata
             then Source_Info.Content_Type
-            else Options.Content_Type));
+            else Options.Content_Type),
+         Metadata =>
+           (if Options.Metadata_Directive = Copy_Metadata
+            then Source_Info.Metadata else Options.Metadata),
+         Tags =>
+           (if Options.Tagging_Directive = Copy_Tags
+            then Source_Tags else Options.Tags),
+         Checksum =>
+           (Algorithm =>
+              (if Options.Selected_Checksum /= No_Checksum
+               then Options.Selected_Checksum
+               elsif Source_Info.Checksum.Algorithm /= No_Checksum
+               then Source_Info.Checksum.Algorithm
+               else Checksum_CRC64NVME),
+            Method => Full_Object_Checksum,
+            Value  => US.Null_Unbounded_String));
+      if Options.Metadata_Directive = Copy_Metadata then
+         Put_Options_Value.Metadata.Website_Redirect_Location :=
+           Options.Metadata.Website_Redirect_Location;
+      end if;
       declare
          Source : File_Source :=
            (File      => File'Access,
@@ -1451,7 +1503,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
                then No_Checksum_Information
                else (Algorithm => Upload_Options.Checksum.Algorithm,
                      Method    => Upload_Options.Checksum.Method,
-                     Value     => Actual_Checksum)));
+                     Value     => Actual_Checksum)),
+            Metadata     => Empty_Object_Metadata);
       end;
       Check_Context (Token, Deadline);
       GNAT.OS_Lib.Rename_File
@@ -1922,7 +1975,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
               (Natural'Image (Natural (Records.Length)), Ada.Strings.Both)),
          Content_Type => Upload_Options.Content_Type,
          Version      => US.Null_Unbounded_String,
-         Checksum     => Completed_Checksum);
+         Checksum     => Completed_Checksum,
+         Metadata     => Empty_Object_Metadata);
       Create_Staging_File
         (Item, Bucket, Key & Upload_ID, File, Staging, Payload);
       Opened := True;

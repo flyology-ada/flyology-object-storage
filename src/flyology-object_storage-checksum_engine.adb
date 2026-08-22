@@ -46,6 +46,12 @@ package body Flyology.Object_Storage.Checksum_Engine is
       end if;
    end Valid_Configuration;
 
+   function Valid_Direct_Configuration
+     (Value : Checksum_Information) return Boolean is
+     (Value.Algorithm /= No_Checksum
+      and then Value.Method = Full_Object_Checksum
+      and then US.Length (Value.Value) = 0);
+
    function Valid_Digest
      (Value : String; Algorithm : Checksum_Algorithm) return Boolean is
      (Algorithm /= No_Checksum

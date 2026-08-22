@@ -221,6 +221,66 @@ is
           and then Resolve_Range'Result.Length =
             Resolve_Range'Result.Last - Resolve_Range'Result.First + 1);
 
+   Maximum_User_Metadata_Entries : constant := 64;
+   Maximum_User_Metadata_Key_Bytes : constant := 117;
+   Maximum_User_Metadata_Bytes : constant := 2 * 1_024;
+   Maximum_System_Metadata_Bytes : constant := 2 * 1_024;
+   Maximum_System_Metadata_Value_Bytes : constant := 2 * 1_024;
+
+   type Optional_Metadata_Value is record
+      Is_Set : Boolean := False;
+      Value  : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  A typed S3 Expires value spanning canonical four-digit years 0001
+   --  through 9999; wire parsing and rendering remain in the S3 layer.
+   type Metadata_Time is range -62_135_596_800 .. 253_402_300_799;
+   type Optional_Metadata_Time is record
+      Is_Set : Boolean := False;
+      Value  : Metadata_Time := 0;
+   end record;
+
+   type User_Metadata_Entry is record
+      Key   : Ada.Strings.Unbounded.Unbounded_String;
+      Value : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   subtype User_Metadata_Count is
+     Natural range 0 .. Maximum_User_Metadata_Entries;
+   subtype User_Metadata_Index is
+     Positive range 1 .. Maximum_User_Metadata_Entries;
+   type User_Metadata_Array is
+     array (User_Metadata_Index) of User_Metadata_Entry;
+
+   type User_Metadata_Set is record
+      Length : User_Metadata_Count := 0;
+      Items  : User_Metadata_Array;
+   end record;
+
+   Empty_User_Metadata : constant User_Metadata_Set;
+
+   --  User-configurable S3 system and user metadata retained with an object.
+   --  Content-Type remains in Object_Information for API compatibility and
+   --  participates in the same system-metadata byte budget.
+   type Object_Metadata is record
+      Cache_Control             : Optional_Metadata_Value;
+      Content_Disposition       : Optional_Metadata_Value;
+      Content_Encoding          : Optional_Metadata_Value;
+      Content_Language          : Optional_Metadata_Value;
+      Expires                   : Optional_Metadata_Time;
+      Website_Redirect_Location : Optional_Metadata_Value;
+      User                      : User_Metadata_Set;
+   end record;
+
+   Empty_Object_Metadata : constant Object_Metadata;
+
+   --  Validate exact S3 metadata budgets. User bytes are the UTF-8 bytes of
+   --  every key and value. System bytes are the US-ASCII bytes of each
+   --  present wire name and value, including Content-Type when nonempty.
+   --  User keys are canonical lowercase HTTP token suffixes and unique.
+   function Valid_Object_Metadata
+     (Metadata : Object_Metadata; Content_Type : String) return Boolean;
+
    --  Metadata retained with one committed object version.
    type Object_Information is record
       Size          : Byte_Count := 0;
@@ -229,6 +289,7 @@ is
       Content_Type  : Ada.Strings.Unbounded.Unbounded_String;
       Version       : Ada.Strings.Unbounded.Unbounded_String;
       Checksum      : Checksum_Information;
+      Metadata      : Object_Metadata;
    end record;
 
    --  One S3 object tag. The wire boundary validates the documented UTF-8
@@ -274,6 +335,9 @@ is
    type Put_Options is record
       Entity_Tag   : Ada.Strings.Unbounded.Unbounded_String;
       Content_Type : Ada.Strings.Unbounded.Unbounded_String;
+      Metadata     : Object_Metadata;
+      Tags         : Object_Tag_Set;
+      Checksum     : Checksum_Information;
    end record;
 
    --  Default metadata for an opaque binary object.
@@ -303,11 +367,16 @@ is
 
 private
    No_Checksum_Information : constant Checksum_Information := (others => <>);
+   Empty_User_Metadata : constant User_Metadata_Set := (others => <>);
+   Empty_Object_Metadata : constant Object_Metadata := (others => <>);
    Empty_Object_Tags : constant Object_Tag_Set := (others => <>);
    Default_Write_Conditions : constant Write_Conditions := (others => <>);
    Default_Put_Options : constant Put_Options :=
      (Entity_Tag   => Ada.Strings.Unbounded.Null_Unbounded_String,
       Content_Type =>
         Ada.Strings.Unbounded.To_Unbounded_String
-          ("application/octet-stream"));
+          ("application/octet-stream"),
+      Metadata     => (others => <>),
+      Tags         => (others => <>),
+      Checksum     => (others => <>));
 end Flyology.Object_Storage;

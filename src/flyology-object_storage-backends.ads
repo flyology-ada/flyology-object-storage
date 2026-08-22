@@ -93,10 +93,15 @@ package Flyology.Object_Storage.Backends is
      (Conditions : Copy_Conditions) return Boolean;
 
    type Copy_Metadata_Directive is (Copy_Metadata, Replace_Metadata);
+   type Copy_Tagging_Directive is (Copy_Tags, Replace_Tags);
 
    type Copy_Options is record
       Metadata_Directive : Copy_Metadata_Directive := Copy_Metadata;
       Content_Type       : Ada.Strings.Unbounded.Unbounded_String;
+      Metadata           : Object_Metadata;
+      Tagging_Directive  : Copy_Tagging_Directive := Copy_Tags;
+      Tags               : Object_Tag_Set;
+      Selected_Checksum  : Checksum_Algorithm := No_Checksum;
       Conditions         : Copy_Conditions;
       Destination_Conditions : Write_Conditions;
    end record;
@@ -812,6 +817,10 @@ private
       Content_Type       =>
         Ada.Strings.Unbounded.To_Unbounded_String
           ("application/octet-stream"),
+      Metadata           => (others => <>),
+      Tagging_Directive  => Copy_Tags,
+      Tags               => (others => <>),
+      Selected_Checksum  => No_Checksum,
       Conditions         => (others => <>),
       Destination_Conditions => (others => <>));
 

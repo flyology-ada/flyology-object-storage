@@ -5,6 +5,7 @@ with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.IO;
 with Flyology.Object_Storage;
+with Flyology.Object_Storage.Checksum_Engine;
 
 package body Copy_Object_Conformance is
 
@@ -171,21 +172,96 @@ package body Copy_Object_Conformance is
       Info   : Object_Information;
       Result : Status;
 
+      function Detailed_Metadata
+        (Label : String; Redirect : String := "") return Object_Metadata
+      is
+         Value : Object_Metadata := Empty_Object_Metadata;
+      begin
+         Value.Cache_Control :=
+           (True, US.To_Unbounded_String ("max-age=" & Label));
+         Value.Content_Disposition :=
+           (True, US.To_Unbounded_String ("attachment; filename=" & Label));
+         Value.Content_Encoding :=
+           (True, US.To_Unbounded_String ("identity"));
+         Value.Content_Language :=
+           (True, US.To_Unbounded_String ("en"));
+         Value.Expires := (True, -315_619_200);
+         if Redirect'Length > 0 then
+            Value.Website_Redirect_Location :=
+              (True, US.To_Unbounded_String (Redirect));
+         end if;
+         Value.User.Length := 2;
+         Value.User.Items (1) :=
+           (US.To_Unbounded_String ("origin"),
+            US.To_Unbounded_String (Label));
+         Value.User.Items (2) :=
+           (US.To_Unbounded_String ("trace-id"),
+            US.To_Unbounded_String ("copy-object"));
+         return Value;
+      end Detailed_Metadata;
+
+      function Detailed_Tags (Label : String) return Object_Tag_Set is
+         Value : Object_Tag_Set := Empty_Object_Tags;
+      begin
+         Value.Length := 2;
+         Value.Items (1) :=
+           (US.To_Unbounded_String ("state"), US.To_Unbounded_String (Label));
+         Value.Items (2) :=
+           (US.To_Unbounded_String ("suite"),
+            US.To_Unbounded_String ("copy"));
+         return Value;
+      end Detailed_Tags;
+
+      procedure Put_Detailed
+        (Key       : String;
+         Payload   : String;
+         Label     : String;
+         Algorithm : Checksum_Algorithm;
+         Metadata  : Object_Metadata;
+         Tags      : Object_Tag_Set;
+         Info      : out Object_Information;
+         Result    : out Status)
+      is
+         Source : Buffer_Source :=
+           (Data => Flyology.Bytes.From_Byte_String (Payload), Position => 0);
+         Put : Put_Options := Default_Put_Options;
+      begin
+         Put.Content_Type := US.To_Unbounded_String (Label);
+         Put.Metadata := Metadata;
+         Put.Tags := Tags;
+         Put.Checksum :=
+           (Algorithm => Algorithm, Method => Full_Object_Checksum,
+            Value => US.Null_Unbounded_String);
+         Store.Put_Object
+           (Bucket, Key, Source, Put, null, Ada.Real_Time.Time_Last,
+            Info, Result);
+      end Put_Detailed;
+
       procedure Put
         (Key          : String;
          Payload      : String;
          Content_Type : String;
          ETag         : String;
          Info         : out Object_Information;
-         Result       : out Status)
+         Result       : out Status;
+         Detailed     : Boolean := False)
       is
          Source : Buffer_Source :=
            (Data     => Flyology.Bytes.From_Byte_String (Payload),
             Position => 0);
-         Options : constant Put_Options :=
+         Options : Put_Options :=
            (Entity_Tag   => US.To_Unbounded_String (ETag),
-            Content_Type => US.To_Unbounded_String (Content_Type));
+            Content_Type => US.To_Unbounded_String (Content_Type),
+            others => <>);
       begin
+         if Detailed then
+            Options.Metadata := Detailed_Metadata (Content_Type);
+            Options.Tags := Detailed_Tags (Content_Type);
+            Options.Checksum :=
+              (Algorithm => Checksum_CRC32,
+               Method => Full_Object_Checksum,
+               Value => US.Null_Unbounded_String);
+         end if;
          Store.Put_Object
            (Bucket, Key, Source, Options, null, Ada.Real_Time.Time_Last,
             Info, Result);
@@ -216,6 +292,37 @@ package body Copy_Object_Conformance is
             and then US.To_String (Snapshot.Content_Type) = Content_Type,
             Message);
       end Require_State;
+
+      procedure Require_Detailed
+        (Key, Payload, Content_Type : String;
+         Metadata : Object_Metadata;
+         Tags : Object_Tag_Set;
+         Algorithm : Checksum_Algorithm;
+         Message : String)
+      is
+         Observed : Status;
+         Tag_Result : Status;
+         Snapshot : Object_Information;
+         Observed_Tags : Object_Tag_Set;
+         Value : constant String := Read_Body (Key, Observed, Snapshot);
+      begin
+         Store.Get_Object_Tags
+           (Bucket, Key, null, Ada.Real_Time.Time_Last, Observed_Tags,
+            Tag_Result);
+         Require
+           (Observed = Success
+            and then Tag_Result = Success
+            and then Value = Payload
+            and then US.To_String (Snapshot.Content_Type) = Content_Type
+            and then Snapshot.Metadata = Metadata
+            and then Observed_Tags = Tags
+            and then Snapshot.Checksum.Algorithm = Algorithm
+            and then Snapshot.Checksum.Method = Full_Object_Checksum
+            and then
+              Flyology.Object_Storage.Checksum_Engine.Valid_Digest
+                (US.To_String (Snapshot.Checksum.Value), Algorithm),
+            Message);
+      end Require_Detailed;
 
       task type Copier
         (Gate      : Start_Gate_Access;
@@ -255,10 +362,17 @@ package body Copy_Object_Conformance is
          Local_Result : Status;
          Source : Buffer_Source :=
            (Data => Flyology.Bytes.From_Byte_String (Large_B), Position => 0);
-         Options : constant Put_Options :=
+         Options : Put_Options :=
            (Entity_Tag => US.To_Unbounded_String ("race-b"),
-            Content_Type => US.To_Unbounded_String ("writer/race"));
+            Content_Type => US.To_Unbounded_String ("writer/race"),
+            others => <>);
       begin
+         Options.Metadata := Detailed_Metadata ("writer/race");
+         Options.Tags := Detailed_Tags ("writer/race");
+         Options.Checksum :=
+           (Algorithm => Checksum_CRC32,
+            Method => Full_Object_Checksum,
+            Value => US.Null_Unbounded_String);
          Gate.Wait;
          if Kind = Delete_Source then
             Target.Delete_Object
@@ -295,6 +409,102 @@ package body Copy_Object_Conformance is
       Require_State
         (Destination_Key, "source-body", "source/type",
          "ordinary CopyObject did not preserve one snapshot");
+      Require
+        (Destination_Info.Checksum.Algorithm = Checksum_CRC64NVME
+         and then Destination_Info.Checksum.Method = Full_Object_Checksum,
+         "CopyObject did not default an unchecksummed source to CRC64NVME");
+
+      declare
+         Tuple_Source : constant String := "copy-tuple-source";
+         Tuple_Destination : constant String := "copy-tuple-destination";
+         Max_Expires_Destination : constant String := "copy-max-expires";
+         Source_Metadata : constant Object_Metadata :=
+           Detailed_Metadata ("source/tuple", "/must-not-copy");
+         Source_Tags : constant Object_Tag_Set := Detailed_Tags ("source");
+         Expected_Copy_Metadata : Object_Metadata := Source_Metadata;
+         Replacement_Metadata : Object_Metadata :=
+           Detailed_Metadata ("replacement/tuple");
+         Replacement_Tags : constant Object_Tag_Set :=
+           Detailed_Tags ("replacement");
+      begin
+         Replacement_Metadata.Expires :=
+           (Is_Set => True, Value => Metadata_Time'Last);
+         Put_Detailed
+           (Tuple_Source, "tuple-body", "source/tuple", Checksum_SHA256,
+            Source_Metadata, Source_Tags, Info, Result);
+         Require (Result = Success, "detailed CopyObject source put failed");
+         Options := Default_Copy_Options;
+         Store.Copy_Object
+           (Bucket, Tuple_Source, Bucket, Tuple_Destination, Options, null,
+            Ada.Real_Time.Time_Last, Info, Result);
+         Expected_Copy_Metadata.Website_Redirect_Location :=
+           (False, US.Null_Unbounded_String);
+         Require
+           (Result = Success,
+            "detailed default CopyObject failed: " & Status'Image (Result));
+         Require_Detailed
+           (Tuple_Destination, "tuple-body", "source/tuple",
+            Expected_Copy_Metadata, Source_Tags, Checksum_SHA256,
+            "default CopyObject lost metadata, tags, or checksum algorithm");
+
+         Options := Default_Copy_Options;
+         Options.Metadata_Directive := Replace_Metadata;
+         Options.Content_Type := US.To_Unbounded_String ("replacement/tuple");
+         Options.Metadata := Replacement_Metadata;
+         Options.Selected_Checksum := Checksum_SHA512;
+         Store.Copy_Object
+           (Bucket, Tuple_Source, Bucket, Tuple_Destination, Options, null,
+            Ada.Real_Time.Time_Last, Info, Result);
+         Require (Result = Success, "CopyObject metadata replace failed");
+         Require_Detailed
+           (Tuple_Destination, "tuple-body", "replacement/tuple",
+            Replacement_Metadata, Source_Tags, Checksum_SHA512,
+            "CopyObject metadata replace changed tags or lost checksum");
+         Store.Copy_Object
+           (Bucket, Tuple_Source, Bucket, Max_Expires_Destination, Options,
+            null, Ada.Real_Time.Time_Last, Info, Result);
+         Require (Result = Success, "maximum Expires copy failed");
+         Require_Detailed
+           (Max_Expires_Destination, "tuple-body", "replacement/tuple",
+            Replacement_Metadata, Source_Tags, Checksum_SHA512,
+            "maximum Expires metadata did not publish atomically");
+
+         Options := Default_Copy_Options;
+         Options.Tagging_Directive := Replace_Tags;
+         Options.Tags := Replacement_Tags;
+         Options.Metadata.Website_Redirect_Location :=
+           (True, US.To_Unbounded_String ("/explicit-copy"));
+         Expected_Copy_Metadata := Source_Metadata;
+         Expected_Copy_Metadata.Website_Redirect_Location :=
+           Options.Metadata.Website_Redirect_Location;
+         Store.Copy_Object
+           (Bucket, Tuple_Source, Bucket, Tuple_Destination, Options, null,
+            Ada.Real_Time.Time_Last, Info, Result);
+         Require (Result = Success, "CopyObject tag replace failed");
+         Require_Detailed
+           (Tuple_Destination, "tuple-body", "source/tuple",
+            Expected_Copy_Metadata, Replacement_Tags, Checksum_SHA256,
+            "CopyObject tag replace changed metadata or checksum algorithm");
+
+         for Algorithm in Checksum_Algorithm loop
+            if Algorithm /= No_Checksum then
+               Options := Default_Copy_Options;
+               Options.Selected_Checksum := Algorithm;
+               Store.Copy_Object
+                 (Bucket, Tuple_Source, Bucket, Tuple_Destination,
+                  Options, null, Ada.Real_Time.Time_Last, Info, Result);
+               Require
+                 (Result = Success
+                  and then Info.Checksum.Algorithm = Algorithm
+                  and then Info.Checksum.Method = Full_Object_Checksum
+                  and then
+                    Flyology.Object_Storage.Checksum_Engine.Valid_Digest
+                      (US.To_String (Info.Checksum.Value), Algorithm),
+                  "CopyObject direct checksum algorithm failed: " &
+                  Checksum_Algorithm'Image (Algorithm));
+            end if;
+         end loop;
+      end;
 
       Options.Conditions.If_Match := US.To_Unbounded_String
         ('"' & US.To_String (Source_Info.Entity_Tag) & '"');
@@ -444,7 +654,7 @@ package body Copy_Object_Conformance is
       for Iteration in 1 .. Race_Iterations loop
          Put
            (Race_Source_Key, Large_A, "source/race", "race-a",
-            Info, Result);
+            Info, Result, Detailed => True);
          Require (Result = Success, "CopyObject race source reset failed");
          Put
            (Race_Destination_Key, "sentinel", "sentinel/type", "sentinel",
@@ -474,19 +684,37 @@ package body Copy_Object_Conformance is
             declare
                Observed : Status;
                Snapshot : Object_Information;
+               Observed_Tags : Object_Tag_Set;
+               Tag_Result : Status;
                Value : constant String := Read_Body
                  (Race_Destination_Key, Observed, Snapshot);
                Content_Type : constant String :=
                  US.To_String (Snapshot.Content_Type);
             begin
+               Store.Get_Object_Tags
+                 (Bucket, Race_Destination_Key, null,
+                  Ada.Real_Time.Time_Last, Observed_Tags, Tag_Result);
                Require
                  (Observed = Success
+                  and then Tag_Result = Success
+                  and then Snapshot.Checksum.Algorithm = Checksum_CRC32
+                  and then Snapshot.Checksum.Method = Full_Object_Checksum
                   and then
-                    ((Value = Large_A and then Content_Type = "source/race")
+                    ((Value = Large_A
+                      and then Content_Type = "source/race"
+                      and then Snapshot.Metadata =
+                        Detailed_Metadata ("source/race")
+                      and then Observed_Tags =
+                        Detailed_Tags ("source/race"))
                      or else
                        (Value = Large_B
-                        and then Content_Type = "writer/race")),
-                  "CopyObject combined body and metadata snapshots");
+                        and then Content_Type = "writer/race"
+                        and then Snapshot.Metadata =
+                          Detailed_Metadata ("writer/race")
+                        and then Observed_Tags =
+                          Detailed_Tags ("writer/race"))),
+                  "CopyObject combined body, info, tag, or checksum " &
+                  "snapshots");
             end;
          else
             Require
@@ -499,7 +727,7 @@ package body Copy_Object_Conformance is
 
          Put
            (Race_Source_Key, Large_A, "source/race", "race-a",
-            Info, Result);
+            Info, Result, Detailed => True);
          Require (Result = Success, "same-key race reset failed");
          declare
             Gate : aliased Start_Gate;
@@ -522,19 +750,40 @@ package body Copy_Object_Conformance is
          declare
             Observed : Status;
             Snapshot : Object_Information;
+            Observed_Tags : Object_Tag_Set;
+            Tag_Result : Status;
             Value : constant String := Read_Body
               (Race_Source_Key, Observed, Snapshot);
             Content_Type : constant String :=
               US.To_String (Snapshot.Content_Type);
          begin
+            Store.Get_Object_Tags
+              (Bucket, Race_Source_Key, null, Ada.Real_Time.Time_Last,
+               Observed_Tags, Tag_Result);
             Require
               (Observed = Success
+               and then Tag_Result = Success
+               and then Snapshot.Checksum.Algorithm = Checksum_CRC32
+               and then Snapshot.Checksum.Method = Full_Object_Checksum
                and then
-                 ((Value = Large_A and then Content_Type = "copy/race")
+                 ((Value = Large_A
+                   and then Content_Type = "copy/race"
+                   and then Snapshot.Metadata = Empty_Object_Metadata
+                   and then Observed_Tags = Detailed_Tags ("source/race"))
                   or else
                     (Value = Large_B
-                     and then Content_Type in "copy/race" | "writer/race")),
-               "same-key CopyObject mixed publication body and metadata");
+                     and then
+                       ((Content_Type = "copy/race"
+                         and then Snapshot.Metadata = Empty_Object_Metadata
+                         and then Observed_Tags =
+                           Detailed_Tags ("writer/race"))
+                        or else
+                          (Content_Type = "writer/race"
+                           and then Snapshot.Metadata =
+                             Detailed_Metadata ("writer/race")
+                           and then Observed_Tags =
+                             Detailed_Tags ("writer/race"))))),
+               "same-key CopyObject mixed body/info/tag/checksum publication");
          end;
       end loop;
    end Exercise;

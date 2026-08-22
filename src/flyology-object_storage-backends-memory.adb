@@ -438,6 +438,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Key    : String;
          Data   : in out Owned_Bytes;
          Info   : Object_Information;
+         Tags   : Object_Tag_Set;
          Conditions : Write_Conditions;
          Stored : out Object_Information;
          Result : out Status)
@@ -502,7 +503,7 @@ package body Flyology.Object_Storage.Backends.Memory is
             Objects (Index).Bucket := Stored_Bucket;
             Objects (Index).Key := Stored_Key;
             Objects (Index).Info := Info;
-            Objects (Index).Tags := Empty_Object_Tags;
+            Objects (Index).Tags := Tags;
             Objects (Index).Completed_Parts.Clear;
             Stored := Info;
             Move (Objects (Index).Data, Data);
@@ -518,6 +519,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Key    : String;
          Data   : out Owned_Bytes;
          Info   : out Object_Information;
+         Tags   : out Object_Tag_Set;
          Result : out Status)
       is
          Index : constant Natural := Object_Index (Bucket, Key);
@@ -526,6 +528,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       begin
          Data := (Ada.Finalization.Controlled with others => <>);
          Info := Empty_Info;
+         Tags := Empty_Object_Tags;
          if Bucket_Index (Bucket) = 0 then
             Result := Bucket_Not_Found;
          elsif Index = 0 then
@@ -542,6 +545,7 @@ package body Flyology.Object_Storage.Backends.Memory is
             Data := Objects (Index).Data;
             Copied := True;
             Info := Objects (Index).Info;
+            Tags := Objects (Index).Tags;
             Result := Success;
          end if;
       exception
@@ -1312,7 +1316,8 @@ package body Flyology.Object_Storage.Backends.Memory is
                      Ada.Strings.Both)),
                Content_Type => Uploads (Upload_At).Options.Content_Type,
                Version      => Ada.Strings.Unbounded.Null_Unbounded_String,
-               Checksum     => Completed_Checksum);
+               Checksum     => Completed_Checksum,
+               Metadata     => (others => <>));
             Stored_Bucket : constant Ada.Strings.Unbounded.Unbounded_String :=
               Ada.Strings.Unbounded.To_Unbounded_String (Bucket);
             Stored_Key : constant Ada.Strings.Unbounded.Unbounded_String :=
@@ -1609,11 +1614,23 @@ package body Flyology.Object_Storage.Backends.Memory is
       Declared : Source_Length := (Kind => Unknown);
       Stored   : Object_Information;
       Hash     : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
+      Direct_Hash : Checksum_Engine.Context
+        (Checksum_Engine.Algorithm_Value
+           (if Options.Checksum.Algorithm = No_Checksum
+            then Checksum_CRC64NVME else Options.Checksum.Algorithm));
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+        or else not Valid_Object_Metadata
+          (Options.Metadata, Ada.Strings.Unbounded.To_String
+             (Options.Content_Type))
+        or else not Valid_Object_Tag_Set (Options.Tags)
+        or else
+          (Options.Checksum /= No_Checksum_Information
+           and then not Checksum_Engine.Valid_Direct_Configuration
+             (Options.Checksum))
       then
          Result := Invalid_Request;
          return;
@@ -1685,6 +1702,10 @@ package body Flyology.Object_Storage.Backends.Memory is
                end;
             end;
             GNAT.MD5.Update (Hash, Buffer (Buffer'First .. Last));
+            if Options.Checksum.Algorithm /= No_Checksum then
+               Checksum_Engine.Update
+                 (Direct_Hash, Buffer (Buffer'First .. Last));
+            end if;
             Append (Data, Buffer (Buffer'First .. Last));
          elsif not Finished then
             Result := Invalid_Request;
@@ -1711,12 +1732,21 @@ package body Flyology.Object_Storage.Backends.Memory is
               (GNAT.MD5.Digest (Hash))),
          Content_Type => Options.Content_Type,
          Version      => Ada.Strings.Unbounded.Null_Unbounded_String,
-         Checksum     => (others => <>));
+         Checksum     =>
+           (if Options.Checksum.Algorithm = No_Checksum
+            then No_Checksum_Information
+            else
+              (Algorithm => Options.Checksum.Algorithm,
+               Method    => Full_Object_Checksum,
+               Value     => Ada.Strings.Unbounded.To_Unbounded_String
+                 (Checksum_Engine.Finish (Direct_Hash)))),
+         Metadata     => Options.Metadata);
       Item.State.Commit
         (Bucket => Bucket,
          Key    => Key,
          Data   => Data,
          Info   => Stored,
+         Tags   => Options.Tags,
          Conditions => Conditions,
          Stored => Info,
          Result => Result);
@@ -1778,6 +1808,7 @@ package body Flyology.Object_Storage.Backends.Memory is
 
       Snapshot      : aliased Owned_Bytes;
       Source_Info   : Object_Information;
+      Source_Tags   : Object_Tag_Set;
       Put_Options_Value : Put_Options;
    begin
       Info := Empty_Info;
@@ -1788,19 +1819,27 @@ package body Flyology.Object_Storage.Backends.Memory is
         or else not Valid_Object_Key (Destination_Key)
         or else not Valid_Copy_Conditions (Options.Conditions)
         or else not Valid_Write_Conditions (Options.Destination_Conditions)
+        or else not Valid_Object_Metadata
+          (Options.Metadata, Ada.Strings.Unbounded.To_String
+             (Options.Content_Type))
+        or else not Valid_Object_Tag_Set (Options.Tags)
       then
          Result := Invalid_Request;
          return;
       elsif Source_Bucket = Destination_Bucket
         and then Source_Key = Destination_Key
         and then Options.Metadata_Directive = Copy_Metadata
+        and then Options.Tagging_Directive = Copy_Tags
+        and then Options.Selected_Checksum = No_Checksum
+        and then not Options.Metadata.Website_Redirect_Location.Is_Set
       then
          Result := Invalid_Request;
          return;
       end if;
 
       Item.State.Fetch
-        (Source_Bucket, Source_Key, Snapshot, Source_Info, Result);
+        (Source_Bucket, Source_Key, Snapshot, Source_Info, Source_Tags,
+         Result);
       if Result = Bucket_Not_Found then
          Result := Source_Bucket_Not_Found;
          return;
@@ -1828,7 +1867,26 @@ package body Flyology.Object_Storage.Backends.Memory is
          Content_Type =>
            (if Options.Metadata_Directive = Copy_Metadata
             then Source_Info.Content_Type
-            else Options.Content_Type));
+            else Options.Content_Type),
+         Metadata =>
+           (if Options.Metadata_Directive = Copy_Metadata
+            then Source_Info.Metadata else Options.Metadata),
+         Tags     =>
+           (if Options.Tagging_Directive = Copy_Tags
+            then Source_Tags else Options.Tags),
+         Checksum =>
+           (Algorithm =>
+              (if Options.Selected_Checksum /= No_Checksum
+               then Options.Selected_Checksum
+               elsif Source_Info.Checksum.Algorithm /= No_Checksum
+               then Source_Info.Checksum.Algorithm
+               else Checksum_CRC64NVME),
+            Method => Full_Object_Checksum,
+            Value  => Ada.Strings.Unbounded.Null_Unbounded_String));
+      if Options.Metadata_Directive = Copy_Metadata then
+         Put_Options_Value.Metadata.Website_Redirect_Location :=
+           Options.Metadata.Website_Redirect_Location;
+      end if;
       declare
          Source : Snapshot_Source :=
            (Data => Snapshot'Access, Position => 0);
@@ -1917,6 +1975,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       First      : Byte_Count := 0;
       Sent       : Byte_Count := 0;
       Buffer     : Ada.Streams.Stream_Element_Array (1 .. 16 * 1_024);
+      Ignored_Tags : Object_Tag_Set;
    begin
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
@@ -1926,7 +1985,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result := Invalid_Request;
          return;
       end if;
-      Item.State.Fetch (Bucket, Key, Data, Info, Result);
+      Item.State.Fetch (Bucket, Key, Data, Info, Ignored_Tags, Result);
       if Result /= Success then
          return;
       end if;
@@ -2353,7 +2412,8 @@ package body Flyology.Object_Storage.Backends.Memory is
                then No_Checksum_Information
                else (Algorithm => Upload_Options.Checksum.Algorithm,
                      Method    => Upload_Options.Checksum.Method,
-                     Value     => Actual_Checksum)));
+                     Value     => Actual_Checksum)),
+            Metadata     => (others => <>));
          Item.State.Commit_Part
            (Bucket      => Bucket,
             Key         => Key,

@@ -374,6 +374,7 @@ private
          Key    : String;
          Data   : in out Owned_Bytes;
          Info   : Object_Information;
+         Tags   : Object_Tag_Set;
          Conditions : Write_Conditions;
          Stored : out Object_Information;
          Result : out Status);
@@ -382,6 +383,7 @@ private
          Key    : String;
          Data   : out Owned_Bytes;
          Info   : out Object_Information;
+         Tags   : out Object_Tag_Set;
          Result : out Status);
       procedure Fetch_Range
         (Bucket    : String;
