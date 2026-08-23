@@ -5224,6 +5224,9 @@ package body Object_Storage_Test_Cases is
       begin
          Conditional_Put_Conformance.Exercise
            (Store, "memory-conditional-bucket");
+         Assert
+           (Store.Bytes_Used = 61,
+            "conditional PutObject replacements leaked memory capacity");
       end;
 
       Clean;
@@ -5249,6 +5252,8 @@ package body Object_Storage_Test_Cases is
          Result : Status;
          Sink   : Buffer_Sink;
       begin
+         Conditional_Put_Conformance.Verify_Tuple
+           (Store, "files-conditional-bucket");
          Store.Get_Object
            ("files-conditional-bucket", "conditional-object",
             Whole_Object, Sink, null, Ada.Real_Time.Time_Last, Info, Result);

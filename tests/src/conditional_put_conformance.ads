@@ -9,4 +9,10 @@ package Conditional_Put_Conformance is
       Bucket          : String;
       Race_Iterations : Positive := 32);
 
+   --  Re-read the final complete PutObject tuple left by Exercise. Files and
+   --  SQLite call this after reopening their durable stores.
+   procedure Verify_Tuple
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String);
+
 end Conditional_Put_Conformance;

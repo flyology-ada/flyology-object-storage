@@ -1,3 +1,5 @@
+with Ada.Calendar;
+with Ada.Calendar.Formatting;
 with Ada.Containers;
 with Ada.Real_Time;
 with Ada.Streams;
@@ -8,17 +10,30 @@ with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.IO;
 with Flyology.Object_Storage;
+with Flyology.Object_Storage.Checksum_Engine;
 
 package body Conditional_Put_Conformance is
 
    use Flyology.Object_Storage;
    use Flyology.Object_Storage.Backends;
    use type Ada.Containers.Count_Type;
+   use type Ada.Calendar.Time;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Real_Time.Time;
    use type Status;
    package US renames Ada.Strings.Unbounded;
    use type US.Unbounded_String;
+   package Checksum_Engine renames
+     Flyology.Object_Storage.Checksum_Engine;
+
+   Tuple_Key : constant String := "put-object-complete-tuple";
+
+   Epoch : constant Ada.Calendar.Time :=
+     Ada.Calendar.Formatting.Time_Of
+       (1970, 1, 1, 0, 0, 0, Time_Zone => 0);
+
+   function Current_Unix_Time return Unix_Time is
+     (Unix_Time (Long_Long_Integer (Ada.Calendar.Clock - Epoch)));
 
    procedure Require (Condition : Boolean; Message : String) is
    begin
@@ -26,6 +41,92 @@ package body Conditional_Put_Conformance is
          raise Program_Error with Message;
       end if;
    end Require;
+
+   function Tuple_Payload (Algorithm : Checksum_Algorithm) return String is
+     ("tuple:" & Checksum_Algorithm'Image (Algorithm));
+
+   function Expected_Checksum
+     (Algorithm : Checksum_Algorithm;
+      Payload   : String) return Checksum_Information
+   is
+      State : Checksum_Engine.Context
+        (Checksum_Engine.Algorithm_Value (Algorithm));
+      Data : constant Ada.Streams.Stream_Element_Array :=
+        Flyology.Bytes.To_Array
+          (Flyology.Bytes.From_Byte_String (Payload));
+   begin
+      Checksum_Engine.Update (State, Data);
+      return
+        (Algorithm => Algorithm,
+         Method    => Full_Object_Checksum,
+         Value     => US.To_Unbounded_String
+           (Checksum_Engine.Finish (State)));
+   end Expected_Checksum;
+
+   function Tuple_Options
+     (Algorithm : Checksum_Algorithm) return Put_Options
+   is
+      Result : Put_Options := Default_Put_Options;
+   begin
+      Result.Entity_Tag := US.To_Unbounded_String
+        ("tuple-" & Checksum_Algorithm'Image (Algorithm));
+      Result.Content_Type := US.To_Unbounded_String ("application/tuple");
+      Result.Metadata.Cache_Control :=
+        (Is_Set => True, Value => US.To_Unbounded_String ("no-cache"));
+      Result.Metadata.Content_Disposition :=
+        (Is_Set => True,
+         Value => US.To_Unbounded_String ("attachment; filename=tuple"));
+      Result.Metadata.Content_Encoding :=
+        (Is_Set => True, Value => US.To_Unbounded_String ("identity"));
+      Result.Metadata.Content_Language :=
+        (Is_Set => True, Value => US.To_Unbounded_String ("en-CA"));
+      Result.Metadata.Expires := (Is_Set => True, Value => 0);
+      Result.Metadata.Website_Redirect_Location :=
+        (Is_Set => True, Value => US.To_Unbounded_String ("/next"));
+      Result.Metadata.User.Length := 2;
+      Result.Metadata.User.Items (1) :=
+        (Key   => US.To_Unbounded_String ("trace"),
+         Value => US.To_Unbounded_String ("alpha"));
+      Result.Metadata.User.Items (2) :=
+        (Key   => US.To_Unbounded_String ("workflow"),
+         Value => US.To_Unbounded_String ("put-object"));
+      Result.Tags.Length := 2;
+      Result.Tags.Items (1) :=
+        (Key   => US.To_Unbounded_String ("stage"),
+         Value => US.To_Unbounded_String ("qualified"));
+      Result.Tags.Items (2) :=
+        (Key   => US.To_Unbounded_String ("algorithm"),
+         Value => US.To_Unbounded_String
+           (Checksum_Algorithm'Image (Algorithm)));
+      Result.Checksum :=
+        (Algorithm => Algorithm,
+         Method    => Full_Object_Checksum,
+         Value     => US.Null_Unbounded_String);
+      return Result;
+   end Tuple_Options;
+
+   procedure Require_Known_Info
+     (Observed  : Object_Information;
+      Options   : Put_Options;
+      Payload   : String;
+      Not_Before : Unix_Time;
+      Not_After  : Unix_Time;
+      Message   : String)
+   is
+      Expected_Digest : constant Checksum_Information :=
+        Expected_Checksum (Options.Checksum.Algorithm, Payload);
+   begin
+      Require
+        (Observed.Size = Byte_Count (Payload'Length)
+         and then Observed.Modified >= Not_Before
+         and then Observed.Modified <= Not_After
+         and then Observed.Entity_Tag = Options.Entity_Tag
+         and then Observed.Content_Type = Options.Content_Type
+         and then Observed.Version = US.Null_Unbounded_String
+         and then Observed.Checksum = Expected_Digest
+         and then Observed.Metadata = Options.Metadata,
+         Message);
+   end Require_Known_Info;
 
    type Buffer_Source is new Byte_Source with record
       Data     : Flyology.Bytes.Unbounded_Bytes;
@@ -112,6 +213,48 @@ package body Conditional_Put_Conformance is
    begin
       Flyology.Bytes.Append (Item.Data, Data);
    end Write;
+
+   procedure Verify_Tuple
+     (Store  : in out Backend'Class;
+      Bucket : String)
+   is
+      Algorithm : constant Checksum_Algorithm := Checksum_XXHASH128;
+      Expected  : constant Put_Options := Tuple_Options (Algorithm);
+      Payload   : constant String := Tuple_Payload (Algorithm);
+      Checksum  : constant Checksum_Information :=
+        Expected_Checksum (Algorithm, Payload);
+      Head_Info : Object_Information;
+      Read_Info : Object_Information;
+      Tags      : Object_Tag_Set;
+      Sink      : Buffer_Sink;
+      Result    : Status;
+   begin
+      Store.Head_Object
+        (Bucket, Tuple_Key, null, Ada.Real_Time.Time_Last,
+         Head_Info, Result);
+      Require
+        (Result = Success
+         and then Head_Info.Size = Byte_Count (Payload'Length)
+         and then Head_Info.Entity_Tag = Expected.Entity_Tag
+         and then Head_Info.Content_Type = Expected.Content_Type
+         and then Head_Info.Version = US.Null_Unbounded_String
+         and then Head_Info.Metadata = Expected.Metadata
+         and then Head_Info.Checksum = Checksum,
+         "complete PutObject tuple head");
+      Store.Get_Object
+        (Bucket, Tuple_Key, Whole_Object, Sink, null,
+         Ada.Real_Time.Time_Last, Read_Info, Result);
+      Require
+        (Result = Success
+         and then Flyology.Bytes.To_Byte_String (Sink.Data) = Payload
+         and then Read_Info = Head_Info,
+         "complete PutObject tuple body/info snapshot");
+      Store.Get_Object_Tags
+        (Bucket, Tuple_Key, null, Ada.Real_Time.Time_Last, Tags, Result);
+      Require
+        (Result = Success and then Tags = Expected.Tags,
+         "complete PutObject tuple tags");
+   end Verify_Tuple;
 
    type Adversarial_Mode is (Raise_After_Chunk, Zero_Progress);
    type Adversarial_Source (Mode : Adversarial_Mode) is new Byte_Source
@@ -488,13 +631,15 @@ package body Conditional_Put_Conformance is
         (Object_Key : String;
          Payload    : String;
          Expected   : Object_Information;
-         Message    : String)
+         Message    : String;
+         Expected_Tags : Object_Tag_Set := Empty_Object_Tags)
       is
          Sink      : Buffer_Sink;
          Bound_Sink : Buffer_Sink;
          Head_Info : Object_Information;
          Read_Info : Object_Information;
          Bound_Info : Object_Information;
+         Tags      : Object_Tag_Set;
          Observed  : Status;
          Read_Conditions_Value : Read_Conditions;
       begin
@@ -507,7 +652,9 @@ package body Conditional_Put_Conformance is
             and then Head_Info.Modified = Expected.Modified
             and then Head_Info.Entity_Tag = Expected.Entity_Tag
             and then Head_Info.Content_Type = Expected.Content_Type
-            and then Head_Info.Version = Expected.Version,
+            and then Head_Info.Version = Expected.Version
+            and then Head_Info.Checksum = Expected.Checksum
+            and then Head_Info.Metadata = Expected.Metadata,
             Message & " metadata");
          Store.Get_Object
            (Bucket, Object_Key, Whole_Object, Sink, null,
@@ -519,7 +666,9 @@ package body Conditional_Put_Conformance is
             and then Read_Info.Modified = Head_Info.Modified
             and then Read_Info.Entity_Tag = Head_Info.Entity_Tag
             and then Read_Info.Content_Type = Head_Info.Content_Type
-            and then Read_Info.Version = Head_Info.Version,
+            and then Read_Info.Version = Head_Info.Version
+            and then Read_Info.Checksum = Head_Info.Checksum
+            and then Read_Info.Metadata = Head_Info.Metadata,
             Message & " body/info");
          Read_Conditions_Value.If_Match := US.To_Unbounded_String
            ("""" & US.To_String (Read_Info.Entity_Tag) & """");
@@ -535,9 +684,44 @@ package body Conditional_Put_Conformance is
             and then Bound_Info.Modified = Read_Info.Modified
             and then Bound_Info.Entity_Tag = Read_Info.Entity_Tag
             and then Bound_Info.Content_Type = Read_Info.Content_Type
-            and then Bound_Info.Version = Read_Info.Version,
+            and then Bound_Info.Version = Read_Info.Version
+            and then Bound_Info.Checksum = Read_Info.Checksum
+            and then Bound_Info.Metadata = Read_Info.Metadata,
             Message & " generation-bound body/info");
+         Store.Get_Object_Tags
+           (Bucket, Object_Key, null, Ada.Real_Time.Time_Last,
+            Tags, Observed);
+         Require
+           (Observed = Success and then Tags = Expected_Tags,
+            Message & " tags");
       end Require_State;
+
+      function Race_Options (Index : Positive) return Put_Options is
+         Options : Put_Options := Default_Put_Options;
+      begin
+         Options.Entity_Tag := US.To_Unbounded_String
+           ("race-" &
+            Ada.Strings.Fixed.Trim
+              (Positive'Image (Index), Ada.Strings.Both));
+         Options.Content_Type := US.To_Unbounded_String ("application/race");
+         Options.Metadata.Cache_Control :=
+           (Is_Set => True,
+            Value => US.To_Unbounded_String
+              ("race-" &
+               Ada.Strings.Fixed.Trim
+                 (Positive'Image (Index), Ada.Strings.Both)));
+         Options.Tags.Length := 1;
+         Options.Tags.Items (1) :=
+           (Key   => US.To_Unbounded_String ("winner"),
+            Value => US.To_Unbounded_String
+              (Positive'Image (Index)));
+         Options.Checksum :=
+           (Algorithm =>
+              (if Index = 1 then Checksum_CRC32 else Checksum_SHA256),
+            Method => Full_Object_Checksum,
+            Value  => US.Null_Unbounded_String);
+         return Options;
+      end Race_Options;
 
       procedure Require_Stale_Read
         (Object_Key, Entity_Tag, Message : String)
@@ -575,13 +759,7 @@ package body Conditional_Put_Conformance is
               (Value => Ada.Streams.Stream_Element
                  (Character'Pos (Payload (Payload'First))),
                Gate  => Gate);
-            Options : constant Put_Options :=
-              (Entity_Tag   => US.To_Unbounded_String
-                 ("race-" &
-                  Ada.Strings.Fixed.Trim
-                    (Positive'Image (Index), Ada.Strings.Both)),
-               Content_Type => US.To_Unbounded_String ("application/race"),
-               others => <>);
+            Options : constant Put_Options := Race_Options (Index);
          begin
             Target.Put_Object
               (Bucket, Race_Key (Iteration), Source, Options, null,
@@ -855,32 +1033,113 @@ package body Conditional_Put_Conformance is
       end;
       Require_State (Key, "third", Current, "deadline rollback");
 
+      for Algorithm in Checksum_CRC32 .. Checksum_XXHASH128 loop
+         declare
+            Payload : constant String := Tuple_Payload (Algorithm);
+            Options : constant Put_Options := Tuple_Options (Algorithm);
+            Source  : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String (Payload),
+               Position => 0);
+            Tuple_Info : Object_Information;
+            Not_Before : constant Unix_Time := Current_Unix_Time;
+            Not_After  : Unix_Time;
+         begin
+            Store.Put_Object
+              (Bucket, Tuple_Key, Source, Options, null,
+               Ada.Real_Time.Time_Last, Tuple_Info, Result);
+            Not_After := Current_Unix_Time;
+            Require
+              (Result = Success,
+               "complete PutObject direct checksum " &
+                 Checksum_Algorithm'Image (Algorithm));
+            Require_Known_Info
+              (Tuple_Info, Options, Payload, Not_Before, Not_After,
+               "complete PutObject exact returned tuple " &
+                 Checksum_Algorithm'Image (Algorithm));
+            Require_State
+              (Tuple_Key, Payload, Tuple_Info,
+               "complete PutObject tuple " &
+                 Checksum_Algorithm'Image (Algorithm),
+               Options.Tags);
+         end;
+      end loop;
+      Verify_Tuple (Store, Bucket);
+
+      declare
+         Source     : Adversarial_Source (Raise_After_Chunk);
+         Raised     : Boolean := False;
+         Prior_Info : Object_Information;
+         After_Info : Object_Information;
+      begin
+         Store.Head_Object
+           (Bucket, Tuple_Key, null, Ada.Real_Time.Time_Last,
+            Prior_Info, Result);
+         Require
+           (Result = Success,
+            "complete PutObject tuple pre-failure snapshot");
+         begin
+            Store.Put_Object
+              (Bucket, Tuple_Key, Source,
+               Tuple_Options (Checksum_CRC32), null,
+               Ada.Real_Time.Time_Last, Info, Result);
+         exception
+            when Program_Error => Raised := True;
+         end;
+         Require
+           (Raised, "complete PutObject tuple source failure was swallowed");
+         Store.Head_Object
+           (Bucket, Tuple_Key, null, Ada.Real_Time.Time_Last,
+            After_Info, Result);
+         Require
+           (Result = Success and then After_Info = Prior_Info,
+            "complete PutObject source failure changed object information");
+         Verify_Tuple (Store, Bucket);
+      end;
+
       for Iteration in 1 .. Race_Iterations loop
          Race.Reset;
          declare
-            Gate : aliased Publication_Race_Gate;
-            One : Writer
-              (1, Iteration, Gate'Unchecked_Access, Store'Unchecked_Access);
-            Two : Writer
-              (2, Iteration, Gate'Unchecked_Access, Store'Unchecked_Access);
+            Not_Before : constant Unix_Time := Current_Unix_Time;
          begin
-            null;
-         end;
-         Require
-           ((Race.Status_At (1) = Success
-             and then Race.Status_At (2) = Precondition_Failed)
-            or else
-              (Race.Status_At (2) = Success
-               and then Race.Status_At (1) = Precondition_Failed),
-            "concurrent create-if-absent did not have exactly one winner");
-         declare
-            Winner : constant Positive :=
-              (if Race.Status_At (1) = Success then 1 else 2);
-            Payload : constant String := (if Winner = 1 then "A" else "B");
-         begin
-            Require_State
-              (Race_Key (Iteration), Payload, Race.Info_At (Winner),
-               "concurrent create-if-absent winner");
+            declare
+               Gate : aliased Publication_Race_Gate;
+               One : Writer
+                 (1, Iteration, Gate'Unchecked_Access,
+                  Store'Unchecked_Access);
+               Two : Writer
+                 (2, Iteration, Gate'Unchecked_Access,
+                  Store'Unchecked_Access);
+            begin
+               null;
+            end;
+            declare
+               Not_After : constant Unix_Time := Current_Unix_Time;
+            begin
+               Require
+                 ((Race.Status_At (1) = Success
+                   and then Race.Status_At (2) = Precondition_Failed)
+                  or else
+                    (Race.Status_At (2) = Success
+                     and then Race.Status_At (1) = Precondition_Failed),
+                  "concurrent create-if-absent did not have exactly " &
+                    "one winner");
+               declare
+                  Winner : constant Positive :=
+                    (if Race.Status_At (1) = Success then 1 else 2);
+                  Payload : constant String :=
+                    (if Winner = 1 then "A" else "B");
+                  Options : constant Put_Options := Race_Options (Winner);
+               begin
+                  Require_Known_Info
+                    (Race.Info_At (Winner), Options, Payload,
+                     Not_Before, Not_After,
+                     "concurrent create-if-absent returned tuple");
+                  Require_State
+                    (Race_Key (Iteration), Payload, Race.Info_At (Winner),
+                     "concurrent create-if-absent winner",
+                     Options.Tags);
+               end;
+            end;
          end;
       end loop;
    end Exercise;

@@ -2232,8 +2232,11 @@ begin
         (Store, "sqlite-conditional-bucket");
    end;
    Assert
-     (Regular_File_Count (Conditional_Root & "/objects") = 33,
+     (Regular_File_Count (Conditional_Root & "/objects") = 34,
       "SQLite conditional failures leaked or retired live payloads");
+   Assert
+     (Regular_File_Count (Conditional_Root & "/staging") = 0,
+      "SQLite conditional failures leaked staging payloads");
    declare
       package Backend renames Flyology.Object_Storage.Backends.SQLite;
       use Flyology.Object_Storage;
@@ -2242,6 +2245,8 @@ begin
       Result : Status;
       Sink   : Buffer_Sink;
    begin
+      Conditional_Put_Conformance.Verify_Tuple
+        (Store, "sqlite-conditional-bucket");
       Store.Get_Object
         ("sqlite-conditional-bucket", "conditional-object", Whole_Object,
          Sink, null, Ada.Real_Time.Time_Last, Info, Result);
