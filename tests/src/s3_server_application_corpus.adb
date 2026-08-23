@@ -5883,6 +5883,22 @@ begin
       Require
         (Has
            (Run
+              (Signed_Request
+                 ("PUT", "/test-bucket/delete-bypass-false", "false")),
+            "200 OK"),
+         "DeleteObject false governance-bypass setup failed");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-bypass-false",
+                  Header_Name => "x-amz-bypass-governance-retention",
+                  Header_Value => "false")),
+            "204 No Content"),
+         "DeleteObject treated false governance bypass as a bypass request");
+      Require
+        (Has
+           (Run
               (Signed_Delete_Object_Request
                  ("/test-bucket/delete-policy",
                   Header_Name => "x-amz-if-match-size",

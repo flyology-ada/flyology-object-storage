@@ -1991,6 +1991,20 @@ package body Flyology.Object_Storage.Backends.Memory is
       Entries  : Delete_Object_Entries;
       Outcomes : Delete_Object_Outcomes;
    begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else
+          ((not Conditions.Has_ETag
+            and then Ada.Strings.Unbounded.Length (Conditions.ETag) > 0)
+           or else
+             (Conditions.Has_ETag
+              and then not Valid_Object_Delete_ETag_Condition
+                (Ada.Strings.Unbounded.To_String (Conditions.ETag))))
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
       Entries.Append
         (Delete_Object_Entry'
            (Key => Ada.Strings.Unbounded.To_Unbounded_String (Key),
@@ -2030,10 +2044,14 @@ package body Flyology.Object_Storage.Backends.Memory is
          if not Valid_Object_Key
            (Ada.Strings.Unbounded.To_String (Request_Entry.Key))
            or else
-             (Request_Entry.Conditions.Has_ETag
-              and then not Valid_Object_Delete_ETag_Condition
-                (Ada.Strings.Unbounded.To_String
-                   (Request_Entry.Conditions.ETag)))
+             ((not Request_Entry.Conditions.Has_ETag
+               and then Ada.Strings.Unbounded.Length
+                 (Request_Entry.Conditions.ETag) > 0)
+              or else
+                (Request_Entry.Conditions.Has_ETag
+                 and then not Valid_Object_Delete_ETag_Condition
+                   (Ada.Strings.Unbounded.To_String
+                      (Request_Entry.Conditions.ETag))))
          then
             Result := Invalid_Request;
             return;

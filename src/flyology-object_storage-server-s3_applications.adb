@@ -5145,7 +5145,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                 (X, 501, "NotImplemented",
                                  "Requester Pays is not implemented",
                                  Target_Text);
-                           elsif Bypass_Count > 0 then
+                           elsif Bypass_Count > 0 and then Bypass.Value then
                               Send_Error
                                 (X, 501, "NotImplemented",
                                  "Governance retention enforcement is not " &

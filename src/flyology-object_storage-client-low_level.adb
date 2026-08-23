@@ -4502,7 +4502,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Charged : constant String := US.To_String (Headers.Request_Charged);
    begin
       if Status = 204 then
-         if not Whitespace_Only (Payload) then
+         if Payload'Length /= 0 then
             raise Invalid_Response with
               "DeleteObject success contains a response body";
          elsif Charged'Length > 0 and then Charged /= "requester" then
@@ -4525,13 +4525,6 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end if;
    exception
       when S3.Errors.Malformed_Error =>
-         if Status = 409 then
-            return
-              (Kind   => Delete_Object_Rejected,
-               Status => Status,
-               Error  => Head_Error
-                 ("DeleteObject", Status, Request_ID, Host_ID));
-         end if;
          raise Invalid_Response with "malformed DeleteObject response";
    end Decode_Delete_Object_Response;
 
@@ -4573,31 +4566,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
          Host_ID : constant String :=
            Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         procedure Reject_Duplicate_Singletons is
+         procedure Reject_Invalid_Singleton (Name : String) is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count (Response, Name);
          begin
-            for Index in 1 .. Flyology.HTTP.Client.Header_Count (Response) loop
-               declare
-                  Name : constant String :=
-                    Ada.Characters.Handling.To_Lower
-                      (Flyology.HTTP.Client.Header_Name (Response, Index));
-               begin
-                  if Name in "x-amz-delete-marker" | "x-amz-version-id" |
-                    "x-amz-request-charged"
-                  then
-                     for Previous in 1 .. Index - 1 loop
-                        if Ada.Characters.Handling.To_Lower
-                          (Flyology.HTTP.Client.Header_Name
-                             (Response, Previous)) = Name
-                        then
-                           raise Invalid_Response with
-                             "DeleteObject response duplicates a singleton " &
-                             "header";
-                        end if;
-                     end loop;
-                  end if;
-               end;
-            end loop;
-         end Reject_Duplicate_Singletons;
+            if Count > 1
+              or else
+                (Count = 1
+                 and then Flyology.HTTP.Client.Header
+                   (Response, Name)'Length = 0)
+            then
+               raise Invalid_Response with
+                 "DeleteObject response has an invalid singleton header";
+            end if;
+         end Reject_Invalid_Singleton;
          Headers : constant Delete_Object_Result :=
            (Delete_Marker => Optional_Boolean_Header
               (Flyology.HTTP.Client.Header
@@ -4611,7 +4593,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         Reject_Duplicate_Singletons;
+         Reject_Invalid_Singleton ("x-amz-delete-marker");
+         Reject_Invalid_Singleton ("x-amz-version-id");
+         Reject_Invalid_Singleton ("x-amz-request-charged");
          return Decode_Delete_Object_Response
            (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
             Request_ID, Host_ID, Limits);

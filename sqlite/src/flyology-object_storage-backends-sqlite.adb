@@ -1047,6 +1047,19 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Entries  : Delete_Object_Entries;
       Outcomes : Delete_Object_Outcomes;
    begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else
+          ((not Conditions.Has_ETag and then US.Length (Conditions.ETag) > 0)
+           or else
+             (Conditions.Has_ETag
+              and then not Valid_Object_Delete_ETag_Condition
+                (US.To_String (Conditions.ETag))))
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
       Entries.Append
         (Delete_Object_Entry'
            (Key => US.To_Unbounded_String (Key), Conditions => Conditions));
@@ -1085,9 +1098,12 @@ package body Flyology.Object_Storage.Backends.SQLite is
       for Request_Entry of Entries loop
          if not Valid_Object_Key (US.To_String (Request_Entry.Key))
            or else
-             (Request_Entry.Conditions.Has_ETag
-              and then not Valid_Object_Delete_ETag_Condition
-                (US.To_String (Request_Entry.Conditions.ETag)))
+             ((not Request_Entry.Conditions.Has_ETag
+               and then US.Length (Request_Entry.Conditions.ETag) > 0)
+              or else
+                (Request_Entry.Conditions.Has_ETag
+                 and then not Valid_Object_Delete_ETag_Condition
+                   (US.To_String (Request_Entry.Conditions.ETag))))
          then
             Result := Invalid_Request;
             return;

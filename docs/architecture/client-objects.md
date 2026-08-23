@@ -54,15 +54,24 @@ precondition, checks the expected bucket owner, and opts into Requester Pays.
 Success preserves the delete-marker flag, version ID, and request-charged
 header; rejection preserves the structured S3 error and request identifiers.
 
-MFA Delete, governance-retention bypass, and directory-bucket modification-time
-and size conditions remain on `Client.Low_Level.Delete_Object_Parameters` so a
-convenience call cannot silently choose security policy. Version IDs are
-bounded to 1,024 bytes and may not contain NUL, consistently across the single
-delete query, multi-delete XML, and response headers.
+The high-level call exposes every modeled request control: version ID,
+If-Match, expected owner, Requester Pays, MFA, optional governance-retention
+bypass, and the directory-bucket modification-time and size predicates. It
+applies the same validation and signing rules as the typed low-level call;
+unsupported server policy is returned as a structured rejection rather than
+being omitted. Version IDs are bounded to 1,024 bytes and may not contain NUL,
+consistently across the single-delete query, multi-delete XML, and response
+headers.
 
-The Flyology server currently implements ordinary unversioned deletion and
-expected-owner checks. It returns `NotImplemented` for valid versioning,
-conditional, Requester Pays, governance, MFA, and directory-only controls.
+The Flyology server implements ordinary unversioned deletion, atomic If-Match,
+expected-owner checks, and pluggable fail-closed MFA verification. A supplied
+MFA credential is bounded, requires secure transport, and must be authorized
+as the bucket's root owner; the backend rechecks the current MFA Delete state
+at deletion publication. Version deletion, Requester Pays, and a true
+governance-retention bypass remain explicit `NotImplemented` boundaries. A
+present false governance-bypass value requests no bypass and is a no-op.
+Directory-bucket modification-time and size conditions are strictly parsed
+but rejected as `InvalidArgument` because directory buckets are not provided.
 Every backend classifies a missing bucket separately from a missing key under
 the same namespace-publication boundary, so the server can return
 `NoSuchBucket` without a racy preliminary probe.

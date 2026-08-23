@@ -729,6 +729,63 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Assert
         (Result = Success,
          "SQLite malformed DeleteObject condition mutated the row");
+
+      declare
+         Huge_Invalid_Key : constant String (1 .. 64 * 1_024) :=
+           (others => 'x');
+         Dormant_ETag : constant String (1 .. 8_193) := (others => 'e');
+      begin
+         Store.Delete_Object
+           (Bucket, Huge_Invalid_Key, null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Invalid_Request,
+            "SQLite DeleteObject did not reject a huge key before admission");
+         Store.Delete_Object
+           (Bucket, "invalid", null, Ada.Real_Time.Time_Last, Result,
+            (Has_ETag => False,
+             ETag => US.To_Unbounded_String (Dormant_ETag),
+             others => <>));
+         Assert
+           (Result = Invalid_Request,
+            "SQLite DeleteObject accepted a nonempty dormant ETag");
+         Put (Bucket, "batch-dormant-first", "preserve-first", Info);
+         declare
+            Entries  : Delete_Object_Entries;
+            Outcomes : Delete_Object_Outcomes;
+         begin
+            Entries.Append
+              (Delete_Object_Entry'
+                 (Key => US.To_Unbounded_String ("batch-dormant-first"),
+                  Conditions => No_Delete_Object_Conditions));
+            Entries.Append
+              (Delete_Object_Entry'
+                 (Key => US.To_Unbounded_String ("invalid"),
+                  Conditions =>
+                    (Has_ETag => False,
+                     ETag => US.To_Unbounded_String (Dormant_ETag),
+                     others => <>)));
+            Store.Delete_Objects
+              (Bucket, Entries, (others => <>), null,
+               Ada.Real_Time.Time_Last, Outcomes, Result);
+            Assert
+              (Result = Invalid_Request and then Outcomes.Is_Empty,
+               "SQLite DeleteObjects admitted a dormant ETag");
+         end;
+      end;
+      Store.Head_Object
+        (Bucket, "invalid", null, Ada.Real_Time.Time_Last, Check, Result);
+      Assert
+        (Result = Success,
+         "SQLite huge invalid DeleteObject key mutated existing data");
+      Store.Head_Object
+        (Bucket, "batch-dormant-first", null, Ada.Real_Time.Time_Last,
+         Check, Result);
+      Assert
+        (Result = Success,
+         "SQLite invalid DeleteObjects batch removed a valid prefix");
+      Store.Delete_Object
+        (Bucket, "batch-dormant-first", null, Ada.Real_Time.Time_Last,
+         Result);
       Store.Delete_Object
         (Bucket, "invalid", null, Ada.Real_Time.Time_Last, Result);
 

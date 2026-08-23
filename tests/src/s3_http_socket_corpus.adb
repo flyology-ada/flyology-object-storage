@@ -1306,6 +1306,21 @@ procedure S3_HTTP_Socket_Corpus is
             "DELETE", "/example-bucket/duplicate-delete-output");
          Serve
            (HTTP_Response
+              ("204 No Content", "", "x-amz-delete-marker:" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/empty-delete-marker-output");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", "x-amz-version-id:" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/empty-delete-version-output");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", "x-amz-request-charged:" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/empty-delete-charged-output");
+         Serve
+           (HTTP_Response
               ("409 Conflict",
                "<Error><Code>OperationAborted</Code>" &
                "<Message>conflict</Message></Error>"),
@@ -2774,6 +2789,42 @@ procedure S3_HTTP_Socket_Corpus is
                     "typed DeleteObject socket result mismatch";
                end if;
             end;
+         end;
+         declare
+            procedure Reject_Empty_Output (Key, Description : String) is
+               Parameters : Low_Level.Delete_Object_Parameters;
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Object
+                   (Origin, Low_Level.Path_Style, "example-bucket", Key,
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               Rejected : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant Low_Level.Delete_Object_Outcome :=
+                       Low_Level.Execute_Delete_Object
+                         (HTTP, Prepared, Timeout => 5.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response => Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "DeleteObject accepted an empty " & Description &
+                    " response header";
+               end if;
+            end Reject_Empty_Output;
+         begin
+            Reject_Empty_Output
+              ("empty-delete-marker-output", "delete-marker");
+            Reject_Empty_Output
+              ("empty-delete-version-output", "version-id");
+            Reject_Empty_Output
+              ("empty-delete-charged-output", "request-charged");
          end;
          declare
             Result : constant Objects.Delete_Outcome :=
