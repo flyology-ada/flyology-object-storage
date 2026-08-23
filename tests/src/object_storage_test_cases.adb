@@ -10103,34 +10103,10 @@ package body Object_Storage_Test_Cases is
          Headers.Expiration := US.To_Unbounded_String ("expiry=soon");
          Headers.Entity_Tag := US.To_Unbounded_String ("""put-etag""");
          Headers.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
-         Headers.Checksum_CRC32C := US.To_Unbounded_String ("AAAAAA==");
-         Headers.Checksum_CRC64NVME :=
-           US.To_Unbounded_String ("AAAAAAAAAAA=");
-         Headers.Checksum_SHA1 :=
-           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-         Headers.Checksum_SHA256 := US.To_Unbounded_String
-           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-         Headers.Checksum_SHA512 := US.To_Unbounded_String
-           (String'(1 .. 86 => 'A') & "==");
-         Headers.Checksum_MD5 :=
-           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
-         Headers.Checksum_XXHASH64 :=
-           US.To_Unbounded_String ("AAAAAAAAAAA=");
-         Headers.Checksum_XXHASH3 :=
-           US.To_Unbounded_String ("AAAAAAAAAAA=");
-         Headers.Checksum_XXHASH128 :=
-           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
          Headers.Checksum_Type := US.To_Unbounded_String ("FULL_OBJECT");
          Headers.Server_Side_Encryption :=
            US.To_Unbounded_String ("aws:backup");
          Headers.Version_ID := US.To_Unbounded_String ("version");
-         Headers.SSE_Customer_Algorithm := US.To_Unbounded_String ("AES256");
-         Headers.SSE_Customer_Key_MD5 :=
-           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
-         Headers.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
-         Headers.SSE_KMS_Encryption_Context :=
-           US.To_Unbounded_String ("context");
-         Headers.Bucket_Key_Enabled := (Is_Set => True, Value => True);
          Headers.Size := (Is_Set => True, Value => 42);
          Headers.Request_Charged := US.To_Unbounded_String ("requester");
          declare
@@ -13899,6 +13875,366 @@ package body Object_Storage_Test_Cases is
          "special unsigned S3 operation traits changed");
    end Check_Generated_S3_Model;
 
+   procedure Check_Put_Object_Response_Decoder
+     (Unused : in out Fixture)
+   is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+      package US renames Ada.Strings.Unbounded;
+      use type Low_Level.Put_Object_Outcome_Kind;
+
+      function Baseline return Low_Level.Put_Object_Result is
+         Result : Low_Level.Put_Object_Result;
+      begin
+         Result.Entity_Tag := US.To_Unbounded_String ("""put-etag""");
+         Result.Size := (Is_Set => True, Value => 0);
+         return Result;
+      end Baseline;
+
+      procedure Require_Valid
+        (Headers : Low_Level.Put_Object_Result; Message : String;
+         Payload : String := "")
+      is
+         Outcome : constant Low_Level.Put_Object_Outcome :=
+           Low_Level.Decode_Put_Object_Response (200, Payload, Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Object_Put
+            and then Low_Level."=" (Outcome.Result, Headers),
+            "PutObject decoder rejected or changed projected headers for " &
+              Message);
+      end Require_Valid;
+
+      procedure Require_Invalid
+        (Headers : Low_Level.Put_Object_Result; Message : String;
+         Payload : String := "")
+      is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Put_Object_Outcome :=
+                 Low_Level.Decode_Put_Object_Response
+                   (200, Payload, Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert (Raised, "PutObject decoder accepted " & Message);
+      end Require_Invalid;
+
+      function Valid_Checksum (Index : Positive) return String is
+        (case Index is
+            when 1 | 2 => "AAAAAA==",
+            when 3 | 8 | 9 => "AAAAAAAAAAA=",
+            when 4 => "AAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            when 5 => "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            when 6 => String'(1 .. 86 => 'A') & "==",
+            when 7 | 10 => "AAAAAAAAAAAAAAAAAAAAAA==",
+            when others => "");
+
+      procedure Set_Checksum
+        (Headers : in out Low_Level.Put_Object_Result;
+         Index   : Positive;
+         Value   : String)
+      is
+         Encoded : constant US.Unbounded_String :=
+           US.To_Unbounded_String (Value);
+      begin
+         case Index is
+            when 1 => Headers.Checksum_CRC32 := Encoded;
+            when 2 => Headers.Checksum_CRC32C := Encoded;
+            when 3 => Headers.Checksum_CRC64NVME := Encoded;
+            when 4 => Headers.Checksum_SHA1 := Encoded;
+            when 5 => Headers.Checksum_SHA256 := Encoded;
+            when 6 => Headers.Checksum_SHA512 := Encoded;
+            when 7 => Headers.Checksum_MD5 := Encoded;
+            when 8 => Headers.Checksum_XXHASH64 := Encoded;
+            when 9 => Headers.Checksum_XXHASH3 := Encoded;
+            when 10 => Headers.Checksum_XXHASH128 := Encoded;
+            when others => raise Program_Error;
+         end case;
+      end Set_Checksum;
+   begin
+      declare
+         Headers : Low_Level.Put_Object_Result := Baseline;
+      begin
+         Require_Valid (Headers, "minimal response with zero object size");
+         Headers.Size := (Is_Set => False, Value => 0);
+         Require_Valid (Headers, "response with absent object size");
+         Headers.Size := (Is_Set => True, Value => 42);
+         Require_Valid (Headers, "response with nonzero object size");
+         Headers.Size :=
+           (Is_Set => True, Value => Flyology.Object_Storage.Byte_Count'Last);
+         Require_Valid (Headers, "response with maximum object size");
+         Require_Invalid (Headers, "one-byte success body", " ");
+         Require_Invalid (Headers, "non-whitespace success body", "x");
+      end;
+
+      for Index in 1 .. 10 loop
+         declare
+            Headers : Low_Level.Put_Object_Result := Baseline;
+         begin
+            Set_Checksum (Headers, Index, Valid_Checksum (Index));
+            Headers.Checksum_Type :=
+              US.To_Unbounded_String ("FULL_OBJECT");
+            Require_Valid
+              (Headers, "canonical checksum" & Positive'Image (Index));
+            Set_Checksum (Headers, Index, "AAAA");
+            Require_Invalid
+              (Headers, "malformed checksum" & Positive'Image (Index));
+         end;
+      end loop;
+
+      declare
+         Headers : Low_Level.Put_Object_Result := Baseline;
+      begin
+         Headers.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
+         Require_Invalid (Headers, "checksum without ChecksumType");
+         Headers.Checksum_Type := US.To_Unbounded_String ("COMPOSITE");
+         Require_Invalid (Headers, "composite complete-object checksum");
+         Headers.Checksum_Type := US.To_Unbounded_String ("FULL_OBJECT");
+         Headers.Checksum_SHA256 := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Require_Invalid (Headers, "multiple checksum value headers");
+         Headers := Baseline;
+         Headers.Checksum_Type := US.To_Unbounded_String ("FULL_OBJECT");
+         Require_Invalid (Headers, "ChecksumType without a checksum");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result := Baseline;
+      begin
+         Headers.Entity_Tag := US.Null_Unbounded_String;
+         Require_Invalid (Headers, "missing ETag");
+         Headers.Entity_Tag := US.To_Unbounded_String ("put-etag");
+         Require_Invalid (Headers, "unquoted ETag");
+         Headers.Entity_Tag := US.To_Unbounded_String ("W/""put-etag""");
+         Require_Invalid (Headers, "weak ETag");
+         Headers.Entity_Tag := US.To_Unbounded_String ("""put""etag""");
+         Require_Invalid (Headers, "ETag containing a quote");
+         Headers.Entity_Tag := US.To_Unbounded_String
+           ('"' & String'(1 .. 8_190 => 'e') & '"');
+         Require_Valid (Headers, "maximum-length strong ETag");
+         Headers.Entity_Tag := US.To_Unbounded_String
+           ('"' & String'(1 .. 8_191 => 'e') & '"');
+         Require_Invalid (Headers, "over-limit strong ETag");
+         Headers.Entity_Tag := US.To_Unbounded_String
+           ('"' & "bad" & Character'Val (16#7F#) & '"');
+         Require_Invalid (Headers, "ETag containing DEL");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result := Baseline;
+      begin
+         Headers.Expiration :=
+           US.To_Unbounded_String (String'(1 .. 8_192 => 'e'));
+         Headers.Version_ID :=
+           US.To_Unbounded_String (String'(1 .. 8_192 => 'v'));
+         Require_Valid (Headers, "bounded optional string maxima");
+         Headers.Version_ID :=
+           US.To_Unbounded_String (String'(1 .. 8_193 => 'v'));
+         Require_Invalid (Headers, "over-limit VersionId");
+         Headers := Baseline;
+         Headers.Expiration :=
+           US.To_Unbounded_String (String'(1 .. 8_193 => 'e'));
+         Require_Invalid (Headers, "over-limit Expiration");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result := Baseline;
+      begin
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("AES256");
+         Require_Valid (Headers, "AES256 encryption enum");
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("not-encryption");
+         Require_Invalid (Headers, "unknown encryption enum");
+         Headers := Baseline;
+         Headers.Request_Charged := US.To_Unbounded_String ("requester");
+         Require_Valid (Headers, "request charging enum");
+         Headers.Request_Charged := US.To_Unbounded_String ("owner");
+         Require_Invalid (Headers, "unknown request charging enum");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result := Baseline;
+      begin
+         Headers.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Headers.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Require_Valid (Headers, "complete SSE-C response group");
+         Headers.SSE_Customer_Key_MD5 := US.Null_Unbounded_String;
+         Require_Invalid (Headers, "SSE-C algorithm without key MD5");
+         Headers := Baseline;
+         Headers.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Require_Invalid (Headers, "SSE-C key MD5 without algorithm");
+         Headers.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("AES256");
+         Require_Invalid (Headers, "mixed SSE-C and server encryption");
+         Headers := Baseline;
+         Headers.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES128");
+         Headers.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Require_Invalid (Headers, "unknown SSE-C algorithm");
+         Headers.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Headers.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("not-base64");
+         Require_Invalid (Headers, "malformed SSE-C key MD5");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result := Baseline;
+      begin
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Headers.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Headers.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String ("e30=");
+         Headers.Bucket_Key_Enabled := (Is_Set => True, Value => True);
+         Require_Valid (Headers, "complete KMS response group");
+         Headers.SSE_KMS_Key_ID := US.Null_Unbounded_String;
+         Require_Valid (Headers, "KMS response with provider-managed key");
+         Headers := Baseline;
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms:dsse");
+         Require_Valid (Headers, "DSSE response with provider-managed key");
+         Headers := Baseline;
+         Headers.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Require_Invalid (Headers, "KMS key ID without KMS encryption");
+         Headers := Baseline;
+         Headers.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String ("e30=");
+         Require_Invalid (Headers, "KMS context without KMS encryption");
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Headers.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String ("not-base64");
+         Require_Invalid (Headers, "non-Base64 KMS context");
+         Headers.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String ("e31=");
+         Require_Invalid (Headers, "non-canonical Base64 KMS context");
+         Headers := Baseline;
+         Headers.Bucket_Key_Enabled := (Is_Set => True, Value => False);
+         Require_Invalid (Headers, "bucket-key flag without KMS encryption");
+         Headers := Baseline;
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms:dsse");
+         Headers.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Headers.Bucket_Key_Enabled := (Is_Set => True, Value => True);
+         Require_Invalid (Headers, "DSSE response with bucket-key flag");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result := Baseline;
+      begin
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Headers.SSE_KMS_Key_ID :=
+           US.To_Unbounded_String (String'(1 .. 8_192 => 'k'));
+         Headers.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String (String'(1 .. 8_192 => 'c'));
+         Require_Valid (Headers, "bounded KMS optional string maxima");
+         Headers.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String (String'(1 .. 8_193 => 'c'));
+         Require_Invalid (Headers, "over-limit KMS context");
+         Headers.SSE_KMS_Encryption_Context := US.Null_Unbounded_String;
+         Headers.SSE_KMS_Key_ID :=
+           US.To_Unbounded_String (String'(1 .. 8_193 => 'k'));
+         Require_Invalid (Headers, "over-limit KMS key ID");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result;
+         Outcome : constant Low_Level.Put_Object_Outcome :=
+           Low_Level.Decode_Put_Object_Response
+             (403, "<Error><Code>AccessDenied</Code>" &
+              "<Message>denied</Message></Error>", Headers,
+              String'(1 .. 8_192 => 'r'), String'(1 .. 8_192 => 'h'));
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Put_Object_Rejected
+            and then Outcome.Status = 403
+            and then US.To_String (Outcome.Error.Code) = "AccessDenied"
+            and then US.To_String (Outcome.Error.Message) = "denied"
+            and then US.Length (Outcome.Error.Request_ID) = 8_192
+            and then US.Length (Outcome.Error.Host_ID) = 8_192,
+            "PutObject structured error identifier maxima");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result;
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Put_Object_Outcome :=
+                 Low_Level.Decode_Put_Object_Response
+                   (403, "<Error><Code>AccessDenied</Code>" &
+                    "<Message>denied</Message></Error>", Headers,
+                    String'(1 .. 8_193 => 'r'));
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "PutObject accepted over-limit error request ID");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result;
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Put_Object_Outcome :=
+                 Low_Level.Decode_Put_Object_Response
+                   (403, "<Error><Code>AccessDenied</Code>" &
+                    "<Message>denied</Message></Error>", Headers, "",
+                    String'(1 .. 8_193 => 'h'));
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "PutObject accepted over-limit error host ID");
+      end;
+
+      declare
+         Headers : Low_Level.Put_Object_Result;
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Put_Object_Outcome :=
+                 Low_Level.Decode_Put_Object_Response
+                   (500, "<Error><Code>broken", Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "PutObject accepted malformed structured error");
+      end;
+   end Check_Put_Object_Response_Decoder;
+
    procedure Check_Put_Object_Required_Disposition
      (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
@@ -15707,6 +16043,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.put-object-required-disposition",
             Check_Put_Object_Required_Disposition'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.put-object-response-decoder-adversarial",
+            Check_Put_Object_Response_Decoder'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.model-request-projection-all-operations",
