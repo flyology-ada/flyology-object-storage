@@ -50,6 +50,8 @@ package body Flyology.Object_Storage.Checksum_Engine is
      (Value : Checksum_Information) return Boolean is
      (Value.Algorithm /= No_Checksum
       and then Value.Method = Full_Object_Checksum
+      and then Policy.Ordinary_Object_Supported
+        (Policy.Full_Object)
       and then US.Length (Value.Value) = 0);
 
    function Valid_Digest

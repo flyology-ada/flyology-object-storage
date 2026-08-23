@@ -2253,6 +2253,11 @@ procedure S3_HTTP_Socket_Corpus is
          Serve
            (HTTP_Response
               ("200 OK", "x",
+               "x-amz-checksum-crc64nvme: AAAAAAAAAAA=-1" & CRLF),
+            "GET", "/example-bucket/typed-get-inferred-illegal-pair");
+         Serve
+           (HTTP_Response
+              ("200 OK", "x",
                "x-amz-checksum-type: COMPOSITE" & CRLF),
             "GET", "/example-bucket/typed-get-type-only");
          Serve
@@ -5356,6 +5361,10 @@ procedure S3_HTTP_Socket_Corpus is
             Reject_Invalid_Get
               ("typed-get-illegal-pair",
                "GetObject accepted composite CRC64NVME metadata");
+            Reject_Invalid_Get
+              ("typed-get-inferred-illegal-pair",
+               "GetObject inferred composite CRC64NVME without " &
+                 "ChecksumType");
             Reject_Invalid_Get
               ("typed-get-type-only",
                "GetObject accepted checksum type without an algorithm");

@@ -45,6 +45,7 @@ procedure S3_Implementation_Corpus is
    use type Ada.Containers.Count_Type;
    use type Ada.Directories.File_Kind;
    use type Stream_IO.Count;
+   use type US.Unbounded_String;
    use type Low_Level.Abort_Multipart_Outcome_Kind;
    use type Low_Level.Complete_Multipart_Outcome_Kind;
    use type Low_Level.Copy_Object_Outcome_Kind;
@@ -152,6 +153,9 @@ procedure S3_Implementation_Corpus is
    Full_CRC32 : constant String :=
      Checksums.Encode_Base64
        (Repeated_Digest (Checksum_Policy.Core.CRC32, Payload'Length));
+   Full_SHA256 : constant String :=
+     Checksums.Encode_Base64
+       (Repeated_Digest (Checksum_Policy.Core.SHA256, Payload'Length));
 
    function Check_List_Multipart_Uploads return Boolean is
       Name : constant String :=
@@ -314,6 +318,32 @@ procedure S3_Implementation_Corpus is
    Multipart_Checksum_Oracle_Mode : constant
      Multipart_Checksum_Oracle_Mode_Kind :=
        Read_Multipart_Checksum_Oracle_Mode;
+
+   type Put_Object_Oracle_Mode_Kind is
+     (Complete_Put_Object,
+      RustFS_RC3_Omits_Checksum_Type,
+      SeaweedFS_443_Omits_Checksum_Type);
+
+   function Read_Put_Object_Oracle_Mode return Put_Object_Oracle_Mode_Kind is
+      Name : constant String := "FLYOLOGY_PUT_OBJECT_ORACLE_MODE";
+   begin
+      if not Ada.Environment_Variables.Exists (Name) then
+         return Complete_Put_Object;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "rustfs-rc3-omits-checksum-type"
+      then
+         return RustFS_RC3_Omits_Checksum_Type;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "seaweedfs-4.43-omits-checksum-type"
+      then
+         return SeaweedFS_443_Omits_Checksum_Type;
+      else
+         raise Program_Error with "unknown PutObject oracle mode";
+      end if;
+   end Read_Put_Object_Oracle_Mode;
+
+   Put_Object_Oracle_Mode : constant Put_Object_Oracle_Mode_Kind :=
+     Read_Put_Object_Oracle_Mode;
 
    type Conditional_Get_Oracle_Mode_Kind is
      (Complete_Conditional_Get,
@@ -2212,6 +2242,231 @@ procedure S3_Implementation_Corpus is
             end;
          end;
       end Require_Conditional_Put;
+
+      procedure Require_Complete_Put_Tuple is
+         Object_Key : constant String := Key & "-complete-put-tuple";
+         Options    : Client_Objects.Complete_Put_Options;
+         Source     : Upload_Source (Payload'Access);
+
+         function Has_Metadata
+           (Values : Low_Level.Metadata_Entry_Vectors.Vector;
+            Name, Value : String) return Boolean
+         is
+         begin
+            for Item of Values loop
+               if US.To_String (Item.Name) = Name
+                 and then US.To_String (Item.Value) = Value
+               then
+                  return True;
+               end if;
+            end loop;
+            return False;
+         end Has_Metadata;
+
+         procedure Require_Metadata
+           (Result : Low_Level.Head_Object_Result)
+         is
+            procedure Require
+              (Name, Actual, Expected : String) is
+            begin
+               if Actual /= Expected then
+                  raise Program_Error with
+                    "S3 implementation changed complete PutObject " & Name &
+                    ": expected=" & Expected & " actual=" & Actual;
+               end if;
+            end Require;
+         begin
+            if Result.Content_Length /=
+              Flyology.Object_Storage.Byte_Count (Payload'Length)
+            then
+               raise Program_Error with
+                 "S3 implementation changed complete PutObject size";
+            end if;
+            Require
+              ("Content-Type", US.To_String (Result.Content_Type),
+               "application/octet-stream");
+            Require
+              ("Cache-Control", US.To_String (Result.Cache_Control),
+               "public, max-age=60");
+            Require
+              ("Content-Disposition",
+               US.To_String (Result.Content_Disposition),
+               "attachment; filename=oracle.bin");
+            Require
+              ("Content-Encoding", US.To_String (Result.Content_Encoding),
+               "identity");
+            Require
+              ("Content-Language", US.To_String (Result.Content_Language),
+               "en-CA");
+            Require
+              ("SHA256 checksum", US.To_String (Result.Checksum_SHA256),
+               Full_SHA256);
+            Require
+              ("checksum type", US.To_String (Result.Checksum_Type),
+               (case Put_Object_Oracle_Mode is
+                   when Complete_Put_Object => "FULL_OBJECT",
+                   when RustFS_RC3_Omits_Checksum_Type |
+                        SeaweedFS_443_Omits_Checksum_Type => ""));
+            if Natural (Result.Metadata.Length) /= 2
+              or else not Has_Metadata
+                (Result.Metadata, "project", "flyology-object-storage")
+              or else not Has_Metadata
+                (Result.Metadata, "purpose", "put-object-oracle")
+            then
+               raise Program_Error with
+                 "S3 implementation changed complete PutObject user " &
+                 "metadata";
+            end if;
+         end Require_Metadata;
+      begin
+         Options.Content_Type :=
+           US.To_Unbounded_String ("application/octet-stream");
+         Options.Metadata.Cache_Control :=
+           (Is_Set => True,
+            Value  => US.To_Unbounded_String ("public, max-age=60"));
+         Options.Metadata.Content_Disposition :=
+           (Is_Set => True,
+            Value  =>
+              US.To_Unbounded_String ("attachment; filename=oracle.bin"));
+         Options.Metadata.Content_Encoding :=
+           (Is_Set => True,
+            Value  => US.To_Unbounded_String ("identity"));
+         Options.Metadata.Content_Language :=
+           (Is_Set => True, Value => US.To_Unbounded_String ("en-CA"));
+         Options.Metadata.User.Length := 2;
+         Options.Metadata.User.Items (1) :=
+           (Key   => US.To_Unbounded_String ("project"),
+            Value => US.To_Unbounded_String ("flyology-object-storage"));
+         Options.Metadata.User.Items (2) :=
+           (Key   => US.To_Unbounded_String ("purpose"),
+            Value => US.To_Unbounded_String ("put-object-oracle"));
+         Options.Tags.Length := 2;
+         Options.Tags.Items (1) :=
+           (Key   => US.To_Unbounded_String ("operation"),
+            Value => US.To_Unbounded_String ("PutObject"));
+         Options.Tags.Items (2) :=
+           (Key   => US.To_Unbounded_String ("scope"),
+            Value => US.To_Unbounded_String ("complete tuple"));
+         Options.Checksum :=
+           (Algorithm => Flyology.Object_Storage.Checksum_SHA256,
+            Method    => Flyology.Object_Storage.Full_Object_Checksum,
+            Value     => US.To_Unbounded_String (Full_SHA256));
+         Options.Conditions.If_None_Match := US.To_Unbounded_String ("*");
+
+         declare
+            Published : constant Client_Objects.Complete_Put_Outcome :=
+              Client_Objects.Put_Object
+                (HTTP, Origin, Bucket, Object_Key, Source,
+                 SigV4.SHA256_Hex (Payload), Identity, Options,
+                 Timeout => 60.0);
+         begin
+            if Published.Kind /= Low_Level.Object_Put
+              or else Published.Status /= 200
+              or else US.Length (Published.Result.Entity_Tag) = 0
+              or else US.To_String (Published.Result.Checksum_SHA256) /=
+                Full_SHA256
+              or else US.To_String (Published.Result.Checksum_Type) /=
+                "FULL_OBJECT"
+            then
+               raise Program_Error with
+                 "S3 implementation rejected complete PutObject tuple";
+            end if;
+
+            declare
+               Parameters : Low_Level.Head_Object_Parameters;
+            begin
+               Parameters.Checksum_Mode := True;
+               declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Head_Object
+                      (Origin, Low_Level.Path_Style, Bucket, Object_Key,
+                       Parameters, Identity, "us-east-1", Timestamp);
+                  Head : constant Low_Level.Head_Object_Outcome :=
+                    Low_Level.Execute_Head_Object
+                      (HTTP, Prepared, Timeout => 30.0);
+               begin
+                  if Head.Kind /= Low_Level.Object_Found
+                    or else Head.Status /= 200
+                    or else Head.Result.Entity_Tag /=
+                      Published.Result.Entity_Tag
+                  then
+                     raise Program_Error with
+                       "S3 implementation changed complete PutObject HEAD " &
+                       "generation";
+                  end if;
+                  Require_Metadata (Head.Result);
+               end;
+            end;
+
+            declare
+               Parameters : Low_Level.Get_Object_Parameters;
+               Received   : US.Unbounded_String;
+               Buffer     : Stream_Element_Array (1 .. 64 * 1_024);
+               Last       : Stream_Element_Offset;
+               Finished   : Boolean := False;
+            begin
+               Parameters.If_Match := Published.Result.Entity_Tag;
+               Parameters.Checksum_Mode := True;
+               declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Get_Object
+                      (Origin, Low_Level.Path_Style, Bucket, Object_Key,
+                       Parameters, Identity, "us-east-1", Timestamp);
+                  Response : HTTP_Client.Response :=
+                    Low_Level.Execute_Get_Object
+                      (HTTP, Prepared, Timeout => 60.0);
+                  Opened : constant Low_Level.Get_Object_Head_Outcome :=
+                    Low_Level.Decode_Get_Object_Response_Head (Response);
+               begin
+                  if Opened.Kind /= Low_Level.Object_Opened
+                    or else Opened.Status /= 200
+                    or else Opened.Result.Entity_Tag /=
+                      Published.Result.Entity_Tag
+                    or else not Opened.Result.Content_Length.Is_Set
+                    or else Opened.Result.Content_Length.Value /=
+                      Flyology.Object_Storage.Byte_Count (Payload'Length)
+                    or else US.To_String (Opened.Result.Checksum_SHA256) /=
+                      Full_SHA256
+                    or else US.To_String (Opened.Result.Checksum_Type) /=
+                      (case Put_Object_Oracle_Mode is
+                          when Complete_Put_Object => "FULL_OBJECT",
+                          when RustFS_RC3_Omits_Checksum_Type |
+                               SeaweedFS_443_Omits_Checksum_Type => "")
+                  then
+                     raise Program_Error with
+                       "S3 implementation changed generation-bound " &
+                       "PutObject GET tuple";
+                  end if;
+                  while not Finished loop
+                     HTTP_Client.Read_Body
+                       (Response, Buffer, Last, Finished);
+                     for Index in Buffer'First .. Last loop
+                        US.Append
+                          (Received, Character'Val (Buffer (Index)));
+                     end loop;
+                  end loop;
+                  if US.To_String (Received) /= Payload then
+                     raise Program_Error with
+                       "S3 implementation changed complete PutObject bytes";
+                  end if;
+               end;
+            end;
+
+            declare
+               Tagging : constant Client_Objects.Tagging_Outcome :=
+                 Client_Objects.Get_Tags
+                   (HTTP, Origin, Bucket, Object_Key, Identity,
+                    Timeout => 30.0);
+            begin
+               if Tagging.Kind /= Client_Objects.Tags_Read
+                 or else Tagging.Result.Tags /= Options.Tags
+               then
+                  raise Program_Error with
+                    "S3 implementation changed complete PutObject tags";
+               end if;
+            end;
+         end;
+      end Require_Complete_Put_Tuple;
    begin
       HTTP_Client.Configure (HTTP, Origin);
       Check_Bucket_Tags;
@@ -2421,6 +2676,7 @@ procedure S3_Implementation_Corpus is
       Require_High_Level_List_Pagination;
       Delete_Many;
       Require_Conditional_Put;
+      Require_Complete_Put_Tuple;
       declare
          Abort_Key : constant String := Key & "-aborted";
          Prepared_Create : constant Low_Level.Prepared_Request :=
@@ -2945,6 +3201,8 @@ begin
            (Origin, Bucket, "native-object-high level+%25", Timestamp);
          Delete_One
            (Origin, Bucket, "native-object-conditional-put", Timestamp);
+         Delete_One
+           (Origin, Bucket, "native-object-complete-put-tuple", Timestamp);
          declare
             task Lightweight_Client is
                pragma Task_Info (Flyology.Lightweight_Task);
@@ -2968,6 +3226,9 @@ begin
                Delete_One
                  (Origin, Bucket,
                   "lightweight-object-conditional-put", Timestamp);
+               Delete_One
+                 (Origin, Bucket,
+                  "lightweight-object-complete-put-tuple", Timestamp);
                Lightweight_Result.Report (True);
             exception
                when Occurrence : others =>

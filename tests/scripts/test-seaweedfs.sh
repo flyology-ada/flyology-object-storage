@@ -81,6 +81,8 @@ FLYOLOGY_DELETE_OBJECT_ORACLE_MODE=\
 seaweedfs-4.43-conditioned-missing-412 \
 FLYOLOGY_COPY_OBJECT_ORACLE_MODE=\
 seaweedfs-4.43-bare-result-etag \
+FLYOLOGY_PUT_OBJECT_ORACLE_MODE=\
+seaweedfs-4.43-omits-checksum-type \
 "$SCRIPT_DIR/run-s3-implementation.sh" \
   "http://127.0.0.1:$PORT" \
   "http://host.docker.internal:$PORT" \
@@ -102,6 +104,9 @@ echo "SeaweedFS multipart checksum oracle: pinned release omits ListParts" \
 echo "SeaweedFS CopyObject oracle: pinned release emits an unquoted ETag in" \
   "the success XML; strict typed and high-level clients reject the response" \
   "after the server has published the copy"
+echo "SeaweedFS PutObject oracle: pinned release returns the exact SHA-256" \
+  "checksum on HEAD and generation-bound GET but omits the optional" \
+  "x-amz-checksum-type response header"
 
 if [ -n "${FLYOLOGY_S3T_BIN:-}" ]; then
   FLYOLOGY_S3_IMPLEMENTATION=seaweedfs \

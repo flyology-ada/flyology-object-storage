@@ -76,6 +76,8 @@ FLYOLOGY_CONDITIONAL_GET_ORACLE_MODE=\
 rustfs-rc3-bodyless-stale-if-match-412 \
 FLYOLOGY_DELETE_OBJECT_ORACLE_MODE=\
 rustfs-rc3-conditioned-missing-412 \
+FLYOLOGY_PUT_OBJECT_ORACLE_MODE=\
+rustfs-rc3-omits-checksum-type \
 "$SCRIPT_DIR/run-s3-implementation.sh" \
   "http://127.0.0.1:$PORT" \
   "http://host.docker.internal:$PORT" \
@@ -88,6 +90,9 @@ echo "RustFS conditional GetObject oracle: pinned release returns a" \
   "bodyless HTTP 412 without the modeled PreconditionFailed error code"
 echo "RustFS DeleteObject oracle: pinned release returns 412 rather than" \
   "AWS's documented 404 for If-Match against a missing key"
+echo "RustFS PutObject oracle: pinned release returns the exact SHA-256" \
+  "checksum on HEAD and generation-bound GET but omits the optional" \
+  "x-amz-checksum-type response header"
 echo "RustFS HeadObject part oracle: pinned release ignores partNumber and" \
   "does not return x-amz-mp-parts-count; an absent part returns HTTP 500"
 echo "RustFS HeadObject range oracle: pinned release ignores Range"

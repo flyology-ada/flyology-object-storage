@@ -31,6 +31,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    use type Model.Operation_Id;
    use type Model.Shape_Kind;
    use type S3.Core.Range_Parse_Status;
+   use type Checksum_Policy.Checksum_Type;
 
    --  DELETE is method-idempotent at the HTTP layer, but replay is not safe
    --  for a conditional S3 mutation after the first request may have been
@@ -5667,10 +5668,25 @@ package body Flyology.Object_Storage.Client.Low_Level is
 
       function Encoding_Is_Valid
         (Value : US.Unbounded_String; Bytes : Positive) return Boolean is
-        (Valid_Optional_Checksum (Value, Bytes)
-         or else Valid_Optional_Object_Checksum (Value, Bytes, Kind));
+        (if Kind = "COMPOSITE"
+         then Valid_Optional_Object_Checksum (Value, Bytes, Kind)
+         elsif Kind = "FULL_OBJECT"
+         then Valid_Optional_Checksum (Value, Bytes)
+         else Valid_Optional_Object_Checksum (Value, Bytes, Kind));
 
       function Pair_Is_Supported return Boolean is
+         Encoded : constant String :=
+           (if US.Length (CRC32) > 0 then US.To_String (CRC32)
+            elsif US.Length (CRC32C) > 0 then US.To_String (CRC32C)
+            elsif US.Length (CRC64NVME) > 0
+            then US.To_String (CRC64NVME)
+            elsif US.Length (SHA1) > 0 then US.To_String (SHA1)
+            elsif US.Length (SHA256) > 0 then US.To_String (SHA256)
+            elsif US.Length (SHA512) > 0 then US.To_String (SHA512)
+            elsif US.Length (MD5) > 0 then US.To_String (MD5)
+            elsif US.Length (XXHASH64) > 0 then US.To_String (XXHASH64)
+            elsif US.Length (XXHASH3) > 0 then US.To_String (XXHASH3)
+            else US.To_String (XXHASH128));
          Algorithm : constant Checksum_Policy.Algorithm :=
            (if US.Length (CRC32) > 0 then S3.Core.CRC32
             elsif US.Length (CRC32C) > 0 then S3.Core.CRC32C
@@ -5684,10 +5700,18 @@ package body Flyology.Object_Storage.Client.Low_Level is
             else S3.Core.XXHASH128);
          Method : constant Checksum_Policy.Checksum_Type :=
            (if Kind = "COMPOSITE"
+              or else
+                (Kind'Length = 0
+                 and then Ada.Strings.Fixed.Index
+                   (Encoded, "-", Going => Ada.Strings.Backward) > 0)
             then Checksum_Policy.Composite
             else Checksum_Policy.Full_Object);
       begin
-         return Checksum_Policy.Supported (Algorithm, Method);
+         return
+           (if Method = Checksum_Policy.Full_Object
+            then Checksum_Policy.Ordinary_Object_Supported
+              (Method)
+            else Checksum_Policy.Supported (Algorithm, Method));
       end Pair_Is_Supported;
    begin
       if Count > 1
@@ -5696,7 +5720,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          return False;
       elsif Count = 0 then
          return Kind'Length = 0;
-      elsif Kind'Length > 0 and then not Pair_Is_Supported then
+      elsif not Pair_Is_Supported then
          return False;
       elsif US.Length (CRC32) > 0 then
          return Encoding_Is_Valid (CRC32, 4);

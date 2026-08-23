@@ -12875,6 +12875,151 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         function Valid_Checksum (Index : Positive) return String is
+           (case Index is
+               when 1 | 2 => "AAAAAA==",
+               when 3 | 8 | 9 => "AAAAAAAAAAA=",
+               when 4 => "AAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+               when 5 =>
+                 "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+               when 6 => String'(1 .. 86 => 'A') & "==",
+               when 7 | 10 => "AAAAAAAAAAAAAAAAAAAAAA==",
+               when others => "");
+
+         procedure Set_Checksum
+           (Headers : in out Low_Level.Head_Object_Result;
+            Index   : Positive;
+            Value   : String)
+         is
+            Encoded : constant US.Unbounded_String :=
+              US.To_Unbounded_String (Value);
+         begin
+            case Index is
+               when 1 => Headers.Checksum_CRC32 := Encoded;
+               when 2 => Headers.Checksum_CRC32C := Encoded;
+               when 3 => Headers.Checksum_CRC64NVME := Encoded;
+               when 4 => Headers.Checksum_SHA1 := Encoded;
+               when 5 => Headers.Checksum_SHA256 := Encoded;
+               when 6 => Headers.Checksum_SHA512 := Encoded;
+               when 7 => Headers.Checksum_MD5 := Encoded;
+               when 8 => Headers.Checksum_XXHASH64 := Encoded;
+               when 9 => Headers.Checksum_XXHASH3 := Encoded;
+               when 10 => Headers.Checksum_XXHASH128 := Encoded;
+               when others => raise Program_Error;
+            end case;
+         end Set_Checksum;
+
+         procedure Require_Invalid
+           (Headers : Low_Level.Head_Object_Result; Message : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Head_Object_Outcome :=
+                    Low_Level.Decode_Head_Object_Response (200, "", Headers);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response => Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Require_Invalid;
+      begin
+         for Index in 1 .. 10 loop
+            declare
+               Headers : Low_Level.Head_Object_Result;
+            begin
+               Headers.Content_Length := 1;
+               Headers.Entity_Tag := US.To_Unbounded_String ("""etag""");
+               Headers.Last_Modified :=
+                 US.To_Unbounded_String
+                   ("Fri, 24 May 2013 00:00:00 GMT");
+               Headers.Checksum_Type :=
+                 US.To_Unbounded_String ("FULL_OBJECT");
+               Set_Checksum (Headers, Index, Valid_Checksum (Index));
+               declare
+                  Outcome : constant Low_Level.Head_Object_Outcome :=
+                    Low_Level.Decode_Head_Object_Response
+                      (200, "", Headers);
+               begin
+                  Assert
+                    (Outcome.Kind = Low_Level.Object_Found,
+                     "HeadObject rejected ordinary FULL_OBJECT checksum" &
+                       Positive'Image (Index));
+               end;
+               Set_Checksum (Headers, Index, "AAAA");
+               Require_Invalid
+                 (Headers,
+                  "HeadObject accepted malformed ordinary checksum" &
+                    Positive'Image (Index));
+               Set_Checksum
+                 (Headers, Index, Valid_Checksum (Index) & "-1");
+               Require_Invalid
+                 (Headers,
+                  "HeadObject accepted suffixed FULL_OBJECT checksum" &
+                    Positive'Image (Index));
+               Headers.Checksum_Type :=
+                 US.To_Unbounded_String ("COMPOSITE");
+               Set_Checksum (Headers, Index, Valid_Checksum (Index));
+               Require_Invalid
+                 (Headers,
+                  "HeadObject accepted raw COMPOSITE checksum" &
+                    Positive'Image (Index));
+               Set_Checksum
+                 (Headers, Index, Valid_Checksum (Index) & "-1");
+               if Index = 3 then
+                  Require_Invalid
+                    (Headers,
+                     "HeadObject accepted composite CRC64NVME checksum");
+               else
+                  declare
+                     Outcome : constant Low_Level.Head_Object_Outcome :=
+                       Low_Level.Decode_Head_Object_Response
+                         (200, "", Headers);
+                  begin
+                     Assert
+                       (Outcome.Kind = Low_Level.Object_Found,
+                        "HeadObject rejected canonical COMPOSITE checksum" &
+                          Positive'Image (Index));
+                  end;
+               end if;
+               Headers.Checksum_Type := US.Null_Unbounded_String;
+               if Index = 3 then
+                  Require_Invalid
+                    (Headers,
+                     "HeadObject inferred composite CRC64NVME without " &
+                     "ChecksumType");
+               else
+                  declare
+                     Outcome : constant Low_Level.Head_Object_Outcome :=
+                       Low_Level.Decode_Head_Object_Response
+                         (200, "", Headers);
+                  begin
+                     Assert
+                       (Outcome.Kind = Low_Level.Object_Found,
+                        "HeadObject rejected inferred COMPOSITE checksum" &
+                          Positive'Image (Index));
+                  end;
+               end if;
+               Set_Checksum (Headers, Index, Valid_Checksum (Index));
+               declare
+                  Outcome : constant Low_Level.Head_Object_Outcome :=
+                    Low_Level.Decode_Head_Object_Response
+                      (200, "", Headers);
+               begin
+                  Assert
+                    (Outcome.Kind = Low_Level.Object_Found,
+                     "HeadObject rejected inferred FULL_OBJECT checksum" &
+                       Positive'Image (Index));
+               end;
+            end;
+         end loop;
+      end;
+
+      declare
          Headers : Low_Level.Head_Object_Result;
       begin
          Headers.Delete_Marker := (Is_Set => True, Value => False);

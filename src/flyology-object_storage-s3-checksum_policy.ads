@@ -74,6 +74,14 @@ is
            Value in Core.CRC32 | Core.CRC32C | Core.CRC64NVME,
          when Composite   => Value /= Core.CRC64NVME);
 
+   --  Report whether an ordinary, non-multipart object can retain this
+   --  checksum. PutObject and CopyObject accept every concrete algorithm in
+   --  the pinned model, always as one full-object digest. Keep this predicate
+   --  separate from the narrower multipart policy above.
+   function Ordinary_Object_Supported
+     (Kind : Checksum_Type) return Boolean is
+     (Kind = Full_Object);
+
    --  Apply S3's default when CreateMultipartUpload omits checksum type.
    function Default_Type (Value : Algorithm) return Checksum_Type is
      (if Value = Core.CRC64NVME then Full_Object else Composite);
