@@ -130,5 +130,16 @@ SeaweedFS, supplemental MinIO, and Flyology memory, files, and SQLite, with an
 independent digest-pinned s5cmd byte and deletion oracle.
 
 The isolated verifier needs only the Python standard library; it does not build
-the Ada project or run GNATprove. Proof evidence is recorded separately after
-the deterministic source freeze and serialized prover-lane audit.
+the Ada project or run GNATprove.
+
+The deterministic source was frozen in local commit
+`7297dcf779cd66dd1d24e06183b1d6acb6938c6c`. After a clear host-process audit,
+the single serialized `./tools/prove.sh` campaign started at
+2026-08-23T13:48:21Z with FSF GNATprove 16.1.0. It forced all nine manifest
+units at level 0 with output headers and warnings as errors and proved 936/936
+checks: 180 flow checks and 756 prover checks, with a maximum of 663 steps.
+The report contains zero warnings, justified or unproved checks, and every
+analyzed subprogram reports zero pragma Assume statements. The audited source
+also contains no `Assume`, `Suppress`, `False_Positive`, or
+`SPARK_Mode => Off` constructs. A post-run host audit found no GNATprove,
+Why3, or SMT process.
