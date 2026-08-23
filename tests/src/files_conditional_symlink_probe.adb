@@ -859,6 +859,37 @@ begin
       end;
    end;
 
+   --  An existing upload directory without its required manifest is corrupt,
+   --  not an unknown upload id.
+   declare
+      Multipart_Bucket : constant String := "multipart-missing-manifest";
+      Upload_ID, Part_ETag : US.Unbounded_String;
+   begin
+      Prepare_Multipart (Multipart_Bucket, Upload_ID, Part_ETag);
+      declare
+         Upload : constant String :=
+           Join
+             (Join
+                (Join (Join (Root, "buckets"), Multipart_Bucket),
+                 "multipart"),
+              GNAT.SHA256.Digest (US.To_String (Upload_ID)));
+         Manifest : constant String := Join (Upload, "upload.fos");
+         Saved_Manifest : constant String :=
+           Join (Outside, "saved-missing-upload-manifest");
+         Part : constant String := Join (Upload, "part-1.fos");
+      begin
+         Ada.Directories.Rename (Manifest, Saved_Manifest);
+         Expect_Upload_Namespace_Failure
+           (Multipart_Bucket, US.To_String (Upload_ID), Part_ETag, True);
+         Require
+           (Ada.Directories.Exists (Saved_Manifest),
+            "multipart operation removed the saved missing manifest");
+         Require
+           (Ada.Directories.Exists (Part),
+            "multipart operation mutated a corrupt upload");
+      end;
+   end;
+
    declare
       Multipart_Bucket : constant String := "multipart-part-bucket";
       Upload_ID, Part_ETag : US.Unbounded_String;
@@ -921,9 +952,67 @@ begin
       end;
    end if;
 
+   --  A created bucket always owns a configuration directory.  Its absence
+   --  is corrupt layout, not an unconfigured-versioning state that permits a
+   --  Require_Unversioned delete.
+   declare
+      Configuration_Bucket : constant String := "missing-configuration";
+      Bucket_Directory : constant String :=
+        Join (Join (Root, "buckets"), Configuration_Bucket);
+      Configuration : constant String :=
+        Join (Bucket_Directory, "configuration");
+      Saved_Configuration : constant String :=
+        Join (Outside, "saved-missing-configuration");
+   begin
+      Store.Create_Bucket
+        (Configuration_Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Require
+        (Result = Storage.Success, "missing-configuration bucket setup");
+      Put (Configuration_Bucket, "preserved", "preserved-body");
+      Store.Put_Bucket_Versioning
+        (Configuration_Bucket,
+         (Status => Storage.Versioning_Enabled, others => <>),
+         null, Ada.Real_Time.Time_Last, Result);
+      Require
+        (Result = Storage.Success, "missing-configuration versioning setup");
+      Ada.Directories.Rename (Configuration, Saved_Configuration);
+      Store.Delete_Object
+        (Configuration_Bucket, "preserved", null,
+         Ada.Real_Time.Time_Last, Result,
+         Requirements => (Require_Unversioned => True));
+      Require
+        (Result = Storage.Backend_Unavailable,
+         "Delete_Object accepted an absent configuration root");
+      Store.Head_Object
+        (Configuration_Bucket, "preserved", null,
+         Ada.Real_Time.Time_Last, Info, Result);
+      Require
+        (Result = Storage.Success,
+         "absent configuration root allowed object deletion");
+   end;
+
    Create_Symlink
      ((if Mode = "live" then External_Directory else Missing_Directory),
       Bucket_Link_Path, "bucket-root");
+   declare
+      Blocked_Source : Buffer_Source :=
+        (Data => Flyology.Bytes.From_Byte_String ("must-not-consume"),
+         Position => 0);
+      Blocked_Info : Storage.Object_Information;
+   begin
+      Store.Put_Object
+        ("root-link-bucket", "blocked", Blocked_Source,
+         Storage.Default_Put_Options, null, Ada.Real_Time.Time_Last,
+         Blocked_Info, Result,
+         Conditions =>
+           (If_None_Match => US.To_Unbounded_String ("*"), others => <>));
+      Require
+        (Result = Storage.Backend_Unavailable,
+         "conditional Put_Object accepted a bucket-root symlink");
+      Require
+        (Blocked_Source.Position = 0,
+         "bucket-root preflight consumed the Put_Object source");
+   end;
    Store.Delete_Object
      ("root-link-bucket", "absent", null, Ada.Real_Time.Time_Last, Result,
       Conditions =>

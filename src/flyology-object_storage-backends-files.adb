@@ -359,7 +359,10 @@ package body Flyology.Object_Storage.Backends.Files is
       elsif GNAT.OS_Lib.Is_Symbolic_Link (Path) then
          raise Ada.IO_Exceptions.Data_Error;
       elsif not Ada.Directories.Exists (Path) then
-         return;
+         --  Once an upload directory exists its manifest is a required part
+         --  of the owned layout.  Treat its disappearance as corruption,
+         --  rather than confusing it with an unknown upload id.
+         raise Ada.IO_Exceptions.Data_Error;
       elsif Ada.Directories.Kind (Path) /= Ada.Directories.Ordinary_File then
          raise Ada.IO_Exceptions.Data_Error;
       end if;
@@ -2916,11 +2919,10 @@ package body Flyology.Object_Storage.Backends.Files is
       if Requirements.Require_Unversioned then
          if GNAT.OS_Lib.Is_Symbolic_Link
               (Configuration_Path (Item, Bucket))
-           or else
-             (Ada.Directories.Exists (Configuration_Path (Item, Bucket))
-              and then Ada.Directories.Kind
-                (Configuration_Path (Item, Bucket)) /=
-                  Ada.Directories.Directory)
+           or else not Ada.Directories.Exists
+             (Configuration_Path (Item, Bucket))
+           or else Ada.Directories.Kind
+             (Configuration_Path (Item, Bucket)) /= Ada.Directories.Directory
          then
             raise Ada.IO_Exceptions.Data_Error;
          end if;
