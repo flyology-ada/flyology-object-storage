@@ -130,6 +130,30 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Delete_Outcome;
 
+   --  Remove the complete CORS configuration from one bucket. Deleting an
+   --  absent configuration follows the endpoint's S3 status unchanged.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose CORS configuration is removed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region Region used to sign the DeleteBucketCors request
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Completed deletion or structured S3 rejection
+   function Delete_CORS
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
    type Head_Outcome_Kind is (Bucket_Available, Head_Rejected);
 
    type Head_Outcome

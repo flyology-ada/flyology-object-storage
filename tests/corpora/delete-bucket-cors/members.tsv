@@ -1,0 +1,3 @@
+direction	shape	ordinal	member	wire_location	current_boundary	required_contract	vector_ids
+request	146	1	Bucket	uri-label	projected	Require one valid bucket and bind its exact value into the signed cors subresource target.	DBC-RQ-001,DBC-RQ-003,DBC-RQ-004
+request	146	2	ExpectedBucketOwner	header	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	DBC-RQ-002,DBC-RQ-003,DBC-RQ-004

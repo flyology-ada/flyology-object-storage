@@ -65,3 +65,10 @@ These operations are deliberately individual. Parallel work across many
 buckets or objects belongs in an application-owned joined scope, while
 multi-file data transfer uses `Client.Transfers.Transfer_Many` and its explicit
 concurrency, in-flight-byte, failure, deadline, and cancellation policy.
+
+`Client.Buckets.Delete_CORS` removes one bucket's complete CORS configuration
+through the exact bodyless `DeleteBucketCors` operation. It preserves the
+optional expected-owner precondition and returns either exact `204` completion
+or a bounded structured S3 rejection. This client-only boundary does not imply
+that Flyology backends store CORS configuration or that the authenticated
+server routes the operation.

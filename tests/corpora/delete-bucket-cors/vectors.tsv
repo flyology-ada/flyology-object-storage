@@ -1,0 +1,13 @@
+id	direction	layer	category	member_refs	stimulus	expected_contract
+DBC-RQ-001	request	client	target	request:Bucket	Path-style and virtual-hosted targets with the exact cors subresource.	Sign DELETE against the exact bucket authority/path and include the cors query flag once.
+DBC-RQ-002	request	client	header	request:ExpectedBucketOwner	Owner omitted, present, empty, overlong, and control-bearing.	Preserve true omission and sign at most one bounded control-free owner header.
+DBC-RQ-003	request	client	admission	request:Bucket,request:ExpectedBucketOwner	Empty, malformed, uppercase, control-bearing, and exact-boundary values.	Reject inadmissible bucket or header values before entering HTTP.
+DBC-RQ-004	request	client	signing	request:Bucket,request:ExpectedBucketOwner	Exact canonical request, signed-header set, payload hash, and both addressing styles.	Project every modeled input and no unmodeled query, header, or body member.
+DBC-RS-001	response	client	success	operation:DeleteBucketCors	204 with empty, whitespace, and nonempty bodies.	Accept only exact bodyless 204 success and return a typed terminal outcome.
+DBC-RS-002	response	client	status	operation:DeleteBucketCors	200, 201, 202, 204, 400, 403, 404, 429, and 5xx statuses.	Never widen the modeled success status; non-204 responses require a structured S3 error.
+DBC-RS-003	response	client	errors	operation:DeleteBucketCors	Structured access, absence, throttling, and service errors with request identifiers.	Return one bounded typed S3 rejection with exact status and diagnostics.
+DBC-RS-004	response	client	malformed	operation:DeleteBucketCors	Empty, malformed, unknown, nested, DTD, and entity error documents.	Reject malformed error bodies without returning a partial outcome.
+DBC-RS-005	response	client	headers	operation:DeleteBucketCors	Absent, present, duplicate, empty, control-bearing, exact-boundary, and overlong request identifiers.	Accept at most one bounded nonempty physical identifier value and never collapse duplicates.
+DBC-RS-006	response	client	limits	operation:DeleteBucketCors	Error documents at and one past byte, depth, element, and text limits.	Admit exact configured limits and reject one past each without unbounded allocation.
+DBC-TR-001	both	client	native	operation:DeleteBucketCors	Signed success and rejection sequence under the native task owner.	Release every response before the synchronous call returns with no retry or detached task.
+DBC-TR-002	both	client	lightweight	operation:DeleteBucketCors	The same signed sequence under a Flyology lightweight task owner.	Produce behavior identical to native ownership with no retained client input or response lease.

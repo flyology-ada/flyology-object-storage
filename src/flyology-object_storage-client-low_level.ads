@@ -1304,6 +1304,65 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_Outcome;
 
+   --  Every member in the pinned DeleteBucketCors request shape.
+   type Delete_Bucket_CORS_Parameters is record
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Build and sign one bodyless DeleteBucketCors request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose complete CORS configuration is removed
+   --  @param Parameters Optional modeled owner precondition
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared request
+   function Prepare_Delete_Bucket_CORS
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Delete_Bucket_CORS_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type Delete_Bucket_CORS_Outcome_Kind is
+     (Bucket_CORS_Deleted, Delete_Bucket_CORS_Rejected);
+
+   type Delete_Bucket_CORS_Outcome
+     (Kind : Delete_Bucket_CORS_Outcome_Kind :=
+       Delete_Bucket_CORS_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_CORS_Deleted =>
+            null;
+         when Delete_Bucket_CORS_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode a bounded DeleteBucketCors response. Only 204 with an empty
+   --  body is successful; other statuses require a structured S3 error.
+   function Decode_Delete_Bucket_CORS_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_CORS_Outcome;
+
+   --  Execute one prepared synchronous DeleteBucketCors request and release
+   --  its response before return.
+   function Execute_Delete_Bucket_CORS
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_CORS_Outcome;
+
    --  Every input member in the pinned DeleteObject request shape.
    type Delete_Object_Parameters is record
       MFA                         : Ada.Strings.Unbounded.Unbounded_String;
@@ -2347,6 +2406,7 @@ private
       Get_Object_Attributes_Operation,
       Put_Object_Operation,
       Delete_Bucket_Operation,
+      Delete_Bucket_CORS_Operation,
       Delete_Object_Operation,
       Delete_Objects_Operation,
       Create_Multipart_Operation,

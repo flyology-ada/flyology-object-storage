@@ -9,7 +9,7 @@ CreateMultipartUpload	core	covered	covered	partial	covered
 CreateSession	extended	missing	covered	missing	covered
 DeleteBucket	core	covered	covered	covered	covered
 DeleteBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
-DeleteBucketCors	extended	missing	partial	missing	missing
+DeleteBucketCors	extended	missing	covered	missing	covered
 DeleteBucketEncryption	extended	missing	partial	missing	missing
 DeleteBucketIntelligentTieringConfiguration	extended	missing	partial	missing	missing
 DeleteBucketInventoryConfiguration	extended	missing	partial	missing	missing

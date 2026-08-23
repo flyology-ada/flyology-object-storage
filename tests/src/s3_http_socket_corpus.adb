@@ -74,6 +74,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Buckets.Put_Tags_Outcome_Kind;
    use type Buckets.Get_Tags_Outcome_Kind;
    use type Buckets.Delete_Tags_Outcome_Kind;
+   use type Buckets.Delete_Outcome_Kind;
+   use type Low_Level.Delete_Bucket_CORS_Outcome_Kind;
    use type Tags.Tag_Vectors.Vector;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
@@ -2991,6 +2993,43 @@ procedure S3_HTTP_Socket_Corpus is
                  ("example-bucket", "oversized/" &
                     String'(1 .. 256 => 'x'))),
             "GET", "/example-bucket?max-keys=1&prefix=oversized%2F&versions");
+         Serve
+           (HTTP_Response ("204 No Content", ""),
+            "DELETE", "/example-bucket?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: cors-request" & CRLF &
+               "x-amz-id-2: cors-host" & CRLF),
+            "DELETE", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: first" & CRLF &
+               "x-amz-request-id: second" & CRLF),
+            "DELETE", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-id-2: first" & CRLF &
+               "x-amz-id-2: second" & CRLF),
+            "DELETE", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id:" & CRLF),
+            "DELETE", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", "<Error><Unknown/></Error>"),
+            "DELETE", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("500 Internal Server Error",
+               "<Error><Code>InternalError</Code><Message>" &
+               String'(1 .. 256 => 'x') & "</Message></Error>"),
+            "DELETE", "/example-bucket?cors");
       end loop;
       Sockets.Close_Socket (Listener);
       State.Complete (True);
@@ -7135,6 +7174,92 @@ procedure S3_HTTP_Socket_Corpus is
               ("malformed/", "ListObjectVersions accepted malformed XML");
             Must_Reject
               ("oversized/", "ListObjectVersions accepted oversized XML",
+               Small_Limits => True);
+         end;
+         declare
+            Result : constant Buckets.Delete_Outcome :=
+              Buckets.Delete_CORS
+                (HTTP, Origin, "example-bucket", Identity,
+                 Expected_Bucket_Owner => "123456789012",
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Buckets.Deletion_Completed
+              or else Result.Status /= 204
+            then
+               raise Program_Error with
+                 "DeleteBucketCors convenience success mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Bucket_CORS
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (Expected_Bucket_Owner => US.Null_Unbounded_String),
+                 Identity, "us-east-1", "20130524T000000Z");
+            Result : constant Low_Level.Delete_Bucket_CORS_Outcome :=
+              Low_Level.Execute_Delete_Bucket_CORS
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Delete_Bucket_CORS_Rejected
+              or else Result.Status /= 403
+              or else US.To_String (Result.Error.Code) /= "AccessDenied"
+              or else US.To_String (Result.Error.Request_ID) /=
+                "cors-request"
+              or else US.To_String (Result.Error.Host_ID) /= "cors-host"
+            then
+               raise Program_Error with
+                 "DeleteBucketCors typed rejection mismatch";
+            end if;
+         end;
+         declare
+            procedure Must_Reject_CORS
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Prepared : constant Low_Level.Prepared_Request :=
+                       Low_Level.Prepare_Delete_Bucket_CORS
+                         (Origin, Low_Level.Path_Style, "example-bucket",
+                          (Expected_Bucket_Owner =>
+                             US.Null_Unbounded_String),
+                          Identity, "us-east-1", "20130524T000000Z");
+                     Ignored : constant
+                       Low_Level.Delete_Bucket_CORS_Outcome :=
+                         (if Small_Limits
+                          then Low_Level.Execute_Delete_Bucket_CORS
+                            (HTTP, Prepared, Timeout => 5.0,
+                             Limits =>
+                               (Maximum_Document_Bytes => 64,
+                                Maximum_Depth          => 8,
+                                Maximum_Elements       => 32,
+                                Maximum_Text_Bytes     => 64))
+                          else Low_Level.Execute_Delete_Bucket_CORS
+                            (HTTP, Prepared, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_CORS;
+         begin
+            Must_Reject_CORS
+              ("DeleteBucketCors accepted duplicate response identifier");
+            Must_Reject_CORS
+              ("DeleteBucketCors accepted duplicate host identifier");
+            Must_Reject_CORS
+              ("DeleteBucketCors accepted empty response identifier");
+            Must_Reject_CORS
+              ("DeleteBucketCors accepted malformed error body");
+            Must_Reject_CORS
+              ("DeleteBucketCors accepted oversized error body",
                Small_Limits => True);
          end;
          HTTP_Client.Shutdown (HTTP);
