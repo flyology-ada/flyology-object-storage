@@ -93,6 +93,37 @@ procedure S3_HTTP_Socket_Corpus is
    Lost_Put_Payload : aliased constant String := "lost put response";
    Put_Response_Vector_Payload : aliased constant String := "v";
 
+   type Read_Checksum_Spec is record
+      Header : US.Unbounded_String;
+      Value  : US.Unbounded_String;
+   end record;
+
+   type Read_Checksum_Spec_Array is array (Positive range <>) of
+     Read_Checksum_Spec;
+
+   Read_Checksums : constant Read_Checksum_Spec_Array :=
+     ((US.To_Unbounded_String ("x-amz-checksum-crc32"),
+       US.To_Unbounded_String ("AAAAAA==")),
+      (US.To_Unbounded_String ("x-amz-checksum-crc32c"),
+       US.To_Unbounded_String ("AAAAAA==")),
+      (US.To_Unbounded_String ("x-amz-checksum-crc64nvme"),
+       US.To_Unbounded_String ("AAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-sha1"),
+       US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-sha256"),
+       US.To_Unbounded_String
+         ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-sha512"),
+       US.To_Unbounded_String (String'(1 .. 86 => 'A') & "==")),
+      (US.To_Unbounded_String ("x-amz-checksum-md5"),
+       US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==")),
+      (US.To_Unbounded_String ("x-amz-checksum-xxhash64"),
+       US.To_Unbounded_String ("AAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-xxhash3"),
+       US.To_Unbounded_String ("AAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-xxhash128"),
+       US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==")));
+
    type Upload_Source
      (Value : not null access constant String) is
      new HTTP_Client.Request_Body_Source with record
@@ -2045,7 +2076,7 @@ procedure S3_HTTP_Socket_Corpus is
                "Content-Type: application/test" & CRLF &
                "x-amz-version-id: head-version" & CRLF &
                "x-amz-checksum-sha256: " &
-               "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" & CRLF &
+               "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-3" & CRLF &
                "x-amz-checksum-type: COMPOSITE" & CRLF &
                "x-amz-mp-parts-count: 3" & CRLF,
                Omit_Content_Length => True),
@@ -2162,6 +2193,37 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-checksum-type: FULL_OBJECT" & CRLF),
             "GET", "/example-bucket/typed-get-full",
             Expected_Checksum_Mode => "ENABLED");
+         for Index in Read_Checksums'Range loop
+            declare
+               Header : constant String :=
+                 US.To_String (Read_Checksums (Index).Header);
+               Value : constant String :=
+                 US.To_String (Read_Checksums (Index).Value);
+               Common : constant String :=
+                 "ETag: ""read-full""" & CRLF &
+                 "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF;
+            begin
+               Serve
+                 (HTTP_Response
+                    ("200 OK", "full", Common & Header & ": " & Value &
+                     CRLF & "x-amz-checksum-type: FULL_OBJECT" & CRLF),
+                  "GET", "/example-bucket/read-full-" & Decimal (Index),
+                  Expected_Checksum_Mode => "ENABLED");
+               Serve
+                 (HTTP_Response
+                    ("200 OK", "x", Common & Header & ": AAAA" & CRLF &
+                     "x-amz-checksum-type: FULL_OBJECT" & CRLF),
+                  "GET", "/example-bucket/read-malformed-" & Decimal (Index),
+                  Expected_Checksum_Mode => "ENABLED");
+               Serve
+                 (HTTP_Response
+                    ("200 OK", "x", Common & Header & ": " & Value & CRLF &
+                     "x-amz-checksum-type: COMPOSITE" & CRLF),
+                  "GET", "/example-bucket/read-wrong-type-" &
+                    Decimal (Index),
+                  Expected_Checksum_Mode => "ENABLED");
+            end;
+         end loop;
          Serve
            (HTTP_Response
               ("304 Not Modified", "",
@@ -4854,7 +4916,7 @@ procedure S3_HTTP_Socket_Corpus is
                 "application/test"
               or else US.To_String (Result.Version_ID) /= "head-version"
               or else US.To_String (Result.Checksum_SHA256) /=
-                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=-3"
               or else US.To_String (Result.Checksum_Type) /= "COMPOSITE"
               or else not Result.Details.Parts_Count.Is_Set
               or else Result.Details.Parts_Count.Value /= 3
@@ -5074,6 +5136,133 @@ procedure S3_HTTP_Socket_Corpus is
                     "full-object GetObject body mismatch";
                end if;
             end;
+         end;
+         declare
+            procedure Require_Valid_Full_Object (Index : Positive) is
+               Parameters : Low_Level.Get_Object_Parameters;
+            begin
+               Parameters.Checksum_Mode := True;
+               declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Get_Object
+                      (Origin, Low_Level.Path_Style, "example-bucket",
+                       "read-full-" & Decimal (Index), Parameters, Identity,
+                       "us-east-1", "20130524T000000Z");
+                  Response : HTTP_Client.Response :=
+                    Low_Level.Execute_Get_Object
+                      (HTTP, Prepared, Timeout => 5.0);
+                  Result : constant Low_Level.Get_Object_Head_Outcome :=
+                    Low_Level.Decode_Get_Object_Response_Head (Response);
+                  Received : US.Unbounded_String;
+                  Buffer : Stream_Element_Array (1 .. 3);
+                  Last : Stream_Element_Offset;
+                  Finished : Boolean := False;
+
+                  function Projected_Checksum return String is
+                  begin
+                     case Index is
+                        when 1 =>
+                           return US.To_String (Result.Result.Checksum_CRC32);
+                        when 2 =>
+                           return US.To_String (Result.Result.Checksum_CRC32C);
+                        when 3 =>
+                           return US.To_String
+                             (Result.Result.Checksum_CRC64NVME);
+                        when 4 =>
+                           return US.To_String (Result.Result.Checksum_SHA1);
+                        when 5 =>
+                           return US.To_String (Result.Result.Checksum_SHA256);
+                        when 6 =>
+                           return US.To_String (Result.Result.Checksum_SHA512);
+                        when 7 =>
+                           return US.To_String (Result.Result.Checksum_MD5);
+                        when 8 =>
+                           return US.To_String
+                             (Result.Result.Checksum_XXHASH64);
+                        when 9 =>
+                           return US.To_String
+                             (Result.Result.Checksum_XXHASH3);
+                        when 10 =>
+                           return US.To_String
+                             (Result.Result.Checksum_XXHASH128);
+                        when others =>
+                           return "";
+                     end case;
+                  end Projected_Checksum;
+               begin
+                  if Result.Kind /= Low_Level.Object_Opened
+                    or else Result.Status /= 200
+                    or else US.To_String (Result.Result.Checksum_Type) /=
+                      "FULL_OBJECT"
+                    or else Projected_Checksum /=
+                      US.To_String (Read_Checksums (Index).Value)
+                  then
+                     raise Program_Error with
+                       "ordinary FULL_OBJECT GetObject mismatch" &
+                         Positive'Image (Index);
+                  end if;
+                  while not Finished loop
+                     HTTP_Client.Read_Body
+                       (Response, Buffer, Last, Finished);
+                     for Offset in Buffer'First .. Last loop
+                        US.Append
+                          (Received, Character'Val (Buffer (Offset)));
+                     end loop;
+                  end loop;
+                  if US.To_String (Received) /= "full" then
+                     raise Program_Error with
+                       "ordinary FULL_OBJECT GetObject body mismatch";
+                  end if;
+               end;
+            end Require_Valid_Full_Object;
+
+            procedure Reject_Invalid_Get
+              (Key : String; Message : String)
+            is
+               Parameters : Low_Level.Get_Object_Parameters;
+            begin
+               Parameters.Checksum_Mode := True;
+               declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Get_Object
+                      (Origin, Low_Level.Path_Style, "example-bucket", Key,
+                       Parameters, Identity, "us-east-1",
+                       "20130524T000000Z");
+                  Response : HTTP_Client.Response :=
+                    Low_Level.Execute_Get_Object
+                      (HTTP, Prepared, Timeout => 5.0);
+                  Raised : Boolean := False;
+               begin
+                  begin
+                     declare
+                        Ignored : constant
+                          Low_Level.Get_Object_Head_Outcome :=
+                            Low_Level.Decode_Get_Object_Response_Head
+                              (Response);
+                        pragma Unreferenced (Ignored);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Low_Level.Invalid_Response => Raised := True;
+                  end;
+                  if not Raised then
+                     raise Program_Error with Message;
+                  end if;
+               end;
+            end Reject_Invalid_Get;
+         begin
+            for Index in Read_Checksums'Range loop
+               Require_Valid_Full_Object (Index);
+               Reject_Invalid_Get
+                 ("read-malformed-" & Decimal (Index),
+                  "GetObject accepted malformed FULL_OBJECT checksum" &
+                    Positive'Image (Index));
+               Reject_Invalid_Get
+                 ("read-wrong-type-" & Decimal (Index),
+                  "GetObject accepted raw checksum as COMPOSITE" &
+                    Positive'Image (Index));
+            end loop;
          end;
          declare
             Parameters : Low_Level.Get_Object_Parameters;
