@@ -1137,6 +1137,11 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode a PutObject result after the transport has projected its
+   --  singleton headers. A 200 response must have an exactly empty body, one
+   --  strong quoted ETag, at most one canonical full-object checksum, and a
+   --  coherent bounded encryption tuple. Other statuses return a bounded,
+   --  structured S3 error.
    function Decode_Put_Object_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
@@ -1146,6 +1151,9 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Object_Outcome;
 
+   --  Execute a prepared PutObject request and enforce physical singleton and
+   --  present-nonempty semantics for all 22 modeled response headers before
+   --  decoding them. Object size remains optional and accepts canonical zero.
    function Execute_Put_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
