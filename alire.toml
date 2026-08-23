@@ -17,12 +17,12 @@ flyology_http = "=0.1.3-dev"
 #  git pin is required for the composable client API and must be replaced by
 #  the reviewed dev-index release after merge; it is never a local path pin.
 [[pins]]
-flyology_http = { url = "https://github.com/flyology-ada/flyology-http.git", commit = "4147160562b14d8ca9db8f7ba9758258781eeca9" }
+flyology_http = { url = "https://github.com/flyology-ada/flyology-http.git", commit = "5f23f559fe392530be1cdea55899314b079dd38c" }
 
 #  PR #33 carries its not-yet-indexed QUIC dependency in this subcrate at the
 #  same reviewed commit, so the provisional graph remains one immutable source.
 [[pins]]
-flyology_quic = { url = "https://github.com/flyology-ada/flyology-http.git", subdir = "flyology_quic", commit = "4147160562b14d8ca9db8f7ba9758258781eeca9" }
+flyology_quic = { url = "https://github.com/flyology-ada/flyology-http.git", subdir = "flyology_quic", commit = "5f23f559fe392530be1cdea55899314b079dd38c" }
 
 [build-switches]
 "*".ada_version = "Ada2022"
