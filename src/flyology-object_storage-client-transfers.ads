@@ -34,6 +34,27 @@ package Flyology.Object_Storage.Client.Transfers is
    Default_Upload_Checksum : constant Upload_Checksum_Selection :=
      (others => <>);
 
+   --  Create one multipart upload through the synchronous no-body path.
+   --  Parameters exposes all non-resource members in the pinned input shape;
+   --  the result preserves all modeled body and response-header members and
+   --  is rejected unless its bucket, key, encryption, payer, and explicit
+   --  checksum policy are coherent with the prepared request. This operation
+   --  is never transparently retried. Invalid_Request raised before HTTP
+   --  admission is definite non-creation; every exception after Execute is
+   --  entered is ambiguous and must be reconciled with ListMultipartUploads.
+   function Create_Multipart_Upload
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.Create_Multipart_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Low_Level.Create_Multipart_Outcome;
+
    --  Abort one active multipart upload without constructing a modeled
    --  request record. Optional advanced members map directly to the pinned
    --  S3 input shape; If_Match_Initiated_Time is an RFC 822 HTTP date.

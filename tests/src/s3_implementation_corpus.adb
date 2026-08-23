@@ -1894,13 +1894,11 @@ procedure S3_Implementation_Corpus is
 
       procedure Copy_With_Multipart is
          Copy_Key : constant String := Key & "-copy-part";
-         Prepared_Create : constant Low_Level.Prepared_Request :=
-           Low_Level.Prepare_Create_Multipart_Upload
-             (Origin, Low_Level.Path_Style, Bucket, Copy_Key, Identity,
-              "us-east-1", Timestamp);
+         Parameters : Low_Level.Create_Multipart_Parameters;
          Created : constant Low_Level.Create_Multipart_Outcome :=
-           Low_Level.Execute_Create_Multipart_Upload
-             (HTTP, Prepared_Create, Timeout => 30.0);
+           Transfers.Create_Multipart_Upload
+             (HTTP, Origin, Bucket, Copy_Key, Parameters, Identity,
+              Timeout => 30.0);
       begin
          if Created.Kind /= Low_Level.Created then
             raise Program_Error with
@@ -2565,13 +2563,10 @@ procedure S3_Implementation_Corpus is
          end;
       end;
       declare
-         Prepared_Create : constant Low_Level.Prepared_Request :=
-           Low_Level.Prepare_Create_Multipart_Upload
-             (Origin, Low_Level.Path_Style, Bucket, Key,
-              Composite_Create_Parameters, Identity, "us-east-1", Timestamp);
          Created : constant Low_Level.Create_Multipart_Outcome :=
-           Low_Level.Execute_Create_Multipart_Upload
-             (HTTP, Prepared_Create, Timeout => 30.0);
+           Transfers.Create_Multipart_Upload
+             (HTTP, Origin, Bucket, Key, Composite_Create_Parameters,
+              Identity, Timeout => 30.0);
       begin
          if Created.Kind /= Low_Level.Created then
             raise Program_Error with
@@ -2732,13 +2727,11 @@ procedure S3_Implementation_Corpus is
       Require_Complete_Put_Tuple;
       declare
          Abort_Key : constant String := Key & "-aborted";
-         Prepared_Create : constant Low_Level.Prepared_Request :=
-           Low_Level.Prepare_Create_Multipart_Upload
-             (Origin, Low_Level.Path_Style, Bucket, Abort_Key, Identity,
-              "us-east-1", Timestamp);
+         Parameters : Low_Level.Create_Multipart_Parameters;
          Created : constant Low_Level.Create_Multipart_Outcome :=
-           Low_Level.Execute_Create_Multipart_Upload
-             (HTTP, Prepared_Create, Timeout => 30.0);
+           Transfers.Create_Multipart_Upload
+             (HTTP, Origin, Bucket, Abort_Key, Parameters, Identity,
+              Timeout => 30.0);
       begin
          if Created.Kind /= Low_Level.Created then
             raise Program_Error with

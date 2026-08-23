@@ -1326,11 +1326,22 @@ procedure S3_HTTP_Socket_Corpus is
       Precondition_XML : constant String :=
         "<Error><Code>PreconditionFailed</Code>" &
         "<Message>condition failed</Message></Error>";
+      function Create_Result_XML
+        (Bucket, Key, Upload_ID : String) return String is
+        ("<InitiateMultipartUploadResult>" &
+         "<Bucket>" & Bucket & "</Bucket><Key>" & Key & "</Key>" &
+         "<UploadId>" & Upload_ID & "</UploadId>" &
+         "</InitiateMultipartUploadResult>");
       Create_XML : constant String :=
-        "<InitiateMultipartUploadResult>" &
-        "<Bucket>example-bucket</Bucket><Key>object key</Key>" &
-        "<UploadId>socket-upload</UploadId>" &
-        "</InitiateMultipartUploadResult>";
+        Create_Result_XML ("example-bucket", "object key", "socket-upload");
+      Lost_Create_List_XML : constant String :=
+        "<ListMultipartUploadsResult>" &
+        "<Bucket>example-bucket</Bucket><Prefix>create-lost</Prefix>" &
+        "<MaxUploads>1000</MaxUploads><IsTruncated>false</IsTruncated>" &
+        "<Upload><UploadId>lost-create-id</UploadId>" &
+        "<Key>create-lost</Key>" &
+        "<Initiated>2026-08-23T00:00:00Z</Initiated></Upload>" &
+        "</ListMultipartUploadsResult>";
       Complete_XML : constant String :=
         "<CompleteMultipartUploadResult>" &
         "<Bucket>example-bucket</Bucket><Key>object key</Key>" &
@@ -2744,8 +2755,64 @@ procedure S3_HTTP_Socket_Corpus is
               ("204 No Content", "", Omit_Content_Length => True),
             "DELETE", "/example-bucket?tagging");
          Serve
-           (HTTP_Response ("200 OK", Create_XML), "POST",
-            "/example-bucket/object%20key?uploads", Fragmented => True);
+           ("", "POST", "/example-bucket/create-lost?uploads",
+            Keep_Open => False);
+         Serve
+           (HTTP_Response ("200 OK", Lost_Create_List_XML), "GET",
+            "/example-bucket?max-uploads=1000&prefix=create-lost&uploads");
+         Serve
+           (HTTP_Response
+              ("200 OK", Create_XML,
+               "x-amz-abort-date: Fri, 24 May 2013 00:00:00 GMT" & CRLF &
+               "x-amz-abort-rule-id: cleanup" & CRLF &
+               "x-amz-server-side-encryption: aws:kms" & CRLF &
+               "x-amz-server-side-encryption-aws-kms-key-id: kms-key" &
+               CRLF & "x-amz-server-side-encryption-context: e30=" & CRLF &
+               "x-amz-server-side-encryption-bucket-key-enabled: true" &
+               CRLF & "x-amz-request-charged: requester" & CRLF &
+               "x-amz-checksum-algorithm: CRC32C" & CRLF &
+               "x-amz-checksum-type: FULL_OBJECT" & CRLF),
+            "POST", "/example-bucket/object%20key?uploads",
+            Expected_Request_Payer => "requester",
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-checksum-algorithm",
+            Expected_Checksum_Algorithm => "CRC32C",
+            Expected_Checksum_Type => "FULL_OBJECT", Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Create_Result_XML
+                 ("wrong-bucket", "create-wrong-bucket", "bad-bucket")),
+            "POST", "/example-bucket/create-wrong-bucket?uploads");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Create_Result_XML
+                 ("example-bucket", "wrong-key", "bad-key")),
+            "POST", "/example-bucket/create-wrong-key?uploads");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Create_Result_XML
+                 ("example-bucket", "create-duplicate", "bad-duplicate"),
+               "x-amz-checksum-algorithm: CRC32C" & CRLF &
+               "x-amz-checksum-algorithm: CRC32C" & CRLF),
+            "POST", "/example-bucket/create-duplicate?uploads");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Create_Result_XML
+                 ("example-bucket", "create-empty", "bad-empty"),
+               "x-amz-request-charged:" & CRLF),
+            "POST", "/example-bucket/create-empty?uploads");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Create_Result_XML
+                 ("example-bucket", "create-bool", "bad-bool"),
+               "x-amz-server-side-encryption-bucket-key-enabled: True" &
+               CRLF),
+            "POST", "/example-bucket/create-bool?uploads");
          Serve
            (HTTP_Response
               ("200 OK", "", "ETag: ""socket-part""" & CRLF),
@@ -6450,22 +6517,136 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
-            Prepared_Create : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_Create_Multipart_Upload
-                (Origin, Low_Level.Path_Style, "example-bucket",
-                 "object key", Identity, "us-east-1",
-                 "20130524T000000Z");
-            Result : constant Low_Level.Create_Multipart_Outcome :=
-              Low_Level.Execute_Create_Multipart_Upload
-                (HTTP, Prepared_Create, Timeout => 5.0);
+            Create_Parameters : Low_Level.Create_Multipart_Parameters;
+            List_Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+            Ambiguous : Boolean := False;
          begin
-            if Result.Kind /= Low_Level.Created
-              or else US.To_String (Result.Result.Upload_ID) /=
-                "socket-upload"
-            then
+            begin
+               declare
+                  Unexpected : constant Low_Level.Create_Multipart_Outcome :=
+                    Transfers.Create_Multipart_Upload
+                      (HTTP, Origin, "example-bucket", "create-lost",
+                       Create_Parameters, Identity, Timeout => 5.0);
+                  pragma Unreferenced (Unexpected);
+               begin
+                  raise Program_Error with
+                    "lost CreateMultipartUpload returned a definite outcome";
+               end;
+            exception
+               when Low_Level.Invalid_Request | Program_Error =>
+                  raise;
+               when others =>
+                  Ambiguous := True;
+            end;
+            if not Ambiguous then
                raise Program_Error with
-                 "socket CreateMultipartUpload result mismatch";
+                 "lost CreateMultipartUpload was not ambiguous";
             end if;
+            List_Parameters.Prefix := US.To_Unbounded_String ("create-lost");
+            declare
+               Listed : constant Low_Level.List_Multipart_Uploads_Outcome :=
+                 Transfers.List_Multipart_Uploads_Page
+                   (HTTP, Origin, "example-bucket", List_Parameters,
+                    Identity, Timeout => 5.0);
+            begin
+               if Listed.Kind /= Low_Level.Multipart_Uploads_Listed
+                 or else Natural (Listed.Result.Listing.Uploads.Length) /= 1
+                 or else US.To_String
+                   (Listed.Result.Listing.Uploads.First_Element.Key) /=
+                     "create-lost"
+                 or else US.To_String
+                   (Listed.Result.Listing.Uploads.First_Element.Upload_ID) /=
+                     "lost-create-id"
+               then
+                  raise Program_Error with
+                    "CreateMultipartUpload lost-response reconciliation " &
+                    "failed";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Create_Multipart_Parameters;
+         begin
+            Parameters.Server_Side_Encryption :=
+              US.To_Unbounded_String ("aws:kms");
+            Parameters.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+            Parameters.SSE_KMS_Encryption_Context :=
+              US.To_Unbounded_String ("e30=");
+            Parameters.Bucket_Key_Enabled := (Is_Set => True, Value => True);
+            Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+            Parameters.Checksum_Algorithm :=
+              US.To_Unbounded_String ("CRC32C");
+            Parameters.Checksum_Type :=
+              US.To_Unbounded_String ("FULL_OBJECT");
+            declare
+               Result : constant Low_Level.Create_Multipart_Outcome :=
+                 Transfers.Create_Multipart_Upload
+                   (HTTP, Origin, "example-bucket", "object key", Parameters,
+                    Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Created
+                 or else US.To_String (Result.Result.Upload_ID) /=
+                   "socket-upload"
+                 or else US.To_String (Result.Result.Abort_Rule_ID) /=
+                   "cleanup"
+                 or else US.To_String
+                   (Result.Result.Server_Side_Encryption) /= "aws:kms"
+                 or else US.To_String (Result.Result.SSE_KMS_Key_ID) /=
+                   "kms-key"
+                 or else US.To_String
+                   (Result.Result.SSE_KMS_Encryption_Context) /= "e30="
+                 or else not Result.Result.Bucket_Key_Enabled.Is_Set
+                 or else not Result.Result.Bucket_Key_Enabled.Value
+                 or else US.To_String (Result.Result.Request_Charged) /=
+                   "requester"
+                 or else US.To_String (Result.Result.Checksum_Algorithm) /=
+                   "CRC32C"
+                 or else US.To_String (Result.Result.Checksum_Type) /=
+                   "FULL_OBJECT"
+               then
+                  raise Program_Error with
+                    "socket CreateMultipartUpload result mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Create_Multipart_Parameters;
+            procedure Require_Invalid (Key, Message : String) is
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant Low_Level.Create_Multipart_Outcome :=
+                       Transfers.Create_Multipart_Upload
+                         (HTTP, Origin, "example-bucket", Key, Parameters,
+                          Identity, Timeout => 5.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response => Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Require_Invalid;
+         begin
+            Require_Invalid
+              ("create-wrong-bucket",
+               "CreateMultipartUpload accepted wrong response bucket");
+            Require_Invalid
+              ("create-wrong-key",
+               "CreateMultipartUpload accepted wrong response key");
+            Require_Invalid
+              ("create-duplicate",
+               "CreateMultipartUpload accepted duplicate response header");
+            Require_Invalid
+              ("create-empty",
+               "CreateMultipartUpload accepted present-empty response header");
+            Require_Invalid
+              ("create-bool",
+               "CreateMultipartUpload accepted noncanonical boolean header");
          end;
          declare
             Completion : Multipart.Complete_Multipart_Upload_Request;

@@ -132,6 +132,28 @@ package body Flyology.Object_Storage.Client.Transfers is
         & "Z";
    end Current_Timestamp;
 
+   function Create_Multipart_Upload
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.Create_Multipart_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Low_Level.Create_Multipart_Outcome
+   is
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Create_Multipart_Upload
+          (Origin, Style, Bucket, Key, Parameters, Identity, Region,
+           Current_Timestamp);
+   begin
+      return Low_Level.Execute_Create_Multipart_Upload
+        (Client, Prepared, Timeout, Token);
+   end Create_Multipart_Upload;
+
    function Abort_Multipart_Upload
      (Client       : aliased in out Flyology.HTTP.Client.Client;
       Origin       : Flyology.HTTP.Origin;

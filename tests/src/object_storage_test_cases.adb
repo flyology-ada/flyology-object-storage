@@ -9023,6 +9023,7 @@ package body Object_Storage_Test_Cases is
         Flyology.Object_Storage.S3.Checksum_Policy;
       package SigV4 renames Flyology.Object_Storage.S3.SigV4;
       package US renames Ada.Strings.Unbounded;
+      use type US.Unbounded_String;
       use type Low_Level.Create_Multipart_Outcome_Kind;
       use type Low_Level.Complete_Multipart_Outcome_Kind;
       use type Low_Level.Abort_Multipart_Outcome_Kind;
@@ -9083,6 +9084,112 @@ package body Object_Storage_Test_Cases is
       end;
 
       declare
+         Parameters : Low_Level.Create_Multipart_Parameters;
+         Prepared : Low_Level.Prepared_Request;
+      begin
+         Parameters.ACL := US.To_Unbounded_String ("private");
+         Parameters.Cache_Control := US.To_Unbounded_String ("no-cache");
+         Parameters.Content_Disposition :=
+           US.To_Unbounded_String ("attachment");
+         Parameters.Content_Encoding := US.To_Unbounded_String ("gzip");
+         Parameters.Content_Language := US.To_Unbounded_String ("en");
+         Parameters.Content_Type := US.To_Unbounded_String ("text/plain");
+         Parameters.Expires :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
+         Parameters.Metadata.Append
+           (Low_Level.Metadata_Entry'
+              (Name => US.To_Unbounded_String ("owner"),
+               Value => US.To_Unbounded_String ("flyology")));
+         Parameters.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Parameters.Storage_Class := US.To_Unbounded_String ("STANDARD");
+         Parameters.Website_Redirect_Location :=
+           US.To_Unbounded_String ("/next");
+         Parameters.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Parameters.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String ("e30=");
+         Parameters.Bucket_Key_Enabled := (Is_Set => True, Value => True);
+         Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+         Parameters.Tagging := US.To_Unbounded_String ("kind=test");
+         Parameters.Object_Lock_Mode :=
+           US.To_Unbounded_String ("GOVERNANCE");
+         Parameters.Object_Lock_Retain_Until_Date :=
+           US.To_Unbounded_String ("2030-01-01T00:00:00Z");
+         Parameters.Object_Lock_Legal_Hold_Status :=
+           US.To_Unbounded_String ("ON");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String ("123456789012");
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("CRC32C");
+         Parameters.Checksum_Type := US.To_Unbounded_String ("FULL_OBJECT");
+         Prepared := Low_Level.Prepare_Create_Multipart_Upload
+           (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+            Low_Level.Path_Style, "example-bucket", "complete-policy",
+            Parameters, Identity, "us-east-1", "20130524T000000Z");
+         declare
+            Signed : constant String :=
+              ";" & Low_Level.Signed_Headers (Prepared) & ";";
+            function Has (Name : String) return Boolean is
+              (Ada.Strings.Fixed.Index (Signed, ";" & Name & ";") > 0);
+         begin
+            Assert
+              (Has ("x-amz-acl")
+               and then Has ("cache-control")
+               and then Has ("content-disposition")
+               and then Has ("content-encoding")
+               and then Has ("content-language")
+               and then Has ("content-type")
+               and then Has ("expires")
+               and then Has ("x-amz-meta-owner")
+               and then Has ("x-amz-server-side-encryption")
+               and then Has ("x-amz-storage-class")
+               and then Has ("x-amz-website-redirect-location")
+               and then Has
+                 ("x-amz-server-side-encryption-aws-kms-key-id")
+               and then Has ("x-amz-server-side-encryption-context")
+               and then Has
+                 ("x-amz-server-side-encryption-bucket-key-enabled")
+               and then Has ("x-amz-request-payer")
+               and then Has ("x-amz-tagging")
+               and then Has ("x-amz-object-lock-mode")
+               and then Has ("x-amz-object-lock-retain-until-date")
+               and then Has ("x-amz-object-lock-legal-hold")
+               and then Has ("x-amz-expected-bucket-owner")
+               and then Has ("x-amz-checksum-algorithm")
+               and then Has ("x-amz-checksum-type"),
+               "CreateMultipartUpload did not project every policy class");
+         end;
+      end;
+
+      declare
+         Parameters : Low_Level.Create_Multipart_Parameters;
+         Prepared : Low_Level.Prepared_Request;
+      begin
+         Parameters.Grant_Full_Control :=
+           US.To_Unbounded_String ("id=""owner""");
+         Parameters.Grant_Read := US.To_Unbounded_String ("id=""reader""");
+         Parameters.Grant_Read_ACP :=
+           US.To_Unbounded_String ("id=""reader-acp""");
+         Parameters.Grant_Write_ACP :=
+           US.To_Unbounded_String ("id=""writer-acp""");
+         Prepared := Low_Level.Prepare_Create_Multipart_Upload
+           (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+            Low_Level.Path_Style, "example-bucket", "grants", Parameters,
+            Identity, "us-east-1", "20130524T000000Z");
+         Assert
+           (Ada.Strings.Fixed.Index
+              (Low_Level.Signed_Headers (Prepared),
+               "x-amz-grant-full-control") > 0
+            and then Ada.Strings.Fixed.Index
+              (Low_Level.Signed_Headers (Prepared), "x-amz-grant-read") > 0
+            and then Ada.Strings.Fixed.Index
+              (Low_Level.Signed_Headers (Prepared), "x-amz-grant-read-acp") > 0
+            and then Ada.Strings.Fixed.Index
+              (Low_Level.Signed_Headers (Prepared), "x-amz-grant-write-acp") >
+                0,
+            "CreateMultipartUpload explicit grants were not projected");
+      end;
+
+      declare
          procedure Rejects
            (Algorithm, Kind : String; Message : String) is
             Parameters : Low_Level.Create_Multipart_Parameters;
@@ -9115,6 +9222,94 @@ package body Object_Storage_Test_Cases is
          Rejects
            ("CRC64NVME", "COMPOSITE",
             "CreateMultipartUpload accepted unsupported checksum policy");
+      end;
+
+      declare
+         procedure Rejects
+           (Parameters : Low_Level.Create_Multipart_Parameters;
+            Origin     : String;
+            Message    : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Create_Multipart_Upload
+                      (Flyology.HTTP.Parse_Origin (Origin),
+                       Low_Level.Path_Style, "example-bucket", "key",
+                       Parameters, Identity, "us-east-1",
+                       "20130524T000000Z");
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request => Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Rejects;
+         Parameters : Low_Level.Create_Multipart_Parameters;
+      begin
+         Parameters.ACL := US.To_Unbounded_String ("private");
+         Parameters.Grant_Read := US.To_Unbounded_String ("id=""reader""");
+         Rejects
+           (Parameters, "https://localhost:9000",
+            "CreateMultipartUpload accepted ACL plus explicit grant");
+         Parameters := (others => <>);
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Rejects
+           (Parameters, "https://localhost:9000",
+            "CreateMultipartUpload accepted mismatched SSE-C digest");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("cLyPS3KoaSFGi/joRB3OUQ==");
+         Rejects
+           (Parameters, "http://localhost:9000",
+            "CreateMultipartUpload accepted SSE-C over plaintext HTTP");
+         Parameters := (others => <>);
+         Parameters.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Rejects
+           (Parameters, "https://localhost:9000",
+            "CreateMultipartUpload accepted KMS key without KMS mode");
+         Parameters := (others => <>);
+         Parameters.Object_Lock_Mode :=
+           US.To_Unbounded_String ("GOVERNANCE");
+         Rejects
+           (Parameters, "https://localhost:9000",
+            "CreateMultipartUpload accepted incomplete Object Lock pair");
+         Parameters.Object_Lock_Retain_Until_Date :=
+           US.To_Unbounded_String ("2030-02-30T00:00:00Z");
+         Rejects
+           (Parameters, "https://localhost:9000",
+            "CreateMultipartUpload accepted invalid Object Lock date");
+         Parameters := (others => <>);
+         Parameters.Expires := US.To_Unbounded_String ("not-a-date");
+         Rejects
+           (Parameters, "https://localhost:9000",
+            "CreateMultipartUpload accepted malformed expiry date");
+         Parameters := (others => <>);
+         Parameters.Tagging :=
+           US.To_Unbounded_String ("duplicate=1&duplicate=2");
+         Rejects
+           (Parameters, "https://localhost:9000",
+            "CreateMultipartUpload accepted duplicate tag key");
+         Parameters := (others => <>);
+         Parameters.Metadata.Append
+           (Low_Level.Metadata_Entry'
+              (Name => US.To_Unbounded_String ("Owner"),
+               Value => US.To_Unbounded_String ("one")));
+         Parameters.Metadata.Append
+           (Low_Level.Metadata_Entry'
+              (Name => US.To_Unbounded_String ("owner"),
+               Value => US.To_Unbounded_String ("two")));
+         Rejects
+           (Parameters, "https://localhost:9000",
+            "CreateMultipartUpload accepted duplicate metadata name");
       end;
 
       declare
@@ -9277,6 +9472,160 @@ package body Object_Storage_Test_Cases is
            (Outcome.Kind = Low_Level.Created
             and then US.To_String (Outcome.Result.Upload_ID) = "upload-1",
             "typed CreateMultipartUpload success response");
+      end;
+
+      declare
+         Headers : constant Low_Level.Create_Multipart_Response_Headers :=
+           (Abort_Date =>
+              US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT"),
+            Abort_Rule_ID => US.To_Unbounded_String ("cleanup"),
+            Server_Side_Encryption => US.To_Unbounded_String ("aws:kms"),
+            SSE_KMS_Key_ID => US.To_Unbounded_String ("kms-key"),
+            SSE_KMS_Encryption_Context => US.To_Unbounded_String ("e30="),
+            Bucket_Key_Enabled => (Is_Set => True, Value => True),
+            Request_Charged => US.To_Unbounded_String ("requester"),
+            Checksum_Algorithm => US.To_Unbounded_String ("CRC32C"),
+            Checksum_Type => US.To_Unbounded_String ("FULL_OBJECT"),
+            others => <>);
+         Outcome : constant Low_Level.Create_Multipart_Outcome :=
+           Low_Level.Decode_Create_Multipart_Response
+             (200, "<InitiateMultipartUploadResult>" &
+              "<Bucket>example-bucket</Bucket><Key>key</Key>" &
+              "<UploadId>upload-headers</UploadId>" &
+              "</InitiateMultipartUploadResult>", Headers => Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Created
+            and then Outcome.Result.Abort_Date = Headers.Abort_Date
+            and then Outcome.Result.Abort_Rule_ID = Headers.Abort_Rule_ID
+            and then Outcome.Result.Server_Side_Encryption =
+              Headers.Server_Side_Encryption
+            and then Outcome.Result.SSE_KMS_Key_ID = Headers.SSE_KMS_Key_ID
+            and then Outcome.Result.SSE_KMS_Encryption_Context =
+              Headers.SSE_KMS_Encryption_Context
+            and then Outcome.Result.Bucket_Key_Enabled.Is_Set
+            and then Outcome.Result.Bucket_Key_Enabled.Value
+            and then Outcome.Result.Request_Charged = Headers.Request_Charged
+            and then Outcome.Result.Checksum_Algorithm =
+              Headers.Checksum_Algorithm
+            and then Outcome.Result.Checksum_Type = Headers.Checksum_Type,
+            "CreateMultipartUpload response headers were not preserved");
+      end;
+
+      declare
+         Headers : constant Low_Level.Create_Multipart_Response_Headers :=
+           (SSE_Customer_Algorithm => US.To_Unbounded_String ("AES256"),
+            SSE_Customer_Key_MD5 =>
+              US.To_Unbounded_String ("cLyPS3KoaSFGi/joRB3OUQ=="),
+            others => <>);
+         Outcome : constant Low_Level.Create_Multipart_Outcome :=
+           Low_Level.Decode_Create_Multipart_Response
+             (200, "<InitiateMultipartUploadResult>" &
+              "<Bucket>example-bucket</Bucket><Key>key</Key>" &
+              "<UploadId>sse-c</UploadId>" &
+              "</InitiateMultipartUploadResult>", Headers => Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Created
+            and then Outcome.Result.SSE_Customer_Algorithm =
+              Headers.SSE_Customer_Algorithm
+            and then Outcome.Result.SSE_Customer_Key_MD5 =
+              Headers.SSE_Customer_Key_MD5,
+            "CreateMultipartUpload SSE-C response was not preserved");
+      end;
+
+      declare
+         Headers : constant Low_Level.Create_Multipart_Response_Headers :=
+           (Abort_Date =>
+              US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT"),
+            Abort_Rule_ID => US.To_Unbounded_String
+              (String'(1 .. 8_192 => 'r')),
+            others => <>);
+         Outcome : constant Low_Level.Create_Multipart_Outcome :=
+           Low_Level.Decode_Create_Multipart_Response
+             (200, "<InitiateMultipartUploadResult>" &
+              "<Bucket>example-bucket</Bucket><Key>key</Key>" &
+              "<UploadId>boundary</UploadId>" &
+              "</InitiateMultipartUploadResult>", Headers => Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Created
+            and then US.Length (Outcome.Result.Abort_Rule_ID) = 8_192,
+            "CreateMultipartUpload rejected exact response-header bound");
+      end;
+
+      declare
+         Outcome : constant Low_Level.Create_Multipart_Outcome :=
+           Low_Level.Decode_Create_Multipart_Response
+             (400, "<Error><Code>InvalidRequest</Code>" &
+              "<Message>bad</Message></Error>",
+              Request_ID => String'(1 .. 8_192 => 'r'),
+              Host_ID => String'(1 .. 8_192 => 'h'));
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Create_Rejected,
+            "CreateMultipartUpload rejected exact error-ID bound");
+      end;
+
+      declare
+         procedure Rejects
+           (Headers : Low_Level.Create_Multipart_Response_Headers;
+            Message : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Create_Multipart_Outcome :=
+                    Low_Level.Decode_Create_Multipart_Response
+                      (200, "<InitiateMultipartUploadResult>" &
+                       "<Bucket>example-bucket</Bucket><Key>key</Key>" &
+                       "<UploadId>upload-invalid</UploadId>" &
+                       "</InitiateMultipartUploadResult>",
+                       Headers => Headers);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response => Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Rejects;
+         Headers : Low_Level.Create_Multipart_Response_Headers;
+      begin
+         Headers.Abort_Date :=
+           US.To_Unbounded_String ("Fri, 24 May 2013 00:00:00 GMT");
+         Rejects (Headers, "CreateMultipartUpload accepted lone abort date");
+         Headers := (others => <>);
+         Headers.Server_Side_Encryption := US.To_Unbounded_String ("AES256");
+         Headers.SSE_Customer_Algorithm := US.To_Unbounded_String ("AES256");
+         Headers.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Rejects (Headers, "CreateMultipartUpload accepted mixed encryption");
+         Headers := (others => <>);
+         Headers.Checksum_Algorithm := US.To_Unbounded_String ("CRC64NVME");
+         Headers.Checksum_Type := US.To_Unbounded_String ("COMPOSITE");
+         Rejects
+           (Headers, "CreateMultipartUpload accepted incompatible checksum");
+         Headers := (others => <>);
+         Headers.Request_Charged := US.To_Unbounded_String ("Requester");
+         Rejects
+           (Headers, "CreateMultipartUpload accepted invalid request payer");
+         Headers := (others => <>);
+         Headers.Abort_Date := US.To_Unbounded_String
+           (String'(1 .. 8_193 => 'a'));
+         Headers.Abort_Rule_ID := US.To_Unbounded_String ("cleanup");
+         Rejects
+           (Headers,
+            "CreateMultipartUpload accepted overlong response header");
+         Headers := (others => <>);
+         Headers.Abort_Date := US.To_Unbounded_String
+           ("Fri, 24 May 2013 00:00:00 GMT");
+         Headers.Abort_Rule_ID := US.To_Unbounded_String
+           ("clean" & Character'Val (10));
+         Rejects
+           (Headers, "CreateMultipartUpload accepted response control byte");
       end;
 
       declare

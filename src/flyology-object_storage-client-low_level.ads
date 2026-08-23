@@ -1407,12 +1407,42 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Objects_Outcome;
 
-   --  Checksum policy subset of the pinned CreateMultipartUpload input.
-   --  Empty algorithm and type preserve AWS's server-selected default.
+   --  Every non-resource member in the pinned CreateMultipartUpload input.
+   --  Empty optional strings preserve omission; Bucket_Key_Enabled preserves
+   --  absent versus explicit false. Metadata entries project as x-amz-meta-*
+   --  headers and are rejected on a case-insensitive duplicate name.
    type Create_Multipart_Parameters is record
-      Content_Type       : Ada.Strings.Unbounded.Unbounded_String;
-      Checksum_Algorithm : Ada.Strings.Unbounded.Unbounded_String;
-      Checksum_Type      : Ada.Strings.Unbounded.Unbounded_String;
+      ACL                       : Ada.Strings.Unbounded.Unbounded_String;
+      Cache_Control             : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Disposition       : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Encoding          : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Language          : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Type              : Ada.Strings.Unbounded.Unbounded_String;
+      Expires                   : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Full_Control        : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Read                : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Read_ACP            : Ada.Strings.Unbounded.Unbounded_String;
+      Grant_Write_ACP           : Ada.Strings.Unbounded.Unbounded_String;
+      Metadata                  : Metadata_Entry_Vectors.Vector;
+      Server_Side_Encryption    : Ada.Strings.Unbounded.Unbounded_String;
+      Storage_Class             : Ada.Strings.Unbounded.Unbounded_String;
+      Website_Redirect_Location : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key          : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5      : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID            : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Encryption_Context : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled        : Optional_Boolean;
+      Request_Payer             : Ada.Strings.Unbounded.Unbounded_String;
+      Tagging                   : Ada.Strings.Unbounded.Unbounded_String;
+      Object_Lock_Mode          : Ada.Strings.Unbounded.Unbounded_String;
+      Object_Lock_Retain_Until_Date :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Object_Lock_Legal_Hold_Status :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner     : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm        : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Type             : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
    function Prepare_Create_Multipart_Upload
@@ -1438,12 +1468,47 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    type Create_Multipart_Outcome_Kind is (Created, Create_Rejected);
 
+   --  Every member in the pinned CreateMultipartUpload output shape.
+   type Create_Multipart_Result is record
+      Bucket                     : Ada.Strings.Unbounded.Unbounded_String;
+      Key                        : Ada.Strings.Unbounded.Unbounded_String;
+      Upload_ID                  : Ada.Strings.Unbounded.Unbounded_String;
+      Abort_Date                 : Ada.Strings.Unbounded.Unbounded_String;
+      Abort_Rule_ID              : Ada.Strings.Unbounded.Unbounded_String;
+      Server_Side_Encryption     : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Algorithm     : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5       : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID             : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Encryption_Context : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled         : Optional_Boolean;
+      Request_Charged            : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm         : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Type              : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Physical response headers supplied to the pure decoder. Empty strings
+   --  and an unset boolean mean absent; Execute enforces physical presence,
+   --  multiplicity, and present-empty distinctions before constructing this.
+   type Create_Multipart_Response_Headers is record
+      Abort_Date                 : Ada.Strings.Unbounded.Unbounded_String;
+      Abort_Rule_ID              : Ada.Strings.Unbounded.Unbounded_String;
+      Server_Side_Encryption     : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Algorithm     : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_Customer_Key_MD5       : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID             : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Encryption_Context : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled         : Optional_Boolean;
+      Request_Charged            : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm         : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Type              : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    type Create_Multipart_Outcome
      (Kind : Create_Multipart_Outcome_Kind := Create_Rejected) is record
       Status : Flyology.HTTP.Status_Code := 500;
       case Kind is
          when Created =>
-            Result : S3.Multipart.Create_Multipart_Upload_Result;
+            Result : Create_Multipart_Result;
          when Create_Rejected =>
             Error : S3.Errors.Error_Response;
       end case;
@@ -1454,7 +1519,9 @@ package Flyology.Object_Storage.Client.Low_Level is
       Payload    : String;
       Request_ID : String := "";
       Host_ID    : String := "";
-      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits;
+      Headers    : Create_Multipart_Response_Headers :=
+        (others => <>))
       return Create_Multipart_Outcome;
 
    function Execute_Create_Multipart_Upload
@@ -2141,6 +2208,23 @@ private
       Requested_Delimiter : Ada.Strings.Unbounded.Unbounded_String;
       Requested_Max_Uploads : S3.Core.Page_Size := 0;
       Requested_URL_Encoding : Boolean := False;
+      Requested_Create_Server_Side_Encryption :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Create_SSE_Customer_Algorithm :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Create_SSE_Customer_Key_MD5 :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Create_SSE_KMS_Key_ID :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Create_SSE_KMS_Encryption_Context :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Create_Bucket_Key_Enabled : Optional_Boolean;
+      Requested_Create_Request_Payer :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Create_Checksum_Algorithm :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Create_Checksum_Type :
+        Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
 end Flyology.Object_Storage.Client.Low_Level;

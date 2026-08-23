@@ -1,7 +1,8 @@
-# CreateMultipartUpload closure preparation
+# CreateMultipartUpload client qualification
 
-This inventory prepares a later CreateMultipartUpload completion slice. It is
-not an implementation, qualification result, or coverage-ledger claim.
+This record freezes the pinned model inventory and the qualified synchronous
+client boundary. Backend initiation and the authenticated server route retain
+their narrower policy support; server coverage therefore remains partial.
 
 ## Pinned authority
 
@@ -57,21 +58,37 @@ point policy must be authenticated, strictly validated, and explicitly
 rejected before upload creation. A successful initiation that silently drops
 one of these controls is not permitted.
 
-## Client and ambiguity boundary
+## Qualified client and ambiguity boundary
 
-The current typed client exposes only content type plus checksum algorithm and
-type, while the generic projector can represent the remaining modeled fields.
-The current typed success decoder parses the XML bucket, key, and upload ID but
-does not expose all 11 modeled success headers. The future client must preserve
-absent optional headers separately from present-empty values, reject duplicate
-singletons, validate encryption/checksum relations, and compare response
-identity with the prepared request.
+`Client.Low_Level.Create_Multipart_Parameters` exposes every non-resource
+member in the pinned request shape and projects all 31 inputs through the
+generated model. It additionally rejects relationally invalid ACL/grant,
+SSE-C, KMS, checksum, Object Lock, expiry, payer, and case-colliding metadata
+combinations before HTTP admission. SSE-C key MD5 is recomputed and SSE-C is
+rejected over plaintext HTTP.
+
+`Client.Low_Level.Create_Multipart_Result` preserves all 14 modeled output
+members, while the XML codec remains limited to its three body fields.
+Execution requires physical singleton response headers, rejects
+present-empty, duplicate, over-8-KiB, and control-bearing values, validates
+abort-date/rule, encryption, boolean, payer, and checksum relations, and binds
+the XML bucket and key exactly to the prepared request. Optional service
+confirmation headers may be absent; when present they must be coherent with
+the explicitly requested policy. Error request identifiers are bounded by the
+same 8-KiB limit.
+
+`Client.Transfers.Create_Multipart_Upload` is the public synchronous wrapper.
+It prepares and executes exactly once without a helper task or automatic
+replay. Credentials and sensitive SSE-C material are retained only by the
+bounded synchronous request state and are not durably stored by this layer.
 
 An accepted initiation followed by a lost response is ambiguous: the service
 may have created an upload whose identifier the caller did not receive.
-Transparent retry can create a second active upload. The future client must not
-replay this operation after possible admission and must document reconciliation
-and cleanup through ListMultipartUploads rather than claim definite absence.
+Transparent retry can create a second active upload. `Invalid_Request` from the
+wrapper is pre-admission and definite non-creation. Any exception after the
+blocking execute call is entered, including timeout, cancellation, transport,
+or invalid-response failure, is conservatively ambiguous. Callers reconcile
+and clean up through ListMultipartUploads; the wrapper never auto-retries.
 
 ## Isolated artifacts
 
@@ -93,8 +110,32 @@ exact 31/14 counts, ordered names, generated wire locations, canonical unique
 vector identifiers, and reciprocal member/vector references. It does not
 build Ada, invoke shared runners, edit a manifest or ledger, or run GNATprove.
 
-After active PutObject work freezes, the implementation owner must re-audit
-its final metadata, tagging, checksum, encryption, and Object Lock policy APIs
-before translating these vectors into ordinary backend, native/lightweight
-application/socket, crash/reopen, and repeated six-server gates. No ledger cell
-may be promoted from this preparation alone.
+The direct corpus signs every modeled request policy class and rejects invalid
+checksum, ACL/grant, SSE-C, KMS, Object Lock, expiry, and duplicate-metadata
+relations. It preserves both KMS and SSE-C response groups, admits exact
+8-KiB response-header and error-ID boundaries, and rejects one-past and control
+values. Fragmented raw-loopback responses run through native and Flyology
+lightweight clients, use the public wrapper, bind bucket/key and explicit
+policy, and reject duplicate and present-empty physical headers. A dropped
+successful initiation is followed by one read-only ListMultipartUploads
+reconciliation request; the scripted server rejects any automatic POST replay.
+This evidence promotes only the client cell; advanced backend and server policy
+enforcement remains separately gated and partial.
+
+## Frozen gate evidence
+
+The qualified source passed the root gate with 37/37 AUnit tests, the 88-case
+files crash matrix, 320 checksum vectors, 210 chunk boundaries, the 64-GiB CRC
+linearization oracle, the server application corpus, and three repetitions of
+the native/lightweight socket corpus. The SQLite gate passed. The six-server
+implementation matrix passed all 18 lanes and repetitions, with pinned
+external-service exclusions reported rather than accepted as relaxed client
+behavior.
+
+The serialized proof campaign started at 2026-08-23T15:19:08Z with FSF
+GNATprove 16.1.0. `./tools/prove.sh` used output headers and warnings as errors
+and proved 936/936 checks across all nine manifest units: 180 flow checks and
+756 prover checks, with a maximum of 663 steps. The report contains zero
+warnings, unproved or justified checks, and `pragma Assume` statements;
+the source contains no `pragma Assume`, `pragma Suppress`, `False_Positive`, or
+`SPARK_Mode => Off`. The post-run host process audit was clean.

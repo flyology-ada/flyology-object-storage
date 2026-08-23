@@ -8,6 +8,7 @@ with Flyology.HTTP.Headers;
 with Flyology.Object_Storage.Secrets;
 with Flyology.Object_Storage.S3.Checksum_Policy;
 with Flyology.Object_Storage.S3.Checksums;
+with Flyology.Object_Storage.S3.IMF_Dates;
 with Flyology.Object_Storage.S3.Object_Reads;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.Tagging;
@@ -73,6 +74,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
      (CRC32, CRC32C, CRC64NVME, SHA1, SHA256, SHA512, MD5,
       XXHASH64, XXHASH3, XXHASH128 : US.Unbounded_String;
       Kind : String) return Boolean;
+   function Valid_Canonical_Base64 (Value : String) return Boolean;
    function Valid_Checksum_Algorithm (Value : String) return Boolean;
    function Content_MD5 (Value : String) return String;
    function Whitespace_Only (Value : String) return Boolean;
@@ -692,6 +694,95 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end loop;
       return US.To_String (Result);
    end Expand_Model_Path;
+
+   function Valid_ISO_8601_Timestamp (Value : String) return Boolean is
+      Text : constant String (1 .. Value'Length) := Value;
+
+      function Decimal (First, Last : Positive) return Natural is
+         Result : Natural := 0;
+      begin
+         for Index in First .. Last loop
+            if Text (Index) not in '0' .. '9' then
+               return Natural'Last;
+            end if;
+            Result := Result * 10 +
+              Character'Pos (Text (Index)) - Character'Pos ('0');
+         end loop;
+         return Result;
+      end Decimal;
+
+      Year        : Natural;
+      Month       : Natural;
+      Day         : Natural;
+      Hour        : Natural;
+      Minute      : Natural;
+      Second      : Natural;
+      Zone        : Positive := 20;
+      Maximum_Day : Natural;
+   begin
+      if Text'Length not in 20 .. 35
+        or else Text (5) /= '-'
+        or else Text (8) /= '-'
+        or else Text (11) /= 'T'
+        or else Text (14) /= ':'
+        or else Text (17) /= ':'
+      then
+         return False;
+      end if;
+      Year := Decimal (1, 4);
+      Month := Decimal (6, 7);
+      Day := Decimal (9, 10);
+      Hour := Decimal (12, 13);
+      Minute := Decimal (15, 16);
+      Second := Decimal (18, 19);
+      if Year not in 1 .. 9_999
+        or else Month not in 1 .. 12
+        or else Hour > 23
+        or else Minute > 59
+        or else Second > 59
+      then
+         return False;
+      end if;
+      Maximum_Day :=
+        (case Month is
+            when 2 =>
+              (if Year mod 400 = 0
+                 or else (Year mod 4 = 0 and then Year mod 100 /= 0)
+               then 29 else 28),
+            when 4 | 6 | 9 | 11 => 30,
+            when others => 31);
+      if Day not in 1 .. Maximum_Day then
+         return False;
+      end if;
+      if Text (Zone) = '.' then
+         Zone := Zone + 1;
+         declare
+            First_Fraction : constant Positive := Zone;
+         begin
+            while Zone <= Text'Last and then Text (Zone) in '0' .. '9' loop
+               Zone := Zone + 1;
+            end loop;
+            if Zone = First_Fraction or else Zone - First_Fraction > 9 then
+               return False;
+            end if;
+         end;
+      end if;
+      if Zone = Text'Last and then Text (Zone) = 'Z' then
+         return True;
+      elsif Zone + 5 = Text'Last
+        and then Text (Zone) in '+' | '-'
+        and then Text (Zone + 3) = ':'
+      then
+         declare
+            Offset_Hour : constant Natural := Decimal (Zone + 1, Zone + 2);
+            Offset_Minute : constant Natural :=
+              Decimal (Zone + 4, Zone + 5);
+         begin
+            return Offset_Hour <= 23 and then Offset_Minute <= 59;
+         end;
+      end if;
+      return False;
+   end Valid_ISO_8601_Timestamp;
 
    function Valid_Model_Scalar
      (Shape : Model.Shape_Index; Value : String) return Boolean
@@ -1665,23 +1756,103 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request
    is
-      Content_Type : constant String :=
-        US.To_String (Parameters.Content_Type);
       Algorithm : constant String :=
         US.To_String (Parameters.Checksum_Algorithm);
       Kind : constant String := US.To_String (Parameters.Checksum_Type);
+      SSE_Algorithm : constant String :=
+        US.To_String (Parameters.SSE_Customer_Algorithm);
+      SSE_Key : constant String := US.To_String (Parameters.SSE_Customer_Key);
+      SSE_Key_MD5 : constant String :=
+        US.To_String (Parameters.SSE_Customer_Key_MD5);
+      Server_Encryption : constant String :=
+        US.To_String (Parameters.Server_Side_Encryption);
+      KMS_Key_ID : constant String :=
+        US.To_String (Parameters.SSE_KMS_Key_ID);
+      KMS_Context : constant String :=
+        US.To_String (Parameters.SSE_KMS_Encryption_Context);
+      Payer : constant String := US.To_String (Parameters.Request_Payer);
+      Expires : constant String := US.To_String (Parameters.Expires);
+      Grant_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.Grant_Full_Control) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Read) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Read_ACP) > 0) +
+        Boolean'Pos (US.Length (Parameters.Grant_Write_ACP) > 0);
+      Has_KMS : constant Boolean :=
+        KMS_Key_ID'Length > 0 or else KMS_Context'Length > 0
+        or else Parameters.Bucket_Key_Enabled.Is_Set;
+      Has_Object_Lock_Mode : constant Boolean :=
+        US.Length (Parameters.Object_Lock_Mode) > 0;
+      Has_Object_Lock_Date : constant Boolean :=
+        US.Length (Parameters.Object_Lock_Retain_Until_Date) > 0;
       Parsed_Algorithm : constant Checksum_Policy.Algorithm_Parse_Result :=
         Checksum_Policy.Parse_Algorithm (Algorithm);
       Parsed_Type : constant Checksum_Policy.Type_Parse_Result :=
         Checksum_Policy.Parse_Type (Kind);
-      Query : constant SigV4.Name_Value_Array :=
-        (1 => SigV4.Pair ("uploads", ""));
-      Header_Count : constant Natural :=
-        Boolean'Pos (Content_Type'Length > 0) +
-        Boolean'Pos (Algorithm'Length > 0) +
-        Boolean'Pos (Kind'Length > 0);
-      Headers : SigV4.Name_Value_Array (1 .. Header_Count);
+      function Present (Value : US.Unbounded_String) return Natural is
+        (Boolean'Pos (US.Length (Value) > 0));
+
+      function Valid_Tagging_Header return Boolean is
+      begin
+         if US.Length (Parameters.Tagging) = 0 then
+            return True;
+         end if;
+         declare
+            Ignored : constant Object_Tag_Set :=
+              S3.Tagging.Parse_Header (US.To_String (Parameters.Tagging));
+            pragma Unreferenced (Ignored);
+         begin
+            return True;
+         end;
+      exception
+         when S3.Tagging.Malformed_Tagging_Query | S3.Tagging.Invalid_Tag =>
+            return False;
+      end Valid_Tagging_Header;
+
+      Optional_Count : constant Natural :=
+        Present (Parameters.ACL) + Present (Parameters.Cache_Control) +
+        Present (Parameters.Content_Disposition) +
+        Present (Parameters.Content_Encoding) +
+        Present (Parameters.Content_Language) +
+        Present (Parameters.Content_Type) + Present (Parameters.Expires) +
+        Present (Parameters.Grant_Full_Control) +
+        Present (Parameters.Grant_Read) + Present (Parameters.Grant_Read_ACP) +
+        Present (Parameters.Grant_Write_ACP) +
+        Natural (Parameters.Metadata.Length) +
+        Present (Parameters.Server_Side_Encryption) +
+        Present (Parameters.Storage_Class) +
+        Present (Parameters.Website_Redirect_Location) +
+        Present (Parameters.SSE_Customer_Algorithm) +
+        Present (Parameters.SSE_Customer_Key) +
+        Present (Parameters.SSE_Customer_Key_MD5) +
+        Present (Parameters.SSE_KMS_Key_ID) +
+        Present (Parameters.SSE_KMS_Encryption_Context) +
+        Boolean'Pos (Parameters.Bucket_Key_Enabled.Is_Set) +
+        Present (Parameters.Request_Payer) + Present (Parameters.Tagging) +
+        Present (Parameters.Object_Lock_Mode) +
+        Present (Parameters.Object_Lock_Retain_Until_Date) +
+        Present (Parameters.Object_Lock_Legal_Hold_Status) +
+        Present (Parameters.Expected_Bucket_Owner) +
+        Present (Parameters.Checksum_Algorithm) +
+        Present (Parameters.Checksum_Type);
+      Values : Model_Value_Array (1 .. 2 + Optional_Count);
       Last : Natural := 0;
+
+      procedure Add (Name, Value : String; Map_Key : String := "") is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key => US.To_Unbounded_String (Map_Key),
+            Value => US.To_Unbounded_String (Value));
+      end Add;
+
+      procedure Add_Optional
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Add (Name, US.To_String (Value));
+         end if;
+      end Add_Optional;
    begin
       if Algorithm'Length = 0 and then Kind'Length > 0 then
          raise Invalid_Request with
@@ -1697,40 +1868,273 @@ package body Flyology.Object_Storage.Client.Low_Level is
       then
          raise Invalid_Request with
            "unsupported multipart checksum algorithm and type";
+      elsif not Valid_SSE_C_Group (SSE_Algorithm, SSE_Key, SSE_Key_MD5)
+        or else (SSE_Key'Length > 0
+                 and then not Checksums.Valid_SSE_C_Key_MD5
+                   (SSE_Key, SSE_Key_MD5))
+        or else (SSE_Key'Length > 0
+                 and then Flyology.HTTP.Scheme (Origin) /=
+                   Flyology.HTTP.Secure_HTTPS)
+        or else (SSE_Key'Length > 0
+                 and then (Server_Encryption'Length > 0 or else Has_KMS))
+        or else (US.Length (Parameters.ACL) > 0 and then Grant_Count > 0)
+        or else (Has_KMS
+                 and then Server_Encryption not in "aws:kms" | "aws:kms:dsse")
+        or else (Parameters.Bucket_Key_Enabled.Is_Set
+                 and then Server_Encryption /= "aws:kms")
+        or else (KMS_Context'Length > 0
+                 and then not Valid_Canonical_Base64 (KMS_Context))
+        or else Payer not in "" | "requester"
+        or else not Valid_Tagging_Header
+        or else Has_Object_Lock_Mode /= Has_Object_Lock_Date
+        or else (Has_Object_Lock_Date
+                 and then not Valid_ISO_8601_Timestamp
+                   (US.To_String
+                      (Parameters.Object_Lock_Retain_Until_Date)))
+        or else (Expires'Length > 0
+                 and then not S3.IMF_Dates.Parse (Expires).Valid)
+      then
+         raise Invalid_Request with "invalid CreateMultipartUpload parameters";
       end if;
-      if Content_Type'Length > 0 then
-         Last := Last + 1;
-         Headers (Last) := SigV4.Pair ("content-type", Content_Type);
+      Add ("Bucket", Bucket);
+      Add ("Key", Key);
+      Add_Optional ("ACL", Parameters.ACL);
+      Add_Optional ("CacheControl", Parameters.Cache_Control);
+      Add_Optional ("ContentDisposition", Parameters.Content_Disposition);
+      Add_Optional ("ContentEncoding", Parameters.Content_Encoding);
+      Add_Optional ("ContentLanguage", Parameters.Content_Language);
+      Add_Optional ("ContentType", Parameters.Content_Type);
+      Add_Optional ("Expires", Parameters.Expires);
+      Add_Optional ("GrantFullControl", Parameters.Grant_Full_Control);
+      Add_Optional ("GrantRead", Parameters.Grant_Read);
+      Add_Optional ("GrantReadACP", Parameters.Grant_Read_ACP);
+      Add_Optional ("GrantWriteACP", Parameters.Grant_Write_ACP);
+      for Metadata_Item of Parameters.Metadata loop
+         Add
+           ("Metadata", US.To_String (Metadata_Item.Value),
+            US.To_String (Metadata_Item.Name));
+      end loop;
+      Add_Optional
+        ("ServerSideEncryption", Parameters.Server_Side_Encryption);
+      Add_Optional ("StorageClass", Parameters.Storage_Class);
+      Add_Optional
+        ("WebsiteRedirectLocation", Parameters.Website_Redirect_Location);
+      Add_Optional
+        ("SSECustomerAlgorithm", Parameters.SSE_Customer_Algorithm);
+      Add_Optional ("SSECustomerKey", Parameters.SSE_Customer_Key);
+      Add_Optional ("SSECustomerKeyMD5", Parameters.SSE_Customer_Key_MD5);
+      Add_Optional ("SSEKMSKeyId", Parameters.SSE_KMS_Key_ID);
+      Add_Optional
+        ("SSEKMSEncryptionContext", Parameters.SSE_KMS_Encryption_Context);
+      if Parameters.Bucket_Key_Enabled.Is_Set then
+         Add
+           ("BucketKeyEnabled",
+            (if Parameters.Bucket_Key_Enabled.Value then "true" else "false"));
       end if;
-      if Algorithm'Length > 0 then
-         Last := Last + 1;
-         Headers (Last) :=
-           SigV4.Pair ("x-amz-checksum-algorithm", Algorithm);
-      end if;
-      if Kind'Length > 0 then
-         Last := Last + 1;
-         Headers (Last) := SigV4.Pair ("x-amz-checksum-type", Kind);
-      end if;
-      return Prepare_Object_Request
-        (Create_Multipart_Operation, "POST", Origin, Style, Bucket, Key,
-         Query, Headers, "", "", Identity, Region, Timestamp);
+      Add_Optional ("RequestPayer", Parameters.Request_Payer);
+      Add_Optional ("Tagging", Parameters.Tagging);
+      Add_Optional ("ObjectLockMode", Parameters.Object_Lock_Mode);
+      Add_Optional
+        ("ObjectLockRetainUntilDate",
+         Parameters.Object_Lock_Retain_Until_Date);
+      Add_Optional
+        ("ObjectLockLegalHoldStatus",
+         Parameters.Object_Lock_Legal_Hold_Status);
+      Add_Optional
+        ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
+      Add_Optional ("ChecksumAlgorithm", Parameters.Checksum_Algorithm);
+      Add_Optional ("ChecksumType", Parameters.Checksum_Type);
+
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Create_Multipart_Upload_Operation, Origin, Style, Values,
+         "", False, "", Identity, Region, Timestamp)
+      do
+         Result.Operation := Create_Multipart_Operation;
+         Result.Requested_Bucket := US.To_Unbounded_String (Bucket);
+         Result.Requested_Key := US.To_Unbounded_String (Key);
+         Result.Requested_Create_Server_Side_Encryption :=
+           Parameters.Server_Side_Encryption;
+         Result.Requested_Create_SSE_Customer_Algorithm :=
+           Parameters.SSE_Customer_Algorithm;
+         Result.Requested_Create_SSE_Customer_Key_MD5 :=
+           Parameters.SSE_Customer_Key_MD5;
+         Result.Requested_Create_SSE_KMS_Key_ID := Parameters.SSE_KMS_Key_ID;
+         Result.Requested_Create_SSE_KMS_Encryption_Context :=
+           Parameters.SSE_KMS_Encryption_Context;
+         Result.Requested_Create_Bucket_Key_Enabled :=
+           Parameters.Bucket_Key_Enabled;
+         Result.Requested_Create_Request_Payer := Parameters.Request_Payer;
+         Result.Requested_Create_Checksum_Algorithm :=
+           Parameters.Checksum_Algorithm;
+         Result.Requested_Create_Checksum_Type := Parameters.Checksum_Type;
+      end return;
+   exception
+      when Constraint_Error =>
+         raise Invalid_Request with "invalid CreateMultipartUpload parameters";
    end Prepare_Create_Multipart_Upload;
+
+   Maximum_Create_Multipart_Response_Header_Bytes : constant Positive :=
+     8_192;
+
+   function Valid_Create_Multipart_Header_Text
+     (Value : US.Unbounded_String) return Boolean
+   is
+      Text : constant String := US.To_String (Value);
+   begin
+      if Text'Length > Maximum_Create_Multipart_Response_Header_Bytes then
+         return False;
+      end if;
+      for Character_Value of Text loop
+         if Character'Pos (Character_Value) < 32
+           or else Character'Pos (Character_Value) = 127
+         then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Valid_Create_Multipart_Header_Text;
+
+   function Valid_Create_Multipart_Enum
+     (Value : US.Unbounded_String; Member : Positive) return Boolean
+   is
+      Text : constant String := US.To_String (Value);
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.Create_Multipart_Upload_Operation));
+      Shape : constant Model.Shape_Index :=
+        Model.Member_Shape (Output, Member);
+   begin
+      if Text'Length = 0 then
+         return True;
+      end if;
+      for Index in 1 .. Model.Enumeration_Count (Shape) loop
+         if Text = Model.Enumeration_Value (Shape, Index) then
+            return True;
+         end if;
+      end loop;
+      return False;
+   end Valid_Create_Multipart_Enum;
+
+   procedure Validate_Create_Multipart_Headers
+     (Value : Create_Multipart_Response_Headers)
+   is
+      Abort_Date : constant String := US.To_String (Value.Abort_Date);
+      Abort_Rule : constant String := US.To_String (Value.Abort_Rule_ID);
+      Encryption : constant String :=
+        US.To_String (Value.Server_Side_Encryption);
+      Customer_Algorithm : constant String :=
+        US.To_String (Value.SSE_Customer_Algorithm);
+      Customer_Key_MD5 : constant String :=
+        US.To_String (Value.SSE_Customer_Key_MD5);
+      KMS_Key_ID : constant String := US.To_String (Value.SSE_KMS_Key_ID);
+      KMS_Context : constant String :=
+        US.To_String (Value.SSE_KMS_Encryption_Context);
+      Algorithm : constant String := US.To_String (Value.Checksum_Algorithm);
+      Kind : constant String := US.To_String (Value.Checksum_Type);
+      Parsed_Algorithm : constant Checksum_Policy.Algorithm_Parse_Result :=
+        Checksum_Policy.Parse_Algorithm (Algorithm);
+      Parsed_Type : constant Checksum_Policy.Type_Parse_Result :=
+        Checksum_Policy.Parse_Type (Kind);
+      Has_Customer : constant Boolean :=
+        Customer_Algorithm'Length > 0 or else Customer_Key_MD5'Length > 0;
+      Has_KMS : constant Boolean :=
+        KMS_Key_ID'Length > 0 or else KMS_Context'Length > 0
+        or else Value.Bucket_Key_Enabled.Is_Set;
+      Is_KMS : constant Boolean :=
+        Encryption in "aws:kms" | "aws:kms:dsse";
+   begin
+      if not Valid_Create_Multipart_Header_Text (Value.Abort_Date)
+        or else not Valid_Create_Multipart_Header_Text (Value.Abort_Rule_ID)
+        or else not Valid_Create_Multipart_Header_Text
+          (Value.Server_Side_Encryption)
+        or else not Valid_Create_Multipart_Header_Text
+          (Value.SSE_Customer_Algorithm)
+        or else not Valid_Create_Multipart_Header_Text
+          (Value.SSE_Customer_Key_MD5)
+        or else not Valid_Create_Multipart_Header_Text (Value.SSE_KMS_Key_ID)
+        or else not Valid_Create_Multipart_Header_Text
+          (Value.SSE_KMS_Encryption_Context)
+        or else not Valid_Create_Multipart_Header_Text (Value.Request_Charged)
+        or else not Valid_Create_Multipart_Header_Text
+          (Value.Checksum_Algorithm)
+        or else not Valid_Create_Multipart_Header_Text (Value.Checksum_Type)
+        or else ((Abort_Date'Length > 0) /= (Abort_Rule'Length > 0))
+        or else (Abort_Date'Length > 0
+                 and then not S3.IMF_Dates.Parse (Abort_Date).Valid)
+        or else not Valid_Create_Multipart_Enum
+          (Value.Server_Side_Encryption, 6)
+        or else Customer_Algorithm not in "" | "AES256"
+        or else (Customer_Key_MD5'Length > 0
+                 and then not Wire_Core.Valid_Base64 (Customer_Key_MD5, 16))
+        or else ((Customer_Algorithm'Length > 0) /=
+                   (Customer_Key_MD5'Length > 0))
+        or else (Has_Customer
+                 and then (Encryption'Length > 0 or else Has_KMS))
+        or else (Has_KMS and then not Is_KMS)
+        or else (KMS_Context'Length > 0
+                 and then not Valid_Canonical_Base64 (KMS_Context))
+        or else (Value.Bucket_Key_Enabled.Is_Set
+                 and then Encryption /= "aws:kms")
+        or else not Valid_Create_Multipart_Enum (Value.Request_Charged, 12)
+        or else ((Algorithm'Length > 0) /= (Kind'Length > 0))
+        or else (Algorithm'Length > 0
+                 and then
+                   (not Parsed_Algorithm.Valid
+                    or else not Parsed_Type.Valid
+                    or else not Checksum_Policy.Supported
+                      (Parsed_Algorithm.Value, Parsed_Type.Value)))
+        or else not Valid_Create_Multipart_Enum
+          (Value.Checksum_Algorithm, 13)
+        or else not Valid_Create_Multipart_Enum (Value.Checksum_Type, 14)
+      then
+         raise Invalid_Response with
+           "invalid CreateMultipartUpload response headers";
+      end if;
+   end Validate_Create_Multipart_Headers;
 
    function Decode_Create_Multipart_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
       Request_ID : String := "";
       Host_ID    : String := "";
-      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits;
+      Headers    : Create_Multipart_Response_Headers :=
+        (others => <>))
       return Create_Multipart_Outcome
    is
    begin
       if Status = 200 then
-         return
-           (Kind   => Created,
-            Status => Status,
-            Result => S3.Multipart.Parse_Create_Result (Payload, Limits));
+         declare
+            Parsed_Body : constant
+              S3.Multipart.Create_Multipart_Upload_Result :=
+              S3.Multipart.Parse_Create_Result (Payload, Limits);
+            Result : constant Create_Multipart_Result :=
+              (Bucket => Parsed_Body.Bucket,
+               Key => Parsed_Body.Key,
+               Upload_ID => Parsed_Body.Upload_ID,
+               Abort_Date => Headers.Abort_Date,
+               Abort_Rule_ID => Headers.Abort_Rule_ID,
+               Server_Side_Encryption => Headers.Server_Side_Encryption,
+               SSE_Customer_Algorithm => Headers.SSE_Customer_Algorithm,
+               SSE_Customer_Key_MD5 => Headers.SSE_Customer_Key_MD5,
+               SSE_KMS_Key_ID => Headers.SSE_KMS_Key_ID,
+               SSE_KMS_Encryption_Context =>
+                 Headers.SSE_KMS_Encryption_Context,
+               Bucket_Key_Enabled => Headers.Bucket_Key_Enabled,
+               Request_Charged => Headers.Request_Charged,
+               Checksum_Algorithm => Headers.Checksum_Algorithm,
+               Checksum_Type => Headers.Checksum_Type);
+         begin
+            Validate_Create_Multipart_Headers (Headers);
+            return (Kind => Created, Status => Status, Result => Result);
+         end;
       else
+         if Request_ID'Length > Maximum_Create_Multipart_Response_Header_Bytes
+           or else Host_ID'Length >
+             Maximum_Create_Multipart_Response_Header_Bytes
+         then
+            raise Invalid_Response with
+              "CreateMultipartUpload error identifiers exceed limit";
+         end if;
          return
            (Kind   => Create_Rejected,
             Status => Status,
@@ -1761,17 +2165,153 @@ package body Flyology.Object_Storage.Client.Low_Level is
              (Client, Prepared.Message, Timeout, Token);
          Status : constant Flyology.HTTP.Status_Code :=
            Flyology.HTTP.Client.Status (Response);
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         function Singleton_Header (Name : String) return String is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count (Response, Name);
+         begin
+            if Count > 1 then
+               raise Invalid_Response with
+                 "duplicate CreateMultipartUpload response header";
+            elsif Count = 0 then
+               return "";
+            end if;
+            declare
+               Value : constant String :=
+                 Flyology.HTTP.Client.Header (Response, Name);
+            begin
+               if Value'Length = 0
+                 or else Value'Length >
+                   Maximum_Create_Multipart_Response_Header_Bytes
+               then
+                  raise Invalid_Response with
+                    "invalid CreateMultipartUpload response header";
+               end if;
+               for Character_Value of Value loop
+                  if Character'Pos (Character_Value) < 32
+                    or else Character'Pos (Character_Value) = 127
+                  then
+                     raise Invalid_Response with
+                       "invalid CreateMultipartUpload response header";
+                  end if;
+               end loop;
+               return Value;
+            end;
+         end Singleton_Header;
+         Request_ID : constant String := Singleton_Header ("x-amz-request-id");
+         Host_ID : constant String := Singleton_Header ("x-amz-id-2");
+         Bucket_Key : constant String := Singleton_Header
+           ("x-amz-server-side-encryption-bucket-key-enabled");
+         Headers : constant Create_Multipart_Response_Headers :=
+           (Abort_Date => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-abort-date")),
+            Abort_Rule_ID => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-abort-rule-id")),
+            Server_Side_Encryption => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-server-side-encryption")),
+            SSE_Customer_Algorithm => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-customer-algorithm")),
+            SSE_Customer_Key_MD5 => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-customer-key-md5")),
+            SSE_KMS_Key_ID => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-aws-kms-key-id")),
+            SSE_KMS_Encryption_Context => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-server-side-encryption-context")),
+            Bucket_Key_Enabled => Optional_Boolean_Header (Bucket_Key),
+            Request_Charged => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-request-charged")),
+            Checksum_Algorithm => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-checksum-algorithm")),
+            Checksum_Type => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-checksum-type")));
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_Create_Multipart_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
-            Host_ID, Limits);
+         declare
+            Outcome : constant Create_Multipart_Outcome :=
+              Decode_Create_Multipart_Response
+                (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
+                 Host_ID, Limits, Headers);
+         begin
+            if Outcome.Kind = Created then
+               if Outcome.Result.Bucket /= Prepared.Requested_Bucket then
+                  raise Invalid_Response with
+                    "CreateMultipartUpload response bucket mismatch";
+               elsif Outcome.Result.Key /= Prepared.Requested_Key then
+                  raise Invalid_Response with
+                    "CreateMultipartUpload response key mismatch";
+               elsif US.Length
+                   (Prepared.Requested_Create_Server_Side_Encryption) > 0
+                 and then US.Length
+                   (Outcome.Result.Server_Side_Encryption) > 0
+                 and then Outcome.Result.Server_Side_Encryption /=
+                   Prepared.Requested_Create_Server_Side_Encryption
+               then
+                  raise Invalid_Response with
+                    "CreateMultipartUpload response encryption mismatch";
+               elsif
+                 (US.Length (Outcome.Result.SSE_Customer_Algorithm) > 0
+                  and then Outcome.Result.SSE_Customer_Algorithm /=
+                    Prepared.Requested_Create_SSE_Customer_Algorithm)
+                 or else
+                   (US.Length (Outcome.Result.SSE_Customer_Key_MD5) > 0
+                    and then Outcome.Result.SSE_Customer_Key_MD5 /=
+                      Prepared.Requested_Create_SSE_Customer_Key_MD5)
+               then
+                  raise Invalid_Response with
+                    "CreateMultipartUpload response SSE-C mismatch";
+               elsif US.Length
+                   (Prepared.Requested_Create_SSE_KMS_Key_ID) > 0
+                 and then US.Length (Outcome.Result.SSE_KMS_Key_ID) > 0
+                 and then Outcome.Result.SSE_KMS_Key_ID /=
+                   Prepared.Requested_Create_SSE_KMS_Key_ID
+               then
+                  raise Invalid_Response with
+                    "CreateMultipartUpload response KMS key mismatch";
+               elsif US.Length
+                   (Prepared.Requested_Create_SSE_KMS_Encryption_Context) > 0
+                 and then US.Length
+                   (Outcome.Result.SSE_KMS_Encryption_Context) > 0
+                 and then Outcome.Result.SSE_KMS_Encryption_Context /=
+                   Prepared.Requested_Create_SSE_KMS_Encryption_Context
+               then
+                  raise Invalid_Response with
+                    "CreateMultipartUpload response KMS context mismatch";
+               elsif Prepared.Requested_Create_Bucket_Key_Enabled.Is_Set
+                 and then Outcome.Result.Bucket_Key_Enabled.Is_Set
+                 and then Outcome.Result.Bucket_Key_Enabled.Value /=
+                   Prepared.Requested_Create_Bucket_Key_Enabled.Value
+               then
+                  raise Invalid_Response with
+                    "CreateMultipartUpload response bucket-key mismatch";
+               elsif US.Length (Outcome.Result.Request_Charged) > 0
+                 and then Outcome.Result.Request_Charged /=
+                   Prepared.Requested_Create_Request_Payer
+               then
+                  raise Invalid_Response with
+                    "CreateMultipartUpload response payer mismatch";
+               elsif US.Length
+                   (Prepared.Requested_Create_Checksum_Algorithm) > 0
+                 and then US.Length (Outcome.Result.Checksum_Algorithm) > 0
+                 and then Outcome.Result.Checksum_Algorithm /=
+                   Prepared.Requested_Create_Checksum_Algorithm
+               then
+                  raise Invalid_Response with
+                    "CreateMultipartUpload response checksum mismatch";
+               elsif US.Length (Prepared.Requested_Create_Checksum_Type) > 0
+                 and then US.Length (Outcome.Result.Checksum_Type) > 0
+                 and then Outcome.Result.Checksum_Type /=
+                   Prepared.Requested_Create_Checksum_Type
+               then
+                  raise Invalid_Response with
+                    "CreateMultipartUpload response checksum type mismatch";
+               end if;
+            end if;
+            return Outcome;
+         end;
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
