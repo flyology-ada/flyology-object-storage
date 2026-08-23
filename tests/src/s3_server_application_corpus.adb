@@ -143,6 +143,21 @@ procedure S3_Server_Application_Corpus is
            (Algorithm,
             Flyology.Bytes.To_Array
               (Flyology.Bytes.From_Byte_String (Value)))));
+
+   function Storage_Algorithm
+     (Algorithm : Checksum_Policy.Algorithm)
+      return Flyology.Object_Storage.Checksum_Algorithm is
+     (case Algorithm is
+         when Core.CRC32 => Flyology.Object_Storage.Checksum_CRC32,
+         when Core.CRC32C => Flyology.Object_Storage.Checksum_CRC32C,
+         when Core.CRC64NVME => Flyology.Object_Storage.Checksum_CRC64NVME,
+         when Core.SHA1 => Flyology.Object_Storage.Checksum_SHA1,
+         when Core.SHA256 => Flyology.Object_Storage.Checksum_SHA256,
+         when Core.SHA512 => Flyology.Object_Storage.Checksum_SHA512,
+         when Core.MD5 => Flyology.Object_Storage.Checksum_MD5,
+         when Core.XXHASH64 => Flyology.Object_Storage.Checksum_XXHASH64,
+         when Core.XXHASH3 => Flyology.Object_Storage.Checksum_XXHASH3,
+         when Core.XXHASH128 => Flyology.Object_Storage.Checksum_XXHASH128);
    type Key_Array is array (Positive range <>) of US.Unbounded_String;
    Listing_Keys : constant Key_Array :=
      (US.To_Unbounded_String ("list/a"),
@@ -357,17 +372,32 @@ procedure S3_Server_Application_Corpus is
       Payload_Hash : constant String :=
         (if Hash_Override'Length > 0 then Hash_Override
          else SigV4.SHA256_Hex (Payload));
-      Headers : constant SigV4.Name_Value_Array :=
-        (SigV4.Pair ("host", Host),
-         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
-         SigV4.Pair ("x-amz-date", Timestamp));
+
+      function Extra_Header_Count return Natural is
+         Result : Natural := 0;
+         Cursor : Integer := Extra_Headers'First;
+      begin
+         while Cursor <= Extra_Headers'Last loop
+            declare
+               Ending : constant Natural := Ada.Strings.Fixed.Index
+                 (Extra_Headers, CRLF, From => Cursor);
+            begin
+               if Ending = 0 then
+                  raise Program_Error with
+                    "test Extra_Headers must end each field with CRLF";
+               end if;
+               Result := Result + 1;
+               Cursor := Integer (Ending) + CRLF'Length;
+            end;
+         end loop;
+         return Result;
+      end Extra_Header_Count;
+
+      Extra_Count : constant Natural := Extra_Header_Count;
+      Headers : SigV4.Name_Value_Array (1 .. 3 + Extra_Count);
       Query : constant SigV4.Name_Value_Array :=
         (if Query_Name'Length = 0 then No_Query
          else (1 => SigV4.Pair (Query_Name, Query_Value)));
-      Signing : constant SigV4.Signing_Result := SigV4.Sign
-        (Method, Target, Query, Headers, Payload_Hash, Access_Key,
-         Secret_Key, Region, Timestamp);
-      Authorization : String := US.To_String (Signing.Authorization);
       Wire_Body : constant String :=
         (if not Chunked then Payload
          elsif Payload'Length = 0 then "0" & CRLF & CRLF
@@ -375,25 +405,204 @@ procedure S3_Server_Application_Corpus is
            (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
            Payload & CRLF & "0" & CRLF & CRLF);
    begin
-      if Corrupt_Signature then
-         Authorization (Authorization'Last) :=
-           (if Authorization (Authorization'Last) = '0' then '1' else '0');
+      Headers (1) := SigV4.Pair ("host", Host);
+      Headers (2) := SigV4.Pair ("x-amz-content-sha256", Payload_Hash);
+      Headers (3) := SigV4.Pair ("x-amz-date", Timestamp);
+      if Extra_Count > 0 then
+         declare
+            Cursor : Integer := Extra_Headers'First;
+         begin
+            for Index in 1 .. Extra_Count loop
+               declare
+                  Ending : constant Natural := Ada.Strings.Fixed.Index
+                    (Extra_Headers, CRLF, From => Cursor);
+                  Line : constant String :=
+                    Extra_Headers (Cursor .. Integer (Ending) - 1);
+                  Colon : constant Natural :=
+                    Ada.Strings.Fixed.Index (Line, ":");
+               begin
+                  if Colon = 0 or else Colon = Line'First then
+                     raise Program_Error with
+                       "test Extra_Headers contains a malformed field";
+                  end if;
+                  Headers (3 + Index) := SigV4.Pair
+                    (Line (Line'First .. Integer (Colon) - 1),
+                     Ada.Strings.Fixed.Trim
+                       (Line (Integer (Colon) + 1 .. Line'Last),
+                        Ada.Strings.Both));
+                  Cursor := Integer (Ending) + CRLF'Length;
+               end;
+            end loop;
+         end;
       end if;
-      return Method & " " & Target &
-        (if Query_Name'Length = 0 then ""
-         else "?" & Query_Name & "=" & Query_Value) &
-        " HTTP/1.1" & CRLF &
+      declare
+         Signing : constant SigV4.Signing_Result := SigV4.Sign
+           (Method, Target, Query, Headers, Payload_Hash, Access_Key,
+            Secret_Key, Region, Timestamp);
+         Authorization : String := US.To_String (Signing.Authorization);
+      begin
+         if Corrupt_Signature then
+            Authorization (Authorization'Last) :=
+              (if Authorization (Authorization'Last) = '0' then '1' else '0');
+         end if;
+         return Method & " " & Target &
+           (if Query_Name'Length = 0 then ""
+            else "?" & Query_Name & "=" & Query_Value) &
+           " HTTP/1.1" & CRLF &
+           "Host: " & Host & CRLF &
+           "x-amz-date: " & Timestamp & CRLF &
+           "x-amz-content-sha256: " & Payload_Hash & CRLF &
+           "Authorization: " & Authorization & CRLF & Extra_Headers &
+           (if Expect then "Expect: 100-continue" & CRLF else "") &
+           (if Chunked then "Transfer-Encoding: chunked" & CRLF
+            else "Content-Length: " &
+              Ada.Strings.Fixed.Trim
+                (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF) &
+           "Connection: close" & CRLF & CRLF & Wire_Body;
+      end;
+   end Signed_Request;
+
+   function Signed_Request_With_Unsigned_Amazon_Header
+     (Target       : String;
+      Payload      : String;
+      Header_Name  : String;
+      Header_Value : String) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+   begin
+      --  This is deliberately the only helper that emits an x-amz-* field
+      --  which is absent from SignedHeaders.  It models a control injected
+      --  after signing; ordinary request helpers sign every physical field.
+      return "PUT " & Target & " HTTP/1.1" & CRLF &
         "Host: " & Host & CRLF &
         "x-amz-date: " & Timestamp & CRLF &
         "x-amz-content-sha256: " & Payload_Hash & CRLF &
-        "Authorization: " & Authorization & CRLF & Extra_Headers &
-        (if Expect then "Expect: 100-continue" & CRLF else "") &
-        (if Chunked then "Transfer-Encoding: chunked" & CRLF
-         else "Content-Length: " &
-           Ada.Strings.Fixed.Trim
-             (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF) &
-        "Connection: close" & CRLF & CRLF & Wire_Body;
-   end Signed_Request;
+        Header_Name & ": " & Header_Value & CRLF &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Expect: 100-continue" & CRLF &
+        "Content-Length: " &
+        Ada.Strings.Fixed.Trim
+          (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
+        "Connection: close" & CRLF & CRLF & Payload;
+   end Signed_Request_With_Unsigned_Amazon_Header;
+
+   function Signed_Put_Declared_Length_Request
+     (Target : String; Length : String) return String
+   is
+      Payload_Hash : constant String := SigV4.Empty_Payload_Hash;
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+   begin
+      return "PUT " & Target & " HTTP/1.1" & CRLF & "Host: " & Host &
+        CRLF & "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Content-Length: " & Length & CRLF & "Connection: close" & CRLF &
+        CRLF;
+   end Signed_Put_Declared_Length_Request;
+
+   function Signed_Malformed_Chunk_Put_Request
+     (Target : String; Payload : String) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+   begin
+      return "PUT " & Target & " HTTP/1.1" & CRLF & "Host: " & Host &
+        CRLF & "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Transfer-Encoding: chunked" & CRLF & "Connection: close" & CRLF &
+        CRLF & Ada.Strings.Fixed.Trim
+          (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
+        Payload & "XX0" & CRLF & CRLF;
+   end Signed_Malformed_Chunk_Put_Request;
+
+   function Signed_Undeclared_Trailer_Put_Request
+     (Target : String; Payload : String) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+   begin
+      return "PUT " & Target & " HTTP/1.1" & CRLF & "Host: " & Host &
+        CRLF & "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Transfer-Encoding: chunked" & CRLF & "Connection: close" & CRLF &
+        CRLF & Ada.Strings.Fixed.Trim
+          (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
+        Payload & CRLF & "0" & CRLF & "x-amz-checksum-crc32: " &
+        Checksum_Value (Core.CRC32, Payload) & CRLF & CRLF;
+   end Signed_Undeclared_Trailer_Put_Request;
+
+   function Signed_Put_Object_Trailer_Request
+     (Target           : String;
+      Payload          : String;
+      Algorithm        : Checksum_Policy.Algorithm;
+      Checksum         : String;
+      Include_Trailer  : Boolean := True;
+      Duplicate        : Boolean := False) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Algorithm_Name : constant String :=
+        Checksum_Policy.Wire_Name (Algorithm);
+      Checksum_Name : constant String := Checksum_Header (Algorithm);
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("content-md5", Content_MD5 (Payload)),
+         SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp),
+         SigV4.Pair ("x-amz-sdk-checksum-algorithm", Algorithm_Name),
+         SigV4.Pair ("x-amz-trailer", Checksum_Name));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+      Wire_Body : US.Unbounded_String;
+   begin
+      for Value of Payload loop
+         US.Append (Wire_Body, "1" & CRLF & Value & CRLF);
+      end loop;
+      US.Append (Wire_Body, "0" & CRLF);
+      if Include_Trailer then
+         US.Append (Wire_Body, Checksum_Name & ": " & Checksum & CRLF);
+         if Duplicate then
+            US.Append (Wire_Body, Checksum_Name & ": " & Checksum & CRLF);
+         end if;
+      end if;
+      US.Append (Wire_Body, CRLF);
+      return "PUT " & Target & " HTTP/1.1" & CRLF & "Host: " & Host &
+        CRLF & "Content-MD5: " & Content_MD5 (Payload) & CRLF &
+        "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "x-amz-sdk-checksum-algorithm: " & Algorithm_Name & CRLF &
+        "x-amz-trailer: " & Checksum_Name & CRLF &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Transfer-Encoding: chunked" & CRLF & "Connection: close" & CRLF &
+        CRLF & US.To_String (Wire_Body);
+   end Signed_Put_Object_Trailer_Request;
 
    function Signed_Delete_Objects_Request
      (Payload       : String;
@@ -454,15 +663,17 @@ procedure S3_Server_Application_Corpus is
            (SigV4.Pair ("host", Host),
             SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
             SigV4.Pair ("x-amz-date", Timestamp))
+         elsif Second_Value'Length = 0 then
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp),
+            SigV4.Pair (Header_Name, Header_Value))
          else
            (SigV4.Pair ("host", Host),
             SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
             SigV4.Pair ("x-amz-date", Timestamp),
-            SigV4.Pair
-              (Header_Name,
-               Header_Value &
-                 (if Second_Value'Length = 0
-                  then "" else ", " & Second_Value))));
+            SigV4.Pair (Header_Name, Header_Value),
+            SigV4.Pair (Header_Name, Second_Value)));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
         ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
          Secret_Key, Region, Timestamp);
@@ -496,15 +707,17 @@ procedure S3_Server_Application_Corpus is
            (SigV4.Pair ("host", Host),
             SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
             SigV4.Pair ("x-amz-date", Timestamp))
+         elsif Second_Value'Length = 0 then
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-date", Timestamp),
+            SigV4.Pair (Header_Name, Header_Value))
          else
            (SigV4.Pair ("host", Host),
             SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
             SigV4.Pair ("x-amz-date", Timestamp),
-            SigV4.Pair
-              (Header_Name,
-               Header_Value &
-                 (if Second_Value'Length = 0
-                  then "" else ", " & Second_Value))));
+            SigV4.Pair (Header_Name, Header_Value),
+            SigV4.Pair (Header_Name, Second_Value)));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
         ("DELETE", Target, Query, Headers, Payload_Hash, Access_Key,
          Secret_Key, Region, Timestamp);
@@ -551,8 +764,9 @@ procedure S3_Server_Application_Corpus is
             SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
             SigV4.Pair ("x-amz-date", Timestamp),
             SigV4.Pair
-              ("x-amz-expected-bucket-owner",
-               Expected_Owner & ", " & Second_Owner)));
+              ("x-amz-expected-bucket-owner", Expected_Owner),
+            SigV4.Pair
+              ("x-amz-expected-bucket-owner", Second_Owner)));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
         (Method, Target, No_Query, Headers, Payload_Hash, Access_Key,
          Secret_Key, Region, Timestamp);
@@ -651,15 +865,19 @@ procedure S3_Server_Application_Corpus is
    is
       Payload_Hash : constant String := SigV4.SHA256_Hex ("");
       Headers : constant SigV4.Name_Value_Array :=
-        (SigV4.Pair ("host", Host),
-         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
-         SigV4.Pair ("x-amz-copy-source", Copy_Source),
-         SigV4.Pair ("x-amz-date", Timestamp),
-         SigV4.Pair
-           (Header_Name,
-            Header_Value &
-              (if Second_Value'Length = 0
-               then "" else ", " & Second_Value)));
+        (if Second_Value'Length = 0 then
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-copy-source", Copy_Source),
+            SigV4.Pair ("x-amz-date", Timestamp),
+            SigV4.Pair (Header_Name, Header_Value))
+         else
+           (SigV4.Pair ("host", Host),
+            SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+            SigV4.Pair ("x-amz-copy-source", Copy_Source),
+            SigV4.Pair ("x-amz-date", Timestamp),
+            SigV4.Pair (Header_Name, Header_Value),
+            SigV4.Pair (Header_Name, Second_Value)));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
         ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
          Secret_Key, Region, Timestamp);
@@ -724,8 +942,8 @@ procedure S3_Server_Application_Corpus is
       Headers : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("host", Host),
          SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
-         SigV4.Pair
-           ("x-amz-copy-source", First_Source & ", " & Second_Source),
+         SigV4.Pair ("x-amz-copy-source", First_Source),
+         SigV4.Pair ("x-amz-copy-source", Second_Source),
          SigV4.Pair ("x-amz-date", Timestamp));
       Signing : constant SigV4.Signing_Result := SigV4.Sign
         ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
@@ -806,9 +1024,8 @@ procedure S3_Server_Application_Corpus is
             SigV4.Pair ("x-amz-date", Timestamp))
          elsif Second_Header_Name'Length = 0 then
            (SigV4.Pair ("host", Host),
-            SigV4.Pair
-              (Extra_Header_Name,
-               Extra_Header_Value & ", " & Second_Header_Value),
+            SigV4.Pair (Extra_Header_Name, Extra_Header_Value),
+            SigV4.Pair (Extra_Header_Name, Second_Header_Value),
             SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
             SigV4.Pair ("x-amz-date", Timestamp))
          else
@@ -844,23 +1061,75 @@ procedure S3_Server_Application_Corpus is
       Extra_Headers : String := "") return String
    is
       Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
-      Headers : constant SigV4.Name_Value_Array :=
-        (SigV4.Pair ("host", Host),
-         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
-         SigV4.Pair ("x-amz-date", Timestamp));
-      Signing : constant SigV4.Signing_Result := SigV4.Sign
-        (Method, Target, Query, Headers, Payload_Hash, Access_Key,
-         Secret_Key, Region, Timestamp);
       Query_Text : constant String := SigV4.Canonical_Query (Query);
+
+      function Extra_Header_Count return Natural is
+         Result : Natural := 0;
+         Cursor : Integer := Extra_Headers'First;
+      begin
+         while Cursor <= Extra_Headers'Last loop
+            declare
+               Ending : constant Natural := Ada.Strings.Fixed.Index
+                 (Extra_Headers, CRLF, From => Cursor);
+            begin
+               if Ending = 0 then
+                  raise Program_Error with
+                    "test Extra_Headers must end each field with CRLF";
+               end if;
+               Result := Result + 1;
+               Cursor := Integer (Ending) + CRLF'Length;
+            end;
+         end loop;
+         return Result;
+      end Extra_Header_Count;
+
+      Extra_Count : constant Natural := Extra_Header_Count;
+      Headers : SigV4.Name_Value_Array (1 .. 3 + Extra_Count);
    begin
-      return Method & " " & Target & "?" & Query_Text & " HTTP/1.1" &
-        CRLF & "Host: " & Host & CRLF & "x-amz-date: " & Timestamp & CRLF &
-        "x-amz-content-sha256: " & Payload_Hash & CRLF &
-        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
-        Extra_Headers & "Content-Length: " &
-        Ada.Strings.Fixed.Trim
-          (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
-        "Connection: close" & CRLF & CRLF & Payload;
+      Headers (1) := SigV4.Pair ("host", Host);
+      Headers (2) := SigV4.Pair ("x-amz-content-sha256", Payload_Hash);
+      Headers (3) := SigV4.Pair ("x-amz-date", Timestamp);
+      if Extra_Count > 0 then
+         declare
+            Cursor : Integer := Extra_Headers'First;
+         begin
+            for Index in 1 .. Extra_Count loop
+               declare
+                  Ending : constant Natural := Ada.Strings.Fixed.Index
+                    (Extra_Headers, CRLF, From => Cursor);
+                  Line : constant String :=
+                    Extra_Headers (Cursor .. Integer (Ending) - 1);
+                  Colon : constant Natural :=
+                    Ada.Strings.Fixed.Index (Line, ":");
+               begin
+                  if Colon = 0 or else Colon = Line'First then
+                     raise Program_Error with
+                       "test Extra_Headers contains a malformed field";
+                  end if;
+                  Headers (3 + Index) := SigV4.Pair
+                    (Line (Line'First .. Integer (Colon) - 1),
+                     Ada.Strings.Fixed.Trim
+                       (Line (Integer (Colon) + 1 .. Line'Last),
+                        Ada.Strings.Both));
+                  Cursor := Integer (Ending) + CRLF'Length;
+               end;
+            end loop;
+         end;
+      end if;
+      declare
+         Signing : constant SigV4.Signing_Result := SigV4.Sign
+           (Method, Target, Query, Headers, Payload_Hash, Access_Key,
+            Secret_Key, Region, Timestamp);
+      begin
+         return Method & " " & Target & "?" & Query_Text & " HTTP/1.1" &
+           CRLF & "Host: " & Host & CRLF & "x-amz-date: " & Timestamp &
+           CRLF & "x-amz-content-sha256: " & Payload_Hash & CRLF &
+           "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+           Extra_Headers & "Content-Length: " &
+           Ada.Strings.Fixed.Trim
+             (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
+           "Connection: close" & CRLF & CRLF & Payload;
+      end;
    end Signed_Query_Body_Request;
 
    function Signed_Query_Body_Header_Request
@@ -1065,7 +1334,8 @@ procedure S3_Server_Application_Corpus is
           + Boolean'Pos (Checksum'Length > 0)
           + Boolean'Pos (Checksum_Value'Length > 0)
           + Boolean'Pos (Owner'Length > 0)
-          + Boolean'Pos (Duplicate_MD5'Length > 0);
+          + Boolean'Pos (Duplicate_MD5'Length > 0)
+          + Boolean'Pos (Duplicate_MFA'Length > 0);
       Headers : SigV4.Name_Value_Array (1 .. Header_Count);
       Last : Natural := 4;
       Query : constant SigV4.Name_Value_Array :=
@@ -1084,10 +1354,11 @@ procedure S3_Server_Application_Corpus is
       end if;
       if MFA'Length > 0 then
          Last := Last + 1;
-         Headers (Last) := SigV4.Pair
-           ("x-amz-mfa",
-            MFA & (if Duplicate_MFA'Length = 0 then ""
-                   else ", " & Duplicate_MFA));
+         Headers (Last) := SigV4.Pair ("x-amz-mfa", MFA);
+      end if;
+      if Duplicate_MFA'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) := SigV4.Pair ("x-amz-mfa", Duplicate_MFA);
       end if;
       if Checksum'Length > 0 then
          Last := Last + 1;
@@ -2548,6 +2819,597 @@ begin
    end;
 
    declare
+      Payload : constant String := "complete put tuple";
+      Last_Checksum : US.Unbounded_String;
+   begin
+      for Algorithm in Checksum_Policy.Algorithm loop
+         declare
+            Digest : constant String := Checksum_Value (Algorithm, Payload);
+            Algorithm_Name : constant String :=
+              Checksum_Policy.Wire_Name (Algorithm);
+            Response : constant String := Run
+              (Signed_Request
+                 ("PUT", "/test-bucket/put-complete", Payload,
+                  Extra_Headers =>
+                    "Cache-Control: max-age=60" & CRLF &
+                    "Content-Disposition: inline" & CRLF &
+                    "Content-Encoding: identity" & CRLF &
+                    "Content-Language: en-CA" & CRLF &
+                    "Content-MD5: " & Content_MD5 (Payload) & CRLF &
+                    "Content-Type: application/put" & CRLF &
+                    "Expires: Fri, 24 May 2013 00:00:00 GMT" & CRLF &
+                    "x-amz-sdk-checksum-algorithm: " & Algorithm_Name &
+                    CRLF & Checksum_Header (Algorithm) & ": " & Digest &
+                    CRLF & "x-amz-website-redirect-location: /put" & CRLF &
+                    "x-amz-meta-team: storage" & CRLF &
+                    "x-amz-storage-class: STANDARD" & CRLF &
+                    "x-amz-tagging: stage=server&algorithm=" &
+                    Algorithm_Name & CRLF &
+                    "x-amz-expected-bucket-owner: test-principal" & CRLF),
+               Receive_Max => 1);
+            Info : Flyology.Object_Storage.Object_Information;
+            Tags_Value : Flyology.Object_Storage.Object_Tag_Set;
+            Status : Flyology.Object_Storage.Status;
+         begin
+            Require
+              (Has (Response, "200 OK")
+               and then Has
+                 (Response, Checksum_Header (Algorithm) & ": " & Digest &
+                    CRLF)
+               and then Has
+                 (Response, "x-amz-checksum-type: FULL_OBJECT" & CRLF)
+               and then Has
+                 (Response, "x-amz-object-size: 18" & CRLF)
+               and then Response_Body (Response) = "",
+               "complete PutObject checksum response " & Algorithm_Name &
+                 ": " & Response);
+            Store.Head_Object
+              ("test-bucket", "put-complete", null,
+               Ada.Real_Time.Time_Last, Info, Status);
+            Store.Get_Object_Tags
+              ("test-bucket", "put-complete", null,
+               Ada.Real_Time.Time_Last, Tags_Value, Status);
+            Require
+              (Status = Flyology.Object_Storage.Success
+               and then Info.Size = Payload'Length
+               and then US.To_String (Info.Content_Type) = "application/put"
+               and then Info.Metadata.Cache_Control.Is_Set
+               and then US.To_String (Info.Metadata.Cache_Control.Value) =
+                 "max-age=60"
+               and then Info.Metadata.Content_Disposition.Is_Set
+               and then US.To_String
+                 (Info.Metadata.Content_Disposition.Value) = "inline"
+               and then Info.Metadata.Content_Encoding.Is_Set
+               and then US.To_String (Info.Metadata.Content_Encoding.Value) =
+                 "identity"
+               and then Info.Metadata.Content_Language.Is_Set
+               and then US.To_String (Info.Metadata.Content_Language.Value) =
+                 "en-CA"
+               and then Info.Metadata.Expires.Is_Set
+               and then Info.Metadata.Website_Redirect_Location.Is_Set
+               and then US.To_String
+                 (Info.Metadata.Website_Redirect_Location.Value) = "/put"
+               and then Info.Metadata.User.Length = 1
+               and then US.To_String (Info.Metadata.User.Items (1).Key) =
+                 "team"
+               and then US.To_String (Info.Metadata.User.Items (1).Value) =
+                 "storage"
+               and then Info.Checksum.Algorithm =
+                 Storage_Algorithm (Algorithm)
+               and then US.To_String (Info.Checksum.Value) = Digest
+               and then Tags_Value.Length = 2
+               and then US.To_String (Tags_Value.Items (1).Value) = "server"
+               and then US.To_String (Tags_Value.Items (2).Value) =
+                 Algorithm_Name,
+               "complete PutObject tuple persistence " & Algorithm_Name);
+            Last_Checksum := US.To_Unbounded_String (Digest);
+         end;
+      end loop;
+
+      declare
+         MD5_Rejected : constant String := Run
+           (Signed_Request
+              ("PUT", "/test-bucket/put-complete", "mutated",
+               Extra_Headers =>
+                 "Content-MD5: AAAAAAAAAAAAAAAAAAAAAA==" & CRLF));
+         Checksum_Rejected : constant String := Run
+           (Signed_Request
+              ("PUT", "/test-bucket/put-complete", "mutated",
+               Extra_Headers =>
+                 "x-amz-sdk-checksum-algorithm: XXHASH128" & CRLF &
+                 "x-amz-checksum-xxhash128: " &
+                 US.To_String (Last_Checksum) & CRLF));
+         Observed : constant String := Run
+           (Signed_Request ("GET", "/test-bucket/put-complete", ""));
+         Cleanup : constant String := Run
+           (Signed_Request ("DELETE", "/test-bucket/put-complete", ""));
+      begin
+         Require
+           (Has (MD5_Rejected, "<Code>BadDigest</Code>")
+            and then Has (Checksum_Rejected, "<Code>BadDigest</Code>")
+            and then Response_Body (Observed) = Payload
+            and then Has (Cleanup, "204 No Content"),
+            "PutObject integrity failure mutated the prior object");
+      end;
+   end;
+
+   declare
+      Wrong_Hash : constant String (1 .. 64) := (others => '0');
+      Unsupported : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("x-amz-acl", "private"),
+         SigV4.Pair ("x-amz-grant-full-control", "id=owner"),
+         SigV4.Pair ("x-amz-grant-read", "id=reader"),
+         SigV4.Pair ("x-amz-grant-read-acp", "id=reader"),
+         SigV4.Pair ("x-amz-grant-write-acp", "id=writer"),
+         SigV4.Pair ("x-amz-write-offset-bytes", "0"),
+         SigV4.Pair ("x-amz-server-side-encryption", "AES256"),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-customer-algorithm", "AES256"),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-customer-key", "a2V5"),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-customer-key-md5",
+            "bWQ1bWQ1bWQ1bWQ1bWQ1bQ=="),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-aws-kms-key-id", "key-id"),
+         SigV4.Pair ("x-amz-server-side-encryption-context", "e30="),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-bucket-key-enabled", "true"),
+         SigV4.Pair ("x-amz-request-payer", "requester"),
+         SigV4.Pair ("x-amz-object-lock-mode", "GOVERNANCE"),
+         SigV4.Pair
+           ("x-amz-object-lock-retain-until-date",
+            "2013-05-24T00:00:00Z"),
+         SigV4.Pair ("x-amz-object-lock-legal-hold", "ON"));
+      Duplicated : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("x-amz-acl", "private"),
+         SigV4.Pair ("cache-control", "no-cache"),
+         SigV4.Pair ("content-disposition", "inline"),
+         SigV4.Pair ("content-encoding", "identity"),
+         SigV4.Pair ("content-language", "en"),
+         SigV4.Pair ("content-md5", Content_MD5 ("mutating")),
+         SigV4.Pair ("content-type", "application/test"),
+         SigV4.Pair ("x-amz-sdk-checksum-algorithm", "CRC32"),
+         SigV4.Pair ("x-amz-checksum-crc32", "Ur8Evw=="),
+         SigV4.Pair ("x-amz-trailer", "x-amz-checksum-crc32"),
+         SigV4.Pair ("expires", "Fri, 24 May 2013 00:00:00 GMT"),
+         SigV4.Pair ("if-match", "*"),
+         SigV4.Pair ("if-none-match", "*"),
+         SigV4.Pair ("x-amz-grant-full-control", "id=owner"),
+         SigV4.Pair ("x-amz-grant-read", "id=reader"),
+         SigV4.Pair ("x-amz-grant-read-acp", "id=reader"),
+         SigV4.Pair ("x-amz-grant-write-acp", "id=writer"),
+         SigV4.Pair ("x-amz-write-offset-bytes", "0"),
+         SigV4.Pair ("x-amz-server-side-encryption", "AES256"),
+         SigV4.Pair ("x-amz-storage-class", "STANDARD"),
+         SigV4.Pair ("x-amz-website-redirect-location", "/redirect"),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-customer-algorithm", "AES256"),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-customer-key", "a2V5"),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-customer-key-md5",
+            "bWQ1bWQ1bWQ1bWQ1bWQ1bQ=="),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-aws-kms-key-id", "key-id"),
+         SigV4.Pair ("x-amz-server-side-encryption-context", "e30="),
+         SigV4.Pair
+           ("x-amz-server-side-encryption-bucket-key-enabled", "true"),
+         SigV4.Pair ("x-amz-request-payer", "requester"),
+         SigV4.Pair ("x-amz-tagging", "stage=duplicate"),
+         SigV4.Pair ("x-amz-object-lock-mode", "GOVERNANCE"),
+         SigV4.Pair
+           ("x-amz-object-lock-retain-until-date",
+            "2013-05-24T00:00:00Z"),
+         SigV4.Pair ("x-amz-object-lock-legal-hold", "ON"),
+         SigV4.Pair ("x-amz-expected-bucket-owner", "test-principal"),
+         SigV4.Pair ("x-amz-meta-team", "storage"));
+      Created : constant String := Run
+        (Signed_Request ("PUT", "/test-bucket/put-policy", "prior"));
+      Tampered : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("X-AmZ-TaGgInG", "stage=injected"),
+         SigV4.Pair ("x-amz-meta-team", "injected"),
+         SigV4.Pair ("x-amz-sdk-checksum-algorithm", "CRC32"),
+         SigV4.Pair ("x-amz-checksum-crc32", "Ur8Evw=="),
+         SigV4.Pair ("x-amz-trailer", "x-amz-checksum-crc32"),
+         SigV4.Pair
+           ("x-amz-expected-bucket-owner", "test-principal"),
+         SigV4.Pair ("x-amz-storage-class", "STANDARD"),
+         SigV4.Pair ("x-amz-acl", "private"),
+         SigV4.Pair ("x-amz-server-side-encryption", "AES256"),
+         SigV4.Pair ("x-amz-object-lock-mode", "GOVERNANCE"));
+   begin
+      Require (Has (Created, "200 OK"), "PutObject policy setup failed");
+      for Item of Tampered loop
+         declare
+            Name : constant String := US.To_String (Item.Name);
+            Response : constant String := Run
+              (Signed_Request_With_Unsigned_Amazon_Header
+                 ("/test-bucket/put-policy", "mutating", Name,
+                  US.To_String (Item.Value)));
+         begin
+            Require
+              (Has (Response, "400 Bad Request")
+               and then Has
+                 (Response, "<Code>AuthorizationHeaderMalformed</Code>")
+               and then not Has (Response, "100 Continue"),
+               "unsigned Amazon control reached PutObject semantics: " &
+                 Name & ": " & Response);
+         end;
+      end loop;
+      for Item of Unsupported loop
+         declare
+            Name : constant String := US.To_String (Item.Name);
+            Response : constant String := Run
+              (Signed_Request
+                 ("PUT", "/test-bucket/put-policy", "mutating",
+                  Extra_Headers => Name & ": " & US.To_String (Item.Value) &
+                    CRLF,
+                  Hash_Override => Wrong_Hash));
+         begin
+            Require
+              (Has (Response, "501 Not Implemented")
+               and then Has (Response, "<Code>NotImplemented</Code>"),
+               "PutObject did not reject unsupported " & Name &
+                 " after authentication: " & Response);
+         end;
+      end loop;
+      for Item of Duplicated loop
+         declare
+            Name : constant String := US.To_String (Item.Name);
+            Header : constant String := Name & ": " &
+              US.To_String (Item.Value) & CRLF;
+            Response : constant String := Run
+              (Signed_Request
+                 ("PUT", "/test-bucket/put-policy", "mutating",
+                  Extra_Headers => Header & Header,
+                  Hash_Override => Wrong_Hash));
+         begin
+            Require
+              (Has (Response, "400 Bad Request")
+               and then Has (Response, "<Code>InvalidRequest</Code>"),
+               "PutObject accepted duplicate physical " & Name & ": " &
+                 Response);
+         end;
+      end loop;
+      declare
+         Owner_Mismatch : constant String := Run
+           (Signed_Request
+              ("PUT", "/test-bucket/put-policy", "mutating",
+               Extra_Headers =>
+                 "x-amz-expected-bucket-owner: another-owner" & CRLF,
+               Hash_Override => Wrong_Hash));
+         Nonstandard : constant String := Run
+           (Signed_Request
+              ("PUT", "/test-bucket/put-policy", "mutating",
+               Extra_Headers => "x-amz-storage-class: STANDARD_IA" & CRLF,
+               Hash_Override => Wrong_Hash));
+         Invalid_Storage : constant String := Run
+           (Signed_Request
+              ("PUT", "/test-bucket/put-policy", "mutating",
+               Extra_Headers => "x-amz-storage-class: INVALID" & CRLF,
+               Hash_Override => Wrong_Hash));
+         Invalid_ACL : constant String := Run
+           (Signed_Request
+              ("PUT", "/test-bucket/put-policy", "mutating",
+               Extra_Headers => "x-amz-acl: invalid" & CRLF,
+               Hash_Override => Wrong_Hash));
+         Invalid_Payer : constant String := Run
+           (Signed_Request
+              ("PUT", "/test-bucket/put-policy", "mutating",
+               Extra_Headers => "x-amz-request-payer: invalid" & CRLF,
+               Hash_Override => Wrong_Hash));
+         Invalid_SSE : constant String := Run
+           (Signed_Request
+              ("PUT", "/test-bucket/put-policy", "mutating",
+               Extra_Headers =>
+                 "x-amz-server-side-encryption: invalid" & CRLF,
+               Hash_Override => Wrong_Hash));
+         Invalid_Lock : constant String := Run
+           (Signed_Request
+              ("PUT", "/test-bucket/put-policy", "mutating",
+               Extra_Headers => "x-amz-object-lock-mode: invalid" & CRLF,
+               Hash_Override => Wrong_Hash));
+         Invalid_Hold : constant String := Run
+           (Signed_Request
+              ("PUT", "/test-bucket/put-policy", "mutating",
+               Extra_Headers =>
+                 "x-amz-object-lock-legal-hold: invalid" & CRLF,
+               Hash_Override => Wrong_Hash));
+         Observed : constant String := Run
+           (Signed_Request ("GET", "/test-bucket/put-policy", ""));
+      begin
+         Require
+           (Has (Owner_Mismatch, "403 Forbidden"),
+            "PutObject ignored expected owner mismatch");
+         Require
+           (Has (Nonstandard, "501 Not Implemented")
+            and then Has (Invalid_Storage, "400 Bad Request")
+            and then Has (Invalid_ACL, "400 Bad Request")
+            and then Has (Invalid_Payer, "400 Bad Request")
+            and then Has (Invalid_SSE, "400 Bad Request")
+            and then Has (Invalid_Lock, "400 Bad Request")
+            and then Has (Invalid_Hold, "400 Bad Request"),
+            "PutObject modeled enumeration validation failed");
+         Require
+           (Response_Body (Observed) = "prior",
+            "rejected PutObject policy member mutated prior body");
+      end;
+      declare
+         Cleanup : constant String := Run
+           (Signed_Request ("DELETE", "/test-bucket/put-policy", ""));
+      begin
+         Require
+           (Has (Cleanup, "204 No Content"),
+            "PutObject policy cleanup failed");
+      end;
+   end;
+
+   declare
+      function User_Headers (Count : Positive) return String is
+         Result : US.Unbounded_String;
+      begin
+         for Index in 1 .. Count loop
+            US.Append
+              (Result, "x-amz-meta-k" &
+                 Ada.Strings.Fixed.Trim
+                   (Positive'Image (Index), Ada.Strings.Both) &
+                 ": v" & CRLF);
+         end loop;
+         return US.To_String (Result);
+      end User_Headers;
+
+      function Repeated_Headers (Count : Positive) return String is
+         Result : US.Unbounded_String;
+      begin
+         for Index in 1 .. Count loop
+            US.Append (Result, "x-amz-meta-repeated: v" & CRLF);
+         end loop;
+         return US.To_String (Result);
+      end Repeated_Headers;
+
+      Wrong_Hash : constant String (1 .. 64) := (others => '0');
+      Ten_Tags : constant String :=
+        "k1=v&k2=v&k3=v&k4=v&k5=v&k6=v&k7=v&k8=v&k9=v&k10=v";
+      Eleven_Tags : constant String := Ten_Tags & "&k11=v";
+      Exact_Object_Limit : constant String := Run
+        (Signed_Put_Declared_Length_Request
+           ("/test-bucket/put-size-limit", "5368709120"));
+      Over_Object_Limit : constant String := Run
+        (Signed_Put_Declared_Length_Request
+           ("/test-bucket/put-size-limit", "5368709121"));
+      Size_Limit_Observed : constant String := Run
+        (Signed_Request ("GET", "/test-bucket/put-size-limit", ""));
+      Exact_System : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "system",
+            Extra_Headers => "Content-Type: " &
+              String'(1 .. 2_036 => 'x') & CRLF));
+      System_Plus_One : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "bad",
+            Extra_Headers => "Content-Type: " &
+              String'(1 .. 2_037 => 'x') & CRLF,
+            Hash_Override => Wrong_Hash));
+      Exact_User : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "user",
+            Extra_Headers => "x-amz-meta-k: " &
+              String'(1 .. 2_047 => 'v') & CRLF));
+      User_Plus_One : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "bad",
+            Extra_Headers => "x-amz-meta-k: " &
+              String'(1 .. 2_048 => 'v') & CRLF,
+            Hash_Override => Wrong_Hash));
+      Sixty_Four_User : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "entries",
+            Extra_Headers => User_Headers (64)));
+      Sixty_Five_User : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "bad",
+            Extra_Headers => User_Headers (65),
+            Hash_Override => Wrong_Hash));
+      Worst_Case_Payload : constant String := "supported header set";
+      Worst_Case_Checksum : constant String :=
+        Checksum_Value (Core.CRC32, Worst_Case_Payload);
+      Worst_Case_Put : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-header-capacity", Worst_Case_Payload,
+            Extra_Headers =>
+              User_Headers (64) &
+              "Cache-Control: max-age=1" & CRLF &
+              "Content-Disposition: inline" & CRLF &
+              "Content-Encoding: identity" & CRLF &
+              "Content-Language: en" & CRLF &
+              "Content-MD5: " & Content_MD5 (Worst_Case_Payload) & CRLF &
+              "Content-Type: application/test" & CRLF &
+              "Expires: Fri, 24 May 2013 00:00:00 GMT" & CRLF &
+              "If-None-Match: *" & CRLF &
+              "x-amz-checksum-crc32: " & Worst_Case_Checksum & CRLF &
+              "x-amz-expected-bucket-owner: test-principal" & CRLF &
+              "x-amz-sdk-checksum-algorithm: CRC32" & CRLF &
+              "x-amz-storage-class: STANDARD" & CRLF &
+              "x-amz-tagging: profile=maximum" & CRLF &
+              "x-amz-website-redirect-location: /maximum" & CRLF));
+      Exact_Unique_Auth_Bound : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-auth-bound", "bad",
+            Extra_Headers => User_Headers (125),
+            Hash_Override => Wrong_Hash,
+            Expect => True));
+      Over_Unique_Auth_Bound : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-auth-bound", "bad",
+            Extra_Headers => User_Headers (126),
+            Hash_Override => Wrong_Hash,
+            Expect => True));
+      Exact_Physical_Auth_Bound : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-auth-bound", "bad",
+            Extra_Headers => Repeated_Headers (253),
+            Hash_Override => Wrong_Hash,
+            Expect => True));
+      Over_Physical_Auth_Bound : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-auth-bound", "bad",
+            Extra_Headers => Repeated_Headers (254),
+            Hash_Override => Wrong_Hash,
+            Expect => True));
+      Auth_Bound_Observed : constant String := Run
+        (Signed_Request ("GET", "/test-bucket/put-auth-bound", ""));
+      Ten_Tag_Result : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "tags",
+            Extra_Headers => "x-amz-tagging: " & Ten_Tags & CRLF));
+      Eleven_Tag_Result : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "bad",
+            Extra_Headers => "x-amz-tagging: " & Eleven_Tags & CRLF,
+            Hash_Override => Wrong_Hash));
+      Malformed_Tag : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "bad",
+            Extra_Headers => "x-amz-tagging: key=%ZZ" & CRLF,
+            Hash_Override => Wrong_Hash));
+      Case_Collision : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "bad",
+            Extra_Headers => "x-amz-meta-Team: one" & CRLF &
+              "x-amz-meta-team: two" & CRLF,
+            Hash_Override => Wrong_Hash));
+      Invalid_Expires : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "bad",
+            Extra_Headers => "Expires: not-a-date" & CRLF,
+            Hash_Override => Wrong_Hash));
+      Invalid_Encoding : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "bad",
+            Extra_Headers => "Content-Encoding: gzip," & CRLF,
+            Hash_Override => Wrong_Hash));
+      SDK_Mismatch : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "bad",
+            Extra_Headers =>
+              "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+              "x-amz-checksum-crc32: " & Checksum_Value (Core.CRC32, "bad") &
+              CRLF,
+            Hash_Override => Wrong_Hash));
+      SDK_Missing_Value : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "bad",
+            Extra_Headers =>
+              "x-amz-sdk-checksum-algorithm: CRC32" & CRLF,
+            Hash_Override => Wrong_Hash));
+      Invalid_MD5 : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "bad",
+            Extra_Headers => "Content-MD5: not-base64" & CRLF,
+            Hash_Override => Wrong_Hash));
+      Encoding_Result : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-budget", "encoding",
+            Extra_Headers => "Content-Encoding: gzip, br" & CRLF));
+      Observed : constant String := Run
+        (Signed_Request ("GET", "/test-bucket/put-budget", ""));
+      Info : Flyology.Object_Storage.Object_Information;
+      Capacity_Info : Flyology.Object_Storage.Object_Information;
+      Capacity_Tags : Flyology.Object_Storage.Object_Tag_Set;
+      Head_Status : Flyology.Object_Storage.Status;
+      Capacity_Status : Flyology.Object_Storage.Status;
+   begin
+      Store.Head_Object
+        ("test-bucket", "put-budget", null, Ada.Real_Time.Time_Last,
+         Info, Head_Status);
+      Require
+        (Has (Exact_Object_Limit, "503 Service Unavailable")
+         and then not Has
+           (Exact_Object_Limit, "<Code>EntityTooLarge</Code>")
+         and then Has
+           (Over_Object_Limit, "<Code>EntityTooLarge</Code>")
+         and then Has (Size_Limit_Observed, "404 Not Found"),
+         "PutObject 5 GiB exact/+1 scalar boundary failed");
+      Require
+        (Has (Exact_System, "200 OK")
+         and then Has (System_Plus_One, "400 Bad Request")
+         and then Has (System_Plus_One, "<Code>InvalidArgument</Code>")
+         and then Has (Exact_User, "200 OK")
+         and then Has (User_Plus_One, "400 Bad Request")
+         and then Has (User_Plus_One, "<Code>InvalidArgument</Code>")
+         and then Has (Sixty_Four_User, "200 OK")
+         and then Has (Sixty_Five_User, "400 Bad Request")
+         and then Has (Sixty_Five_User, "<Code>InvalidArgument</Code>"),
+         "PutObject metadata exact/+1 budgets failed");
+      Store.Head_Object
+        ("test-bucket", "put-header-capacity", null,
+         Ada.Real_Time.Time_Last, Capacity_Info, Capacity_Status);
+      Store.Get_Object_Tags
+        ("test-bucket", "put-header-capacity", null,
+         Ada.Real_Time.Time_Last, Capacity_Tags, Capacity_Status);
+      Require
+        (Has (Worst_Case_Put, "200 OK")
+         and then Capacity_Status = Flyology.Object_Storage.Success
+         and then Capacity_Info.Size = Worst_Case_Payload'Length
+         and then Capacity_Info.Metadata.User.Length = 64
+         and then Capacity_Info.Checksum.Algorithm =
+           Flyology.Object_Storage.Checksum_CRC32
+         and then US.To_String (Capacity_Info.Checksum.Value) =
+           Worst_Case_Checksum
+         and then Capacity_Tags.Length = 1
+         and then US.To_String (Capacity_Tags.Items (1).Value) = "maximum",
+         "supported worst-case PutObject header set did not persist exactly");
+      Require
+        (Has (Exact_Unique_Auth_Bound, "<Code>InvalidArgument</Code>")
+         and then Has
+           (Over_Unique_Auth_Bound,
+            "<Code>AuthorizationHeaderMalformed</Code>")
+         and then not Has (Over_Unique_Auth_Bound, "100 Continue")
+         and then Has
+           (Exact_Physical_Auth_Bound, "<Code>InvalidRequest</Code>")
+         and then Has
+           (Over_Physical_Auth_Bound,
+            "<Code>AuthorizationHeaderMalformed</Code>")
+         and then not Has (Over_Physical_Auth_Bound, "100 Continue")
+         and then Has (Auth_Bound_Observed, "404 Not Found"),
+         "SigV4 unique/physical signed-header bounds did not fail closed");
+      Require
+        (Has (Ten_Tag_Result, "200 OK")
+         and then Has (Eleven_Tag_Result, "<Code>InvalidTag</Code>")
+         and then Has (Malformed_Tag, "<Code>InvalidTag</Code>")
+         and then Has (Case_Collision, "<Code>InvalidRequest</Code>")
+         and then Has (Invalid_Expires, "<Code>InvalidArgument</Code>")
+         and then Has (Invalid_Encoding, "<Code>InvalidArgument</Code>"),
+         "PutObject tag or metadata syntax boundary failed");
+      Require
+        (Has (SDK_Mismatch, "<Code>InvalidRequest</Code>")
+         and then Has (SDK_Missing_Value, "<Code>InvalidRequest</Code>")
+         and then Has (Invalid_MD5, "<Code>InvalidDigest</Code>"),
+         "PutObject checksum-group preflight failed");
+      Require
+        (Has (Encoding_Result, "200 OK")
+         and then Response_Body (Observed) = "encoding"
+         and then Head_Status = Flyology.Object_Storage.Success
+         and then Info.Metadata.Content_Encoding.Is_Set
+         and then US.To_String (Info.Metadata.Content_Encoding.Value) =
+           "gzip, br",
+         "PutObject did not preserve ordinary content encoding exactly");
+      declare
+         Cleanup : constant String := Run
+           (Signed_Request ("DELETE", "/test-bucket/put-budget", ""));
+         Capacity_Cleanup : constant String := Run
+           (Signed_Request
+              ("DELETE", "/test-bucket/put-header-capacity", ""));
+      begin
+         Require
+           (Has (Cleanup, "204 No Content")
+            and then Has (Capacity_Cleanup, "204 No Content"),
+            "PutObject budget cleanup failed");
+      end;
+   end;
+
+   declare
       Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("location", ""),
          SigV4.Pair ("x-id", "GetBucketLocation"));
@@ -3506,6 +4368,174 @@ begin
          "versioning corpus bucket cleanup failed");
    end;
 
+   declare
+      Payload : constant String := "trailer put";
+   begin
+      for Algorithm in Checksum_Policy.Algorithm loop
+         declare
+            Digest : constant String := Checksum_Value (Algorithm, Payload);
+            Response : constant String := Run
+              (Signed_Put_Object_Trailer_Request
+                 ("/test-bucket/put-trailer", Payload, Algorithm, Digest),
+               Receive_Max => 1);
+         begin
+            Require
+              (Has (Response, "200 OK")
+               and then Has
+                 (Response, Checksum_Header (Algorithm) & ": " & Digest &
+                    CRLF),
+               "PutObject physical trailer checksum " &
+                 Checksum_Policy.Wire_Name (Algorithm) & ": " & Response);
+         end;
+      end loop;
+      declare
+         Info : Flyology.Object_Storage.Object_Information;
+         Head_Status : Flyology.Object_Storage.Status;
+         Missing : constant String := Run
+           (Signed_Put_Object_Trailer_Request
+              ("/test-bucket/put-trailer", "bad", Core.SHA256,
+               Checksum_Value (Core.SHA256, "bad"),
+               Include_Trailer => False));
+         Duplicate : constant String := Run
+           (Signed_Put_Object_Trailer_Request
+              ("/test-bucket/put-trailer", "bad", Core.SHA256,
+               Checksum_Value (Core.SHA256, "bad"), Duplicate => True));
+         Mismatch : constant String := Run
+           (Signed_Put_Object_Trailer_Request
+              ("/test-bucket/put-trailer", "bad", Core.SHA256,
+               Checksum_Value (Core.SHA256, Payload)));
+         Observed : constant String := Run
+           (Signed_Request ("GET", "/test-bucket/put-trailer", ""));
+      begin
+         Store.Head_Object
+           ("test-bucket", "put-trailer", null, Ada.Real_Time.Time_Last,
+            Info, Head_Status);
+         Require
+           (Has (Missing, "400 Bad Request")
+            and then Has (Duplicate, "400 Bad Request")
+            and then Has (Mismatch, "<Code>BadDigest</Code>")
+            and then Response_Body (Observed) = Payload
+            and then Head_Status = Flyology.Object_Storage.Success
+            and then not Info.Metadata.Content_Encoding.Is_Set,
+            "invalid PutObject physical trailer mutated the object");
+         declare
+            Cleanup : constant String := Run
+              (Signed_Request ("DELETE", "/test-bucket/put-trailer", ""));
+         begin
+            Require
+              (Has (Cleanup, "204 No Content"),
+               "PutObject trailer cleanup failed");
+         end;
+      end;
+   end;
+
+   declare
+      Payload : constant String := "bad";
+      Trailer_Headers : constant String :=
+        "x-amz-sdk-checksum-algorithm: CRC32" & CRLF &
+        "x-amz-trailer: x-amz-checksum-crc32" & CRLF;
+      Decoded_Without_Encoding : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-trailer-invalid", Payload,
+            Extra_Headers =>
+              "x-amz-decoded-content-length: 3" & CRLF,
+            Chunked => True));
+      Duplicate_Encoding : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-trailer-invalid", Payload,
+            Extra_Headers =>
+              "Content-Encoding: aws-chunked, aws-chunked" & CRLF &
+              "x-amz-decoded-content-length: 3" & CRLF & Trailer_Headers,
+            Chunked => True));
+      Missing_Decoded : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-trailer-invalid", Payload,
+            Extra_Headers => "Content-Encoding: aws-chunked" & CRLF &
+              Trailer_Headers,
+            Chunked => True));
+      Missing_Trailer : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-trailer-invalid", Payload,
+            Extra_Headers => "Content-Encoding: aws-chunked" & CRLF &
+              "x-amz-decoded-content-length: 3" & CRLF,
+            Chunked => True));
+      Malformed_Decoded : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-trailer-invalid", Payload,
+            Extra_Headers => "Content-Encoding: aws-chunked" & CRLF &
+              "x-amz-decoded-content-length: 3x" & CRLF & Trailer_Headers,
+            Chunked => True));
+      Exact_Limit : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-trailer-invalid", Payload,
+            Extra_Headers => "Content-Encoding: aws-chunked" & CRLF &
+              "x-amz-decoded-content-length: 5368709120" & CRLF &
+              Trailer_Headers,
+            Chunked => True));
+      Over_Limit : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-trailer-invalid", Payload,
+            Extra_Headers => "Content-Encoding: aws-chunked" & CRLF &
+              "x-amz-decoded-content-length: 5368709121" & CRLF &
+              Trailer_Headers,
+            Chunked => True));
+      Inner_AWS_Frames : constant String := Run
+        (Signed_Request
+           ("PUT", "/test-bucket/put-trailer-invalid", Payload,
+            Extra_Headers => "Content-Encoding: aws-chunked" & CRLF &
+              "x-amz-decoded-content-length: 3" & CRLF & Trailer_Headers));
+      Malformed_Chunk : constant String := Run
+        (Signed_Malformed_Chunk_Put_Request
+           ("/test-bucket/put-trailer-invalid", Payload));
+      Undeclared_Trailer : constant String := Run
+        (Signed_Undeclared_Trailer_Put_Request
+           ("/test-bucket/put-trailer-invalid", Payload));
+      Observed : constant String := Run
+        (Signed_Request ("GET", "/test-bucket/put-trailer-invalid", ""));
+   begin
+      Require
+        (Has (Decoded_Without_Encoding, "<Code>InvalidRequest</Code>"),
+         "PutObject accepted decoded length without aws-chunked: " &
+           Decoded_Without_Encoding);
+      Require
+        (Has (Duplicate_Encoding, "<Code>InvalidArgument</Code>"),
+         "PutObject accepted duplicate aws-chunked: " & Duplicate_Encoding);
+      Require
+        (Has (Missing_Decoded, "<Code>InvalidRequest</Code>"),
+         "PutObject accepted aws-chunked without decoded length: " &
+           Missing_Decoded);
+      Require
+        (Has (Missing_Trailer, "<Code>InvalidRequest</Code>"),
+         "PutObject accepted aws-chunked without checksum trailer: " &
+           Missing_Trailer);
+      Require
+        (Has (Malformed_Decoded, "<Code>InvalidArgument</Code>"),
+         "PutObject accepted malformed decoded length: " & Malformed_Decoded);
+      Require
+        (Has (Exact_Limit, "501 Not Implemented")
+         and then not Has (Exact_Limit, "<Code>EntityTooLarge</Code>"),
+         "PutObject did not validate then reject exact-limit aws-chunked: " &
+           Exact_Limit);
+      Require
+        (Has (Over_Limit, "<Code>EntityTooLarge</Code>"),
+         "PutObject accepted decoded limit plus one: " & Over_Limit);
+      Require
+        (Has (Inner_AWS_Frames, "501 Not Implemented"),
+         "PutObject accepted undecoded inner aws-chunked frames: " &
+           Inner_AWS_Frames);
+      Require
+        (Has (Malformed_Chunk, "<Code>InvalidRequest</Code>"),
+         "PutObject did not map malformed chunk framing to InvalidRequest: " &
+           Malformed_Chunk);
+      Require
+        (Has (Undeclared_Trailer, "<Code>InvalidRequest</Code>"),
+         "PutObject accepted an undeclared physical trailer: " &
+           Undeclared_Trailer);
+      Require
+        (Has (Observed, "404 Not Found"),
+         "rejected aws-chunked PutObject published an object: " & Observed);
+   end;
+
    for Name of Listing_Buckets loop
       Require
         (Has
@@ -3663,7 +4693,13 @@ begin
                "authenticated Expect request was not admitted");
       Require (Has (Response, "200 OK"), "PutObject failed");
       Require
-        (Has (Response, "ETag: ""5eb63bbbe01eeed093cb22bb8f5acdc3"""),
+        (Has (Response, "ETag: ""5eb63bbbe01eeed093cb22bb8f5acdc3""")
+         and then Has
+           (Response, "x-amz-checksum-crc64nvme: " &
+              Checksum_Value (Core.CRC64NVME, "hello world") & CRLF)
+         and then Has
+           (Response, "x-amz-checksum-type: FULL_OBJECT" & CRLF)
+         and then Has (Response, "x-amz-object-size: 11" & CRLF),
          "PutObject ETag mismatch");
    end;
 
@@ -3688,7 +4724,10 @@ begin
            "5eb63bbbe01eeed093cb22bb8f5acdc3"
          and then Parsed.Object_Size.Is_Set
          and then Parsed.Object_Size.Value = 11
-         and then not Parsed.Has_Checksum
+         and then Parsed.Has_Checksum
+         and then US.To_String (Parsed.Checksum.CRC64NVME) =
+           Checksum_Value (Core.CRC64NVME, "hello world")
+         and then US.To_String (Parsed.Checksum.Kind) = "FULL_OBJECT"
          and then not Parsed.Has_Object_Parts
          and then not Parsed.Has_Storage_Class,
          "GetObjectAttributes ordinary object response mismatch: " &
@@ -3700,17 +4739,20 @@ begin
               ("GET", "/test-bucket/object",
                (1 => SigV4.Pair ("attributes", "")),
                "x-amz-object-attributes", "Checksum"));
-         Empty : constant Attributes.Get_Object_Attributes_Result :=
+         Checksum_Result : constant Attributes.Get_Object_Attributes_Result :=
            Attributes.Parse_Result (Response_Body (Checksum_Only));
       begin
          Require
            (Has (Checksum_Only, "200 OK")
-            and then not Empty.Has_Entity_Tag
-            and then not Empty.Has_Checksum
-            and then not Empty.Has_Object_Parts
-            and then not Empty.Has_Storage_Class
-            and then not Empty.Object_Size.Is_Set,
-            "GetObjectAttributes invented an unavailable checksum");
+            and then not Checksum_Result.Has_Entity_Tag
+            and then Checksum_Result.Has_Checksum
+            and then US.To_String
+              (Checksum_Result.Checksum.CRC64NVME) =
+                Checksum_Value (Core.CRC64NVME, "hello world")
+            and then not Checksum_Result.Has_Object_Parts
+            and then not Checksum_Result.Has_Storage_Class
+            and then not Checksum_Result.Object_Size.Is_Set,
+            "GetObjectAttributes omitted the default object checksum");
       end;
 
       Require

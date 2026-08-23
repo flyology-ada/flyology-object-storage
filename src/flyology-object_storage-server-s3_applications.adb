@@ -9,7 +9,9 @@ with GNAT.MD5;
 with GNAT.SHA256;
 with Flyology.Bytes;
 with Flyology.Cancellation;
+with Flyology.HTTP;
 with Flyology.IO;
+with Flyology.Object_Storage.Checksum_Engine;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Checksum_Policy;
@@ -66,6 +68,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    use type S3.Core.Range_Parse_Status;
 
    Payload_Hash_Mismatch : exception;
+   Content_MD5_Mismatch : exception;
+   Body_Checksum_Invalid : exception;
+   Body_Checksum_Mismatch : exception;
    Malformed_Body_Framing : exception;
    Body_Entity_Too_Large : exception;
 
@@ -177,9 +182,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       return Result;
    end Attribute_Checksum;
 
-   function Content_MD5 (Value : String) return String is
-      Digest : constant GNAT.MD5.Binary_Message_Digest :=
-        GNAT.MD5.Digest (Value);
+   function Encode_Content_MD5
+     (Digest : GNAT.MD5.Binary_Message_Digest) return String
+   is
       Alphabet : constant String :=
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
       Result : String (1 .. 24);
@@ -216,7 +221,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Result (23 .. 24) := "==";
       end;
       return Result;
-   end Content_MD5;
+   end Encode_Content_MD5;
+
+   function Content_MD5 (Value : String) return String is
+     (Encode_Content_MD5 (GNAT.MD5.Digest (Value)));
 
    function Valid_Tagging_Content_Type (Value : String) return Boolean is
       Lower : constant String := Ada.Characters.Handling.To_Lower (Value);
@@ -715,13 +723,23 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       end Copy_Result_XML;
 
       package Request_IO is
-         type Request_Source is limited new Backends.Byte_Source with record
+         type Request_Source
+           (Checksum_Kind : Checksum_Policy.Algorithm := S3.Core.CRC64NVME)
+         is limited new Backends.Byte_Source with record
             Length_Value : Backends.Source_Length :=
               (Kind => Backends.Unknown);
             Expected_Hash : US.Unbounded_String;
             Check_Hash    : Boolean := False;
             Hash          : GNAT.SHA256.Context :=
               GNAT.SHA256.Initial_Context;
+            Check_Content_MD5 : Boolean := False;
+            Expected_Content_MD5 : US.Unbounded_String;
+            Content_MD5_Hash : GNAT.MD5.Context := GNAT.MD5.Initial_Context;
+            Check_Body_Checksum : Boolean := False;
+            Checksum_From_Trailer : Boolean := False;
+            Reject_Unexpected_Trailers : Boolean := False;
+            Expected_Body_Checksum : US.Unbounded_String;
+            Body_Checksum_Hash : Checksums.Context (Checksum_Kind);
             Observed      : Byte_Count := 0;
             Maximum       : Byte_Count := Byte_Count'Last;
             Completed     : Boolean := False;
@@ -760,7 +778,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                Finished := True;
                return;
             end if;
-            Apps.Read_Body (X, Data, Last, Finished);
+            begin
+               Apps.Read_Body (X, Data, Last, Finished);
+            exception
+               when Flyology.HTTP.Protocol_Error =>
+                  raise Malformed_Body_Framing;
+            end;
             if Last >= Data'First then
                Chunk_Length := Byte_Count (Last - Data'First + 1);
                if Chunk_Length > Item.Maximum
@@ -777,10 +800,22 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                end if;
                Item.Observed := Item.Observed + Chunk_Length;
                GNAT.SHA256.Update (Item.Hash, Data (Data'First .. Last));
+               if Item.Check_Content_MD5 then
+                  GNAT.MD5.Update
+                    (Item.Content_MD5_Hash, Data (Data'First .. Last));
+               end if;
+               if Item.Check_Body_Checksum then
+                  Checksums.Update
+                    (Item.Body_Checksum_Hash, Data (Data'First .. Last));
+               end if;
             end if;
             if Finished then
                Item.Completed := True;
-               if Item.Length_Value.Kind = Backends.Known
+               if Item.Checksum_From_Trailer
+                 and then not Apps.Body_Complete (X)
+               then
+                  raise Body_Checksum_Invalid;
+               elsif Item.Length_Value.Kind = Backends.Known
                  and then Item.Observed /= Item.Length_Value.Bytes
                then
                   raise Malformed_Body_Framing;
@@ -789,6 +824,54 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                    Encoding.Lowercase (US.To_String (Item.Expected_Hash))
                then
                   raise Payload_Hash_Mismatch;
+               end if;
+               if Item.Check_Content_MD5 then
+                  declare
+                     Digest : constant GNAT.MD5.Binary_Message_Digest :=
+                       GNAT.MD5.Digest (Item.Content_MD5_Hash);
+                  begin
+                     if Encode_Content_MD5 (Digest) /=
+                       US.To_String (Item.Expected_Content_MD5)
+                     then
+                        raise Content_MD5_Mismatch;
+                     end if;
+                  end;
+               end if;
+               if Item.Reject_Unexpected_Trailers
+                 and then not Item.Checksum_From_Trailer
+                 and then Apps.Request_Trailer_Count (X) > 0
+               then
+                  raise Body_Checksum_Invalid;
+               end if;
+               if Item.Check_Body_Checksum then
+                  if Item.Checksum_From_Trailer
+                    and then
+                      (Apps.Request_Trailer_Count (X) /= 1
+                       or else Apps.Request_Trailer_Count
+                         (X, Checksum_Header_Name
+                            (Storage_Algorithm (Item.Checksum_Kind))) /= 1)
+                  then
+                     raise Body_Checksum_Invalid;
+                  end if;
+                  declare
+                     Supplied : constant String :=
+                       (if Item.Checksum_From_Trailer
+                        then Apps.Request_Trailer
+                          (X, Checksum_Header_Name
+                             (Storage_Algorithm (Item.Checksum_Kind)))
+                        else US.To_String (Item.Expected_Body_Checksum));
+                     Computed : constant String :=
+                       Checksums.Encode_Base64
+                         (Checksums.Finish (Item.Body_Checksum_Hash));
+                  begin
+                     if not Checksum_Engine.Valid_Digest
+                       (Supplied, Storage_Algorithm (Item.Checksum_Kind))
+                     then
+                        raise Body_Checksum_Invalid;
+                     elsif Supplied /= Computed then
+                        raise Body_Checksum_Mismatch;
+                     end if;
+                  end;
                end if;
             elsif Last < Data'First then
                raise Malformed_Body_Framing;
@@ -1449,8 +1532,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Apps.Set_Principal (X, US.To_String (Auth.Principal));
 
       if Has_Encryption_Header
-        and then Operation not in Copy_Object | Head_Object | Get_Object |
-          Get_Object_Attributes
+        and then Operation not in Copy_Object | Put_Object | Head_Object |
+          Get_Object | Get_Object_Attributes
       then
          Send_Error
            (X, 501, "NotImplemented",
@@ -1656,7 +1739,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             when Create_Bucket =>
                declare
                   Source : Request_IO.Request_Source :=
-                    (Length_Value  => Length,
+                    (Checksum_Kind => S3.Core.CRC64NVME,
+                     Length_Value  => Length,
                      Expected_Hash => Auth.Payload_Hash,
                      Check_Hash    =>
                        US.To_String (Auth.Payload_Hash) /=
@@ -1664,7 +1748,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Hash      => GNAT.SHA256.Initial_Context,
                      Observed  => 0,
                      Maximum   => Maximum_Create_Bucket_Body,
-                     Completed => False);
+                     Completed => False,
+                     others    => <>);
                   Document : constant String := Read_Document (Source);
                   Configuration : constant
                     Buckets.Create_Bucket_Configuration :=
@@ -1988,7 +2073,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      if Owner_Accepted then
                         declare
                            Source : Request_IO.Request_Source :=
-                             (Length_Value  => Length,
+                             (Checksum_Kind => S3.Core.CRC64NVME,
+                              Length_Value  => Length,
                               Expected_Hash => Auth.Payload_Hash,
                               Check_Hash    =>
                                 US.To_String (Auth.Payload_Hash) /=
@@ -1996,7 +2082,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                               Hash      => GNAT.SHA256.Initial_Context,
                               Observed  => 0,
                               Maximum   => Maximum_Bucket_Tagging_Body,
-                              Completed => False);
+                              Completed => False,
+                              others    => <>);
                            Document : constant String :=
                              Read_Document (Source);
 
@@ -2332,7 +2419,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      if Owner_Accepted then
                         declare
                            Source : Request_IO.Request_Source :=
-                             (Length_Value  => Length,
+                             (Checksum_Kind => S3.Core.CRC64NVME,
+                              Length_Value  => Length,
                               Expected_Hash => Auth.Payload_Hash,
                               Check_Hash    =>
                                 US.To_String (Auth.Payload_Hash) /=
@@ -2340,7 +2428,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                               Hash      => GNAT.SHA256.Initial_Context,
                               Observed  => 0,
                               Maximum   => Maximum_Versioning_Body,
-                              Completed => False);
+                              Completed => False,
+                              others    => <>);
                            Document : constant String :=
                              Read_Document (Source);
                            Checksum_Status : constant
@@ -3111,7 +3200,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Query : constant Multipart.Multipart_Query :=
                     Multipart.Parse_Query (Query_Text);
                   Source : Request_IO.Request_Source :=
-                    (Length_Value  => Length,
+                    (Checksum_Kind => S3.Core.CRC64NVME,
+                     Length_Value  => Length,
                      Expected_Hash => Auth.Payload_Hash,
                      Check_Hash    =>
                        US.To_String (Auth.Payload_Hash) /=
@@ -3119,7 +3209,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Hash      => GNAT.SHA256.Initial_Context,
                      Observed  => 0,
                      Maximum   => Backends.Maximum_Multipart_Part_Size,
-                     Completed => False);
+                     Completed => False,
+                     others    => <>);
                   Value_Count : constant Natural :=
                     Checksum_Value_Header_Count;
                   SDK_Count : constant Natural := Apps.Request_Header_Count
@@ -3349,7 +3440,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Query : constant Multipart.Multipart_Query :=
                     Multipart.Parse_Query (Query_Text);
                   Source : Request_IO.Request_Source :=
-                    (Length_Value  => Length,
+                    (Checksum_Kind => S3.Core.CRC64NVME,
+                     Length_Value  => Length,
                      Expected_Hash => Auth.Payload_Hash,
                      Check_Hash    =>
                        US.To_String (Auth.Payload_Hash) /=
@@ -3357,7 +3449,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Hash      => GNAT.SHA256.Initial_Context,
                      Observed  => 0,
                      Maximum   => Maximum_Complete_Multipart_Body,
-                     Completed => False);
+                     Completed => False,
+                     others    => <>);
                   Request : constant
                     Multipart.Complete_Multipart_Upload_Request :=
                       Multipart.Parse_Complete_Request
@@ -3808,6 +3901,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      or else Count ("content-encoding") > 1
                      or else Count ("content-language") > 1
                      or else Count ("content-type") > 1
+                     or else Count ("x-amz-decoded-content-length") > 1
                      or else Count ("x-amz-copy-source-if-match") > 1
                      or else Count
                        ("x-amz-copy-source-if-modified-since") > 1
@@ -4430,58 +4524,567 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
             when Put_Object =>
                declare
-                  Source : Request_IO.Request_Source :=
-                    (Length_Value  => Length,
-                     Expected_Hash => Auth.Payload_Hash,
-                     Check_Hash    =>
-                       US.To_String (Auth.Payload_Hash) /=
-                         S3.SigV4.Unsigned_Payload,
-                     Hash      => GNAT.SHA256.Initial_Context,
-                     Observed  => 0,
-                     Maximum   => Byte_Count'Last,
-                     Completed => False);
+                  function Count (Name : String) return Natural is
+                    (Apps.Request_Header_Count (X, Name));
+
+                  function Duplicate_User_Metadata return Boolean is
+                  begin
+                     for Index in 1 .. Apps.Request_Header_Count (X) loop
+                        declare
+                           Name : constant String :=
+                             Ada.Characters.Handling.To_Lower
+                               (Apps.Request_Header_Name (X, Index));
+                        begin
+                           if Name'Length >= 11
+                             and then Name (Name'First .. Name'First + 10) =
+                               "x-amz-meta-"
+                             and then Count (Name) > 1
+                           then
+                              return True;
+                           end if;
+                        end;
+                     end loop;
+                     return False;
+                  end Duplicate_User_Metadata;
+
+                  function Any_Duplicate return Boolean is
+                    (Count ("x-amz-acl") > 1
+                     or else Count ("cache-control") > 1
+                     or else Count ("content-disposition") > 1
+                     or else Count ("content-encoding") > 1
+                     or else Count ("content-language") > 1
+                     or else Count ("content-md5") > 1
+                     or else Count ("content-type") > 1
+                     or else Count ("x-amz-sdk-checksum-algorithm") > 1
+                     or else Checksum_Value_Header_Count > 1
+                     or else Count ("x-amz-trailer") > 1
+                     or else Count ("expires") > 1
+                     or else Count ("if-match") > 1
+                     or else Count ("if-none-match") > 1
+                     or else Count ("x-amz-grant-full-control") > 1
+                     or else Count ("x-amz-grant-read") > 1
+                     or else Count ("x-amz-grant-read-acp") > 1
+                     or else Count ("x-amz-grant-write-acp") > 1
+                     or else Count ("x-amz-write-offset-bytes") > 1
+                     or else Count ("x-amz-server-side-encryption") > 1
+                     or else Count ("x-amz-storage-class") > 1
+                     or else Count
+                       ("x-amz-website-redirect-location") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-customer-algorithm") >
+                         1
+                     or else Count
+                       ("x-amz-server-side-encryption-customer-key") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-customer-key-md5") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-aws-kms-key-id") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-context") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-bucket-key-enabled") >
+                         1
+                     or else Count ("x-amz-request-payer") > 1
+                     or else Count ("x-amz-tagging") > 1
+                     or else Count ("x-amz-object-lock-mode") > 1
+                     or else Count
+                       ("x-amz-object-lock-retain-until-date") > 1
+                     or else Count
+                       ("x-amz-object-lock-legal-hold") > 1
+                     or else Count ("x-amz-expected-bucket-owner") > 1
+                     or else Duplicate_User_Metadata);
+
+                  function Valid_Enumeration
+                    (Member : Positive; Value : String) return Boolean
+                  is
+                     Input : constant Model.Shape_Index := Model.Shape_Index
+                       (Model.Input_Shape (Model.Put_Object_Operation));
+                     Shape : constant Model.Shape_Index :=
+                       Model.Member_Shape (Input, Member);
+                  begin
+                     for Index in 1 .. Model.Enumeration_Count (Shape) loop
+                        if Value = Model.Enumeration_Value (Shape, Index) then
+                           return True;
+                        end if;
+                     end loop;
+                     return False;
+                  end Valid_Enumeration;
+
                   Options : Put_Options := Default_Put_Options;
                   Conditions : Write_Conditions := Default_Write_Conditions;
-                  Match_Count : constant Natural :=
-                    Apps.Request_Header_Count (X, "if-match");
-                  None_Match_Count : constant Natural :=
-                    Apps.Request_Header_Count (X, "if-none-match");
+                  Selected : Checksum_Algorithm := Checksum_CRC64NVME;
+                  Verify_Checksum : Boolean := False;
+                  Trailer_Checksum : Boolean := False;
+                  Supplied_Checksum : US.Unbounded_String;
+                  Metadata_OK : Boolean := True;
+                  Owner_OK : Boolean := False;
+                  Encoding_OK : Boolean := True;
+                  AWS_Chunked_Encoding : Boolean := False;
+
+                  function Valid_Content_Coding (Value : String)
+                    return Boolean
+                  is
+                  begin
+                     if Value'Length = 0 then
+                        return False;
+                     end if;
+                     for Item of Value loop
+                        if not (Item in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9'
+                                or else Item in
+                                  '!' | '#' | '$' | '%' | '&' | ''' | '*' |
+                                  '+' | '-' | '.' | '^' | '_' | '`' | '|' |
+                                  '~')
+                        then
+                           return False;
+                        end if;
+                     end loop;
+                     return True;
+                  end Valid_Content_Coding;
+
+                  procedure Parse_Content_Encoding is
+                  begin
+                     if Count ("content-encoding") = 0 then
+                        return;
+                     end if;
+                     declare
+                        Value : constant String :=
+                          Apps.Request_Header (X, "content-encoding");
+                        Cursor : Integer := Value'First;
+                     begin
+                        if Value'Length = 0 then
+                           Encoding_OK := False;
+                           return;
+                        end if;
+                        while Cursor <= Value'Last loop
+                           declare
+                              Comma : constant Natural :=
+                                Ada.Strings.Fixed.Index
+                                  (Value, ",", From => Cursor);
+                              Last : constant Integer :=
+                                (if Comma = 0 then Value'Last
+                                 else Integer (Comma) - 1);
+                              Token : constant String := Ada.Strings.Fixed.Trim
+                                (Value (Cursor .. Last), Ada.Strings.Both);
+                           begin
+                              if not Valid_Content_Coding (Token) then
+                                 Encoding_OK := False;
+                                 return;
+                              elsif Ada.Characters.Handling.To_Lower (Token) =
+                                "aws-chunked"
+                              then
+                                 if AWS_Chunked_Encoding then
+                                    Encoding_OK := False;
+                                    return;
+                                 end if;
+                                 AWS_Chunked_Encoding := True;
+                              end if;
+                              exit when Comma = 0;
+                              Cursor := Integer (Comma) + 1;
+                              if Cursor > Value'Last then
+                                 Encoding_OK := False;
+                                 return;
+                              end if;
+                           end;
+                        end loop;
+                     end;
+                  end Parse_Content_Encoding;
+
+                  procedure Set_Metadata_Value
+                    (Name : String; Target : out Optional_Metadata_Value) is
+                  begin
+                     if Count (Name) = 1 then
+                        Target :=
+                          (Is_Set => True,
+                           Value => US.To_Unbounded_String
+                             (Apps.Request_Header (X, Name)));
+                     else
+                        Target := (others => <>);
+                     end if;
+                  end Set_Metadata_Value;
                begin
-                  if Apps.Request_Header_Count (X, "content-type") = 1 then
+                  if Any_Duplicate then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A PutObject header is duplicated", Target_Text);
+                     return;
+                  elsif Count ("content-md5") = 1
+                    and then not S3.Wire_Core.Valid_Base64
+                      (Apps.Request_Header (X, "content-md5"), 16)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidDigest",
+                        "The Content-MD5 is invalid", Target_Text);
+                     return;
+                  end if;
+
+                  if Count ("x-amz-sdk-checksum-algorithm") = 1 then
+                     declare
+                        Valid : Boolean;
+                        Parsed : constant Checksum_Algorithm :=
+                          Parse_Checksum_Algorithm
+                            (Apps.Request_Header
+                               (X, "x-amz-sdk-checksum-algorithm"), Valid);
+                     begin
+                        if not Valid then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The checksum algorithm is invalid",
+                              Target_Text);
+                           return;
+                        end if;
+                        Selected := Parsed;
+                     end;
+                  end if;
+
+                  if Checksum_Value_Header_Count = 1 then
+                     if Count ("x-amz-trailer") > 0 then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "A checksum header and trailer cannot be combined",
+                           Target_Text);
+                        return;
+                     end if;
+                     if Count ("x-amz-sdk-checksum-algorithm") = 1
+                       and then Selected /= Checksum_Value_Algorithm
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The checksum algorithm and value header differ",
+                           Target_Text);
+                        return;
+                     end if;
+                     Selected := Checksum_Value_Algorithm;
+                     Supplied_Checksum := US.To_Unbounded_String
+                       (Apps.Request_Header
+                          (X, Checksum_Header_Name (Selected)));
+                     if not Checksum_Engine.Valid_Digest
+                       (US.To_String (Supplied_Checksum), Selected)
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The checksum value is invalid", Target_Text);
+                        return;
+                     end if;
+                     Verify_Checksum := True;
+                  elsif Count ("x-amz-trailer") = 1 then
+                     if Count ("x-amz-sdk-checksum-algorithm") /= 1
+                       or else Ada.Characters.Handling.To_Lower
+                         (Apps.Request_Header (X, "x-amz-trailer")) /=
+                           Checksum_Header_Name (Selected)
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The checksum trailer declaration is invalid",
+                           Target_Text);
+                        return;
+                     end if;
+                     Verify_Checksum := True;
+                     Trailer_Checksum := True;
+                  elsif Count ("x-amz-sdk-checksum-algorithm") = 1 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The selected checksum value is missing", Target_Text);
+                     return;
+                  end if;
+
+                  Parse_Content_Encoding;
+                  if not Encoding_OK then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The content encoding is invalid", Target_Text);
+                     return;
+                  elsif AWS_Chunked_Encoding then
+                     if Count ("x-amz-decoded-content-length") /= 1
+                       or else not Trailer_Checksum
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "aws-chunked requires one decoded length and " &
+                           "checksum trailer", Target_Text);
+                        return;
+                     end if;
+                     declare
+                        Parsed : constant S3.Wire_Core.Byte_Count_Result :=
+                          S3.Wire_Core.Parse_Byte_Count
+                            (Apps.Request_Header
+                               (X, "x-amz-decoded-content-length"));
+                     begin
+                        if not Parsed.Valid then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The decoded content length is invalid",
+                              Target_Text);
+                           return;
+                        elsif Parsed.Value > 5 * 1_024 * 1_024 * 1_024 then
+                           Send_Error
+                             (X, 400, "EntityTooLarge",
+                              "Your proposed upload exceeds the maximum " &
+                              "allowed size", Target_Text);
+                           return;
+                        end if;
+                     end;
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "aws-chunked payloads are not implemented",
+                        Target_Text);
+                     return;
+                  elsif Count ("x-amz-decoded-content-length") > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A decoded content length requires aws-chunked",
+                        Target_Text);
+                     return;
+                  elsif Length.Kind = Backends.Known
+                    and then Length.Bytes > 5 * 1_024 * 1_024 * 1_024
+                  then
+                     Send_Error
+                       (X, 400, "EntityTooLarge",
+                        "Your proposed upload exceeds the maximum allowed " &
+                        "size", Target_Text);
+                     return;
+                  end if;
+
+                  if Count ("x-amz-storage-class") = 1 then
+                     declare
+                        Value : constant String :=
+                          Apps.Request_Header (X, "x-amz-storage-class");
+                     begin
+                        if not Valid_Enumeration (33, Value) then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The storage class is invalid", Target_Text);
+                           return;
+                        elsif Value /= "STANDARD" then
+                           Send_Error
+                             (X, 501, "NotImplemented",
+                              "This storage class is not implemented",
+                              Target_Text);
+                           return;
+                        end if;
+                     end;
+                  end if;
+                  if Count ("x-amz-acl") = 1
+                    and then not Valid_Enumeration
+                      (1, Apps.Request_Header (X, "x-amz-acl"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The canned ACL is invalid", Target_Text);
+                     return;
+                  elsif Count ("x-amz-request-payer") = 1
+                    and then not Valid_Enumeration
+                      (41, Apps.Request_Header (X, "x-amz-request-payer"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer is invalid", Target_Text);
+                     return;
+                  elsif Count ("x-amz-server-side-encryption") = 1
+                    and then not Valid_Enumeration
+                      (32, Apps.Request_Header
+                         (X, "x-amz-server-side-encryption"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The server-side encryption value is invalid",
+                        Target_Text);
+                     return;
+                  elsif Count ("x-amz-object-lock-mode") = 1
+                    and then not Valid_Enumeration
+                      (43, Apps.Request_Header (X, "x-amz-object-lock-mode"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The object lock mode is invalid", Target_Text);
+                     return;
+                  elsif Count ("x-amz-object-lock-legal-hold") = 1
+                    and then not Valid_Enumeration
+                      (45, Apps.Request_Header
+                         (X, "x-amz-object-lock-legal-hold"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The object lock legal hold is invalid", Target_Text);
+                     return;
+                  elsif Count ("x-amz-acl") > 0
+                    or else Count ("x-amz-grant-full-control") > 0
+                    or else Count ("x-amz-grant-read") > 0
+                    or else Count ("x-amz-grant-read-acp") > 0
+                    or else Count ("x-amz-grant-write-acp") > 0
+                    or else Count ("x-amz-write-offset-bytes") > 0
+                    or else Has_Encryption_Header
+                    or else Count ("x-amz-request-payer") > 0
+                    or else Count ("x-amz-object-lock-mode") > 0
+                    or else Count
+                      ("x-amz-object-lock-retain-until-date") > 0
+                    or else Count ("x-amz-object-lock-legal-hold") > 0
+                  then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "This modeled PutObject member is not implemented",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  end if;
+
+                  if Count ("content-type") = 1 then
                      Options.Content_Type := US.To_Unbounded_String
                        (Apps.Request_Header (X, "content-type"));
                   end if;
-                  if Match_Count > 1 or else None_Match_Count > 1
+                  Set_Metadata_Value
+                    ("cache-control", Options.Metadata.Cache_Control);
+                  Set_Metadata_Value
+                    ("content-disposition",
+                     Options.Metadata.Content_Disposition);
+                  Set_Metadata_Value
+                    ("content-encoding", Options.Metadata.Content_Encoding);
+                  Set_Metadata_Value
+                    ("content-language", Options.Metadata.Content_Language);
+                  Set_Metadata_Value
+                    ("x-amz-website-redirect-location",
+                     Options.Metadata.Website_Redirect_Location);
+                  if Count ("expires") = 1 then
+                     declare
+                        Parsed_Expires : constant
+                          IMF_Dates.Metadata_Time_Result := IMF_Dates.Parse
+                            (Apps.Request_Header (X, "expires"));
+                     begin
+                        if not Parsed_Expires.Valid then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The Expires metadata is not canonical",
+                              Target_Text);
+                           return;
+                        end if;
+                        Options.Metadata.Expires :=
+                          (Is_Set => True, Value => Parsed_Expires.Value);
+                     end;
+                  end if;
+                  for Index in 1 .. Apps.Request_Header_Count (X) loop
+                     declare
+                        Header_Name : constant String :=
+                          Apps.Request_Header_Name (X, Index);
+                        Name : constant String :=
+                          Ada.Characters.Handling.To_Lower (Header_Name);
+                     begin
+                        if Name'Length >= 11
+                          and then Name (Name'First .. Name'First + 10) =
+                            "x-amz-meta-"
+                        then
+                           if Options.Metadata.User.Length =
+                             Maximum_User_Metadata_Entries
+                           then
+                              Metadata_OK := False;
+                           else
+                              Options.Metadata.User.Length :=
+                                Options.Metadata.User.Length + 1;
+                              Options.Metadata.User.Items
+                                (Options.Metadata.User.Length) :=
+                                  (Key => US.To_Unbounded_String
+                                     (Name (Name'First + 11 .. Name'Last)),
+                                   Value => US.To_Unbounded_String
+                                     (Apps.Request_Header (X, Header_Name)));
+                           end if;
+                        end if;
+                     end;
+                  end loop;
+                  Metadata_OK := Metadata_OK and then Valid_Object_Metadata
+                    (Options.Metadata, US.To_String (Options.Content_Type));
+                  if not Metadata_OK then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The PutObject metadata is invalid", Target_Text);
+                     return;
+                  end if;
+                  if Count ("x-amz-tagging") = 1 then
+                     begin
+                        Options.Tags := Tagging.Parse_Header
+                          (Apps.Request_Header (X, "x-amz-tagging"));
+                     exception
+                        when Tagging.Malformed_Tagging_Query =>
+                           Send_Error
+                             (X, 400, "InvalidTag",
+                              "The PutObject tag set is invalid", Target_Text);
+                           return;
+                     end;
+                  end if;
+
+                  if Count ("if-match") = 1 then
+                     Conditions.If_Match := US.To_Unbounded_String
+                       (Apps.Request_Header (X, "if-match"));
+                  end if;
+                  if Count ("if-none-match") = 1 then
+                     Conditions.If_None_Match := US.To_Unbounded_String
+                       (Apps.Request_Header (X, "if-none-match"));
+                  end if;
+                  if (Count ("if-match") = 1
+                      and then Apps.Request_Header (X, "if-match") = "")
                     or else
-                      (Match_Count = 1
-                       and then Apps.Request_Header (X, "if-match") = "")
-                    or else
-                      (None_Match_Count = 1
-                       and then
-                         Apps.Request_Header (X, "if-none-match") = "")
+                      (Count ("if-none-match") = 1
+                       and then Apps.Request_Header (X, "if-none-match") = "")
+                    or else not Backends.Valid_Write_Conditions (Conditions)
                   then
-                     Result := Invalid_Request;
-                  else
-                     if Match_Count = 1 then
-                        Conditions.If_Match := US.To_Unbounded_String
-                          (Apps.Request_Header (X, "if-match"));
-                     end if;
-                     if None_Match_Count = 1 then
-                        Conditions.If_None_Match := US.To_Unbounded_String
-                          (Apps.Request_Header (X, "if-none-match"));
-                     end if;
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "A PutObject entity-tag condition is invalid",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  Options.Checksum :=
+                    (Algorithm => Selected,
+                     Method    => Full_Object_Checksum,
+                     Value     => US.Null_Unbounded_String);
+                  declare
+                     Source : Request_IO.Request_Source
+                       (Checksum_Engine.Algorithm_Value (Selected)) :=
+                         (Checksum_Kind =>
+                            Checksum_Engine.Algorithm_Value (Selected),
+                          Length_Value  => Length,
+                          Expected_Hash => Auth.Payload_Hash,
+                          Check_Hash    =>
+                            US.To_String (Auth.Payload_Hash) /=
+                              S3.SigV4.Unsigned_Payload,
+                          Hash      => GNAT.SHA256.Initial_Context,
+                          Check_Content_MD5 => Count ("content-md5") = 1,
+                          Expected_Content_MD5 =>
+                            (if Count ("content-md5") = 1
+                             then US.To_Unbounded_String
+                               (Apps.Request_Header (X, "content-md5"))
+                             else US.Null_Unbounded_String),
+                          Check_Body_Checksum => Verify_Checksum,
+                          Checksum_From_Trailer => Trailer_Checksum,
+                          Reject_Unexpected_Trailers => True,
+                          Expected_Body_Checksum => Supplied_Checksum,
+                          Observed  => 0,
+                          Maximum   => 5 * 1_024 * 1_024 * 1_024,
+                          Completed => False,
+                          others    => <>);
+                  begin
                      Store.Put_Object
                        (Bucket, Key, Source, Options, Apps.Cancellation (X),
                         Apps.Deadline (X), Info, Result, Conditions);
-                  end if;
-                  if Result = Success and then not Source.Completed then
-                     raise Program_Error with
-                       "backend committed before validating the whole body";
-                  end if;
+                     if Result = Success and then not Source.Completed then
+                        raise Program_Error with
+                          "backend committed before validating the whole body";
+                     end if;
+                  end;
                end;
                if Result = Success then
                   Apps.Set_Header
                     (X, "ETag", '"' & US.To_String (Info.Entity_Tag) & '"');
+                  Set_Checksum_Headers (X, Info.Checksum);
+                  if US.Length (Info.Version) > 0 then
+                     Apps.Set_Header
+                       (X, "x-amz-version-id", US.To_String (Info.Version));
+                  end if;
+                  Apps.Set_Header
+                    (X, "x-amz-object-size", Decimal (Info.Size));
                   Apps.Respond (X, 200, "", "");
                else
                   --  Put_Object can report Not_Found only for its bucket;
@@ -4564,7 +5167,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      end if;
                      declare
                         Source : Request_IO.Request_Source :=
-                          (Length_Value  => Length,
+                          (Checksum_Kind => S3.Core.CRC64NVME,
+                           Length_Value  => Length,
                            Expected_Hash => Auth.Payload_Hash,
                            Check_Hash    =>
                              US.To_String (Auth.Payload_Hash) /=
@@ -4572,7 +5176,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            Hash      => GNAT.SHA256.Initial_Context,
                            Observed  => 0,
                            Maximum   => Maximum_Object_Tagging_Body,
-                           Completed => False);
+                           Completed => False,
+                           others    => <>);
                         Document : constant String := Read_Document (Source);
                      begin
                         if Content_MD5 (Document) /=
@@ -5723,7 +6328,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             when Delete_Objects =>
                declare
                   Source : Request_IO.Request_Source :=
-                    (Length_Value  => Length,
+                    (Checksum_Kind => S3.Core.CRC64NVME,
+                     Length_Value  => Length,
                      Expected_Hash => Auth.Payload_Hash,
                      Check_Hash    =>
                        US.To_String (Auth.Payload_Hash) /=
@@ -5731,7 +6337,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Hash      => GNAT.SHA256.Initial_Context,
                      Observed  => 0,
                      Maximum   => Maximum_Delete_Objects_Body,
-                     Completed => False);
+                     Completed => False,
+                     others    => <>);
                   Document : constant String := Read_Document (Source);
                   MD5_Count : constant Natural :=
                     Apps.Request_Header_Count (X, "content-md5");
@@ -6194,6 +6801,33 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Send_Error
               (X, 400, "XAmzContentSHA256Mismatch",
                "The provided payload hash does not match the request body",
+               Target_Text);
+         end if;
+      when Content_MD5_Mismatch =>
+         if Apps.Wire_Response_Started (X) then
+            Apps.Mark_Failed (X);
+         else
+            Send_Error
+              (X, 400, "BadDigest",
+               "The Content-MD5 does not match the request body",
+               Target_Text);
+         end if;
+      when Body_Checksum_Mismatch =>
+         if Apps.Wire_Response_Started (X) then
+            Apps.Mark_Failed (X);
+         else
+            Send_Error
+              (X, 400, "BadDigest",
+               "The checksum does not match the request body",
+               Target_Text);
+         end if;
+      when Body_Checksum_Invalid =>
+         if Apps.Wire_Response_Started (X) then
+            Apps.Mark_Failed (X);
+         else
+            Send_Error
+              (X, 400, "InvalidRequest",
+               "The checksum value or trailer is invalid",
                Target_Text);
          end if;
       when Malformed_Body_Framing =>
