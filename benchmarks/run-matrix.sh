@@ -20,7 +20,7 @@ if [ "$PROFILE" = full ]; then
 fi
 
 if ! grep -Fq 'flyology_http = "=0.1.3-dev"' "$PROJECT_DIR/alire.toml" ||
-   ! grep -Fq 'commit = "8a527902148487d8d80af15aa0dac66774c6cc90"' \
+   ! grep -Fq 'commit = "4147160562b14d8ca9db8f7ba9758258781eeca9"' \
      "$PROJECT_DIR/alire.toml"
 then
   echo "benchmark comparison requires the reviewed Flyology.HTTP PR #33 pin" >&2

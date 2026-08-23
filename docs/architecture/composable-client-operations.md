@@ -227,7 +227,7 @@ high-level child must not expose or duplicate signed request fields merely to
 cross the sibling-package privacy boundary.
 
 The consumer-approved PR #33 baseline is pinned at
-`8a527902148487d8d80af15aa0dac66774c6cc90`. Its qualification includes the
+`4147160562b14d8ca9db8f7ba9758258781eeca9`. Its qualification includes the
 established-child lifecycle, typed buffer restoration, admission certainty,
 and owner-driven HTTP/1.1, HTTP/2, and HTTP/3 exchange behavior required by
 this design. Object Storage still independently gates its semantic mappings
