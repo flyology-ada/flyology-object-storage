@@ -10,16 +10,21 @@ fail() {
   exit 1
 }
 
-HTTP_DECLARATIONS=$(git grep -h -E \
-  '^[[:space:]]*flyology_http[[:space:]]*=' -- '*alire.toml' || true)
-test -n "$HTTP_DECLARATIONS" || fail "flyology_http dependency is missing"
-while IFS= read -r declaration
-do
-  if [ "$declaration" != 'flyology_http = "=0.1.2"' ]; then
-    fail "every flyology_http declaration must be an indexed =0.1.2 dependency"
-  fi
-done <<<"$HTTP_DECLARATIONS"
-echo "dependency policy: exact indexed flyology_http=0.1.2, no HTTP pin"
+# The five independently solved Alire roots must all use the same reviewed PR
+# commit until Flyology.HTTP 0.1.3-dev and its QUIC dependency are indexed.
+HTTP_DEPENDENCY='flyology_http = "=0.1.3-dev"'
+HTTP_PIN='flyology_http = { url = "https://github.com/flyology-ada/flyology-http.git", commit = "aba55512bfa751e0c91a2e18fb70cde0a3e0f909" }'
+QUIC_PIN='flyology_quic = { url = "https://github.com/flyology-ada/flyology-http.git", subdir = "flyology_quic", commit = "aba55512bfa751e0c91a2e18fb70cde0a3e0f909" }'
+test "$(git grep -h -F "$HTTP_DEPENDENCY" -- '*alire.toml' | wc -l | tr -d ' ')" -eq 2 ||
+  fail "root and server must require exact flyology_http=0.1.3-dev"
+test "$(git grep -h -F "$HTTP_PIN" -- '*alire.toml' | wc -l | tr -d ' ')" -eq 5 ||
+  fail "all five Alire roots must pin the approved Flyology.HTTP PR commit"
+test "$(git grep -h -F "$QUIC_PIN" -- '*alire.toml' | wc -l | tr -d ' ')" -eq 5 ||
+  fail "all five Alire roots must pin the matching Flyology QUIC subcrate"
+if git grep -n -E 'flyology_http[[:space:]]*=.*path[[:space:]]*=' -- '*alire.toml'; then
+  fail "flyology_http must never use a committed local path pin"
+fi
+echo "dependency policy: immutable Flyology.HTTP PR #33 commit, no local HTTP pin"
 
 while IFS= read -r script
 do

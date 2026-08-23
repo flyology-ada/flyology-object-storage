@@ -2,9 +2,9 @@
 
 This note records the contract for the first completion-set-aware convenience
 client slice. It is a design and qualification boundary, not a claim that the
-API is implemented. Production declarations remain deferred until the matching
-Flyology HTTP client operation API is merged, released, and available through
-the Flyology Alire index.
+Object Storage API is implemented. Development proceeds against the reviewed
+Flyology HTTP PR #33 commit; publication remains deferred until that dependency
+is merged, released, and available through the Flyology Alire index.
 
 ## Upstream basis
 
@@ -189,12 +189,11 @@ its slot, and continue response-body work without blocking or moving work to a
 helper task. A synthetic parent regression in HTTP must prove this lifecycle,
 including parent cancellation while the child owns request or response data.
 
-### Candidate alignment
+### Approved HTTP alignment
 
-The uncommitted HTTP client candidate inspected on 2026-08-22 is promising but
-is not a dependency or API baseline. It supplies an absolute
+The consumer-approved HTTP PR #33 baseline supplies an absolute
 `Monotonic_Deadline`, monotonic `Admission_Certainty`, bounded typed exchange
-results, a candidate set-independent nonblocking request source, immediate
+results, a set-independent nonblocking request source, immediate
 response sinks, ownership-moving response buffers, and constructor plus
 established `Start` forms across HTTP/1.1, HTTP/2, and HTTP/3.
 
@@ -230,19 +229,19 @@ bridge should start an HTTP exchange from that prepared value; the public
 high-level child must not expose or duplicate signed request fields merely to
 cross the sibling-package privacy boundary.
 
-The candidate still requires a synthetic established-child test before it is
-a usable prerequisite. That test must put the HTTP operation in a parent
-record, invoke `Continue_After`, typed Finish, and `Release` from
-`Dependency_Changed`, restart the same child, and prove parent cancellation
-drains every source and buffer borrow. Constructor-only smoke tests do not
-establish that composition contract.
+The consumer-approved PR #33 baseline is pinned at
+`aba55512bfa751e0c91a2e18fb70cde0a3e0f909`. Its qualification includes the
+established-child lifecycle, typed buffer restoration, admission certainty,
+and owner-driven HTTP/1.1, HTTP/2, and HTTP/3 exchange behavior required by
+this design. Object Storage still independently gates its semantic mappings
+and ownership restoration before claiming the higher-level surface.
 
 ### Publication mapping oracle
 
 The compile-independent mapping corpus at
 `tests/corpora/composable-client/put-certainty.tsv` is normative for the first
-Put slice. Candidate HTTP names are recorded only as inputs to be checked
-again when a stable release is indexed. The mapping rules are:
+Put slice. The pinned HTTP names are inputs to be checked again when a stable
+release is indexed. The mapping rules are:
 
 - a complete, valid 200 response is `Published`;
 - a complete 412 plus exact `PreconditionFailed` code is

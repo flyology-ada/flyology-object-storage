@@ -19,8 +19,11 @@ if [ "$PROFILE" = full ]; then
   : "${FLYOLOGY_BENCH_CPU_POLICY:?full campaign requires FLYOLOGY_BENCH_CPU_POLICY}"
 fi
 
-if ! grep -Fq 'flyology_http = "=0.1.2"' "$PROJECT_DIR/alire.toml"; then
-  echo "benchmark comparison requires indexed flyology_http=0.1.2 fixed responses" >&2
+if ! grep -Fq 'flyology_http = "=0.1.3-dev"' "$PROJECT_DIR/alire.toml" ||
+   ! grep -Fq 'commit = "aba55512bfa751e0c91a2e18fb70cde0a3e0f909"' \
+     "$PROJECT_DIR/alire.toml"
+then
+  echo "benchmark comparison requires the reviewed Flyology.HTTP PR #33 pin" >&2
   exit 1
 fi
 

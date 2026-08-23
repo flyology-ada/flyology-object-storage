@@ -7,15 +7,17 @@ and run the SPARK manifest through `tools/prove.sh`. The proof job has a
 repository-wide concurrency lock so two workflow runs never share the proof
 lane logically, even though GitHub gives them separate runners.
 
-Repository integrity is checked before the build jobs. That gate requires the
-exact indexed `flyology_http=0.1.2` dependency, immutable full-commit GitHub
-Action references, executable and syntax-clean scripts, clean changed lines,
-no merge-conflict markers, valid local Markdown links, the exact 116-operation
-coverage ledger, its negative anti-promotion oracle, reviewed corpus locks,
-and generated S3 model sources matching the hash-pinned botocore model. A
-second negative oracle mutates the workflow to use a floating Action, an
-incorrect proof tool, an incorrect documentation tool, and persisted checkout
-credentials; all four unsafe fixtures must be rejected.
+Repository integrity is checked before the build jobs. That gate requires all
+five Alire roots to use the exact provisional Flyology HTTP PR #33 commit and
+matching QUIC subcrate without any local HTTP path pin. It also requires
+immutable full-commit GitHub Action references, executable and syntax-clean
+scripts, clean changed lines, no merge-conflict markers, valid local Markdown
+links, the exact 116-operation coverage ledger, its negative anti-promotion
+oracle, reviewed corpus locks, and generated S3 model sources matching the
+hash-pinned botocore model. A second negative oracle mutates the workflow to
+use a floating Action, an incorrect proof tool, an incorrect documentation
+tool, and persisted checkout credentials; all four unsafe fixtures must be
+rejected.
 
 Every pull request and push also runs the digest-pinned, MIT-licensed s5cmd
 black-box corpus against the memory server. A scheduled lane runs a bounded

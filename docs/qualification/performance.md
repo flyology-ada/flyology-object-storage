@@ -61,8 +61,8 @@ the two references plus all three Flyology backends sequentially. Its default
 `full` profile honors each scenario's warmup and duration, uses five
 repetitions by default, and requires explicit `FLYOLOGY_BENCH_HOST_LABEL`,
 `FLYOLOGY_BENCH_POWER_MODE`, and `FLYOLOGY_BENCH_CPU_POLICY` metadata. The
-launcher refuses to compare Flyology until the indexed fixed-length HTTP
-response dependency is consumed.
+launcher refuses to compare Flyology unless the exact reviewed HTTP dependency
+for the current source is present.
 
 The current common eligibility manifest is
 [`benchmarks/eligibility.tsv`](../../benchmarks/eligibility.tsv). Eleven

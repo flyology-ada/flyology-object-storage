@@ -1,8 +1,9 @@
 # Flyology Object Storage Server
 
 This independent executable crate runs the S3 application with the memory,
-files, or SQLite backend. It consumes indexed `flyology_http=0.1.2`; only the
-two sibling development crates are path-pinned inside this repository.
+files, or SQLite backend. During the composable-client rollout, HTTP and QUIC
+use the same immutable PR #33 git commit. Only the two sibling development
+crates use repository-local path pins; HTTP never does.
 
 The server provides bounded S3 and management HTTP/1.1 listeners under a
 dependency-ordered Flyology static supervisor. SIGTERM requests an orderly

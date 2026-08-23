@@ -128,10 +128,10 @@ barrier require every reopened namespace to be an intact old-or-new state.
 Windows directory-metadata durability and cross-process root sharing remain
 unsupported.
 
-The server application remains `partial`, but it now consumes indexed
-`flyology_http=0.1.2`: GET, HEAD and range responses use exact stored lengths
-without chunked fallback. The dependency also provides 64-bit request
-accounting, a 50 TB streaming ceiling, and per-route `Body_Size` limits.
+The server application remains `partial`: GET, HEAD and range responses use
+exact stored lengths without chunked fallback. Flyology HTTP also provides
+64-bit request accounting, a 50 TB streaming ceiling, and per-route
+`Body_Size` limits.
 
 The SQLite backend’s exact commit, recovery, and ownership model is described
 in [docs/architecture/sqlite-backend.md](docs/architecture/sqlite-backend.md).
@@ -148,9 +148,12 @@ alr build
 ./tests/scripts/test.sh
 ```
 
-`flyology_http` 0.1.2 is intentionally resolved from that index. This
-repository does not carry a machine-local path pin or a development-version
-dependency.
+The composable client rollout temporarily uses Flyology HTTP PR #33 at exact
+commit `aba55512bfa751e0c91a2e18fb70cde0a3e0f909`. Because its
+`flyology_quic=0.1.2-dev` dependency is not yet indexed, every independently
+solved Alire root pins that subcrate from the same repository and commit. These
+immutable git pins are provisional until the reviewed HTTP merge and dev-index
+publication; committed machine-local path pins remain prohibited.
 
 The independent S3 interoperability matrix uses digest-pinned RustFS and
 SeaweedFS servers as its permissively licensed primary targets, MinIO as an
@@ -201,14 +204,14 @@ permissive references and the memory, files, and SQLite backend series; each
 Flyology series is reported as an absolute result and as a same-run ratio to
 both references.
 
-After the indexed fixed-response HTTP dependency is consumed, run the
-correctness-checked aggregate smoke comparison with:
+With the exact reviewed HTTP dependency resolved, run the correctness-checked
+aggregate smoke comparison with:
 
 ```sh
 ./benchmarks/run-matrix.sh
 ```
 
-The launcher refuses the older HTTP dependency so GET framing is comparable.
+The launcher refuses any other HTTP dependency so GET framing is comparable.
 Dedicated-host campaigns use `FLYOLOGY_BENCH_PROFILE=full` and must record the
 host, power, and CPU policies described in the performance guide.
 
