@@ -239,3 +239,13 @@ statements.
       warnings as errors, zero warnings, justified or unproved checks, and
       zero Assume, Suppress, False_Positive, or SPARK Off constructs. The
       invocation header and complete output are retained under `obj/proof/`.
+- [x] Re-proved the DeleteObject final source base in one clean serialized
+      forced eight-unit manifest run started at 2026-08-23T01:38:37Z with FSF
+      GNATprove 16.1.0, level 0, oneline output, output headers, and warnings as
+      errors. All 625/625 checks proved (157 flow and 468 prover: 39
+      initialization, 351 run-time, 39 assertions, 65 contracts, and 131
+      termination), with a maximum of 390 prover steps and zero warnings,
+      justified or unproved checks, Assume, Suppress, False_Positive, or SPARK
+      Off constructs. Invocation-attributed output is retained in
+      `obj/proof/logs/gnatprove-run.txt` and
+      `obj/proof/gnatprove/gnatprove.out`.

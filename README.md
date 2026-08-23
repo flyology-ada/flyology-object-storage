@@ -54,7 +54,8 @@ The core crate includes:
 - high-level GetObjectAttributes and non-replaying DeleteObject clients that
   preserve selected metadata, version,
   delete-marker, requester-charged, and structured error outcomes (see
-  [object convenience client](docs/architecture/client-objects.md));
+  [object convenience client](docs/architecture/client-objects.md) and
+  [DeleteObject qualification](docs/qualification/delete-object.md));
 - signed, bounded CreateBucket, GetBucketLocation, HeadBucket,
   PutBucketTagging, GetBucketTagging, DeleteBucketTagging, GetObject,
   HeadObject, PutObject,
