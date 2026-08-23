@@ -65,7 +65,7 @@ The core crate includes:
   deletes, GetBucketAbac, GetBucketAccelerateConfiguration, GetBucketPolicy,
   GetBucketPolicyStatus, GetBucketRequestPayment, GetPublicAccessBlock,
   PutBucketAbac, PutBucketAccelerateConfiguration,
-  PutBucketRequestPayment, PutPublicAccessBlock,
+  PutBucketPolicy, PutBucketRequestPayment, PutPublicAccessBlock,
   DeleteObject, DeleteObjects REST/XML, and multipart
   initiate/upload/complete/abort/ListParts/ListMultipartUploads low-level
   operations over caller-owned `flyology_http` clients, plus a synchronous

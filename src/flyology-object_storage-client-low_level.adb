@@ -6841,6 +6841,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Bucket          : String;
       Payload         : String;
       Has_Content_MD5 : Boolean;
+      Confirm_Remove_Self_Access : Optional_Boolean;
+      Has_Confirm_Remove : Boolean;
       Parameters      : Put_Bucket_Control_Parameters;
       Identity        : Credentials;
       Region          : String;
@@ -6861,6 +6863,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (1 => SigV4.Pair (Subresource, ""));
       Headers : SigV4.Name_Value_Array
         (1 .. Boolean'Pos (Has_Content_MD5) +
+           Boolean'Pos (Confirm_Remove_Self_Access.Is_Set) +
            Boolean'Pos (Owner'Length > 0) +
            2 * Boolean'Pos (Checksum'Length > 0));
       Last : Natural := 0;
@@ -6870,6 +6873,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else Model.Request_URI (Operation) /=
           "/{Bucket}?" & Subresource
         or else (not Has_Content_MD5 and then Supplied_MD5'Length > 0)
+        or else
+          (not Has_Confirm_Remove and then Confirm_Remove_Self_Access.Is_Set)
         or else (Has_Content_MD5 and then not Wire_Core.Valid_Base64 (MD5, 16))
         or else not Valid_List_Response_Header_Text (Owner)
         or else (Checksum'Length > 0 and then not Algorithm.Valid)
@@ -6879,6 +6884,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
       if Has_Content_MD5 then
          Last := Last + 1;
          Headers (Last) := SigV4.Pair ("content-md5", MD5);
+      end if;
+      if Confirm_Remove_Self_Access.Is_Set then
+         Last := Last + 1;
+         Headers (Last) :=
+           SigV4.Pair
+             ("x-amz-confirm-remove-self-bucket-access",
+              (if Confirm_Remove_Self_Access.Value then "true" else "false"));
       end if;
       if Owner'Length > 0 then
          Last := Last + 1;
@@ -6930,8 +6942,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Prepared_Request is
      (Prepare_Bucket_Control_Put
         (Model.Put_Bucket_Abac_Operation, "abac", Origin, Style, Bucket,
-         Bucket_Controls.Serialize_Abac (Value), True, Parameters, Identity,
-         Region, Timestamp));
+         Bucket_Controls.Serialize_Abac (Value), True, (others => <>), False,
+         Parameters, Identity, Region, Timestamp));
 
    function Prepare_Put_Bucket_Accelerate_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -6942,7 +6954,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
      (Prepare_Bucket_Control_Put
         (Model.Put_Bucket_Accelerate_Configuration_Operation, "accelerate",
          Origin, Style, Bucket, Bucket_Controls.Serialize_Accelerate (Value),
-         False, Parameters, Identity, Region, Timestamp));
+         False, (others => <>), False, Parameters, Identity, Region,
+         Timestamp));
 
    function Prepare_Put_Bucket_Request_Payment
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -6955,8 +6968,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Prepare_Bucket_Control_Put
         (Model.Put_Bucket_Request_Payment_Operation, "requestPayment",
          Origin, Style, Bucket,
-         Bucket_Controls.Serialize_Request_Payment (Value), True, Parameters,
-         Identity, Region, Timestamp);
+         Bucket_Controls.Serialize_Request_Payment (Value), True,
+         (others => <>), False, Parameters, Identity, Region, Timestamp);
    exception
       when Bucket_Controls.Malformed_Configuration =>
          raise Invalid_Request with "request-payment payer is required";
@@ -6972,7 +6985,30 @@ package body Flyology.Object_Storage.Client.Low_Level is
      (Prepare_Bucket_Control_Put
         (Model.Put_Public_Access_Block_Operation, "publicAccessBlock", Origin,
          Style, Bucket, Bucket_Controls.Serialize_Public_Access_Block (Value),
-         True, Parameters, Identity, Region, Timestamp));
+         True, (others => <>), False, Parameters, Identity, Region,
+         Timestamp));
+
+   function Prepare_Put_Bucket_Policy
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Policy : String;
+      Parameters : Put_Bucket_Policy_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request
+   is
+      Common : constant Put_Bucket_Control_Parameters :=
+        (Content_MD5 => Parameters.Content_MD5,
+         Checksum_Algorithm => Parameters.Checksum_Algorithm,
+         Expected_Bucket_Owner => Parameters.Expected_Bucket_Owner);
+   begin
+      if Policy'Length > Limits.Maximum_Document_Bytes then
+         raise Invalid_Request with "bucket policy exceeds configured limit";
+      end if;
+      return Prepare_Bucket_Control_Put
+        (Model.Put_Bucket_Policy_Operation, "policy", Origin, Style, Bucket,
+         Policy, True, Parameters.Confirm_Remove_Self_Access, True, Common,
+         Identity, Region, Timestamp);
+   end Prepare_Put_Bucket_Policy;
 
    function Decode_Put_Bucket_Control_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
@@ -7093,6 +7129,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Put_Bucket_Control_Outcome is
      (Execute_Bucket_Control_Put
         (Client, Prepared, Model.Put_Public_Access_Block_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Put_Bucket_Policy
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome is
+     (Execute_Bucket_Control_Put
+        (Client, Prepared, Model.Put_Bucket_Policy_Operation,
          Timeout, Token, Limits));
 
    function Prepare_Delete_Object

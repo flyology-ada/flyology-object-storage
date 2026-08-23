@@ -75,9 +75,9 @@ procedure S3_Put_Bucket_Controls_Corpus is
    is
       Value : constant String := US.To_String (Algorithms (Index));
    begin
-      --  Derived test distribution: modulo four rotates the ten external
+      --  Derived test distribution: modulo five rotates the ten external
       --  algorithms across every operation without changing product policy.
-      case Index mod 4 is
+      case Index mod 5 is
          when 0 =>
             return Low_Level.Prepare_Put_Bucket_Abac
               (Origin, Low_Level.Path_Style, "example-bucket",
@@ -93,11 +93,19 @@ procedure S3_Put_Bucket_Controls_Corpus is
               (Origin, Low_Level.Path_Style, "example-bucket",
                Controls.Requester, Parameters (Checksum => Value),
                Identity, "us-east-1", "20130524T000000Z");
-         when others =>
+         when 3 =>
             return Low_Level.Prepare_Put_Public_Access_Block
               (Origin, Low_Level.Path_Style, "example-bucket", (others => <>),
                Parameters (Checksum => Value), Identity, "us-east-1",
                "20130524T000000Z");
+         when others =>
+            return Low_Level.Prepare_Put_Bucket_Policy
+              (Origin, Low_Level.Path_Style, "example-bucket", "policy",
+               (Content_MD5 => US.Null_Unbounded_String,
+                Checksum_Algorithm => US.To_Unbounded_String (Value),
+                Confirm_Remove_Self_Access => (others => <>),
+                Expected_Bucket_Owner => US.Null_Unbounded_String),
+               Identity, "us-east-1", "20130524T000000Z");
       end case;
    end Prepare_With_Checksum;
 
@@ -190,6 +198,14 @@ begin
           (Origin, Low_Level.Path_Style, "example-bucket", (others => <>),
            Parameters (Owner_Value => Owner), Identity, "us-east-1",
            "20130524T000000Z");
+      Policy : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Put_Bucket_Policy
+          (Origin, Low_Level.Path_Style, "example-bucket", "policy",
+           (Content_MD5 => US.Null_Unbounded_String,
+            Checksum_Algorithm => US.Null_Unbounded_String,
+            Confirm_Remove_Self_Access => (Is_Set => True, Value => True),
+            Expected_Bucket_Owner => US.To_Unbounded_String (Owner)),
+           Identity, "us-east-1", "20130524T000000Z");
       Hosted_Abac : constant Low_Level.Prepared_Request :=
         Low_Level.Prepare_Put_Bucket_Abac
           (Hosted_Origin, Low_Level.Virtual_Hosted_Style, "example-bucket",
@@ -210,6 +226,15 @@ begin
           (Hosted_Origin, Low_Level.Virtual_Hosted_Style, "example-bucket",
            (others => <>), Parameters, Identity, "us-east-1",
            "20130524T000000Z");
+      Hosted_Policy : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Put_Bucket_Policy
+          (Hosted_Origin, Low_Level.Virtual_Hosted_Style, "example-bucket",
+           "policy",
+           (Content_MD5 => US.Null_Unbounded_String,
+            Checksum_Algorithm => US.Null_Unbounded_String,
+            Confirm_Remove_Self_Access => (others => <>),
+            Expected_Bucket_Owner => US.Null_Unbounded_String),
+           Identity, "us-east-1", "20130524T000000Z");
    begin
       Require
         (Low_Level.Target (Abac) = "/example-bucket?abac"
@@ -218,7 +243,8 @@ begin
          and then Low_Level.Target (Payment) =
            "/example-bucket?requestPayment"
          and then Low_Level.Target (Public_Access) =
-           "/example-bucket?publicAccessBlock",
+           "/example-bucket?publicAccessBlock"
+         and then Low_Level.Target (Policy) = "/example-bucket?policy",
          "bucket-control PUT targets mismatch");
       Require
         (Low_Level.Target (Hosted_Abac) = "/?abac"
@@ -226,6 +252,7 @@ begin
          and then Low_Level.Target (Hosted_Payment) = "/?requestPayment"
          and then Low_Level.Target (Hosted_Public_Access) =
            "/?publicAccessBlock"
+         and then Low_Level.Target (Hosted_Policy) = "/?policy"
          and then Low_Level.Authority (Hosted_Abac) =
            "example-bucket.s3.example.test",
          "virtual-hosted bucket-control PUT targets mismatch");
@@ -235,6 +262,11 @@ begin
          and then Ada.Strings.Fixed.Index
            (Low_Level.Signed_Headers (Accelerate), "content-md5") = 0,
          "bucket-control PUT MD5 projection mismatch");
+      Require
+        (Ada.Strings.Fixed.Index
+           (Low_Level.Signed_Headers (Policy),
+            "x-amz-confirm-remove-self-bucket-access") > 0,
+         "PutBucketPolicy confirmation header was not signed");
 
       declare
          HTTP : aliased HTTP_Client.Client (Capacity => 1);
@@ -306,6 +338,53 @@ begin
       Require
         (Raised_Overlong and then Raised_Malformed_MD5,
          "bucket-control PUT owner or MD5 bound was not enforced");
+   end;
+
+   declare
+      Policy_Text : constant String := "policy";
+      Exact : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Put_Bucket_Policy
+          (Origin, Low_Level.Path_Style, "example-bucket", Policy_Text,
+           (Content_MD5 => US.Null_Unbounded_String,
+            Checksum_Algorithm => US.Null_Unbounded_String,
+            Confirm_Remove_Self_Access => (others => <>),
+            Expected_Bucket_Owner => US.Null_Unbounded_String),
+           Identity, "us-east-1", "20130524T000000Z",
+           (Maximum_Document_Bytes => Policy_Text'Length,
+            Maximum_Depth => 1, Maximum_Elements => 1,
+            Maximum_Text_Bytes => 1));
+      Binary_Safe : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Put_Bucket_Policy
+          (Origin, Low_Level.Path_Style, "example-bucket",
+           "p" & Character'Val (0),
+           (Content_MD5 => US.Null_Unbounded_String,
+            Checksum_Algorithm => US.Null_Unbounded_String,
+            Confirm_Remove_Self_Access => (others => <>),
+            Expected_Bucket_Owner => US.Null_Unbounded_String),
+           Identity, "us-east-1", "20130524T000000Z");
+      pragma Unreferenced (Exact, Binary_Safe);
+      Raised : Boolean := False;
+   begin
+      begin
+         declare
+            Ignored : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Bucket_Policy
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 Policy_Text & "!",
+                 (Content_MD5 => US.Null_Unbounded_String,
+                  Checksum_Algorithm => US.Null_Unbounded_String,
+                  Confirm_Remove_Self_Access => (others => <>),
+                  Expected_Bucket_Owner => US.Null_Unbounded_String),
+                 Identity, "us-east-1", "20130524T000000Z",
+                 (Maximum_Document_Bytes => Policy_Text'Length,
+                  Maximum_Depth => 1, Maximum_Elements => 1,
+                  Maximum_Text_Bytes => 1));
+            pragma Unreferenced (Ignored);
+         begin null; end;
+      exception
+         when Low_Level.Invalid_Request => Raised := True;
+      end;
+      Require (Raised, "PutBucketPolicy admitted a one-past policy body");
    end;
 
    for Index in Algorithms'Range loop

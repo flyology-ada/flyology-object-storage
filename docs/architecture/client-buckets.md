@@ -95,13 +95,17 @@ payload without XML interpretation. The four XML responses use the caller's
 shared S3 XML resource limits and accept the established compatible empty or
 AWS S3 namespace, while rejecting foreign namespaces, attributes, unknown or
 duplicate fields, nesting, DTDs, and entities. This is a client-only boundary:
-Flyology backends and the authenticated server do not implement these five
+Flyology backends and the authenticated server do not implement these six
 operations, and external-provider interoperability is not claimed.
 
-The scalar write companion covers ABAC, acceleration, requester payment, and
-public-access block. It serializes exact AWS-namespaced XML, generates
-Content-MD5 for the three operations that model it, and can compute and sign
-each of the ten modeled concrete checksum algorithms. Acceleration rejects a
+The scalar write companion covers ABAC, acceleration, raw bucket policy,
+requester payment, and public-access block. The four structured operations
+serialize exact AWS-namespaced XML; policy preserves the caller's bytes
+without XML interpretation and bounds them with the caller's existing S3 XML
+document limit. The client generates Content-MD5 for the four operations that
+model it and can compute and sign each of the ten modeled concrete checksum
+algorithms. Policy also preserves the optional modeled
+`x-amz-confirm-remove-self-bucket-access` Boolean. Acceleration rejects a
 supplied Content-MD5 because that member is absent from its pinned request
 shape. Exact operation binding is checked again before HTTP, and 200 success
 must contain only an empty or whitespace body. These remain client-only

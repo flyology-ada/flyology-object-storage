@@ -427,6 +427,21 @@ package Flyology.Object_Storage.Client.Buckets is
         Flyology.Object_Storage.S3.XML.Default_Limits)
       return Low_Level.Put_Bucket_Control_Outcome;
 
+   --  Replace the complete bounded raw bucket-policy document.
+   function Set_Policy
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String; Policy : String;
+      Identity : Low_Level.Credentials;
+      Confirm_Remove_Self_Access : Low_Level.Optional_Boolean :=
+        (others => <>);
+      Checksum_Algorithm : String := ""; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Put_Bucket_Control_Outcome;
+
    type Head_Outcome_Kind is (Bucket_Available, Head_Rejected);
 
    type Head_Outcome

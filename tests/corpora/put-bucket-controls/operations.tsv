@@ -1,5 +1,6 @@
 operation	input_shape	request_uri	member_count	prepare	execute	high_level	vector_ids
 PutBucketAbac	523	/{Bucket}?abac	6	Prepare_Put_Bucket_Abac	Execute_Put_Bucket_Abac	Set_ABAC	PBC-MD-001,PBC-RQ-001,PBC-RQ-002,PBC-RQ-003,PBC-RQ-004,PBC-RQ-005,PBC-RQ-006,PBC-RS-001,PBC-RS-002,PBC-TR-001,PBC-TR-002
 PutBucketAccelerateConfiguration	524	/{Bucket}?accelerate	5	Prepare_Put_Bucket_Accelerate_Configuration	Execute_Put_Bucket_Accelerate_Configuration	Set_Accelerate_Configuration	PBC-MD-001,PBC-RQ-001,PBC-RQ-002,PBC-RQ-003,PBC-RQ-005,PBC-RQ-006,PBC-RS-001,PBC-RS-002,PBC-TR-001,PBC-TR-002
+PutBucketPolicy	539	/{Bucket}?policy	6	Prepare_Put_Bucket_Policy	Execute_Put_Bucket_Policy	Set_Policy	PBC-MD-001,PBC-RQ-001,PBC-RQ-002,PBC-RQ-003,PBC-RQ-004,PBC-RQ-005,PBC-RQ-006,PBC-RS-001,PBC-RS-002,PBC-TR-001,PBC-TR-002
 PutBucketRequestPayment	541	/{Bucket}?requestPayment	6	Prepare_Put_Bucket_Request_Payment	Execute_Put_Bucket_Request_Payment	Set_Request_Payment	PBC-MD-001,PBC-RQ-001,PBC-RQ-002,PBC-RQ-003,PBC-RQ-004,PBC-RQ-005,PBC-RQ-006,PBC-RS-001,PBC-RS-002,PBC-TR-001,PBC-TR-002
 PutPublicAccessBlock	559	/{Bucket}?publicAccessBlock	9	Prepare_Put_Public_Access_Block	Execute_Put_Public_Access_Block	Set_Public_Access_Block	PBC-MD-001,PBC-RQ-001,PBC-RQ-002,PBC-RQ-003,PBC-RQ-004,PBC-RQ-005,PBC-RQ-006,PBC-RS-001,PBC-RS-002,PBC-TR-001,PBC-TR-002

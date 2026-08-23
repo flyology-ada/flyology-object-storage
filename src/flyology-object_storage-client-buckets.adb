@@ -720,6 +720,34 @@ package body Flyology.Object_Storage.Client.Buckets is
         (Client, Prepared, Timeout, Token, Limits);
    end Set_Public_Access_Block;
 
+   function Set_Policy
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String; Policy : String;
+      Identity : Low_Level.Credentials;
+      Confirm_Remove_Self_Access : Low_Level.Optional_Boolean :=
+        (others => <>);
+      Checksum_Algorithm : String := ""; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Put_Bucket_Control_Outcome
+   is
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Put_Bucket_Policy
+          (Origin, Style, Bucket, Policy,
+           (Content_MD5 => US.Null_Unbounded_String,
+            Checksum_Algorithm => US.To_Unbounded_String (Checksum_Algorithm),
+            Confirm_Remove_Self_Access => Confirm_Remove_Self_Access,
+            Expected_Bucket_Owner =>
+              US.To_Unbounded_String (Expected_Bucket_Owner)),
+           Identity, Region, Timestamp, Limits);
+   begin
+      return Low_Level.Execute_Put_Bucket_Policy
+        (Client, Prepared, Timeout, Token, Limits);
+   end Set_Policy;
+
    function Head
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;

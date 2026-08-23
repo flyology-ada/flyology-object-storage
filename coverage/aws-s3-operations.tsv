@@ -91,7 +91,7 @@ PutBucketMetricsConfiguration	extended	missing	partial	missing	missing
 PutBucketNotification	extended	missing	partial	missing	missing
 PutBucketNotificationConfiguration	extended	missing	partial	missing	missing
 PutBucketOwnershipControls	extended	missing	partial	missing	missing
-PutBucketPolicy	extended	missing	partial	missing	missing
+PutBucketPolicy	extended	missing	covered	missing	covered
 PutBucketReplication	extended	missing	partial	missing	missing
 PutBucketRequestPayment	extended	missing	covered	missing	covered
 PutBucketTagging	core	covered	covered	covered	covered

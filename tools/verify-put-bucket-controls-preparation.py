@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the pinned four-operation scalar bucket-control PUT family."""
+"""Verify the pinned five-operation scalar bucket-control PUT family."""
 
 from __future__ import annotations
 
@@ -25,6 +25,8 @@ EXPECTED = [
      524, "/{Bucket}?accelerate", "Prepare_Put_Bucket_Accelerate_Configuration",
      "Execute_Put_Bucket_Accelerate_Configuration",
      "Set_Accelerate_Configuration"),
+    ("PutBucketPolicy", "Put_Bucket_Policy", 539, "/{Bucket}?policy",
+     "Prepare_Put_Bucket_Policy", "Execute_Put_Bucket_Policy", "Set_Policy"),
     ("PutBucketRequestPayment", "Put_Bucket_Request_Payment", 541,
      "/{Bucket}?requestPayment", "Prepare_Put_Bucket_Request_Payment",
      "Execute_Put_Bucket_Request_Payment", "Set_Request_Payment"),
@@ -45,6 +47,12 @@ EXPECTED_MEMBERS = [
     ("PutBucketAccelerateConfiguration", "request", 524, 3, "ExpectedBucketOwner", 15, "header", "false"),
     ("PutBucketAccelerateConfiguration", "request", 524, 4, "ChecksumAlgorithm", 77, "header", "false"),
     ("PutBucketAccelerateConfiguration", "nested", 7, 1, "Status", 49, "body", "false"),
+    ("PutBucketPolicy", "request", 539, 1, "Bucket", 60, "uri-label", "true"),
+    ("PutBucketPolicy", "request", 539, 2, "ContentMD5", 111, "header", "false"),
+    ("PutBucketPolicy", "request", 539, 3, "ChecksumAlgorithm", 77, "header", "false"),
+    ("PutBucketPolicy", "request", 539, 4, "ConfirmRemoveSelfBucketAccess", 106, "header", "false"),
+    ("PutBucketPolicy", "request", 539, 5, "Policy", 515, "body", "true"),
+    ("PutBucketPolicy", "request", 539, 6, "ExpectedBucketOwner", 15, "header", "false"),
     ("PutBucketRequestPayment", "request", 541, 1, "Bucket", 60, "uri-label", "true"),
     ("PutBucketRequestPayment", "request", 541, 2, "ContentMD5", 111, "header", "false"),
     ("PutBucketRequestPayment", "request", 541, 3, "ChecksumAlgorithm", 77, "header", "false"),
@@ -160,7 +168,7 @@ def main() -> int:
         fail("operation inventory or order changed")
     expected_rows = [tuple(str(value) for value in row) for row in EXPECTED_MEMBERS]
     if [tuple(row[name] for name in MEMBER_HEADER[:-1]) for row in members] != expected_rows:
-        fail("member inventory does not match the reviewed 26-member graph")
+        fail("member inventory does not match the reviewed 32-member graph")
     texts = [path.read_text(encoding="utf-8") for path in
              [ROOT / "src/flyology-object_storage-client-low_level.ads",
               ROOT / "src/flyology-object_storage-client-low_level.adb",
@@ -216,7 +224,7 @@ def main() -> int:
             if vector_id not in vector_by_id or member["operation"] not in \
                     comma_values(vector_by_id[vector_id]["operation_refs"]):
                 fail(f"{member['operation']}:{member['member']}: bad vector")
-    print("scalar bucket-control PUT preparation: 4 operations, 26 request/nested "
+    print("scalar bucket-control PUT preparation: 5 operations, 32 request/nested "
           f"members, 4 exact enum domains, {len(vectors)} reciprocal vectors; "
           "pinned model and exact public APIs match")
     return 0

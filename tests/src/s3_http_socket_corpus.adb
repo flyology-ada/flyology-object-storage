@@ -648,6 +648,7 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Bucket_Owner : String := "";
          Expected_MFA : String := "";
          Expected_Governance_Bypass : String := "";
+         Expected_Confirm_Remove_Self_Access : String := "";
          Expected_SDK_Checksum : String := "";
          Expected_Checksum_CRC32 : String := "";
          Expected_Cache_Control : String := "";
@@ -897,6 +898,13 @@ procedure S3_HTTP_Socket_Corpus is
                            Ada.Characters.Handling.To_Lower
                              (Expected_Governance_Bypass))
                     or else
+                      (Expected_Confirm_Remove_Self_Access'Length > 0
+                       and then Header_Value
+                         (Lower,
+                          "x-amz-confirm-remove-self-bucket-access") /=
+                            Ada.Characters.Handling.To_Lower
+                              (Expected_Confirm_Remove_Self_Access))
+                    or else
                       (Expected_SDK_Checksum'Length > 0
                        and then Header_Value
                          (Lower, "x-amz-sdk-checksum-algorithm") /=
@@ -933,6 +941,11 @@ procedure S3_HTTP_Socket_Corpus is
                       (Expected_Governance_Bypass'Length > 0
                        and then Ada.Strings.Fixed.Index
                          (Lower, ";x-amz-bypass-governance-retention;") = 0)
+                    or else
+                      (Expected_Confirm_Remove_Self_Access'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower,
+                          ";x-amz-confirm-remove-self-bucket-access") = 0)
                     or else
                       (Expected_SDK_Checksum'Length > 0
                        and then Ada.Strings.Fixed.Index
@@ -1090,6 +1103,18 @@ procedure S3_HTTP_Socket_Corpus is
                       (Lower,
                        "signedheaders=content-md5;host;" &
                        "x-amz-content-sha256;x-amz-date") = 0
+                    or else
+                      (Expected_Confirm_Remove_Self_Access'Length > 0
+                       and then Header_Value
+                         (Lower,
+                          "x-amz-confirm-remove-self-bucket-access") /=
+                            Ada.Characters.Handling.To_Lower
+                              (Expected_Confirm_Remove_Self_Access))
+                    or else
+                      (Expected_Confirm_Remove_Self_Access'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower,
+                          ";x-amz-confirm-remove-self-bucket-access") = 0)
                  elsif Expected_Content_Type'Length = 0 then
                     Ada.Strings.Fixed.Index
                       (Lower,
@@ -3126,6 +3151,12 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Body_Root => "<PublicAccessBlockConfiguration",
             Expected_Content_MD5 => "*",
             Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT", "/example-bucket?policy",
+            Expected_Body_Root => "policy",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Confirm_Remove_Self_Access => "true");
          Serve
            (HTTP_Response
               ("200 OK", "<AccelerateConfiguration/>",
@@ -7518,11 +7549,18 @@ procedure S3_HTTP_Socket_Corpus is
                     (Is_Set => True, Value => False)),
                  Identity, Expected_Bucket_Owner => "123456789012",
                  Timeout => 5.0);
+            Policy : constant Low_Level.Put_Bucket_Control_Outcome :=
+              Buckets.Set_Policy
+                (HTTP, Origin, "example-bucket", "policy", Identity,
+                 Confirm_Remove_Self_Access =>
+                   (Is_Set => True, Value => True),
+                 Expected_Bucket_Owner => "123456789012", Timeout => 5.0);
          begin
             if Abac.Kind /= Low_Level.Bucket_Control_Updated
               or else Accelerate.Kind /= Low_Level.Bucket_Control_Updated
               or else Payment.Kind /= Low_Level.Bucket_Control_Updated
               or else Public_Access.Kind /= Low_Level.Bucket_Control_Updated
+              or else Policy.Kind /= Low_Level.Bucket_Control_Updated
             then
                raise Program_Error with "bucket-control PUT socket mismatch";
             end if;

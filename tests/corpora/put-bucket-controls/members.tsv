@@ -10,6 +10,12 @@ PutBucketAccelerateConfiguration	request	524	2	AccelerateConfiguration	7	body	tr
 PutBucketAccelerateConfiguration	request	524	3	ExpectedBucketOwner	15	header	false	PBC-MD-001,PBC-RQ-002
 PutBucketAccelerateConfiguration	request	524	4	ChecksumAlgorithm	77	header	false	PBC-MD-001,PBC-RQ-005
 PutBucketAccelerateConfiguration	nested	7	1	Status	49	body	false	PBC-MD-001,PBC-RQ-003
+PutBucketPolicy	request	539	1	Bucket	60	uri-label	true	PBC-MD-001,PBC-RQ-001
+PutBucketPolicy	request	539	2	ContentMD5	111	header	false	PBC-MD-001,PBC-RQ-004
+PutBucketPolicy	request	539	3	ChecksumAlgorithm	77	header	false	PBC-MD-001,PBC-RQ-005
+PutBucketPolicy	request	539	4	ConfirmRemoveSelfBucketAccess	106	header	false	PBC-MD-001,PBC-RQ-003
+PutBucketPolicy	request	539	5	Policy	515	body	true	PBC-MD-001,PBC-RQ-003
+PutBucketPolicy	request	539	6	ExpectedBucketOwner	15	header	false	PBC-MD-001,PBC-RQ-002
 PutBucketRequestPayment	request	541	1	Bucket	60	uri-label	true	PBC-MD-001,PBC-RQ-001
 PutBucketRequestPayment	request	541	2	ContentMD5	111	header	false	PBC-MD-001,PBC-RQ-004
 PutBucketRequestPayment	request	541	3	ChecksumAlgorithm	77	header	false	PBC-MD-001,PBC-RQ-005

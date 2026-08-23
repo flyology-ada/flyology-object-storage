@@ -1931,6 +1931,35 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome;
 
+   --  Complete physical controls for PutBucketPolicy.
+   --  @field Content_MD5 Optional canonical MD5 override
+   --  @field Checksum_Algorithm Optional one of the ten modeled algorithms
+   --  @field Confirm_Remove_Self_Access Optional modeled safety confirmation
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Put_Bucket_Policy_Parameters is record
+      Content_MD5           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
+      Confirm_Remove_Self_Access : Optional_Boolean;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare one exact bounded PutBucketPolicy request.
+   function Prepare_Put_Bucket_Policy
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Policy : String;
+      Parameters : Put_Bucket_Policy_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request;
+
+   --  Execute one exact prepared PutBucketPolicy request.
+   function Execute_Put_Bucket_Policy
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome;
+
    --  Every input member in the pinned DeleteObject request shape.
    type Delete_Object_Parameters is record
       MFA                         : Ada.Strings.Unbounded.Unbounded_String;
