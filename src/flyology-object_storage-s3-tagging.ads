@@ -24,9 +24,10 @@ package Flyology.Object_Storage.S3.Tagging is
    function Parse_Query
      (Query : String; Operation : Tagging_Operation) return Tagging_Query;
 
-   --  Parse the x-amz-tagging request header used by CopyObject. The value is
-   --  an ampersand-separated sequence of percent-encoded key=value pairs;
-   --  unlike HTML form encoding, a plus sign is not decoded as a space.
+   --  Parse the x-amz-tagging request header used by PutObject and CopyObject.
+   --  The value is an ampersand-separated sequence of percent-encoded
+   --  key=value pairs; unlike HTML form encoding, a plus sign is not decoded
+   --  as a space.
    function Parse_Header (Value : String) return Object_Tag_Set;
 
    function Parse
@@ -34,6 +35,10 @@ package Flyology.Object_Storage.S3.Tagging is
       Limits   : XML.Parse_Limits := XML.Default_Limits) return Object_Tag_Set;
 
    function Serialize (Tags : Object_Tag_Set) return String;
+
+   --  Serialize the bounded x-amz-tagging request-header form. Components
+   --  use RFC 3986 percent encoding; plus remains data, never a space.
+   function Serialize_Header (Tags : Object_Tag_Set) return String;
 
    function Parse_Bucket
      (Document : String;

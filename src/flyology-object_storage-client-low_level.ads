@@ -1140,8 +1140,9 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Decode a PutObject result after the transport has projected its
    --  singleton headers. A 200 response must have an exactly empty body, one
    --  strong quoted ETag, at most one canonical full-object checksum, and a
-   --  coherent bounded encryption tuple. Other statuses return a bounded,
-   --  structured S3 error.
+   --  coherent bounded encryption tuple. An omitted ChecksumType accompanying
+   --  one checksum is normalized to FULL_OBJECT, the only PutObject type.
+   --  Other statuses return a bounded, structured S3 error.
    function Decode_Put_Object_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;

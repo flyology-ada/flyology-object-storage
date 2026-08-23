@@ -13995,7 +13995,18 @@ package body Object_Storage_Test_Cases is
          Headers : Low_Level.Put_Object_Result := Baseline;
       begin
          Headers.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
-         Require_Invalid (Headers, "checksum without ChecksumType");
+         declare
+            Outcome : constant Low_Level.Put_Object_Outcome :=
+              Low_Level.Decode_Put_Object_Response (200, "", Headers);
+         begin
+            Assert
+              (Outcome.Kind = Low_Level.Object_Put
+               and then US.To_String (Outcome.Result.Checksum_CRC32) =
+                 "AAAAAA=="
+               and then US.To_String (Outcome.Result.Checksum_Type) =
+                 "FULL_OBJECT",
+               "PutObject checksum without type was not normalized");
+         end;
          Headers.Checksum_Type := US.To_Unbounded_String ("COMPOSITE");
          Require_Invalid (Headers, "composite complete-object checksum");
          Headers.Checksum_Type := US.To_Unbounded_String ("FULL_OBJECT");

@@ -111,7 +111,69 @@ package Flyology.Object_Storage.Client.Objects is
       Token    : access Flyology.Cancellation.Token := null)
       return List_Outcome;
 
-   subtype Conditional_Put_Outcome is Low_Level.Put_Object_Outcome;
+   subtype Complete_Put_Outcome is Low_Level.Put_Object_Outcome;
+   subtype Conditional_Put_Outcome is Complete_Put_Outcome;
+
+   --  Semantically bounded, backend-neutral controls supported by the
+   --  complete-object S3 convenience call. Every dynamic field is validated
+   --  against the shared/model wire limits before request admission.
+   --  Checksum, when present, must be a direct
+   --  Full_Object_Checksum with one canonical encoded digest. Tags and
+   --  metadata retain the shared backend limits.
+   type Complete_Put_Options is record
+      Content_MD5           : Ada.Strings.Unbounded.Unbounded_String;
+      Content_Type          : Ada.Strings.Unbounded.Unbounded_String;
+      Metadata              : Object_Metadata;
+      Tags                  : Object_Tag_Set;
+      Checksum              : Checksum_Information;
+      Conditions            : Write_Conditions;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   Default_Complete_Put_Options : constant Complete_Put_Options :=
+     (Content_MD5           => Ada.Strings.Unbounded.Null_Unbounded_String,
+      Content_Type          => Ada.Strings.Unbounded.Null_Unbounded_String,
+      Metadata              => Empty_Object_Metadata,
+      Tags                  => Empty_Object_Tags,
+      Checksum              => No_Checksum_Information,
+      Conditions            => Default_Write_Conditions,
+      Expected_Bucket_Owner => Ada.Strings.Unbounded.Null_Unbounded_String);
+
+   --  Publish one complete object through the typed PutObject client. Source
+   --  must be one-shot: this call never opts into the blocking HTTP client's
+   --  stale-connection replay path. Expected S3 rejections are returned;
+   --  after execution begins any propagated timeout, cancellation, transport,
+   --  or invalid-response exception is conservatively an unknown publication
+   --  outcome and must be reconciled by a generation-bound read. No mutation
+   --  is retried by this helper.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination object key
+   --  @param Source One-shot complete request body, borrowed for this call
+   --  @param Payload_SHA256 Exact lowercase body digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only while signing this request
+   --  @param Options Bounded metadata, tags, checksum, conditions, and owner
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Blocking HTTP exchange budget
+   --  @param Token Optional cancellation source
+   --  @return Complete PutObject result or structured S3 rejection
+   --  @exception Low_Level.Invalid_Request Source or options are invalid
+   function Put_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Source   : in out Flyology.HTTP.Client.Request_Body_Source'Class;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Options  : Complete_Put_Options := Default_Complete_Put_Options;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Complete_Put_Outcome;
 
    --  Publish a complete object only when no current object exists. Source
    --  must be a one-shot Request_Body_Source, not a rewindable source; this

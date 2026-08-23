@@ -1,6 +1,7 @@
 with Ada.Containers;
 with Ada.Strings.Fixed;
 with Flyology.Object_Storage.S3.Deletions;
+with Flyology.Object_Storage.S3.SigV4_Encoding;
 
 package body Flyology.Object_Storage.S3.Tagging is
 
@@ -193,6 +194,32 @@ package body Flyology.Object_Storage.S3.Tagging is
       US.Append (Result, "</TagSet></Tagging>");
       return US.To_String (Result);
    end Serialize;
+
+   function Serialize_Header (Tags : Object_Tag_Set) return String is
+      Result : US.Unbounded_String;
+   begin
+      if not Valid_S3_Tags (Tags) then
+         raise Invalid_Tag with "cannot serialize invalid object tags";
+      end if;
+      for Index in 1 .. Tags.Length loop
+         if Index > 1 then
+            US.Append (Result, "&");
+         end if;
+         US.Append
+           (Result,
+            SigV4_Encoding.URI_Encode
+              (US.To_String (Tags.Items (Index).Key), Encode_Slash => True));
+         US.Append (Result, "=");
+         US.Append
+           (Result,
+            SigV4_Encoding.URI_Encode
+              (US.To_String (Tags.Items (Index).Value), Encode_Slash => True));
+         if US.Length (Result) > Maximum_Query_Bytes then
+            raise Invalid_Tag with "object tagging header is too large";
+         end if;
+      end loop;
+      return US.To_String (Result);
+   end Serialize_Header;
 
    function Hex_Value (Value : Character) return Natural is
      (if Value in '0' .. '9' then

@@ -1,5 +1,8 @@
 with Ada.Calendar;
 with Ada.Calendar.Formatting;
+with Flyology.Object_Storage.S3.Checksum_Policy;
+with Flyology.Object_Storage.S3.IMF_Dates;
+with Flyology.Object_Storage.S3.Tagging;
 
 package body Flyology.Object_Storage.Client.Objects is
 
@@ -9,6 +12,7 @@ package body Flyology.Object_Storage.Client.Objects is
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
+   use type US.Unbounded_String;
 
    function Timestamp return String is
       Image : constant String := Ada.Calendar.Formatting.Image
@@ -192,6 +196,205 @@ package body Flyology.Object_Storage.Client.Objects is
       end;
    end List_V1_Page;
 
+   procedure Apply_Complete_Put_Options
+     (Options    : Complete_Put_Options;
+      Parameters : in out Low_Level.Put_Object_Parameters)
+   is
+      Content_Type : constant String := US.To_String (Options.Content_Type);
+
+      procedure Copy
+        (Value  : Optional_Metadata_Value;
+         Target : out US.Unbounded_String) is
+      begin
+         Target :=
+           (if Value.Is_Set then Value.Value else US.Null_Unbounded_String);
+      end Copy;
+
+      procedure Set_Checksum is
+         Value : constant US.Unbounded_String := Options.Checksum.Value;
+      begin
+         if Options.Checksum.Algorithm = No_Checksum then
+            if Options.Checksum.Method /= No_Checksum_Method
+              or else US.Length (Value) > 0
+            then
+               raise Low_Level.Invalid_Request with
+                 "incomplete PutObject checksum selection";
+            end if;
+            return;
+         elsif Options.Checksum.Method /= Full_Object_Checksum
+           or else US.Length (Value) = 0
+         then
+            raise Low_Level.Invalid_Request with
+              "PutObject requires one full-object checksum";
+         end if;
+         case Options.Checksum.Algorithm is
+            when No_Checksum =>
+               null;
+            when Checksum_CRC32 =>
+               Parameters.Checksum_Algorithm := US.To_Unbounded_String
+                 (S3.Checksum_Policy.Wire_Name
+                    (S3.Checksum_Policy.Core.CRC32));
+               Parameters.Checksum_CRC32 := Value;
+            when Checksum_CRC32C =>
+               Parameters.Checksum_Algorithm := US.To_Unbounded_String
+                 (S3.Checksum_Policy.Wire_Name
+                    (S3.Checksum_Policy.Core.CRC32C));
+               Parameters.Checksum_CRC32C := Value;
+            when Checksum_CRC64NVME =>
+               Parameters.Checksum_Algorithm := US.To_Unbounded_String
+                 (S3.Checksum_Policy.Wire_Name
+                    (S3.Checksum_Policy.Core.CRC64NVME));
+               Parameters.Checksum_CRC64NVME := Value;
+            when Checksum_SHA1 =>
+               Parameters.Checksum_Algorithm := US.To_Unbounded_String
+                 (S3.Checksum_Policy.Wire_Name
+                    (S3.Checksum_Policy.Core.SHA1));
+               Parameters.Checksum_SHA1 := Value;
+            when Checksum_SHA256 =>
+               Parameters.Checksum_Algorithm := US.To_Unbounded_String
+                 (S3.Checksum_Policy.Wire_Name
+                    (S3.Checksum_Policy.Core.SHA256));
+               Parameters.Checksum_SHA256 := Value;
+            when Checksum_SHA512 =>
+               Parameters.Checksum_Algorithm := US.To_Unbounded_String
+                 (S3.Checksum_Policy.Wire_Name
+                    (S3.Checksum_Policy.Core.SHA512));
+               Parameters.Checksum_SHA512 := Value;
+            when Checksum_MD5 =>
+               Parameters.Checksum_Algorithm := US.To_Unbounded_String
+                 (S3.Checksum_Policy.Wire_Name
+                    (S3.Checksum_Policy.Core.MD5));
+               Parameters.Checksum_MD5 := Value;
+            when Checksum_XXHASH64 =>
+               Parameters.Checksum_Algorithm := US.To_Unbounded_String
+                 (S3.Checksum_Policy.Wire_Name
+                    (S3.Checksum_Policy.Core.XXHASH64));
+               Parameters.Checksum_XXHASH64 := Value;
+            when Checksum_XXHASH3 =>
+               Parameters.Checksum_Algorithm := US.To_Unbounded_String
+                 (S3.Checksum_Policy.Wire_Name
+                    (S3.Checksum_Policy.Core.XXHASH3));
+               Parameters.Checksum_XXHASH3 := Value;
+            when Checksum_XXHASH128 =>
+               Parameters.Checksum_Algorithm := US.To_Unbounded_String
+                 (S3.Checksum_Policy.Wire_Name
+                    (S3.Checksum_Policy.Core.XXHASH128));
+               Parameters.Checksum_XXHASH128 := Value;
+         end case;
+      end Set_Checksum;
+   begin
+      if not Valid_Object_Metadata (Options.Metadata, Content_Type)
+        or else not S3.Tagging.Valid_S3_Tags (Options.Tags)
+        or else not Valid_Object_Write_Conditions
+          (US.To_String (Options.Conditions.If_Match),
+           US.To_String (Options.Conditions.If_None_Match))
+      then
+         raise Low_Level.Invalid_Request with
+           "invalid complete PutObject options";
+      end if;
+      Parameters.Content_MD5 := Options.Content_MD5;
+      Parameters.Content_Type := Options.Content_Type;
+      Parameters.If_Match := Options.Conditions.If_Match;
+      Parameters.If_None_Match := Options.Conditions.If_None_Match;
+      Parameters.Expected_Bucket_Owner := Options.Expected_Bucket_Owner;
+      Copy (Options.Metadata.Cache_Control, Parameters.Cache_Control);
+      Copy
+        (Options.Metadata.Content_Disposition,
+         Parameters.Content_Disposition);
+      Copy (Options.Metadata.Content_Encoding, Parameters.Content_Encoding);
+      Copy (Options.Metadata.Content_Language, Parameters.Content_Language);
+      Copy
+        (Options.Metadata.Website_Redirect_Location,
+         Parameters.Website_Redirect_Location);
+      if Options.Metadata.Expires.Is_Set then
+         Parameters.Expires := US.To_Unbounded_String
+           (S3.IMF_Dates.Image (Options.Metadata.Expires.Value));
+      end if;
+      for Index in 1 .. Options.Metadata.User.Length loop
+         Parameters.Metadata.Append
+           (Low_Level.Metadata_Entry'
+              (Name  => Options.Metadata.User.Items (Index).Key,
+               Value => Options.Metadata.User.Items (Index).Value));
+      end loop;
+      if Options.Tags.Length > 0 then
+         Parameters.Tagging := US.To_Unbounded_String
+           (S3.Tagging.Serialize_Header (Options.Tags));
+      end if;
+      Set_Checksum;
+   exception
+      when S3.Tagging.Invalid_Tag =>
+         raise Low_Level.Invalid_Request with
+           "invalid complete PutObject tags";
+   end Apply_Complete_Put_Options;
+
+   function Put_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Source   : in out Flyology.HTTP.Client.Request_Body_Source'Class;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Options  : Complete_Put_Options := Default_Complete_Put_Options;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Complete_Put_Outcome
+   is
+      Parameters : Low_Level.Put_Object_Parameters;
+
+      function Result_Checksum
+        (Value : Low_Level.Put_Object_Result) return US.Unbounded_String is
+      begin
+         case Options.Checksum.Algorithm is
+            when No_Checksum => return US.Null_Unbounded_String;
+            when Checksum_CRC32 => return Value.Checksum_CRC32;
+            when Checksum_CRC32C => return Value.Checksum_CRC32C;
+            when Checksum_CRC64NVME => return Value.Checksum_CRC64NVME;
+            when Checksum_SHA1 => return Value.Checksum_SHA1;
+            when Checksum_SHA256 => return Value.Checksum_SHA256;
+            when Checksum_SHA512 => return Value.Checksum_SHA512;
+            when Checksum_MD5 => return Value.Checksum_MD5;
+            when Checksum_XXHASH64 => return Value.Checksum_XXHASH64;
+            when Checksum_XXHASH3 => return Value.Checksum_XXHASH3;
+            when Checksum_XXHASH128 => return Value.Checksum_XXHASH128;
+         end case;
+      end Result_Checksum;
+   begin
+      if Source in Flyology.HTTP.Client.Rewindable_Request_Body_Source'Class
+      then
+         raise Low_Level.Invalid_Request with
+           "complete PutObject source must be one-shot";
+      end if;
+      Apply_Complete_Put_Options (Options, Parameters);
+      declare
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_Put_Object
+             (Origin, Style, Bucket, Key, Parameters, Payload_SHA256,
+              Identity, Region, Timestamp);
+         Outcome : constant Conditional_Put_Outcome :=
+           Low_Level.Execute_Put_Object
+             (Client, Prepared, Source, Timeout, Token);
+      begin
+         if Outcome.Kind = Low_Level.Object_Put
+           and then
+             (not Valid_Exact_Entity_Tag
+                (US.To_String (Outcome.Result.Entity_Tag))
+              or else
+                (Options.Checksum.Algorithm /= No_Checksum
+                 and then
+                   (Result_Checksum (Outcome.Result) /= Options.Checksum.Value
+                    or else US.To_String (Outcome.Result.Checksum_Type) /=
+                      "FULL_OBJECT")))
+         then
+            raise Low_Level.Invalid_Response with
+              "PutObject success does not match requested publication";
+         end if;
+         return Outcome;
+      end;
+   end Put_Object;
+
    function Conditional_Put
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;
@@ -210,37 +413,17 @@ package body Flyology.Object_Storage.Client.Objects is
       Token    : access Flyology.Cancellation.Token)
       return Conditional_Put_Outcome
    is
-      Parameters : Low_Level.Put_Object_Parameters;
+      Options : Complete_Put_Options := Default_Complete_Put_Options;
    begin
-      if Source in
-        Flyology.HTTP.Client.Rewindable_Request_Body_Source'Class
-      then
-         raise Low_Level.Invalid_Request with
-           "conditional PutObject source must be one-shot";
-      end if;
-      Parameters.If_Match := US.To_Unbounded_String (If_Match);
-      Parameters.If_None_Match := US.To_Unbounded_String (If_None_Match);
-      Parameters.Content_Type := US.To_Unbounded_String (Content_Type);
-      Parameters.Expected_Bucket_Owner :=
+      Options.Conditions.If_Match := US.To_Unbounded_String (If_Match);
+      Options.Conditions.If_None_Match :=
+        US.To_Unbounded_String (If_None_Match);
+      Options.Content_Type := US.To_Unbounded_String (Content_Type);
+      Options.Expected_Bucket_Owner :=
         US.To_Unbounded_String (Expected_Bucket_Owner);
-      declare
-         Prepared : constant Low_Level.Prepared_Request :=
-           Low_Level.Prepare_Put_Object
-             (Origin, Style, Bucket, Key, Parameters, Payload_SHA256,
-              Identity, Region, Timestamp);
-         Outcome : constant Conditional_Put_Outcome :=
-           Low_Level.Execute_Put_Object
-             (Client, Prepared, Source, Timeout, Token);
-      begin
-         if Outcome.Kind = Low_Level.Object_Put
-           and then not Valid_Exact_Entity_Tag
-             (US.To_String (Outcome.Result.Entity_Tag))
-         then
-            raise Low_Level.Invalid_Response with
-              "PutObject success has no exact opaque entity tag";
-         end if;
-         return Outcome;
-      end;
+      return Put_Object
+        (Client, Origin, Bucket, Key, Source, Payload_SHA256, Identity,
+         Options, Region, Style, Timeout, Token);
    end Conditional_Put;
 
    function Put_If_Absent

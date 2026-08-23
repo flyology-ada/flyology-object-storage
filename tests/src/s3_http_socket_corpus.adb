@@ -22,6 +22,7 @@ with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.SigV4;
+with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.Tags;
 
 procedure S3_HTTP_Socket_Corpus is
@@ -38,6 +39,7 @@ procedure S3_HTTP_Socket_Corpus is
    package Model renames Flyology.Object_Storage.S3.Model;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
+   package S3_Tagging renames Flyology.Object_Storage.S3.Tagging;
    package Tags renames Flyology.Object_Storage.Tags;
    package Sockets renames Flyology.IO.Sockets;
    package US renames Ada.Strings.Unbounded;
@@ -87,6 +89,9 @@ procedure S3_HTTP_Socket_Corpus is
      "conditional-collision";
    Conditional_Second : aliased constant String := "conditional-second";
    Conditional_Stale : aliased constant String := "conditional-stale";
+   Convenience_Put_Payload : aliased constant String := "convenience put";
+   Lost_Put_Payload : aliased constant String := "lost put response";
+   Put_Response_Vector_Payload : aliased constant String := "v";
 
    type Upload_Source
      (Value : not null access constant String) is
@@ -187,6 +192,14 @@ procedure S3_HTTP_Socket_Corpus is
      Checksums.Encode_Base64
        (Checksums.Compute
           (Checksum_Policy.Core.CRC32, Bytes (High_Level_File_Payload)));
+   Convenience_Put_CRC32 : constant String :=
+     Checksums.Encode_Base64
+       (Checksums.Compute
+          (Checksum_Policy.Core.CRC32, Bytes (Convenience_Put_Payload)));
+   Convenience_Put_MD5 : constant String :=
+     Checksums.Encode_Base64
+       (Checksums.Compute
+          (Checksum_Policy.Core.MD5, Bytes (Convenience_Put_Payload)));
    High_Level_SHA256_Digest : constant Checksums.Digest_Value :=
      Checksums.Compute
        (Checksum_Policy.Core.SHA256, Bytes (High_Level_File_Payload));
@@ -310,6 +323,66 @@ procedure S3_HTTP_Socket_Corpus is
       return Image (Image'First + 1 .. Image'Last);
    end Decimal;
 
+   type Put_Response_Header_Spec is record
+      Name  : US.Unbounded_String;
+      Value : US.Unbounded_String;
+   end record;
+
+   type Put_Response_Header_Spec_Array is array (Positive range <>) of
+     Put_Response_Header_Spec;
+
+   Put_Response_Headers : constant Put_Response_Header_Spec_Array :=
+     ((US.To_Unbounded_String ("x-amz-expiration"),
+       US.To_Unbounded_String ("expiry")),
+      (US.To_Unbounded_String ("etag"),
+       US.To_Unbounded_String ("""vector""")),
+      (US.To_Unbounded_String ("x-amz-checksum-crc32"),
+       US.To_Unbounded_String ("AAAAAA==")),
+      (US.To_Unbounded_String ("x-amz-checksum-crc32c"),
+       US.To_Unbounded_String ("AAAAAA==")),
+      (US.To_Unbounded_String ("x-amz-checksum-crc64nvme"),
+       US.To_Unbounded_String ("AAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-sha1"),
+       US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-sha256"),
+       US.To_Unbounded_String
+         ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-sha512"),
+       US.To_Unbounded_String (String'(1 .. 86 => 'A') & "==")),
+      (US.To_Unbounded_String ("x-amz-checksum-md5"),
+       US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==")),
+      (US.To_Unbounded_String ("x-amz-checksum-xxhash64"),
+       US.To_Unbounded_String ("AAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-xxhash3"),
+       US.To_Unbounded_String ("AAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-xxhash128"),
+       US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==")),
+      (US.To_Unbounded_String ("x-amz-checksum-type"),
+       US.To_Unbounded_String ("FULL_OBJECT")),
+      (US.To_Unbounded_String ("x-amz-server-side-encryption"),
+       US.To_Unbounded_String ("aws:kms")),
+      (US.To_Unbounded_String ("x-amz-version-id"),
+       US.To_Unbounded_String ("version")),
+      (US.To_Unbounded_String
+         ("x-amz-server-side-encryption-customer-algorithm"),
+       US.To_Unbounded_String ("AES256")),
+      (US.To_Unbounded_String
+         ("x-amz-server-side-encryption-customer-key-md5"),
+       US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==")),
+      (US.To_Unbounded_String
+         ("x-amz-server-side-encryption-aws-kms-key-id"),
+       US.To_Unbounded_String ("kms-key")),
+      (US.To_Unbounded_String
+         ("x-amz-server-side-encryption-context"),
+       US.To_Unbounded_String ("e30=")),
+      (US.To_Unbounded_String
+         ("x-amz-server-side-encryption-bucket-key-enabled"),
+       US.To_Unbounded_String ("true")),
+      (US.To_Unbounded_String ("x-amz-object-size"),
+       US.To_Unbounded_String ("0")),
+      (US.To_Unbounded_String ("x-amz-request-charged"),
+       US.To_Unbounded_String ("requester")));
+
    function HTTP_Response
      (Status, Payload      : String;
       Extra_Headers        : String := "";
@@ -425,6 +498,41 @@ procedure S3_HTTP_Socket_Corpus is
          return Header (First .. Last);
       end Header_Value;
 
+      function Exact_Header_Value (Header, Name : String) return String is
+         Lower : constant String := Ada.Characters.Handling.To_Lower (Header);
+         Marker : constant String := CRLF &
+           Ada.Characters.Handling.To_Lower (Name) & ":";
+         Position : constant Natural :=
+           Ada.Strings.Fixed.Index (Lower, Marker);
+         First : Natural := Position + Marker'Length;
+         Last  : Natural;
+      begin
+         if Position = 0 then
+            return "";
+         end if;
+         while First <= Header'Last and then Header (First) = ' ' loop
+            First := First + 1;
+         end loop;
+         Last := Ada.Strings.Fixed.Index
+           (Header, CRLF, From => First) - 1;
+         if Last < First then
+            return "";
+         end if;
+         return Header (First .. Last);
+      end Exact_Header_Value;
+
+      function Is_Signed (Lower_Header, Name : String) return Boolean is
+         Lower_Name : constant String :=
+           Ada.Characters.Handling.To_Lower (Name);
+      begin
+         return Ada.Strings.Fixed.Index
+           (Lower_Header, "signedheaders=" & Lower_Name & ";") /= 0
+           or else Ada.Strings.Fixed.Index
+             (Lower_Header, ";" & Lower_Name & ";") /= 0
+           or else Ada.Strings.Fixed.Index
+             (Lower_Header, ";" & Lower_Name & ",") /= 0;
+      end Is_Signed;
+
       procedure Serve
         (Response           : String;
          Expected_Method    : String;
@@ -448,6 +556,15 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Governance_Bypass : String := "";
          Expected_SDK_Checksum : String := "";
          Expected_Checksum_CRC32 : String := "";
+         Expected_Cache_Control : String := "";
+         Expected_Content_Disposition : String := "";
+         Expected_Content_Encoding : String := "";
+         Expected_Content_Language : String := "";
+         Expected_Expires : String := "";
+         Expected_Tagging : String := "";
+         Expected_User_Metadata_Name : String := "";
+         Expected_User_Metadata_Value : String := "";
+         Expected_Website_Redirect : String := "";
          Expected_Object_Attributes : String := "";
          Expected_Get_Object_Attributes : String := "";
          Expected_Max_Parts : String := "";
@@ -515,7 +632,61 @@ procedure S3_HTTP_Socket_Corpus is
                 (Require_Zero_Content_Length
                  and then Header_Value (Lower, "content-length") /= "0")
               or else
-                (if Expected_Checksum_Algorithm_Header'Length > 0
+                (if Expected_Tagging'Length > 0 then
+                    Exact_Header_Value (Header, "content-md5") /=
+                      Expected_Content_MD5
+                    or else Exact_Header_Value (Header, "content-type") /=
+                      Expected_Content_Type
+                    or else Exact_Header_Value (Header, "cache-control") /=
+                      Expected_Cache_Control
+                    or else Exact_Header_Value
+                      (Header, "content-disposition") /=
+                        Expected_Content_Disposition
+                    or else Exact_Header_Value
+                      (Header, "content-encoding") /= Expected_Content_Encoding
+                    or else Exact_Header_Value
+                      (Header, "content-language") /= Expected_Content_Language
+                    or else Exact_Header_Value (Header, "expires") /=
+                      Expected_Expires
+                    or else Exact_Header_Value (Header, "if-none-match") /=
+                      Expected_If_None_Match
+                    or else Exact_Header_Value
+                      (Header, "x-amz-expected-bucket-owner") /=
+                        Expected_Bucket_Owner
+                    or else Header_Value
+                      (Lower, "x-amz-sdk-checksum-algorithm") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_SDK_Checksum)
+                    or else Header_Value
+                      (Header, "x-amz-checksum-crc32") /=
+                        Expected_Checksum_CRC32
+                    or else Exact_Header_Value (Header, "x-amz-tagging") /=
+                      Expected_Tagging
+                    or else Exact_Header_Value
+                      (Header, "x-amz-meta-" & Expected_User_Metadata_Name) /=
+                        Expected_User_Metadata_Value
+                    or else Exact_Header_Value
+                      (Header, "x-amz-website-redirect-location") /=
+                        Expected_Website_Redirect
+                    or else not Is_Signed (Lower, "content-md5")
+                    or else not Is_Signed (Lower, "content-type")
+                    or else not Is_Signed (Lower, "cache-control")
+                    or else not Is_Signed (Lower, "content-disposition")
+                    or else not Is_Signed (Lower, "content-encoding")
+                    or else not Is_Signed (Lower, "content-language")
+                    or else not Is_Signed (Lower, "expires")
+                    or else not Is_Signed (Lower, "if-none-match")
+                    or else not Is_Signed
+                      (Lower, "x-amz-expected-bucket-owner")
+                    or else not Is_Signed
+                      (Lower, "x-amz-sdk-checksum-algorithm")
+                    or else not Is_Signed (Lower, "x-amz-checksum-crc32")
+                    or else not Is_Signed (Lower, "x-amz-meta-" &
+                      Expected_User_Metadata_Name)
+                    or else not Is_Signed (Lower, "x-amz-tagging")
+                    or else not Is_Signed
+                      (Lower, "x-amz-website-redirect-location")
+                 elsif Expected_Checksum_Algorithm_Header'Length > 0
                    or else Expected_Checksum_Header'Length > 0
                    or else Expected_Checksum_Type'Length > 0
                    or else Expected_Mpu_Object_Size'Length > 0
@@ -896,6 +1067,49 @@ procedure S3_HTTP_Socket_Corpus is
          end if;
       end Serve;
 
+      procedure Serve_Put_Response
+        (Key     : String;
+         Headers : String;
+         Payload : String := "") is
+      begin
+         Serve
+           (HTTP_Response ("200 OK", Payload, Headers),
+            "PUT", "/example-bucket/" & Key,
+            Put_Response_Vector_Payload);
+      end Serve_Put_Response;
+
+      function Valid_Put_Response_Headers (Index : Positive) return String is
+         Name : constant String :=
+           US.To_String (Put_Response_Headers (Index).Name);
+         Value : constant String :=
+           US.To_String (Put_Response_Headers (Index).Value);
+         Line : constant String := Name & ": " & Value & CRLF;
+         ETag : constant String := "ETag: ""vector""" & CRLF;
+         Customer_Algorithm : constant String :=
+           "x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF;
+         Customer_MD5 : constant String :=
+           "x-amz-server-side-encryption-customer-key-md5: " &
+           "AAAAAAAAAAAAAAAAAAAAAA==" & CRLF;
+         KMS : constant String :=
+           "x-amz-server-side-encryption: aws:kms" & CRLF;
+      begin
+         case Index is
+            when 2 =>
+               return Line;
+            when 3 .. 12 =>
+               return ETag & Line & "x-amz-checksum-type: FULL_OBJECT" &
+                 CRLF;
+            when 13 =>
+               return ETag & "x-amz-checksum-crc32: AAAAAA==" & CRLF & Line;
+            when 16 | 17 =>
+               return ETag & Customer_Algorithm & Customer_MD5;
+            when 18 .. 20 =>
+               return ETag & KMS & Line;
+            when others =>
+               return ETag & Line;
+         end case;
+      end Valid_Put_Response_Headers;
+
       Success_XML : constant String :=
         "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
         "2006-03-01/"">" &
@@ -1191,12 +1405,193 @@ procedure S3_HTTP_Socket_Corpus is
                "ETag: ""typed-put""" & CRLF &
                "x-amz-checksum-crc32: AAAAAA==" & CRLF &
                "x-amz-checksum-type: FULL_OBJECT" & CRLF &
-               "x-amz-server-side-encryption: aws:backup" & CRLF &
+               "x-amz-server-side-encryption: aws:kms" & CRLF &
+               "x-amz-server-side-encryption-aws-kms-key-id: kms-key" &
+               CRLF &
                "x-amz-version-id: put-version" & CRLF &
                "x-amz-server-side-encryption-bucket-key-enabled: true" &
                CRLF & "x-amz-object-size: 1" & CRLF &
                "x-amz-request-charged: requester" & CRLF),
             "PUT", "/example-bucket/typed-put", "u");
+         Serve_Put_Response
+           ("put-response-minimal", "ETag: ""vector""" & CRLF);
+         Serve_Put_Response
+           ("put-response-body", "ETag: ""vector""" & CRLF, "x");
+         for Index in Put_Response_Headers'Range loop
+            declare
+               Name : constant String :=
+                 US.To_String (Put_Response_Headers (Index).Name);
+               Value : constant String :=
+                 US.To_String (Put_Response_Headers (Index).Value);
+               Baseline : constant String :=
+                 (if Name = "etag" then "" else "ETag: ""vector""" & CRLF);
+            begin
+               Serve_Put_Response
+                 ("put-response-valid-" & Decimal (Index),
+                  Valid_Put_Response_Headers (Index));
+               Serve_Put_Response
+                 ("put-response-empty-" & Decimal (Index),
+                  Baseline & Name & ":" & CRLF);
+               Serve_Put_Response
+                 ("put-response-duplicate-" & Decimal (Index),
+                  Baseline & Name & ": " & Value & CRLF &
+                    Name & ": " & Value & CRLF);
+            end;
+         end loop;
+         Serve_Put_Response
+           ("put-size-zero",
+            "ETag: ""vector""" & CRLF & "x-amz-object-size: 0" & CRLF);
+         Serve_Put_Response
+           ("put-size-maximum",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-object-size: 9223372036854775807" & CRLF);
+         Serve_Put_Response
+           ("put-size-leading-zero",
+            "ETag: ""vector""" & CRLF & "x-amz-object-size: 00" & CRLF);
+         Serve_Put_Response
+           ("put-size-negative",
+            "ETag: ""vector""" & CRLF & "x-amz-object-size: -1" & CRLF);
+         Serve_Put_Response
+           ("put-size-overflow",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-object-size: 9223372036854775808" & CRLF);
+         Serve_Put_Response
+           ("put-bucket-key-invalid-case",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption: aws:kms" & CRLF &
+              "x-amz-server-side-encryption-bucket-key-enabled: TRUE" &
+              CRLF);
+         Serve_Put_Response
+           ("put-bucket-key-invalid-digit",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption: aws:kms" & CRLF &
+              "x-amz-server-side-encryption-bucket-key-enabled: 1" & CRLF);
+         Serve_Put_Response
+           ("put-checksum-without-type",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-checksum-crc32: AAAAAA==" & CRLF);
+         Serve_Put_Response
+           ("put-checksum-type-without-value",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-checksum-type: FULL_OBJECT" & CRLF);
+         Serve_Put_Response
+           ("put-checksum-composite",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-checksum-crc32: AAAAAA==" & CRLF &
+              "x-amz-checksum-type: COMPOSITE" & CRLF);
+         Serve_Put_Response
+           ("put-checksum-multiple",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-checksum-crc32: AAAAAA==" & CRLF &
+              "x-amz-checksum-sha256: " &
+              "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" & CRLF &
+              "x-amz-checksum-type: FULL_OBJECT" & CRLF);
+         for Index in 3 .. 12 loop
+            Serve_Put_Response
+              ("put-checksum-malformed-" & Decimal (Index),
+               "ETag: ""vector""" & CRLF &
+                 US.To_String (Put_Response_Headers (Index).Name) &
+                 ": AAAA" & CRLF &
+                 "x-amz-checksum-type: FULL_OBJECT" & CRLF);
+         end loop;
+         Serve_Put_Response ("put-etag-missing", "");
+         Serve_Put_Response ("put-etag-unquoted", "ETag: vector" & CRLF);
+         Serve_Put_Response
+           ("put-etag-weak", "ETag: W/""vector""" & CRLF);
+         Serve_Put_Response
+           ("put-encryption-invalid-enum",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption: unknown" & CRLF);
+         Serve_Put_Response
+           ("put-request-charged-invalid-enum",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-request-charged: owner" & CRLF);
+         Serve_Put_Response
+           ("put-ssec-invalid-algorithm",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption-customer-algorithm: AES128" &
+              CRLF &
+              "x-amz-server-side-encryption-customer-key-md5: " &
+              "AAAAAAAAAAAAAAAAAAAAAA==" & CRLF);
+         Serve_Put_Response
+           ("put-ssec-invalid-md5",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption-customer-algorithm: AES256" &
+              CRLF &
+              "x-amz-server-side-encryption-customer-key-md5: AAAA" &
+              CRLF);
+         Serve_Put_Response
+           ("put-kms-context-invalid-base64",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption: aws:kms" & CRLF &
+              "x-amz-server-side-encryption-context: not-base64" & CRLF);
+         Serve_Put_Response
+           ("put-expiration-over-limit",
+            "ETag: ""vector""" & CRLF & "x-amz-expiration: " &
+              String'(1 .. 8_193 => 'e') & CRLF);
+         Serve_Put_Response
+           ("put-version-over-limit",
+            "ETag: ""vector""" & CRLF & "x-amz-version-id: " &
+              String'(1 .. 8_193 => 'v') & CRLF);
+         Serve_Put_Response
+           ("put-kms-key-over-limit",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption: aws:kms" & CRLF &
+              "x-amz-server-side-encryption-aws-kms-key-id: " &
+              String'(1 .. 8_193 => 'k') & CRLF);
+         Serve_Put_Response
+           ("put-ssec-incomplete",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption-customer-algorithm: AES256" &
+              CRLF);
+         Serve_Put_Response
+           ("put-kms-key-without-encryption",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption-aws-kms-key-id: kms-key" & CRLF);
+         Serve_Put_Response
+           ("put-bucket-key-without-encryption",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption-bucket-key-enabled: true" &
+              CRLF);
+         Serve_Put_Response
+           ("put-dsse-bucket-key",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption: aws:kms:dsse" & CRLF &
+              "x-amz-server-side-encryption-bucket-key-enabled: true" &
+              CRLF);
+         Serve_Put_Response
+           ("put-mixed-customer-kms",
+            "ETag: ""vector""" & CRLF &
+              "x-amz-server-side-encryption: aws:kms" & CRLF &
+              "x-amz-server-side-encryption-customer-algorithm: AES256" &
+              CRLF &
+              "x-amz-server-side-encryption-customer-key-md5: " &
+              "AAAAAAAAAAAAAAAAAAAAAA==" & CRLF);
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "ETag: ""convenience-put""" & CRLF &
+               "x-amz-checksum-crc32: " & Convenience_Put_CRC32 & CRLF &
+               "x-amz-checksum-type: FULL_OBJECT" & CRLF &
+               "x-amz-object-size: " &
+               Decimal (Convenience_Put_Payload'Length) & CRLF),
+            "PUT", "/example-bucket/convenience-put",
+            Convenience_Put_Payload,
+            Expected_Content_Type => "text/plain",
+            Expected_Content_MD5 => Convenience_Put_MD5,
+            Expected_If_None_Match => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => Convenience_Put_CRC32,
+            Expected_Cache_Control => "no-cache",
+            Expected_Content_Disposition => "inline",
+            Expected_Content_Encoding => "gzip",
+            Expected_Content_Language => "en-CA",
+            Expected_Expires => "Fri, 24 May 2013 00:00:00 GMT",
+            Expected_Tagging => "team%2Bname=storage%2Fada",
+            Expected_User_Metadata_Name => "project",
+            Expected_User_Metadata_Value => "flyology",
+            Expected_Website_Redirect => "/next");
          Serve
            (HTTP_Response
               ("200 OK", "", "ETag: ""conditional-first""" & CRLF),
@@ -1248,6 +1643,24 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "conditional-second", "ETag: *" & CRLF),
             "GET", "/example-bucket/conditional-put",
             Expected_If_Match => """conditional-second""");
+         --  Accept exactly one one-shot conditional PutObject and close
+         --  without a response. The next accepted request is the caller's
+         --  generation-bound reconciliation read, so a transparent replay
+         --  fails this sequence.
+         Serve
+           ("HTTP/1.1 404 Not Found" & CRLF &
+            "Content-Length: 0" & CRLF &
+            "Connection: keep-alive" & CRLF & CRLF,
+            "HEAD", "/example-bucket/lost-put", Keep_Open => True);
+         Serve
+           ("", "PUT", "/example-bucket/lost-put", Lost_Put_Payload,
+            Expected_If_None_Match => "*", Reuse_Peer => True);
+         Serve
+           (HTTP_Response
+              ("200 OK", Lost_Put_Payload,
+               "ETag: ""lost-put-generation""" & CRLF),
+            "GET", "/example-bucket/lost-put",
+            Expected_If_Match => """lost-put-generation""");
          Serve
            (HTTP_Response
               ("200 OK", "", "x-amz-version-id: tag-put-version" & CRLF),
@@ -1426,7 +1839,8 @@ procedure S3_HTTP_Socket_Corpus is
          Serve
            (HTTP_Response
               ("200 OK", "", "ETag: ""high-level-sha256""" & CRLF &
-               "x-amz-checksum-sha256: " & High_Level_SHA256 & CRLF),
+               "x-amz-checksum-sha256: " & High_Level_SHA256 & CRLF &
+               "x-amz-checksum-type: FULL_OBJECT" & CRLF),
             "PUT", "/example-bucket/high-level-checksum-sha256",
             High_Level_File_Payload,
             Expected_Checksum_Algorithm_Header =>
@@ -1862,6 +2276,141 @@ procedure S3_HTTP_Socket_Corpus is
              (Origin, Low_Level.Path_Style, "example-bucket", Parameters,
               Identity, "us-east-1", "20130524T000000Z");
 
+         procedure Require_Put_Response
+           (Key           : String;
+            Expected_Valid : Boolean;
+            Expected_Size : String := "";
+            Projection_Index : Natural := 0;
+            Expected_Checksum_Type : String := "")
+         is
+            Parameters : Low_Level.Put_Object_Parameters;
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Object
+                (Origin, Low_Level.Path_Style, "example-bucket", Key,
+                 Parameters, SigV4.SHA256_Hex (Put_Response_Vector_Payload),
+                 Identity, "us-east-1", "20130524T000000Z");
+            Source : Upload_Source (Put_Response_Vector_Payload'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               declare
+                  Result : constant Low_Level.Put_Object_Outcome :=
+                    Low_Level.Execute_Put_Object
+                      (HTTP, Prepared, Source, Timeout => 5.0);
+
+                  function Projected_Text return String is
+                  begin
+                     case Projection_Index is
+                        when 1 =>
+                           return US.To_String (Result.Result.Expiration);
+                        when 2 =>
+                           return US.To_String (Result.Result.Entity_Tag);
+                        when 3 =>
+                           return US.To_String (Result.Result.Checksum_CRC32);
+                        when 4 =>
+                           return US.To_String (Result.Result.Checksum_CRC32C);
+                        when 5 =>
+                           return US.To_String
+                             (Result.Result.Checksum_CRC64NVME);
+                        when 6 =>
+                           return US.To_String (Result.Result.Checksum_SHA1);
+                        when 7 =>
+                           return US.To_String (Result.Result.Checksum_SHA256);
+                        when 8 =>
+                           return US.To_String (Result.Result.Checksum_SHA512);
+                        when 9 =>
+                           return US.To_String (Result.Result.Checksum_MD5);
+                        when 10 =>
+                           return US.To_String
+                             (Result.Result.Checksum_XXHASH64);
+                        when 11 =>
+                           return US.To_String
+                             (Result.Result.Checksum_XXHASH3);
+                        when 12 =>
+                           return US.To_String
+                             (Result.Result.Checksum_XXHASH128);
+                        when 13 =>
+                           return US.To_String (Result.Result.Checksum_Type);
+                        when 14 =>
+                           return US.To_String
+                             (Result.Result.Server_Side_Encryption);
+                        when 15 =>
+                           return US.To_String (Result.Result.Version_ID);
+                        when 16 =>
+                           return US.To_String
+                             (Result.Result.SSE_Customer_Algorithm);
+                        when 17 =>
+                           return US.To_String
+                             (Result.Result.SSE_Customer_Key_MD5);
+                        when 18 =>
+                           return US.To_String (Result.Result.SSE_KMS_Key_ID);
+                        when 19 =>
+                           return US.To_String
+                             (Result.Result.SSE_KMS_Encryption_Context);
+                        when 22 =>
+                           return US.To_String (Result.Result.Request_Charged);
+                        when others =>
+                           return "";
+                     end case;
+                  end Projected_Text;
+               begin
+                  if not Expected_Valid then
+                     raise Program_Error with
+                       "malformed raw PutObject response was accepted: " & Key;
+                  elsif Result.Kind /= Low_Level.Object_Put
+                    or else US.To_String (Result.Result.Entity_Tag) /=
+                      """vector"""
+                    or else
+                      (Expected_Size'Length > 0
+                       and then
+                         (not Result.Result.Size.Is_Set
+                          or else Result.Result.Size.Value /=
+                            Long_Long_Integer'Value (Expected_Size)))
+                    or else
+                      (Expected_Checksum_Type'Length > 0
+                       and then US.To_String (Result.Result.Checksum_Type) /=
+                         Expected_Checksum_Type)
+                  then
+                     raise Program_Error with
+                       "valid raw PutObject response mismatch: " & Key;
+                  end if;
+                  if Projection_Index in Put_Response_Headers'Range then
+                     if Projection_Index = 20 then
+                        if not Result.Result.Bucket_Key_Enabled.Is_Set
+                          or else not Result.Result.Bucket_Key_Enabled.Value
+                        then
+                           raise Program_Error with
+                             "raw PutObject boolean projection mismatch";
+                        end if;
+                     elsif Projection_Index = 21 then
+                        if not Result.Result.Size.Is_Set
+                          or else Result.Result.Size.Value /= 0
+                        then
+                           raise Program_Error with
+                             "raw PutObject size projection mismatch";
+                        end if;
+                     elsif Projected_Text /= US.To_String
+                       (Put_Response_Headers (Projection_Index).Value)
+                     then
+                        raise Program_Error with
+                          "raw PutObject header projection mismatch: " & Key;
+                     end if;
+                  end if;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  if Expected_Valid then
+                     raise Program_Error with
+                       "valid raw PutObject response was rejected: " & Key;
+                  end if;
+                  Rejected := True;
+            end;
+            if not Expected_Valid and then not Rejected then
+               raise Program_Error with
+                 "raw PutObject response did not reject: " & Key;
+            end if;
+         end Require_Put_Response;
+
          function Conditional_Put
            (Value         : not null access constant String;
             If_Match      : String := "";
@@ -2100,6 +2649,178 @@ procedure S3_HTTP_Socket_Corpus is
               (Conditional_Second, """conditional-second""");
             Require_Invalid_Generation_Rejected;
          end Run_Conditional_Put_Lifecycle;
+
+         procedure Require_Tag_Header_Boundaries is
+            Roman_Eight : constant String :=
+              Character'Val (16#E2#) & Character'Val (16#85#) &
+              Character'Val (16#A7#);
+            Superscript_Two : constant String :=
+              Character'Val (16#C2#) & Character'Val (16#B2#);
+
+            function Repeat (Value : String; Count : Natural) return String is
+               Result : String (1 .. Value'Length * Count);
+               Last   : Natural := 0;
+            begin
+               for Iteration in 1 .. Count loop
+                  Result (Last + 1 .. Last + Value'Length) := Value;
+                  Last := Last + Value'Length;
+               end loop;
+               return Result;
+            end Repeat;
+
+            Small : Flyology.Object_Storage.Object_Tag_Set;
+            Exact : Flyology.Object_Storage.Object_Tag_Set;
+            Parsed : Flyology.Object_Storage.Object_Tag_Set;
+            Rejected : Boolean := False;
+         begin
+            Small.Length := 3;
+            Small.Items (1) :=
+              (Key   => US.To_Unbounded_String ("a_b"),
+               Value => US.To_Unbounded_String ("x+y"));
+            Small.Items (2) :=
+              (Key   => US.To_Unbounded_String ("number"),
+               Value => US.To_Unbounded_String
+                 (Roman_Eight & Superscript_Two));
+            Small.Items (3) :=
+              (Key   => US.To_Unbounded_String ("reserved"),
+               Value => US.To_Unbounded_String (" /="));
+            declare
+               Header : constant String := S3_Tagging.Serialize_Header (Small);
+            begin
+               if Header /=
+                 "a_b=x%2By&number=%E2%85%A7%C2%B2&reserved=%20%2F%3D"
+               then
+                  raise Program_Error with
+                    "PutObject tag header reserved-byte encoding mismatch";
+               end if;
+               Parsed := S3_Tagging.Parse_Header (Header);
+               if Parsed /= Small then
+                  raise Program_Error with
+                    "PutObject tag header round trip mismatch";
+               end if;
+            end;
+            begin
+               Parsed := S3_Tagging.Parse_Header ("a=1&a=2");
+               raise Program_Error with
+                 "duplicate PutObject tag header key was accepted";
+            exception
+               when S3_Tagging.Malformed_Tagging_Query =>
+                  null;
+            end;
+
+            --  Two 3,449-byte encoded pairs, two separators, and a
+            --  1,292-byte third pair total exactly the 8 KiB wire bound.
+            Exact.Length := 3;
+            for Index in 1 .. 2 loop
+               Exact.Items (Index) :=
+                 (Key   => US.To_Unbounded_String
+                    (Repeat (Roman_Eight, 127) & Decimal (Index)),
+                  Value => US.To_Unbounded_String
+                    (Repeat (Roman_Eight, 256)));
+            end loop;
+            Exact.Items (3) :=
+              (Key   => US.To_Unbounded_String ("3"),
+               Value => US.To_Unbounded_String
+                 (Repeat (Roman_Eight, 143) & "abc"));
+            declare
+               Header : constant String := S3_Tagging.Serialize_Header (Exact);
+            begin
+               if Header'Length /= S3_Tagging.Maximum_Query_Bytes
+                 or else S3_Tagging.Parse_Header (Header) /= Exact
+               then
+                  raise Program_Error with
+                    "exact-bound PutObject tag header mismatch";
+               end if;
+            end;
+            Exact.Items (3).Value := US.To_Unbounded_String
+              (Repeat (Roman_Eight, 143) & "abcd");
+            begin
+               declare
+                  Unexpected : constant String :=
+                    S3_Tagging.Serialize_Header (Exact);
+                  pragma Unreferenced (Unexpected);
+               begin
+                  null;
+               end;
+            exception
+               when S3_Tagging.Invalid_Tag =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "over-bound PutObject tag header was accepted";
+            end if;
+         end Require_Tag_Header_Boundaries;
+
+         procedure Run_Lost_Put_Reconciliation is
+            Head_Parameters : Low_Level.Head_Object_Parameters;
+            Head_Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Head_Object
+                (Origin, Low_Level.Path_Style, "example-bucket", "lost-put",
+                 Head_Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Options : Objects.Complete_Put_Options :=
+              Objects.Default_Complete_Put_Options;
+            Lost_Response : Boolean := False;
+         begin
+            declare
+               Before : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Execute_Head_Object
+                   (HTTP, Head_Prepared, Timeout => 5.0);
+            begin
+               if Before.Kind /= Low_Level.Head_Object_Rejected
+                 or else Before.Status /= 404
+               then
+                  raise Program_Error with
+                    "lost-response PutObject priming HEAD mismatch";
+               end if;
+            end;
+            Options.Conditions.If_None_Match := US.To_Unbounded_String ("*");
+            begin
+               declare
+                  Source : Upload_Source (Lost_Put_Payload'Access);
+                  Ignored : constant Low_Level.Put_Object_Outcome :=
+                    Objects.Put_Object
+                      (HTTP, Origin, "example-bucket", "lost-put", Source,
+                       SigV4.SHA256_Hex (Lost_Put_Payload), Identity,
+                       Options => Options, Timeout => 5.0);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Request | Program_Error |
+                    Constraint_Error =>
+                  raise;
+               when others =>
+                  --  The server accepted the body but returned no response.
+                  --  The synchronous API must leave this publication unknown.
+                  Lost_Response := True;
+            end;
+            if not Lost_Response then
+               raise Program_Error with
+                 "lost PutObject response was classified conclusively";
+            end if;
+            declare
+               After : constant Objects.Whole_Get_Outcome :=
+                 Objects.Get_Whole
+                   (HTTP, Origin, "example-bucket", "lost-put",
+                    Lost_Put_Payload'Length, Identity,
+                    Expected_Entity_Tag => """lost-put-generation""",
+                    Timeout => 5.0);
+            begin
+               if After.Kind /= Objects.Whole_Object_Read
+                 or else After.Status /= 200
+                 or else US.To_String (After.Result.Entity_Tag) /=
+                   """lost-put-generation"""
+                 or else Flyology.Bytes.To_Byte_String
+                   (After.Object_Bytes) /= Lost_Put_Payload
+               then
+                  raise Program_Error with
+                    "lost PutObject response reconciliation mismatch";
+               end if;
+            end;
+         end Run_Lost_Put_Reconciliation;
       begin
          HTTP_Client.Configure (HTTP, Origin);
          declare
@@ -2685,7 +3406,9 @@ procedure S3_HTTP_Socket_Corpus is
               or else US.To_String (Result.Result.Checksum_Type) /=
                 "FULL_OBJECT"
               or else US.To_String
-                (Result.Result.Server_Side_Encryption) /= "aws:backup"
+                (Result.Result.Server_Side_Encryption) /= "aws:kms"
+              or else US.To_String (Result.Result.SSE_KMS_Key_ID) /=
+                "kms-key"
               or else not Result.Result.Bucket_Key_Enabled.Is_Set
               or else not Result.Result.Bucket_Key_Enabled.Value
               or else not Result.Result.Size.Is_Set
@@ -2694,9 +3417,244 @@ procedure S3_HTTP_Socket_Corpus is
                raise Program_Error with "typed PutObject result mismatch";
             end if;
          end;
+         Require_Put_Response ("put-response-minimal", True);
+         Require_Put_Response ("put-response-body", False);
+         for Index in Put_Response_Headers'Range loop
+            Require_Put_Response
+              ("put-response-valid-" & Decimal (Index), True,
+               Projection_Index => Index);
+            Require_Put_Response
+              ("put-response-empty-" & Decimal (Index), False);
+            Require_Put_Response
+              ("put-response-duplicate-" & Decimal (Index), False);
+         end loop;
+         Require_Put_Response ("put-size-zero", True, "0");
+         Require_Put_Response
+           ("put-size-maximum", True, "9223372036854775807");
+         Require_Put_Response ("put-size-leading-zero", False);
+         Require_Put_Response ("put-size-negative", False);
+         Require_Put_Response ("put-size-overflow", False);
+         Require_Put_Response ("put-bucket-key-invalid-case", False);
+         Require_Put_Response ("put-bucket-key-invalid-digit", False);
+         Require_Put_Response
+           ("put-checksum-without-type", True,
+            Expected_Checksum_Type => "FULL_OBJECT");
+         Require_Put_Response ("put-checksum-type-without-value", False);
+         Require_Put_Response ("put-checksum-composite", False);
+         Require_Put_Response ("put-checksum-multiple", False);
+         for Index in 3 .. 12 loop
+            Require_Put_Response
+              ("put-checksum-malformed-" & Decimal (Index), False);
+         end loop;
+         Require_Put_Response ("put-etag-missing", False);
+         Require_Put_Response ("put-etag-unquoted", False);
+         Require_Put_Response ("put-etag-weak", False);
+         Require_Put_Response ("put-encryption-invalid-enum", False);
+         Require_Put_Response ("put-request-charged-invalid-enum", False);
+         Require_Put_Response ("put-ssec-invalid-algorithm", False);
+         Require_Put_Response ("put-ssec-invalid-md5", False);
+         Require_Put_Response ("put-kms-context-invalid-base64", False);
+         Require_Put_Response ("put-expiration-over-limit", False);
+         Require_Put_Response ("put-version-over-limit", False);
+         Require_Put_Response ("put-kms-key-over-limit", False);
+         Require_Put_Response ("put-ssec-incomplete", False);
+         Require_Put_Response ("put-kms-key-without-encryption", False);
+         Require_Put_Response ("put-bucket-key-without-encryption", False);
+         Require_Put_Response ("put-dsse-bucket-key", False);
+         Require_Put_Response ("put-mixed-customer-kms", False);
+         declare
+            Options : Objects.Complete_Put_Options :=
+              Objects.Default_Complete_Put_Options;
+            Source : Upload_Source (Convenience_Put_Payload'Access);
+         begin
+            Options.Content_MD5 :=
+              US.To_Unbounded_String (Convenience_Put_MD5);
+            Options.Content_Type := US.To_Unbounded_String ("text/plain");
+            Options.Metadata.Cache_Control :=
+              (Is_Set => True, Value => US.To_Unbounded_String ("no-cache"));
+            Options.Metadata.Content_Disposition :=
+              (Is_Set => True, Value => US.To_Unbounded_String ("inline"));
+            Options.Metadata.Content_Encoding :=
+              (Is_Set => True, Value => US.To_Unbounded_String ("gzip"));
+            Options.Metadata.Content_Language :=
+              (Is_Set => True, Value => US.To_Unbounded_String ("en-CA"));
+            Options.Metadata.Expires :=
+              (Is_Set => True, Value => 1_369_353_600);
+            Options.Metadata.Website_Redirect_Location :=
+              (Is_Set => True, Value => US.To_Unbounded_String ("/next"));
+            Options.Metadata.User.Length := 1;
+            Options.Metadata.User.Items (1) :=
+              (Key   => US.To_Unbounded_String ("project"),
+               Value => US.To_Unbounded_String ("flyology"));
+            Options.Tags.Length := 1;
+            Options.Tags.Items (1) :=
+              (Key   => US.To_Unbounded_String ("team+name"),
+               Value => US.To_Unbounded_String ("storage/ada"));
+            Options.Checksum :=
+              (Algorithm => Flyology.Object_Storage.Checksum_CRC32,
+               Method    => Flyology.Object_Storage.Full_Object_Checksum,
+               Value     => US.To_Unbounded_String (Convenience_Put_CRC32));
+            Options.Conditions.If_None_Match := US.To_Unbounded_String ("*");
+            Options.Expected_Bucket_Owner :=
+              US.To_Unbounded_String ("123456789012");
+            declare
+               Result : constant Low_Level.Put_Object_Outcome :=
+                 Objects.Put_Object
+                   (HTTP, Origin, "example-bucket", "convenience-put",
+                    Source, SigV4.SHA256_Hex (Convenience_Put_Payload),
+                    Identity, Options => Options, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Object_Put
+                 or else US.To_String (Result.Result.Entity_Tag) /=
+                   """convenience-put"""
+                 or else US.To_String (Result.Result.Checksum_CRC32) /=
+                   Convenience_Put_CRC32
+                 or else US.To_String (Result.Result.Checksum_Type) /=
+                   "FULL_OBJECT"
+                 or else not Result.Result.Size.Is_Set
+                 or else Result.Result.Size.Value /=
+                   Convenience_Put_Payload'Length
+               then
+                  raise Program_Error with
+                    "convenience PutObject result mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Options : Objects.Complete_Put_Options :=
+              Objects.Default_Complete_Put_Options;
+
+            procedure Require_Invalid_Options is
+               Source : Upload_Source (Convenience_Put_Payload'Access);
+               Rejected : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant Low_Level.Put_Object_Outcome :=
+                       Objects.Put_Object
+                         (HTTP, Origin, "example-bucket", "invalid-put",
+                          Source,
+                          SigV4.SHA256_Hex (Convenience_Put_Payload),
+                          Identity, Options => Options, Timeout => 5.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Request =>
+                     Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "invalid convenience PutObject options were admitted";
+               end if;
+            end Require_Invalid_Options;
+         begin
+            Options.Checksum :=
+              (Algorithm => Flyology.Object_Storage.Checksum_CRC32,
+               Method    => Flyology.Object_Storage.Composite_Checksum,
+               Value     => US.To_Unbounded_String (Convenience_Put_CRC32));
+            Require_Invalid_Options;
+            Options := Objects.Default_Complete_Put_Options;
+            Options.Checksum.Method :=
+              Flyology.Object_Storage.Full_Object_Checksum;
+            Require_Invalid_Options;
+            Options := Objects.Default_Complete_Put_Options;
+            Options.Checksum.Value := US.To_Unbounded_String ("AAAAAA==");
+            Require_Invalid_Options;
+            Options := Objects.Default_Complete_Put_Options;
+            Options.Checksum :=
+              (Algorithm => Flyology.Object_Storage.Checksum_CRC32,
+               Method    => Flyology.Object_Storage.Full_Object_Checksum,
+               Value     => US.Null_Unbounded_String);
+            Require_Invalid_Options;
+            Options.Checksum.Value := US.To_Unbounded_String ("AAAA");
+            Require_Invalid_Options;
+            Options := Objects.Default_Complete_Put_Options;
+            Options.Content_MD5 := US.To_Unbounded_String ("not-base64");
+            Require_Invalid_Options;
+            Options := Objects.Default_Complete_Put_Options;
+            Options.Conditions.If_Match := US.To_Unbounded_String ("bad");
+            Require_Invalid_Options;
+            Options := Objects.Default_Complete_Put_Options;
+            Options.Content_Type := US.To_Unbounded_String
+              (String'
+                 (1 .. Flyology.Object_Storage.Maximum_System_Metadata_Bytes
+                    => 'x'));
+            Require_Invalid_Options;
+            Options := Objects.Default_Complete_Put_Options;
+            Options.Metadata.User.Items (1) :=
+              (Key   => US.To_Unbounded_String ("hidden"),
+               Value => US.To_Unbounded_String ("value"));
+            Require_Invalid_Options;
+            Options := Objects.Default_Complete_Put_Options;
+            Options.Tags.Length := 1;
+            Options.Tags.Items (1) :=
+              (Key   => US.To_Unbounded_String ("bad&"),
+               Value => US.Null_Unbounded_String);
+            Require_Invalid_Options;
+            Options := Objects.Default_Complete_Put_Options;
+            Options.Tags.Length := 3;
+            declare
+               Roman_Eight : constant String :=
+                 Character'Val (16#E2#) & Character'Val (16#85#) &
+                 Character'Val (16#A7#);
+               function Repeat
+                 (Value : String; Count : Natural) return String
+               is
+                  Result : String (1 .. Value'Length * Count);
+                  Last   : Natural := 0;
+               begin
+                  for Iteration in 1 .. Count loop
+                     Result (Last + 1 .. Last + Value'Length) := Value;
+                     Last := Last + Value'Length;
+                  end loop;
+                  return Result;
+               end Repeat;
+            begin
+               for Index in 1 .. 2 loop
+                  Options.Tags.Items (Index) :=
+                    (Key   => US.To_Unbounded_String
+                       (Repeat (Roman_Eight, 127) & Decimal (Index)),
+                     Value => US.To_Unbounded_String
+                       (Repeat (Roman_Eight, 256)));
+               end loop;
+               Options.Tags.Items (3) :=
+                 (Key   => US.To_Unbounded_String ("3"),
+                  Value => US.To_Unbounded_String
+                    (Repeat (Roman_Eight, 143) & "abcd"));
+            end;
+            Require_Invalid_Options;
+            declare
+               Source : Rewindable_Probe;
+               Rejected : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant Low_Level.Put_Object_Outcome :=
+                       Objects.Put_Object
+                         (HTTP, Origin, "example-bucket", "invalid-put",
+                          Source, SigV4.SHA256_Hex (""), Identity,
+                          Timeout => 5.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Request =>
+                     Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "rewindable convenience PutObject source was admitted";
+               end if;
+            end;
+         end;
          Require_Rewindable_Put_Rejected;
          Require_Invalid_Condition_Rejected;
+         Require_Tag_Header_Boundaries;
          Run_Conditional_Put_Lifecycle;
+         Run_Lost_Put_Reconciliation;
          declare
             Tags : Flyology.Object_Storage.Object_Tag_Set;
             Put_Parameters : Low_Level.Put_Object_Tagging_Parameters;

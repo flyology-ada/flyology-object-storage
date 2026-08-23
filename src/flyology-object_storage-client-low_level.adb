@@ -4267,7 +4267,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else not Valid_Optional_Checksum (Value.Checksum_XXHASH128, 16)
         or else Checksum_Count > 1
         or else (Checksum_Count = 0 and then Checksum_Type'Length > 0)
-        or else (Checksum_Count = 1 and then Checksum_Type /= "FULL_OBJECT")
+        or else (Checksum_Count = 1
+                 and then Checksum_Type not in "" | "FULL_OBJECT")
         or else not Valid_Put_Object_Enum
           (Value.Server_Side_Encryption, 14)
         or else not Bounded_Optional_Put_Header (Value.Version_ID)
@@ -4312,8 +4313,19 @@ package body Flyology.Object_Storage.Client.Low_Level is
             raise Invalid_Response with
               "PutObject success contains a response body";
          end if;
-         Validate_Put_Object_Headers (Headers);
-         return (Kind => Object_Put, Status => Status, Result => Headers);
+         declare
+            Normalized : Put_Object_Result := Headers;
+         begin
+            Validate_Put_Object_Headers (Normalized);
+            if Put_Checksum_Count (Normalized) = 1
+              and then US.Length (Normalized.Checksum_Type) = 0
+            then
+               Normalized.Checksum_Type :=
+                 US.To_Unbounded_String ("FULL_OBJECT");
+            end if;
+            return
+              (Kind => Object_Put, Status => Status, Result => Normalized);
+         end;
       else
          if Request_ID'Length > Maximum_Put_Object_Response_Header_Bytes
            or else Host_ID'Length >
