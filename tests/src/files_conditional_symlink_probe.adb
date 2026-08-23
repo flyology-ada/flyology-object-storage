@@ -976,6 +976,47 @@ begin
       Require
         (Result = Storage.Success, "missing-configuration versioning setup");
       Ada.Directories.Rename (Configuration, Saved_Configuration);
+      declare
+         Observed_Configuration : Storage.Bucket_Versioning_Configuration;
+         Observed_Tags : Tags.Tag_Set;
+      begin
+         Store.Get_Bucket_Versioning
+           (Configuration_Bucket, null, Ada.Real_Time.Time_Last,
+            Observed_Configuration, Result);
+         Require
+           (Result = Storage.Backend_Unavailable,
+            "Get_Bucket_Versioning accepted an absent configuration root");
+         Store.Put_Bucket_Versioning
+           (Configuration_Bucket,
+            (Status => Storage.Versioning_Suspended, others => <>),
+            null, Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Storage.Backend_Unavailable,
+            "Put_Bucket_Versioning recreated an absent configuration root");
+         Store.Get_Bucket_Tags
+           (Configuration_Bucket, null, Ada.Real_Time.Time_Last,
+            Observed_Tags, Result);
+         Require
+           (Result = Storage.Backend_Unavailable,
+            "Get_Bucket_Tags accepted an absent configuration root");
+         Store.Put_Bucket_Tags
+           (Configuration_Bucket, Tag_Set, null,
+            Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Storage.Backend_Unavailable,
+            "Put_Bucket_Tags recreated an absent configuration root");
+         Store.Delete_Bucket_Tags
+           (Configuration_Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Storage.Backend_Unavailable,
+            "Delete_Bucket_Tags accepted an absent configuration root");
+         Require
+           (not Ada.Directories.Exists (Configuration),
+            "configuration consumer silently repaired corrupt layout");
+         Require
+           (Ada.Directories.Exists (Saved_Configuration),
+            "configuration consumer removed the saved configuration");
+      end;
       Store.Delete_Object
         (Configuration_Bucket, "preserved", null,
          Ada.Real_Time.Time_Last, Result,

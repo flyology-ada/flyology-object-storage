@@ -280,6 +280,17 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : Store; Bucket : String) return String is
      (Join (Bucket_Path (Item, Bucket), "configuration"));
 
+   procedure Validate_Configuration_Path (Item : Store; Bucket : String) is
+      Path : constant String := Configuration_Path (Item, Bucket);
+   begin
+      if GNAT.OS_Lib.Is_Symbolic_Link (Path)
+        or else not Ada.Directories.Exists (Path)
+        or else Ada.Directories.Kind (Path) /= Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+   end Validate_Configuration_Path;
+
    function Tags_Path (Item : Store; Bucket : String) return String is
      (Join (Configuration_Path (Item, Bucket), "tags.fos"));
 
@@ -1776,7 +1787,7 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          raise Ada.IO_Exceptions.Data_Error;
       end if;
-      Ensure_Directory (Item, Configuration_Path (Item, Bucket));
+      Validate_Configuration_Path (Item, Bucket);
       if GNAT.OS_Lib.Is_Symbolic_Link (Target)
         or else
           (Ada.Directories.Exists (Target)
@@ -1860,12 +1871,10 @@ package body Flyology.Object_Storage.Backends.Files is
          raise Ada.IO_Exceptions.Data_Error;
       elsif GNAT.OS_Lib.Is_Symbolic_Link
           (Configuration_Path (Item, Bucket))
-      then
-         raise Ada.IO_Exceptions.Data_Error;
-      elsif not Ada.Directories.Exists (Configuration_Path (Item, Bucket)) then
-         Result := Tag_Set_Not_Found;
-      elsif Ada.Directories.Kind (Configuration_Path (Item, Bucket)) /=
-        Ada.Directories.Directory
+        or else not Ada.Directories.Exists
+          (Configuration_Path (Item, Bucket))
+        or else Ada.Directories.Kind (Configuration_Path (Item, Bucket)) /=
+          Ada.Directories.Directory
       then
          raise Ada.IO_Exceptions.Data_Error;
       elsif GNAT.OS_Lib.Is_Symbolic_Link (Path) then
@@ -1933,26 +1942,21 @@ package body Flyology.Object_Storage.Backends.Files is
           Ada.Directories.Directory
       then
          raise Ada.IO_Exceptions.Data_Error;
-      elsif GNAT.OS_Lib.Is_Symbolic_Link (Configuration_Directory) then
-         raise Ada.IO_Exceptions.Data_Error;
-      elsif not Ada.Directories.Exists (Configuration_Directory) then
-         Result := Success;
-      elsif Ada.Directories.Kind (Configuration_Directory) /=
-        Ada.Directories.Directory
-      then
-         raise Ada.IO_Exceptions.Data_Error;
-      elsif GNAT.OS_Lib.Is_Symbolic_Link (Target) then
-         raise Ada.IO_Exceptions.Data_Error;
-      elsif not Ada.Directories.Exists (Target) then
-         Result := Success;
-      elsif Ada.Directories.Kind (Target) /=
-          Ada.Directories.Ordinary_File
-      then
-         raise Ada.IO_Exceptions.Data_Error;
       else
-         Ada.Directories.Delete_File (Target);
-         Sync_Directory (Item, Configuration_Directory);
-         Result := Success;
+         Validate_Configuration_Path (Item, Bucket);
+         if GNAT.OS_Lib.Is_Symbolic_Link (Target) then
+            raise Ada.IO_Exceptions.Data_Error;
+         elsif not Ada.Directories.Exists (Target) then
+            Result := Success;
+         elsif Ada.Directories.Kind (Target) /=
+             Ada.Directories.Ordinary_File
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         else
+            Ada.Directories.Delete_File (Target);
+            Sync_Directory (Item, Configuration_Directory);
+            Result := Success;
+         end if;
       end if;
       Item.Publication.Release;
       Locked := False;
@@ -2003,6 +2007,7 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          raise Ada.IO_Exceptions.Data_Error;
       else
+         Validate_Configuration_Path (Item, Bucket);
          declare
             Value : Bucket_Versioning_Configuration :=
               Read_Versioning (Item, Bucket);
@@ -2043,7 +2048,6 @@ package body Flyology.Object_Storage.Backends.Files is
                    when MFA_Delete_Disabled     => "D"));
             SIO.Close (File);
             Sync_File (Item, US.To_String (Temp));
-            Ensure_Directory (Item, Configuration_Path (Item, Bucket));
             GNAT.OS_Lib.Rename_File
               (US.To_String (Temp), Target, Renamed);
             if not Renamed then
@@ -2122,10 +2126,10 @@ package body Flyology.Object_Storage.Backends.Files is
          raise Ada.IO_Exceptions.Data_Error;
       elsif GNAT.OS_Lib.Is_Symbolic_Link
           (Configuration_Path (Item, Bucket))
-        or else
-          (Ada.Directories.Exists (Configuration_Path (Item, Bucket))
-           and then Ada.Directories.Kind
-             (Configuration_Path (Item, Bucket)) /= Ada.Directories.Directory)
+        or else not Ada.Directories.Exists
+          (Configuration_Path (Item, Bucket))
+        or else Ada.Directories.Kind
+          (Configuration_Path (Item, Bucket)) /= Ada.Directories.Directory
       then
          raise Ada.IO_Exceptions.Data_Error;
       else
@@ -2917,15 +2921,7 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
 
       if Requirements.Require_Unversioned then
-         if GNAT.OS_Lib.Is_Symbolic_Link
-              (Configuration_Path (Item, Bucket))
-           or else not Ada.Directories.Exists
-             (Configuration_Path (Item, Bucket))
-           or else Ada.Directories.Kind
-             (Configuration_Path (Item, Bucket)) /= Ada.Directories.Directory
-         then
-            raise Ada.IO_Exceptions.Data_Error;
-         end if;
+         Validate_Configuration_Path (Item, Bucket);
          declare
             Configuration : constant Bucket_Versioning_Configuration :=
               Read_Versioning (Item, Bucket);
