@@ -11,7 +11,7 @@ codex` generated the committed `AGENTS.md`.
 - shared package source: `https://github.com/flyology-ada/agents.git`
 - shared profile: `packages/profiles/ada-library`
 - manifest update channel: `main`
-- resolved shared commit: `62eff321af50d7d6162fdcc042c32cb7ee5d5bca`
+- resolved shared commit: `de62e63dbb25fff1b21b71673c9eefd6f5f38c38`
 - Codex: `codex-cli 0.147.0`, fresh `codex exec --ephemeral` sessions with
   read-only sandboxing
 - Claude: `2.1.238 (Claude Code)`, fresh `claude -p
@@ -90,7 +90,7 @@ already loaded project rule. The negative-control discovery criterion passed.
 
 No discovery or adherence failure remained after the corrected invocations.
 
-## Shared-main refresh
+## Shared-main refresh history
 
 After flyology-ada/agents PR #1 merged on 2026-08-23, the reviewed `main`
 channel advanced to
@@ -102,6 +102,21 @@ instructions were byte-for-byte unchanged; the shared
 lock. The refresh passed `apm compile --target codex`, `apm compile
 --validate`, frozen replay, CI audit, generated-file diff, and whitespace
 validation before its focused commit.
+
+After PR #2 merged the same day, `main` advanced to
+`de62e63dbb25fff1b21b71673c9eefd6f5f38c38` and added the always-on review
+cycle. `apm update flyology-ada/agents --yes` added the review-cycle package and
+updated all eight shared lock entries to that exact commit while preserving
+`ref: main` in the root manifest. A frozen install materialized the graph
+before compilation. The generated `AGENTS.md` now contains `# Review cycle`
+and requires an explicit findings sweep, P0/P1 fixes, P2 fix-by-default, and a
+repeat review after fixes.
+
+The refresh passed, in order, `apm install --frozen`, `apm compile --target
+codex`, `apm compile --validate`, `apm audit --ci` with 10/10 checks, and `git
+diff --check`. The compile emitted only the expected seven global-instruction
+placement notices; validation and audit reported no primitive, integrity, or
+deployment drift.
 
 ## Update policy
 
