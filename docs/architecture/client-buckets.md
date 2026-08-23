@@ -57,7 +57,9 @@ selection, and expected-owner control. It rejects MFA credentials on cleartext
 origins and requires an explicit status and credential for an MFA Delete
 change. The synchronous request retains the credential only through signing
 and execution. These calls configure a bucket; they do not imply object-version
-creation, version IDs, delete markers, or ListObjectVersions support.
+creation, version IDs, or delete markers. The separately qualified
+`Client.Objects.List_Versions_Page` is a client-only wire boundary and does not
+change that backend limitation.
 
 These operations are deliberately individual. Parallel work across many
 buckets or objects belongs in an application-owned joined scope, while

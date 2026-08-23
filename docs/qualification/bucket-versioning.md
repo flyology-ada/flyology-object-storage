@@ -5,9 +5,10 @@ This slice qualifies configuration semantics for `PutBucketVersioning` and
 markers, version-addressed reads or deletes, or `ListObjectVersions`.
 
 The machine ledger records both configuration operations as `covered` for the
-backend, client, server, and corpus columns. The `ListObjectVersions` row
-remains `missing / partial / missing / missing`; configuring versioning never
-silently enables an unimplemented object-version data plane.
+backend, client, server, and corpus columns. The separately qualified
+`ListObjectVersions` synchronous boundary is `missing / covered / missing /
+covered`; configuring versioning never silently enables an unimplemented
+object-version data plane.
 
 Evidence is reproducible with these exact repository gates:
 

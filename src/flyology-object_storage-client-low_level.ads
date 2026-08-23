@@ -16,6 +16,7 @@ with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Versioning;
+with Flyology.Object_Storage.S3.Versions;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
 
@@ -272,6 +273,101 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null;
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Objects_V2_Outcome;
+
+   --  Every non-bucket member in the pinned ListObjectVersions request.
+   --  Presence flags preserve explicit empty markers and filters. The model's
+   --  OptionalObjectAttributes list currently has one value, RestoreStatus.
+   type List_Object_Versions_Parameters is record
+      Delimiter               : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Delimiter           : Boolean := False;
+      URL_Encoding            : Boolean := False;
+      Key_Marker              : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Key_Marker          : Boolean := False;
+      Max_Keys                : S3.Core.Page_Size := 1_000;
+      Has_Max_Keys            : Boolean := True;
+      Prefix                  : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Prefix              : Boolean := False;
+      Version_ID_Marker       : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Version_ID_Marker   : Boolean := False;
+      Expected_Bucket_Owner   : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer           : Ada.Strings.Unbounded.Unbounded_String;
+      Include_Restore_Status  : Boolean := False;
+   end record;
+
+   --  Build and sign one bodyless ListObjectVersions request. A present
+   --  Version_ID_Marker requires a present Key_Marker. When Has_Max_Keys is
+   --  false, the request omits max-keys and response binding uses the modeled
+   --  S3 default of Page_Size'Last.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose versions are requested
+   --  @param Parameters Presence-preserving filters, cursor, and headers
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared request with response-binding context
+   function Prepare_List_Object_Versions
+     (Origin      : Flyology.HTTP.Origin;
+      Style       : Addressing_Style;
+      Bucket      : String;
+      Parameters  : List_Object_Versions_Parameters;
+      Identity    : Credentials;
+      Region      : String;
+      Timestamp   : String) return Prepared_Request;
+
+   --  Every output member in the pinned ListObjectVersions response. The 13
+   --  XML members are grouped in Listing; RequestCharged is its sole header.
+   type List_Object_Versions_Result is record
+      Listing         : S3.Versions.List_Object_Versions_Result;
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type List_Object_Versions_Outcome
+     (Kind : List_Outcome_Kind := Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Listed =>
+            Result : List_Object_Versions_Result;
+         when Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode one already bounded ListObjectVersions HTTP result. This helper
+   --  validates payload structure and typed S3 errors but cannot bind success
+   --  echoes to a prepared request; Execute_List_Object_Versions performs that
+   --  additional check.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Request_Charged Optional modeled response header
+   --  @param Request_ID Optional physical request identifier
+   --  @param Host_ID Optional physical host identifier
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Typed page or structured S3 rejection
+   function Decode_List_Object_Versions_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Object_Versions_Outcome;
+
+   --  Execute one prepared synchronous request, bind the returned page to its
+   --  bucket/filter/cursor context, and release the response before return.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Request returned by Prepare_List_Object_Versions
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Typed page or structured S3 rejection
+   function Execute_List_Object_Versions
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Object_Versions_Outcome;
 
    --  Every member of the pinned ListBuckets request shape. Presence flags
    --  preserve omission independently from default or empty scalar values.
@@ -2235,6 +2331,7 @@ private
    type Operation_Kind is
      (List_Objects_V2_Operation,
       List_Objects_Operation,
+      List_Object_Versions_Operation,
       List_Buckets_Operation,
       Model_Driven_Operation,
       Create_Bucket_Operation,
@@ -2285,6 +2382,13 @@ private
       Requested_Delimiter : Ada.Strings.Unbounded.Unbounded_String;
       Requested_Max_Uploads : S3.Core.Page_Size := 0;
       Requested_URL_Encoding : Boolean := False;
+      Requested_Has_Key_Marker : Boolean := False;
+      Requested_Version_ID_Marker :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Has_Version_ID_Marker : Boolean := False;
+      Requested_Has_Prefix : Boolean := False;
+      Requested_Has_Delimiter : Boolean := False;
+      Requested_Max_Keys : S3.Core.Page_Size := 0;
       Requested_Create_Server_Side_Encryption :
         Ada.Strings.Unbounded.Unbounded_String;
       Requested_Create_SSE_Customer_Algorithm :

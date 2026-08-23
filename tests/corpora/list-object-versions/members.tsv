@@ -1,0 +1,46 @@
+direction	shape	ordinal	member	wire_location	current_boundary	required_contract	vector_ids
+request	395	1	Bucket	uri-label	projected	Require one valid bucket and bind its exact value into the signed request target.	LOV-RQ-001,LOV-RQ-005
+request	395	2	Delimiter	query	projected	Preserve omission and explicit empty separately and sign the exact encoded delimiter.	LOV-RQ-002,LOV-RQ-005,LOV-RS-004
+request	395	3	EncodingType	query	projected	Preserve omission or project only the modeled url value and bind encoded response echoes.	LOV-RQ-002,LOV-RS-004
+request	395	4	KeyMarker	query	projected	Preserve omission and explicit empty and bind the opaque key cursor to response echoes.	LOV-RQ-002,LOV-RQ-003,LOV-RS-004
+request	395	5	MaxKeys	query	projected	Project one explicit 0-through-1000 page bound and reject responses exceeding it.	LOV-RQ-002,LOV-RS-003,LOV-RS-005
+request	395	6	Prefix	query	projected	Preserve omission and explicit empty and bind the exact encoded prefix echo.	LOV-RQ-002,LOV-RQ-005,LOV-RS-004
+request	395	7	VersionIdMarker	query	projected	Admit an opaque version cursor only with KeyMarker and bind its response echo.	LOV-RQ-002,LOV-RQ-003,LOV-RS-004
+request	395	8	ExpectedBucketOwner	header	projected	Preserve omission or sign one bounded nonempty owner precondition.	LOV-RQ-004,LOV-RQ-005
+request	395	9	RequestPayer	header	projected	Preserve omission or sign only the modeled requester value.	LOV-RQ-004,LOV-RS-014
+request	395	10	OptionalObjectAttributes	header	projected	Preserve omission or sign the sole modeled RestoreStatus list member.	LOV-RQ-004,LOV-RS-009
+response	394	1	IsTruncated	body	decoded	Require exactly one canonical boolean coherent with paired next markers.	LOV-RS-001,LOV-RS-003,LOV-RS-005,LOV-RS-013
+response	394	2	KeyMarker	body	decoded	Preserve absence or empty echo and require an exact encoded match when requested.	LOV-RS-001,LOV-RS-004,LOV-RS-013
+response	394	3	VersionIdMarker	body	decoded	Reject it without KeyMarker and require an exact match when requested.	LOV-RS-001,LOV-RS-004,LOV-RS-013
+response	394	4	NextKeyMarker	body	decoded	Require one bounded nonempty key cursor exactly on truncated pages.	LOV-RS-001,LOV-RS-004,LOV-RS-005,LOV-RS-013
+response	394	5	NextVersionIdMarker	body	decoded	Require one bounded nonempty version cursor paired with NextKeyMarker.	LOV-RS-001,LOV-RS-004,LOV-RS-005,LOV-RS-013
+response	394	6	Versions	body	decoded	Decode a bounded flattened sequence of complete unique ObjectVersion structures.	LOV-RS-001,LOV-RS-005,LOV-RS-006,LOV-RS-016
+response	394	7	DeleteMarkers	body	decoded	Decode a bounded flattened sequence of complete unique DeleteMarker structures.	LOV-RS-001,LOV-RS-005,LOV-RS-010,LOV-RS-016
+response	394	8	Name	body	decoded	Require exactly one nonempty bucket equal to the prepared request bucket.	LOV-RS-001,LOV-RS-003,LOV-RS-004,LOV-RS-013
+response	394	9	Prefix	body	decoded	Preserve absence or empty echo and require an exact encoded match when requested.	LOV-RS-001,LOV-RS-004,LOV-RS-013
+response	394	10	Delimiter	body	decoded	Preserve absence or empty echo and require an exact encoded match when requested.	LOV-RS-001,LOV-RS-004,LOV-RS-013
+response	394	11	MaxKeys	body	decoded	Require one canonical 0-through-1000 value equal to the prepared request limit.	LOV-RS-001,LOV-RS-003,LOV-RS-005,LOV-RS-013
+response	394	12	CommonPrefixes	body	decoded	Decode unique nonempty prefixes and count each against MaxKeys.	LOV-RS-001,LOV-RS-005,LOV-RS-011,LOV-RS-016
+response	394	13	EncodingType	body	decoded	Preserve omission and require exactly url when requested.	LOV-RS-001,LOV-RS-004,LOV-RS-013
+response	394	14	RequestCharged	header	decoded	Preserve omission and accept only one nonempty requester singleton header.	LOV-RS-014,LOV-TR-001,LOV-TR-002
+version	491	1	ETag	body	decoded	Preserve omission or decode one bounded scalar without normalizing its opaque text.	LOV-RS-001,LOV-RS-006,LOV-RS-013
+version	491	2	ChecksumAlgorithm	body	decoded	Decode a unique bounded list containing only pinned checksum algorithm values.	LOV-RS-001,LOV-RS-007,LOV-RS-013
+version	491	3	ChecksumType	body	decoded	Preserve omission or accept only COMPOSITE or FULL_OBJECT with an algorithm.	LOV-RS-001,LOV-RS-007,LOV-RS-013
+version	491	4	Size	body	decoded	Require one canonical nonnegative 64-bit byte count.	LOV-RS-001,LOV-RS-006,LOV-RS-012,LOV-RS-013
+version	491	5	StorageClass	body	decoded	Require exactly one pinned ObjectVersion storage class value.	LOV-RS-001,LOV-RS-006,LOV-RS-013
+version	491	6	Key	body	decoded	Require exactly one key and retain exact decoded or URL-encoded response text.	LOV-RS-001,LOV-RS-006,LOV-RS-013
+version	491	7	VersionId	body	decoded	Require exactly one nonempty opaque version identifier.	LOV-RS-001,LOV-RS-006,LOV-RS-013
+version	491	8	IsLatest	body	decoded	Require exactly one canonical boolean.	LOV-RS-001,LOV-RS-006,LOV-RS-012,LOV-RS-013
+version	491	9	LastModified	body	decoded	Require exactly one strict ISO-8601 timestamp.	LOV-RS-001,LOV-RS-006,LOV-RS-012,LOV-RS-013
+version	491	10	Owner	body	decoded	Preserve omission or decode one strict nonduplicated Owner structure.	LOV-RS-001,LOV-RS-008,LOV-RS-013
+version	491	11	RestoreStatus	body	decoded	Preserve omission or decode one strict nonduplicated RestoreStatus structure.	LOV-RS-001,LOV-RS-009,LOV-RS-013
+delete-marker	161	1	Owner	body	decoded	Preserve omission or decode one strict nonduplicated Owner structure.	LOV-RS-008,LOV-RS-010,LOV-RS-013
+delete-marker	161	2	Key	body	decoded	Require exactly one key and reject duplicate version or cross-kind identities.	LOV-RS-010,LOV-RS-013
+delete-marker	161	3	VersionId	body	decoded	Require exactly one nonempty opaque version identifier.	LOV-RS-010,LOV-RS-013
+delete-marker	161	4	IsLatest	body	decoded	Require exactly one canonical boolean.	LOV-RS-010,LOV-RS-012,LOV-RS-013
+delete-marker	161	5	LastModified	body	decoded	Require exactly one strict ISO-8601 timestamp.	LOV-RS-010,LOV-RS-012,LOV-RS-013
+owner	499	1	DisplayName	body	decoded	Preserve omission and decode at most one bounded display name.	LOV-RS-008,LOV-RS-013
+owner	499	2	ID	body	decoded	Preserve omission and decode at most one bounded owner identifier.	LOV-RS-008,LOV-RS-013
+restore	617	1	IsRestoreInProgress	body	decoded	Preserve omission or decode one canonical boolean.	LOV-RS-009,LOV-RS-012,LOV-RS-013
+restore	617	2	RestoreExpiryDate	body	decoded	Preserve omission or decode one strict ISO-8601 timestamp.	LOV-RS-009,LOV-RS-012,LOV-RS-013
+common-prefix	97	1	Prefix	body	decoded	Require one nonempty bounded prefix and reject duplicate entries.	LOV-RS-011,LOV-RS-013

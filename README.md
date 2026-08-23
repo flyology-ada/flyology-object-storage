@@ -44,10 +44,11 @@ The core crate includes:
   CRC linearization, and a reproducible 320-vector differential corpus (see
   [S3 checksum foundation](docs/architecture/s3-checksums.md));
 - complete typed, bounded HeadBucket, GetBucketLocation, ListBuckets,
-  ListObjects v1/v2 and multipart initiation, completion, ListParts, and
-  ListMultipartUploads REST/XML codecs, plus the complete GetObjectAttributes
-  request/output model, with high-level paginated ListBuckets and
-  ListObjects v1 and ListObjectsV2,
+  ListObjects v1/v2, ListObjectVersions, and multipart initiation, completion,
+  ListParts, and ListMultipartUploads REST/XML codecs, plus the complete
+  GetObjectAttributes request/output model, with high-level paginated
+  ListBuckets, ListObjects v1, ListObjectsV2, and paired-cursor
+  ListObjectVersions,
   HeadBucket, CreateBucket, GetBucketLocation, DeleteBucket, and bucket-tag
   convenience
   APIs (see [bucket convenience client](docs/architecture/client-buckets.md));
@@ -59,7 +60,7 @@ The core crate includes:
 - signed, bounded CreateBucket, GetBucketLocation, HeadBucket,
   PutBucketTagging, GetBucketTagging, DeleteBucketTagging, GetObject,
   HeadObject, PutObject,
-  ListBuckets, ListObjects, ListObjectsV2, DeleteBucket,
+  ListBuckets, ListObjects, ListObjectsV2, ListObjectVersions, DeleteBucket,
   DeleteObject, DeleteObjects REST/XML, and multipart
   initiate/upload/complete/abort/ListParts/ListMultipartUploads low-level
   operations over caller-owned `flyology_http` clients, plus a synchronous

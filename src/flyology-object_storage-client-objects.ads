@@ -8,6 +8,7 @@ with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Listings;
+with Flyology.Object_Storage.S3.Versions;
 
 --  High-level object and object-listing operations over a configured Flyology
 --  HTTP client.
@@ -110,6 +111,66 @@ package Flyology.Object_Storage.Client.Objects is
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
       return List_Outcome;
+
+   --  One complete typed version-listing page or structured S3 rejection.
+   type List_Versions_Outcome
+     (Kind : List_Outcome_Kind := List_Rejected) is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Page_Available =>
+            Page : S3.Versions.List_Object_Versions_Result;
+            Next_Key_Marker : Ada.Strings.Unbounded.Unbounded_String;
+            Next_Version_ID_Marker : Ada.Strings.Unbounded.Unbounded_String;
+            Has_Next_Markers : Boolean := False;
+            Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+         when List_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  List one bounded page of object versions and delete markers. A
+   --  Version_ID_Marker is valid only together with Key_Marker. When
+   --  Has_Next_Markers is true, pass the outcome's Next_Key_Marker and
+   --  Next_Version_ID_Marker to continue the same prefix/delimiter scope.
+   --  Next_Key_Marker is decoded from the url response representation;
+   --  version identifiers remain opaque.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose versions are listed
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Prefix Optional byte prefix filter
+   --  @param Delimiter Optional byte delimiter for CommonPrefixes grouping
+   --  @param Maximum Maximum combined entries and prefixes in this page
+   --  @param Key_Marker Key component of the paired pagination cursor
+   --  @param Version_ID_Marker Version component of the paired cursor
+   --  @param URL_Encoding Percent-encode returned keys, prefixes and delimiter
+   --  @param Include_Restore_Status Request RestoreStatus where it exists
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return One typed page or a structured S3 rejection
+   function List_Versions_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Prefix   : String := "";
+      Delimiter : String := "";
+      Maximum  : S3.Core.Page_Size := 1_000;
+      Key_Marker : String := "";
+      Version_ID_Marker : String := "";
+      URL_Encoding : Boolean := False;
+      Include_Restore_Status : Boolean := False;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Versions_Outcome;
 
    subtype Complete_Put_Outcome is Low_Level.Put_Object_Outcome;
    subtype Conditional_Put_Outcome is Complete_Put_Outcome;

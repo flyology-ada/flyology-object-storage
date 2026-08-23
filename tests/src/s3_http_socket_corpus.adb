@@ -1321,6 +1321,82 @@ procedure S3_HTTP_Socket_Corpus is
         "<IsTruncated>true</IsTruncated>" &
         "<Contents><Key>socket-v1/%GG</Key><Size>1</Size></Contents>" &
         "</ListBucketResult>";
+      Versions_Complete_XML : constant String :=
+        "<ListVersionsResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><IsTruncated>true</IsTruncated>" &
+        "<KeyMarker>logs/a</KeyMarker>" &
+        "<VersionIdMarker>v+1</VersionIdMarker>" &
+        "<NextKeyMarker>logs/next</NextKeyMarker>" &
+        "<NextVersionIdMarker>v-next</NextVersionIdMarker>" &
+        "<Version><ETag>&quot;socket-version&quot;</ETag>" &
+        "<ChecksumAlgorithm>SHA256</ChecksumAlgorithm>" &
+        "<ChecksumAlgorithm>CRC32C</ChecksumAlgorithm>" &
+        "<ChecksumType>FULL_OBJECT</ChecksumType>" &
+        "<Size>4294967297</Size><StorageClass>STANDARD</StorageClass>" &
+        "<Key>logs/object</Key><VersionId>v-object</VersionId>" &
+        "<IsLatest>false</IsLatest>" &
+        "<LastModified>2026-08-23T01:02:03.123Z</LastModified>" &
+        "<Owner><DisplayName>socket-owner</DisplayName>" &
+        "<ID>socket-owner-id</ID></Owner>" &
+        "<RestoreStatus><IsRestoreInProgress>false" &
+        "</IsRestoreInProgress>" &
+        "<RestoreExpiryDate>2026-08-24T01:02:03Z" &
+        "</RestoreExpiryDate></RestoreStatus></Version>" &
+        "<DeleteMarker><Owner><ID>socket-owner-id</ID></Owner>" &
+        "<Key>logs/deleted</Key><VersionId>v-delete</VersionId>" &
+        "<IsLatest>true</IsLatest>" &
+        "<LastModified>2026-08-23T02:03:04Z</LastModified>" &
+        "</DeleteMarker><Name>example-bucket</Name>" &
+        "<Prefix>logs/</Prefix><Delimiter>/</Delimiter>" &
+        "<MaxKeys>3</MaxKeys>" &
+        "<CommonPrefixes><Prefix>logs/group/</Prefix>" &
+        "</CommonPrefixes><EncodingType>url</EncodingType>" &
+        "</ListVersionsResult>";
+      Versions_Empty_Echo_XML : constant String :=
+        "<ListVersionsResult><IsTruncated>false</IsTruncated>" &
+        "<KeyMarker></KeyMarker><VersionIdMarker></VersionIdMarker>" &
+        "<Name>example-bucket</Name><Prefix></Prefix>" &
+        "<Delimiter></Delimiter><MaxKeys>1</MaxKeys>" &
+        "</ListVersionsResult>";
+      Versions_Paged_First_XML : constant String :=
+        "<ListVersionsResult><IsTruncated>true</IsTruncated>" &
+        "<NextKeyMarker>paged/a%20/%25%C3%A9</NextKeyMarker>" &
+        "<NextVersionIdMarker>v+1</NextVersionIdMarker>" &
+        "<Version><Size>1</Size><StorageClass>STANDARD</StorageClass>" &
+        "<Key>paged/a</Key><VersionId>v0</VersionId>" &
+        "<IsLatest>false</IsLatest>" &
+        "<LastModified>2026-08-23T01:02:03Z</LastModified></Version>" &
+        "<Name>example-bucket</Name><Prefix>paged/</Prefix>" &
+        "<MaxKeys>1</MaxKeys><EncodingType>url</EncodingType>" &
+        "</ListVersionsResult>";
+      Versions_Paged_Second_XML : constant String :=
+        "<ListVersionsResult><IsTruncated>false</IsTruncated>" &
+        "<KeyMarker>paged/a%20/%25%C3%A9</KeyMarker>" &
+        "<VersionIdMarker>v+1</VersionIdMarker>" &
+        "<Name>example-bucket</Name><Prefix>paged/</Prefix>" &
+        "<MaxKeys>1</MaxKeys><EncodingType>url</EncodingType>" &
+        "</ListVersionsResult>";
+      Versions_Bad_Marker_XML : constant String :=
+        "<ListVersionsResult><IsTruncated>true</IsTruncated>" &
+        "<NextKeyMarker>%GG</NextKeyMarker>" &
+        "<NextVersionIdMarker>v-next</NextVersionIdMarker>" &
+        "<Version><Size>1</Size><StorageClass>STANDARD</StorageClass>" &
+        "<Key>bad-marker/item</Key><VersionId>v0</VersionId>" &
+        "<IsLatest>false</IsLatest>" &
+        "<LastModified>2026-08-23T01:02:03Z</LastModified></Version>" &
+        "<Name>example-bucket</Name><Prefix>bad-marker/</Prefix>" &
+        "<MaxKeys>1</MaxKeys><EncodingType>url</EncodingType>" &
+        "</ListVersionsResult>";
+
+      function Final_Versions_XML
+        (Name, Prefix : String;
+         Maximum     : Positive := 1;
+         Encoding    : Boolean := False) return String is
+        ("<ListVersionsResult><IsTruncated>false</IsTruncated>" &
+         "<Name>" & Name & "</Name><Prefix>" & Prefix & "</Prefix>" &
+         "<MaxKeys>" & Decimal (Maximum) & "</MaxKeys>" &
+         (if Encoding then "<EncodingType>url</EncodingType>" else "") &
+         "</ListVersionsResult>");
       Error_XML : constant String :=
         "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>";
       Precondition_XML : constant String :=
@@ -2831,6 +2907,90 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("204 No Content", "", Omit_Content_Length => True), "DELETE",
             "/example-bucket/object%20key?uploadId=socket-upload");
+         Serve
+           (HTTP_Response
+              ("200 OK", Versions_Complete_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "key-marker=logs%2Fa&max-keys=3&prefix=logs%2F&" &
+              "version-id-marker=v%2B1&versions",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus",
+            Fragmented => True);
+         Serve
+           (HTTP_Response ("200 OK", Versions_Empty_Echo_XML),
+            "GET", "/example-bucket?max-keys=1&versions",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Final_Versions_XML
+                 ("example-bucket", "omitted-max/", Maximum => 1_000)),
+            "GET", "/example-bucket?prefix=omitted-max%2F&versions");
+         Serve
+           (HTTP_Response ("200 OK", Versions_Paged_First_XML),
+            "GET", "/example-bucket?encoding-type=url&max-keys=1&" &
+              "prefix=paged%2F&versions", Fragmented => True);
+         Serve
+           (HTTP_Response ("200 OK", Versions_Paged_Second_XML),
+            "GET", "/example-bucket?encoding-type=url&" &
+              "key-marker=paged%2Fa%20%2F%25%C3%A9&max-keys=1&" &
+              "prefix=paged%2F&version-id-marker=v%2B1&versions");
+         Serve
+           (HTTP_Response ("200 OK", Versions_Bad_Marker_XML),
+            "GET", "/example-bucket?encoding-type=url&max-keys=1&" &
+              "prefix=bad-marker%2F&versions");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: versions-request" & CRLF &
+               "x-amz-id-2: versions-host" & CRLF),
+            "GET", "/example-bucket?max-keys=1&prefix=error%2F&versions");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Final_Versions_XML ("example-bucket", "duplicate/"),
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?max-keys=1&prefix=duplicate%2F&" &
+              "versions");
+         Serve
+           (HTTP_Response
+              ("200 OK", Final_Versions_XML ("wrong-bucket", "bucket/")),
+            "GET", "/example-bucket?max-keys=1&prefix=bucket%2F&versions");
+         Serve
+           (HTTP_Response
+              ("200 OK", Final_Versions_XML ("example-bucket", "wrong/")),
+            "GET", "/example-bucket?max-keys=1&prefix=right%2F&versions");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Final_Versions_XML
+                 ("example-bucket", "maximum/", Maximum => 2)),
+            "GET", "/example-bucket?max-keys=1&prefix=maximum%2F&versions");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Final_Versions_XML ("example-bucket", "encoding/")),
+            "GET", "/example-bucket?encoding-type=url&max-keys=1&" &
+              "prefix=encoding%2F&versions");
+         Serve
+           (HTTP_Response
+              ("200 OK", Final_Versions_XML ("example-bucket", "surprise/")),
+            "GET", "/example-bucket?max-keys=1&versions");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<ListVersionsResult><Unknown/></ListVersionsResult>"),
+            "GET", "/example-bucket?max-keys=1&prefix=malformed%2F&versions");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Final_Versions_XML
+                 ("example-bucket", "oversized/" &
+                    String'(1 .. 256 => 'x'))),
+            "GET", "/example-bucket?max-keys=1&prefix=oversized%2F&versions");
       end loop;
       Sockets.Close_Socket (Listener);
       State.Complete (True);
@@ -6726,6 +6886,256 @@ procedure S3_HTTP_Socket_Corpus is
                   end if;
                end;
             end;
+         end;
+         declare
+            Parameters : Low_Level.List_Object_Versions_Parameters;
+         begin
+            Parameters.Delimiter := US.To_Unbounded_String ("/");
+            Parameters.Has_Delimiter := True;
+            Parameters.URL_Encoding := True;
+            Parameters.Key_Marker := US.To_Unbounded_String ("logs/a");
+            Parameters.Has_Key_Marker := True;
+            Parameters.Max_Keys := 3;
+            Parameters.Has_Max_Keys := True;
+            Parameters.Prefix := US.To_Unbounded_String ("logs/");
+            Parameters.Has_Prefix := True;
+            Parameters.Version_ID_Marker := US.To_Unbounded_String ("v+1");
+            Parameters.Has_Version_ID_Marker := True;
+            Parameters.Expected_Bucket_Owner :=
+              US.To_Unbounded_String ("123456789012");
+            Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+            Parameters.Include_Restore_Status := True;
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Object_Versions
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Parameters, Identity, "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.List_Object_Versions_Outcome :=
+                 Low_Level.Execute_List_Object_Versions
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Listed
+                 or else Result.Status /= 200
+                 or else Natural (Result.Result.Listing.Versions.Length) /= 1
+                 or else Natural
+                   (Result.Result.Listing.Delete_Markers.Length) /= 1
+                 or else Natural
+                   (Result.Result.Listing.Common_Prefixes.Length) /= 1
+                 or else Result.Result.Listing.Versions.First_Element.Size /=
+                   4_294_967_297
+                 or else US.To_String (Result.Result.Request_Charged) /=
+                   "requester"
+               then
+                  raise Program_Error with
+                    "typed ListObjectVersions socket success mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Result : constant Objects.List_Versions_Outcome :=
+              Objects.List_Versions_Page
+                (HTTP, Origin, "example-bucket", Identity,
+                 Maximum => 1, Timeout => 5.0);
+         begin
+            if Result.Kind /= Objects.Page_Available
+              or else Result.Status /= 200
+              or else not Result.Page.Versions.Is_Empty
+              or else not Result.Page.Delete_Markers.Is_Empty
+              or else not Result.Page.Common_Prefixes.Is_Empty
+              or else not Result.Page.Has_Key_Marker
+              or else US.Length (Result.Page.Key_Marker) /= 0
+              or else not Result.Page.Has_Version_ID_Marker
+              or else US.Length (Result.Page.Version_ID_Marker) /= 0
+              or else not Result.Page.Has_Prefix
+              or else US.Length (Result.Page.Prefix) /= 0
+              or else not Result.Page.Has_Delimiter
+              or else US.Length (Result.Page.Delimiter) /= 0
+            then
+               raise Program_Error with
+               "ListObjectVersions empty echo compatibility mismatch";
+            end if;
+         end;
+         declare
+            Parameters : Low_Level.List_Object_Versions_Parameters;
+         begin
+            Parameters.Max_Keys := 2;
+            Parameters.Has_Max_Keys := False;
+            Parameters.Prefix := US.To_Unbounded_String ("omitted-max/");
+            Parameters.Has_Prefix := True;
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Object_Versions
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Parameters, Identity, "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.List_Object_Versions_Outcome :=
+                 Low_Level.Execute_List_Object_Versions
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Listed
+                 or else Result.Result.Listing.Max_Keys /= 1_000
+               then
+                  raise Program_Error with
+                    "ListObjectVersions omitted MaxKeys binding mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Logical_Key : constant String :=
+              "paged/a /%" & Character'Val (16#C3#) &
+              Character'Val (16#A9#);
+            First : constant Objects.List_Versions_Outcome :=
+              Objects.List_Versions_Page
+                (HTTP, Origin, "example-bucket", Identity,
+                 Prefix => "paged/", Maximum => 1, URL_Encoding => True,
+                 Timeout => 5.0);
+         begin
+            if First.Kind /= Objects.Page_Available
+              or else not First.Page.Is_Truncated
+              or else not First.Has_Next_Markers
+              or else US.To_String (First.Next_Key_Marker) /= Logical_Key
+              or else US.To_String (First.Next_Version_ID_Marker) /= "v+1"
+            then
+               raise Program_Error with
+                 "ListObjectVersions logical continuation mismatch";
+            end if;
+            declare
+               Next : constant Objects.List_Versions_Outcome :=
+                 Objects.List_Versions_Page
+                   (HTTP, Origin, "example-bucket", Identity,
+                    Prefix => "paged/", Maximum => 1,
+                    Key_Marker => US.To_String (First.Next_Key_Marker),
+                    Version_ID_Marker =>
+                      US.To_String (First.Next_Version_ID_Marker),
+                    URL_Encoding => True, Timeout => 5.0);
+            begin
+               if Next.Kind /= Objects.Page_Available
+                 or else Next.Page.Is_Truncated
+                 or else Next.Has_Next_Markers
+               then
+                  raise Program_Error with
+                    "ListObjectVersions second page mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Objects.List_Versions_Outcome :=
+                    Objects.List_Versions_Page
+                      (HTTP, Origin, "example-bucket", Identity,
+                       Prefix => "bad-marker/", Maximum => 1,
+                       URL_Encoding => True, Timeout => 5.0);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            if not Raised then
+               raise Program_Error with
+                 "ListObjectVersions accepted malformed encoded cursor";
+            end if;
+         end;
+         declare
+            Parameters : Low_Level.List_Object_Versions_Parameters;
+         begin
+            Parameters.Max_Keys := 1;
+            Parameters.Has_Max_Keys := True;
+            Parameters.Prefix := US.To_Unbounded_String ("error/");
+            Parameters.Has_Prefix := True;
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Object_Versions
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Parameters, Identity, "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.List_Object_Versions_Outcome :=
+                 Low_Level.Execute_List_Object_Versions
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Rejected
+                 or else US.To_String (Result.Error.Code) /= "AccessDenied"
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "versions-request"
+                 or else US.To_String (Result.Error.Host_ID) /=
+                   "versions-host"
+               then
+                  raise Program_Error with
+                    "typed ListObjectVersions socket error mismatch";
+               end if;
+            end;
+         end;
+         declare
+            procedure Must_Reject
+              (Prefix        : String;
+               Message       : String;
+               URL_Encoding  : Boolean := False;
+               Omit_Prefix   : Boolean := False;
+               Small_Limits  : Boolean := False)
+            is
+               Parameters : Low_Level.List_Object_Versions_Parameters;
+               Raised : Boolean := False;
+            begin
+               Parameters.Max_Keys := 1;
+               Parameters.Has_Max_Keys := True;
+               Parameters.Prefix := US.To_Unbounded_String (Prefix);
+               Parameters.Has_Prefix := not Omit_Prefix;
+               Parameters.URL_Encoding := URL_Encoding;
+               begin
+                  declare
+                     Prepared : constant Low_Level.Prepared_Request :=
+                       Low_Level.Prepare_List_Object_Versions
+                         (Origin, Low_Level.Path_Style, "example-bucket",
+                          Parameters, Identity, "us-east-1",
+                          "20130524T000000Z");
+                     Ignored : constant
+                       Low_Level.List_Object_Versions_Outcome :=
+                         (if Small_Limits
+                          then Low_Level.Execute_List_Object_Versions
+                            (HTTP, Prepared, Timeout => 5.0,
+                             Limits =>
+                               (Maximum_Document_Bytes => 64,
+                                Maximum_Depth          => 8,
+                                Maximum_Elements       => 32,
+                                Maximum_Text_Bytes     => 64))
+                          else Low_Level.Execute_List_Object_Versions
+                            (HTTP, Prepared, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject;
+         begin
+            Must_Reject
+              ("duplicate/",
+               "ListObjectVersions accepted duplicate response header");
+            Must_Reject
+              ("bucket/", "ListObjectVersions accepted wrong bucket echo");
+            Must_Reject
+              ("right/", "ListObjectVersions accepted wrong prefix echo");
+            Must_Reject
+              ("maximum/", "ListObjectVersions accepted wrong MaxKeys echo");
+            Must_Reject
+              ("encoding/", "ListObjectVersions accepted missing encoding",
+               URL_Encoding => True);
+            Must_Reject
+              ("", "ListObjectVersions accepted unexpected nonempty echo",
+               Omit_Prefix => True);
+            Must_Reject
+              ("malformed/", "ListObjectVersions accepted malformed XML");
+            Must_Reject
+              ("oversized/", "ListObjectVersions accepted oversized XML",
+               Small_Limits => True);
          end;
          HTTP_Client.Shutdown (HTTP);
       end;

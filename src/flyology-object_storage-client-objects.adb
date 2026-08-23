@@ -196,6 +196,89 @@ package body Flyology.Object_Storage.Client.Objects is
       end;
    end List_V1_Page;
 
+   function List_Versions_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Prefix   : String := "";
+      Delimiter : String := "";
+      Maximum  : S3.Core.Page_Size := 1_000;
+      Key_Marker : String := "";
+      Version_ID_Marker : String := "";
+      URL_Encoding : Boolean := False;
+      Include_Restore_Status : Boolean := False;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Versions_Outcome
+   is
+      Parameters : Low_Level.List_Object_Versions_Parameters;
+   begin
+      Parameters.Prefix := US.To_Unbounded_String (Prefix);
+      Parameters.Has_Prefix := Prefix'Length > 0;
+      Parameters.Delimiter := US.To_Unbounded_String (Delimiter);
+      Parameters.Has_Delimiter := Delimiter'Length > 0;
+      Parameters.Key_Marker := US.To_Unbounded_String (Key_Marker);
+      Parameters.Has_Key_Marker := Key_Marker'Length > 0;
+      Parameters.Version_ID_Marker :=
+        US.To_Unbounded_String (Version_ID_Marker);
+      Parameters.Has_Version_ID_Marker := Version_ID_Marker'Length > 0;
+      Parameters.Max_Keys := Maximum;
+      Parameters.Has_Max_Keys := True;
+      Parameters.URL_Encoding := URL_Encoding;
+      Parameters.Include_Restore_Status := Include_Restore_Status;
+      Parameters.Expected_Bucket_Owner :=
+        US.To_Unbounded_String (Expected_Bucket_Owner);
+      Parameters.Request_Payer := US.To_Unbounded_String (Request_Payer);
+      declare
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_List_Object_Versions
+             (Origin, Style, Bucket, Parameters, Identity, Region,
+              Timestamp);
+         Outcome : constant Low_Level.List_Object_Versions_Outcome :=
+           Low_Level.Execute_List_Object_Versions
+             (Client, Prepared, Timeout, Token);
+      begin
+         if Outcome.Kind = Low_Level.Rejected then
+            return
+              (Kind => List_Rejected, Status => Outcome.Status,
+               Error => Outcome.Error);
+         end if;
+         declare
+            Page : S3.Versions.List_Object_Versions_Result renames
+              Outcome.Result.Listing;
+            Next_Key : US.Unbounded_String;
+            Next_Version : US.Unbounded_String;
+         begin
+            if Page.Is_Truncated then
+               Next_Key :=
+                 (if Page.Has_Encoding_Type
+                  then US.To_Unbounded_String
+                    (S3.Listings.Decode_URL_Value
+                       (US.To_String (Page.Next_Key_Marker)))
+                  else Page.Next_Key_Marker);
+               Next_Version := Page.Next_Version_ID_Marker;
+            end if;
+            return
+              (Kind                   => Page_Available,
+               Status                 => Outcome.Status,
+               Page                   => Page,
+               Next_Key_Marker        => Next_Key,
+               Next_Version_ID_Marker => Next_Version,
+               Has_Next_Markers       => Page.Is_Truncated,
+               Request_Charged        => Outcome.Result.Request_Charged);
+         exception
+            when S3.Listings.Malformed_Listing =>
+               raise Low_Level.Invalid_Response with
+                 "malformed encoded ListObjectVersions next key marker";
+         end;
+      end;
+   end List_Versions_Page;
+
    procedure Apply_Complete_Put_Options
      (Options    : Complete_Put_Options;
       Parameters : in out Low_Level.Put_Object_Parameters)
