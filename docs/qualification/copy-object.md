@@ -6,8 +6,9 @@ The authoritative inventory is botocore S3 revision
 Its `CopyObjectRequest` has 44 members. `CopyObjectOutput` has 11 top-level
 members, one of which is the 13-member `CopyObjectResult`, for 24 modeled
 output positions in the qualification inventory. The table below is the
-required disposition before the compatibility ledger can be promoted. An
-omitted value is not the same as silently ignoring a supplied value.
+audited disposition supporting the covered client ledger entry and the
+server's explicit path-style, unversioned capability profile. An omitted value
+is not the same as silently ignoring a supplied value.
 
 Disposition meanings:
 
@@ -168,3 +169,26 @@ that value without adding quotes. The matrix therefore requires both typed
 client layers to reject the response as invalid while independently checking
 the published destination bytes. This is a narrow oracle profile; the
 production decoder continues to require one strong quoted entity-tag.
+
+## Functional evidence
+
+The final functional campaign on 2026-08-22 used the clean CopyObject stack
+rebased onto `03ee379ae1069b595922fd875288d4508eb3a26a`:
+
+- `./tests/scripts/test.sh` passed. It included 34/34 AUnit cases, all 88
+  abrupt-crash cases, shared memory/files CopyObject conformance, namespace
+  symlink probes, the 320-vector checksum corpus, authenticated application
+  corpus, and three native/lightweight socket repetitions.
+- `./sqlite/tests/scripts/test.sh` passed the vendored SQLite wrapper, exact
+  schema and migration audit, external-payload catalog, reopen, and backend
+  conformance gate.
+- `./tests/scripts/test-s3-matrix.sh` passed all 18 lanes: three repetitions
+  each for pinned RustFS, pinned SeaweedFS, supplemental MinIO, and Flyology
+  memory, files, and SQLite. Every lane used native and lightweight typed
+  clients plus the digest-pinned s5cmd byte and deletion oracle.
+
+The SeaweedFS profile does not relax production parsing. After its expected
+strict `Invalid_Response`, the corpus downloads and byte-compares both typed
+CopyObject destinations. DeleteObjects setup copies are independently checked
+before deletion, and both destinations must independently return `HEAD 404`
+afterward.
