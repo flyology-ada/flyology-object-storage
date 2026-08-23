@@ -25,11 +25,19 @@ is
    function Leap (Year : Calendar_Year) return Boolean is
      (Year mod 4 = 0 and then (Year mod 100 /= 0 or else Year mod 400 = 0));
 
-   function Days_Before_Year (Year : Calendar_Year) return Day_Boundary is
-     (declare
-         Previous : constant Natural := Year - 1;
-      begin
-         365 * Previous + Previous / 4 - Previous / 100 + Previous / 400);
+   function Days_Before_Year (Year : Calendar_Year) return Day_Boundary
+   with
+     Post =>
+       Days_Before_Year'Result =
+         365 * (Year - 1) + (Year - 1) / 4
+           - (Year - 1) / 100 + (Year - 1) / 400
+   is
+      Previous : constant Natural := Year - 1;
+   begin
+      return
+        365 * Previous + Previous / 4
+          - Previous / 100 + Previous / 400;
+   end Days_Before_Year;
 
    function Days_In_Year (Year : Rendered_Year) return Year_Length is
      (if Leap (Year) then 366 else 365);
@@ -239,18 +247,37 @@ is
             if Middle_Day <= Absolute_Day then
                Low := Middle;
                Low_Day := Middle_Day;
+               pragma Assert (Low_Day = Days_Before_Year (Low));
+               pragma Assert (High_Day = Days_Before_Year (High));
             else
                High := Middle;
                High_Day := Middle_Day;
+               pragma Assert (Low_Day = Days_Before_Year (Low));
+               pragma Assert (High_Day = Days_Before_Year (High));
             end if;
          end;
       end loop;
       pragma Assert (High = Low + 1);
       Year := Rendered_Year (Low);
+      pragma Assert (Low = Calendar_Year (Year));
+      pragma Assert (High = Calendar_Year (Year + 1));
+      pragma Assert (Low_Day = Days_Before_Year (Year));
+      pragma Assert
+        (High_Day = Days_Before_Year (Calendar_Year (Year + 1)));
       Prove_Adjacent_Year (Year);
       pragma Assert
         (High_Day = Low_Day + Days_In_Year (Year));
-      Day_Of_Year := Day_Within_Year (Absolute_Day - Low_Day);
+      pragma Assert (Low_Day <= Absolute_Day);
+      declare
+         Day_Offset : constant Natural := Absolute_Day - Low_Day;
+      begin
+         pragma Assert (Day_Offset < High_Day - Low_Day);
+         pragma Assert
+           (High_Day - Low_Day = Days_In_Year (Year));
+         pragma Assert (Day_Offset < Days_In_Year (Year));
+         pragma Assert (Day_Offset <= Day_Within_Year'Last);
+         Day_Of_Year := Day_Within_Year (Day_Offset);
+      end;
       pragma Assert (Day_Of_Year < Days_In_Year (Year));
       while Month < 12
         and then Day_Of_Year >= Days_In_Month (Year, Month)
