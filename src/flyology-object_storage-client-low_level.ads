@@ -1859,6 +1859,11 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Upload_Part_Outcome;
 
+   --  Execute one prepared UploadPart request without replay. Source must be
+   --  forward-only and is borrowed only until this call returns. Invalid_Request
+   --  is raised before HTTP admission; every other exception is conservatively
+   --  publication-ambiguous and must be reconciled using the prepared upload
+   --  ID and part number before any retry or completion decision.
    function Execute_Upload_Part
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -2120,6 +2125,10 @@ private
       Target_Value    : Ada.Strings.Unbounded.Unbounded_String;
       Authority_Value : Ada.Strings.Unbounded.Unbounded_String;
       Signing   : S3.SigV4.Signing_Result;
+      Requested_Upload_Checksum_Algorithm : Checksum_Algorithm :=
+        No_Checksum;
+      Requested_Upload_Checksum_Value :
+        Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
 end Flyology.Object_Storage.Client.Low_Level;

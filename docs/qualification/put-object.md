@@ -185,6 +185,12 @@ independently verifies uploaded-object bytes and deletion. MinIO and all
 Flyology servers use the strict oracle profile, and unknown profile values fail
 closed.
 
+Pinned RustFS also returns a bodyless HTTP 412, without the modeled
+`PreconditionFailed` error code, when a generation-bound GetObject uses a stale
+`If-Match`. The implementation corpus recognizes only that exact external
+capability exclusion and still requires the 412; the production decoder is not
+weakened and the Flyology lanes must return the structured modeled error.
+
 ## Reproducible functional evidence
 
 The final functional tree is

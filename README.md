@@ -62,8 +62,9 @@ The core crate includes:
   ListBuckets, ListObjects, ListObjectsV2, DeleteBucket,
   DeleteObject, DeleteObjects REST/XML, and multipart
   initiate/upload/complete/abort/ListParts/ListMultipartUploads low-level
-  operations over caller-owned `flyology_http` clients, with UploadPart
-  bodies borrowed from streaming sources;
+  operations over caller-owned `flyology_http` clients, plus a synchronous
+  one-shot UploadPart API whose bodies are borrowed from forward-only streaming
+  sources and whose post-admission exceptions require ListParts reconciliation;
 - a bounded ordered DeleteObjects backend batch, with process-atomic memory,
   transactional SQLite, and explicitly scoped per-file durability semantics
   (see [DeleteObjects qualification](docs/qualification/delete-objects.md));

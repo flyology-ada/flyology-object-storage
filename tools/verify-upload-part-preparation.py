@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the isolated UploadPart model disposition and design corpus."""
+"""Verify the qualified UploadPart model disposition and design corpus."""
 
 from __future__ import annotations
 
@@ -46,7 +46,9 @@ VECTOR_HEADER = [
     "id", "direction", "layer", "category", "member_refs", "stimulus",
     "expected_contract",
 ]
-ALLOWED_BOUNDARIES = {"projected", "transport_owned", "partial", "client_only"}
+ALLOWED_BOUNDARIES = {
+    "qualified", "transport_owned", "validated_rejected",
+}
 ALLOWED_VECTOR_DIRECTIONS = {"request", "response", "both"}
 MANIFEST_TO_MODEL_LOCATION = {
     "payload": "Body_Location",
@@ -241,7 +243,7 @@ def main() -> int:
     request_count = len(grouped[("request", "708")])
     response_count = len(grouped[("response", "707")])
     print(
-        "UploadPart preparation: "
+        "UploadPart qualification: "
         f"{request_count} request members, {response_count} response members, "
         f"{len(vectors)} contract vectors; pinned model and references match"
     )
@@ -252,5 +254,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (OSError, UnicodeError, ValueError) as exc:
-        print(f"UploadPart preparation verification failed: {exc}", file=sys.stderr)
+        print(f"UploadPart qualification verification failed: {exc}", file=sys.stderr)
         raise SystemExit(1)

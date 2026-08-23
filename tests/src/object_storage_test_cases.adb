@@ -10303,6 +10303,8 @@ package body Object_Storage_Test_Cases is
       begin
          Headers.Entity_Tag := US.To_Unbounded_String ("""part""");
          Headers.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
          Headers.Bucket_Key_Enabled := US.To_Unbounded_String ("true");
          Headers.Request_Charged := US.To_Unbounded_String ("requester");
          declare
@@ -14417,6 +14419,395 @@ package body Object_Storage_Test_Cases is
       end;
    end Check_Put_Object_Response_Decoder;
 
+   procedure Check_Upload_Part_Client_Adversarial
+     (Unused : in out Fixture)
+   is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+      package SigV4 renames Flyology.Object_Storage.S3.SigV4;
+      package US renames Ada.Strings.Unbounded;
+      use type Low_Level.Upload_Part_Outcome_Kind;
+      use type Low_Level.Upload_Part_Result;
+      Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
+        ("AKIAIOSFODNN7EXAMPLE",
+         "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+
+      function Valid_Checksum (Index : Positive) return String is
+        (case Index is
+            when 1 | 2 => "AAAAAA==",
+            when 3 | 8 | 9 => "AAAAAAAAAAA=",
+            when 4 => "AAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            when 5 => "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            when 6 => String'(1 .. 86 => 'A') & "==",
+            when 7 | 10 => "AAAAAAAAAAAAAAAAAAAAAA==",
+            when others => "");
+
+      function Algorithm_Name (Index : Positive) return String is
+        (case Index is
+            when 1 => "CRC32",
+            when 2 => "CRC32C",
+            when 3 => "CRC64NVME",
+            when 4 => "SHA1",
+            when 5 => "SHA256",
+            when 6 => "SHA512",
+            when 7 => "MD5",
+            when 8 => "XXHASH64",
+            when 9 => "XXHASH3",
+            when 10 => "XXHASH128",
+            when others => "");
+
+      procedure Set_Checksum
+        (Headers : in out Low_Level.Upload_Part_Result;
+         Index   : Positive;
+         Value   : String)
+      is
+         Encoded : constant US.Unbounded_String :=
+           US.To_Unbounded_String (Value);
+      begin
+         case Index is
+            when 1 => Headers.Checksum_CRC32 := Encoded;
+            when 2 => Headers.Checksum_CRC32C := Encoded;
+            when 3 => Headers.Checksum_CRC64NVME := Encoded;
+            when 4 => Headers.Checksum_SHA1 := Encoded;
+            when 5 => Headers.Checksum_SHA256 := Encoded;
+            when 6 => Headers.Checksum_SHA512 := Encoded;
+            when 7 => Headers.Checksum_MD5 := Encoded;
+            when 8 => Headers.Checksum_XXHASH64 := Encoded;
+            when 9 => Headers.Checksum_XXHASH3 := Encoded;
+            when 10 => Headers.Checksum_XXHASH128 := Encoded;
+            when others => raise Program_Error;
+         end case;
+      end Set_Checksum;
+
+      procedure Set_Checksum
+        (Parameters : in out Low_Level.Upload_Part_Parameters;
+         Index      : Positive;
+         Value      : String)
+      is
+         Encoded : constant US.Unbounded_String :=
+           US.To_Unbounded_String (Value);
+      begin
+         case Index is
+            when 1 => Parameters.Checksum_CRC32 := Encoded;
+            when 2 => Parameters.Checksum_CRC32C := Encoded;
+            when 3 => Parameters.Checksum_CRC64NVME := Encoded;
+            when 4 => Parameters.Checksum_SHA1 := Encoded;
+            when 5 => Parameters.Checksum_SHA256 := Encoded;
+            when 6 => Parameters.Checksum_SHA512 := Encoded;
+            when 7 => Parameters.Checksum_MD5 := Encoded;
+            when 8 => Parameters.Checksum_XXHASH64 := Encoded;
+            when 9 => Parameters.Checksum_XXHASH3 := Encoded;
+            when 10 => Parameters.Checksum_XXHASH128 := Encoded;
+            when others => raise Program_Error;
+         end case;
+      end Set_Checksum;
+
+      function Baseline return Low_Level.Upload_Part_Result is
+         Result : Low_Level.Upload_Part_Result;
+      begin
+         Result.Entity_Tag := US.To_Unbounded_String ("""part-etag""");
+         return Result;
+      end Baseline;
+
+      procedure Require_Valid
+        (Headers : Low_Level.Upload_Part_Result;
+         Message : String;
+         Payload : String := "")
+      is
+         Outcome : constant Low_Level.Upload_Part_Outcome :=
+           Low_Level.Decode_Upload_Part_Response
+             (200, Payload, Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Part_Uploaded
+            and then Outcome.Result = Headers,
+            "UploadPart decoder rejected or changed " & Message);
+      end Require_Valid;
+
+      procedure Require_Invalid
+        (Headers : Low_Level.Upload_Part_Result;
+         Message : String;
+         Payload : String := "")
+      is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Upload_Part_Outcome :=
+                 Low_Level.Decode_Upload_Part_Response
+                   (200, Payload, Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "UploadPart decoder accepted " & Message);
+      end Require_Invalid;
+
+      procedure Require_Prepare
+        (Parameters : Low_Level.Upload_Part_Parameters;
+         Valid      : Boolean;
+         Message    : String)
+      is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Upload_Part
+                   (Flyology.HTTP.Parse_Origin ("https://localhost:9000"),
+                    Low_Level.Path_Style, "example-bucket", "key",
+                    Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+               pragma Unreferenced (Prepared);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request => Raised := True;
+         end;
+         Assert
+           (Raised = not Valid,
+            "UploadPart prepare disposition mismatch for " & Message);
+      end Require_Prepare;
+   begin
+      declare
+         Headers : constant Low_Level.Upload_Part_Result := Baseline;
+      begin
+         Require_Valid (Headers, "minimal response");
+         Require_Invalid (Headers, "space success body", " ");
+         Require_Invalid
+           (Headers, "newline success body", (1 => Character'Val (10)));
+         Require_Invalid (Headers, "XML success body", "<ok/>");
+      end;
+
+      for Index in 1 .. 10 loop
+         declare
+            Headers : Low_Level.Upload_Part_Result := Baseline;
+         begin
+            Set_Checksum (Headers, Index, Valid_Checksum (Index));
+            Require_Valid
+              (Headers, "canonical checksum" & Positive'Image (Index));
+            Set_Checksum (Headers, Index, "AAAA");
+            Require_Invalid
+              (Headers, "malformed checksum" & Positive'Image (Index));
+         end;
+      end loop;
+
+      declare
+         Headers : Low_Level.Upload_Part_Result := Baseline;
+      begin
+         Headers.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
+         Headers.Checksum_SHA256 := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Require_Invalid (Headers, "multiple checksum headers");
+      end;
+
+      declare
+         Headers : Low_Level.Upload_Part_Result := Baseline;
+      begin
+         Headers.Entity_Tag := US.Null_Unbounded_String;
+         Require_Invalid (Headers, "missing ETag");
+         Headers.Entity_Tag := US.To_Unbounded_String ("opaque-part-3");
+         Require_Valid (Headers, "unquoted opaque multipart ETag");
+         Headers.Entity_Tag := US.To_Unbounded_String ("W/""weak""");
+         Require_Valid (Headers, "weak opaque multipart ETag");
+         Headers.Entity_Tag :=
+           US.To_Unbounded_String (String'(1 .. 8_192 => 'e'));
+         Require_Valid (Headers, "maximum ETag");
+         Headers.Entity_Tag :=
+           US.To_Unbounded_String (String'(1 .. 8_193 => 'e'));
+         Require_Invalid (Headers, "over-limit ETag");
+         Headers.Entity_Tag := US.To_Unbounded_String
+           ("bad" & Character'Val (16#7F#));
+         Require_Invalid (Headers, "control-bearing ETag");
+      end;
+
+      declare
+         Headers : Low_Level.Upload_Part_Result := Baseline;
+      begin
+         Headers.Server_Side_Encryption := US.To_Unbounded_String ("AES256");
+         Require_Valid (Headers, "AES256 encryption");
+         Headers.Server_Side_Encryption := US.To_Unbounded_String ("unknown");
+         Require_Invalid (Headers, "unknown encryption");
+
+         Headers := Baseline;
+         Headers.SSE_Customer_Algorithm := US.To_Unbounded_String ("AES256");
+         Headers.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Require_Valid (Headers, "complete SSE-C response");
+         Headers.SSE_Customer_Key_MD5 := US.Null_Unbounded_String;
+         Require_Invalid (Headers, "incomplete SSE-C response");
+         Headers := Baseline;
+         Headers.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Require_Invalid (Headers, "orphan SSE-C key MD5");
+         Headers.SSE_Customer_Algorithm := US.To_Unbounded_String ("AES256");
+         Headers.Server_Side_Encryption := US.To_Unbounded_String ("AES256");
+         Require_Invalid (Headers, "mixed SSE-C and server encryption");
+
+         Headers := Baseline;
+         Headers.Server_Side_Encryption := US.To_Unbounded_String ("aws:kms");
+         Headers.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Headers.Bucket_Key_Enabled := US.To_Unbounded_String ("true");
+         Require_Valid (Headers, "coherent KMS response");
+         Headers.Bucket_Key_Enabled := US.To_Unbounded_String ("True");
+         Require_Invalid (Headers, "noncanonical bucket-key boolean");
+         Headers := Baseline;
+         Headers.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Require_Invalid (Headers, "orphan KMS key");
+         Headers := Baseline;
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms:dsse");
+         Headers.Bucket_Key_Enabled := US.To_Unbounded_String ("false");
+         Require_Invalid (Headers, "DSSE bucket-key response");
+
+         Headers := Baseline;
+         Headers.Request_Charged := US.To_Unbounded_String ("requester");
+         Require_Valid (Headers, "request charging");
+         Headers.Request_Charged := US.To_Unbounded_String ("owner");
+         Require_Invalid (Headers, "unknown request charging");
+      end;
+
+      declare
+         Headers : Low_Level.Upload_Part_Result := Baseline;
+      begin
+         Headers.SSE_KMS_Key_ID :=
+           US.To_Unbounded_String (String'(1 .. 8_193 => 'k'));
+         Require_Invalid (Headers, "over-limit optional header");
+         Headers := Baseline;
+         Headers.Request_Charged := US.To_Unbounded_String
+           ("request" & Character'Val (1));
+         Require_Invalid (Headers, "control-bearing optional header");
+      end;
+
+      declare
+         Headers : Low_Level.Upload_Part_Result;
+         Outcome : constant Low_Level.Upload_Part_Outcome :=
+           Low_Level.Decode_Upload_Part_Response
+             (403, "<Error><Code>AccessDenied</Code>" &
+              "<Message>denied</Message></Error>", Headers,
+              String'(1 .. 8_192 => 'r'), String'(1 .. 8_192 => 'h'));
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Upload_Rejected
+            and then US.To_String (Outcome.Error.Code) = "AccessDenied"
+            and then US.Length (Outcome.Error.Request_ID) = 8_192
+            and then US.Length (Outcome.Error.Host_ID) = 8_192,
+            "UploadPart structured error maxima");
+      end;
+
+      for Identifier in 1 .. 3 loop
+         declare
+            Headers : Low_Level.Upload_Part_Result;
+            Raised : Boolean := False;
+            Request_ID : constant String :=
+              (if Identifier = 1 then String'(1 .. 8_193 => 'r')
+               elsif Identifier = 3 then "bad" & Character'Val (1)
+               else "");
+            Host_ID : constant String :=
+              (if Identifier = 2 then String'(1 .. 8_193 => 'h') else "");
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Upload_Part_Outcome :=
+                    Low_Level.Decode_Upload_Part_Response
+                      (403, "<Error><Code>AccessDenied</Code>" &
+                       "<Message>denied</Message></Error>", Headers,
+                       Request_ID, Host_ID);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response => Raised := True;
+            end;
+            Assert (Raised, "UploadPart accepted invalid error identifier");
+         end;
+      end loop;
+
+      for Index in 1 .. 10 loop
+         declare
+            Parameters : Low_Level.Upload_Part_Parameters;
+         begin
+            Parameters.Part_Number := 1;
+            Parameters.Upload_ID := US.To_Unbounded_String ("upload");
+            Parameters.Payload_SHA256 := US.To_Unbounded_String
+              (SigV4.SHA256_Hex ("payload"));
+            Parameters.Checksum_Algorithm :=
+              US.To_Unbounded_String (Algorithm_Name (Index));
+            Set_Checksum (Parameters, Index, Valid_Checksum (Index));
+            Require_Prepare
+              (Parameters, True,
+               "canonical checksum" & Positive'Image (Index));
+            Set_Checksum (Parameters, Index, "AAAA");
+            Require_Prepare
+              (Parameters, False,
+               "malformed checksum" & Positive'Image (Index));
+         end;
+      end loop;
+
+      declare
+         Parameters : Low_Level.Upload_Part_Parameters;
+      begin
+         Parameters.Upload_ID := US.To_Unbounded_String ("upload");
+         Parameters.Payload_SHA256 := US.To_Unbounded_String
+           (SigV4.SHA256_Hex ("payload"));
+         Parameters.Checksum_Algorithm := US.To_Unbounded_String ("SHA256");
+         Require_Prepare (Parameters, False, "selector without value");
+         Parameters.Checksum_CRC32 := US.To_Unbounded_String ("AAAAAA==");
+         Require_Prepare
+           (Parameters, True, "concrete checksum precedence over selector");
+         Parameters.Checksum_SHA256 := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Require_Prepare (Parameters, False, "multiple concrete checksums");
+
+         Parameters := (others => <>);
+         Parameters.Upload_ID :=
+           US.To_Unbounded_String (String'(1 .. 8_150 => 'u'));
+         Parameters.Payload_SHA256 := US.To_Unbounded_String
+           (SigV4.SHA256_Hex ("payload"));
+         Require_Prepare
+           (Parameters, True, "exact maximum complete request target");
+         Parameters.Upload_ID :=
+           US.To_Unbounded_String (String'(1 .. 8_151 => 'u'));
+         Require_Prepare
+           (Parameters, False, "complete request target over limit");
+
+         Parameters.Upload_ID :=
+           US.To_Unbounded_String (String'(1 .. 8_193 => 'u'));
+         Require_Prepare
+           (Parameters, False, "standalone upload ID over limit");
+
+         Parameters.Upload_ID := US.To_Unbounded_String ("upload");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String (String'(1 .. 8_192 => 'o'));
+         Require_Prepare (Parameters, True, "maximum expected owner");
+         Parameters.Expected_Bucket_Owner :=
+           US.To_Unbounded_String (String'(1 .. 8_193 => 'o'));
+         Require_Prepare (Parameters, False, "over-limit expected owner");
+
+         Parameters.Expected_Bucket_Owner := US.Null_Unbounded_String;
+         Parameters.Request_Payer := US.To_Unbounded_String ("owner");
+         Require_Prepare (Parameters, False, "invalid requester payer");
+
+         Parameters.Request_Payer := US.Null_Unbounded_String;
+         Parameters.SSE_Customer_Algorithm :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_Customer_Key := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("cLyPS3KoaSFGi/joRB3OUQ==");
+         Require_Prepare (Parameters, True, "valid SSE-C triplet");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Require_Prepare (Parameters, False, "wrong SSE-C key MD5");
+      end;
+   end Check_Upload_Part_Client_Adversarial;
+
    procedure Check_Put_Object_Required_Disposition
      (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
@@ -16229,6 +16620,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.put-object-response-decoder-adversarial",
             Check_Put_Object_Response_Decoder'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.upload-part-client-adversarial",
+            Check_Upload_Part_Client_Adversarial'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.model-request-projection-all-operations",

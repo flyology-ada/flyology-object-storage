@@ -53,6 +53,46 @@ package Flyology.Object_Storage.Client.Transfers is
       Token        : access Flyology.Cancellation.Token := null)
       return Low_Level.Abort_Multipart_Outcome;
 
+   --  Upload one multipart part through the synchronous one-shot path. The
+   --  source is borrowed only until this call returns and must not implement
+   --  Rewindable_Request_Body_Source; UploadPart is never transparently
+   --  replayed after possible service admission. Parameters exposes every
+   --  modeled UploadPart control and the result preserves all 17 modeled
+   --  response headers. Invalid_Request raised by this wrapper occurs before
+   --  HTTP admission. Every other exception is conservatively publication-
+   --  ambiguous because it may follow service admission, including an
+   --  Invalid_Response raised while validating the reply. Reconcile the exact
+   --  UploadId and PartNumber with ListParts before retrying or completing the
+   --  upload.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign the request
+   --  @param Bucket Destination S3 bucket
+   --  @param Key Destination S3 object key
+   --  @param Parameters Complete typed UploadPart controls
+   --  @param Source Borrowed forward-only request body source
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole synchronous request budget
+   --  @param Token Optional cancellation source
+   --  @return Typed UploadPart success or S3 rejection
+   --  @exception Low_Level.Invalid_Request if Source is rewindable or any
+   --     modeled request member is invalid; this exception is pre-admission
+   function Upload_Part
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.Upload_Part_Parameters;
+      Source       : in out
+        Flyology.HTTP.Client.Request_Body_Source'Class;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Low_Level.Upload_Part_Outcome;
+
    type Upload_Outcome_Kind is (File_Uploaded, Upload_Rejected);
 
    type Upload_Outcome
@@ -83,12 +123,14 @@ package Flyology.Object_Storage.Client.Transfers is
    --  are sent sequentially through one open descriptor; Transfer_Many
    --  supplies bounded parallelism across independent subjects.
    --
-   --  A timeout, cancellation, or transport failure after the complete-
-   --  multipart request is sent is an ambiguous outcome: S3 may have
-   --  committed the object even though no success response arrived. The
-   --  implementation attempts AbortMultipartUpload on failure, but that is
-   --  cleanup rather than a transactional rollback. Applications requiring
-   --  certainty must reconcile with HeadObject or an application manifest.
+   --  A timeout, cancellation, or transport failure after an UploadPart or
+   --  CompleteMultipartUpload request enters HTTP is ambiguous: S3 may have
+   --  published the part or committed the object even though no success
+   --  response arrived. No part is transparently replayed. The implementation
+   --  attempts AbortMultipartUpload on failure, but that is cleanup rather
+   --  than a transactional rollback and may itself fail. Applications that
+   --  need to reconcile a part before deciding how to proceed must call the
+   --  direct Upload_Part API and retain its upload ID and part number.
    --  @param Client Configured, caller-owned Flyology HTTP client
    --  @param Origin Exact origin used to configure Client and sign requests
    --  @param Bucket Destination S3 bucket

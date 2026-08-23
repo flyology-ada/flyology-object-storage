@@ -66,10 +66,20 @@ payload and per-part hashes.
 
 After initiation, a rejected part or local exception triggers a best-effort
 AbortMultipartUpload with an independent short cleanup budget. A lost response
-to CompleteMultipartUpload remains ambiguous: S3 may have committed the object
-before the transport failed. Abort is not rollback. Applications needing an
-unambiguous workflow must reconcile the expected key, size and metadata with
-HeadObject or publish through an application-level manifest/version pointer.
+to UploadPart or CompleteMultipartUpload remains ambiguous: S3 may have staged
+the part or committed the object before the transport failed. No part is
+transparently replayed, and Abort is cleanup rather than rollback. Applications
+that must reconcile a part before deciding whether to continue use the direct
+`Upload_Part` call and retain its upload ID and part number; completed-object
+reconciliation uses HeadObject or an application-level manifest/version
+pointer.
+
+The direct synchronous `Upload_Part` call is the publication-aware primitive.
+It rejects rewindable sources and invalid modeled parameters before HTTP
+admission. Once those checks pass, every exception is conservatively ambiguous,
+including a response-validation exception raised after the service accepted the
+part. The caller maps that state to unknown and reconciles the exact upload ID
+and part number with ListParts; the library does not automatically retry.
 
 Callers can also retire an upload explicitly with `Abort_Multipart_Upload`.
 The convenience call accepts bucket, key, and upload ID directly and retains

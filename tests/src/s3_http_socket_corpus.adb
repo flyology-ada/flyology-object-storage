@@ -52,6 +52,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Complete_Multipart_Outcome_Kind;
    use type Low_Level.Abort_Multipart_Outcome_Kind;
    use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
+   use type Low_Level.List_Parts_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
    use type Low_Level.Delete_Objects_Outcome_Kind;
@@ -91,6 +92,7 @@ procedure S3_HTTP_Socket_Corpus is
    Conditional_Stale : aliased constant String := "conditional-stale";
    Convenience_Put_Payload : aliased constant String := "convenience put";
    Lost_Put_Payload : aliased constant String := "lost put response";
+   Lost_Upload_Payload : aliased constant String := "lost upload response";
    Put_Response_Vector_Payload : aliased constant String := "v";
 
    type Read_Checksum_Spec is record
@@ -231,6 +233,15 @@ procedure S3_HTTP_Socket_Corpus is
      Checksums.Encode_Base64
        (Checksums.Compute
           (Checksum_Policy.Core.MD5, Bytes (Convenience_Put_Payload)));
+   Put_Response_Vector_SHA256 : constant String :=
+     Checksums.Encode_Base64
+       (Checksums.Compute
+          (Checksum_Policy.Core.SHA256,
+           Bytes (Put_Response_Vector_Payload)));
+   Lost_Upload_SHA256 : constant String :=
+     Checksums.Encode_Base64
+       (Checksums.Compute
+          (Checksum_Policy.Core.SHA256, Bytes (Lost_Upload_Payload)));
    High_Level_SHA256_Digest : constant Checksums.Digest_Value :=
      Checksums.Compute
        (Checksum_Policy.Core.SHA256, Bytes (High_Level_File_Payload));
@@ -411,6 +422,47 @@ procedure S3_HTTP_Socket_Corpus is
        US.To_Unbounded_String ("true")),
       (US.To_Unbounded_String ("x-amz-object-size"),
        US.To_Unbounded_String ("0")),
+      (US.To_Unbounded_String ("x-amz-request-charged"),
+       US.To_Unbounded_String ("requester")));
+
+   Upload_Response_Headers : constant Put_Response_Header_Spec_Array :=
+     ((US.To_Unbounded_String ("x-amz-server-side-encryption"),
+       US.To_Unbounded_String ("aws:kms")),
+      (US.To_Unbounded_String ("etag"),
+       US.To_Unbounded_String ("opaque-part-etag")),
+      (US.To_Unbounded_String ("x-amz-checksum-crc32"),
+       US.To_Unbounded_String ("AAAAAA==")),
+      (US.To_Unbounded_String ("x-amz-checksum-crc32c"),
+       US.To_Unbounded_String ("AAAAAA==")),
+      (US.To_Unbounded_String ("x-amz-checksum-crc64nvme"),
+       US.To_Unbounded_String ("AAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-sha1"),
+       US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-sha256"),
+       US.To_Unbounded_String
+         ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-sha512"),
+       US.To_Unbounded_String (String'(1 .. 86 => 'A') & "==")),
+      (US.To_Unbounded_String ("x-amz-checksum-md5"),
+       US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==")),
+      (US.To_Unbounded_String ("x-amz-checksum-xxhash64"),
+       US.To_Unbounded_String ("AAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-xxhash3"),
+       US.To_Unbounded_String ("AAAAAAAAAAA=")),
+      (US.To_Unbounded_String ("x-amz-checksum-xxhash128"),
+       US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==")),
+      (US.To_Unbounded_String
+         ("x-amz-server-side-encryption-customer-algorithm"),
+       US.To_Unbounded_String ("AES256")),
+      (US.To_Unbounded_String
+         ("x-amz-server-side-encryption-customer-key-md5"),
+       US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==")),
+      (US.To_Unbounded_String
+         ("x-amz-server-side-encryption-aws-kms-key-id"),
+       US.To_Unbounded_String ("kms-key")),
+      (US.To_Unbounded_String
+         ("x-amz-server-side-encryption-bucket-key-enabled"),
+       US.To_Unbounded_String ("true")),
       (US.To_Unbounded_String ("x-amz-request-charged"),
        US.To_Unbounded_String ("requester")));
 
@@ -1141,6 +1193,50 @@ procedure S3_HTTP_Socket_Corpus is
          end case;
       end Valid_Put_Response_Headers;
 
+      procedure Serve_Upload_Response
+        (Key     : String;
+         Headers : String;
+         Payload : String := "") is
+      begin
+         Serve
+           (HTTP_Response ("200 OK", Payload, Headers), "PUT",
+            "/example-bucket/" & Key &
+              "?partNumber=1&uploadId=socket-upload-response",
+            Put_Response_Vector_Payload);
+      end Serve_Upload_Response;
+
+      function Valid_Upload_Response_Headers
+        (Index : Positive) return String
+      is
+         Name : constant String :=
+           US.To_String (Upload_Response_Headers (Index).Name);
+         Value : constant String :=
+           US.To_String (Upload_Response_Headers (Index).Value);
+         Line : constant String := Name & ": " & Value & CRLF;
+         ETag : constant String := "ETag: opaque-part-etag" & CRLF;
+         Customer_Algorithm : constant String :=
+           "x-amz-server-side-encryption-customer-algorithm: AES256" &
+           CRLF;
+         Customer_MD5 : constant String :=
+           "x-amz-server-side-encryption-customer-key-md5: " &
+           "AAAAAAAAAAAAAAAAAAAAAA==" & CRLF;
+         KMS : constant String :=
+           "x-amz-server-side-encryption: aws:kms" & CRLF;
+      begin
+         case Index is
+            when 2 =>
+               return Line;
+            when 13 =>
+               return ETag & Line & Customer_MD5;
+            when 14 =>
+               return ETag & Customer_Algorithm & Line;
+            when 15 | 16 =>
+               return ETag & KMS & Line;
+            when others =>
+               return ETag & Line;
+         end case;
+      end Valid_Upload_Response_Headers;
+
       Success_XML : constant String :=
         "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
         "2006-03-01/"">" &
@@ -1598,6 +1694,158 @@ procedure S3_HTTP_Socket_Corpus is
               CRLF &
               "x-amz-server-side-encryption-customer-key-md5: " &
               "AAAAAAAAAAAAAAAAAAAAAA==" & CRLF);
+         Serve_Upload_Response
+           ("upload-response-minimal", "ETag: opaque-part-etag" & CRLF);
+         Serve_Upload_Response
+           ("upload-response-body", "ETag: opaque-part-etag" & CRLF, "x");
+         for Index in Upload_Response_Headers'Range loop
+            declare
+               Name : constant String :=
+                 US.To_String (Upload_Response_Headers (Index).Name);
+               Value : constant String :=
+                 US.To_String (Upload_Response_Headers (Index).Value);
+               Baseline : constant String :=
+                 (if Name = "etag" then ""
+                  else "ETag: opaque-part-etag" & CRLF);
+            begin
+               Serve_Upload_Response
+                 ("upload-response-valid-" & Decimal (Index),
+                  Valid_Upload_Response_Headers (Index));
+               Serve_Upload_Response
+                 ("upload-response-empty-" & Decimal (Index),
+                  Baseline & Name & ":" & CRLF);
+               Serve_Upload_Response
+                 ("upload-response-duplicate-" & Decimal (Index),
+                  Baseline & Name & ": " & Value & CRLF &
+                    Name & ": " & Value & CRLF);
+            end;
+         end loop;
+         for Index in 3 .. 12 loop
+            Serve_Upload_Response
+              ("upload-checksum-malformed-" & Decimal (Index),
+               "ETag: opaque-part-etag" & CRLF &
+                 US.To_String (Upload_Response_Headers (Index).Name) &
+                 ": AAAA" & CRLF);
+         end loop;
+         Serve_Upload_Response
+           ("upload-checksum-multiple", "ETag: opaque-part-etag" & CRLF &
+            "x-amz-checksum-crc32: AAAAAA==" & CRLF &
+            "x-amz-checksum-sha256: " &
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" & CRLF);
+         Serve_Upload_Response
+           ("upload-ssec-incomplete", "ETag: opaque-part-etag" & CRLF &
+            "x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF);
+         Serve_Upload_Response
+           ("upload-kms-key-without-encryption",
+            "ETag: opaque-part-etag" & CRLF &
+            "x-amz-server-side-encryption-aws-kms-key-id: kms-key" & CRLF);
+         Serve_Upload_Response
+           ("upload-bucket-key-without-encryption",
+            "ETag: opaque-part-etag" & CRLF &
+            "x-amz-server-side-encryption-bucket-key-enabled: true" & CRLF);
+         Serve_Upload_Response
+           ("upload-dsse-bucket-key", "ETag: opaque-part-etag" & CRLF &
+            "x-amz-server-side-encryption: aws:kms:dsse" & CRLF &
+            "x-amz-server-side-encryption-bucket-key-enabled: true" & CRLF);
+         Serve_Upload_Response
+           ("upload-mixed-customer-kms", "ETag: opaque-part-etag" & CRLF &
+            "x-amz-server-side-encryption: aws:kms" & CRLF &
+            "x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            "AAAAAAAAAAAAAAAAAAAAAA==" & CRLF);
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: bound-part" & CRLF &
+               "x-amz-checksum-sha256: " &
+               Put_Response_Vector_SHA256 & CRLF),
+            "PUT", "/example-bucket/upload-bind-exact?partNumber=1&" &
+              "uploadId=socket-upload-response",
+            Put_Response_Vector_Payload,
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-sdk-checksum-algorithm",
+            Expected_Checksum_Algorithm => "SHA256",
+            Expected_Checksum_Header => "x-amz-checksum-sha256",
+            Expected_Checksum => Put_Response_Vector_SHA256);
+         --  Prime a reused connection, accept exactly one one-shot part PUT,
+         --  then lose its response.  The next request must be ListParts
+         --  reconciliation; a transparent retry desynchronizes this oracle.
+         Serve
+           ("HTTP/1.1 200 OK" & CRLF & "Content-Length: 0" & CRLF &
+            "ETag: ""lost-prime""" & CRLF &
+            "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+            "Connection: keep-alive" & CRLF & CRLF,
+            "HEAD", "/example-bucket/lost-upload-prime",
+            Keep_Open => True);
+         Serve
+           ("", "PUT", "/example-bucket/lost-upload?partNumber=1&" &
+              "uploadId=lost-upload-id", Lost_Upload_Payload,
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-sdk-checksum-algorithm",
+            Expected_Checksum_Algorithm => "SHA256",
+            Expected_Checksum_Header => "x-amz-checksum-sha256",
+            Expected_Checksum => Lost_Upload_SHA256,
+            Reuse_Peer => True);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<ListPartsResult><Bucket>example-bucket</Bucket>" &
+               "<Key>lost-upload</Key><UploadId>lost-upload-id</UploadId>" &
+               "<PartNumberMarker>0</PartNumberMarker>" &
+               "<MaxParts>1000</MaxParts><IsTruncated>false" &
+               "</IsTruncated><Part><PartNumber>1</PartNumber>" &
+               "<LastModified>2026-08-21T17:00:00Z</LastModified>" &
+               "<ETag>&quot;lost-part&quot;</ETag><Size>" &
+               Decimal (Lost_Upload_Payload'Length) & "</Size>" &
+               "<ChecksumSHA256>" & Lost_Upload_SHA256 &
+               "</ChecksumSHA256></Part><ChecksumAlgorithm>SHA256" &
+               "</ChecksumAlgorithm><ChecksumType>COMPOSITE</ChecksumType>" &
+               "</ListPartsResult>"),
+            "GET", "/example-bucket/lost-upload?max-parts=1000&" &
+              "part-number-marker=0&uploadId=lost-upload-id");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<CompleteMultipartUploadResult>" &
+               "<Bucket>example-bucket</Bucket><Key>lost-upload</Key>" &
+               "<ETag>&quot;lost-whole&quot;</ETag>" &
+               "</CompleteMultipartUploadResult>"),
+            "POST", "/example-bucket/lost-upload?uploadId=lost-upload-id",
+            "<CompleteMultipartUpload");
+         Serve
+           (HTTP_Response
+              ("200 OK", Lost_Upload_Payload,
+               "ETag: ""lost-whole""" & CRLF &
+               "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+               "x-amz-checksum-sha256: " & Lost_Upload_SHA256 & CRLF &
+               "x-amz-checksum-type: FULL_OBJECT" & CRLF),
+            "GET", "/example-bucket/lost-upload",
+            Expected_If_Match => """lost-whole""",
+            Expected_Checksum_Mode => "ENABLED");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: bound-part" & CRLF &
+               "x-amz-checksum-crc32: AAAAAA==" & CRLF),
+            "PUT", "/example-bucket/upload-bind-wrong-algorithm?" &
+              "partNumber=1&uploadId=socket-upload-response",
+            Put_Response_Vector_Payload,
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-sdk-checksum-algorithm",
+            Expected_Checksum_Algorithm => "SHA256",
+            Expected_Checksum_Header => "x-amz-checksum-sha256",
+            Expected_Checksum => Put_Response_Vector_SHA256);
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "ETag: bound-part" & CRLF &
+               "x-amz-checksum-sha256: " & Wrong_SHA256 & CRLF),
+            "PUT", "/example-bucket/upload-bind-wrong-value?partNumber=1&" &
+              "uploadId=socket-upload-response",
+            Put_Response_Vector_Payload,
+            Expected_Checksum_Algorithm_Header =>
+              "x-amz-sdk-checksum-algorithm",
+            Expected_Checksum_Algorithm => "SHA256",
+            Expected_Checksum_Header => "x-amz-checksum-sha256",
+            Expected_Checksum => Put_Response_Vector_SHA256);
          Serve
            (HTTP_Response
               ("200 OK", "",
@@ -2477,6 +2725,128 @@ procedure S3_HTTP_Socket_Corpus is
                  "raw PutObject response did not reject: " & Key;
             end if;
          end Require_Put_Response;
+
+         procedure Require_Upload_Response
+           (Key              : String;
+            Expected_Valid   : Boolean;
+            Projection_Index : Natural := 0;
+            Bind_SHA256      : Boolean := False)
+         is
+            Upload_Parameters : Low_Level.Upload_Part_Parameters;
+            Source : Upload_Source (Put_Response_Vector_Payload'Access);
+            Rejected : Boolean := False;
+         begin
+            Upload_Parameters.Upload_ID :=
+              US.To_Unbounded_String ("socket-upload-response");
+            Upload_Parameters.Payload_SHA256 := US.To_Unbounded_String
+              (SigV4.SHA256_Hex (Put_Response_Vector_Payload));
+            if Bind_SHA256 then
+               Upload_Parameters.Checksum_Algorithm :=
+                 US.To_Unbounded_String ("SHA256");
+               Upload_Parameters.Checksum_SHA256 :=
+                 US.To_Unbounded_String (Put_Response_Vector_SHA256);
+            end if;
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Upload_Part
+                   (Origin, Low_Level.Path_Style, "example-bucket", Key,
+                    Upload_Parameters, Identity, "us-east-1",
+                    "20130524T000000Z");
+            begin
+               begin
+                  declare
+                     Result : constant Low_Level.Upload_Part_Outcome :=
+                       Low_Level.Execute_Upload_Part
+                         (HTTP, Prepared, Source, Timeout => 5.0);
+
+                     function Projected_Text return String is
+                     begin
+                        case Projection_Index is
+                           when 1 =>
+                              return US.To_String
+                                (Result.Result.Server_Side_Encryption);
+                           when 2 =>
+                              return US.To_String (Result.Result.Entity_Tag);
+                           when 3 =>
+                              return US.To_String
+                                (Result.Result.Checksum_CRC32);
+                           when 4 =>
+                              return US.To_String
+                                (Result.Result.Checksum_CRC32C);
+                           when 5 =>
+                              return US.To_String
+                                (Result.Result.Checksum_CRC64NVME);
+                           when 6 =>
+                              return US.To_String
+                                (Result.Result.Checksum_SHA1);
+                           when 7 =>
+                              return US.To_String
+                                (Result.Result.Checksum_SHA256);
+                           when 8 =>
+                              return US.To_String
+                                (Result.Result.Checksum_SHA512);
+                           when 9 =>
+                              return US.To_String (Result.Result.Checksum_MD5);
+                           when 10 =>
+                              return US.To_String
+                                (Result.Result.Checksum_XXHASH64);
+                           when 11 =>
+                              return US.To_String
+                                (Result.Result.Checksum_XXHASH3);
+                           when 12 =>
+                              return US.To_String
+                                (Result.Result.Checksum_XXHASH128);
+                           when 13 =>
+                              return US.To_String
+                                (Result.Result.SSE_Customer_Algorithm);
+                           when 14 =>
+                              return US.To_String
+                                (Result.Result.SSE_Customer_Key_MD5);
+                           when 15 =>
+                              return US.To_String
+                                (Result.Result.SSE_KMS_Key_ID);
+                           when 16 =>
+                              return US.To_String
+                                (Result.Result.Bucket_Key_Enabled);
+                           when 17 =>
+                              return US.To_String
+                                (Result.Result.Request_Charged);
+                           when others =>
+                              return "";
+                        end case;
+                     end Projected_Text;
+                  begin
+                     if not Expected_Valid then
+                        raise Program_Error with
+                          "malformed raw UploadPart response was accepted: " &
+                          Key;
+                     elsif Result.Kind /= Low_Level.Part_Uploaded
+                       or else US.Length (Result.Result.Entity_Tag) = 0
+                       or else
+                         (Projection_Index in Upload_Response_Headers'Range
+                          and then Projected_Text /= US.To_String
+                            (Upload_Response_Headers
+                               (Projection_Index).Value))
+                     then
+                        raise Program_Error with
+                          "valid raw UploadPart response mismatch: " & Key;
+                     end if;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response =>
+                     if Expected_Valid then
+                        raise Program_Error with
+                          "valid raw UploadPart response was rejected: " &
+                          Key;
+                     end if;
+                     Rejected := True;
+               end;
+            end;
+            if not Expected_Valid and then not Rejected then
+               raise Program_Error with
+                 "raw UploadPart response did not reject: " & Key;
+            end if;
+         end Require_Upload_Response;
 
          function Conditional_Put
            (Value         : not null access constant String;
@@ -3529,6 +3899,206 @@ procedure S3_HTTP_Socket_Corpus is
          Require_Put_Response ("put-bucket-key-without-encryption", False);
          Require_Put_Response ("put-dsse-bucket-key", False);
          Require_Put_Response ("put-mixed-customer-kms", False);
+         declare
+            Upload_Parameters : Low_Level.Upload_Part_Parameters;
+            Source : Rewindable_Probe;
+            Rejected : Boolean := False;
+         begin
+            Upload_Parameters.Upload_ID :=
+              US.To_Unbounded_String ("socket-upload-response");
+            Upload_Parameters.Payload_SHA256 := US.To_Unbounded_String
+              (SigV4.SHA256_Hex (""));
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Upload_Part
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "upload-rewindable", Upload_Parameters, Identity,
+                    "us-east-1", "20130524T000000Z");
+            begin
+               begin
+                  declare
+                     Ignored : constant Low_Level.Upload_Part_Outcome :=
+                       Low_Level.Execute_Upload_Part
+                         (HTTP, Prepared, Source, Timeout => 5.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Request => Rejected := True;
+               end;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "rewindable UploadPart source reached HTTP admission";
+            end if;
+         end;
+         Require_Upload_Response ("upload-response-minimal", True);
+         Require_Upload_Response ("upload-response-body", False);
+         for Index in Upload_Response_Headers'Range loop
+            Require_Upload_Response
+              ("upload-response-valid-" & Decimal (Index), True,
+               Projection_Index => Index);
+            Require_Upload_Response
+              ("upload-response-empty-" & Decimal (Index), False);
+            Require_Upload_Response
+              ("upload-response-duplicate-" & Decimal (Index), False);
+         end loop;
+         for Index in 3 .. 12 loop
+            Require_Upload_Response
+              ("upload-checksum-malformed-" & Decimal (Index), False);
+         end loop;
+         Require_Upload_Response ("upload-checksum-multiple", False);
+         Require_Upload_Response ("upload-ssec-incomplete", False);
+         Require_Upload_Response
+           ("upload-kms-key-without-encryption", False);
+         Require_Upload_Response
+           ("upload-bucket-key-without-encryption", False);
+         Require_Upload_Response ("upload-dsse-bucket-key", False);
+         Require_Upload_Response ("upload-mixed-customer-kms", False);
+         Require_Upload_Response
+           ("upload-bind-exact", True, Bind_SHA256 => True);
+         declare
+            Prime : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, "example-bucket", "lost-upload-prime",
+                 Identity, Timeout => 5.0);
+            Upload_Parameters : Low_Level.Upload_Part_Parameters;
+            Source : Upload_Source (Lost_Upload_Payload'Access);
+            Ambiguous : Boolean := False;
+         begin
+            if Prime.Kind /= Transfers.Object_Found
+              or else US.To_String (Prime.Entity_Tag) /= """lost-prime"""
+            then
+               raise Program_Error with
+                 "UploadPart lost-response connection prime failed";
+            end if;
+            Upload_Parameters.Upload_ID :=
+              US.To_Unbounded_String ("lost-upload-id");
+            Upload_Parameters.Payload_SHA256 := US.To_Unbounded_String
+              (SigV4.SHA256_Hex (Lost_Upload_Payload));
+            Upload_Parameters.Checksum_Algorithm :=
+              US.To_Unbounded_String ("SHA256");
+            Upload_Parameters.Checksum_SHA256 :=
+              US.To_Unbounded_String (Lost_Upload_SHA256);
+            begin
+               declare
+                  Unexpected : constant Low_Level.Upload_Part_Outcome :=
+                    Transfers.Upload_Part
+                      (HTTP, Origin, "example-bucket", "lost-upload",
+                       Upload_Parameters, Source, Identity, Timeout => 5.0);
+                  pragma Unreferenced (Unexpected);
+               begin
+                  raise Program_Error with
+                    "lost UploadPart response returned a definite outcome";
+               end;
+            exception
+               when Low_Level.Invalid_Request |
+                    Low_Level.Invalid_Response |
+                    Program_Error =>
+                  raise;
+               when others =>
+                  Ambiguous := True;
+            end;
+            if not Ambiguous then
+               raise Program_Error with
+                 "lost UploadPart response was not publication-ambiguous";
+            end if;
+
+            declare
+               List_Parameters : Low_Level.List_Parts_Parameters;
+            begin
+               List_Parameters.Upload_ID :=
+                 US.To_Unbounded_String ("lost-upload-id");
+               declare
+                  Prepared_List : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_List_Parts
+                      (Origin, Low_Level.Path_Style, "example-bucket",
+                       "lost-upload", List_Parameters, Identity,
+                       "us-east-1", "20130524T000000Z");
+                  Listed : constant Low_Level.List_Parts_Outcome :=
+                    Low_Level.Execute_List_Parts
+                      (HTTP, Prepared_List, Timeout => 5.0);
+               begin
+                  if Listed.Kind /= Low_Level.Parts_Listed
+                    or else Natural
+                      (Listed.Result.Listing.Parts.Length) /= 1
+                  then
+                     raise Program_Error with
+                       "UploadPart lost-response reconciliation failed";
+                  end if;
+                  declare
+                     Part : constant Multipart.Listed_Part :=
+                       Listed.Result.Listing.Parts.First_Element;
+                     Completion :
+                       Multipart.Complete_Multipart_Upload_Request;
+                  begin
+                     if Part.Number /= 1
+                       or else Part.Size /= Lost_Upload_Payload'Length
+                       or else US.To_String (Part.Entity_Tag) /=
+                         """lost-part"""
+                       or else US.To_String (Part.Checksum_SHA256) /=
+                         Lost_Upload_SHA256
+                     then
+                        raise Program_Error with
+                          "UploadPart reconciliation tuple mismatch";
+                     end if;
+                     Completion.Parts.Append
+                       (Multipart.Completed_Part'
+                          (Number => Part.Number,
+                           Entity_Tag => Part.Entity_Tag,
+                           Checksum_SHA256 => Part.Checksum_SHA256,
+                           others => <>));
+                     declare
+                        Prepared_Complete : constant
+                          Low_Level.Prepared_Request :=
+                            Low_Level.Prepare_Complete_Multipart_Upload
+                              (Origin, Low_Level.Path_Style,
+                               "example-bucket", "lost-upload",
+                               "lost-upload-id", Completion, Identity,
+                               "us-east-1", "20130524T000000Z");
+                        Completed : constant
+                          Low_Level.Complete_Multipart_Outcome :=
+                            Low_Level.Execute_Complete_Multipart_Upload
+                              (HTTP, Prepared_Complete, Timeout => 5.0);
+                     begin
+                        if Completed.Kind /= Low_Level.Completed
+                          or else US.To_String
+                            (Completed.Result.Entity_Tag) /= """lost-whole"""
+                        then
+                           raise Program_Error with
+                             "reconciled UploadPart did not complete";
+                        end if;
+                     end;
+                     declare
+                        Whole : constant Objects.Whole_Get_Outcome :=
+                          Objects.Get_Whole
+                            (HTTP, Origin, "example-bucket", "lost-upload",
+                             1_024, Identity,
+                             Expected_Entity_Tag => """lost-whole""",
+                             Checksum_Mode => True, Timeout => 5.0);
+                     begin
+                        if Whole.Kind /= Objects.Whole_Object_Read
+                          or else US.To_String
+                            (Whole.Result.Entity_Tag) /= """lost-whole"""
+                          or else US.To_String
+                            (Whole.Result.Checksum_SHA256) /=
+                              Lost_Upload_SHA256
+                          or else Flyology.Bytes.To_Byte_String
+                            (Whole.Object_Bytes) /= Lost_Upload_Payload
+                        then
+                           raise Program_Error with
+                             "generation-bound completed object mismatch";
+                        end if;
+                     end;
+                  end;
+               end;
+            end;
+         end;
+         Require_Upload_Response
+           ("upload-bind-wrong-algorithm", False, Bind_SHA256 => True);
+         Require_Upload_Response
+           ("upload-bind-wrong-value", False, Bind_SHA256 => True);
          declare
             Options : Objects.Complete_Put_Options :=
               Objects.Default_Complete_Put_Options;
@@ -5494,14 +6064,10 @@ procedure S3_HTTP_Socket_Corpus is
                Parameters.Payload_SHA256 := US.To_Unbounded_String
                  (SigV4.SHA256_Hex (Upload_Payload));
                declare
-                  Prepared_Upload : constant Low_Level.Prepared_Request :=
-                    Low_Level.Prepare_Upload_Part
-                      (Origin, Low_Level.Path_Style, "example-bucket",
-                       "object key", Parameters, Identity, "us-east-1",
-                       "20130524T000000Z");
                   Uploaded : constant Low_Level.Upload_Part_Outcome :=
-                    Low_Level.Execute_Upload_Part
-                      (HTTP, Prepared_Upload, Source, Timeout => 5.0);
+                    Transfers.Upload_Part
+                      (HTTP, Origin, "example-bucket", "object key",
+                       Parameters, Source, Identity, Timeout => 5.0);
                begin
                   if Uploaded.Kind /= Low_Level.Part_Uploaded
                     or else US.To_String (Uploaded.Result.Entity_Tag) /=

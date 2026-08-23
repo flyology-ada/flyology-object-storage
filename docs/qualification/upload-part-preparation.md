@@ -1,9 +1,10 @@
-# UploadPart closure preparation
+# UploadPart qualification
 
-This is a preparatory contract inventory, not an implementation or an S3
-coverage claim. It freezes the exact modeled surface that a later UploadPart
-slice must close after the active PutObject work has established the shared
-streaming, checksum-trailer, and HTTP/2/HTTP/3 behavior.
+This record ties the covered UploadPart backend, client, and corpus cells to
+executable evidence. The authenticated Flyology server remains `partial`
+because it validates and explicitly rejects unsupported SSE-C and Requester
+Pays controls and does not accept `aws-chunked` request bodies. Those exclusions
+are not silently ignored and are not counted as positive support.
 
 ## Authority and scope
 
@@ -23,30 +24,54 @@ Current AWS primary references were reviewed on 2026-08-22:
 - [Multipart checksum guidance](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity-upload.html)
 
 The pinned generated model remains authoritative when current prose and the
-pinned SDK model differ. The eventual implementation must document any narrow
-version-pinned oracle divergence rather than weakening the decoder.
+pinned SDK model differ. Narrow version-pinned oracle divergences are
+documented rather than used to weaken the decoder.
 
-## Current boundary
+## Qualified synchronous client
 
-The low-level client already projects the non-body request members and decodes
-the modeled response headers. The existing authenticated server streams the
-part body and validates a useful subset of checksum headers. That is why the
-operation remains `partial`, not `missing`.
+`Flyology.Object_Storage.Client.Transfers.Upload_Part` is the direct synchronous
+entry point. It accepts the complete 23-member typed request policy, borrows a
+forward-only body source only for the duration of the call, and returns the
+complete 17-member typed response result or a structured S3 rejection. A
+rewindable source and every invalid modeled request combination are rejected
+before HTTP admission. The operation does not create helper tasks, retain the
+source, or transparently retry.
 
-The remaining closure is substantive:
+The client qualifies:
 
-- the server must deliberately handle Content-MD5, expected owner, requester
-  acknowledgement, and the SSE-C triplet instead of silently ignoring them;
-- checksum selection must share PutObject's final header/trailer precedence,
-  physical-trailer validation, and atomic no-publication-on-mismatch rule;
-- checksum and encryption choices must be checked against the exact multipart
-  initiation state at the part-publication boundary;
-- the client must distinguish absent, present-empty, duplicate, malformed, and
-  overlong modeled response headers and require an exactly empty success body;
-- a convenience API must retain source ownership and whole-operation deadline
-  semantics without detached work or unsafe automatic replay; and
-- native and lightweight signed application/socket tests plus the repeated
-  permissive-server matrix must qualify identical bytes and state transitions.
+- all ten concrete checksum headers, exact canonical Base64 widths, selector
+  precedence, Content-MD5, expected owner, requester, and secure SSE-C groups;
+- a complete request-target bound, including the composed upload-ID query;
+- exactly one required opaque ETag and singleton handling for all 17 response
+  headers, with absent/present-empty/duplicate/overlong/control-bearing cases;
+- exact empty success bodies, bounded structured errors, and request-bound
+  checksum response algorithm/value equality; and
+- the same one-shot state machine from direct calls and `Upload_File` multipart
+  ranges, with one absolute synchronous timeout budget.
+
+`Invalid_Request` from the synchronous wrapper is pre-admission. Every other
+exception is conservatively publication-ambiguous, including
+`Invalid_Response` raised while validating a reply after S3 may have accepted
+the part. The caller reconciles the exact upload ID and part number through
+ListParts before retrying or completing; the library performs no automatic
+retry. The lost-response socket lane accepts one PUT, drops the response,
+requires ListParts next, completes from the reconciled tuple, and verifies the
+exact bytes, ETag, and SHA-256 with a generation-bound whole GET.
+
+## Backend and server boundary
+
+Memory, pure-files, and SQLite share the same generation-bound multipart
+conformance suite. They enforce the 5 GiB part ceiling, atomic whole-part
+replacement, checksum metadata, prior-part preservation on validation failure,
+and reopen/crash behavior appropriate to each backend.
+
+The authenticated path-style server validates Content-MD5, all ten checksum
+headers, physical checksum trailers, expected owner, payer, and SSE-C request
+groups before publication. It checks checksum selection against initiation
+state at the atomic publication boundary. Unsupported policy is authenticated,
+strictly validated, and returned as explicit `NotImplemented`; `aws-chunked`
+content encoding is likewise excluded. The server ledger cell therefore
+remains `partial`.
 
 The design intentionally does not claim SSE-C, Requester Pays, directory
 buckets, access points, or object versioning. Unsupported policy must be
@@ -73,8 +98,8 @@ tenant or provide a future bucket-owner capability.
 ## Machine-checked artifacts
 
 `tests/corpora/upload-part/members.tsv` records every modeled member, its wire
-position, the current boundary, the required closure, and the vectors that
-gate it. `tests/corpora/upload-part/vectors.tsv` records adversarial request,
+position, qualified boundary, behavioral contract, and the vectors that gate
+it. `tests/corpora/upload-part/vectors.tsv` records adversarial request,
 response, lifecycle, oracle, and benchmark designs. The verifier checks:
 
 - exact 23/17 counts and ordinal member names against generated shapes 708/707;
@@ -89,13 +114,21 @@ Run the isolated self-test with:
 python3 tools/verify-upload-part-preparation.py
 ```
 
-It needs only the Python standard library and does not build the Ada project,
-invoke a shared test runner, alter the 116-operation ledger, or run GNATprove.
+The deterministic qualification gates are:
 
-## Integration boundary
+```sh
+./tests/scripts/test.sh
+./sqlite/tests/scripts/test.sh
+./tests/scripts/test-s3-matrix.sh
+```
 
-After PutObject freezes, the implementation owner should re-audit its final
-checksum and streaming APIs before translating these vectors into executable
-application/socket and six-server lanes. At that point the owner must add the
-ordinary project gates and independent review cycle. This preparation alone
-must not promote any UploadPart ledger cell.
+The root gate runs 37 AUnit cases, the signed server application corpus, and
+the native/lightweight raw socket corpus three times. The backend gate covers
+SQLite wrapper, catalog, and backend behavior. The matrix repeats native and
+lightweight signed client lifecycles three times against pinned RustFS,
+SeaweedFS, supplemental MinIO, and Flyology memory, files, and SQLite, with an
+independent digest-pinned s5cmd byte and deletion oracle.
+
+The isolated verifier needs only the Python standard library; it does not build
+the Ada project or run GNATprove. Proof evidence is recorded separately after
+the deterministic source freeze and serialized prover-lane audit.

@@ -63,6 +63,30 @@ package body Flyology.Object_Storage.Client.Transfers is
    type Client_Access is access all HTTP_Client.Client;
    type Credentials_Access is access constant Low_Level.Credentials;
 
+   --  Multipart part replacement cannot be transparently replayed after the
+   --  first request may have reached S3.  This adapter deliberately exposes
+   --  an otherwise rewindable borrowed file range as a one-shot source while
+   --  retaining the same bounded synchronous lifetime and streaming reads.
+   type One_Shot_Range_Source
+     (Value : not null access File_Bodies.Range_Source)
+   is limited new HTTP_Client.Request_Body_Source with null record;
+
+   overriding function Declared_Length
+     (Item : One_Shot_Range_Source) return HTTP_Client.Body_Length is
+     (File_Bodies.Declared_Length (Item.Value.all));
+
+   overriding procedure Read
+     (Item     : in out One_Shot_Range_Source;
+      Data     : out Ada.Streams.Stream_Element_Array;
+      Last     : out Ada.Streams.Stream_Element_Offset;
+      Finished : out Boolean;
+      Timeout  : Duration;
+      Token    : access Flyology.Cancellation.Token) is
+   begin
+      File_Bodies.Read
+        (Item.Value.all, Data, Last, Finished, Timeout, Token);
+   end Read;
+
    type Work_Item is record
       Client            : Client_Access;
       Origin            : Flyology.HTTP.Origin;
@@ -138,6 +162,37 @@ package body Flyology.Object_Storage.Client.Transfers is
       return Low_Level.Execute_Abort_Multipart_Upload
         (Client, Prepared, Timeout, Token);
    end Abort_Multipart_Upload;
+
+   function Upload_Part
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.Upload_Part_Parameters;
+      Source       : in out
+        Flyology.HTTP.Client.Request_Body_Source'Class;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Low_Level.Upload_Part_Outcome
+   is
+   begin
+      if Source in HTTP_Client.Rewindable_Request_Body_Source'Class then
+         raise Low_Level.Invalid_Request with
+           "UploadPart requires a one-shot request body source";
+      end if;
+      declare
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_Upload_Part
+             (Origin, Style, Bucket, Key, Parameters, Identity, Region,
+              Current_Timestamp);
+      begin
+         return Low_Level.Execute_Upload_Part
+           (Client, Prepared, Source, Timeout, Token);
+      end;
+   end Upload_Part;
 
    function Deadline_For (Timeout : Duration) return Ada.Real_Time.Time is
    begin
@@ -705,22 +760,20 @@ package body Flyology.Object_Storage.Client.Transfers is
                   others => <>);
                Completed : Multipart.Completed_Part :=
                  (Number => Core.Part_Number (Index), others => <>);
-               Source : File_Bodies.Range_Source
+               Range_Value : aliased File_Bodies.Range_Source
                  (File, Files.File_Offset (Offset),
                   Flyology.HTTP.Body_Size (Count));
+               Source : One_Shot_Range_Source (Range_Value'Access);
             begin
                if Selection.Enabled then
                   Set_Part_Checksum
                     (Part_Checksums (Index), Parameters, Completed);
                end if;
                declare
-                  Prepared : constant Low_Level.Prepared_Request :=
-                    Low_Level.Prepare_Upload_Part
-                      (Origin, Style, Bucket, Key, Parameters, Identity,
-                       Region, Current_Timestamp);
                   Outcome : constant Low_Level.Upload_Part_Outcome :=
-                    Low_Level.Execute_Upload_Part
-                      (Client, Prepared, Source, Remaining (Deadline), Token);
+                    Upload_Part
+                      (Client, Origin, Bucket, Key, Parameters, Source,
+                       Identity, Region, Style, Remaining (Deadline), Token);
                begin
                   if Outcome.Kind = Low_Level.Upload_Rejected then
                      Abort_Best_Effort;

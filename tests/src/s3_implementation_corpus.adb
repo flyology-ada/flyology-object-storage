@@ -2554,13 +2554,11 @@ procedure S3_Implementation_Corpus is
                  (SigV4.SHA256_Hex
                     (Payload (First .. First + Length - 1)));
                declare
-                  Prepared : constant Low_Level.Prepared_Request :=
-                    Low_Level.Prepare_Upload_Part
-                      (Origin, Low_Level.Path_Style, Bucket, Key, Parameters,
-                       Identity, "us-east-1", Timestamp);
                   Uploaded : constant Low_Level.Upload_Part_Outcome :=
-                    Low_Level.Execute_Upload_Part
-                      (HTTP, Prepared, Source, Timeout => 60.0);
+                    Transfers.Upload_Part
+                      (HTTP, Origin, Bucket, Key, Parameters, Source,
+                       Identity, "us-east-1", Low_Level.Path_Style,
+                       Timeout => 60.0);
                begin
                   if Uploaded.Kind /= Low_Level.Part_Uploaded then
                      raise Program_Error with
