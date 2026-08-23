@@ -32,6 +32,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    use type Model.Shape_Kind;
    use type S3.Core.Range_Parse_Status;
    use type Checksum_Policy.Checksum_Type;
+   use type US.Unbounded_String;
 
    --  DELETE is method-idempotent at the HTTP layer, but replay is not safe
    --  for a conditional S3 mutation after the first request may have been
@@ -5329,6 +5330,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else (SSE_Key'Length > 0
                  and then Flyology.HTTP.Scheme (Origin) /=
                    Flyology.HTTP.Secure_HTTPS)
+        or else (SSE_Key'Length > 0
+                 and then not Checksums.Valid_SSE_C_Key_MD5
+                   (SSE_Key, SSE_Key_MD5))
       then
          raise Invalid_Request with "invalid ListParts parameters";
       end if;
@@ -5358,11 +5362,35 @@ package body Flyology.Object_Storage.Client.Low_Level is
          SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
       do
          Result.Operation := List_Parts_Operation;
+         Result.Requested_Bucket := US.To_Unbounded_String (Bucket);
+         Result.Requested_Key := US.To_Unbounded_String (Key);
+         Result.Requested_Upload_ID := Parameters.Upload_ID;
+         Result.Requested_Part_Number_Marker :=
+           Parameters.Part_Number_Marker;
+         Result.Requested_Max_Parts := Parameters.Max_Parts;
       end return;
    exception
       when Constraint_Error =>
          raise Invalid_Request with "invalid ListParts parameters";
    end Prepare_List_Parts;
+
+   Maximum_List_Response_Header_Bytes : constant Positive := 8_192;
+
+   function Valid_List_Response_Header_Text
+     (Value : String) return Boolean is
+   begin
+      if Value'Length > Maximum_List_Response_Header_Bytes then
+         return False;
+      end if;
+      for Item of Value loop
+         if Character'Pos (Item) < 16#20#
+           or else Character'Pos (Item) = 16#7F#
+         then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Valid_List_Response_Header_Text;
 
    function Decode_List_Parts_Response
      (Status          : Flyology.HTTP.Status_Code;
@@ -5377,8 +5405,18 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
    begin
       if Status = 200 then
-         if Request_Charged'Length > 0
-           and then Request_Charged /= "requester"
+         if not Valid_List_Response_Header_Text (Abort_Date)
+           or else not Valid_List_Response_Header_Text (Abort_Rule_ID)
+           or else not Valid_List_Response_Header_Text (Request_Charged)
+           or else not Valid_List_Response_Header_Text (Request_ID)
+           or else not Valid_List_Response_Header_Text (Host_ID)
+           or else ((Abort_Date'Length > 0) /=
+                      (Abort_Rule_ID'Length > 0))
+           or else (Abort_Date'Length > 0
+                    and then not S3.Object_Reads.Parse_Conditional_Date
+                      (Abort_Date).Valid)
+           or else (Request_Charged'Length > 0
+                    and then Request_Charged /= "requester")
          then
             raise Invalid_Response with "invalid ListParts response headers";
          end if;
@@ -5393,6 +5431,12 @@ package body Flyology.Object_Storage.Client.Low_Level is
                Request_Charged =>
                  US.To_Unbounded_String (Request_Charged)));
       else
+         if not Valid_List_Response_Header_Text (Request_ID)
+           or else not Valid_List_Response_Header_Text (Host_ID)
+         then
+            raise Invalid_Response with
+              "ListParts error response identifiers exceed limit";
+         end if;
          return
            (Kind   => List_Parts_Rejected,
             Status => Status,
@@ -5400,8 +5444,14 @@ package body Flyology.Object_Storage.Client.Low_Level is
               (Payload, Request_ID, Host_ID, Limits));
       end if;
    exception
-      when S3.Multipart.Malformed_Multipart | S3.Errors.Malformed_Error =>
-         raise Invalid_Response with "malformed ListParts response";
+      when Occurrence : S3.Multipart.Malformed_Multipart =>
+         raise Invalid_Response with
+           "malformed ListParts response: " &
+           Ada.Exceptions.Exception_Message (Occurrence);
+      when Occurrence : S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed ListParts error response: " &
+           Ada.Exceptions.Exception_Message (Occurrence);
    end Decode_List_Parts_Response;
 
    function Execute_List_Parts
@@ -5422,23 +5472,64 @@ package body Flyology.Object_Storage.Client.Low_Level is
              (Client, Prepared.Message, Timeout, Token);
          Status : constant Flyology.HTTP.Status_Code :=
            Flyology.HTTP.Client.Status (Response);
-         Abort_Date : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-abort-date");
-         Abort_Rule_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-abort-rule-id");
-         Request_Charged : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-charged");
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         function Singleton_Header (Name : String) return String is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count (Response, Name);
+         begin
+            if Count > 1 then
+               raise Invalid_Response with
+                 "invalid ListParts response header multiplicity";
+            elsif Count = 0 then
+               return "";
+            end if;
+            declare
+               Value : constant String :=
+                 Flyology.HTTP.Client.Header (Response, Name);
+            begin
+               if Value'Length = 0
+                 or else not Valid_List_Response_Header_Text (Value)
+               then
+                  raise Invalid_Response with
+                    "invalid ListParts response header value";
+               end if;
+               return Value;
+            end;
+         end Singleton_Header;
+         Abort_Date : constant String := Singleton_Header
+           ("x-amz-abort-date");
+         Abort_Rule_ID : constant String := Singleton_Header
+           ("x-amz-abort-rule-id");
+         Request_Charged : constant String := Singleton_Header
+           ("x-amz-request-charged");
+         Request_ID : constant String := Singleton_Header
+           ("x-amz-request-id");
+         Host_ID : constant String := Singleton_Header ("x-amz-id-2");
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_List_Parts_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Abort_Date,
-            Abort_Rule_ID, Request_Charged, Request_ID, Host_ID, Limits);
+         declare
+            Outcome : constant List_Parts_Outcome :=
+              Decode_List_Parts_Response
+                (Status, Flyology.Bytes.To_Byte_String (Payload), Abort_Date,
+                 Abort_Rule_ID, Request_Charged, Request_ID, Host_ID, Limits);
+         begin
+            if Outcome.Kind = Parts_Listed
+              and then
+                (Outcome.Result.Listing.Bucket /= Prepared.Requested_Bucket
+                 or else Outcome.Result.Listing.Key /= Prepared.Requested_Key
+                 or else Outcome.Result.Listing.Upload_ID /=
+                   Prepared.Requested_Upload_ID
+                 or else Outcome.Result.Listing.Part_Number_Marker /=
+                   Prepared.Requested_Part_Number_Marker
+                 or else Outcome.Result.Listing.Max_Parts /=
+                   Prepared.Requested_Max_Parts)
+            then
+               raise Invalid_Response with
+                 "ListParts response does not match prepared request";
+            end if;
+            return Outcome;
+         end;
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
@@ -5513,6 +5604,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
          False, SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
       do
          Result.Operation := List_Multipart_Uploads_Operation;
+         Result.Requested_Bucket := US.To_Unbounded_String (Bucket);
+         Result.Requested_Key_Marker := Parameters.Key_Marker;
+         Result.Requested_Upload_ID_Marker := Parameters.Upload_ID_Marker;
+         Result.Requested_Prefix := Parameters.Prefix;
+         Result.Requested_Delimiter := Parameters.Delimiter;
+         Result.Requested_Max_Uploads := Parameters.Max_Uploads;
+         Result.Requested_URL_Encoding := Parameters.URL_Encoding;
       end return;
    exception
       when Constraint_Error =>
@@ -5531,8 +5629,11 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
    begin
       if Status = 200 then
-         if Request_Charged'Length > 0
-           and then Request_Charged /= "requester"
+         if not Valid_List_Response_Header_Text (Request_Charged)
+           or else not Valid_List_Response_Header_Text (Request_ID)
+           or else not Valid_List_Response_Header_Text (Host_ID)
+           or else (Request_Charged'Length > 0
+                    and then Request_Charged /= "requester")
          then
             raise Invalid_Response with
               "invalid ListMultipartUploads response headers";
@@ -5547,6 +5648,12 @@ package body Flyology.Object_Storage.Client.Low_Level is
                Request_Charged =>
                  US.To_Unbounded_String (Request_Charged)));
       else
+         if not Valid_List_Response_Header_Text (Request_ID)
+           or else not Valid_List_Response_Header_Text (Host_ID)
+         then
+            raise Invalid_Response with
+              "ListMultipartUploads error response identifiers exceed limit";
+         end if;
          return
            (Kind   => List_Multipart_Uploads_Rejected,
             Status => Status,
@@ -5582,19 +5689,76 @@ package body Flyology.Object_Storage.Client.Low_Level is
              (Client, Prepared.Message, Timeout, Token);
          Status : constant Flyology.HTTP.Status_Code :=
            Flyology.HTTP.Client.Status (Response);
-         Request_Charged : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-charged");
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+         function Singleton_Header (Name : String) return String is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count (Response, Name);
+         begin
+            if Count > 1 then
+               raise Invalid_Response with
+                 "invalid ListMultipartUploads response header multiplicity";
+            elsif Count = 0 then
+               return "";
+            end if;
+            declare
+               Value : constant String :=
+                 Flyology.HTTP.Client.Header (Response, Name);
+            begin
+               if Value'Length = 0
+                 or else not Valid_List_Response_Header_Text (Value)
+               then
+                  raise Invalid_Response with
+                    "invalid ListMultipartUploads response header value";
+               end if;
+               return Value;
+            end;
+         end Singleton_Header;
+         Request_Charged : constant String := Singleton_Header
+           ("x-amz-request-charged");
+         Request_ID : constant String := Singleton_Header
+           ("x-amz-request-id");
+         Host_ID : constant String := Singleton_Header ("x-amz-id-2");
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_List_Multipart_Uploads_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload),
-            Request_Charged, Request_ID, Host_ID, Limits);
+         declare
+            Outcome : constant List_Multipart_Uploads_Outcome :=
+              Decode_List_Multipart_Uploads_Response
+                (Status, Flyology.Bytes.To_Byte_String (Payload),
+                 Request_Charged, Request_ID, Host_ID, Limits);
+            Expected_Encoding : constant String :=
+              (if Prepared.Requested_URL_Encoding then "url" else "");
+            function Expected_Echo
+              (Value : US.Unbounded_String) return String is
+              (if Prepared.Requested_URL_Encoding
+               then Encoding.URI_Encode
+                 (US.To_String (Value), Encode_Slash => False)
+               else US.To_String (Value));
+         begin
+            if Outcome.Kind = Multipart_Uploads_Listed
+              and then
+                (Outcome.Result.Listing.Bucket /= Prepared.Requested_Bucket
+                 or else US.To_String
+                   (Outcome.Result.Listing.Key_Marker) /=
+                     Expected_Echo (Prepared.Requested_Key_Marker)
+                 or else Outcome.Result.Listing.Upload_ID_Marker /=
+                   Prepared.Requested_Upload_ID_Marker
+                 or else US.To_String (Outcome.Result.Listing.Prefix) /=
+                   Expected_Echo (Prepared.Requested_Prefix)
+                 or else US.To_String (Outcome.Result.Listing.Delimiter) /=
+                   Expected_Echo (Prepared.Requested_Delimiter)
+                 or else Outcome.Result.Listing.Max_Uploads /=
+                   Prepared.Requested_Max_Uploads
+                 or else US.To_String
+                   (Outcome.Result.Listing.Encoding_Type) /=
+                     Expected_Encoding)
+            then
+               raise Invalid_Response with
+                 "ListMultipartUploads response does not match prepared " &
+                 "request";
+            end if;
+            return Outcome;
+         end;
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

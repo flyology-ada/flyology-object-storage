@@ -163,6 +163,49 @@ package body Flyology.Object_Storage.Client.Transfers is
         (Client, Prepared, Timeout, Token);
    end Abort_Multipart_Upload;
 
+   function List_Parts_Page
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.List_Parts_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Low_Level.List_Parts_Outcome
+   is
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_List_Parts
+          (Origin, Style, Bucket, Key, Parameters, Identity, Region,
+           Current_Timestamp);
+   begin
+      return Low_Level.Execute_List_Parts
+        (Client, Prepared, Timeout, Token);
+   end List_Parts_Page;
+
+   function List_Multipart_Uploads_Page
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Parameters   : Low_Level.List_Multipart_Uploads_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Low_Level.List_Multipart_Uploads_Outcome
+   is
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_List_Multipart_Uploads
+          (Origin, Style, Bucket, Parameters, Identity, Region,
+           Current_Timestamp);
+   begin
+      return Low_Level.Execute_List_Multipart_Uploads
+        (Client, Prepared, Timeout, Token);
+   end List_Multipart_Uploads_Page;
+
    function Upload_Part
      (Client       : aliased in out Flyology.HTTP.Client.Client;
       Origin       : Flyology.HTTP.Origin;

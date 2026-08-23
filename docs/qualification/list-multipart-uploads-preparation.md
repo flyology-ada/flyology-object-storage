@@ -1,7 +1,8 @@
-# ListMultipartUploads closure preparation
+# ListMultipartUploads client qualification
 
-This inventory prepares a later ListMultipartUploads completion slice. It is
-not an implementation, qualification result, or coverage-ledger claim.
+This record freezes the pinned model inventory and the qualified synchronous
+client boundary. Backend coverage is complete; owner and requester-pays server
+policy remains partial.
 
 ## Pinned authority
 
@@ -58,12 +59,24 @@ Directory buckets have different ordering and no upload-ID marker. They remain
 outside this general-purpose path-style claim and must be rejected explicitly
 until their endpoint and session policy exists.
 
-## Strict response and oracle boundary
+## Qualified client and oracle boundary
 
-The low-level client already projects all nine modeled request positions and
-parses all 13 top-level output positions. Backends already form bounded atomic
-pages. The ledger remains partial because a high-level paired-cursor pager is
-absent and the server does not yet implement all owner and billing policy.
+The low-level client projects all nine modeled request positions and parses all
+13 top-level output positions. `Client.Transfers.List_Multipart_Uploads_Page`
+is the public bounded one-page API. Prepared requests retain bucket, both
+markers, prefix, delimiter, encoding mode, and maximum; execution binds every
+echoed field to that exact scope, including URL-encoded key fields while
+leaving upload-ID markers opaque. Callers advance the two returned markers as
+one cursor, and separate calls do not share a snapshot.
+
+The sole modeled response header is a physical singleton. Present-empty,
+duplicate, over-8-KiB, control-bearing, or invalid requester-pays values are
+rejected. The codec enforces combined upload/common-prefix bounds, complete and
+unique uploads, canonical initiation timestamps, checksum type/algorithm
+coherence, unique grouping prefixes, grouped-upload exclusion, final/truncated
+marker consistency, and advancing general-purpose cursor pairs. The server
+does not yet implement all owner and billing policy, so its coverage remains
+partial.
 
 The future client must reject duplicate modeled singleton XML fields and
 headers, distinguish required nonempty identities from permitted absent or
@@ -101,7 +114,27 @@ exact 9/13 counts, ordered names, generated wire locations, canonical unique
 vector identifiers, and reciprocal member/vector references. It does not
 build Ada, invoke shared runners, edit a manifest or ledger, or run GNATprove.
 
-After active PutObject work freezes, the implementation owner must translate
-these designs into ordinary backend, native/lightweight application/socket,
-reopen/concurrency, and repeated external-server gates, followed by an
-independent review cycle. This preparation alone cannot promote coverage.
+The fragmented raw-loopback corpus runs through both native and Flyology
+lightweight clients, independently mutates all seven echoed scope/cursor
+fields, exercises duplicate and present-empty headers, and follows a real
+two-page paired cursor. The repeated implementation matrix calls the public
+page API against RustFS, supplemental MinIO, and Flyology memory/files/SQLite;
+the exact SeaweedFS exclusion above remains pinned. Ledger promotion records
+this qualified client boundary only.
+
+## Frozen gate evidence
+
+The qualified source passed the root gate with 37/37 AUnit tests, the 88-case
+files crash matrix, 320 checksum vectors, 210 chunk boundaries, the 64-GiB CRC
+linearization oracle, the server application corpus, and three repetitions of
+the native/lightweight socket corpus. The SQLite gate passed. The six-server
+implementation matrix passed all 18 lanes and repetitions, with the exact
+SeaweedFS exclusions above reported rather than accepted.
+
+The serialized proof campaign started at 2026-08-23T14:39:58Z with FSF
+GNATprove 16.1.0. `./tools/prove.sh` used output headers and warnings as errors
+and proved 936/936 checks across all nine manifest units: 180 flow checks and
+756 prover checks, with a maximum of 663 steps. The report contains zero
+warnings, unproved or justified checks, and `pragma Assume` statements;
+the source contains no `pragma Assume`, `pragma Suppress`, `False_Positive`, or
+`SPARK_Mode => Off`. The post-run host process audit was clean.

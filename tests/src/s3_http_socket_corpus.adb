@@ -19,6 +19,7 @@ with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Checksums;
+with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.SigV4;
@@ -1342,11 +1343,95 @@ procedure S3_HTTP_Socket_Corpus is
         "<ListMultipartUploadsResult>" &
         "<Bucket>example-bucket</Bucket><KeyMarker>before</KeyMarker>" &
         "<UploadIdMarker>upload-before</UploadIdMarker>" &
+        "<Prefix>socket/</Prefix><Delimiter>/</Delimiter>" &
         "<MaxUploads>2</MaxUploads><IsTruncated>false</IsTruncated>" &
         "<Upload><UploadId>socket-upload</UploadId><Key>socket/key</Key>" &
         "<Initiated>2026-08-21T00:00:00Z</Initiated>" &
         "<StorageClass>STANDARD</StorageClass></Upload>" &
         "</ListMultipartUploadsResult>";
+      List_Uploads_Empty_XML : constant String :=
+        "<ListMultipartUploadsResult><Bucket>example-bucket</Bucket>" &
+        "<MaxUploads>1000</MaxUploads><IsTruncated>false</IsTruncated>" &
+        "</ListMultipartUploadsResult>";
+      List_Uploads_Wrong_Bucket_XML : constant String :=
+        "<ListMultipartUploadsResult><Bucket>wrong-bucket</Bucket>" &
+        "<MaxUploads>1000</MaxUploads><IsTruncated>false</IsTruncated>" &
+        "</ListMultipartUploadsResult>";
+
+      function Empty_List_Uploads_XML
+        (Bucket, Key_Marker, Upload_ID_Marker, Prefix, Delimiter,
+         Encoding_Type : String;
+         Maximum : Positive) return String is
+        ("<ListMultipartUploadsResult><Bucket>" & Bucket & "</Bucket>" &
+         "<KeyMarker>" & Key_Marker & "</KeyMarker>" &
+         "<UploadIdMarker>" & Upload_ID_Marker & "</UploadIdMarker>" &
+         "<Prefix>" & Prefix & "</Prefix><Delimiter>" & Delimiter &
+         "</Delimiter><MaxUploads>" & Decimal (Maximum) &
+         "</MaxUploads><IsTruncated>false</IsTruncated>" &
+         (if Encoding_Type'Length = 0 then ""
+          else "<EncodingType>" & Encoding_Type & "</EncodingType>") &
+         "</ListMultipartUploadsResult>");
+
+      List_Uploads_First_Page_XML : constant String :=
+        "<ListMultipartUploadsResult><Bucket>example-bucket</Bucket>" &
+        "<KeyMarker></KeyMarker><UploadIdMarker></UploadIdMarker>" &
+        "<NextKeyMarker>paged/key</NextKeyMarker>" &
+        "<NextUploadIdMarker>id-1</NextUploadIdMarker>" &
+        "<Prefix>paged/</Prefix><MaxUploads>1</MaxUploads>" &
+        "<IsTruncated>true</IsTruncated>" &
+        "<Upload><UploadId>id-1</UploadId><Key>paged/key</Key>" &
+        "<Initiated>2026-08-21T00:00:00Z</Initiated>" &
+        "</Upload></ListMultipartUploadsResult>";
+      List_Uploads_Second_Page_XML : constant String :=
+        "<ListMultipartUploadsResult><Bucket>example-bucket</Bucket>" &
+        "<KeyMarker>paged/key</KeyMarker>" &
+        "<UploadIdMarker>id-1</UploadIdMarker>" &
+        "<Prefix>paged/</Prefix><MaxUploads>1</MaxUploads>" &
+        "<IsTruncated>false</IsTruncated>" &
+        "<Upload><UploadId>id-2</UploadId><Key>paged/key</Key>" &
+        "<Initiated>2026-08-21T00:00:01Z</Initiated>" &
+        "</Upload></ListMultipartUploadsResult>";
+      List_Parts_First_XML : constant String :=
+        "<ListPartsResult><Bucket>example-bucket</Bucket>" &
+        "<Key>paged-parts</Key><UploadId>paged-upload</UploadId>" &
+        "<PartNumberMarker>0</PartNumberMarker><MaxParts>1</MaxParts>" &
+        "<IsTruncated>true</IsTruncated>" &
+        "<NextPartNumberMarker>1</NextPartNumberMarker>" &
+        "<Part><PartNumber>1</PartNumber>" &
+        "<LastModified>2026-08-21T00:00:00Z</LastModified>" &
+        "<ETag>&quot;part-1&quot;</ETag><Size>1</Size></Part>" &
+        "</ListPartsResult>";
+      List_Parts_Second_XML : constant String :=
+        "<ListPartsResult><Bucket>example-bucket</Bucket>" &
+        "<Key>paged-parts</Key><UploadId>paged-upload</UploadId>" &
+        "<PartNumberMarker>1</PartNumberMarker><MaxParts>1</MaxParts>" &
+        "<IsTruncated>false</IsTruncated>" &
+        "<Part><PartNumber>2</PartNumber>" &
+        "<LastModified>2026-08-21T00:00:01Z</LastModified>" &
+        "<ETag>&quot;part-2&quot;</ETag><Size>1</Size></Part>" &
+        "</ListPartsResult>";
+      List_Parts_Wrong_Key_XML : constant String :=
+        "<ListPartsResult><Bucket>example-bucket</Bucket>" &
+        "<Key>wrong-key</Key><UploadId>paged-upload</UploadId>" &
+        "<PartNumberMarker>0</PartNumberMarker><MaxParts>1</MaxParts>" &
+        "<IsTruncated>false</IsTruncated></ListPartsResult>";
+      List_Parts_Empty_XML : constant String :=
+        "<ListPartsResult><Bucket>example-bucket</Bucket>" &
+        "<Key>paged-parts</Key><UploadId>paged-upload</UploadId>" &
+        "<PartNumberMarker>0</PartNumberMarker><MaxParts>1</MaxParts>" &
+        "<IsTruncated>false</IsTruncated></ListPartsResult>";
+
+      function Empty_List_Parts_XML
+        (Bucket, Key, Upload_ID : String;
+         Marker : Multipart.Part_Marker_Value;
+         Maximum : Flyology.Object_Storage.S3.Core.Page_Size)
+         return String is
+        ("<ListPartsResult><Bucket>" & Bucket & "</Bucket><Key>" & Key &
+         "</Key><UploadId>" & Upload_ID & "</UploadId>" &
+         "<PartNumberMarker>" & Decimal (Marker) &
+         "</PartNumberMarker><MaxParts>" & Decimal (Maximum) &
+         "</MaxParts><IsTruncated>false</IsTruncated>" &
+         "</ListPartsResult>");
       Copy_XML : constant String :=
         "<CopyObjectResult>" &
         "<LastModified>2026-08-21T17:00:00.000Z</LastModified>" &
@@ -1491,6 +1576,135 @@ procedure S3_HTTP_Socket_Corpus is
               "upload-id-marker=upload-before&uploads",
             Expected_Request_Payer => "requester",
             Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", List_Uploads_Wrong_Bucket_XML),
+            "GET", "/example-bucket?max-uploads=1000&uploads");
+         Serve
+           (HTTP_Response
+              ("200 OK", List_Uploads_Empty_XML,
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?max-uploads=1000&uploads");
+         Serve
+           (HTTP_Response
+              ("200 OK", List_Uploads_Empty_XML,
+               "x-amz-request-charged:" & CRLF),
+            "GET", "/example-bucket?max-uploads=1000&uploads");
+         declare
+            Query : constant String :=
+              "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "key-marker=a%2Bb&max-uploads=7&" &
+              "prefix=photos%2FJan%20%26&" &
+              "upload-id-marker=upload%2B%2F%3D&uploads";
+         begin
+            Serve
+              (HTTP_Response
+                 ("200 OK", Empty_List_Uploads_XML
+                    ("wrong-bucket", "a%2Bb", "upload+/=",
+                     "photos/Jan%20%26", "/", "url", 7)),
+               "GET", Query, Expected_Request_Payer => "requester",
+               Expected_Bucket_Owner => "123456789012");
+            Serve
+              (HTTP_Response
+                 ("200 OK", Empty_List_Uploads_XML
+                    ("example-bucket", "wrong-marker", "upload+/=",
+                     "photos/Jan%20%26", "/", "url", 7)),
+               "GET", Query, Expected_Request_Payer => "requester",
+               Expected_Bucket_Owner => "123456789012");
+            Serve
+              (HTTP_Response
+                 ("200 OK", Empty_List_Uploads_XML
+                    ("example-bucket", "a%2Bb", "wrong-upload",
+                     "photos/Jan%20%26", "/", "url", 7)),
+               "GET", Query, Expected_Request_Payer => "requester",
+               Expected_Bucket_Owner => "123456789012");
+            Serve
+              (HTTP_Response
+                 ("200 OK", Empty_List_Uploads_XML
+                    ("example-bucket", "a%2Bb", "upload+/=", "wrong",
+                     "/", "url", 7)),
+               "GET", Query, Expected_Request_Payer => "requester",
+               Expected_Bucket_Owner => "123456789012");
+            Serve
+              (HTTP_Response
+                 ("200 OK", Empty_List_Uploads_XML
+                    ("example-bucket", "a%2Bb", "upload+/=",
+                     "photos/Jan%20%26", "!", "url", 7)),
+               "GET", Query, Expected_Request_Payer => "requester",
+               Expected_Bucket_Owner => "123456789012");
+            Serve
+              (HTTP_Response
+                 ("200 OK", Empty_List_Uploads_XML
+                    ("example-bucket", "a%2Bb", "upload+/=",
+                     "photos/Jan%20%26", "/", "url", 6)),
+               "GET", Query, Expected_Request_Payer => "requester",
+               Expected_Bucket_Owner => "123456789012");
+            Serve
+              (HTTP_Response
+                 ("200 OK", Empty_List_Uploads_XML
+                    ("example-bucket", "a%2Bb", "upload+/=",
+                     "photos/Jan%20%26", "/", "", 7)),
+               "GET", Query, Expected_Request_Payer => "requester",
+               Expected_Bucket_Owner => "123456789012");
+         end;
+         Serve
+           (HTTP_Response ("200 OK", List_Uploads_First_Page_XML), "GET",
+            "/example-bucket?max-uploads=1&prefix=paged%2F&uploads",
+            Fragmented => True);
+         Serve
+           (HTTP_Response ("200 OK", List_Uploads_Second_Page_XML), "GET",
+            "/example-bucket?key-marker=paged%2Fkey&max-uploads=1&" &
+              "prefix=paged%2F&upload-id-marker=id-1&uploads");
+         Serve
+           (HTTP_Response ("200 OK", List_Parts_First_XML), "GET",
+            "/example-bucket/paged-parts?max-parts=1&" &
+              "part-number-marker=0&uploadId=paged-upload",
+            Fragmented => True);
+         Serve
+           (HTTP_Response ("200 OK", List_Parts_Second_XML), "GET",
+            "/example-bucket/paged-parts?max-parts=1&" &
+              "part-number-marker=1&uploadId=paged-upload");
+         Serve
+           (HTTP_Response ("200 OK", List_Parts_Wrong_Key_XML), "GET",
+            "/example-bucket/paged-parts?max-parts=1&" &
+              "part-number-marker=0&uploadId=paged-upload");
+         Serve
+           (HTTP_Response
+              ("200 OK", List_Parts_Empty_XML,
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket/paged-parts?max-parts=1&" &
+              "part-number-marker=0&uploadId=paged-upload");
+         Serve
+           (HTTP_Response
+              ("200 OK", Empty_List_Parts_XML
+                 ("wrong-bucket", "paged-parts", "paged-upload", 0, 1)),
+            "GET", "/example-bucket/paged-parts?max-parts=1&" &
+              "part-number-marker=0&uploadId=paged-upload");
+         Serve
+           (HTTP_Response
+              ("200 OK", Empty_List_Parts_XML
+                 ("example-bucket", "paged-parts", "wrong-upload", 0, 1)),
+            "GET", "/example-bucket/paged-parts?max-parts=1&" &
+              "part-number-marker=0&uploadId=paged-upload");
+         Serve
+           (HTTP_Response
+              ("200 OK", Empty_List_Parts_XML
+                 ("example-bucket", "paged-parts", "paged-upload", 1, 1)),
+            "GET", "/example-bucket/paged-parts?max-parts=1&" &
+              "part-number-marker=0&uploadId=paged-upload");
+         Serve
+           (HTTP_Response
+              ("200 OK", Empty_List_Parts_XML
+                 ("example-bucket", "paged-parts", "paged-upload", 0, 2)),
+            "GET", "/example-bucket/paged-parts?max-parts=1&" &
+              "part-number-marker=0&uploadId=paged-upload");
+         Serve
+           (HTTP_Response
+              ("200 OK", List_Parts_Empty_XML,
+               "x-amz-request-charged:" & CRLF),
+            "GET", "/example-bucket/paged-parts?max-parts=1&" &
+              "part-number-marker=0&uploadId=paged-upload");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT",
             "/example-bucket?versioning",
@@ -3658,14 +3872,10 @@ procedure S3_HTTP_Socket_Corpus is
             List_Parameters.Expected_Bucket_Owner :=
               US.To_Unbounded_String ("123456789012");
             declare
-               Prepared_Uploads : constant Low_Level.Prepared_Request :=
-                 Low_Level.Prepare_List_Multipart_Uploads
-                   (Origin, Low_Level.Path_Style, "example-bucket",
-                    List_Parameters, Identity, "us-east-1",
-                    "20130524T000000Z");
                Result : constant Low_Level.List_Multipart_Uploads_Outcome :=
-                 Low_Level.Execute_List_Multipart_Uploads
-                   (HTTP, Prepared_Uploads, Timeout => 5.0);
+                 Transfers.List_Multipart_Uploads_Page
+                   (HTTP, Origin, "example-bucket", List_Parameters,
+                    Identity, Timeout => 5.0);
             begin
                if Result.Kind /= Low_Level.Multipart_Uploads_Listed
                  or else Natural
@@ -3701,6 +3911,211 @@ procedure S3_HTTP_Socket_Corpus is
                     "typed ListMultipartUploads socket error mismatch";
                end if;
             end;
+         end;
+         declare
+            Uploads_Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+
+            procedure Require_Invalid_Uploads (Message : String) is
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant
+                       Low_Level.List_Multipart_Uploads_Outcome :=
+                         Transfers.List_Multipart_Uploads_Page
+                           (HTTP, Origin, "example-bucket",
+                            Uploads_Parameters, Identity, Timeout => 5.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Require_Invalid_Uploads;
+         begin
+            Require_Invalid_Uploads
+              ("ListMultipartUploads accepted a wrong echoed bucket");
+            Require_Invalid_Uploads
+              ("ListMultipartUploads accepted duplicate singleton header");
+            Require_Invalid_Uploads
+              ("ListMultipartUploads accepted present-empty header");
+
+            Uploads_Parameters.Delimiter := US.To_Unbounded_String ("/");
+            Uploads_Parameters.URL_Encoding := True;
+            Uploads_Parameters.Key_Marker := US.To_Unbounded_String ("a+b");
+            Uploads_Parameters.Max_Uploads := 7;
+            Uploads_Parameters.Prefix :=
+              US.To_Unbounded_String ("photos/Jan &");
+            Uploads_Parameters.Upload_ID_Marker :=
+              US.To_Unbounded_String ("upload+/=");
+            Uploads_Parameters.Expected_Bucket_Owner :=
+              US.To_Unbounded_String ("123456789012");
+            Uploads_Parameters.Request_Payer :=
+              US.To_Unbounded_String ("requester");
+            for Echo_Index in 1 .. 7 loop
+               Require_Invalid_Uploads
+                 ((case Echo_Index is
+                     when 1 => "wrong ListMultipartUploads bucket accepted",
+                     when 2 =>
+                       "wrong ListMultipartUploads key marker accepted",
+                     when 3 =>
+                       "wrong ListMultipartUploads upload marker accepted",
+                     when 4 => "wrong ListMultipartUploads prefix accepted",
+                     when 5 =>
+                       "wrong ListMultipartUploads delimiter accepted",
+                     when 6 => "wrong ListMultipartUploads maximum accepted",
+                     when others =>
+                       "wrong ListMultipartUploads encoding accepted"));
+            end loop;
+         end;
+         declare
+            Uploads_Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+         begin
+            Uploads_Parameters.Max_Uploads := 1;
+            Uploads_Parameters.Prefix := US.To_Unbounded_String ("paged/");
+            declare
+               First : constant Low_Level.List_Multipart_Uploads_Outcome :=
+                 Transfers.List_Multipart_Uploads_Page
+                   (HTTP, Origin, "example-bucket", Uploads_Parameters,
+                    Identity, Timeout => 5.0);
+            begin
+               if First.Kind /= Low_Level.Multipart_Uploads_Listed
+                 or else not First.Result.Listing.Is_Truncated
+                 or else Natural (First.Result.Listing.Uploads.Length) /= 1
+                 or else US.Length
+                   (First.Result.Listing.Next_Key_Marker) = 0
+                 or else US.Length
+                   (First.Result.Listing.Next_Upload_ID_Marker) = 0
+               then
+                  raise Program_Error with
+                    "high-level ListMultipartUploads first page mismatch";
+               end if;
+               Uploads_Parameters.Key_Marker :=
+                 First.Result.Listing.Next_Key_Marker;
+               Uploads_Parameters.Upload_ID_Marker :=
+                 First.Result.Listing.Next_Upload_ID_Marker;
+            end;
+            declare
+               Second : constant Low_Level.List_Multipart_Uploads_Outcome :=
+                 Transfers.List_Multipart_Uploads_Page
+                   (HTTP, Origin, "example-bucket", Uploads_Parameters,
+                    Identity, Timeout => 5.0);
+            begin
+               if Second.Kind /= Low_Level.Multipart_Uploads_Listed
+                 or else Second.Result.Listing.Is_Truncated
+                 or else Natural
+                   (Second.Result.Listing.Uploads.Length) /= 1
+                 or else US.To_String
+                   (Second.Result.Listing.Uploads.First_Element.Upload_ID) /=
+                     "id-2"
+               then
+                  raise Program_Error with
+                    "high-level ListMultipartUploads continuation mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parts_Parameters : Low_Level.List_Parts_Parameters;
+         begin
+            Parts_Parameters.Max_Parts := 1;
+            Parts_Parameters.Upload_ID :=
+              US.To_Unbounded_String ("paged-upload");
+            declare
+               First : constant Low_Level.List_Parts_Outcome :=
+                 Transfers.List_Parts_Page
+                   (HTTP, Origin, "example-bucket", "paged-parts",
+                    Parts_Parameters, Identity, Timeout => 5.0);
+            begin
+               if First.Kind /= Low_Level.Parts_Listed
+                 or else not First.Result.Listing.Is_Truncated
+                 or else Natural (First.Result.Listing.Parts.Length) /= 1
+                 or else First.Result.Listing.Next_Part_Number_Marker /= 1
+               then
+                  raise Program_Error with
+                    "high-level ListParts first page mismatch";
+               end if;
+               Parts_Parameters.Part_Number_Marker :=
+                 First.Result.Listing.Next_Part_Number_Marker;
+            end;
+            declare
+               Second : constant Low_Level.List_Parts_Outcome :=
+                 Transfers.List_Parts_Page
+                   (HTTP, Origin, "example-bucket", "paged-parts",
+                    Parts_Parameters, Identity, Timeout => 5.0);
+            begin
+               if Second.Kind /= Low_Level.Parts_Listed
+                 or else Second.Result.Listing.Is_Truncated
+                 or else Natural (Second.Result.Listing.Parts.Length) /= 1
+                 or else Second.Result.Listing.Parts.First_Element.Number /= 2
+               then
+                  raise Program_Error with
+                    "high-level ListParts continuation mismatch";
+               end if;
+            end;
+            Parts_Parameters.Part_Number_Marker := 0;
+            for Case_Index in 1 .. 3 loop
+               declare
+                  Raised : Boolean := False;
+               begin
+                  begin
+                     declare
+                        Ignored : constant Low_Level.List_Parts_Outcome :=
+                          Transfers.List_Parts_Page
+                            (HTTP, Origin, "example-bucket", "paged-parts",
+                             Parts_Parameters, Identity, Timeout => 5.0);
+                        pragma Unreferenced (Ignored);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Low_Level.Invalid_Response =>
+                        Raised := True;
+                  end;
+                  if not Raised then
+                     raise Program_Error with
+                       (case Case_Index is
+                           when 1 =>
+                             "ListParts accepted a wrong echoed key",
+                           when 2 =>
+                             "ListParts accepted duplicate singleton header",
+                           when others =>
+                             "ListParts accepted present-empty header");
+                  end if;
+               end;
+            end loop;
+            for Echo_Index in 1 .. 4 loop
+               declare
+                  Raised : Boolean := False;
+               begin
+                  begin
+                     declare
+                        Ignored : constant Low_Level.List_Parts_Outcome :=
+                          Transfers.List_Parts_Page
+                            (HTTP, Origin, "example-bucket", "paged-parts",
+                             Parts_Parameters, Identity, Timeout => 5.0);
+                        pragma Unreferenced (Ignored);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Low_Level.Invalid_Response =>
+                        Raised := True;
+                  end;
+                  if not Raised then
+                     raise Program_Error with
+                       (case Echo_Index is
+                           when 1 => "wrong ListParts bucket accepted",
+                           when 2 => "wrong ListParts upload ID accepted",
+                           when 3 => "wrong ListParts marker accepted",
+                           when others => "wrong ListParts maximum accepted");
+                  end if;
+               end;
+            end loop;
          end;
          declare
             Put_Parameters : constant

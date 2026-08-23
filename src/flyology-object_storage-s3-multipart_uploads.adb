@@ -11,6 +11,7 @@ package body Flyology.Object_Storage.S3.Multipart_Uploads is
    package Model renames Flyology.Object_Storage.S3.Model;
    package Wire_Core renames Flyology.Object_Storage.S3.Wire_Core;
    use type Ada.Containers.Count_Type;
+   use type US.Unbounded_String;
 
    Maximum_Query_Length : constant := 8 * 1_024;
 
@@ -530,12 +531,105 @@ package body Flyology.Object_Storage.S3.Multipart_Uploads is
         (US.Length (Value.ID) = 0
          and then US.Length (Value.Display_Name) = 0));
 
+   function Valid_ISO_8601_Timestamp (Value : String) return Boolean is
+      Text : constant String (1 .. Value'Length) := Value;
+
+      function Decimal (First, Last : Positive) return Natural is
+         Result : Natural := 0;
+      begin
+         for Index in First .. Last loop
+            if Text (Index) not in '0' .. '9' then
+               return Natural'Last;
+            end if;
+            Result := Result * 10 +
+              Character'Pos (Text (Index)) - Character'Pos ('0');
+         end loop;
+         return Result;
+      end Decimal;
+
+      Year   : Natural;
+      Month  : Natural;
+      Day    : Natural;
+      Hour   : Natural;
+      Minute : Natural;
+      Second : Natural;
+      Zone   : Positive := 20;
+      Maximum_Day : Natural;
+   begin
+      if Text'Length not in 20 .. 35
+        or else Text (5) /= '-'
+        or else Text (8) /= '-'
+        or else Text (11) /= 'T'
+        or else Text (14) /= ':'
+        or else Text (17) /= ':'
+      then
+         return False;
+      end if;
+      Year := Decimal (1, 4);
+      Month := Decimal (6, 7);
+      Day := Decimal (9, 10);
+      Hour := Decimal (12, 13);
+      Minute := Decimal (15, 16);
+      Second := Decimal (18, 19);
+      if Year not in 1 .. 9_999
+        or else Month not in 1 .. 12
+        or else Hour > 23
+        or else Minute > 59
+        or else Second > 59
+      then
+         return False;
+      end if;
+      Maximum_Day :=
+        (case Month is
+            when 2 =>
+              (if Year mod 400 = 0
+                 or else (Year mod 4 = 0 and then Year mod 100 /= 0)
+               then 29 else 28),
+            when 4 | 6 | 9 | 11 => 30,
+            when others => 31);
+      if Day not in 1 .. Maximum_Day then
+         return False;
+      end if;
+      if Text (Zone) = '.' then
+         Zone := Zone + 1;
+         declare
+            First_Fraction : constant Positive := Zone;
+         begin
+            while Zone <= Text'Last and then Text (Zone) in '0' .. '9' loop
+               Zone := Zone + 1;
+            end loop;
+            if Zone = First_Fraction or else Zone - First_Fraction > 9 then
+               return False;
+            end if;
+         end;
+      end if;
+      if Zone = Text'Last and then Text (Zone) = 'Z' then
+         return True;
+      elsif Zone + 5 = Text'Last
+        and then Text (Zone) in '+' | '-'
+        and then Text (Zone + 3) = ':'
+      then
+         declare
+            Offset_Hour : constant Natural := Decimal (Zone + 1, Zone + 2);
+            Offset_Minute : constant Natural := Decimal (Zone + 4, Zone + 5);
+         begin
+            return Offset_Hour <= 23 and then Offset_Minute <= 59;
+         end;
+      end if;
+      return False;
+   end Valid_ISO_8601_Timestamp;
+
+   function Starts_With (Value, Prefix : String) return Boolean is
+     (Prefix'Length <= Value'Length
+      and then Value
+        (Value'First .. Value'First + Prefix'Length - 1) = Prefix);
+
    procedure Validate (Value : List_Multipart_Uploads_Result) is
    begin
       if US.Length (Value.Bucket) = 0 then
          raise Malformed_Upload_Listing with
            "ListMultipartUploads lacks bucket";
-      elsif Value.Uploads.Length >
+      elsif Value.Uploads.Length + Value.Common_Prefixes.Length >
         Ada.Containers.Count_Type (Value.Max_Uploads)
         or else (Value.Max_Uploads = 0 and then Value.Is_Truncated)
       then
@@ -545,6 +639,32 @@ package body Flyology.Object_Storage.S3.Multipart_Uploads is
       then
          raise Malformed_Upload_Listing with
            "truncated multipart upload page lacks next key marker";
+      elsif not Value.Is_Truncated
+        and then
+          (US.Length (Value.Next_Key_Marker) > 0
+           or else US.Length (Value.Next_Upload_ID_Marker) > 0)
+      then
+         raise Malformed_Upload_Listing with
+           "final multipart upload page has next markers";
+      elsif Value.Is_Truncated
+        and then US.Length (Value.Delimiter) = 0
+        and then US.Length (Value.Next_Upload_ID_Marker) = 0
+      then
+         raise Malformed_Upload_Listing with
+           "truncated ungrouped page lacks paired next markers";
+      elsif Value.Is_Truncated
+        and then
+          (US.To_String (Value.Next_Key_Marker) <
+             US.To_String (Value.Key_Marker)
+           or else
+             (Value.Next_Key_Marker = Value.Key_Marker
+              and then
+                (US.Length (Value.Next_Upload_ID_Marker) = 0
+                 or else Value.Next_Upload_ID_Marker =
+                   Value.Upload_ID_Marker)))
+      then
+         raise Malformed_Upload_Listing with
+           "ListMultipartUploads next cursor does not advance";
       elsif US.Length (Value.Encoding_Type) > 0
         and then not Valid_Enumeration
           (US.To_String (Value.Encoding_Type), Output_Member_Shape (12))
@@ -557,6 +677,12 @@ package body Flyology.Object_Storage.S3.Multipart_Uploads is
          if US.Length (Upload.Upload_ID) = 0
            or else US.Length (Upload.Key) = 0
            or else US.Length (Upload.Initiated) = 0
+           or else not Valid_ISO_8601_Timestamp
+             (US.To_String (Upload.Initiated))
+           or else
+             (US.Length (Value.Prefix) > 0
+              and then not Starts_With
+                (US.To_String (Upload.Key), US.To_String (Value.Prefix)))
            or else
              (US.Length (Upload.Storage_Class) > 0
               and then not Valid_Enumeration
@@ -571,21 +697,77 @@ package body Flyology.Object_Storage.S3.Multipart_Uploads is
                  Upload_Member_Shape (7)))
            or else
              (US.Length (Upload.Checksum_Type) > 0
-              and then not Valid_Enumeration
-                (US.To_String (Upload.Checksum_Type),
-                 Upload_Member_Shape (8)))
+              and then
+                (US.Length (Upload.Checksum_Algorithm) = 0
+                 or else not Valid_Enumeration
+                   (US.To_String (Upload.Checksum_Type),
+                    Upload_Member_Shape (8))))
          then
             raise Malformed_Upload_Listing with
               "invalid multipart upload entry";
          end if;
       end loop;
+      if not Value.Uploads.Is_Empty then
+         for Left in Value.Uploads.First_Index .. Value.Uploads.Last_Index loop
+            if Left < Value.Uploads.Last_Index then
+               for Right in Positive'Succ (Left) ..
+                 Value.Uploads.Last_Index
+               loop
+                  if Value.Uploads (Left).Key = Value.Uploads (Right).Key
+                    and then Value.Uploads (Left).Upload_ID =
+                      Value.Uploads (Right).Upload_ID
+                  then
+                     raise Malformed_Upload_Listing with
+                       "duplicate multipart upload";
+                  end if;
+               end loop;
+            end if;
+         end loop;
+      end if;
 
       for Prefix of Value.Common_Prefixes loop
-         if US.Length (Prefix) = 0 then
+         if US.Length (Prefix) = 0
+           or else
+             (US.Length (Value.Prefix) > 0
+              and then not Starts_With
+                (US.To_String (Prefix), US.To_String (Value.Prefix)))
+           or else
+             (US.Length (Value.Delimiter) > 0
+              and then
+                (US.Length (Value.Delimiter) > US.Length (Prefix)
+                 or else US.Tail
+                   (Prefix, US.Length (Value.Delimiter)) /= Value.Delimiter))
+         then
             raise Malformed_Upload_Listing with
-              "empty multipart common prefix";
+              "invalid multipart common prefix";
          end if;
+         for Upload of Value.Uploads loop
+            if Starts_With
+              (US.To_String (Upload.Key), US.To_String (Prefix))
+            then
+               raise Malformed_Upload_Listing with
+                 "grouped upload also appears in upload list";
+            end if;
+         end loop;
       end loop;
+      if not Value.Common_Prefixes.Is_Empty then
+         for Left in Value.Common_Prefixes.First_Index ..
+           Value.Common_Prefixes.Last_Index
+         loop
+            if Left < Value.Common_Prefixes.Last_Index then
+               for Right in Positive'Succ (Left) ..
+                 Value.Common_Prefixes.Last_Index
+               loop
+                  if Value.Common_Prefixes (Left) =
+                    Value.Common_Prefixes (Right)
+                  then
+                     raise Malformed_Upload_Listing with
+                       "duplicate multipart common prefix";
+                  end if;
+               end loop;
+            end if;
+         end loop;
+      end if;
    end Validate;
 
    function Parse_List_Multipart_Uploads

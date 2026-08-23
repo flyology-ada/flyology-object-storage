@@ -71,6 +71,8 @@ fi
 
 FLYOLOGY_LIST_MULTIPART_UPLOADS_ORACLE_MODE=\
 seaweedfs-4.43-invalid-pagination \
+FLYOLOGY_LIST_PARTS_PAGINATION_ORACLE_MODE=\
+seaweedfs-4.43-repeats-marker-page \
 FLYOLOGY_HEAD_OBJECT_ORACLE_MODE=\
 seaweedfs-4.43-returns-whole-size-for-parts-and-range \
 FLYOLOGY_LIST_OBJECTS_V1_ORACLE_MODE=\
@@ -89,6 +91,8 @@ seaweedfs-4.43-omits-checksum-type \
   "$BUCKET" "$ACCESS_KEY" "$SECRET_KEY" yes
 echo "SeaweedFS ListMultipartUploads oracle: skipped, pinned response has" \
   "invalid truncation markers and omits initiation metadata"
+echo "SeaweedFS ListParts pagination oracle: pinned release repeats a part" \
+  "at or below the supplied PartNumberMarker; the strict decoder rejects it"
 echo "SeaweedFS HeadObject part oracle: pinned release returns whole-object" \
   "Content-Length for valid partNumber requests and HTTP 400 for an absent" \
   "part"

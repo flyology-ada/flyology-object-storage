@@ -1586,6 +1586,43 @@ package body Flyology.Object_Storage.S3.Multipart is
          or else Wire_Core.Valid_Base64
            (US.To_String (Value.Checksum_XXHASH128), 16)));
 
+   function Listed_Part_Checksum_Count
+     (Value : Listed_Part) return Natural is
+     (Boolean'Pos (US.Length (Value.Checksum_CRC32) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_CRC32C) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_CRC64NVME) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_SHA1) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_SHA256) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_SHA512) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_MD5) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_XXHASH64) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_XXHASH3) > 0) +
+      Boolean'Pos (US.Length (Value.Checksum_XXHASH128) > 0));
+
+   function Listed_Part_Checksum_Matches
+     (Value : Listed_Part; Algorithm : String) return Boolean is
+     (Listed_Part_Checksum_Count (Value) = 0
+      or else (Algorithm = "CRC32"
+               and then US.Length (Value.Checksum_CRC32) > 0)
+      or else (Algorithm = "CRC32C"
+               and then US.Length (Value.Checksum_CRC32C) > 0)
+      or else (Algorithm = "CRC64NVME"
+               and then US.Length (Value.Checksum_CRC64NVME) > 0)
+      or else (Algorithm = "SHA1"
+               and then US.Length (Value.Checksum_SHA1) > 0)
+      or else (Algorithm = "SHA256"
+               and then US.Length (Value.Checksum_SHA256) > 0)
+      or else (Algorithm = "SHA512"
+               and then US.Length (Value.Checksum_SHA512) > 0)
+      or else (Algorithm = "MD5"
+               and then US.Length (Value.Checksum_MD5) > 0)
+      or else (Algorithm = "XXHASH64"
+               and then US.Length (Value.Checksum_XXHASH64) > 0)
+      or else (Algorithm = "XXHASH3"
+               and then US.Length (Value.Checksum_XXHASH3) > 0)
+      or else (Algorithm = "XXHASH128"
+               and then US.Length (Value.Checksum_XXHASH128) > 0));
+
    procedure Validate (Value : List_Parts_Result) is
       Previous : Part_Marker_Value := Value.Part_Number_Marker;
       Count : constant Ada.Containers.Count_Type := Value.Parts.Length;
@@ -1633,6 +1670,9 @@ package body Flyology.Object_Storage.S3.Multipart is
       end if;
       for Part of Value.Parts loop
          if not Valid_Listed_Part (Part)
+           or else Listed_Part_Checksum_Count (Part) > 1
+           or else not Listed_Part_Checksum_Matches
+             (Part, US.To_String (Value.Checksum_Algorithm))
            or else Part.Number <= Previous
          then
             raise Malformed_Multipart with "invalid ListParts part sequence";

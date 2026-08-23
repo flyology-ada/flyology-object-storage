@@ -173,6 +173,20 @@ procedure S3_Implementation_Corpus is
       end if;
    end Check_List_Multipart_Uploads;
 
+   function Check_List_Parts_Pagination return Boolean is
+      Name : constant String := "FLYOLOGY_LIST_PARTS_PAGINATION_ORACLE_MODE";
+   begin
+      if not Ada.Environment_Variables.Exists (Name) then
+         return True;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "seaweedfs-4.43-repeats-marker-page"
+      then
+         return False;
+      else
+         raise Program_Error with "unknown ListParts pagination oracle mode";
+      end if;
+   end Check_List_Parts_Pagination;
+
    function Check_List_Objects_V1_Pagination return Boolean is
       Name : constant String := "FLYOLOGY_LIST_OBJECTS_V1_ORACLE_MODE";
    begin
@@ -1713,13 +1727,10 @@ procedure S3_Implementation_Corpus is
          Parameters.Max_Parts := 1;
          Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
          declare
-            Prepared : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_List_Parts
-                (Origin, Low_Level.Path_Style, Bucket, Object_Key,
-                 Parameters, Identity, "us-east-1", Timestamp);
             Outcome : constant Low_Level.List_Parts_Outcome :=
-              Low_Level.Execute_List_Parts
-                (HTTP, Prepared, Timeout => 30.0);
+              Transfers.List_Parts_Page
+                (HTTP, Origin, Bucket, Object_Key, Parameters, Identity,
+                 Timeout => 30.0);
          begin
             if Outcome.Kind /= Low_Level.Parts_Listed then
                raise Program_Error with
@@ -1784,6 +1795,50 @@ procedure S3_Implementation_Corpus is
          end;
       end Require_Listed_Part;
 
+      procedure Require_Two_Listed_Parts
+        (Object_Key, Upload_ID : String) is
+         Parameters : Low_Level.List_Parts_Parameters;
+         First_Number : S3_Core.Part_Number;
+      begin
+         Parameters.Max_Parts := 1;
+         Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
+         declare
+            First : constant Low_Level.List_Parts_Outcome :=
+              Transfers.List_Parts_Page
+                (HTTP, Origin, Bucket, Object_Key, Parameters, Identity,
+                 Timeout => 30.0);
+         begin
+            if First.Kind /= Low_Level.Parts_Listed
+              or else Natural (First.Result.Listing.Parts.Length) /= 1
+              or else not First.Result.Listing.Is_Truncated
+              or else First.Result.Listing.Next_Part_Number_Marker /=
+                First.Result.Listing.Parts.First_Element.Number
+            then
+               raise Program_Error with
+                 "S3 implementation ListParts first continuation mismatch";
+            end if;
+            First_Number := First.Result.Listing.Parts.First_Element.Number;
+            Parameters.Part_Number_Marker :=
+              First.Result.Listing.Next_Part_Number_Marker;
+         end;
+         declare
+            Second : constant Low_Level.List_Parts_Outcome :=
+              Transfers.List_Parts_Page
+                (HTTP, Origin, Bucket, Object_Key, Parameters, Identity,
+                 Timeout => 30.0);
+         begin
+            if Second.Kind /= Low_Level.Parts_Listed
+              or else Natural (Second.Result.Listing.Parts.Length) /= 1
+              or else Second.Result.Listing.Is_Truncated
+              or else Second.Result.Listing.Parts.First_Element.Number <=
+                First_Number
+            then
+               raise Program_Error with
+                 "S3 implementation ListParts second continuation mismatch";
+            end if;
+         end;
+      end Require_Two_Listed_Parts;
+
       procedure Require_Listed_Upload
         (Object_Key, Upload_ID : String; Present : Boolean)
       is
@@ -1792,13 +1847,10 @@ procedure S3_Implementation_Corpus is
          Parameters.Prefix := US.To_Unbounded_String (Object_Key);
          Parameters.Max_Uploads := 1;
          declare
-            Prepared : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_List_Multipart_Uploads
-                (Origin, Low_Level.Path_Style, Bucket, Parameters, Identity,
-                 "us-east-1", Timestamp);
             Outcome : constant Low_Level.List_Multipart_Uploads_Outcome :=
-              Low_Level.Execute_List_Multipart_Uploads
-                (HTTP, Prepared, Timeout => 30.0);
+              Transfers.List_Multipart_Uploads_Page
+                (HTTP, Origin, Bucket, Parameters, Identity,
+                 Timeout => 30.0);
          begin
             if Outcome.Kind /= Low_Level.Multipart_Uploads_Listed then
                raise Program_Error with
@@ -2591,6 +2643,9 @@ procedure S3_Implementation_Corpus is
                     Upload (2, Second_First, Second_Length);
                   Completion : Multipart.Complete_Multipart_Upload_Request;
                begin
+                  if Check_List_Parts_Pagination then
+                     Require_Two_Listed_Parts (Key, Upload_ID);
+                  end if;
                   Completion.Parts.Append
                     (Multipart.Completed_Part'
                        (Number     => 1,

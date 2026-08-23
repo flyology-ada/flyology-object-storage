@@ -1860,9 +1860,10 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Upload_Part_Outcome;
 
    --  Execute one prepared UploadPart request without replay. Source must be
-   --  forward-only and is borrowed only until this call returns. Invalid_Request
-   --  is raised before HTTP admission; every other exception is conservatively
-   --  publication-ambiguous and must be reconciled using the prepared upload
+   --  forward-only and is borrowed only until this call returns.
+   --  Invalid_Request is raised before HTTP admission; every other exception
+   --  is conservatively publication-ambiguous and must be reconciled using
+   --  the prepared upload
    --  ID and part number before any retry or completion decision.
    function Execute_Upload_Part
      (Client   : aliased in out Flyology.HTTP.Client.Client;
@@ -2129,6 +2130,17 @@ private
         No_Checksum;
       Requested_Upload_Checksum_Value :
         Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Bucket : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Key : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Upload_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Part_Number_Marker : S3.Multipart.Part_Marker_Value := 0;
+      Requested_Max_Parts : S3.Core.Page_Size := 0;
+      Requested_Key_Marker : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Upload_ID_Marker : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Prefix : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Delimiter : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Max_Uploads : S3.Core.Page_Size := 0;
+      Requested_URL_Encoding : Boolean := False;
    end record;
 
 end Flyology.Object_Storage.Client.Low_Level;

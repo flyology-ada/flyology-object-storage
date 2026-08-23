@@ -7393,18 +7393,8 @@ package body Object_Storage_Test_Cases is
               "<LastModified>2026-08-21T12:00:00.000Z</LastModified>" &
               "<ETag>&quot;etag&quot;</ETag>" &
               "<Size>9223372036854775807</Size>" &
-              "<ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
-              "<ChecksumCRC32C>AAAAAA==</ChecksumCRC32C>" &
-              "<ChecksumCRC64NVME>AAAAAAAAAAA=</ChecksumCRC64NVME>" &
-              "<ChecksumSHA1>AAAAAAAAAAAAAAAAAAAAAAAAAAA=</ChecksumSHA1>" &
               "<ChecksumSHA256>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" &
-              "</ChecksumSHA256><ChecksumSHA512>" &
-              String'(1 .. 86 => 'A') & "==</ChecksumSHA512>" &
-              "<ChecksumMD5>AAAAAAAAAAAAAAAAAAAAAA==</ChecksumMD5>" &
-              "<ChecksumXXHASH64>AAAAAAAAAAA=</ChecksumXXHASH64>" &
-              "<ChecksumXXHASH3>AAAAAAAAAAA=</ChecksumXXHASH3>" &
-              "<ChecksumXXHASH128>AAAAAAAAAAAAAAAAAAAAAA==" &
-              "</ChecksumXXHASH128></Part>" &
+              "</ChecksumSHA256></Part>" &
               "<Initiator><ID>initiator-id</ID>" &
               "<DisplayName>initiator</DisplayName></Initiator>" &
               "<Owner><ID>owner-id</ID><DisplayName>owner</DisplayName>" &
@@ -7436,11 +7426,8 @@ package body Object_Storage_Test_Cases is
             and then Round_Trip.Parts.First_Element.Size =
               Flyology.Object_Storage.Byte_Count'Last
             and then US.To_String
-              (Round_Trip.Parts.First_Element.Checksum_SHA512) =
-                String'(1 .. 86 => 'A') & "=="
-            and then US.To_String
-              (Round_Trip.Parts.First_Element.Checksum_XXHASH128) =
-                "AAAAAAAAAAAAAAAAAAAAAA==",
+              (Round_Trip.Parts.First_Element.Checksum_SHA256) =
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             "ListParts serialization round trip");
       end;
 
@@ -7488,6 +7475,19 @@ package body Object_Storage_Test_Cases is
                "<LastModified>x</LastModified><ETag>e</ETag><Size>1</Size>" &
                "<ChecksumCRC32>abc</ChecksumCRC32></Part>"),
          "ListParts malformed checksum was accepted");
+      Must_Reject
+        (Root ("<Part><PartNumber>1</PartNumber>" &
+               "<LastModified>x</LastModified><ETag>e</ETag><Size>1</Size>" &
+               "<ChecksumCRC32>AAAAAA==</ChecksumCRC32>" &
+               "<ChecksumCRC32C>AAAAAA==</ChecksumCRC32C></Part>" &
+               "<ChecksumAlgorithm>CRC32</ChecksumAlgorithm>"),
+         "ListParts multiple part checksums were accepted");
+      Must_Reject
+        (Root ("<Part><PartNumber>1</PartNumber>" &
+               "<LastModified>x</LastModified><ETag>e</ETag><Size>1</Size>" &
+               "<ChecksumCRC32>AAAAAA==</ChecksumCRC32></Part>" &
+               "<ChecksumAlgorithm>SHA256</ChecksumAlgorithm>"),
+         "ListParts mismatched part checksum was accepted");
       Must_Reject
         (Root ("<Part><PartNumber>2</PartNumber><LastModified>x" &
                "</LastModified><ETag>e</ETag><Size>1</Size></Part>" &
@@ -8068,56 +8068,42 @@ package body Object_Storage_Test_Cases is
       Must_Reject
         (Root
            (Upload_XML
-              ("key", "id", "x",
+              ("key", "id", "2026-08-21T00:00:00Z",
                "<ChecksumAlgorithm>UNKNOWN</ChecksumAlgorithm>")),
          "invalid multipart upload checksum algorithm accepted");
       Must_Reject
         (Root
            (Upload_XML
-              ("key", "id", "x",
+              ("key", "id", "2026-08-21T00:00:00Z",
                "<ChecksumType>UNKNOWN</ChecksumType>")),
          "invalid multipart upload checksum type accepted");
-      declare
-         Type_Only : constant Uploads.List_Multipart_Uploads_Result :=
-           Uploads.Parse_List_Multipart_Uploads
-             (Root
-                (Upload_XML
-                   ("key", "id", "x",
-                    "<ChecksumType>COMPOSITE</ChecksumType>")));
-      begin
-         Assert
-           (US.To_String
-              (Type_Only.Uploads.First_Element.Checksum_Type) = "COMPOSITE",
-            "independent multipart upload checksum type was rejected");
-      end;
+      Must_Reject
+        (Root
+           (Upload_XML
+              ("key", "id", "2026-08-21T00:00:00Z",
+               "<ChecksumType>COMPOSITE</ChecksumType>")),
+         "multipart upload checksum type without algorithm was accepted");
       declare
          Directory_Order : constant Uploads.List_Multipart_Uploads_Result :=
            Uploads.Parse_List_Multipart_Uploads
              (Root
-                (Upload_XML ("b", "id-b", "x") &
-                 Upload_XML ("a", "id-a", "x")));
+                (Upload_XML
+                   ("b", "id-b", "2026-08-21T00:00:00Z") &
+                 Upload_XML
+                   ("a", "id-a", "2026-08-21T01:00:00Z")));
       begin
          Assert
            (Directory_Order.Uploads.Length = 2,
             "directory-bucket multipart upload order was rejected");
       end;
-      declare
-         Marker_Variance : constant Uploads.List_Multipart_Uploads_Result :=
-           Uploads.Parse_List_Multipart_Uploads
-             ("<ListMultipartUploadsResult><Bucket>bucket</Bucket>" &
-              "<UploadIdMarker>ignored-without-key</UploadIdMarker>" &
-              "<NextKeyMarker>sample.jpg</NextKeyMarker>" &
-              "<NextUploadIdMarker>next-id</NextUploadIdMarker>" &
-              "<MaxUploads>1</MaxUploads><IsTruncated>false" &
-              "</IsTruncated></ListMultipartUploadsResult>");
-      begin
-         Assert
-           (US.To_String (Marker_Variance.Upload_ID_Marker) =
-              "ignored-without-key"
-            and then US.To_String (Marker_Variance.Next_Key_Marker) =
-              "sample.jpg",
-            "valid AWS multipart-upload marker variance was rejected");
-      end;
+      Must_Reject
+        ("<ListMultipartUploadsResult><Bucket>bucket</Bucket>" &
+         "<UploadIdMarker>ignored-without-key</UploadIdMarker>" &
+         "<NextKeyMarker>sample.jpg</NextKeyMarker>" &
+         "<NextUploadIdMarker>next-id</NextUploadIdMarker>" &
+         "<MaxUploads>1</MaxUploads><IsTruncated>false" &
+         "</IsTruncated></ListMultipartUploadsResult>",
+         "final multipart-upload page with next markers was accepted");
       Must_Reject
         ("<ListMultipartUploadsResult><Bucket>bucket</Bucket>" &
          "<MaxUploads>1</MaxUploads><IsTruncated>true</IsTruncated>" &
@@ -8128,24 +8114,18 @@ package body Object_Storage_Test_Cases is
            (Upload_XML ("a", "id-a", "x") &
             Upload_XML ("b", "id-b", "x"), 1),
          "multipart-upload page exceeding max-uploads accepted");
-      declare
-         Prefixes_Do_Not_Consume_Upload_Limit : constant
-           Uploads.List_Multipart_Uploads_Result :=
-             Uploads.Parse_List_Multipart_Uploads
-               (Root
-                  (Upload_XML ("a", "id-a", "x") &
-                   "<CommonPrefixes><Prefix>b/</Prefix></CommonPrefixes>",
-                   1));
-      begin
-         Assert
-           (Prefixes_Do_Not_Consume_Upload_Limit.Uploads.Length = 1
-            and then
-              Prefixes_Do_Not_Consume_Upload_Limit.Common_Prefixes.Length = 1,
-            "common prefixes incorrectly consumed max-uploads");
-      end;
+      Must_Reject
+        (Root
+           (Upload_XML ("a", "id-a", "2026-08-21T00:00:00Z") &
+            "<CommonPrefixes><Prefix>b/</Prefix></CommonPrefixes>", 1),
+         "common prefix did not consume max-uploads");
       Must_Reject
         (Root ("<CommonPrefixes></CommonPrefixes>"),
          "empty multipart common-prefix structure accepted");
+      Must_Reject
+        (Root ("<Delimiter>long</Delimiter>" &
+               "<CommonPrefixes><Prefix>a</Prefix></CommonPrefixes>"),
+         "common prefix shorter than delimiter was accepted");
       Must_Reject
         (Root
            ("<CommonPrefixes><Prefix>a/</Prefix><Prefix>b/</Prefix>" &
@@ -9197,7 +9177,7 @@ package body Object_Storage_Test_Cases is
          Parameters.SSE_Customer_Key := US.To_Unbounded_String
            ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
          Parameters.SSE_Customer_Key_MD5 :=
-           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+           US.To_Unbounded_String ("cLyPS3KoaSFGi/joRB3OUQ==");
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Complete_Multipart_Upload
@@ -9604,7 +9584,7 @@ package body Object_Storage_Test_Cases is
          Parameters.SSE_Customer_Key := US.To_Unbounded_String
            ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
          Parameters.SSE_Customer_Key_MD5 :=
-           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+           US.To_Unbounded_String ("cLyPS3KoaSFGi/joRB3OUQ==");
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_List_Parts
@@ -9743,6 +9723,12 @@ package body Object_Storage_Test_Cases is
          Parameters.SSE_Customer_Algorithm :=
            US.To_Unbounded_String ("AES256");
          Require_Rejected ("ListParts accepted an incomplete SSE-C group");
+
+         Parameters.SSE_Customer_Key := US.To_Unbounded_String
+           ("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+         Parameters.SSE_Customer_Key_MD5 :=
+           US.To_Unbounded_String ("AAAAAAAAAAAAAAAAAAAAAA==");
+         Require_Rejected ("ListParts accepted an incorrect SSE-C key MD5");
       end;
 
       declare
@@ -9769,6 +9755,74 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "ListParts invalid request-charged was accepted");
+      end;
+
+      declare
+         Success : constant String :=
+           "<ListPartsResult><Bucket>example-bucket</Bucket>" &
+           "<Key>key</Key><UploadId>upload</UploadId>" &
+           "<PartNumberMarker>0</PartNumberMarker><MaxParts>0</MaxParts>" &
+           "<IsTruncated>false</IsTruncated></ListPartsResult>";
+
+         procedure Require_Invalid
+           (Abort_Date      : String := "";
+            Abort_Rule_ID   : String := "";
+            Request_Charged : String := "";
+            Request_ID      : String := "";
+            Host_ID         : String := "";
+            Status          : Flyology.HTTP.Status_Code := 200;
+            Payload         : String := Success;
+            Message         : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.List_Parts_Outcome :=
+                    Low_Level.Decode_List_Parts_Response
+                      (Status, Payload, Abort_Date, Abort_Rule_ID,
+                       Request_Charged, Request_ID, Host_ID);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Require_Invalid;
+
+         Exact : constant Low_Level.List_Parts_Outcome :=
+           Low_Level.Decode_List_Parts_Response
+             (200, Success,
+              Abort_Date => "Fri, 21 Aug 2026 00:00:00 GMT",
+              Abort_Rule_ID => String'(1 .. 8_192 => 'r'),
+              Request_ID => String'(1 .. 8_192 => 'i'),
+              Host_ID => String'(1 .. 8_192 => 'h'));
+      begin
+         Assert
+           (Exact.Kind = Low_Level.Parts_Listed,
+            "ListParts exact response header boundary was rejected");
+         Require_Invalid
+           (Abort_Date => "Fri, 21 Aug 2026 00:00:00 GMT",
+            Message => "ListParts accepted an unpaired abort date");
+         Require_Invalid
+           (Abort_Date => "not-a-date", Abort_Rule_ID => "cleanup",
+            Message => "ListParts accepted a malformed abort date");
+         Require_Invalid
+           (Request_Charged => "requester" & ASCII.HT,
+            Message => "ListParts accepted a control-bearing header");
+         Require_Invalid
+           (Abort_Date => "Fri, 21 Aug 2026 00:00:00 GMT",
+            Abort_Rule_ID => String'(1 .. 8_193 => 'r'),
+            Message => "ListParts accepted an over-bound success header");
+         Require_Invalid
+           (Status => 403,
+            Payload => "<Error><Code>AccessDenied</Code>" &
+              "<Message>denied</Message></Error>",
+            Request_ID => String'(1 .. 8_193 => 'i'),
+            Message => "ListParts accepted an over-bound error identifier");
       end;
 
       declare
@@ -9928,6 +9982,61 @@ package body Object_Storage_Test_Cases is
          Assert
            (Raised,
             "ListMultipartUploads invalid request-charged was accepted");
+      end;
+
+      declare
+         Success : constant String :=
+           "<ListMultipartUploadsResult><Bucket>example-bucket</Bucket>" &
+           "<MaxUploads>1</MaxUploads><IsTruncated>false</IsTruncated>" &
+           "</ListMultipartUploadsResult>";
+         Exact : constant Low_Level.List_Multipart_Uploads_Outcome :=
+           Low_Level.Decode_List_Multipart_Uploads_Response
+             (200, Success,
+              Request_Charged => "requester",
+              Request_ID => String'(1 .. 8_192 => 'i'),
+              Host_ID => String'(1 .. 8_192 => 'h'));
+
+         procedure Require_Invalid
+           (Status          : Flyology.HTTP.Status_Code;
+            Payload         : String;
+            Request_Charged : String := "";
+            Request_ID      : String := "";
+            Host_ID         : String := "";
+            Message         : String)
+         is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant
+                    Low_Level.List_Multipart_Uploads_Outcome :=
+                      Low_Level.Decode_List_Multipart_Uploads_Response
+                        (Status, Payload, Request_Charged, Request_ID,
+                         Host_ID);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Require_Invalid;
+      begin
+         Assert
+           (Exact.Kind = Low_Level.Multipart_Uploads_Listed,
+            "ListMultipartUploads exact header boundary was rejected");
+         Require_Invalid
+           (200, Success, Request_Charged => "requester" & ASCII.DEL,
+            Message =>
+              "ListMultipartUploads accepted a control-bearing header");
+         Require_Invalid
+           (403, "<Error><Code>AccessDenied</Code>" &
+              "<Message>denied</Message></Error>",
+            Host_ID => String'(1 .. 8_193 => 'h'),
+            Message =>
+              "ListMultipartUploads accepted an over-bound error ID");
       end;
 
       declare

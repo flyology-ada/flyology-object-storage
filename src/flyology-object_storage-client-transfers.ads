@@ -53,6 +53,42 @@ package Flyology.Object_Storage.Client.Transfers is
       Token        : access Flyology.Cancellation.Token := null)
       return Low_Level.Abort_Multipart_Outcome;
 
+   --  Fetch one bounded ListParts page. Parameters carries the exact upload
+   --  ID, marker, maximum, payer, owner and SSE-C scope. A truncated result's
+   --  Next_Part_Number_Marker may be supplied as the next call's marker, but
+   --  separate calls do not share a service snapshot. The response is
+   --  rejected unless its echoed bucket, key, upload ID, marker and maximum
+   --  match this request exactly.
+   function List_Parts_Page
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.List_Parts_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Low_Level.List_Parts_Outcome;
+
+   --  Fetch one bounded ListMultipartUploads page. Key_Marker and
+   --  Upload_ID_Marker form one continuation cursor and must be advanced
+   --  together from the returned pair. Separate calls do not share a service
+   --  snapshot. The response is rejected unless every echoed scope and cursor
+   --  field matches this request exactly.
+   function List_Multipart_Uploads_Page
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Parameters   : Low_Level.List_Multipart_Uploads_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Low_Level.List_Multipart_Uploads_Outcome;
+
    --  Upload one multipart part through the synchronous one-shot path. The
    --  source is borrowed only until this call returns and must not implement
    --  Rewindable_Request_Body_Source; UploadPart is never transparently
