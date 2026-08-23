@@ -13,7 +13,11 @@ package Flyology.Object_Storage.Server.Authentication is
    --  inside the provider. Simple providers can call
    --  S3.SigV4_Verification.Verify with their borrowed secret; HSM-backed
    --  providers can implement the same decision without exporting a key.
-   --  Session_Token is empty when the request does not carry one.
+   --  Session_Token is empty when the request does not carry one. Principal
+   --  identifies the tenant/account owner, not the individual access key.
+   --  A provider used by one S3_Applications instance must return the same
+   --  nonempty Principal for every credential it accepts for that Store over
+   --  the lifetime of that provider/application instance.
    procedure Authenticate
      (Item          : in out Credential_Provider;
       Authorization : S3.SigV4_Verification.Authorization_Data;

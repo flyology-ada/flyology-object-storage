@@ -610,7 +610,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return False;
       end Has_Encryption_Header;
 
-      function Has_Checksum_Header return Boolean is
+      function Checksum_Header_Count return Natural is
+         Result : Natural := 0;
       begin
          for Index in 1 .. Apps.Request_Header_Count (X) loop
             declare
@@ -621,12 +622,15 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                  and then Name (Name'First .. Name'First + 14) =
                    "x-amz-checksum-"
                then
-                  return True;
+                  Result := Result + 1;
                end if;
             end;
          end loop;
-         return False;
-      end Has_Checksum_Header;
+         return Result;
+      end Checksum_Header_Count;
+
+      function Has_Checksum_Header return Boolean is
+        (Checksum_Header_Count > 0);
 
       function Checksum_Value_Header_Count return Natural is
          Result : Natural := 0;
@@ -1572,7 +1576,56 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       end if;
       Apps.Set_Principal (X, US.To_String (Auth.Principal));
 
-      if Has_Encryption_Header
+      if Operation = Put_Multipart_Part and then Has_Encryption_Header then
+         declare
+            Algorithm_Count : constant Natural :=
+              Apps.Request_Header_Count
+                (X, "x-amz-server-side-encryption-customer-algorithm");
+            Key_Count : constant Natural :=
+              Apps.Request_Header_Count
+                (X, "x-amz-server-side-encryption-customer-key");
+            MD5_Count : constant Natural :=
+              Apps.Request_Header_Count
+                (X, "x-amz-server-side-encryption-customer-key-md5");
+         begin
+            if Algorithm_Count /= 1 or else Key_Count /= 1
+              or else MD5_Count /= 1
+            then
+               Send_Error
+                 (X, 400, "InvalidRequest",
+                  "The SSE-C request group is invalid", Target_Text);
+               return;
+            elsif Apps.Request_Header
+              (X, "x-amz-server-side-encryption-customer-algorithm") /=
+                "AES256"
+            then
+               Send_Error
+                 (X, 400, "InvalidArgument",
+                  "The SSE-C algorithm is invalid", Target_Text);
+               return;
+            elsif Apps.Request_Scheme (X) /= Flyology.HTTP.Secure_HTTPS then
+               Send_Error
+                 (X, 400, "InvalidRequest",
+                  "SSE-C requests require HTTPS", Target_Text);
+               return;
+            end if;
+            if not Checksums.Valid_SSE_C_Key_MD5
+              (Apps.Request_Header
+                 (X, "x-amz-server-side-encryption-customer-key"),
+               Apps.Request_Header
+                 (X, "x-amz-server-side-encryption-customer-key-md5"))
+            then
+               Send_Error
+                 (X, 400, "InvalidDigest",
+                  "The SSE-C key or digest is invalid", Target_Text);
+               return;
+            end if;
+         end;
+         Send_Error
+           (X, 501, "NotImplemented",
+            "Server-side encryption is not implemented", Target_Text);
+         return;
+      elsif Has_Encryption_Header
         and then Operation not in Copy_Object | Put_Object | Head_Object |
           Get_Object | Get_Object_Attributes
       then
@@ -3240,30 +3293,110 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                declare
                   Query : constant Multipart.Multipart_Query :=
                     Multipart.Parse_Query (Query_Text);
-                  Source : Request_IO.Request_Source :=
-                    (Checksum_Kind => S3.Core.CRC64NVME,
-                     Length_Value  => Length,
-                     Expected_Hash => Auth.Payload_Hash,
-                     Check_Hash    =>
-                       US.To_String (Auth.Payload_Hash) /=
-                         S3.SigV4.Unsigned_Payload,
-                     Hash      => GNAT.SHA256.Initial_Context,
-                     Observed  => 0,
-                     Maximum   => Backends.Maximum_Multipart_Part_Size,
-                     Completed => False,
-                     others    => <>);
                   Value_Count : constant Natural :=
                     Checksum_Value_Header_Count;
                   SDK_Count : constant Natural := Apps.Request_Header_Count
                     (X, "x-amz-sdk-checksum-algorithm");
-                  Value_Algorithm : constant Checksum_Algorithm :=
+                  Trailer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-trailer");
+                  Content_MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-expected-bucket-owner");
+                  Value_Algorithm : Checksum_Algorithm :=
                     Checksum_Value_Algorithm;
                   SDK_Algorithm : Checksum_Algorithm := No_Checksum;
                   SDK_Valid : Boolean := False;
+                  Verify_Checksum : Boolean := False;
+                  Trailer_Checksum : Boolean := False;
+                  Supplied_Checksum : US.Unbounded_String;
+                  Owner_OK : Boolean := False;
+                  Encoding_OK : Boolean := True;
+                  AWS_Chunked_Encoding : Boolean := False;
                   Page : Backends.Multipart_Part_Page;
-                  Part_Options : Backends.Multipart_Part_Options;
+                  Part_Options : Backends.Multipart_Part_Options :=
+                    Backends.Default_Multipart_Part_Options;
+
+                  function Valid_Content_Coding (Value : String)
+                    return Boolean
+                  is
+                  begin
+                     if Value'Length = 0 then
+                        return False;
+                     end if;
+                     for Item of Value loop
+                        if not (Item in 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9'
+                                or else Item in
+                                  '!' | '#' | '$' | '%' | '&' | ''' | '*' |
+                                  '+' | '-' | '.' | '^' | '_' | '`' | '|' |
+                                  '~')
+                        then
+                           return False;
+                        end if;
+                     end loop;
+                     return True;
+                  end Valid_Content_Coding;
+
+                  procedure Parse_Content_Encoding is
+                  begin
+                     if Apps.Request_Header_Count (X, "content-encoding") = 0
+                     then
+                        return;
+                     end if;
+                     declare
+                        Value : constant String :=
+                          Apps.Request_Header (X, "content-encoding");
+                        Cursor : Integer := Value'First;
+                     begin
+                        if Value'Length = 0 then
+                           Encoding_OK := False;
+                           return;
+                        end if;
+                        while Cursor <= Value'Last loop
+                           declare
+                              Comma : constant Natural :=
+                                Ada.Strings.Fixed.Index
+                                  (Value, ",", From => Cursor);
+                              Last : constant Integer :=
+                                (if Comma = 0 then Value'Last
+                                 else Integer (Comma) - 1);
+                              Token : constant String :=
+                                Ada.Strings.Fixed.Trim
+                                  (Value (Cursor .. Last), Ada.Strings.Both);
+                           begin
+                              if not Valid_Content_Coding (Token) then
+                                 Encoding_OK := False;
+                                 return;
+                              elsif Ada.Characters.Handling.To_Lower (Token) =
+                                "aws-chunked"
+                              then
+                                 if AWS_Chunked_Encoding then
+                                    Encoding_OK := False;
+                                    return;
+                                 end if;
+                                 AWS_Chunked_Encoding := True;
+                              end if;
+                              exit when Comma = 0;
+                              Cursor := Integer (Comma) + 1;
+                              if Cursor > Value'Last then
+                                 Encoding_OK := False;
+                                 return;
+                              end if;
+                           end;
+                        end loop;
+                     end;
+                  end Parse_Content_Encoding;
                begin
                   if Value_Count > 1 or else SDK_Count > 1
+                    or else Trailer_Count > 1
+                    or else Content_MD5_Count > 1
+                    or else Payer_Count > 1
+                    or else Apps.Request_Header_Count
+                      (X, "content-encoding") > 1
+                    or else Checksum_Header_Count /= Value_Count
                     or else Apps.Request_Header_Count
                       (X, "x-amz-checksum-algorithm") > 0
                     or else Apps.Request_Header_Count
@@ -3274,14 +3407,75 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         "The UploadPart checksum group is invalid",
                         Target_Text);
                      return;
+                  elsif Content_MD5_Count = 1
+                    and then not S3.Wire_Core.Valid_Base64
+                      (Apps.Request_Header (X, "content-md5"), 16)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidDigest",
+                        "The Content-MD5 is invalid", Target_Text);
+                     return;
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer is invalid", Target_Text);
+                     return;
+                  elsif Payer_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Requester Pays is not implemented", Target_Text);
+                     return;
+                  elsif Owner_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-expected-bucket-owner")'Length
+                        not in 1 .. 8 * 1_024
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The expected bucket owner is invalid", Target_Text);
+                     return;
                   end if;
+
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  end if;
+
+                  Parse_Content_Encoding;
+                  if not Encoding_OK then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The content encoding is invalid", Target_Text);
+                     return;
+                  elsif Apps.Request_Header_Count
+                    (X, "content-encoding") = 1
+                    and then not AWS_Chunked_Encoding
+                  then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "UploadPart content encoding is not implemented",
+                        Target_Text);
+                     return;
+                  elsif not AWS_Chunked_Encoding
+                    and then Apps.Request_Header_Count
+                      (X, "x-amz-decoded-content-length") > 0
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A decoded content length requires aws-chunked",
+                        Target_Text);
+                     return;
+                  end if;
+
                   if SDK_Count = 1 then
                      SDK_Algorithm := Parse_Checksum_Algorithm
                        (Apps.Request_Header
                           (X, "x-amz-sdk-checksum-algorithm"), SDK_Valid);
-                     if not SDK_Valid or else Value_Count /= 1
-                       or else SDK_Algorithm /= Value_Algorithm
-                     then
+                     if not SDK_Valid then
                         Send_Error
                           (X, 400, "InvalidRequest",
                            "The UploadPart checksum algorithm is invalid",
@@ -3289,6 +3483,100 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         return;
                      end if;
                   end if;
+
+                  if Value_Count = 1 then
+                     if Trailer_Count > 0 then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The UploadPart checksum group is invalid",
+                           Target_Text);
+                        return;
+                     end if;
+                     Supplied_Checksum := US.To_Unbounded_String
+                       (Apps.Request_Header
+                          (X, Checksum_Header_Name (Value_Algorithm)));
+                     if not Checksum_Engine.Valid_Digest
+                       (US.To_String (Supplied_Checksum), Value_Algorithm)
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The UploadPart checksum value is invalid",
+                           Target_Text);
+                        return;
+                     end if;
+                     Verify_Checksum := True;
+                  elsif Trailer_Count = 1 then
+                     if SDK_Count /= 1
+                       or else Ada.Characters.Handling.To_Lower
+                         (Apps.Request_Header (X, "x-amz-trailer")) /=
+                           Checksum_Header_Name (SDK_Algorithm)
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The UploadPart checksum trailer is invalid",
+                           Target_Text);
+                        return;
+                     end if;
+                     Value_Algorithm := SDK_Algorithm;
+                     Verify_Checksum := True;
+                     Trailer_Checksum := True;
+                  elsif SDK_Count = 1 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The selected UploadPart checksum is missing",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  if AWS_Chunked_Encoding then
+                     if Apps.Request_Header_Count
+                       (X, "x-amz-decoded-content-length") /= 1
+                       or else not Trailer_Checksum
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "aws-chunked requires one decoded length and " &
+                           "checksum trailer", Target_Text);
+                        return;
+                     end if;
+                     declare
+                        Parsed : constant S3.Wire_Core.Byte_Count_Result :=
+                          S3.Wire_Core.Parse_Byte_Count
+                            (Apps.Request_Header
+                               (X, "x-amz-decoded-content-length"));
+                     begin
+                        if not Parsed.Valid then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The decoded content length is invalid",
+                              Target_Text);
+                           return;
+                        elsif Parsed.Value >
+                          Backends.Maximum_Multipart_Part_Size
+                        then
+                           Send_Error
+                             (X, 400, "EntityTooLarge",
+                              "Your proposed upload exceeds the maximum " &
+                              "allowed size", Target_Text);
+                           return;
+                        end if;
+                     end;
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "aws-chunked payloads are not implemented",
+                        Target_Text);
+                     return;
+                  elsif Length.Kind = Backends.Known
+                    and then Length.Bytes >
+                      Backends.Maximum_Multipart_Part_Size
+                  then
+                     Send_Error
+                       (X, 400, "EntityTooLarge",
+                        "Your proposed upload exceeds the maximum allowed " &
+                        "size", Target_Text);
+                     return;
+                  end if;
+
                   Store.List_Multipart_Parts
                     (Bucket, Key, US.To_String (Query.Upload_ID),
                      (After => 0, Maximum => 0), Apps.Cancellation (X),
@@ -3303,11 +3591,19 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Send_Backend_Error (X, Result, False, Target_Text);
                      return;
                   elsif Page.Checksum.Method = Composite_Checksum
-                    and then Value_Count = 0
+                    and then not Verify_Checksum
                   then
                      Send_Error
                        (X, 400, "InvalidRequest",
                         "A composite UploadPart checksum is required",
+                        Target_Text);
+                     return;
+                  elsif Verify_Checksum
+                    and then Value_Algorithm /= Page.Checksum.Algorithm
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The UploadPart checksum differs from initiation",
                         Target_Text);
                      return;
                   end if;
@@ -3315,19 +3611,52 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Part_Options.Expected_Checksum :=
                        (Algorithm => Value_Algorithm,
                         Method    => Page.Checksum.Method,
-                        Value     => US.To_Unbounded_String
-                          (Apps.Request_Header
-                             (X, Checksum_Header_Name (Value_Algorithm))));
+                        Value     => Supplied_Checksum);
                   end if;
-                  Store.Put_Multipart_Part
-                    (Bucket, Key, US.To_String (Query.Upload_ID),
-                     Backends.Multipart_Part_Number (Query.Part_Number),
-                     Source, Part_Options, Apps.Cancellation (X),
-                     Apps.Deadline (X), Info, Result);
-                  if Result = Success and then not Source.Completed then
-                     raise Program_Error with
-                       "backend committed before validating the whole part";
-                  elsif Result = Success then
+
+                  declare
+                     Selected : constant Checksum_Algorithm :=
+                       (if Page.Checksum.Algorithm = No_Checksum
+                        then Checksum_CRC64NVME
+                        else Page.Checksum.Algorithm);
+                     Source : Request_IO.Request_Source
+                       (Checksum_Engine.Algorithm_Value (Selected)) :=
+                         (Checksum_Kind =>
+                            Checksum_Engine.Algorithm_Value (Selected),
+                          Length_Value  => Length,
+                          Expected_Hash => Auth.Payload_Hash,
+                          Check_Hash    =>
+                            US.To_String (Auth.Payload_Hash) /=
+                              S3.SigV4.Unsigned_Payload,
+                          Hash      => GNAT.SHA256.Initial_Context,
+                          Check_Content_MD5 => Content_MD5_Count = 1,
+                          Expected_Content_MD5 =>
+                            (if Content_MD5_Count = 1
+                             then US.To_Unbounded_String
+                               (Apps.Request_Header (X, "content-md5"))
+                             else US.Null_Unbounded_String),
+                          Check_Body_Checksum => Verify_Checksum,
+                          Checksum_From_Trailer => Trailer_Checksum,
+                          Reject_Unexpected_Trailers => True,
+                          Expected_Body_Checksum => Supplied_Checksum,
+                          Observed  => 0,
+                          Maximum   =>
+                            Backends.Maximum_Multipart_Part_Size,
+                          Completed => False,
+                          others    => <>);
+                  begin
+                     Store.Put_Multipart_Part
+                       (Bucket, Key, US.To_String (Query.Upload_ID),
+                        Backends.Multipart_Part_Number (Query.Part_Number),
+                        Source, Part_Options, Apps.Cancellation (X),
+                        Apps.Deadline (X), Info, Result);
+                     if Result = Success and then not Source.Completed then
+                        raise Program_Error with
+                          "backend committed before validating the whole " &
+                          "part";
+                     end if;
+                  end;
+                  if Result = Success then
                      Apps.Set_Header
                        (X, "ETag", '"' & US.To_String (Info.Entity_Tag) & '"');
                      if Info.Checksum.Algorithm /= No_Checksum then

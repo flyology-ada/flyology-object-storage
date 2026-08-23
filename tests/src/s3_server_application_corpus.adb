@@ -66,6 +66,7 @@ procedure S3_Server_Application_Corpus is
    use type Flyology.Object_Storage.Status;
    use type Flyology.Object_Storage.Metadata_Time;
    use type Flyology.Object_Storage.Checksum_Algorithm;
+   use type Checksum_Policy.Algorithm;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type MFA.Authorization_Status;
    use type Tags.Tag_Vectors.Vector;
@@ -1058,9 +1059,14 @@ procedure S3_Server_Application_Corpus is
       Target        : String;
       Query         : SigV4.Name_Value_Array;
       Payload       : String;
-      Extra_Headers : String := "") return String
+      Extra_Headers : String := "";
+      Hash_Override : String := "";
+      Expect        : Boolean := False;
+      Corrupt_Signature : Boolean := False) return String
    is
-      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Payload_Hash : constant String :=
+        (if Hash_Override'Length = 0
+         then SigV4.SHA256_Hex (Payload) else Hash_Override);
       Query_Text : constant String := SigV4.Canonical_Query (Query);
 
       function Extra_Header_Count return Natural is
@@ -1120,12 +1126,18 @@ procedure S3_Server_Application_Corpus is
          Signing : constant SigV4.Signing_Result := SigV4.Sign
            (Method, Target, Query, Headers, Payload_Hash, Access_Key,
             Secret_Key, Region, Timestamp);
+         Authorization : String := US.To_String (Signing.Authorization);
       begin
+         if Corrupt_Signature then
+            Authorization (Authorization'Last) :=
+              (if Authorization (Authorization'Last) = '0' then '1' else '0');
+         end if;
          return Method & " " & Target & "?" & Query_Text & " HTTP/1.1" &
            CRLF & "Host: " & Host & CRLF & "x-amz-date: " & Timestamp &
            CRLF & "x-amz-content-sha256: " & Payload_Hash & CRLF &
-           "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
-           Extra_Headers & "Content-Length: " &
+           "Authorization: " & Authorization & CRLF & Extra_Headers &
+           (if Expect then "Expect: 100-continue" & CRLF else "") &
+           "Content-Length: " &
            Ada.Strings.Fixed.Trim
              (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
            "Connection: close" & CRLF & CRLF & Payload;
@@ -1302,6 +1314,26 @@ procedure S3_Server_Application_Corpus is
    function Has (Value, Pattern : String) return Boolean is
      (Ada.Strings.Fixed.Index (Value, Pattern) /= 0);
 
+   function Occurrences (Value, Pattern : String) return Natural is
+      Result : Natural := 0;
+      Cursor : Integer := Value'First;
+   begin
+      if Pattern'Length = 0 then
+         return 0;
+      end if;
+      while Cursor <= Value'Last loop
+         declare
+            Found : constant Natural :=
+              Ada.Strings.Fixed.Index (Value, Pattern, From => Cursor);
+         begin
+            exit when Found = 0;
+            Result := Result + 1;
+            Cursor := Integer (Found) + Pattern'Length;
+         end;
+      end loop;
+      return Result;
+   end Occurrences;
+
    function Has
      (Value : US.Unbounded_String; Pattern : String) return Boolean is
      (US.Index (Value, Pattern) /= 0);
@@ -1452,6 +1484,90 @@ procedure S3_Server_Application_Corpus is
         "Connection: close" & CRLF & CRLF & US.To_String (Wire_Body);
    end Signed_Versioning_Trailer_Request;
 
+   function Signed_Upload_Part_Trailer_Request
+     (Target          : String;
+      Upload_ID       : String;
+      Part_Number     : Positive;
+      Payload         : String;
+      Algorithm       : Checksum_Policy.Algorithm;
+      Checksum        : String;
+      Include_Trailer : Boolean := True;
+      Duplicate       : Boolean := False) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
+      Algorithm_Name : constant String :=
+        Checksum_Policy.Wire_Name (Algorithm);
+      Checksum_Name : constant String := Checksum_Header (Algorithm);
+      Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair
+           ("partNumber",
+            Ada.Strings.Fixed.Trim
+              (Positive'Image (Part_Number), Ada.Strings.Both)),
+         SigV4.Pair ("uploadId", Upload_ID));
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp),
+         SigV4.Pair ("x-amz-sdk-checksum-algorithm", Algorithm_Name),
+         SigV4.Pair ("x-amz-trailer", Checksum_Name));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", Target, Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+      Wire_Body : US.Unbounded_String;
+   begin
+      for Value of Payload loop
+         US.Append (Wire_Body, "1" & CRLF & Value & CRLF);
+      end loop;
+      US.Append (Wire_Body, "0" & CRLF);
+      if Include_Trailer then
+         US.Append (Wire_Body, Checksum_Name & ": " & Checksum & CRLF);
+         if Duplicate then
+            US.Append (Wire_Body, Checksum_Name & ": " & Checksum & CRLF);
+         end if;
+      end if;
+      US.Append (Wire_Body, CRLF);
+      return "PUT " & Target & "?" & SigV4.Canonical_Query (Query) &
+        " HTTP/1.1" & CRLF & "Host: " & Host & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-sdk-checksum-algorithm: " & Algorithm_Name & CRLF &
+        "x-amz-trailer: " & Checksum_Name & CRLF & "Authorization: " &
+        US.To_String (Signing.Authorization) & CRLF &
+        "Transfer-Encoding: chunked" & CRLF & "Connection: close" & CRLF &
+        CRLF & US.To_String (Wire_Body);
+   end Signed_Upload_Part_Trailer_Request;
+
+   function Signed_Upload_Part_Declared_Length_Request
+     (Target      : String;
+      Upload_ID   : String;
+      Part_Number : Positive;
+      Length      : Flyology.Object_Storage.Byte_Count) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex ("");
+      Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair
+           ("partNumber",
+            Ada.Strings.Fixed.Trim
+              (Positive'Image (Part_Number), Ada.Strings.Both)),
+         SigV4.Pair ("uploadId", Upload_ID));
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-date", Timestamp));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", Target, Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+   begin
+      return "PUT " & Target & "?" & SigV4.Canonical_Query (Query) &
+        " HTTP/1.1" & CRLF & "Host: " & Host & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "x-amz-date: " & Timestamp & CRLF & "Authorization: " &
+        US.To_String (Signing.Authorization) & CRLF & "Content-Length: " &
+        Ada.Strings.Fixed.Trim
+          (Flyology.Object_Storage.Byte_Count'Image (Length),
+           Ada.Strings.Both) & CRLF & "Connection: close" & CRLF & CRLF;
+   end Signed_Upload_Part_Declared_Length_Request;
+
    procedure Check_Cancellation_Propagation is
       Wire : aliased Memory_Transport;
       Stop : aliased Flyology.Cancellation.Token;
@@ -1581,6 +1697,544 @@ procedure S3_Server_Application_Corpus is
                 Expected_Checksum
             and then not Listed.Is_Truncated,
             "ListParts server response mismatch: " & Response);
+      end;
+      declare
+         procedure Exercise_Checksum
+           (Algorithm : Checksum_Policy.Algorithm)
+         is
+            Name : constant String := Checksum_Policy.Wire_Name (Algorithm);
+            Target : constant String :=
+              "/test-bucket/upload-part-checksum-" & Name;
+            Create_Response : constant String := Run
+              (Signed_Query_Body_Request
+                 ("POST", Target, Create_Query, "",
+                  "x-amz-checksum-algorithm: " & Name & CRLF));
+            ID : constant String := US.To_String
+              (Multipart.Parse_Create_Result
+                 (Response_Body (Create_Response)).Upload_ID);
+            Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("partNumber", "1"),
+               SigV4.Pair ("uploadId", ID));
+            Header_Payload : constant String := "header-" & Name;
+            Header_Checksum : constant String :=
+              Checksum_Value (Algorithm, Header_Payload);
+            --  SHA256 deliberately carries a conflicting SDK selector.  The
+            --  concrete individual checksum has the pinned AWS precedence.
+            Selector : constant String :=
+              (if Algorithm = Core.SHA256 then "CRC32" else Name);
+            Header_Response : constant String := Run
+              (Signed_Query_Body_Request
+                 ("PUT", Target, Query, Header_Payload,
+                  "content-md5: " & Content_MD5 (Header_Payload) & CRLF &
+                  "x-amz-sdk-checksum-algorithm: " & Selector & CRLF &
+                  Checksum_Header (Algorithm) & ": " & Header_Checksum &
+                  CRLF &
+                  (if Algorithm = Core.CRC32
+                   then "x-amz-expected-bucket-owner: test-principal" & CRLF
+                   else "")));
+            Trailer_Payload : constant String := "trailer-" & Name;
+            Trailer_Checksum : constant String :=
+              Checksum_Value (Algorithm, Trailer_Payload);
+            Trailer_Response : constant String := Run
+              (Signed_Upload_Part_Trailer_Request
+                 (Target, ID, 2, Trailer_Payload, Algorithm,
+                  Trailer_Checksum));
+            List_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("uploadId", ID),
+               SigV4.Pair ("x-id", "ListParts"));
+            List_Response : constant String := Run
+              (Signed_Query_Request ("GET", Target, List_Query));
+            Abort_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("uploadId", ID),
+               SigV4.Pair ("x-id", "AbortMultipartUpload"));
+
+            procedure Reject_Header
+              (Value : String; Code : String; Label : String)
+            is
+               Negative_Query : constant SigV4.Name_Value_Array :=
+                 (SigV4.Pair ("partNumber", "3"),
+                  SigV4.Pair ("uploadId", ID));
+               Response : constant String := Run
+                 (Signed_Query_Body_Request
+                    ("PUT", Target, Negative_Query, Header_Payload,
+                     Value));
+            begin
+               Require
+                 (not Has (Response, "200 OK")
+                  and then Has (Response, "<Code>" & Code & "</Code>"),
+                  "UploadPart accepted " & Name & " " & Label & ": " &
+                    Response);
+            end Reject_Header;
+         begin
+            Require
+              (Has (Create_Response, "200 OK")
+               and then Has (Header_Response, "200 OK")
+               and then Response_Body (Header_Response) = ""
+               and then Occurrences (Header_Response, "ETag: ") = 1
+               and then Occurrences
+                 (Header_Response, Checksum_Header (Algorithm) & ": ") = 1
+               and then Has
+                 (Header_Response,
+                  Checksum_Header (Algorithm) & ": " & Header_Checksum &
+                  CRLF)
+               and then Has (Trailer_Response, "200 OK")
+               and then Response_Body (Trailer_Response) = ""
+               and then Occurrences (Trailer_Response, "ETag: ") = 1
+               and then Occurrences
+                 (Trailer_Response, Checksum_Header (Algorithm) & ": ") = 1
+               and then Has
+                 (Trailer_Response,
+                  Checksum_Header (Algorithm) & ": " & Trailer_Checksum &
+                  CRLF),
+               "UploadPart rejected valid " & Name & " header/trailer");
+            Require
+              (Has (List_Response, "200 OK")
+               and then Has
+                 (Response_Body (List_Response),
+                  "<Checksum" & Name & ">" & Header_Checksum &
+                  "</Checksum" & Name & ">")
+               and then Has
+                 (Response_Body (List_Response),
+                  "<Checksum" & Name & ">" & Trailer_Checksum &
+                  "</Checksum" & Name & ">"),
+               "UploadPart did not persist exact " & Name & " parts");
+            for Other in Checksum_Policy.Algorithm loop
+               if Other /= Algorithm then
+                  Require
+                    (not Has
+                       (Header_Response, Checksum_Header (Other) & ": ")
+                     and then not Has
+                       (Trailer_Response, Checksum_Header (Other) & ": "),
+                     "UploadPart emitted an unselected checksum header");
+               end if;
+            end loop;
+            Require
+              (not Has (Header_Response, "x-amz-server-side-encryption:")
+               and then not Has
+                 (Header_Response,
+                  "x-amz-server-side-encryption-customer-algorithm:")
+               and then not Has
+                 (Header_Response,
+                  "x-amz-server-side-encryption-customer-key-MD5:")
+               and then not Has
+                 (Header_Response,
+                  "x-amz-server-side-encryption-aws-kms-key-id:")
+               and then not Has
+                 (Header_Response,
+                  "x-amz-server-side-encryption-bucket-key-enabled:")
+               and then not Has (Header_Response, "x-amz-request-charged:"),
+               "UploadPart emitted unsupported response metadata");
+            Reject_Header
+              (Checksum_Header (Algorithm) & ": " & CRLF,
+               "InvalidRequest", "present-empty checksum");
+            Reject_Header
+              (Checksum_Header (Algorithm) & ": " & Header_Checksum & CRLF &
+               Checksum_Header (Algorithm) & ": " & Header_Checksum & CRLF,
+               "InvalidRequest", "duplicate checksum");
+            Reject_Header
+              (Checksum_Header (Algorithm) & ": !" & CRLF,
+               "InvalidRequest", "malformed checksum");
+            Reject_Header
+              (Checksum_Header (Algorithm) & ": " &
+               Checksum_Value (Algorithm, "different") & CRLF,
+               "BadDigest", "mismatched checksum");
+            declare
+               After_Negatives : constant String := Run
+                 (Signed_Query_Request ("GET", Target, List_Query));
+               Abort_Response : constant String := Run
+                 (Signed_Query_Request ("DELETE", Target, Abort_Query));
+            begin
+               Require
+                 (Has (After_Negatives, "200 OK")
+                  and then Response_Body (After_Negatives) =
+                    Response_Body (List_Response),
+                  "rejected UploadPart changed the staged part set for " &
+                    Name);
+               Require
+                 (Has (Abort_Response, "204 No Content"),
+                  "UploadPart checksum upload cleanup failed");
+            end;
+         end Exercise_Checksum;
+      begin
+         for Algorithm in Checksum_Policy.Algorithm loop
+            Exercise_Checksum (Algorithm);
+         end loop;
+      end;
+      declare
+         Part_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("partNumber", "1"),
+            SigV4.Pair ("uploadId", Upload_ID));
+         Prior_List_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("uploadId", Upload_ID),
+            SigV4.Pair ("x-id", "ListParts"));
+         Prior_List_Response : constant String := Run
+           (Signed_Query_Request
+              ("GET", "/test-bucket/multipart-object", Prior_List_Query));
+         Prior_Listed : constant Multipart.List_Parts_Result :=
+           Multipart.Parse_List_Parts_Result
+             (Response_Body (Prior_List_Response));
+
+         procedure Reject
+           (Headers : String;
+            Code    : String;
+            Label   : String;
+            Scheme  : Flyology.HTTP.Origin_Scheme :=
+              Flyology.HTTP.Plain_HTTP)
+         is
+            Response : constant String := Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/multipart-object", Part_Query,
+                  Payload, Headers), Scheme => Scheme);
+         begin
+            Require
+              (not Has (Response, "200 OK")
+               and then Has (Response, "<Code>" & Code & "</Code>"),
+               "UploadPart accepted " & Label & ": " & Response);
+         end Reject;
+
+         procedure Reject_Wire
+           (Request : String; Code : String; Label : String)
+         is
+            Response : constant String := Run (Request);
+         begin
+            Require
+              (not Has (Response, "200 OK")
+               and then Has (Response, "<Code>" & Code & "</Code>"),
+               "UploadPart accepted " & Label & ": " & Response);
+         end Reject_Wire;
+
+         Key : constant String := Checksum_Value (Core.SHA256, "sse-key");
+         Decoded_Key : constant Checksums.Decode_Result :=
+           Checksums.Decode_Base64 (Key, Core.SHA256);
+         Key_MD5 : constant String := Checksums.Encode_Base64
+           (Checksums.Compute
+              (Core.MD5, Checksums.Raw_Bytes (Decoded_Key.Value)));
+         Overlong : constant String (1 .. 8 * 1_024 + 1) := (others => 'x');
+      begin
+         declare
+            Missing_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("partNumber", "1"),
+               SigV4.Pair ("uploadId", "missing-upload"));
+            Response : constant String := Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/multipart-object", Missing_Query,
+                  Payload,
+                  "content-md5: malformed" & CRLF &
+                  "x-amz-request-payer: requester" & CRLF &
+                  "x-amz-expected-bucket-owner: different-owner" & CRLF &
+                  "x-amz-checksum-crc64nvme: malformed" & CRLF,
+                  Expect => True, Corrupt_Signature => True));
+         begin
+            Require
+              (Has (Response, "<Code>SignatureDoesNotMatch</Code>")
+               and then not Has (Response, "100 Continue")
+               and then not Has (Response, "NoSuchUpload")
+               and then not Has (Response, "InvalidDigest")
+               and then not Has (Response, "NotImplemented")
+               and then not Has (Response, "AccessDenied"),
+               "UploadPart controls ran before authentication: " & Response);
+         end;
+         Reject
+           ("content-md5: malformed" & CRLF, "InvalidDigest",
+            "malformed Content-MD5");
+         Reject
+           ("content-md5: " & Content_MD5 ("different") & CRLF,
+            "BadDigest", "mismatched Content-MD5");
+         Reject
+           ("content-md5: " & Content_MD5 (Payload) & CRLF &
+            "content-md5: " & Content_MD5 (Payload) & CRLF,
+            "InvalidRequest", "duplicate Content-MD5");
+         Reject
+           ("x-amz-sdk-checksum-algorithm: CRC64NVME" & CRLF,
+            "InvalidRequest", "selector without checksum evidence");
+         Reject
+           ("x-amz-sdk-checksum-algorithm: " & CRLF,
+            "InvalidRequest", "empty checksum selector");
+         Reject
+           ("x-amz-sdk-checksum-algorithm: UNKNOWN" & CRLF,
+            "InvalidRequest", "invalid checksum selector");
+         Reject
+           ("x-amz-sdk-checksum-algorithm: CRC64NVME" & CRLF &
+            "x-amz-sdk-checksum-algorithm: CRC64NVME" & CRLF &
+            "x-amz-checksum-crc64nvme: " & Expected_Checksum & CRLF,
+            "InvalidRequest", "duplicate checksum selector");
+         Reject
+           ("x-amz-checksum-unknown: value" & CRLF,
+            "InvalidRequest", "unknown checksum control");
+         Reject
+           ("X-Amz-Checksum-Unknown: value" & CRLF &
+            "x-amz-checksum-crc64nvme: " & Expected_Checksum & CRLF,
+            "InvalidRequest", "case-folded unknown checksum with known");
+         Reject
+           ("x-amz-checksum-crc32-extra: value" & CRLF,
+            "InvalidRequest", "near-name checksum control");
+         Reject
+           ("x-amz-checksum-type: FULL_OBJECT" & CRLF,
+            "InvalidRequest", "unsupported UploadPart checksum type");
+         Reject
+           ("x-amz-checksum-crc64nvme: " & Expected_Checksum & CRLF &
+            "x-amz-checksum-crc32: " &
+            Checksum_Value (Core.CRC32, Payload) & CRLF,
+            "InvalidRequest", "multiple concrete checksums");
+         Reject
+           ("x-amz-checksum-crc64nvme: " &
+            Checksum_Value (Core.CRC64NVME, "different") & CRLF,
+            "BadDigest", "mismatched concrete checksum");
+         declare
+            Wrong_Hash : constant String (1 .. 64) := (others => '0');
+            Response : constant String := Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/multipart-object", Part_Query,
+                  Payload, Hash_Override => Wrong_Hash));
+         begin
+            Require
+              (Has
+                 (Response,
+                  "<Code>XAmzContentSHA256Mismatch</Code>"),
+               "UploadPart accepted a mismatched signed payload hash");
+         end;
+         Reject_Wire
+           (Signed_Upload_Part_Trailer_Request
+              ("/test-bucket/multipart-object", Upload_ID, 1, Payload,
+               Core.CRC64NVME, Expected_Checksum,
+               Include_Trailer => False),
+            "InvalidRequest", "missing physical checksum trailer");
+         Reject_Wire
+           (Signed_Upload_Part_Trailer_Request
+              ("/test-bucket/multipart-object", Upload_ID, 1, Payload,
+               Core.CRC64NVME, Expected_Checksum, Duplicate => True),
+            "InvalidRequest", "duplicate physical checksum trailer");
+         Reject_Wire
+           (Signed_Upload_Part_Trailer_Request
+              ("/test-bucket/multipart-object", Upload_ID, 1, Payload,
+               Core.CRC64NVME,
+               Checksum_Value (Core.CRC64NVME, "different")),
+            "BadDigest", "mismatched physical checksum trailer");
+         Reject
+           ("x-amz-sdk-checksum-algorithm: CRC64NVME" & CRLF &
+            "x-amz-trailer: x-amz-checksum-crc32" & CRLF,
+            "InvalidRequest", "wrong checksum trailer declaration");
+         Reject
+           ("x-amz-sdk-checksum-algorithm: CRC64NVME" & CRLF &
+            "x-amz-trailer: " & CRLF,
+            "InvalidRequest", "empty checksum trailer declaration");
+         Reject
+           ("x-amz-request-payer: requester" & CRLF,
+            "NotImplemented", "unsupported requester pays");
+         Reject
+           ("x-amz-request-payer: " & CRLF,
+            "InvalidArgument", "empty requester payer");
+         Reject
+           ("x-amz-request-payer: Requester" & CRLF,
+            "InvalidArgument", "invalid requester payer");
+         Reject
+           ("x-amz-request-payer: requester" & CRLF &
+            "x-amz-request-payer: requester" & CRLF,
+            "InvalidRequest", "duplicate requester payer");
+         Reject
+           ("x-amz-request-payer: " & Overlong & CRLF,
+            "InvalidArgument", "overlong requester payer");
+         Reject
+           ("x-amz-expected-bucket-owner: different-owner" & CRLF,
+            "AccessDenied", "mismatched expected owner");
+         Reject
+           ("x-amz-expected-bucket-owner: " & CRLF,
+            "InvalidRequest", "empty expected owner");
+         Reject
+           ("x-amz-expected-bucket-owner: test-principal" & CRLF &
+            "x-amz-expected-bucket-owner: test-principal" & CRLF,
+            "InvalidRequest", "duplicate expected owner");
+         Reject
+           ("x-amz-expected-bucket-owner: " & Overlong & CRLF,
+            "InvalidRequest", "overlong expected owner");
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF, "InvalidRequest", "incomplete SSE-C group");
+         Reject
+           ("x-amz-server-side-encryption-customer-key: " & Key & CRLF &
+            "x-amz-server-side-encryption-customer-key-md5: " & Key_MD5 &
+            CRLF, "InvalidRequest", "SSE-C group missing algorithm");
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "InvalidRequest", "SSE-C group missing key");
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF, "InvalidRequest", "SSE-C group missing key digest");
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF &
+            "x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "InvalidRequest",
+            "duplicate SSE-C algorithm");
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "InvalidRequest", "duplicate SSE-C key");
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF &
+            "x-amz-server-side-encryption-customer-key-md5: " & Key_MD5 &
+            CRLF, "InvalidRequest", "duplicate SSE-C key digest");
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: malformed" &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "InvalidDigest", "malformed SSE-C key",
+            Flyology.HTTP.Secure_HTTPS);
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF &
+            "x-amz-server-side-encryption-customer-key-md5: malformed" &
+            CRLF, "InvalidDigest", "malformed SSE-C key digest",
+            Flyology.HTTP.Secure_HTTPS);
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES128" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "InvalidArgument", "invalid SSE-C algorithm",
+            Flyology.HTTP.Secure_HTTPS);
+         Reject
+           ("content-encoding: aws-chunked" & CRLF &
+            "x-amz-decoded-content-length: 14" & CRLF &
+            "x-amz-sdk-checksum-algorithm: CRC64NVME" & CRLF &
+            "x-amz-trailer: x-amz-checksum-crc64nvme" & CRLF,
+            "NotImplemented", "synthetic aws-chunked payload");
+         Reject
+           ("content-encoding: " & CRLF,
+            "InvalidArgument", "empty UploadPart content encoding");
+         Reject
+           ("content-encoding: aws chunked" & CRLF,
+            "InvalidArgument", "malformed UploadPart content coding");
+         Reject
+           ("content-encoding: aws-chunked," & CRLF,
+            "InvalidArgument", "trailing empty content coding");
+         Reject
+           ("content-encoding: aws-chunked, aws-chunked" & CRLF,
+            "InvalidArgument", "duplicate aws-chunked content coding");
+         Reject
+           ("content-encoding: aws-chunked" & CRLF &
+            "x-amz-decoded-content-length: 14" & CRLF &
+            "x-amz-sdk-checksum-algorithm: UNKNOWN" & CRLF &
+            "x-amz-trailer: x-amz-checksum-crc64nvme" & CRLF,
+            "InvalidRequest", "aws-chunked invalid checksum selector");
+         Reject
+           ("content-encoding: aws-chunked" & CRLF &
+            "x-amz-decoded-content-length: 14" & CRLF &
+            "x-amz-sdk-checksum-algorithm: CRC64NVME" & CRLF &
+            "x-amz-trailer: x-amz-checksum-crc32" & CRLF,
+            "InvalidRequest", "aws-chunked wrong trailer declaration");
+         Reject
+           ("content-encoding: aws-chunked" & CRLF &
+            "x-amz-sdk-checksum-algorithm: CRC64NVME" & CRLF &
+            "x-amz-trailer: x-amz-checksum-crc64nvme" & CRLF,
+            "InvalidRequest", "aws-chunked missing decoded length");
+         Reject
+           ("content-encoding: aws-chunked" & CRLF &
+            "x-amz-decoded-content-length: 14" & CRLF &
+            "x-amz-sdk-checksum-algorithm: CRC64NVME" & CRLF,
+            "InvalidRequest", "aws-chunked missing trailer declaration");
+         Reject
+           ("content-encoding: aws-chunked" & CRLF &
+            "x-amz-decoded-content-length: invalid" & CRLF &
+            "x-amz-sdk-checksum-algorithm: CRC64NVME" & CRLF &
+            "x-amz-trailer: x-amz-checksum-crc64nvme" & CRLF,
+            "InvalidArgument", "aws-chunked invalid decoded length");
+         Reject
+           ("content-encoding: aws-chunked" & CRLF &
+            "x-amz-decoded-content-length: 5368709121" & CRLF &
+            "x-amz-sdk-checksum-algorithm: CRC64NVME" & CRLF &
+            "x-amz-trailer: x-amz-checksum-crc64nvme" & CRLF,
+            "EntityTooLarge", "aws-chunked oversized decoded length");
+         Reject
+           ("content-encoding: gzip" & CRLF,
+            "NotImplemented", "unsupported UploadPart content encoding");
+
+         Reject_Wire
+           (Signed_Upload_Part_Declared_Length_Request
+              ("/test-bucket/multipart-object", Upload_ID, 1,
+               Backends.Maximum_Multipart_Part_Size + 1),
+            "EntityTooLarge", "5 GiB+1 declared length");
+         declare
+            Response : constant String := Run
+              (Signed_Upload_Part_Declared_Length_Request
+                 ("/test-bucket/multipart-object", Upload_ID, 1,
+                  Backends.Maximum_Multipart_Part_Size));
+         begin
+            Require
+              (Has (Response, "503 Service Unavailable")
+               and then Has (Response, "<Code>SlowDown</Code>")
+               and then not Has (Response, "<Code>EntityTooLarge</Code>"),
+               "UploadPart exact 5 GiB scalar missed capacity policy: " &
+                 Response);
+         end;
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Content_MD5 ("different") & CRLF, "InvalidDigest",
+            "mismatched SSE-C key digest", Flyology.HTTP.Secure_HTTPS);
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "InvalidRequest", "SSE-C over plaintext");
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "NotImplemented", "unsupported valid SSE-C",
+            Flyology.HTTP.Secure_HTTPS);
+
+         declare
+            Leading_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("partNumber", "01"),
+               SigV4.Pair ("uploadId", Upload_ID));
+            Response : constant String := Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/multipart-object", Leading_Query,
+                  Payload));
+         begin
+            Require
+              (Has (Response, "<Code>InvalidArgument</Code>"),
+               "UploadPart accepted a leading-zero part number");
+         end;
+
+         declare
+            List_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("uploadId", Upload_ID),
+               SigV4.Pair ("x-id", "ListParts"));
+            Response : constant String := Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/multipart-object", List_Query));
+            Listed : constant Multipart.List_Parts_Result :=
+              Multipart.Parse_List_Parts_Result (Response_Body (Response));
+         begin
+            Require
+              (Has (Response, "200 OK") and then Listed.Parts.Length = 1
+               and then Listed.Parts.First_Element.Number = 1
+               and then Listed.Parts.First_Element.Size = Payload'Length
+               and then US.To_String
+                 (Listed.Parts.First_Element.Entity_Tag) =
+                   '"' & Part_ETag & '"'
+               and then US.To_String
+                 (Listed.Parts.First_Element.Checksum_CRC64NVME) =
+                   Expected_Checksum
+               and then Prior_Listed.Parts.Length = 1
+               and then US.To_String
+                 (Listed.Parts.First_Element.Last_Modified) =
+                   US.To_String
+                     (Prior_Listed.Parts.First_Element.Last_Modified),
+               "rejected UploadPart request changed the prior part");
+         end;
       end;
       declare
          Z_Create : constant String := Run
@@ -1954,6 +2608,11 @@ procedure S3_Server_Application_Corpus is
            (Signed_Upload_Part_Copy_Request
               ("/test-bucket/multipart-copy", Copy_ID,
                "test-bucket/multipart-object", "bytes=10-13", "AES256"));
+         Leading_Response : constant String := Run
+           (Signed_Upload_Part_Copy_Request
+              ("/test-bucket/multipart-copy", Copy_ID,
+               "test-bucket/multipart-object", "bytes=10-13",
+               Part_Number => "01"));
          Copy_ETag : constant String :=
            "841a2d689ad86bd1611447453c22c6fc";
          Completion : Multipart.Complete_Multipart_Upload_Request;
@@ -1973,6 +2632,11 @@ procedure S3_Server_Application_Corpus is
             and then Has
               (Encrypted_Response, "<Code>NotImplemented</Code>"),
             "UploadPartCopy silently accepted unsupported encryption");
+         Require
+           (Has (Leading_Response, "400 Bad Request")
+            and then Has
+              (Leading_Response, "<Code>InvalidArgument</Code>"),
+            "UploadPartCopy accepted a leading-zero part number");
          Completion.Parts.Append
            (Multipart.Completed_Part'
               (Number     => 1,

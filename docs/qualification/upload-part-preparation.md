@@ -53,6 +53,23 @@ buckets, access points, or object versioning. Unsupported policy must be
 authenticated, strictly validated, and explicitly rejected. It must never be
 accepted and discarded.
 
+For the unsupported SSE-C boundary, the server validates the complete triplet,
+canonical key/digest encodings, key MD5, and HTTPS before returning an
+authenticated `NotImplemented` response without reading the part source. It
+does not log, persist, or deliberately retain the key beyond request cleanup.
+The HTTP exchange retains the encoded header until cleanup and the generic MD5
+implementation may create transient request-stack copies that are not
+guaranteed erased. Guaranteed end-to-end zeroization and persisted initiation
+encryption state are prerequisites for any later positive SSE-C support.
+
+The authenticated path-style server is a single-tenant application profile.
+Its credential provider reports one stable tenant/account-owner principal for
+every access key accepted by the application instance and its bound Store.
+`ExpectedBucketOwner` is compared exactly with that principal. A provider that
+returns different principals for credentials admitted to the same Store is
+outside this profile; it must instead bind a separate application/store per
+tenant or provide a future bucket-owner capability.
+
 ## Machine-checked artifacts
 
 `tests/corpora/upload-part/members.tsv` records every modeled member, its wire

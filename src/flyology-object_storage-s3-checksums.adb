@@ -3,6 +3,8 @@ with Flyology.Object_Storage.S3.Wire_Core;
 with Interfaces.C;
 with System;
 
+with Flyology.Object_Storage.Secrets;
+
 package body Flyology.Object_Storage.S3.Checksums is
    use type Ada.Streams.Stream_Element_Offset;
    use type Interfaces.C.int;
@@ -169,6 +171,56 @@ package body Flyology.Object_Storage.S3.Checksums is
       end loop;
       return (Valid => True, Value => Result);
    end Decode_Base64;
+
+   function Valid_SSE_C_Key_MD5 (Key, Key_MD5 : String) return Boolean is
+      Decoded_MD5 : constant Decode_Result :=
+        Decode_Base64 (Key_MD5, Policy.Core.MD5);
+      Key_Bytes : Ada.Streams.Stream_Element_Array (1 .. 32) :=
+        (others => 0);
+      Source : Positive := Key'First;
+      Target : Ada.Streams.Stream_Element_Offset := Key_Bytes'First;
+      First, Second, Third, Fourth : Natural;
+      Result : Boolean := False;
+   begin
+      if Wire_Core.Valid_Base64 (Key, 32) and then Decoded_MD5.Valid then
+         while Source <= Key'Last loop
+            First := Base64_Value (Key (Source));
+            Second := Base64_Value (Key (Source + 1));
+            Third :=
+              (if Key (Source + 2) = '='
+               then 0 else Base64_Value (Key (Source + 2)));
+            Fourth :=
+              (if Key (Source + 3) = '='
+               then 0 else Base64_Value (Key (Source + 3)));
+            Key_Bytes (Target) := Ada.Streams.Stream_Element
+              (First * 4 + Second / 16);
+            if Target < Key_Bytes'Last then
+               Target := Target + 1;
+               Key_Bytes (Target) := Ada.Streams.Stream_Element
+                 ((Second mod 16) * 16 + Third / 4);
+            end if;
+            if Target < Key_Bytes'Last then
+               Target := Target + 1;
+               Key_Bytes (Target) := Ada.Streams.Stream_Element
+                 ((Third mod 4) * 64 + Fourth);
+            end if;
+            Source := Source + 4;
+            if Target < Key_Bytes'Last then
+               Target := Target + 1;
+            end if;
+         end loop;
+         Result := Equivalent
+           (Decoded_MD5.Value, Compute (Policy.Core.MD5, Key_Bytes));
+      end if;
+      Flyology.Object_Storage.Secrets.Wipe
+        (Key_Bytes'Address, Key_Bytes'Length);
+      return Result;
+   exception
+      when others =>
+         Flyology.Object_Storage.Secrets.Wipe
+           (Key_Bytes'Address, Key_Bytes'Length);
+         raise;
+   end Valid_SSE_C_Key_MD5;
 
    function Decimal (Value : Positive) return String is
      (Ada.Strings.Fixed.Trim (Positive'Image (Value), Ada.Strings.Both));

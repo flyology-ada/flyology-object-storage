@@ -50,6 +50,12 @@ package Flyology.Object_Storage.S3.Checksums is
    function Decode_Base64
      (Text : String; Expected : Algorithm) return Decode_Result;
 
+   --  Validate an AES256 SSE-C key and its caller-supplied MD5. The explicit
+   --  decoded buffer is erased before return. The generic MD5 implementation
+   --  may make transient request-stack copies that are not guaranteed erased;
+   --  callers must not retain, log, or persist the key.
+   function Valid_SSE_C_Key_MD5 (Key, Key_MD5 : String) return Boolean;
+
    --  Encode an object checksum, including S3's -part-count composite suffix.
    function Encode_Object
      (Value      : Digest_Value;

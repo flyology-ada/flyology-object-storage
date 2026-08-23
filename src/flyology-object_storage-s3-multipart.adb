@@ -116,6 +116,9 @@ package body Flyology.Object_Storage.S3.Multipart is
                           Wire_Core.Parse_Natural (Value);
                      begin
                         if Seen_Part or else not Parsed.Valid
+                          or else
+                            (Value'Length > 1
+                             and then Value (Value'First) = '0')
                           or else Parsed.Value not in Core.Part_Number'Range
                         then
                            raise Malformed_Multipart with

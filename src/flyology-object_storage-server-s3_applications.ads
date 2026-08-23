@@ -7,6 +7,11 @@ with Flyology.Object_Storage.Server.MFA;
 --  Binds one pluggable backend and credential provider into an authenticated
 --  path-style S3 application callback. Each Handle call owns its request and
 --  response streams synchronously; no borrowed exchange escapes the call.
+--  This is a single-tenant application boundary: every credential accepted
+--  by Credentials must report the same tenant/account-owner Principal for the
+--  bound Store. Expected-owner checks compare against that stable Principal;
+--  a multi-tenant credential provider requires a separate application/store
+--  binding per tenant.
 generic
    type Backend_Type (<>) is limited new Backends.Backend with private;
    Store : in out Backend_Type;

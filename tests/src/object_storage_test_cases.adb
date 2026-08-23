@@ -6984,6 +6984,9 @@ package body Object_Storage_Test_Cases is
         ("uploadId=x&partNumber=10001",
          "oversized multipart part number accepted");
       Must_Reject_Query
+        ("uploadId=x&partNumber=01",
+         "multipart part number with leading zero accepted");
+      Must_Reject_Query
         ("uploadId=%GG&partNumber=1",
          "bad multipart percent escape accepted");
       Must_Reject_Query
