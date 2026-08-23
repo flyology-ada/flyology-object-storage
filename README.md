@@ -284,3 +284,25 @@ to backend semantics.
 The Ada sources are available under MIT OR Apache-2.0. Vendored SQLite is in
 the public domain; its exact provenance is recorded in
 `sqlite/vendor/sqlite/README.md`.
+
+## Agent setup
+
+This repository uses APM 0.28.0 to provision one locked graph of shared and
+repository-specific instructions and skills for Codex and Claude. In a new
+clone or worktree, run:
+
+```sh
+curl -sSL https://aka.ms/apm-unix | sh -s -- @v0.28.0
+apm --version
+
+apm install --frozen
+apm compile --target codex
+```
+
+The compiled `AGENTS.md` is committed so Codex receives the instructions
+without setup. APM generates Claude's native rules and the Codex and Claude
+native skill trees locally from the same `apm.lock.yaml` graph; those deployment
+outputs are intentionally ignored. Start a fresh client session after
+installation so it discovers the generated skills. Repository-specific
+instructions live under `agent-packages/`, and shared Ada/workflow resources
+come from `flyology-ada/agents` at the locked revision.

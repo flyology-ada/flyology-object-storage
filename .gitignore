@@ -22,3 +22,7 @@ __pycache__/
 /sqlite/tests/obj/
 /sqlite/tests/alire/
 /benchmarks/results/
+.agents/
+.claude/rules/
+.claude/skills/
+apm_modules/
