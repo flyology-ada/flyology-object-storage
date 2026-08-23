@@ -1288,6 +1288,21 @@ procedure S3_HTTP_Socket_Corpus is
             Fragmented => True);
          Serve
            (HTTP_Response
+              ("204 No Content", "", "x-amz-delete-marker:" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/empty-delete-marker-output");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", "x-amz-version-id:" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/empty-delete-version-output");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", "x-amz-request-charged:" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/empty-delete-charged-output");
+         Serve
+           (HTTP_Response
               ("204 No Content", "", Omit_Content_Length => True),
             "DELETE", "/example-bucket/convenient-delete",
             Expected_If_Match => "*",
@@ -1304,21 +1319,6 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-version-id: second" & CRLF,
                Omit_Content_Length => True),
             "DELETE", "/example-bucket/duplicate-delete-output");
-         Serve
-           (HTTP_Response
-              ("204 No Content", "", "x-amz-delete-marker:" & CRLF,
-               Omit_Content_Length => True),
-            "DELETE", "/example-bucket/empty-delete-marker-output");
-         Serve
-           (HTTP_Response
-              ("204 No Content", "", "x-amz-version-id:" & CRLF,
-               Omit_Content_Length => True),
-            "DELETE", "/example-bucket/empty-delete-version-output");
-         Serve
-           (HTTP_Response
-              ("204 No Content", "", "x-amz-request-charged:" & CRLF,
-               Omit_Content_Length => True),
-            "DELETE", "/example-bucket/empty-delete-charged-output");
          Serve
            (HTTP_Response
               ("409 Conflict",
