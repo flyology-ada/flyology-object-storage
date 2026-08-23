@@ -1,5 +1,5 @@
 lockfile_version: '1'
-generated_at: '2026-08-23T16:00:39.550381+00:00'
+generated_at: '2026-08-23T16:24:20.839753+00:00'
 apm_version: 0.28.0
 dependencies:
 - repo_url: _local/repository
@@ -16,7 +16,7 @@ dependencies:
   name: flyology-ada-library-profile
   host: github.com
   resolved_commit: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
-  resolved_ref: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
+  resolved_ref: main
   version: 0.1.0
   virtual_path: packages/profiles/ada-library
   is_virtual: true
@@ -26,7 +26,7 @@ dependencies:
   name: flyology-ada-interface-values
   host: github.com
   resolved_commit: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
-  resolved_ref: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
+  resolved_ref: main
   version: 0.1.0
   virtual_path: packages/instructions/ada-interface-values
   is_virtual: true
@@ -42,7 +42,7 @@ dependencies:
   name: flyology-ada-source-style
   host: github.com
   resolved_commit: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
-  resolved_ref: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
+  resolved_ref: main
   version: 0.1.0
   virtual_path: packages/instructions/ada-source-style
   is_virtual: true
@@ -58,7 +58,7 @@ dependencies:
   name: flyology-decision-authority
   host: github.com
   resolved_commit: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
-  resolved_ref: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
+  resolved_ref: main
   version: 0.1.0
   virtual_path: packages/instructions/decision-authority
   is_virtual: true
@@ -74,7 +74,7 @@ dependencies:
   name: flyology-problem-solution-commits
   host: github.com
   resolved_commit: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
-  resolved_ref: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
+  resolved_ref: main
   version: 0.1.0
   virtual_path: packages/instructions/problem-solution-commits
   is_virtual: true
@@ -90,7 +90,7 @@ dependencies:
   name: flyology-repository-workflow
   host: github.com
   resolved_commit: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
-  resolved_ref: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
+  resolved_ref: main
   version: 0.1.0
   virtual_path: packages/instructions/repository-workflow
   is_virtual: true
@@ -106,7 +106,7 @@ dependencies:
   name: flyology-ada-skills
   host: github.com
   resolved_commit: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
-  resolved_ref: ac2e1793ea620fa567ed3b4f8b7cb9a058c07682
+  resolved_ref: main
   version: 0.1.0
   virtual_path: packages/skills
   is_virtual: true

@@ -10,6 +10,7 @@ codex` generated the committed `AGENTS.md`.
 - APM: `Agent Package Manager (APM) CLI version 0.28.0 (e041462)`
 - shared package source: `https://github.com/flyology-ada/agents.git`
 - shared profile: `packages/profiles/ada-library`
+- manifest update channel: `main`
 - resolved shared commit: `ac2e1793ea620fa567ed3b4f8b7cb9a058c07682`
 - Codex: `codex-cli 0.147.0`, fresh `codex exec --ephemeral` sessions with
   read-only sandboxing
@@ -88,3 +89,15 @@ already loaded project rule. The negative-control discovery criterion passed.
   read-only execution, and all four behavioral outcomes still completed.
 
 No discovery or adherence failure remained after the corrected invocations.
+
+## Update policy
+
+The root manifest deliberately names the mutable `main` channel. Exact
+reproducibility and integrity come from the committed `apm.lock.yaml`, whose
+`resolved_commit` records the reviewed shared revision above. Normal setup and
+CI use `apm install --frozen` and therefore do not select a newer commit.
+
+An intentional upgrade uses `apm outdated`, `apm update
+flyology-ada/agents`, `apm compile --target codex`, `apm audit --ci`, and `git
+diff --check`. The resulting lockfile and generated `AGENTS.md` require review
+and a focused commit; validation CI must not run `apm update`.

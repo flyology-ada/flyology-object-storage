@@ -305,4 +305,19 @@ native skill trees locally from the same `apm.lock.yaml` graph; those deployment
 outputs are intentionally ignored. Start a fresh client session after
 installation so it discovers the generated skills. Repository-specific
 instructions live under `agent-packages/`, and shared Ada/workflow resources
-come from `flyology-ada/agents` at the locked revision.
+come from the `flyology-ada/agents` `main` update channel at the exact revision
+recorded in `apm.lock.yaml`.
+
+To review an intentional shared-resource upgrade, run:
+
+```sh
+apm outdated
+apm update flyology-ada/agents
+apm compile --target codex
+apm audit --ci
+git diff --check
+```
+
+Review the resulting lockfile, generated `AGENTS.md`, and behavior before
+committing them. Frozen installation and CI never update the selected shared
+revision.
