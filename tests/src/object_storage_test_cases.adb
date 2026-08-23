@@ -1972,6 +1972,19 @@ package body Object_Storage_Test_Cases is
 
       declare
          Metadata : Object_Metadata;
+         Exact_Content_Type : constant String :=
+           String'(1 .. Maximum_System_Metadata_Bytes - 12 => 'x');
+      begin
+         Assert
+           (Valid_Object_Metadata (Metadata, Exact_Content_Type),
+            "exact Content-Type system metadata budget was rejected");
+         Assert
+           (not Valid_Object_Metadata (Metadata, Exact_Content_Type & "x"),
+            "Content-Type system metadata budget +1 was accepted");
+      end;
+
+      declare
+         Metadata : Object_Metadata;
       begin
          Metadata.User.Length := 1;
          Metadata.User.Items (1) :=
@@ -5367,6 +5380,10 @@ package body Object_Storage_Test_Cases is
            IMF_Dates.Parse ("Fri, 01 Jan 1960 12:34:60 GMT");
          Day_End_Leap : constant IMF_Dates.Metadata_Time_Result :=
            IMF_Dates.Parse ("Fri, 01 Jan 1960 23:59:60 GMT");
+         Gregorian_Leap : constant IMF_Dates.Metadata_Time_Result :=
+           IMF_Dates.Parse ("Tue, 29 Feb 2000 23:59:59 GMT");
+         Gregorian_Century : constant IMF_Dates.Metadata_Time_Result :=
+           IMF_Dates.Parse ("Thu, 01 Mar 1900 00:00:00 GMT");
       begin
          Assert
            (Earliest.Valid
@@ -5395,11 +5412,23 @@ package body Object_Storage_Test_Cases is
               "Sat, 02 Jan 1960 00:00:00 GMT",
             "canonical Expires leap second was not normalized");
          Assert
+           (Gregorian_Leap.Valid
+            and then IMF_Dates.Image (Gregorian_Leap.Value) =
+              "Tue, 29 Feb 2000 23:59:59 GMT"
+            and then Gregorian_Century.Valid
+            and then IMF_Dates.Image (Gregorian_Century.Value) =
+              "Thu, 01 Mar 1900 00:00:00 GMT",
+            "canonical Expires Gregorian year boundary did not round trip");
+         Assert
            (not IMF_Dates.Parse
               ("Thu, 31 Dec 9999 23:59:59 GMT").Valid
             and then not IMF_Dates.Parse
               ("Mon, 29 Feb 1900 00:00:00 GMT").Valid,
             "malformed canonical Expires was accepted");
+         Assert
+           (not IMF_Dates.Parse
+              ("Fri, 01 Jan 19x0 00:00:00 GMT").Valid,
+            "nondigit canonical Expires year was accepted");
          Assert
            (not IMF_Dates.Parse
               ("Fri, 31 Dec 9999 23:59:60 GMT").Valid,

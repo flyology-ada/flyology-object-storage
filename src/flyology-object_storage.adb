@@ -492,7 +492,19 @@ is
    function Valid_Object_Metadata
      (Metadata : Object_Metadata; Content_Type : String) return Boolean
    is
-      System_Bytes : Natural := 0;
+      subtype System_Metadata_Byte_Count is
+        Natural range 0 .. Maximum_System_Metadata_Bytes;
+
+      type System_Value_Result (Valid : Boolean := False) is record
+         case Valid is
+            when True =>
+               Bytes : System_Metadata_Byte_Count;
+            when False =>
+               null;
+         end case;
+      end record;
+
+      System_Bytes : System_Metadata_Byte_Count := 0;
       User_Bytes   : Natural := 0;
 
       function Valid_UTF8_Header_Value (Value : String) return Boolean is
@@ -549,25 +561,56 @@ is
          return True;
       end Valid_UTF8_Header_Value;
 
-      function Valid_System
-        (Item : Optional_Metadata_Value; Name : String) return Boolean
+      function Validate_System_Value
+        (Item : Optional_Metadata_Value;
+         Name : String;
+         Used : System_Metadata_Byte_Count) return System_Value_Result
       is
-         Value : constant String :=
-           Ada.Strings.Unbounded.To_String (Item.Value);
+         Value_Length : constant Natural :=
+           Ada.Strings.Unbounded.Length (Item.Value);
       begin
          if not Item.Is_Set then
-            return Value'Length = 0;
-         elsif Value'Length > Maximum_System_Metadata_Value_Bytes then
-            return False;
-         end if;
-         for Character_Value of Value loop
-            if Character'Pos (Character_Value) not in 16#20# .. 16#7E# then
-               return False;
+            if Value_Length = 0 then
+               return (Valid => True, Bytes => Used);
+            else
+               return (Valid => False);
             end if;
-         end loop;
-         System_Bytes := System_Bytes + Name'Length + Value'Length;
-         return System_Bytes <= Maximum_System_Metadata_Bytes;
-      end Valid_System;
+         elsif Value_Length > Maximum_System_Metadata_Value_Bytes
+           or else Name'Length > Maximum_System_Metadata_Bytes - Used
+           or else Value_Length >
+             Maximum_System_Metadata_Bytes - Used - Name'Length
+         then
+            return (Valid => False);
+         end if;
+         declare
+            Value : constant String :=
+              Ada.Strings.Unbounded.To_String (Item.Value);
+         begin
+            for Character_Value of Value loop
+               if Character'Pos (Character_Value) not in 16#20# .. 16#7E# then
+                  return (Valid => False);
+               end if;
+            end loop;
+            return
+              (Valid => True,
+               Bytes => Used + Name'Length + Value_Length);
+         end;
+      end Validate_System_Value;
+
+      procedure Include_System_Value
+        (Item  : Optional_Metadata_Value;
+         Name  : String;
+         Used  : in out System_Metadata_Byte_Count;
+         Valid : out Boolean)
+      is
+         Result : constant System_Value_Result :=
+           Validate_System_Value (Item, Name, Used);
+      begin
+         Valid := Result.Valid;
+         if Result.Valid then
+            Used := Result.Bytes;
+         end if;
+      end Include_System_Value;
 
       function Valid_User_Key (Value : String) return Boolean is
       begin
@@ -586,7 +629,11 @@ is
          return True;
       end Valid_User_Key;
    begin
-      if Content_Type'Length > Maximum_System_Metadata_Value_Bytes then
+      if Content_Type'Length > Maximum_System_Metadata_Value_Bytes
+        or else
+          (Content_Type'Length > 0
+           and then Content_Type'Length > Maximum_System_Metadata_Bytes - 12)
+      then
          return False;
       end if;
       for Character_Value of Content_Type loop
@@ -597,19 +644,39 @@ is
       if Content_Type'Length > 0 then
          System_Bytes := 12 + Content_Type'Length;
       end if;
-      if not Valid_System (Metadata.Cache_Control, "Cache-Control")
-        or else not Valid_System
-          (Metadata.Content_Disposition, "Content-Disposition")
-        or else not Valid_System
-          (Metadata.Content_Encoding, "Content-Encoding")
-        or else not Valid_System
-          (Metadata.Content_Language, "Content-Language")
-        or else not Valid_System
-          (Metadata.Website_Redirect_Location,
-           "x-amz-website-redirect-location")
-      then
-         return False;
-      end if;
+      declare
+         Valid : Boolean;
+      begin
+         Include_System_Value
+           (Metadata.Cache_Control, "Cache-Control", System_Bytes, Valid);
+         if not Valid then
+            return False;
+         end if;
+         Include_System_Value
+           (Metadata.Content_Disposition, "Content-Disposition",
+            System_Bytes, Valid);
+         if not Valid then
+            return False;
+         end if;
+         Include_System_Value
+           (Metadata.Content_Encoding, "Content-Encoding", System_Bytes,
+            Valid);
+         if not Valid then
+            return False;
+         end if;
+         Include_System_Value
+           (Metadata.Content_Language, "Content-Language", System_Bytes,
+            Valid);
+         if not Valid then
+            return False;
+         end if;
+         Include_System_Value
+           (Metadata.Website_Redirect_Location,
+            "x-amz-website-redirect-location", System_Bytes, Valid);
+         if not Valid then
+            return False;
+         end if;
+      end;
 
       --  IMF-fixdate is always 29 US-ASCII bytes.  An absent typed value must
       --  retain no hidden timestamp, matching Optional_Metadata_Value.
