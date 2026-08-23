@@ -303,6 +303,55 @@ package Flyology.Object_Storage.Client.Scoped is
       end case;
    end record;
 
+   --  Resolved single response interval from Content-Range. Total_Length is
+   --  the immutable representation size against which suffix and open-ended
+   --  requests were resolved.
+   --  @field First First returned byte offset
+   --  @field Last Last returned byte offset
+   --  @field Total_Length Complete representation length
+   type Resolved_Byte_Range is record
+      First        : Byte_Count := 0;
+      Last         : Byte_Count := 0;
+      Total_Length : Byte_Count := 0;
+   end record;
+
+   --  Shape of a terminal generation-bound range result.
+   --  @enum Range_Get_Response_Available Complete modeled S3 response exists
+   --  @enum Range_Get_Exchange_Failed No complete modeled S3 response exists
+   type Range_Get_Result_Kind is
+     (Range_Get_Response_Available, Range_Get_Exchange_Failed);
+
+   --  Typed generation-bound range result. A modeled rejection has a complete
+   --  Response with Has_Resolved_Range false. Successful 206 responses carry
+   --  the exact interval after request/response binding.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Response Complete modeled S3 response
+   --  @field Has_Resolved_Range Whether a successful interval is present
+   --  @field Resolved Exact returned interval and representation length
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Required_Body_Length Exact known capacity requirement
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Range_Get_Result
+     (Kind : Range_Get_Result_Kind := Range_Get_Exchange_Failed) is record
+      Failure : Failure_Reason := Corrupt_Or_Invalid_Response;
+      case Kind is
+         when Range_Get_Response_Available =>
+            Response : Low_Level.Get_Object_Head_Outcome;
+            Has_Resolved_Range : Boolean := False;
+            Resolved : Resolved_Byte_Range;
+         when Range_Get_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Required_Body_Length : Flyology.HTTP.Client.Length_Requirement :=
+              (others => <>);
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
    --  Same-response bounded whole GetObject operation. Destination is an
    --  explicit retained handle borrow: it must outlive terminal Finish and
    --  must not be inspected while the operation is active. Initiation moves
@@ -405,6 +454,207 @@ package Flyology.Object_Storage.Client.Scoped is
       Result    : out Whole_Get_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  A distinct range type prevents a caller from consuming the operation
+   --  through whole-Get Finish while retaining the same owner-driven shape.
+   type Range_Get_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation with private;
+
+   --  Start or restart a generation-bound single-range GET. Requested must be
+   --  bounded, open-ended, or suffix; the response interval is resolved and
+   --  bound to it against one immutable representation length. The exact
+   --  quoted entity tag prevents bytes from another generation being
+   --  accepted. Destination ownership matches Start_Get_Whole.
+   --  @param Operation Fresh or consumed established range operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Requested Typed non-whole single range
+   --  @param Destination Acquired retained output handle
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Expected_Entity_Tag Exact strong generation validator
+   --  @param Version_ID Optional exact provider version selector
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Checksum_Mode Whether to request provider checksum headers
+   --  @param Token Optional cancellation source retained through drain
+   procedure Start_Get_Range
+     (Operation : in out Range_Get_Operation;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Requested : Byte_Range;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Expected_Entity_Tag : String;
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Token    : access Flyology.Cancellation.Token := null)
+     with Pre => Flyology.Buffers.Has_Buffer (Destination.all)
+       and then not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one generation-bound single-range GET operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Requested Typed non-whole single range
+   --  @param Destination Acquired retained output handle
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Expected_Entity_Tag Exact strong generation validator
+   --  @param Version_ID Optional exact provider version selector
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Checksum_Mode Whether to request provider checksum headers
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started bounded same-response range read
+   function Get_Range
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Requested : Byte_Range;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Expected_Entity_Tag : String;
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Range_Get_Operation
+     with Pre => Flyology.Buffers.Has_Buffer (Destination.all);
+
+   --  Consume one terminal range GET and return its bound interval.
+   --  @param Operation Terminal same-response range read
+   --  @param Result Typed response, resolved interval, or bounded failure
+   procedure Finish
+     (Operation : in out Range_Get_Operation;
+      Result    : out Range_Get_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Shape of a terminal bodyless HeadObject result.
+   --  @enum Head_Response_Available Complete modeled S3 response exists
+   --  @enum Head_Exchange_Failed No complete modeled S3 response exists
+   type Head_Result_Kind is
+     (Head_Response_Available, Head_Exchange_Failed);
+
+   --  Typed bodyless HeadObject result or bounded HTTP failure.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Head_Result
+     (Kind : Head_Result_Kind := Head_Exchange_Failed) is record
+      Failure : Failure_Reason := Corrupt_Or_Invalid_Response;
+      case Kind is
+         when Head_Response_Available =>
+            Response : Low_Level.Head_Object_Outcome;
+         when Head_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  Bodyless HeadObject parent with one hidden HTTP child. Parameters is the
+   --  complete pinned HeadObject input surface and is copied into the signed
+   --  request before initiation returns.
+   type Head_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart a bodyless HeadObject operation.
+   --  @param Operation Fresh or consumed established HeadObject operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Parameters Complete modeled HeadObject controls
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Start_Head_Object
+     (Operation : in out Head_Operation;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Head_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bodyless HeadObject operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Parameters Complete modeled HeadObject controls
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started bodyless HeadObject operation
+   function Head_Object
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Head_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Head_Operation;
+
+   --  Consume one terminal HeadObject operation.
+   --  @param Operation Terminal bodyless metadata request
+   --  @param Result Typed modeled response or bounded failure
+   procedure Finish
+     (Operation : in out Head_Operation;
+      Result    : out Head_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
 private
    --  @exclude
    type Conditional_Put_Operation
@@ -440,6 +690,41 @@ private
       Expected_Entity_Tag : Ada.Strings.Unbounded.Unbounded_String;
       Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
       Final_Result : Whole_Get_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Range_Get_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Expected_Entity_Tag : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Range : Byte_Range := Whole_Object;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Final_Result : Range_Get_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Head_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Final_Result : Head_Result;
       Has_Final_Result : Boolean := False;
       Has_Saved_Error : Boolean := False;
       Saved_Error : Ada.Exceptions.Exception_Occurrence;
@@ -508,6 +793,40 @@ private
    --  @exclude
    --  @param Item Internal whole-Get parent
    overriding procedure Finalize (Item : in out Whole_Get_Operation);
+
+   --  @exclude
+   --  @param Item Internal range-Get parent
+   --  @param Event Owner-driver event
+   overriding procedure Drive
+     (Item : in out Range_Get_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal range-Get parent
+   overriding procedure Request_Cancellation
+     (Item : in out Range_Get_Operation);
+   --  @exclude
+   --  @param Item Internal range-Get parent
+   overriding procedure Finalize (Item : in out Range_Get_Operation);
+
+   --  @exclude
+   --  @param Item Internal HeadObject parent
+   --  @param Data Response-body octets, which are forbidden for HEAD
+   overriding procedure Write
+     (Item : in out Head_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal HeadObject parent
+   --  @param Event Owner-driver event
+   overriding procedure Drive
+     (Item : in out Head_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal HeadObject parent
+   overriding procedure Request_Cancellation
+     (Item : in out Head_Operation);
+   --  @exclude
+   --  @param Item Internal HeadObject parent
+   overriding procedure Finalize (Item : in out Head_Operation);
 
    --  Private normalization boundary shared with the strict test child.
    --  @exclude

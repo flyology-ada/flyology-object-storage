@@ -5,6 +5,8 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 PUT_FIXTURE=${1:-"$PROJECT_DIR/tests/corpora/composable-client/put-certainty.tsv"}
 PARENT_FIXTURE=${2:-"$PROJECT_DIR/tests/corpora/composable-client/parent-faults.tsv"}
+RANGE_FIXTURE=${3:-"$PROJECT_DIR/tests/corpora/composable-client/range-get.tsv"}
+HEAD_FIXTURE=${4:-"$PROJECT_DIR/tests/corpora/composable-client/head-object.tsv"}
 
 if [ ! -f "$PUT_FIXTURE" ]; then
   printf '%s\n' "missing Put fixture: $PUT_FIXTURE" >&2
@@ -12,6 +14,14 @@ if [ ! -f "$PUT_FIXTURE" ]; then
 fi
 if [ ! -f "$PARENT_FIXTURE" ]; then
   printf '%s\n' "missing parent-fault fixture: $PARENT_FIXTURE" >&2
+  exit 1
+fi
+if [ ! -f "$RANGE_FIXTURE" ]; then
+  printf '%s\n' "missing range-Get fixture: $RANGE_FIXTURE" >&2
+  exit 1
+fi
+if [ ! -f "$HEAD_FIXTURE" ]; then
+  printf '%s\n' "missing HeadObject fixture: $HEAD_FIXTURE" >&2
   exit 1
 fi
 
@@ -206,5 +216,67 @@ END {
   exit failed
 }
 ' "$PARENT_FIXTURE"
+
+verify_read_fixture() {
+  fixture=$1
+  fixture_kind=$2
+  prefix=$3
+  minimum=$4
+  required=$5
+  awk -F '\t' -v kind="$fixture_kind" -v prefix="$prefix" \
+    -v minimum="$minimum" -v required_text="$required" '
+function fail(message) {
+  print FILENAME ":" NR ": " message > "/dev/stderr"
+  failed = 1
+}
+
+BEGIN {
+  allowed_scope["request"] = 1
+  allowed_scope["response"] = 1
+  allowed_scope["transport"] = 1
+  split(required_text, required, " ")
+}
+
+NR == 1 {
+  if (NF != 6 || $1 != "case" || $2 != "scope" ||
+      $3 != "concern" || $4 != "request" || $5 != "response" ||
+      $6 != "required_observation")
+    fail("unexpected " kind " fixture header")
+  next
+}
+
+{
+  if (NF != 6) fail("expected 6 tab-separated fields, got " NF)
+  for (field = 1; field <= 6; field++)
+    if ($field == "") fail(kind " fixture fields must not be empty")
+  if (index($1, prefix "-") != 1)
+    fail("unexpected " kind " case identifier " $1)
+  if ($1 in seen) fail("duplicate " kind " case " $1)
+  seen[$1] = 1
+  if (!($2 in allowed_scope)) fail("unknown " kind " scope " $2)
+  scope_seen[$2] = 1
+  concern_seen[$3] = 1
+}
+
+END {
+  for (i in required)
+    if (!(required[i] in seen))
+      fail("missing required " kind " case " required[i])
+  for (scope in allowed_scope)
+    if (!(scope in scope_seen))
+      fail("missing " kind " scope " scope)
+  if (length(concern_seen) < 12)
+    fail(kind " fixture has too few independent concerns")
+  if (NR - 1 < minimum)
+    fail(kind " fixture is unexpectedly small")
+  exit failed
+}
+' "$fixture"
+}
+
+verify_read_fixture "$RANGE_FIXTURE" "range-Get" "RG" 34 \
+  "RG-RQ-001 RG-RQ-005 RG-RQ-010 RG-RS-001 RG-RS-002 RG-RS-005 RG-RS-006 RG-RS-010 RG-RS-012 RG-RS-013 RG-RS-015 RG-TR-001 RG-TR-002 RG-TR-004"
+verify_read_fixture "$HEAD_FIXTURE" "HeadObject" "HD" 32 \
+  "HD-RQ-001 HD-RQ-006 HD-RQ-010 HD-RS-001 HD-RS-002 HD-RS-003 HD-RS-004 HD-RS-006 HD-RS-008 HD-RS-015 HD-TR-001 HD-TR-002 HD-TR-005"
 
 printf '%s\n' "composable client fixtures: OK"

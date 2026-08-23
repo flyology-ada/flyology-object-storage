@@ -1,8 +1,10 @@
 with Ada.Calendar;
 with Ada.Calendar.Formatting;
+with Ada.Strings.Fixed;
 with System.Address_To_Access_Conversions;
 with System.Storage_Elements;
 with Flyology.Object_Storage.Client.Low_Level.Scoped;
+with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Operations.Drivers;
 
@@ -15,6 +17,7 @@ package body Flyology.Object_Storage.Client.Scoped is
    package Operation_Drivers renames Flyology.Operations.Drivers;
    package Low_Scoped renames
      Flyology.Object_Storage.Client.Low_Level.Scoped;
+   package Core renames Flyology.Object_Storage.S3.Core;
    package Byte_Pointers is new System.Address_To_Access_Conversions
      (Ada.Streams.Stream_Element);
 
@@ -23,6 +26,7 @@ package body Flyology.Object_Storage.Client.Scoped is
    use type HTTP_Client.Exchange_Result_Kind;
    use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
+   use type Core.Range_Parse_Status;
    use type Operations.Driver_Event;
    use type System.Storage_Elements.Storage_Offset;
    use type US.Unbounded_String;
@@ -589,6 +593,31 @@ package body Flyology.Object_Storage.Client.Scoped is
          Detail               => US.Null_Unbounded_String);
    end Invalid_Read_Result;
 
+   function Range_Read_Exchange_Failure
+     (Value : HTTP_Client.Exchange_Result) return Range_Get_Result is
+   begin
+      return
+        (Kind                 => Range_Get_Exchange_Failed,
+         Failure              => Failed_Reason (HTTP_Client.Kind (Value)),
+         HTTP_Result          => HTTP_Client.Kind (Value),
+         HTTP_Phase           => HTTP_Client.Phase (Value),
+         Required_Body_Length =>
+           HTTP_Client.Required_Body_Length (Value),
+         Detail               => US.To_Unbounded_String
+           (HTTP_Client.Failure_Detail (Value)));
+   end Range_Read_Exchange_Failure;
+
+   function Invalid_Range_Read_Result return Range_Get_Result is
+   begin
+      return
+        (Kind                 => Range_Get_Exchange_Failed,
+         Failure              => Corrupt_Or_Invalid_Response,
+         HTTP_Result          => HTTP_Client.Response_Invalid,
+         HTTP_Phase           => HTTP_Client.Receiving_Response_Body,
+         Required_Body_Length => (others => <>),
+         Detail               => US.Null_Unbounded_String);
+   end Invalid_Range_Read_Result;
+
    procedure Clear_Buffer (Item : in out Flyology.Buffers.Unique_Buffer) is
       procedure Clear
         (Data   : in out Ada.Streams.Stream_Element_Array;
@@ -614,6 +643,87 @@ package body Flyology.Object_Storage.Client.Scoped is
       Flyology.Buffers.With_Readable_Data (Item, Copy'Access);
       return Flyology.Bytes.To_Byte_String (Bytes);
    end Buffer_Text;
+
+   function Decimal (Value : Byte_Count) return String is
+     (Ada.Strings.Fixed.Trim
+        (Byte_Count'Image (Value), Ada.Strings.Both));
+
+   function Valid_Range_Request (Value : Byte_Range) return Boolean is
+     (case Value.Kind is
+         when Bounded_Range => Value.First <= Value.Last,
+         when Open_Ended_Range => True,
+         when Suffix_Range => Value.Count > 0,
+         when Whole_Range => False);
+
+   --  RFC 9110 single-range wire form. The public Byte_Range domain is the
+   --  authority; this formatter introduces no independent bound or policy.
+   function Range_Header (Value : Byte_Range) return String is
+   begin
+      case Value.Kind is
+         when Bounded_Range =>
+            return "bytes=" & Decimal (Value.First) & "-" &
+              Decimal (Value.Last);
+         when Open_Ended_Range =>
+            return "bytes=" & Decimal (Value.First) & "-";
+         when Suffix_Range =>
+            return "bytes=-" & Decimal (Value.Count);
+         when Whole_Range =>
+            raise Low_Level.Invalid_Request with
+              "Get_Range requires a non-whole byte range";
+      end case;
+   end Range_Header;
+
+   function Bind_Response_Range
+     (Value     : String;
+      Requested : Byte_Range;
+      Resolved  : out Resolved_Byte_Range) return Boolean
+   is
+      Prefix : constant String := "bytes ";
+      Hyphen : Natural;
+      Slash  : Natural;
+   begin
+      Resolved := (others => 0);
+      if Value'Length <= Prefix'Length
+        or else Value (Value'First .. Value'First + Prefix'Length - 1) /=
+          Prefix
+      then
+         return False;
+      end if;
+      Hyphen := Ada.Strings.Fixed.Index
+        (Value, "-", From => Value'First + Prefix'Length);
+      Slash := Ada.Strings.Fixed.Index
+        (Value, "/", From => Value'First + Prefix'Length);
+      if Hyphen = 0 or else Slash = 0 or else Hyphen >= Slash then
+         return False;
+      end if;
+      declare
+         Returned : constant Core.Range_Parse_Result :=
+           Core.Parse_Range_Header
+             ("bytes=" &
+                Value (Value'First + Prefix'Length .. Slash - 1));
+         Total : constant Byte_Count :=
+           Byte_Count'Value (Value (Slash + 1 .. Value'Last));
+         Expected : constant Range_Resolution :=
+           Core.Resolve_Range (Total, Requested);
+      begin
+         if Returned.Status /= Core.Range_Parsed
+           or else Returned.Request.Kind /= Bounded_Range
+           or else Expected.Kind /= Satisfied_Range
+           or else Returned.Request.First /= Expected.First
+           or else Returned.Request.Last /= Expected.Last
+         then
+            return False;
+         end if;
+         Resolved :=
+           (First        => Expected.First,
+            Last         => Expected.Last,
+            Total_Length => Total);
+         return True;
+      end;
+   exception
+      when Constraint_Error =>
+         return False;
+   end Bind_Response_Range;
 
    procedure Complete_Child (Item : in out Whole_Get_Operation) is
       HTTP_Result : HTTP_Client.Exchange_Result;
@@ -718,6 +828,130 @@ package body Flyology.Object_Storage.Client.Scoped is
    end Request_Cancellation;
 
    overriding procedure Finalize (Item : in out Whole_Get_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+   end Finalize;
+
+   procedure Complete_Range_Child (Item : in out Range_Get_Operation) is
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response    : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Scoped.Finish
+           (Item.Child, HTTP_Result, Response, Item.Destination.all);
+      exception
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Range_Read_Exchange_Failure (HTTP_Result);
+      else
+         begin
+            declare
+               Head : constant Low_Level.Get_Object_Head_Outcome :=
+                 Low_Level.Decode_Get_Object_Complete_Response
+                   (Response, Buffer_Text (Item.Destination.all));
+            begin
+               if Head.Kind = Low_Level.Get_Object_Rejected then
+                  Clear_Buffer (Item.Destination.all);
+                  Item.Final_Result :=
+                    (Kind               => Range_Get_Response_Available,
+                     Failure            => No_Failure,
+                     Response           => Head,
+                     Has_Resolved_Range => False,
+                     Resolved           => (others => 0));
+               elsif Head.Status /= 206
+                 or else not Valid_Exact_Entity_Tag
+                   (US.To_String (Head.Result.Entity_Tag))
+                 or else not Head.Result.Content_Length.Is_Set
+                 or else Head.Result.Content_Length.Value /=
+                   Byte_Count
+                     (Flyology.Buffers.Length (Item.Destination.all))
+                 or else Head.Result.Entity_Tag /= Item.Expected_Entity_Tag
+               then
+                  Clear_Buffer (Item.Destination.all);
+                  Item.Final_Result := Invalid_Range_Read_Result;
+               else
+                  declare
+                     Bound : Resolved_Byte_Range;
+                  begin
+                     if not Bind_Response_Range
+                       (US.To_String (Head.Result.Content_Range),
+                        Item.Requested_Range, Bound)
+                     then
+                        Clear_Buffer (Item.Destination.all);
+                        Item.Final_Result := Invalid_Range_Read_Result;
+                     else
+                        Item.Final_Result :=
+                          (Kind               => Range_Get_Response_Available,
+                           Failure            => No_Failure,
+                           Response           => Head,
+                           Has_Resolved_Range => True,
+                           Resolved           => Bound);
+                     end if;
+                  end;
+               end if;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Clear_Buffer (Item.Destination.all);
+               Item.Final_Result := Invalid_Range_Read_Result;
+         end;
+      end if;
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Range_Child;
+
+   overriding procedure Drive
+     (Item : in out Range_Get_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low_Scoped.Start_Get_Object
+           (Item.Child, Item.HTTP, Item.Prepared'Access,
+            Item.Destination.all, Item.Deadline, Item.Cancellation);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Range_Child (Item);
+      else
+         raise Program_Error with "invalid range GET driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Range_Get_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize (Item : in out Range_Get_Operation) is
    begin
       begin
          Operations.Finalize (Operations.Operation (Item));
@@ -840,6 +1074,103 @@ package body Flyology.Object_Storage.Client.Scoped is
       end return;
    end Get_Whole;
 
+   procedure Start_Get_Range
+     (Operation : in out Range_Get_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Requested : Byte_Range;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Expected_Entity_Tag : String;
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Token    : access Flyology.Cancellation.Token := null)
+   is
+      Parameters : Low_Level.Get_Object_Parameters;
+   begin
+      if Operation.HTTP /= Client
+        or else Operation.Destination /= Destination
+        or else Operation.Cancellation /= Token
+      then
+         raise Program_Error with
+           "range GET restart changed a retained owner";
+      elsif not Valid_Exact_Entity_Tag (Expected_Entity_Tag) then
+         raise Low_Level.Invalid_Request with
+           "Get_Range requires one strong entity tag";
+      elsif not Valid_Range_Request (Requested) then
+         raise Low_Level.Invalid_Request with
+           "Get_Range requires one valid single range";
+      end if;
+      Parameters.If_Match :=
+        US.To_Unbounded_String (Expected_Entity_Tag);
+      Parameters.Byte_Range_Header :=
+        US.To_Unbounded_String (Range_Header (Requested));
+      Parameters.Version_ID := US.To_Unbounded_String (Version_ID);
+      Parameters.Expected_Bucket_Owner :=
+        US.To_Unbounded_String (Expected_Bucket_Owner);
+      Parameters.Request_Payer := US.To_Unbounded_String (Request_Payer);
+      Parameters.Checksum_Mode := Checksum_Mode;
+      Operation.Prepared := Low_Level.Prepare_Get_Object
+        (Origin, Style, Bucket, Key, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Expected_Entity_Tag :=
+        US.To_Unbounded_String (Expected_Entity_Tag);
+      Operation.Requested_Range := Requested;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            raise;
+      end;
+   end Start_Get_Range;
+
+   function Get_Range
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Requested : Byte_Range;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Expected_Entity_Tag : String;
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Range_Get_Operation is
+   begin
+      return Result : Range_Get_Operation
+        (Set, Client, Destination, Token)
+      do
+         Start_Get_Range
+           (Result, Client, Origin, Bucket, Key, Requested, Destination,
+            Identity, Deadline, Expected_Entity_Tag, Version_ID, Region,
+            Style, Expected_Bucket_Owner, Request_Payer, Checksum_Mode,
+            Token);
+      end return;
+   end Get_Range;
+
    procedure Finish
      (Operation : in out Whole_Get_Operation;
       Result    : out Whole_Get_Result) is
@@ -851,6 +1182,223 @@ package body Flyology.Object_Storage.Client.Scoped is
             Ada.Exceptions.Exception_Message (Operation.Saved_Error));
       elsif not Operation.Has_Final_Result then
          raise Program_Error with "whole GET has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   procedure Finish
+     (Operation : in out Range_Get_Operation;
+      Result    : out Range_Get_Result) is
+   begin
+      Operations.Consume (Operation);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "range GET has no terminal result";
+      elsif Operation.Final_Result.Kind = Range_Get_Response_Available
+        and then Operation.Final_Result.Response.Kind = Low_Level.Object_Opened
+        and then not Operation.Final_Result.Has_Resolved_Range
+      then
+         raise Program_Error with "range GET lacks a resolved interval";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   function Head_Exchange_Failure
+     (Value : HTTP_Client.Exchange_Result) return Head_Result is
+   begin
+      return
+        (Kind        => Head_Exchange_Failed,
+         Failure     => Failed_Reason (HTTP_Client.Kind (Value)),
+         HTTP_Result => HTTP_Client.Kind (Value),
+         HTTP_Phase  => HTTP_Client.Phase (Value),
+         Detail      => US.To_Unbounded_String
+           (HTTP_Client.Failure_Detail (Value)));
+   end Head_Exchange_Failure;
+
+   overriding procedure Write
+     (Item : in out Head_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      pragma Unreferenced (Item);
+      if Data'Length > 0 then
+         --  HTTP defines HEAD as bodyless. Reject any octet that its framing
+         --  layer nevertheless exposes to this sink; bytes after a complete
+         --  HEAD response remain the HTTP connection owner's responsibility.
+         raise Response_Limit_Exceeded with
+           "HeadObject response contains a body";
+      end if;
+   end Write;
+
+   procedure Complete_Head_Child (Item : in out Head_Operation) is
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response    : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Scoped.Finish
+           (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result :=
+              (Kind        => Head_Exchange_Failed,
+               Failure     => Corrupt_Or_Invalid_Response,
+               HTTP_Result => HTTP_Client.Response_Sink_Failed,
+               HTTP_Phase  => HTTP_Client.Receiving_Response_Body,
+               Detail      => US.Null_Unbounded_String);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Head_Exchange_Failure (HTTP_Result);
+      else
+         begin
+            Item.Final_Result :=
+              (Kind     => Head_Response_Available,
+               Failure  => No_Failure,
+               Response => Low_Level.Decode_Head_Object_Complete_Response
+                 (Response, ""));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result :=
+                 (Kind        => Head_Exchange_Failed,
+                  Failure     => Corrupt_Or_Invalid_Response,
+                  HTTP_Result => HTTP_Client.Response_Invalid,
+                  HTTP_Phase  => HTTP_Client.Waiting_Response_Head,
+                  Detail      => US.Null_Unbounded_String);
+         end;
+      end if;
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Head_Child;
+
+   overriding procedure Drive
+     (Item : in out Head_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low_Scoped.Start_Head_Object
+           (Item.Child, Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item.Deadline, Item.Cancellation);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Head_Child (Item);
+      else
+         raise Program_Error with "invalid HeadObject driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Head_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize (Item : in out Head_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+   end Finalize;
+
+   procedure Start_Head_Object
+     (Operation : in out Head_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Head_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "HeadObject restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Head_Object
+        (Origin, Style, Bucket, Key, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            raise;
+      end;
+   end Start_Head_Object;
+
+   function Head_Object
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Head_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Head_Operation is
+   begin
+      return Result : Head_Operation (Set, Client, Token) do
+         Start_Head_Object
+           (Result, Client, Origin, Bucket, Key, Parameters, Identity,
+            Deadline, Region, Style, Token);
+      end return;
+   end Head_Object;
+
+   procedure Finish
+     (Operation : in out Head_Operation;
+      Result    : out Head_Result) is
+   begin
+      Operations.Consume (Operation);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "HeadObject has no terminal result";
       end if;
       Result := Operation.Final_Result;
    end Finish;

@@ -1,11 +1,10 @@
 # Composable object client operations
 
-This note records the implemented contract for the first completion-set-aware
-convenience client slice: conditional complete-object Put and generation-bound
-whole Get. Exact-range Get and Head remain additive follow-on work. Development
-proceeds against the reviewed Flyology HTTP PR #33 commit; publication remains
-deferred until that dependency is merged, released, and available through the
-Flyology Alire index.
+This note records the implemented contract for the completion-set-aware object
+client slice: conditional complete-object Put, generation-bound whole and
+single-range Get, and bodyless Head. Development proceeds against the reviewed
+Flyology HTTP PR #33 commit; publication remains deferred until that dependency
+is merged, released, and available through the Flyology Alire index.
 
 ## Upstream basis
 
@@ -45,22 +44,23 @@ The initial operation order is:
 3. generation-bound exact-range `Get_Object`; and
 4. `Head_Object`.
 
-The implemented Put and whole-Get operations each have both a limited
-constructor taking a completion set and an established-operation `Start`
-overload suitable for a reusable component in a larger state machine.
-Initiation performs bounded validation and state setup, then returns without
-waiting. The established overload accepts only a fresh, released, or consumed
-nonterminal operation.
+Each implemented operation has both a limited constructor taking a completion
+set and an established-operation `Start` overload suitable for a reusable
+component in a larger state machine. Initiation performs bounded validation and
+state setup, then returns without waiting. The established overload accepts
+only a fresh, released, or consumed nonterminal operation.
 
 Each body call moves an acquired `Flyology.Buffers.Unique_Buffer` into the
 operation. The public handle is vacant on successful initiation. Validation or
 capacity failure either occurs before the move or restores ownership before
 returning. Typed `Finish` always restores the exact pool token, length, tag,
-metadata, and payload for Put. Get also takes an acquired buffer, leaving its
-handle vacant; Finish restores the token. A successful read sets the exact
-readable length, while every non-success restores it with zero readable
-length. A response larger than the block produces a typed capacity outcome
-that includes the required content length.
+metadata, and payload for Put. Whole and range Get also take an acquired buffer,
+leaving its handle vacant; Finish restores the token. A successful read sets the
+exact readable length, while every non-success restores it with zero readable
+length. A response larger than the block produces a typed capacity outcome that
+includes the required content length. Head has no body buffer. Its defensive
+sink rejects any response-body octet exposed by the HTTP framing layer; bytes
+after a complete HEAD response remain owned and policed by HTTP.
 
 An abandoned operation first requests cancellation and drains all HTTP,
 kernel, token, descriptor, source, and response leases. Only after no borrower
@@ -144,10 +144,11 @@ listing.
 
 ## Synchronous convergence
 
-The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, and
-`Get_Whole` overloads are literal waits on the same `Client.Scoped` state
-machines and retain their typed certainty, capacity, and ownership results.
-The older one-shot source and owned-bytes overloads remain source compatible.
+The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
+`Get_Range`, and `Head_Object` overloads are literal waits on the same
+`Client.Scoped` state machines and retain their typed certainty, capacity,
+metadata, and ownership results. The older one-shot source, owned-bytes, and
+transfer overloads remain source compatible.
 Because they do not expose transport admission certainty, a caller treats
 every mutation exception after call entry as an unknown publication outcome
 and reconciles before choosing any later retry.
@@ -258,6 +259,13 @@ release is indexed. The mapping rules are:
   `Outcome_Unknown` and record `Unavailable_Or_Retryable`. The convenience
   operation does not retry them. The caller reconciles before choosing a later
   retry.
+
+The sibling `range-get.tsv` and `head-object.tsv` corpora are normative for the
+read surface. They enumerate typed request forms, physical singleton handling,
+same-response range binding, bodylessness, capacity, cancellation, restart,
+abandonment, and native/lightweight transport behavior. Their verifier rejects
+missing mandatory lanes, duplicate case identities, malformed schemas, and an
+unexpectedly narrow corpus before the Ada socket tests run.
 
 `Response_Observed` alone is not a conclusive publication result. Only a
 complete response whose status and modeled fields validate can establish one

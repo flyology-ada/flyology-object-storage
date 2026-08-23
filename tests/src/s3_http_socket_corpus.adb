@@ -83,6 +83,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Failure_Reason;
    use type Scoped.Publication_Disposition;
    use type Scoped.Whole_Get_Result_Kind;
+   use type Scoped.Range_Get_Result_Kind;
+   use type Scoped.Head_Result_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Buckets.Put_Tags_Outcome_Kind;
@@ -1639,9 +1641,92 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_If_Match => """scoped-generation""");
          Serve
            (HTTP_Response
-              ("200 OK", String'(1 .. 80 => 'x'),
+              ("200 OK", String'(1 .. 112 => 'x'),
                "etag: ""oversized-generation""" & CRLF),
             "GET", "/example-bucket/scoped-oversized");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "2345",
+               "content-range: bytes 2-5/10" & CRLF &
+                 "etag: ""range-generation""" & CRLF),
+            "GET", "/example-bucket/scoped-range",
+            Expected_If_Match => """range-generation""",
+            Expected_Range => "bytes=2-5");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "6789",
+               "content-range: bytes 6-9/10" & CRLF &
+                 "etag: ""range-generation""" & CRLF),
+            "GET", "/example-bucket/scoped-range-open",
+            Expected_If_Match => """range-generation""",
+            Expected_Range => "bytes=6-");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "789",
+               "content-range: bytes 7-9/10" & CRLF &
+                 "etag: ""range-generation""" & CRLF),
+            "GET", "/example-bucket/scoped-range-suffix",
+            Expected_If_Match => """range-generation""",
+            Expected_Range => "bytes=-3");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "3456",
+               "content-range: bytes 3-6/10" & CRLF &
+                 "etag: ""range-generation""" & CRLF),
+            "GET", "/example-bucket/scoped-range-wrong",
+            Expected_If_Match => """range-generation""",
+            Expected_Range => "bytes=2-5");
+         Serve
+           (HTTP_Response
+              ("412 Precondition Failed",
+               "<Error><Code>PreconditionFailed</Code>" &
+                 "<Message>condition failed</Message></Error>"),
+            "GET", "/example-bucket/scoped-range-rejected",
+            Expected_If_Match => """stale-generation""",
+            Expected_Range => "bytes=2-5");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "2345",
+               "content-range: bytes 2-5/10" & CRLF &
+                 "etag: ""range-generation""" & CRLF &
+                 "etag: ""range-generation""" & CRLF),
+            "GET", "/example-bucket/scoped-range-duplicate",
+            Expected_If_Match => """range-generation""",
+            Expected_Range => "bytes=2-5");
+         Serve
+           (HTTP_Response
+              ("206 Partial Content", "23456",
+               "content-range: bytes 2-6/10" & CRLF &
+                 "etag: ""range-generation""" & CRLF),
+            "GET", "/example-bucket/scoped-range-oversized",
+            Expected_If_Match => """range-generation""",
+            Expected_Range => "bytes=2-6");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "content-length: 10" & CRLF &
+                 "etag: ""head-generation""" & CRLF &
+                 "last-modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+                 "x-amz-version-id: head-version" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/scoped-head?versionId=head-version",
+            Expected_If_Match => """head-generation""");
+         Serve
+           (HTTP_Response
+              ("404 Not Found", "",
+               "x-amz-request-id: scoped-head-request" & CRLF &
+                 "x-amz-id-2: scoped-head-host" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/scoped-head-missing");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "content-length: 10" & CRLF &
+                 "etag: ""head-generation""" & CRLF &
+                 "etag: ""head-generation""" & CRLF &
+                 "last-modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket/scoped-head-duplicate");
          Serve
            (HTTP_Response ("200 OK", List_Buckets_XML),
             "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
@@ -3970,10 +4055,11 @@ procedure S3_HTTP_Socket_Corpus is
          HTTP_Client.Configure (HTTP, Origin);
          declare
             --  Test-reference geometry: two tokens cover one retained request
-            --  and one response destination. A 64-byte block holds every
-            --  success fixture, while the maintained 80-byte response proves
-            --  the typed overflow lane; changing either changes corpus scope.
-            Pool : aliased Buffers.Pool (Block_Size => 64, Capacity => 2);
+            --  and one response destination. A 96-byte block holds every
+            --  success and modeled error fixture, while the maintained
+            --  112-byte response proves the typed overflow lane; changing
+            --  either changes corpus scope.
+            Pool : aliased Buffers.Pool (Block_Size => 96, Capacity => 2);
             Payload_Buffer : Buffers.Unique_Buffer (Pool'Access);
             Destination : aliased Buffers.Unique_Buffer (Pool'Access);
          begin
@@ -4029,7 +4115,21 @@ procedure S3_HTTP_Socket_Corpus is
                  or else Buffer_String (Payload_Buffer) /= "scoped-cas-body"
                then
                   raise Program_Error with
-                    "synchronous composable CAS mapping mismatch";
+                    "synchronous composable CAS mapping mismatch: kind=" &
+                    Scoped.Conditional_Put_Result_Kind'Image (Result.Kind) &
+                    " disposition=" &
+                    Scoped.Publication_Disposition'Image
+                      (Result.Disposition) & " failure=" &
+                    Scoped.Failure_Reason'Image (Result.Failure) &
+                    " buffer=" & Boolean'Image
+                      (Buffers.Has_Buffer (Payload_Buffer)) &
+                    (if Result.Kind = Scoped.Put_Exchange_Failed
+                     then " http=" &
+                       HTTP_Client.Exchange_Result_Kind'Image
+                         (Result.HTTP_Result) & " phase=" &
+                       HTTP_Client.Exchange_Phase'Image (Result.HTTP_Phase) &
+                       " detail=" & US.To_String (Result.Detail)
+                     else "");
                end if;
             end;
 
@@ -4072,11 +4172,375 @@ procedure S3_HTTP_Socket_Corpus is
                if Result.Kind /= Scoped.Whole_Get_Exchange_Failed
                  or else Result.Failure /= Scoped.Response_Too_Large
                  or else not Result.Required_Body_Length.Known
-                 or else Result.Required_Body_Length.Bytes /= 80
+                 or else Result.Required_Body_Length.Bytes /= 112
                  or else Buffers.Length (Destination) /= 0
                then
                   raise Program_Error with
                     "scoped GetObject capacity mapping mismatch";
+               end if;
+            end;
+
+            declare
+               --  Object, HTTP exchange, and its single transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Scoped.Range_Get_Operation := Scoped.Get_Range
+                 (Set'Access, HTTP'Access, Origin, "example-bucket",
+                  "scoped-range",
+                  (Kind  => Flyology.Object_Storage.Bounded_Range,
+                   First => 2, Last => 5, Count => 0),
+                  Destination'Access, Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  """range-generation""");
+               Result : Scoped.Range_Get_Result;
+            begin
+               if Buffers.Has_Buffer (Destination) then
+                  raise Program_Error with
+                    "scoped range GetObject did not move its output token";
+               end if;
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.Range_Get_Response_Available
+                 or else Result.Response.Kind /= Low_Level.Object_Opened
+                 or else not Result.Has_Resolved_Range
+                 or else Result.Resolved.First /= 2
+                 or else Result.Resolved.Last /= 5
+                 or else Result.Resolved.Total_Length /= 10
+                 or else Buffer_String (Destination) /= "2345"
+               then
+                  raise Program_Error with
+                    "scoped bounded range binding mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Scoped.Range_Get_Result :=
+                 Objects.Get_Range
+                   (HTTP, Origin, "example-bucket", "scoped-range-open",
+                    (Kind  => Flyology.Object_Storage.Open_Ended_Range,
+                     First => 6, Last => 0, Count => 0),
+                    Destination, Identity, """range-generation""",
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Range_Get_Response_Available
+                 or else not Result.Has_Resolved_Range
+                 or else Result.Resolved.First /= 6
+                 or else Result.Resolved.Last /= 9
+                 or else Result.Resolved.Total_Length /= 10
+                 or else Buffer_String (Destination) /= "6789"
+               then
+                  raise Program_Error with
+                    "synchronous open-ended range binding mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Scoped.Range_Get_Result :=
+                 Objects.Get_Range
+                   (HTTP, Origin, "example-bucket", "scoped-range-suffix",
+                    (Kind  => Flyology.Object_Storage.Suffix_Range,
+                     First => 0, Last => 0, Count => 3),
+                    Destination, Identity, """range-generation""",
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Range_Get_Response_Available
+                 or else not Result.Has_Resolved_Range
+                 or else Result.Resolved.First /= 7
+                 or else Result.Resolved.Last /= 9
+                 or else Result.Resolved.Total_Length /= 10
+                 or else Buffer_String (Destination) /= "789"
+               then
+                  raise Program_Error with
+                    "synchronous suffix range binding mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Scoped.Range_Get_Result :=
+                 Objects.Get_Range
+                   (HTTP, Origin, "example-bucket", "scoped-range-wrong",
+                    (Kind  => Flyology.Object_Storage.Bounded_Range,
+                     First => 2, Last => 5, Count => 0),
+                    Destination, Identity, """range-generation""",
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Range_Get_Exchange_Failed
+                 or else Result.Failure /=
+                   Scoped.Corrupt_Or_Invalid_Response
+                 or else Buffers.Length (Destination) /= 0
+               then
+                  raise Program_Error with
+                    "range GetObject accepted the wrong returned interval";
+               end if;
+            end;
+
+            declare
+               Result : constant Scoped.Range_Get_Result :=
+                 Objects.Get_Range
+                   (HTTP, Origin, "example-bucket",
+                    "scoped-range-rejected",
+                    (Kind  => Flyology.Object_Storage.Bounded_Range,
+                     First => 2, Last => 5, Count => 0),
+                    Destination, Identity, """stale-generation""",
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Range_Get_Response_Available
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Object_Rejected
+                 or else Result.Response.Status /= 412
+                 or else Result.Has_Resolved_Range
+                 or else Buffers.Length (Destination) /= 0
+               then
+                  raise Program_Error with
+                    "range GetObject rejection mapping mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Scoped.Range_Get_Result :=
+                 Objects.Get_Range
+                   (HTTP, Origin, "example-bucket",
+                    "scoped-range-duplicate",
+                    (Kind  => Flyology.Object_Storage.Bounded_Range,
+                     First => 2, Last => 5, Count => 0),
+                    Destination, Identity, """range-generation""",
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Range_Get_Exchange_Failed
+                 or else Result.Failure /=
+                   Scoped.Corrupt_Or_Invalid_Response
+                 or else Buffers.Length (Destination) /= 0
+               then
+                  raise Program_Error with
+                    "range GetObject accepted duplicate singleton metadata";
+               end if;
+            end;
+
+            declare
+               --  Test-reference capacity: four bytes is one less than the
+               --  maintained five-byte range response, proving exact required
+               --  length restoration without introducing product policy.
+               Small_Pool : aliased Buffers.Pool
+                 (Block_Size => 4, Capacity => 1);
+               Small : aliased Buffers.Unique_Buffer (Small_Pool'Access);
+            begin
+               Buffers.Acquire (Small);
+               declare
+                  Result : constant Scoped.Range_Get_Result :=
+                    Objects.Get_Range
+                      (HTTP, Origin, "example-bucket",
+                       "scoped-range-oversized",
+                       (Kind  => Flyology.Object_Storage.Bounded_Range,
+                        First => 2, Last => 6, Count => 0),
+                       Small, Identity, """range-generation""",
+                       Timeout => 5.0);
+               begin
+                  if Result.Kind /= Scoped.Range_Get_Exchange_Failed
+                    or else Result.Failure /= Scoped.Response_Too_Large
+                    or else not Result.Required_Body_Length.Known
+                    or else Result.Required_Body_Length.Bytes /= 5
+                    or else Buffers.Length (Small) /= 0
+                  then
+                     raise Program_Error with
+                       "range GetObject capacity mapping mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
+               Parameters : Low_Level.Head_Object_Parameters :=
+                 (others => <>);
+            begin
+               Parameters.If_Match :=
+                 US.To_Unbounded_String ("""head-generation""");
+               Parameters.Version_ID :=
+                 US.To_Unbounded_String ("head-version");
+               declare
+                  --  Object, HTTP exchange, and its single transport child.
+                  Set : aliased Operations.Completion_Set (3);
+                  Operation : Scoped.Head_Operation := Scoped.Head_Object
+                    (Set'Access, HTTP'Access, Origin, "example-bucket",
+                     "scoped-head", Parameters, Identity,
+                     HTTP_Client.Deadline_After (5.0));
+                  Result : Scoped.Head_Result;
+               begin
+                  Operations.Wait_All (Set);
+                  Scoped.Finish (Operation, Result);
+                  if Result.Kind /= Scoped.Head_Response_Available
+                    or else Result.Response.Kind /= Low_Level.Object_Found
+                    or else Result.Response.Result.Content_Length /= 10
+                    or else US.To_String
+                      (Result.Response.Result.Entity_Tag) /=
+                        """head-generation"""
+                    or else US.To_String
+                      (Result.Response.Result.Version_ID) /= "head-version"
+                  then
+                     raise Program_Error with
+                       "scoped HeadObject response mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
+               Parameters : constant Low_Level.Head_Object_Parameters :=
+                 (others => <>);
+               Result : constant Scoped.Head_Result := Objects.Head_Object
+                 (HTTP, Origin, "example-bucket", "scoped-head-missing",
+                  Parameters, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Head_Response_Available
+                 or else Result.Response.Kind /=
+                   Low_Level.Head_Object_Rejected
+                 or else Result.Response.Status /= 404
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "scoped-head-request"
+                 or else US.To_String (Result.Response.Error.Host_ID) /=
+                   "scoped-head-host"
+               then
+                  raise Program_Error with
+                    "synchronous HeadObject rejection mismatch";
+               end if;
+            end;
+
+            declare
+               Parameters : constant Low_Level.Head_Object_Parameters :=
+                 (others => <>);
+               Result : constant Scoped.Head_Result := Objects.Head_Object
+                 (HTTP, Origin, "example-bucket", "scoped-head-duplicate",
+                  Parameters, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Head_Exchange_Failed
+                 or else Result.Failure /=
+                   Scoped.Corrupt_Or_Invalid_Response
+               then
+                  raise Program_Error with
+                    "HeadObject accepted duplicate singleton metadata";
+               end if;
+            end;
+
+            declare
+               procedure Must_Reject_Range
+                 (Requested : Flyology.Object_Storage.Byte_Range;
+                  Entity_Tag : String;
+                  Message : String)
+               is
+                  Raised : Boolean := False;
+               begin
+                  begin
+                     declare
+                        Ignored : constant Scoped.Range_Get_Result :=
+                          Objects.Get_Range
+                            (HTTP, Origin, "example-bucket",
+                             "scoped-range-invalid", Requested, Destination,
+                             Identity, Entity_Tag, Timeout => 5.0);
+                        pragma Unreferenced (Ignored);
+                     begin
+                        null;
+                     end;
+                  exception
+                     when Low_Level.Invalid_Request =>
+                        Raised := True;
+                  end;
+                  if not Raised
+                    or else not Buffers.Has_Buffer (Destination)
+                    or else Buffers.Length (Destination) /= 0
+                  then
+                     raise Program_Error with Message;
+                  end if;
+               end Must_Reject_Range;
+            begin
+               Must_Reject_Range
+                 (Flyology.Object_Storage.Whole_Object,
+                  """range-generation""",
+                  "Get_Range admitted a whole-object request");
+               Must_Reject_Range
+                 ((Kind  => Flyology.Object_Storage.Suffix_Range,
+                   First => 0, Last => 0, Count => 0),
+                  """range-generation""",
+                  "Get_Range admitted an empty suffix");
+               Must_Reject_Range
+                 ((Kind  => Flyology.Object_Storage.Bounded_Range,
+                   First => 2, Last => 5, Count => 0),
+                  "weak-generation",
+                  "Get_Range admitted a non-strong generation validator");
+            end;
+
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+            begin
+               Stop.Request;
+               declare
+                  Result : constant Scoped.Range_Get_Result :=
+                    Objects.Get_Range
+                      (HTTP, Origin, "example-bucket",
+                       "scoped-range-cancelled",
+                       (Kind  => Flyology.Object_Storage.Bounded_Range,
+                        First => 2, Last => 5, Count => 0),
+                       Destination, Identity, """range-generation""",
+                       Timeout => 5.0, Token => Stop'Access);
+               begin
+                  if Result.Kind /= Scoped.Range_Get_Exchange_Failed
+                    or else Result.Failure /= Scoped.Cancelled
+                    or else not Buffers.Has_Buffer (Destination)
+                    or else Buffers.Length (Destination) /= 0
+                  then
+                     raise Program_Error with
+                       "pre-admission range cancellation mapping mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
+               Result : constant Scoped.Range_Get_Result :=
+                 Objects.Get_Range
+                   (HTTP, Origin, "example-bucket", "scoped-range-timeout",
+                    (Kind  => Flyology.Object_Storage.Bounded_Range,
+                     First => 2, Last => 5, Count => 0),
+                    Destination, Identity, """range-generation""",
+                    Timeout => 0.0);
+            begin
+               if Result.Kind /= Scoped.Range_Get_Exchange_Failed
+                 or else Result.Failure /= Scoped.Timed_Out
+                 or else not Buffers.Has_Buffer (Destination)
+                 or else Buffers.Length (Destination) /= 0
+               then
+                  raise Program_Error with
+                    "pre-admission range deadline mapping mismatch";
+               end if;
+            end;
+
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+               Parameters : constant Low_Level.Head_Object_Parameters :=
+                 (others => <>);
+            begin
+               Stop.Request;
+               declare
+                  Result : constant Scoped.Head_Result := Objects.Head_Object
+                    (HTTP, Origin, "example-bucket", "scoped-head-cancelled",
+                     Parameters, Identity, Timeout => 5.0,
+                     Token => Stop'Access);
+               begin
+                  if Result.Kind /= Scoped.Head_Exchange_Failed
+                    or else Result.Failure /= Scoped.Cancelled
+                  then
+                     raise Program_Error with
+                       "pre-admission HeadObject cancellation mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
+               Parameters : constant Low_Level.Head_Object_Parameters :=
+                 (others => <>);
+               Result : constant Scoped.Head_Result := Objects.Head_Object
+                 (HTTP, Origin, "example-bucket", "scoped-head-timeout",
+                  Parameters, Identity, Timeout => 0.0);
+            begin
+               if Result.Kind /= Scoped.Head_Exchange_Failed
+                 or else Result.Failure /= Scoped.Timed_Out
+               then
+                  raise Program_Error with
+                    "pre-admission HeadObject deadline mismatch";
                end if;
             end;
          end;

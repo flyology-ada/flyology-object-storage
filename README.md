@@ -71,6 +71,10 @@ The core crate includes:
   operations over caller-owned `flyology_http` clients, plus a synchronous
   one-shot UploadPart API whose bodies are borrowed from forward-only streaming
   sources and whose post-admission exceptions require ListParts reconciliation;
+- completion-set-aware conditional Put, bounded whole Get, generation-bound
+  single-range Get, and bodyless Head operations, with synchronous buffer-owned
+  wrappers that wait on the same owner-driven state machines and never create a
+  per-operation helper task;
 - a bounded ordered DeleteObjects backend batch, with process-atomic memory,
   transactional SQLite, and explicitly scoped per-file durability semantics
   (see [DeleteObjects qualification](docs/qualification/delete-objects.md));

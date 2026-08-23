@@ -4812,11 +4812,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end if;
    end Decode_Head_Object_Response;
 
-   function Execute_Head_Object
-     (Client   : aliased in out Flyology.HTTP.Client.Client;
-      Prepared : Prepared_Request;
-      Timeout  : Duration := 30.0;
-      Token    : access Flyology.Cancellation.Token := null)
+   function Decode_Head_Object_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String)
       return Head_Object_Outcome
    is
       function Is_Head_Singleton_Header (Name : String) return Boolean is
@@ -4869,13 +4867,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          or else Name = "x-amz-version-id"
          or else Name = "x-amz-website-redirect-location");
    begin
-      if Prepared.Operation /= Head_Object_Operation then
-         raise Invalid_Request with "prepared request operation mismatch";
-      end if;
       declare
-         Response : Flyology.HTTP.Client.Response :=
-           Flyology.HTTP.Client.Execute
-             (Client, Prepared.Message, Timeout, Token);
          Status : constant Flyology.HTTP.Status_Code :=
            Flyology.HTTP.Client.Status (Response);
          Request_ID : constant String :=
@@ -4988,13 +4980,33 @@ package body Flyology.Object_Storage.Client.Low_Level is
                  H ("x-amz-object-lock-retain-until-date"),
                Object_Lock_Legal_Hold_Status =>
                  H ("x-amz-object-lock-legal-hold"));
-            Payload : constant Flyology.Bytes.Unbounded_Bytes :=
-              Flyology.HTTP.Client.Read_All (Response, 1, Token);
          begin
             return Decode_Head_Object_Response
-              (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-               Request_ID, Host_ID);
+              (Status, Payload, Headers, Request_ID, Host_ID);
          end;
+      end;
+   end Decode_Head_Object_Complete_Response;
+
+   function Execute_Head_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Head_Object_Outcome
+   is
+   begin
+      if Prepared.Operation /= Head_Object_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All (Response, 1, Token);
+      begin
+         return Decode_Head_Object_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload));
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
@@ -5145,6 +5157,55 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Limits        : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Head_Outcome
    is
+      function Is_Get_Singleton_Header (Name : String) return Boolean is
+        (Name = "accept-ranges"
+         or else Name = "cache-control"
+         or else Name = "content-disposition"
+         or else Name = "content-encoding"
+         or else Name = "content-language"
+         or else Name = "content-length"
+         or else Name = "content-range"
+         or else Name = "content-type"
+         or else Name = "etag"
+         or else Name = "expires"
+         or else Name = "last-modified"
+         or else Name = "x-amz-checksum-crc32"
+         or else Name = "x-amz-checksum-crc32c"
+         or else Name = "x-amz-checksum-crc64nvme"
+         or else Name = "x-amz-checksum-md5"
+         or else Name = "x-amz-checksum-sha1"
+         or else Name = "x-amz-checksum-sha256"
+         or else Name = "x-amz-checksum-sha512"
+         or else Name = "x-amz-checksum-type"
+         or else Name = "x-amz-checksum-xxhash128"
+         or else Name = "x-amz-checksum-xxhash3"
+         or else Name = "x-amz-checksum-xxhash64"
+         or else Name = "x-amz-delete-marker"
+         or else Name = "x-amz-expiration"
+         or else Name = "x-amz-id-2"
+         or else Name = "x-amz-missing-meta"
+         or else Name = "x-amz-mp-parts-count"
+         or else Name = "x-amz-object-lock-legal-hold"
+         or else Name = "x-amz-object-lock-mode"
+         or else Name = "x-amz-object-lock-retain-until-date"
+         or else Name = "x-amz-replication-status"
+         or else Name = "x-amz-request-charged"
+         or else Name = "x-amz-request-id"
+         or else Name = "x-amz-restore"
+         or else Name = "x-amz-server-side-encryption"
+         or else Name =
+           "x-amz-server-side-encryption-aws-kms-key-id"
+         or else Name =
+           "x-amz-server-side-encryption-bucket-key-enabled"
+         or else Name =
+           "x-amz-server-side-encryption-customer-algorithm"
+         or else Name =
+           "x-amz-server-side-encryption-customer-key-md5"
+         or else Name = "x-amz-storage-class"
+         or else Name = "x-amz-tagging-count"
+         or else Name = "x-amz-version-id"
+         or else Name = "x-amz-website-redirect-location");
+
       Status : constant Flyology.HTTP.Status_Code :=
         Flyology.HTTP.Client.Status (Response);
       Request_ID : constant String :=
@@ -5156,6 +5217,28 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (US.To_Unbounded_String
            (Flyology.HTTP.Client.Header (Response, Name)));
    begin
+      --  Modeled GetObject scalar headers are physical singletons. Retaining
+      --  that wire multiplicity prevents an intermediary's first/last-value
+      --  selection from changing the generation, length, or range binding.
+      for Index in 1 .. Flyology.HTTP.Client.Header_Count (Response) loop
+         declare
+            Name : constant String := Ada.Characters.Handling.To_Lower
+              (Flyology.HTTP.Client.Header_Name (Response, Index));
+         begin
+            if Is_Get_Singleton_Header (Name) then
+               for Previous in 1 .. Index - 1 loop
+                  if Ada.Characters.Handling.To_Lower
+                    (Flyology.HTTP.Client.Header_Name
+                       (Response, Previous)) = Name
+                  then
+                     raise Invalid_Response with
+                       "GetObject response duplicates a singleton header";
+                  end if;
+               end loop;
+            end if;
+         end;
+      end loop;
+
       if Status not in 200 | 206 then
          declare
             Text : constant String := Error_Payload;

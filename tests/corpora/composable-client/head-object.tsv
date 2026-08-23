@@ -1,0 +1,33 @@
+case	scope	concern	request	response	required_observation
+HD-RQ-001	request	method	complete modeled HeadObject parameters	signed HEAD request	use HEAD with no request body and copy every dynamic parameter before return
+HD-RQ-002	request	generation	absent, exact If-Match, weak If-None-Match, date predicates	headers and signature	preserve the established low-level conditional-read surface exactly
+HD-RQ-003	request	version	absent, opaque, reserved URI bytes	query and signature	preserve one optional version selector without inventing generation semantics
+HD-RQ-004	request	range	absent and single raw range header	header and signature	preserve HeadObject's AWS metadata-range behavior independently from Get_Range
+HD-RQ-005	request	response-overrides	all six modeled response overrides	query and signature	encode and sign each override exactly once
+HD-RQ-006	request	encryption	complete SSE-C triplet and incomplete groups	pre-admission or signed headers	apply existing validation and never retain secret key bytes after initiation
+HD-RQ-007	request	payer-owner	absent and exact modeled values	headers and signature	preserve payer and expected-owner controls without a new default
+HD-RQ-008	request	part	absent, one, maximum, zero, over-maximum	pre-admission or query	retain Optional_Part_Number semantics and reject invalid values before admission
+HD-RQ-009	request	checksum	false and true	header and signature	request checksum fields only when explicitly selected
+HD-RQ-010	request	deadline	future, expired, expires while active	typed terminal result	one absolute deadline covers the hidden child and terminal drain
+HD-RQ-011	request	cancellation	pre-requested, during connect, after response head	typed terminal result	cancel and drain without leaving a helper task, slot, or retained token
+HD-RQ-012	request	restart	same owners and changed HTTP or token	restart result	allow consumed same-owner restart and reject every retained-owner change
+HD-RS-001	response	status	200, range-selected 206, 304, 404, 412	complete response	return modeled success or rejection with the exact HTTP status
+HD-RS-002	response	body	zero bytes and body octets exposed by HTTP framing	terminal result	retain no body and reject the first octet actually delivered to the defensive sink
+HD-RS-003	response	transfer-encoding	absent, chunked, duplicate, conflicting framing	complete response	reject transfer coding for the externally bodyless HEAD contract
+HD-RS-004	response	content-length	required success length, zero, maximum 64-bit, absent, malformed, duplicate	complete response	require one canonical object length on success and never narrow it to 32 bits
+HD-RS-005	response	content-range	absent, valid selected range, malformed, unsolicited	complete 200 or 206	validate status-coherent range metadata without reading a body
+HD-RS-006	response	etag	absent, empty, opaque quoted, multipart-looking, malformed, duplicate	complete success	preserve one opaque entity tag and reject physical singleton ambiguity
+HD-RS-007	response	last-modified	valid HTTP date, absent, malformed, duplicate	complete success	require and validate one modeled modification timestamp
+HD-RS-008	response	checksums	each supported checksum and type, malformed, incompatible, duplicate	complete success	validate every present checksum field and its modeled type relationship
+HD-RS-009	response	enums	each pinned storage, encryption, replication, lock, payer value plus unknowns	complete success	accept only exact modeled spellings and preserve true absence
+HD-RS-010	response	optionals	delete marker, missing metadata, part count, tag count, bucket-key enabled	complete success	preserve absent versus explicit scalar values and validate public bounds
+HD-RS-011	response	metadata	zero, one, many, repeated metadata name, controls, aggregate boundary	complete success	retain bounded user metadata while scalar response headers remain physical singletons
+HD-RS-012	response	identifiers	request ID and host ID absent, present, empty, duplicate, overlong	rejection	preserve bounded diagnostics and reject ambiguous physical multiplicity
+HD-RS-013	response	error	bodyless 304, 404, 412 and other service status	modeled rejection	return a typed Head error without requiring or retaining an XML body
+HD-RS-014	response	framing	fragmented head, close after head, persistent connection	complete response	produce identical metadata across legal response-head fragmentation
+HD-RS-015	response	singletons	duplicate every modeled scalar header equal and unequal	complete response	never collapse duplicates or select a provider/intermediary value
+HD-TR-001	transport	native	success, rejection, exposed body octet, malformed singleton	owner-driven socket exchange	finish exactly once and release the hidden child before returning
+HD-TR-002	transport	lightweight	success, rejection, exposed body octet, malformed singleton	owner-driven socket exchange	match native results without stack growth or a per-operation helper task
+HD-TR-003	transport	reuse	success then rejection then malformed response on one configured client	connection lifecycle	no stale headers, completion state, or transport ownership crosses calls
+HD-TR-004	transport	abandon	active parent finalized before Finish	cancel and drain	no hidden child, cancellation pointer, completion slot, or client borrow survives finalization
+HD-TR-005	transport	synchronous-wait	all typed terminal forms	Objects.Head_Object	blocking wrapper waits on and returns the same scoped state-machine outcome

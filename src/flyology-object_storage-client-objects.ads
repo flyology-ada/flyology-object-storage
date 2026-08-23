@@ -450,6 +450,75 @@ package Flyology.Object_Storage.Client.Objects is
       return Scoped.Whole_Get_Result
      with Pre => Flyology.Buffers.Has_Buffer (Destination);
 
+   --  Read exactly one generation-bound byte interval by waiting on the
+   --  composable range operation. Requested may be bounded, open-ended, or a
+   --  suffix range. A successful response returns both the bytes and the
+   --  resolved interval from the same 206 response; Destination is empty for
+   --  every rejection or exchange failure.
+   --  @param Client Configured origin client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Requested Typed single byte range
+   --  @param Destination Acquired bounded output buffer
+   --  @param Identity Credentials used only during signing
+   --  @param Expected_Entity_Tag Required exact strong generation validator
+   --  @param Version_ID Optional exact provider version selector
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Checksum_Mode Whether to request provider checksum headers
+   --  @param Timeout Complete operation timeout
+   --  @param Token Optional cancellation source
+   --  @return Typed response and resolved interval or bounded failure
+   function Get_Range
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Requested : Byte_Range;
+      Destination : aliased in out Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Expected_Entity_Tag : String;
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Range_Get_Result
+     with Pre => Flyology.Buffers.Has_Buffer (Destination);
+
+   --  Execute one bodyless HeadObject by waiting on the composable operation.
+   --  Parameters is the complete modeled HeadObject control surface and is
+   --  copied before the operation starts.
+   --  @param Client Configured origin client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Parameters Complete modeled HeadObject controls
+   --  @param Identity Credentials used only during signing
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Timeout Complete operation timeout
+   --  @param Token Optional cancellation source
+   --  @return Typed complete response or bounded exchange failure
+   function Head_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Head_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Head_Result;
+
    type Delete_Outcome_Kind is (Object_Removed, Delete_Rejected);
 
    type Delete_Outcome

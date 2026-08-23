@@ -1,0 +1,35 @@
+case	scope	concern	request	response	required_observation
+RG-RQ-001	request	range-kind	bounded first-equals-last, bounded interval, open-ended, suffix	canonical single bytes Range header	each typed non-whole form is signed exactly and no multi-range form exists
+RG-RQ-002	request	bounded-order	first below, equal to, and above last	pre-admission result	reject only the inverted interval before HTTP admission and preserve destination ownership
+RG-RQ-003	request	suffix-count	one, total-sized, larger-than-total, zero	pre-admission or resolved 206	zero is rejected; positive suffixes resolve against the same returned total
+RG-RQ-004	request	whole-exclusion	Whole_Object	pre-admission rejection	whole reads use Get_Whole and cannot silently select range semantics
+RG-RQ-005	request	generation	exact quoted opaque ETag, empty, weak, unquoted, list	pre-admission result	require one exact strong validator and preserve destination ownership on rejection
+RG-RQ-006	request	version	absent, opaque, reserved URI bytes	query and signature	preserve the optional provider version exactly alongside If-Match
+RG-RQ-007	request	owner	absent and exact expected bucket owner	header and signature	sign only the modeled singleton and retain no borrowed caller text
+RG-RQ-008	request	payer	absent and requester	header and signature	preserve the established GetObject payer policy without a new default
+RG-RQ-009	request	checksum	false and true	header and signature	request checksum mode exactly without changing range or generation binding
+RG-RQ-010	request	capacity	zero, exact, one-short, and larger destination	HTTP admission and terminal result	caller pool capacity is the only retained-body bound and exact required length is reported
+RG-RQ-011	request	deadline	future, already expired, expires while active	typed terminal result	one absolute deadline covers signing, exchange, drain, and Finish without restart
+RG-RQ-012	request	cancellation	pre-requested, during connect, during body	typed terminal result	cancel, drain, restore destination, and leave no hidden child or transport owner
+RG-RQ-013	request	restart	same owners and changed HTTP, destination, or token	restart result	allow consumed same-owner restart and reject every retained-owner change
+RG-RS-001	response	status	206, unsolicited 200, other 2xx	complete response	only 206 can produce bytes and a resolved interval
+RG-RS-002	response	etag	exact requested, absent, empty, malformed, weak, different	complete 206	require the exact strong generation validator before exposing bytes
+RG-RS-003	response	etag-duplicate	equal and unequal physical ETag fields	complete 206	reject physical singleton duplication without first-value or last-value selection
+RG-RS-004	response	content-length	absent, zero, exact, short, long, duplicate	body-complete response	require one canonical length equal to retained bytes
+RG-RS-005	response	content-range	absent, valid, empty, malformed, duplicate	complete 206	require one physical valid Content-Range before exposing bytes
+RG-RS-006	response	interval	requested interval, shifted, shortened, extended	complete 206	bind the returned first and last exactly to typed resolution
+RG-RS-007	response	total	exact positive total, zero, below last, numeric overflow	complete 206	validate total and return it from the same immutable response snapshot
+RG-RS-008	response	bounded	first byte, middle, final byte, full representation	complete 206	accept every exactly bound satisfiable interval including a one-byte result
+RG-RS-009	response	open-ended	start below final, at final, beyond total	complete 206	resolve to the returned final byte or reject an unsatisfiable/mismatched response
+RG-RS-010	response	suffix	count below, equal to, and above total	complete 206	resolve to the exact final suffix or whole representation without a prior HEAD
+RG-RS-011	response	inverted	first greater than last	complete 206	reject malformed Content-Range and clear all retained bytes
+RG-RS-012	response	unsatisfied	bytes */total and HTTP 416	modeled rejection	return a typed service rejection with no resolved interval and an empty destination
+RG-RS-013	response	multipart	multipart/byteranges with one or several parts	complete response	reject multipart range bodies because the API models one exact interval
+RG-RS-014	response	framing	fixed length, fragmented head/body, chunked body	complete response	produce identical bytes and metadata across legal HTTP framing
+RG-RS-015	response	error	404 NoSuchKey and 412 PreconditionFailed	modeled rejection	return the parsed rejection, no resolved interval, and an empty destination
+RG-RS-016	response	error-body	bodyless, valid bounded XML, malformed XML, oversized XML	rejection or bounded failure	never expose error bytes as object bytes and fail boundedly when semantics are incomplete
+RG-RS-017	response	metadata	version, checksum, payer, user metadata, encryption fields	complete 206	validate and return modeled fields from the same response as bytes and interval
+RG-TR-001	transport	native	fragmented success, rejection, overflow, malformed singleton	owner-driven socket exchange	finish exactly once and restore all buffer, slot, and transport ownership
+RG-TR-002	transport	lightweight	fragmented success, rejection, overflow, malformed singleton	owner-driven socket exchange	match native outcomes without a helper task or simulated asynchronous call
+RG-TR-003	transport	reuse	success then rejection then malformed response on one configured client	connection lifecycle	no stale body, range, generation, completion, or source state crosses operations
+RG-TR-004	transport	abandon	active parent finalized before Finish	cancel and drain	no detached child, destination token, cancellation pointer, or completion slot survives finalization

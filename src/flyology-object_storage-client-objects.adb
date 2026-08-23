@@ -743,6 +743,67 @@ package body Flyology.Object_Storage.Client.Objects is
       return Result;
    end Get_Whole;
 
+   function Get_Range
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Requested : Byte_Range;
+      Destination : aliased in out Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Expected_Entity_Tag : String;
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Range_Get_Result
+   is
+      --  The object operation, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+      Operation : Scoped.Range_Get_Operation := Scoped.Get_Range
+        (Set'Access, Client'Access, Origin, Bucket, Key, Requested,
+         Destination'Access, Identity,
+         Flyology.HTTP.Client.Deadline_After (Timeout),
+         Expected_Entity_Tag, Version_ID, Region, Style,
+         Expected_Bucket_Owner, Request_Payer, Checksum_Mode, Token);
+      Result : Scoped.Range_Get_Result;
+   begin
+      Flyology.Operations.Wait_All (Set);
+      Scoped.Finish (Operation, Result);
+      return Result;
+   end Get_Range;
+
+   function Head_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Head_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Head_Result
+   is
+      --  The object operation, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+      Operation : Scoped.Head_Operation := Scoped.Head_Object
+        (Set'Access, Client'Access, Origin, Bucket, Key, Parameters, Identity,
+         Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style, Token);
+      Result : Scoped.Head_Result;
+   begin
+      Flyology.Operations.Wait_All (Set);
+      Scoped.Finish (Operation, Result);
+      return Result;
+   end Head_Object;
+
    function Delete
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;
