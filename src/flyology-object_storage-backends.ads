@@ -548,7 +548,11 @@ package Flyology.Object_Storage.Backends is
    --  unconditioned missing key is an idempotent success; a missing key with
    --  an ETag condition is Not_Found. Require_Unversioned returns
    --  Not_Implemented without mutation once versioning is configured or MFA
-   --  Delete is enabled.
+   --  Delete is enabled. For a pure-files backend, Backend_Unavailable,
+   --  cancellation, timeout, or an exception after unlink is not proof that
+   --  the deletion was not published: a directory durability confirmation
+   --  can fail after the name is gone. Callers requiring certainty must
+   --  reconcile with Head_Object or Get_Object before retrying.
 
    --  Evaluate and publish a bounded ordered batch under one backend batch
    --  boundary. Outcomes align one-for-one with Entries when Result is
@@ -558,7 +562,11 @@ package Flyology.Object_Storage.Backends is
    --  the same protected, locked, or transactional boundary as deletion, so a
    --  concurrent versioning change cannot race current-object semantics. This
    --  contract does not promise cross-file power-loss atomicity for a pure
-   --  filesystem implementation.
+   --  filesystem implementation. A pure-files failure, cancellation, or
+   --  exception can expose a deleted prefix of the ordered batch, including
+   --  when directory durability confirmation fails after one or more unlinks;
+   --  Backend_Unavailable is not a no-deletion certainty signal. Callers must
+   --  reconcile every requested key before retrying an indeterminate batch.
    procedure Delete_Objects
      (Item     : in out Backend;
       Bucket   : String;

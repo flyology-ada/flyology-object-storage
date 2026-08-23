@@ -938,6 +938,54 @@ package body Object_Storage_Test_Cases is
          "DeleteObject malformed condition mutated the object");
 
       declare
+         Huge_Invalid_Key : constant String (1 .. 64 * 1_024) :=
+           (others => 'x');
+         Dormant_ETag : constant String (1 .. 8_193) := (others => 'e');
+      begin
+         Store.Delete_Object
+           (Bucket, Huge_Invalid_Key, null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Invalid_Request,
+            "DeleteObject did not reject a huge key before admission");
+         Store.Delete_Object
+           (Bucket, "single-invalid", null, Ada.Real_Time.Time_Last, Result,
+            (Has_ETag => False,
+             ETag => US.To_Unbounded_String (Dormant_ETag),
+             others => <>));
+         Assert
+           (Result = Invalid_Request,
+            "DeleteObject accepted a nonempty dormant ETag");
+         Put ("batch-dormant-first", "preserve-first", Size_Info);
+         Entries.Clear;
+         Outcomes.Clear;
+         Entries.Append (Item ("batch-dormant-first"));
+         Entries.Append
+           (Item
+              ("single-invalid",
+               (Has_ETag => False,
+                ETag => US.To_Unbounded_String (Dormant_ETag),
+                others => <>)));
+         Store.Delete_Objects
+           (Bucket, Entries, (others => <>), null,
+            Ada.Real_Time.Time_Last, Outcomes, Result);
+         Assert
+           (Result = Invalid_Request and then Outcomes.Is_Empty,
+            "DeleteObjects admitted a nonempty dormant ETag");
+      end;
+      Store.Head_Object
+        (Bucket, "single-invalid", null, Ada.Real_Time.Time_Last,
+         Size_Info, Result);
+      Assert
+        (Result = Success,
+         "huge invalid DeleteObject key mutated existing data");
+      Store.Head_Object
+        (Bucket, "batch-dormant-first", null, Ada.Real_Time.Time_Last,
+         Size_Info, Result);
+      Assert
+        (Result = Success,
+         "invalid DeleteObjects batch removed a validated prefix");
+
+      declare
          Cancel : aliased Flyology.Cancellation.Token;
          Raised : Boolean := False;
       begin
@@ -1051,6 +1099,11 @@ package body Object_Storage_Test_Cases is
       Store.Delete_Object
         (Bucket, "single-invalid", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "DeleteObject single-test cleanup failed");
+      Store.Delete_Object
+        (Bucket, "batch-dormant-first", null, Ada.Real_Time.Time_Last,
+         Result);
+      Assert
+        (Result = Success, "DeleteObjects dormant-test cleanup failed");
 
       --  Bucket versioning and current-object deletion are decided at the
       --  same backend boundary. A delete that linearizes before enablement is
@@ -4158,6 +4211,11 @@ package body Object_Storage_Test_Cases is
                if Result = Success then
                   Assert (Observed = Not_Found,
                           "successful durable delete remained visible");
+               else
+                  Assert
+                    (Observed = Not_Found,
+                     "post-unlink DeleteObject failure did not expose its " &
+                     "documented ambiguous publication state");
                end if;
             end;
             Clean (Root);
@@ -4554,6 +4612,7 @@ package body Object_Storage_Test_Cases is
       pragma Unreferenced (Unused);
       package Memory renames Flyology.Object_Storage.Backends.Memory;
       package Files renames Flyology.Object_Storage.Backends.Files;
+      package US renames Ada.Strings.Unbounded;
       Root : constant String :=
         Ada.Directories.Compose
           (Ada.Directories.Compose
@@ -4577,6 +4636,93 @@ package body Object_Storage_Test_Cases is
          Store : Files.Store := Files.Open (Root, Maximum_Object_Size => 64);
       begin
          Exercise_Delete_Objects (Store, "files-delete-objects-bucket");
+         declare
+            use AUnit.Assertions;
+            use Flyology.Object_Storage;
+            use Flyology.Object_Storage.Backends;
+            Bucket : constant String := "files-delete-cancel-prefix";
+            First_Path : constant String :=
+              Ada.Directories.Compose
+                (Ada.Directories.Compose
+                   (Ada.Directories.Compose
+                      (Ada.Directories.Compose (Root, "buckets"), Bucket),
+                    "objects"),
+                 "61.fos");
+            Entries  : Delete_Object_Entries;
+            Outcomes : Delete_Object_Outcomes;
+            Result   : Status;
+            Info     : Object_Information;
+            Cancel   : aliased Flyology.Cancellation.Token;
+
+            procedure Put (Key : String) is
+               Source : Buffer_Source :=
+                 (Data => Flyology.Bytes.From_Byte_String ("x"),
+                  Position => 0,
+                  Length => (Kind => Known, Bytes => 1),
+                  Bad_Last => False);
+            begin
+               Store.Put_Object
+                 (Bucket, Key, Source, Default_Put_Options, null,
+                  Ada.Real_Time.Time_Last, Info, Result);
+               Assert (Result = Success, "cancel-prefix object setup");
+               Entries.Append
+                 (Delete_Object_Entry'
+                    (Key => US.To_Unbounded_String (Key),
+                     Conditions => No_Delete_Object_Conditions));
+            end Put;
+         begin
+            Store.Create_Bucket
+              (Bucket, null, Ada.Real_Time.Time_Last, Result);
+            Assert (Result = Success, "cancel-prefix bucket setup");
+            Put ("a");
+            for Index in 1 .. 254 loop
+               Put
+                 ("middle-" &
+                  Ada.Strings.Fixed.Trim
+                    (Positive'Image (Index), Ada.Strings.Both));
+            end loop;
+            Put ("z");
+            declare
+               Raised : Boolean := False;
+               task Watch_First_Removal;
+               task body Watch_First_Removal is
+               begin
+                  while Ada.Directories.Exists (First_Path) loop
+                     delay 0.0;
+                  end loop;
+                  Cancel.Request;
+               end Watch_First_Removal;
+            begin
+               begin
+                  Store.Delete_Objects
+                    (Bucket, Entries, (others => <>), Cancel'Access,
+                     Ada.Real_Time.Time_Last, Outcomes, Result);
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled =>
+                     Raised := True;
+               end;
+               Assert
+                 (Raised,
+                  "DeleteObjects did not observe cancellation after unlink");
+            end;
+            Store.Head_Object
+              (Bucket, "a", null, Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Not_Found,
+               "cancelled DeleteObjects did not retain deleted prefix");
+            Store.Head_Object
+              (Bucket, "z", null, Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Success,
+               "cancelled DeleteObjects removed the unvisited suffix");
+            Store.Delete_Objects
+              (Bucket, Entries, (others => <>), null,
+               Ada.Real_Time.Time_Last, Outcomes, Result);
+            Assert (Result = Success, "cancel-prefix cleanup batch");
+            Store.Delete_Bucket
+              (Bucket, null, Ada.Real_Time.Time_Last, Result);
+            Assert (Result = Success, "cancel-prefix bucket cleanup");
+         end;
       end;
       Clean;
    exception
@@ -12261,7 +12407,7 @@ package body Object_Storage_Test_Cases is
          declare
             Outcome : constant Low_Level.Delete_Object_Outcome :=
               Low_Level.Decode_Delete_Object_Response
-                (204, " " & Character'Val (10), Headers);
+                (204, "", Headers);
          begin
             Assert
               (Outcome.Kind = Low_Level.Object_Deleted
@@ -12271,6 +12417,25 @@ package body Object_Storage_Test_Cases is
                  "deleted-version",
                "typed DeleteObject success headers");
          end;
+      end;
+
+      declare
+         Headers : Low_Level.Delete_Object_Result;
+         Raised  : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Delete_Object_Outcome :=
+                 Low_Level.Decode_Delete_Object_Response
+                   (204, " " & Character'Val (10), Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
+         Assert (Raised, "DeleteObject accepted a whitespace success body");
       end;
 
       declare
@@ -12290,16 +12455,22 @@ package body Object_Storage_Test_Cases is
 
       declare
          Headers : Low_Level.Delete_Object_Result;
-         Outcome : constant Low_Level.Delete_Object_Outcome :=
-           Low_Level.Decode_Delete_Object_Response
-             (409, "", Headers, "request-id");
+         Raised : Boolean := False;
       begin
+         begin
+            declare
+               Ignored : constant Low_Level.Delete_Object_Outcome :=
+                 Low_Level.Decode_Delete_Object_Response
+                   (409, "", Headers, "request-id");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response => Raised := True;
+         end;
          Assert
-           (Outcome.Kind = Low_Level.Delete_Object_Rejected
-            and then Outcome.Status = 409
-            and then US.To_String (Outcome.Error.Code) = "HTTP409"
-            and then US.To_String (Outcome.Error.Request_ID) = "request-id",
-            "DeleteObject bodyless 409 was not a typed conflict");
+           (Raised, "DeleteObject accepted a bodyless 409 conflict");
       end;
 
       declare

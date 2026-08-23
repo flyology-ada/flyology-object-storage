@@ -66,6 +66,24 @@ bucket directories are staged beneath `tmp/` and atomically renamed into the
 namespace; opening the exclusively owned root removes interrupted staging
 artifacts before accepting work.
 
+Every operation revalidates the configured root plus its required `buckets/`
+and `tmp/` directories as exact nonsymlink directories. Staging paths also
+validate `tmp/` before any body or metadata is written, including paths that
+are prepared before the publication gate is acquired. Bucket object and
+multipart roots are required exact directories; encoded object ancestors,
+upload directories, manifests, and part files are inspected symlink-first.
+Raw directory iteration detects dangling links that a platform's high-level
+file-kind enumeration can omit. Listing and recursive cleanup reject
+unexpected and symlinked entries instead of following or silently skipping
+them.
+
+These checks qualify stable pre-existing corruption and same-process operations
+serialized by the publication gate. They do not claim resistance to a hostile
+local process swapping a validated path component before the following
+`Open`, `Rename`, or `Delete`; descriptor-relative `openat`/`O_NOFOLLOW`
+publication throughout would be required for that stronger threat model. Such
+concurrent external mutation violates the backend's exclusive-root contract.
+
 Each bucket also owns `configuration/tags.fos`, a versioned, length-prefixed
 binary record with strict key/value and exact-file-size checks. Put writes and
 syncs a unique root-local temporary record, publishes it by rename under the
@@ -95,5 +113,8 @@ unlink is individually durable before the next entry. A pure filesystem has no
 portable transaction spanning those independent directory entries, so an I/O
 failure, cancellation, deadline, or process/power loss during the removal loop
 can leave a successfully removed prefix applied. Retrying the same request is
-safe because missing unconditioned keys are successes; this backend does not
-claim whole-batch cross-file atomicity.
+idempotent only for unconditioned entries. Callers must reconcile conditioned
+entries and every key in an indeterminate batch. A single DeleteObject is also
+publication-ambiguous when unlink succeeds but the following directory sync
+fails; Backend_Unavailable is not proof that the object remains. This backend
+does not claim whole-batch cross-file atomicity.
