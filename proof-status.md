@@ -2,12 +2,12 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest uncontended, serialized CopyObject final-base qualification on
-commit `f38a0eb` started at 2026-08-23T03:24:24Z with FSF GNATprove 16.1.0.
+The latest uncontended, serialized PutObject final-base qualification on
+commit `971670b` started at 2026-08-23T07:48:01Z with FSF GNATprove 16.1.0.
 It forced all nine manifest units at level 0 with output headers and warnings
-as errors, and proved 935/935 checks: 179 flow checks and 756 prover checks
+as errors, and proved 936/936 checks: 180 flow checks and 756 prover checks
 (45 initialization, 521 run-time, 125 assertions, 94 functional contracts,
-and 150 termination), with a maximum of 663 prover steps. The report contains
+and 151 termination), with a maximum of 663 prover steps. The report contains
 zero warnings, justified or unproved checks, and the proof surface contains
 zero Assume, Suppress, False_Positive, or SPARK Off constructs. The complete
 invocation output is retained in `obj/proof/logs/gnatprove-run.txt` and
@@ -140,19 +140,16 @@ statements.
 - [x] Proved the hyphen-position loop invariant.
 - [x] Re-proved callers after helper numeric changes.
 - [x] Widened to the entire unit with a forced level-0 run.
-- [x] Proved the S3 core rules in a warnings-as-errors unit run; the recorded
-      combined report contains 51/51 proved checks and zero assumptions.
-- [x] Widened the forced proof manifest to SigV4 byte canonicalization; the
-      authoritative `obj/proof/gnatprove/gnatprove.out` report contains
-      118/118 proved checks and zero justified or assumed checks.
+- [x] Proved the S3 core rules in a historical warnings-as-errors unit
+      widening: 51/51 checks and zero assumptions.
+- [x] Widened the forced proof manifest to SigV4 byte canonicalization in a
+      historical 118/118-check run with zero justified or assumed checks.
 - [x] Isolated proof from XML/Ada's aggregate GPR while retaining the
       registry-resolved Flyology parent project.
-- [x] Widened the forced manifest to attacker-controlled wire scalar parsing;
-      the authoritative report now includes canonical fixed-length base64
-      checksum validation.
+- [x] Widened the forced manifest to attacker-controlled wire scalar parsing,
+      including canonical fixed-length base64 checksum validation.
 - [x] Re-proved the forced manifest after adding the checksummed multipart
-      consecutive-order rule; the authoritative report contains 161/161
-      proved checks.
+      consecutive-order rule in a historical 161/161-check widening.
 - [x] Added the pinned generated S3 model to the forced manifest after a
       scoped run, reviewed it for proof suppressions and assumptions, then
       widened to 202/202 proved checks with zero justified or assumed checks.
@@ -238,17 +235,17 @@ statements.
       (196 target-attributed; 220 aggregate). One clean forced eight-unit
       manifest run then proved 625/625 checks (157 flow and 468 prover), with
       warnings as errors, zero justified or unproved checks, zero Assume
-      statements, and invocation-attributed logs retained under
-      `obj/proof/logs/multipart-final-serial/`. An earlier campaign that
-      overlapped an external proof lane is quarantined under
-      `obj/proof/logs/invalid-concurrent-20260822/` and is explicitly excluded
-      from qualification evidence.
+      statements. An earlier campaign that overlapped an external proof lane
+      was explicitly excluded from qualification evidence. This historical
+      baseline and its former artifacts are superseded by the current
+      PutObject final-base widening below.
 - [x] Re-proved the bucket-versioning final base after rebasing onto the
       callback/deadline safety checks: one clean, serialized forced eight-unit
       manifest run proved 625/625 checks (157 flow and 468 prover) with
       warnings as errors, zero warnings, justified or unproved checks, and
       zero Assume, Suppress, False_Positive, or SPARK Off constructs. The
-      invocation header and complete output are retained under `obj/proof/`.
+      historical baseline and its former output are superseded by the current
+      PutObject final-base widening below.
 - [x] Re-proved the DeleteObject final source base in one clean serialized
       forced eight-unit manifest run started at 2026-08-23T01:38:37Z with FSF
       GNATprove 16.1.0, level 0, oneline output, output headers, and warnings as
@@ -256,9 +253,8 @@ statements.
       initialization, 351 run-time, 39 assertions, 65 contracts, and 131
       termination), with a maximum of 390 prover steps and zero warnings,
       justified or unproved checks, Assume, Suppress, False_Positive, or SPARK
-      Off constructs. Invocation-attributed output is retained in
-      `obj/proof/logs/gnatprove-run.txt` and
-      `obj/proof/gnatprove/gnatprove.out`.
+      Off constructs. This historical baseline and its former output are
+      superseded by the current PutObject final-base widening below.
 - [x] Widened the forced manifest to nine units for the canonical S3
       IMF-fixdate codec, bounded CopyObject metadata validation, and its
       Gregorian arithmetic. The final serialized run started at
@@ -266,7 +262,16 @@ statements.
       (179 flow and 756 prover: 45 initialization, 521 run-time, 125
       assertions, 94 functional contracts, and 150 termination), with a
       maximum of 663 prover steps and zero warnings, justified or unproved
-      checks. The three earlier widening reports are retained under
-      `obj/proof/logs/` as superseded diagnostic evidence; the authoritative
-      output is `obj/proof/logs/gnatprove-run.txt` and
+      checks. That historical baseline and its former authoritative output
+      have since been superseded by the PutObject final-base widening below.
+- [x] Re-proved the PutObject final source base on commit `971670b` in one
+      clean serialized forced nine-unit manifest run started at
+      2026-08-23T07:48:01Z with FSF GNATprove 16.1.0, level 0, oneline output,
+      output headers, and warnings as errors. All 936/936 checks proved (180
+      flow and 756 prover: 45 initialization, 521 run-time, 125 assertions,
+      94 functional contracts, and 151 termination), with a maximum of 663
+      prover steps and zero warnings, justified or unproved checks, Assume,
+      Suppress, False_Positive, or SPARK Off constructs. The authoritative
+      invocation output and report are retained in
+      `obj/proof/logs/gnatprove-run.txt` and
       `obj/proof/gnatprove/gnatprove.out`.

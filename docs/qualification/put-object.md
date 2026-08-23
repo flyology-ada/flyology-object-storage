@@ -207,6 +207,14 @@ runs each of pinned RustFS, SeaweedFS, MinIO, and Flyology memory, pure-files,
 and SQLite, with native and lightweight typed clients plus the independent
 digest-pinned s5cmd byte/deletion oracle.
 
-The functional campaign does not replace formal proof. This slice changes the
-SPARK checksum-policy manifest unit; `proof-status.md` remains unchanged until
-a fresh serialized nine-unit proof run is explicitly authorized and succeeds.
+The functional campaign was followed by one clean serialized proof run on
+commit `971670bfd4816a7d795f004cf3d907a6edadb8fb`, started at
+2026-08-23T07:48:01Z with FSF GNATprove 16.1.0. `./tools/prove.sh` forced all
+nine manifest units at level 0 with output headers and warnings as errors. It
+proved all 936/936 checks: 180 flow checks and 756 prover checks (45
+initialization, 521 run-time, 125 assertions, 94 functional contracts, and 151
+termination), with a maximum of 663 prover steps. The report contains zero
+warnings, justified or unproved checks, and the proof surface contains zero
+Assume, Suppress, False_Positive, or SPARK Off constructs. The exact invocation
+and report are retained in `obj/proof/logs/gnatprove-run.txt` and
+`obj/proof/gnatprove/gnatprove.out`.

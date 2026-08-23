@@ -26,8 +26,8 @@ pinned 116-operation/718-shape S3 model descriptor, S3 range/multipart rules,
 SigV4 byte canonicalization, bounded decimal/size/boolean wire scalars,
 canonical fixed-length base64 checksums, and the typed canonical S3
 IMF-fixdate parser/renderer. The final uncontended serialized widening on
-commit `f38a0eb`, started at 2026-08-23T03:24:24Z with FSF GNATprove 16.1.0,
-proved all 935/935 checks across those nine units (179 flow and 756 prover)
+commit `971670b`, started at 2026-08-23T07:48:01Z with FSF GNATprove 16.1.0,
+proved all 936/936 checks across those nine units (180 flow and 756 prover)
 with warnings as errors, zero warnings, justified or unproved checks, and zero
 Assume, Suppress, False_Positive, or SPARK Off constructs. The authoritative
 invocation and report are retained at `obj/proof/logs/gnatprove-run.txt` and
