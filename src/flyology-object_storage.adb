@@ -686,7 +686,6 @@ is
          if System_Bytes > Maximum_System_Metadata_Bytes - 36 then
             return False;
          end if;
-         System_Bytes := System_Bytes + 36;
       end if;
 
       for Index in User_Metadata_Index loop

@@ -8,6 +8,7 @@ is
    subtype Year_Length is Positive range 365 .. 366;
    subtype Day_Boundary is Natural range 0 .. 3_652_059;
    subtype Absolute_Day_Number is Natural range 0 .. 3_652_058;
+   subtype Day_Within_Year is Natural range 0 .. 365;
    subtype Seconds_Within_Day is Natural range 0 .. 86_399;
    subtype Two_Digit_Number is Natural range 0 .. 99;
    subtype Decimal_Value is Integer range -1 .. 9_999;
@@ -198,8 +199,10 @@ is
         Absolute_Day_Number (Elapsed / 86_400);
       Low  : Calendar_Year := 1;
       High : Calendar_Year := 10_000;
+      Low_Day : Day_Boundary := Days_Before_Year (Low);
+      High_Day : Day_Boundary := Days_Before_Year (High);
       Year : Rendered_Year;
-      Day_Of_Year : Natural;
+      Day_Of_Year : Day_Within_Year;
       Month : Month_Number_Value := 1;
       Day   : Two_Digit_Number;
       Hour  : constant Natural := Seconds / 3_600;
@@ -222,18 +225,23 @@ is
          pragma Loop_Invariant (Low in 1 .. 9_999);
          pragma Loop_Invariant (High in 2 .. 10_000);
          pragma Loop_Invariant (Low < High);
-         pragma Loop_Invariant
-           (Days_Before_Year (Low) <= Absolute_Day);
-         pragma Loop_Invariant
-           (Absolute_Day < Days_Before_Year (High));
+         pragma Loop_Invariant (Low_Day <= Absolute_Day);
+         pragma Loop_Invariant (Absolute_Day < High_Day);
+         pragma Loop_Invariant (Low_Day < High_Day);
+         pragma Loop_Invariant (Low_Day = Days_Before_Year (Low));
+         pragma Loop_Invariant (High_Day = Days_Before_Year (High));
          pragma Loop_Variant (Decreases => High - Low);
          declare
             Middle : constant Calendar_Year := Low + (High - Low) / 2;
+            Middle_Day : constant Day_Boundary :=
+              Days_Before_Year (Middle);
          begin
-            if Days_Before_Year (Middle) <= Absolute_Day then
+            if Middle_Day <= Absolute_Day then
                Low := Middle;
+               Low_Day := Middle_Day;
             else
                High := Middle;
+               High_Day := Middle_Day;
             end if;
          end;
       end loop;
@@ -241,16 +249,16 @@ is
       Year := Rendered_Year (Low);
       Prove_Adjacent_Year (Year);
       pragma Assert
-        (Days_Before_Year (High) =
-           Days_Before_Year (Year) + Days_In_Year (Year));
-      Day_Of_Year := Absolute_Day - Days_Before_Year (Year);
+        (High_Day = Low_Day + Days_In_Year (Year));
+      Day_Of_Year := Day_Within_Year (Absolute_Day - Low_Day);
       pragma Assert (Day_Of_Year < Days_In_Year (Year));
       while Month < 12
         and then Day_Of_Year >= Days_In_Month (Year, Month)
       loop
          pragma Loop_Invariant (Month in 1 .. 11);
          pragma Loop_Invariant
-           (Day_Of_Year <= 365 - 28 * (Natural (Month) - 1));
+           (Day_Of_Year <=
+              Day_Within_Year'Last - 28 * (Natural (Month) - 1));
          pragma Loop_Variant (Decreases => 12 - Month);
          Day_Of_Year := Day_Of_Year - Days_In_Month (Year, Month);
          Month := Month + 1;
