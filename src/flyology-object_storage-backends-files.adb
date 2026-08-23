@@ -3960,6 +3960,11 @@ package body Flyology.Object_Storage.Backends.Files is
          In_Callback := False;
          Check_Context (Token, Deadline);
          if Declared.Kind = Known
+           and then Declared.Bytes > Maximum_Multipart_Part_Size
+         then
+            Result := Entity_Too_Large;
+            return;
+         elsif Declared.Kind = Known
            and then Declared.Bytes > Item.Maximum_Object_Size
          then
             Result := Capacity_Exceeded;
@@ -4011,7 +4016,15 @@ package body Flyology.Object_Storage.Backends.Files is
                   Count : constant Byte_Count :=
                     Byte_Count (Last - Buffer'First + 1);
                begin
-                  if Count > Item.Maximum_Object_Size
+                  if Count > Maximum_Multipart_Part_Size
+                    or else Total > Maximum_Multipart_Part_Size - Count
+                  then
+                     Result := Entity_Too_Large;
+                     SIO.Close (File);
+                     Opened := False;
+                     Ada.Directories.Delete_File (US.To_String (Temp));
+                     return;
+                  elsif Count > Item.Maximum_Object_Size
                     or else Total > Item.Maximum_Object_Size - Count
                   then
                      Result := Capacity_Exceeded;

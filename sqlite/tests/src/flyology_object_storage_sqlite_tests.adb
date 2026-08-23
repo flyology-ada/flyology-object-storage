@@ -9,6 +9,7 @@ with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Conditional_Put_Conformance;
 with Copy_Object_Conformance;
+with Multipart_Part_Conformance;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.IO;
@@ -2512,6 +2513,34 @@ begin
          "schema9 maximum Expires did not survive backend reopen");
    end;
    Ada.Directories.Delete_Tree (Copy_Root);
+
+   if Ada.Directories.Exists ("obj/sqlite-part-boundary") then
+      Ada.Directories.Delete_Tree ("obj/sqlite-part-boundary");
+   end if;
+   declare
+      Boundary_Root : constant String := "obj/sqlite-part-boundary";
+      package Backend renames Flyology.Object_Storage.Backends.SQLite;
+      Store : Backend.Store := Backend.Open (Boundary_Root);
+      Result : Flyology.Object_Storage.Status;
+   begin
+      Store.Create_Bucket
+        ("part-boundary", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success,
+         "SQLite boundary bucket create failed");
+      Multipart_Part_Conformance.Exercise_Global_Size_Boundary
+        (Store, "part-boundary", "SQLite");
+      Assert
+        (Multipart_Part_Conformance.Ordinary_File_Count
+           ("obj/sqlite-part-boundary/staging") = 0,
+         "SQLite boundary failures left a staging payload");
+      Store.Delete_Bucket
+        ("part-boundary", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Flyology.Object_Storage.Success,
+         "SQLite boundary bucket cleanup failed");
+   end;
+   Ada.Directories.Delete_Tree ("obj/sqlite-part-boundary");
 
    if Ada.Directories.Exists (Backend_Root) then
       Ada.Directories.Delete_Tree (Backend_Root);

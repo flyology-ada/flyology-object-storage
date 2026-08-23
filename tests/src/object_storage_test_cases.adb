@@ -12,6 +12,7 @@ with AUnit.Test_Caller;
 with AUnit.Test_Fixtures;
 with Conditional_Put_Conformance;
 with Copy_Object_Conformance;
+with Multipart_Part_Conformance;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP;
@@ -3532,6 +3533,28 @@ package body Object_Storage_Test_Cases is
          Assert (Result = Success, "atomic commit policy delete bucket");
       end;
       Clean;
+      if Ada.Directories.Exists (Root & "-part-boundary") then
+         Ada.Directories.Delete_Tree (Root & "-part-boundary");
+      end if;
+      declare
+         Boundary_Root : constant String := Root & "-part-boundary";
+         Store : Files.Store := Files.Open (Boundary_Root);
+         Result : Status;
+      begin
+         Store.Create_Bucket
+           ("part-boundary", null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files boundary bucket create failed");
+         Multipart_Part_Conformance.Exercise_Global_Size_Boundary
+           (Store, "part-boundary", "files");
+         Assert
+           (Multipart_Part_Conformance.Ordinary_File_Count
+              (Ada.Directories.Compose (Boundary_Root, "tmp")) = 0,
+            "files boundary failures left a temporary payload");
+         Store.Delete_Bucket
+           ("part-boundary", null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files boundary bucket cleanup failed");
+      end;
+      Ada.Directories.Delete_Tree (Root & "-part-boundary");
       declare
          Store : Files.Store := Files.Open (Root, Maximum_Object_Size => 64);
          Source : Buffer_Source :=
