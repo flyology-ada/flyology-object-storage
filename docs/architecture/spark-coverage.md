@@ -25,10 +25,15 @@ The current forced nine-unit manifest covers domain validation, the exhaustive
 pinned 116-operation/718-shape S3 model descriptor, S3 range/multipart rules,
 SigV4 byte canonicalization, bounded decimal/size/boolean wire scalars,
 canonical fixed-length base64 checksums, and the typed canonical S3
-IMF-fixdate parser/renderer. The latest completed manifest-wide result is
-recorded in `proof-status.md`; it remains the preceding eight-unit baseline
-until the new date unit receives an uncontended serialized widening. The
-bucket-versioning scoped result below is retained as targeted evidence.
+IMF-fixdate parser/renderer. The final uncontended serialized widening on
+commit `f38a0eb`, started at 2026-08-23T03:24:24Z with FSF GNATprove 16.1.0,
+proved all 935/935 checks across those nine units (179 flow and 756 prover)
+with warnings as errors, zero warnings, justified or unproved checks, and zero
+Assume, Suppress, False_Positive, or SPARK Off constructs. The authoritative
+invocation and report are retained at `obj/proof/logs/gnatprove-run.txt` and
+`obj/proof/gnatprove/gnatprove.out`; exact category totals and historical
+scoped evidence are recorded in `proof-status.md`. The bucket-versioning
+scoped result below is retained as targeted historical evidence.
 XML/Ada SAX orchestration remains
 outside SPARK; attacker-controlled scalar decisions are delegated to the
 proved wire core. The manifest also includes the bounded request-target

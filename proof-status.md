@@ -2,11 +2,16 @@
 <!-- Reflect the top-level goal given. Items in the list below are moved from
      Not Started to In Progress to Reviewed and finally to Proved and Finalized. -->
 
-The latest uncontended, serialized bucket-versioning final-base qualification
-on commit `905375f` forced an eight-unit manifest-wide level-0 proof and
-completed with 625/625 checks proved (157 flow and 468 prover), warnings as
-errors, zero warnings, justified or unproved checks, and zero Assume,
-Suppress, False_Positive, or SPARK Off constructs across the proof surface.
+The latest uncontended, serialized CopyObject final-base qualification on
+commit `f38a0eb` started at 2026-08-23T03:24:24Z with FSF GNATprove 16.1.0.
+It forced all nine manifest units at level 0 with output headers and warnings
+as errors, and proved 935/935 checks: 179 flow checks and 756 prover checks
+(45 initialization, 521 run-time, 125 assertions, 94 functional contracts,
+and 150 termination), with a maximum of 663 prover steps. The report contains
+zero warnings, justified or unproved checks, and the proof surface contains
+zero Assume, Suppress, False_Positive, or SPARK Off constructs. The complete
+invocation output is retained in `obj/proof/logs/gnatprove-run.txt` and
+`obj/proof/gnatprove/gnatprove.out`.
 Final-base scoped level-0 runs
 proved the impacted root SPARK unit with 196 target-attributed checks
 (220 aggregate),
@@ -71,6 +76,11 @@ statements.
         (4 target-attributed, 13 aggregate checks)
   - [x] Combine decreasing-byte-count termination
         (15 target-attributed, 24 aggregate checks)
+- [x] Flyology.Object_Storage.S3.IMF_Dates (level 0, all)
+  - [x] canonical S3 IMF-fixdate parsing and rendering
+  - [x] leap-second normalization within the four-digit rendered-year domain
+  - [x] bounded Gregorian year and month search termination
+  - [x] proved adjacent-year day-count recurrence
 - [x] Flyology.Object_Storage.S3.Model (level 0, all; generated descriptor)
   - [x] 116 operation identities and REST traits
   - [x] 718 shape identities and scalar/container traits
@@ -248,4 +258,15 @@ statements.
       justified or unproved checks, Assume, Suppress, False_Positive, or SPARK
       Off constructs. Invocation-attributed output is retained in
       `obj/proof/logs/gnatprove-run.txt` and
+      `obj/proof/gnatprove/gnatprove.out`.
+- [x] Widened the forced manifest to nine units for the canonical S3
+      IMF-fixdate codec, bounded CopyObject metadata validation, and its
+      Gregorian arithmetic. The final serialized run started at
+      2026-08-23T03:24:24Z with FSF GNATprove 16.1.0 and proved 935/935 checks
+      (179 flow and 756 prover: 45 initialization, 521 run-time, 125
+      assertions, 94 functional contracts, and 150 termination), with a
+      maximum of 663 prover steps and zero warnings, justified or unproved
+      checks. The three earlier widening reports are retained under
+      `obj/proof/logs/` as superseded diagnostic evidence; the authoritative
+      output is `obj/proof/logs/gnatprove-run.txt` and
       `obj/proof/gnatprove/gnatprove.out`.
