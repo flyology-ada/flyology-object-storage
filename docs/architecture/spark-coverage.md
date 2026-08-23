@@ -21,12 +21,15 @@ all checks in SPARK-enabled units to prove. No Assume, False_Positive
 annotation, imported ghost axiom, or body-level SPARK_Mode Off is accepted as
 a proof fix.
 
-The current forced manifest covers domain validation, the exhaustive pinned
-116-operation/718-shape S3 model descriptor, S3 range/multipart rules, SigV4
-byte canonicalization, bounded decimal/size/boolean wire scalars, and
-canonical fixed-length base64 checksums. The latest manifest-wide result is
-recorded in `proof-status.md`; the bucket-versioning scoped result below is
-retained as targeted evidence. XML/Ada SAX orchestration remains
+The current forced nine-unit manifest covers domain validation, the exhaustive
+pinned 116-operation/718-shape S3 model descriptor, S3 range/multipart rules,
+SigV4 byte canonicalization, bounded decimal/size/boolean wire scalars,
+canonical fixed-length base64 checksums, and the typed canonical S3
+IMF-fixdate parser/renderer. The latest completed manifest-wide result is
+recorded in `proof-status.md`; it remains the preceding eight-unit baseline
+until the new date unit receives an uncontended serialized widening. The
+bucket-versioning scoped result below is retained as targeted evidence.
+XML/Ada SAX orchestration remains
 outside SPARK; attacker-controlled scalar decisions are delegated to the
 proved wire core. The manifest also includes the bounded request-target
 classifier, semantic SigV4 timestamp validation, RFC byte-range parser, and

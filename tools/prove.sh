@@ -16,6 +16,7 @@ PROOF_UNITS=(
   flyology-object_storage-s3-core.adb
   flyology-object_storage-s3-checksum_policy.adb
   flyology-object_storage-s3-checksum_crc.adb
+  flyology-object_storage-s3-imf_dates.adb
   flyology-object_storage-s3-model.adb
   flyology-object_storage-s3-requests.adb
   flyology-object_storage-s3-sigv4_encoding.adb
