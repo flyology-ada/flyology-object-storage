@@ -84,3 +84,16 @@ remain operation-specific, so sharing transport and response logic does not
 allow a prepared request to be executed as another operation. These are
 client-only wire boundaries and make no backend, Flyology server, or external
 provider interoperability claim.
+
+Five small bucket-control reads use a second shared synchronous state machine:
+transfer acceleration, raw bucket policy, policy status, requester-pays, and
+public-access block. Their public preparers, executors, outcomes, and
+convenience calls remain operation-specific. Optional modeled fields preserve
+absence, including each of the four public-access-block booleans; enum and
+boolean spellings are exact. Policy is returned as the bounded same-response
+payload without XML interpretation. The four XML responses use the caller's
+shared S3 XML resource limits and accept the established compatible empty or
+AWS S3 namespace, while rejecting foreign namespaces, attributes, unknown or
+duplicate fields, nesting, DTDs, and entities. This is a client-only boundary:
+Flyology backends and the authenticated server do not implement these five
+operations, and external-provider interoperability is not claimed.

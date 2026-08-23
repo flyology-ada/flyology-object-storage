@@ -20,6 +20,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
    package US renames Ada.Strings.Unbounded;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
    package Model renames Flyology.Object_Storage.S3.Model;
+   package Bucket_Controls renames
+     Flyology.Object_Storage.S3.Bucket_Controls;
    package Encoding renames Flyology.Object_Storage.S3.SigV4_Encoding;
    package Object_Reads renames Flyology.Object_Storage.S3.Object_Reads;
    package Checksum_Policy renames
@@ -6350,6 +6352,433 @@ package body Flyology.Object_Storage.Client.Low_Level is
      (Execute_Bucket_Configuration_Deletion
         (Client, Prepared, Model.Delete_Public_Access_Block_Operation,
          Timeout, Token, Limits));
+
+   function Prepare_Bucket_Control_Get
+     (Operation  : Model.Operation_Id;
+      Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Owner      : US.Unbounded_String;
+      Payer      : US.Unbounded_String;
+      Has_Payer  : Boolean;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Owner_Text : constant String := US.To_String (Owner);
+      Payer_Text : constant String := US.To_String (Payer);
+      Values : Model_Value_Array
+        (1 .. 1 + Boolean'Pos (Owner_Text'Length > 0) +
+           Boolean'Pos (Has_Payer));
+      Last : Positive := 1;
+   begin
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_List_Response_Header_Text (Owner_Text)
+        or else (Has_Payer and then Payer_Text /= "requester")
+        or else (not Has_Payer and then Payer_Text'Length > 0)
+        or else Model.Method (Operation) /= Model.Get_Method
+        or else Model.Response_Code (Operation) /= 200
+      then
+         raise Invalid_Request with "invalid bucket-control GET parameters";
+      end if;
+      Values (1) :=
+        (Member_Name => US.To_Unbounded_String ("Bucket"),
+         Map_Key     => US.Null_Unbounded_String,
+         Value       => US.To_Unbounded_String (Bucket));
+      if Owner_Text'Length > 0 then
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name =>
+              US.To_Unbounded_String ("ExpectedBucketOwner"),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => Owner);
+      end if;
+      if Has_Payer then
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String ("RequestPayer"),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => Payer);
+      end if;
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Operation, Origin, Style, Values, "", False,
+         SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := Get_Bucket_Control_Operation;
+      end return;
+   end Prepare_Bucket_Control_Get;
+
+   function Prepare_Get_Bucket_Accelerate_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Accelerate_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Bucket_Accelerate_Configuration_Operation,
+         Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
+         Parameters.Request_Payer,
+         Has_Payer => US.Length (Parameters.Request_Payer) > 0,
+         Identity => Identity, Region => Region, Timestamp => Timestamp));
+
+   function Prepare_Get_Bucket_Policy
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Bucket_Policy_Operation, Origin, Style, Bucket,
+         Parameters.Expected_Bucket_Owner, US.Null_Unbounded_String, False,
+         Identity, Region, Timestamp));
+
+   function Prepare_Get_Bucket_Policy_Status
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Bucket_Policy_Status_Operation, Origin, Style, Bucket,
+         Parameters.Expected_Bucket_Owner, US.Null_Unbounded_String, False,
+         Identity, Region, Timestamp));
+
+   function Prepare_Get_Bucket_Request_Payment
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Bucket_Request_Payment_Operation, Origin, Style, Bucket,
+         Parameters.Expected_Bucket_Owner, US.Null_Unbounded_String, False,
+         Identity, Region, Timestamp));
+
+   function Prepare_Get_Public_Access_Block
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Public_Access_Block_Operation, Origin, Style, Bucket,
+         Parameters.Expected_Bucket_Owner, US.Null_Unbounded_String, False,
+         Identity, Region, Timestamp));
+
+   procedure Validate_Bucket_Control_Response_Headers
+     (Request_ID, Host_ID : String) is
+   begin
+      if not Valid_List_Response_Header_Text (Request_ID)
+        or else not Valid_List_Response_Header_Text (Host_ID)
+      then
+         raise Invalid_Response with
+           "invalid bucket-control response identifiers";
+      end if;
+   end Validate_Bucket_Control_Response_Headers;
+
+   function Decode_Get_Bucket_Accelerate_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Request_Charged : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Accelerate_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      if Status = 200 then
+         if Request_Charged'Length > 0
+           and then Request_Charged /= "requester"
+         then
+            raise Invalid_Response with "invalid request-charged response";
+         end if;
+         return
+           (Kind            => Bucket_Control_Found,
+            Status          => Status,
+            Configuration   =>
+              (if Payload'Length = 0 then
+                  Bucket_Controls.Accelerate_Status_Absent
+               else Bucket_Controls.Parse_Accelerate (Payload, Limits)),
+            Request_Charged => US.To_Unbounded_String (Request_Charged));
+      end if;
+      return
+        (Kind   => Get_Bucket_Control_Rejected,
+         Status => Status,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Bucket_Controls.Malformed_Configuration |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetBucketAccelerateConfiguration response";
+   end Decode_Get_Bucket_Accelerate_Response;
+
+   function Decode_Get_Bucket_Policy_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Policy_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      if Payload'Length > Limits.Maximum_Document_Bytes then
+         raise Invalid_Response with "bucket policy exceeds response limit";
+      elsif Status = 200 then
+         return
+           (Kind   => Bucket_Control_Found,
+            Status => Status,
+            Policy => US.To_Unbounded_String (Payload));
+      end if;
+      return
+        (Kind   => Get_Bucket_Control_Rejected,
+         Status => Status,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed GetBucketPolicy response";
+   end Decode_Get_Bucket_Policy_Response;
+
+   function Decode_Get_Bucket_Policy_Status_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Policy_Status_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      if Status = 200 then
+         return
+           (Kind      => Bucket_Control_Found,
+            Status    => Status,
+            Is_Public =>
+              (if Payload'Length = 0 then
+                  (Is_Set => False, Value => False)
+               else Bucket_Controls.Parse_Policy_Status (Payload, Limits)));
+      end if;
+      return
+        (Kind   => Get_Bucket_Control_Rejected,
+         Status => Status,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Bucket_Controls.Malformed_Configuration |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetBucketPolicyStatus response";
+   end Decode_Get_Bucket_Policy_Status_Response;
+
+   function Decode_Get_Bucket_Request_Payment_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Request_Payment_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      if Status = 200 then
+         return
+           (Kind    => Bucket_Control_Found,
+            Status  => Status,
+            Payment =>
+              (if Payload'Length = 0 then Bucket_Controls.Payer_Absent
+               else Bucket_Controls.Parse_Request_Payment (Payload, Limits)));
+      end if;
+      return
+        (Kind   => Get_Bucket_Control_Rejected,
+         Status => Status,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Bucket_Controls.Malformed_Configuration |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetBucketRequestPayment response";
+   end Decode_Get_Bucket_Request_Payment_Response;
+
+   function Decode_Get_Public_Access_Block_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Public_Access_Block_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      if Status = 200 then
+         return
+           (Kind          => Bucket_Control_Found,
+            Status        => Status,
+            Configuration =>
+              (if Payload'Length = 0 then
+                  (Block_Public_ACLs       => (others => <>),
+                   Ignore_Public_ACLs      => (others => <>),
+                   Block_Public_Policy     => (others => <>),
+                   Restrict_Public_Buckets => (others => <>))
+               else
+                  Bucket_Controls.Parse_Public_Access_Block
+                    (Payload, Limits)));
+      end if;
+      return
+        (Kind   => Get_Bucket_Control_Rejected,
+         Status => Status,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Bucket_Controls.Malformed_Configuration |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetPublicAccessBlock response";
+   end Decode_Get_Public_Access_Block_Response;
+
+   type Bucket_Control_Raw_Response is record
+      Status          : Flyology.HTTP.Status_Code;
+      Payload         : US.Unbounded_String;
+      Request_ID      : US.Unbounded_String;
+      Host_ID         : US.Unbounded_String;
+      Request_Charged : US.Unbounded_String;
+   end record;
+
+   function Execute_Bucket_Control_Get
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Operation : Model.Operation_Id;
+      Collect_Request_Charged : Boolean; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits) return Bucket_Control_Raw_Response
+   is
+   begin
+      if Prepared.Operation /= Get_Bucket_Control_Operation
+        or else Prepared.Modeled_Operation /= Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+
+         function Singleton_Header (Name : String) return String is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count (Response, Name);
+         begin
+            if Count > 1 then
+               raise Invalid_Response with
+                 "invalid bucket-control header multiplicity";
+            elsif Count = 0 then
+               return "";
+            end if;
+            declare
+               Value : constant String :=
+                 Flyology.HTTP.Client.Header (Response, Name);
+            begin
+               if Value'Length = 0
+                 or else not Valid_List_Response_Header_Text (Value)
+               then
+                  raise Invalid_Response with
+                    "invalid bucket-control response header";
+               end if;
+               return Value;
+            end;
+         end Singleton_Header;
+
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return
+           (Status => Flyology.HTTP.Client.Status (Response),
+            Payload => US.To_Unbounded_String
+              (Flyology.Bytes.To_Byte_String (Payload)),
+            Request_ID => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-request-id")),
+            Host_ID => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-id-2")),
+            Request_Charged =>
+              (if Collect_Request_Charged
+               then US.To_Unbounded_String
+                 (Singleton_Header ("x-amz-request-charged"))
+               else US.Null_Unbounded_String));
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "bucket-control response exceeds configured limit";
+   end Execute_Bucket_Control_Get;
+
+   function Execute_Get_Bucket_Accelerate_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Accelerate_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared,
+           Model.Get_Bucket_Accelerate_Configuration_Operation, True,
+           Timeout, Token, Limits);
+   begin
+      return Decode_Get_Bucket_Accelerate_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID),
+         US.To_String (Raw.Request_Charged), Limits);
+   end Execute_Get_Bucket_Accelerate_Configuration;
+
+   function Execute_Get_Bucket_Policy
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Policy_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared, Model.Get_Bucket_Policy_Operation, False,
+           Timeout, Token, Limits);
+   begin
+      return Decode_Get_Bucket_Policy_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_Get_Bucket_Policy;
+
+   function Execute_Get_Bucket_Policy_Status
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Policy_Status_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared, Model.Get_Bucket_Policy_Status_Operation, False,
+           Timeout, Token, Limits);
+   begin
+      return Decode_Get_Bucket_Policy_Status_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_Get_Bucket_Policy_Status;
+
+   function Execute_Get_Bucket_Request_Payment
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Request_Payment_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared, Model.Get_Bucket_Request_Payment_Operation,
+           False, Timeout, Token, Limits);
+   begin
+      return Decode_Get_Bucket_Request_Payment_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_Get_Bucket_Request_Payment;
+
+   function Execute_Get_Public_Access_Block
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Public_Access_Block_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared, Model.Get_Public_Access_Block_Operation, False,
+           Timeout, Token, Limits);
+   begin
+      return Decode_Get_Public_Access_Block_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_Get_Public_Access_Block;
 
    function Prepare_Delete_Object
      (Origin     : Flyology.HTTP.Origin;

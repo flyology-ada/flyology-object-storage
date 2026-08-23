@@ -480,6 +480,118 @@ package body Flyology.Object_Storage.Client.Buckets is
          (Public_Access_Block_Configuration, Client, Origin, Bucket, "",
           Identity, Region, Style, Expected_Bucket_Owner, Timeout, Token));
 
+   function Get_Accelerate_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Request_Payer : String := "";
+      Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Get_Bucket_Accelerate_Outcome
+   is
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Get_Bucket_Accelerate_Configuration
+          (Origin, Style, Bucket,
+           (Expected_Bucket_Owner =>
+              US.To_Unbounded_String (Expected_Bucket_Owner),
+            Request_Payer => US.To_Unbounded_String (Request_Payer)),
+           Identity, Region, Timestamp);
+   begin
+      return Low_Level.Execute_Get_Bucket_Accelerate_Configuration
+        (Client, Prepared, Timeout, Token, Limits);
+   end Get_Accelerate_Configuration;
+
+   function Get_Policy
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Get_Bucket_Policy_Outcome
+   is
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Get_Bucket_Policy
+          (Origin, Style, Bucket,
+           (Expected_Bucket_Owner =>
+              US.To_Unbounded_String (Expected_Bucket_Owner)),
+           Identity, Region, Timestamp);
+   begin
+      return Low_Level.Execute_Get_Bucket_Policy
+        (Client, Prepared, Timeout, Token, Limits);
+   end Get_Policy;
+
+   function Get_Policy_Status
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Get_Bucket_Policy_Status_Outcome
+   is
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Get_Bucket_Policy_Status
+          (Origin, Style, Bucket,
+           (Expected_Bucket_Owner =>
+              US.To_Unbounded_String (Expected_Bucket_Owner)),
+           Identity, Region, Timestamp);
+   begin
+      return Low_Level.Execute_Get_Bucket_Policy_Status
+        (Client, Prepared, Timeout, Token, Limits);
+   end Get_Policy_Status;
+
+   function Get_Request_Payment
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Get_Bucket_Request_Payment_Outcome
+   is
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Get_Bucket_Request_Payment
+          (Origin, Style, Bucket,
+           (Expected_Bucket_Owner =>
+              US.To_Unbounded_String (Expected_Bucket_Owner)),
+           Identity, Region, Timestamp);
+   begin
+      return Low_Level.Execute_Get_Bucket_Request_Payment
+        (Client, Prepared, Timeout, Token, Limits);
+   end Get_Request_Payment;
+
+   function Get_Public_Access_Block
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Get_Public_Access_Block_Outcome
+   is
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Get_Public_Access_Block
+          (Origin, Style, Bucket,
+           (Expected_Bucket_Owner =>
+              US.To_Unbounded_String (Expected_Bucket_Owner)),
+           Identity, Region, Timestamp);
+   begin
+      return Low_Level.Execute_Get_Public_Access_Block
+        (Client, Prepared, Timeout, Token, Limits);
+   end Get_Public_Access_Block;
+
    function Head
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;

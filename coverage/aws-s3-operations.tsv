@@ -28,7 +28,7 @@ DeleteObjectTagging	core	covered	covered	partial	covered
 DeleteObjects	core	partial	covered	partial	covered
 DeletePublicAccessBlock	extended	missing	covered	missing	covered
 GetBucketAbac	extended	missing	partial	missing	missing
-GetBucketAccelerateConfiguration	extended	missing	partial	missing	missing
+GetBucketAccelerateConfiguration	extended	missing	covered	missing	covered
 GetBucketAcl	extended	missing	partial	missing	missing
 GetBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
 GetBucketCors	extended	missing	partial	missing	missing
@@ -45,10 +45,10 @@ GetBucketMetricsConfiguration	extended	missing	partial	missing	missing
 GetBucketNotification	extended	missing	partial	missing	missing
 GetBucketNotificationConfiguration	extended	missing	partial	missing	missing
 GetBucketOwnershipControls	extended	missing	partial	missing	missing
-GetBucketPolicy	extended	missing	partial	missing	missing
-GetBucketPolicyStatus	extended	missing	partial	missing	missing
+GetBucketPolicy	extended	missing	covered	missing	covered
+GetBucketPolicyStatus	extended	missing	covered	missing	covered
 GetBucketReplication	extended	missing	partial	missing	missing
-GetBucketRequestPayment	extended	missing	partial	missing	missing
+GetBucketRequestPayment	extended	missing	covered	missing	covered
 GetBucketTagging	core	covered	covered	covered	covered
 GetBucketVersioning	core	covered	covered	covered	covered
 GetBucketWebsite	extended	missing	partial	missing	missing
@@ -61,7 +61,7 @@ GetObjectLockConfiguration	extended	missing	partial	missing	missing
 GetObjectRetention	extended	missing	partial	missing	missing
 GetObjectTagging	core	covered	covered	partial	covered
 GetObjectTorrent	extended	missing	partial	missing	missing
-GetPublicAccessBlock	extended	missing	partial	missing	missing
+GetPublicAccessBlock	extended	missing	covered	missing	covered
 HeadBucket	core	covered	covered	covered	covered
 HeadObject	core	covered	covered	partial	covered
 ListBucketAnalyticsConfigurations	extended	missing	partial	missing	missing

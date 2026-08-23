@@ -19,6 +19,7 @@ with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Checksums;
+with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
@@ -36,6 +37,8 @@ procedure S3_HTTP_Socket_Corpus is
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Checksums renames Flyology.Object_Storage.S3.Checksums;
+   package Bucket_Controls renames
+     Flyology.Object_Storage.S3.Bucket_Controls;
    package Checksum_Policy renames Checksums.Policy;
    package Model renames Flyology.Object_Storage.S3.Model;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
@@ -76,6 +79,9 @@ procedure S3_HTTP_Socket_Corpus is
    use type Buckets.Delete_Tags_Outcome_Kind;
    use type Buckets.Delete_Outcome_Kind;
    use type Low_Level.Delete_Bucket_CORS_Outcome_Kind;
+   use type Low_Level.Get_Bucket_Control_Outcome_Kind;
+   use type Bucket_Controls.Accelerate_Status;
+   use type Bucket_Controls.Payer;
    use type Tags.Tag_Vectors.Vector;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
@@ -3049,6 +3055,52 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response ("204 No Content", ""), "DELETE",
             "/example-bucket?publicAccessBlock",
             Expected_Bucket_Owner => "123456789012");
+         --  Pinned-model reference fixtures for the five qualified GETs.
+         --  Spellings and values cover every public result field; changing
+         --  them requires paired client assertions and has no product-policy
+         --  effect.
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<AccelerateConfiguration><Status>Enabled</Status>" &
+               "</AccelerateConfiguration>",
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?accelerate",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", "{""Statement"":[]}"),
+            "GET", "/example-bucket?policy",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<PolicyStatus><IsPublic>false</IsPublic></PolicyStatus>"),
+            "GET", "/example-bucket?policyStatus",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<RequestPaymentConfiguration>" &
+               "<Payer>BucketOwner</Payer>" &
+               "</RequestPaymentConfiguration>"),
+            "GET", "/example-bucket?requestPayment",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<PublicAccessBlockConfiguration>" &
+               "<BlockPublicAcls>true</BlockPublicAcls>" &
+               "<IgnorePublicAcls>false</IgnorePublicAcls>" &
+               "<BlockPublicPolicy>true</BlockPublicPolicy>" &
+               "<RestrictPublicBuckets>false</RestrictPublicBuckets>" &
+               "</PublicAccessBlockConfiguration>"),
+            "GET", "/example-bucket?publicAccessBlock",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccelerateConfiguration/>",
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?accelerate");
          Serve
            (HTTP_Response
               ("403 Forbidden", Error_XML,
@@ -7318,6 +7370,108 @@ procedure S3_HTTP_Socket_Corpus is
               (HTTP, Origin, "example-bucket", Identity,
                Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
             "DeletePublicAccessBlock");
+         --  These paired assertions are the native/lightweight transport
+         --  oracle for the five reference responses served above.
+         declare
+            Result : constant Low_Level.Get_Bucket_Accelerate_Outcome :=
+              Buckets.Get_Accelerate_Configuration
+                (HTTP, Origin, "example-bucket", Identity,
+                 Expected_Bucket_Owner => "123456789012",
+                 Request_Payer => "requester", Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Configuration /=
+                Bucket_Controls.Accelerate_Enabled
+              or else US.To_String (Result.Request_Charged) /= "requester"
+            then
+               raise Program_Error with
+                 "GetBucketAccelerateConfiguration socket mismatch";
+            end if;
+         end;
+         declare
+            Result : constant Low_Level.Get_Bucket_Policy_Outcome :=
+              Buckets.Get_Policy
+                (HTTP, Origin, "example-bucket", Identity,
+                 Expected_Bucket_Owner => "123456789012", Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else US.To_String (Result.Policy) /= "{""Statement"":[]}"
+            then
+               raise Program_Error with "GetBucketPolicy socket mismatch";
+            end if;
+         end;
+         declare
+            Result : constant Low_Level.Get_Bucket_Policy_Status_Outcome :=
+              Buckets.Get_Policy_Status
+                (HTTP, Origin, "example-bucket", Identity,
+                 Expected_Bucket_Owner => "123456789012", Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else not Result.Is_Public.Is_Set
+              or else Result.Is_Public.Value
+            then
+               raise Program_Error with
+                 "GetBucketPolicyStatus socket mismatch";
+            end if;
+         end;
+         declare
+            Result : constant
+              Low_Level.Get_Bucket_Request_Payment_Outcome :=
+                Buckets.Get_Request_Payment
+                  (HTTP, Origin, "example-bucket", Identity,
+                   Expected_Bucket_Owner => "123456789012", Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Payment /= Bucket_Controls.Bucket_Owner
+            then
+               raise Program_Error with
+                 "GetBucketRequestPayment socket mismatch";
+            end if;
+         end;
+         declare
+            Result : constant Low_Level.Get_Public_Access_Block_Outcome :=
+              Buckets.Get_Public_Access_Block
+                (HTTP, Origin, "example-bucket", Identity,
+                 Expected_Bucket_Owner => "123456789012", Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else not Result.Configuration.Block_Public_ACLs.Is_Set
+              or else not Result.Configuration.Block_Public_ACLs.Value
+              or else not Result.Configuration.Ignore_Public_ACLs.Is_Set
+              or else Result.Configuration.Ignore_Public_ACLs.Value
+              or else not Result.Configuration.Block_Public_Policy.Is_Set
+              or else not Result.Configuration.Block_Public_Policy.Value
+              or else not
+                Result.Configuration.Restrict_Public_Buckets.Is_Set
+              or else Result.Configuration.Restrict_Public_Buckets.Value
+            then
+               raise Program_Error with
+                 "GetPublicAccessBlock socket mismatch";
+            end if;
+         end;
+         declare
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Get_Bucket_Accelerate_Outcome :=
+                    Buckets.Get_Accelerate_Configuration
+                      (HTTP, Origin, "example-bucket", Identity,
+                       Timeout => 5.0);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  Raised := True;
+            end;
+            if not Raised then
+               raise Program_Error with
+                 "GetBucketAccelerateConfiguration accepted duplicate " &
+                 "request-charged headers";
+            end if;
+         end;
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Delete_Bucket_CORS

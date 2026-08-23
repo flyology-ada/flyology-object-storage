@@ -5,6 +5,7 @@ with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Errors;
+with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
 
 --  High-level bucket operations over a configured Flyology HTTP client.
@@ -283,6 +284,77 @@ package Flyology.Object_Storage.Client.Buckets is
       Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null)
       return Delete_Outcome;
+
+   --  Existing project-policy classification: the following synchronous
+   --  Buckets calls retain the established us-east-1, path-style,
+   --  absent-owner, and 30-second defaults. Changing them is source- and
+   --  behavior-incompatible across this package.
+   --  Read the optional transfer-acceleration status and requester-charged
+   --  response header for one bucket.
+   --  @param Limits Caller-selected shared S3 XML and byte limits
+   function Get_Accelerate_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Request_Payer : String := "";
+      Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Get_Bucket_Accelerate_Outcome;
+
+   --  Read the complete raw bucket-policy document.
+   --  @param Limits Caller-selected response byte limit
+   function Get_Policy
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Get_Bucket_Policy_Outcome;
+
+   --  Read the optional public-policy assessment for one bucket.
+   --  @param Limits Caller-selected shared S3 XML limits
+   function Get_Policy_Status
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Get_Bucket_Policy_Status_Outcome;
+
+   --  Read the optional requester-pays configuration for one bucket.
+   --  @param Limits Caller-selected shared S3 XML limits
+   function Get_Request_Payment
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Get_Bucket_Request_Payment_Outcome;
+
+   --  Read the presence-preserving four-field public-access block.
+   --  @param Limits Caller-selected shared S3 XML limits
+   function Get_Public_Access_Block
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Low_Level.Get_Public_Access_Block_Outcome;
 
    type Head_Outcome_Kind is (Bucket_Available, Head_Rejected);
 

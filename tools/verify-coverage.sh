@@ -81,6 +81,7 @@ do
     require_evidence "$operation_name" corpus "$pattern" \
       "$PROJECT_DIR/tests/src/s3_implementation_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_delete_bucket_configurations_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_controls_corpus.adb" \
       "$PROJECT_DIR/tests/scripts"
   fi
 done
