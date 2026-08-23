@@ -12,6 +12,7 @@ is
    subtype Seconds_Within_Day is Natural range 0 .. 86_399;
    subtype Two_Digit_Number is Natural range 0 .. 99;
    subtype Decimal_Value is Integer range -1 .. 9_999;
+   subtype Quotient_Increment is Natural range 0 .. 1;
 
    type Short_Name is new String (1 .. 3);
    Weekdays : constant array (Natural range 0 .. 6) of Short_Name :=
@@ -72,19 +73,78 @@ is
        Days_Before_Year (Calendar_Year (Year + 1)) =
          Days_Before_Year (Year) + Days_In_Year (Year)
    is
+      Current_Days : constant Day_Boundary := Days_Before_Year (Year);
+      Next_Days : constant Day_Boundary :=
+        Days_Before_Year (Calendar_Year (Year + 1));
+      Increment_4 : constant Quotient_Increment :=
+        Boolean'Pos (Year mod 4 = 0);
+      Increment_100 : constant Quotient_Increment :=
+        Boolean'Pos (Year mod 100 = 0);
+      Increment_400 : constant Quotient_Increment :=
+        Boolean'Pos (Year mod 400 = 0);
+      Calendar_Delta : constant Integer :=
+        365 + Increment_4 - Increment_100 + Increment_400;
    begin
       Prove_Quotient_Step (Year, 4);
       Prove_Quotient_Step (Year, 100);
       Prove_Quotient_Step (Year, 400);
+      pragma Assert
+        (Year / 4 = (Year - 1) / 4 + Increment_4);
+      pragma Assert
+        (Year / 100 = (Year - 1) / 100 + Increment_100);
+      pragma Assert
+        (Year / 400 = (Year - 1) / 400 + Increment_400);
+      pragma Assert
+        (Current_Days =
+           365 * (Year - 1) + (Year - 1) / 4
+             - (Year - 1) / 100 + (Year - 1) / 400);
+      pragma Assert
+        (Next_Days =
+           365 * Year + Year / 4 - Year / 100 + Year / 400);
+      pragma Assert
+        (365 * Year = 365 * (Year - 1) + 365);
+      pragma Assert
+        (Next_Days = Current_Days + Calendar_Delta);
       if Year mod 400 = 0 then
+         pragma Assert (Year mod 100 = 0);
+         pragma Assert (Year mod 4 = 0);
+         pragma Assert (Increment_4 = 1);
+         pragma Assert (Increment_100 = 1);
+         pragma Assert (Increment_400 = 1);
+         pragma Assert (Calendar_Delta = 366);
          pragma Assert (Leap (Year));
+         pragma Assert (Days_In_Year (Year) = 366);
       elsif Year mod 100 = 0 then
+         pragma Assert (Year mod 400 /= 0);
+         pragma Assert (Year mod 4 = 0);
+         pragma Assert (Increment_4 = 1);
+         pragma Assert (Increment_100 = 1);
+         pragma Assert (Increment_400 = 0);
+         pragma Assert (Calendar_Delta = 365);
          pragma Assert (not Leap (Year));
+         pragma Assert (Days_In_Year (Year) = 365);
       elsif Year mod 4 = 0 then
+         pragma Assert (Year mod 100 /= 0);
+         pragma Assert (Year mod 400 /= 0);
+         pragma Assert (Increment_4 = 1);
+         pragma Assert (Increment_100 = 0);
+         pragma Assert (Increment_400 = 0);
+         pragma Assert (Calendar_Delta = 366);
          pragma Assert (Leap (Year));
+         pragma Assert (Days_In_Year (Year) = 366);
       else
+         pragma Assert (Year mod 4 /= 0);
+         pragma Assert (Year mod 100 /= 0);
+         pragma Assert (Year mod 400 /= 0);
+         pragma Assert (Increment_4 = 0);
+         pragma Assert (Increment_100 = 0);
+         pragma Assert (Increment_400 = 0);
+         pragma Assert (Calendar_Delta = 365);
          pragma Assert (not Leap (Year));
+         pragma Assert (Days_In_Year (Year) = 365);
       end if;
+      pragma Assert
+        (Next_Days = Current_Days + Days_In_Year (Year));
    end Prove_Adjacent_Year;
 
    Epoch_Day : constant Day_Boundary := Days_Before_Year (1970);
