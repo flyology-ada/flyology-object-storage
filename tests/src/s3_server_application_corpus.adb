@@ -27,6 +27,7 @@ with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Tagging;
+with Flyology.Object_Storage.S3.Versions;
 with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.Tags;
 with Flyology.Object_Storage.Server.Authentication;
@@ -53,6 +54,7 @@ procedure S3_Server_Application_Corpus is
    package Backends renames Flyology.Object_Storage.Backends;
    package Tagging renames Flyology.Object_Storage.S3.Tagging;
    package Tags renames Flyology.Object_Storage.Tags;
+   package Versions renames Flyology.Object_Storage.S3.Versions;
    package Versioning renames Flyology.Object_Storage.S3.Versioning;
    package Authentication renames
      Flyology.Object_Storage.Server.Authentication;
@@ -6848,8 +6850,8 @@ begin
         (Has
            (Run (Signed_Query_Request
               ("HEAD", "/test-bucket/object", Version)),
-            "501 Not Implemented"),
-         "HeadObject accepted a real versionId without versioning");
+            "404 Not Found"),
+         "HeadObject found an unknown exact generation");
       declare
          Response : constant String := Run
            (Signed_Query_Request
@@ -7105,8 +7107,8 @@ begin
         (Has
            (Run (Signed_Query_Request
               ("GET", "/test-bucket/object", Version_Other)),
-            "501 Not Implemented"),
-         "GetObject silently ignored a non-null version ID");
+            "404 Not Found"),
+         "GetObject found an unknown exact generation");
       Require
         (Has
            (Run (Signed_Query_Request
@@ -8242,6 +8244,387 @@ begin
          "ListObjectsV2 absent bucket mismatch");
    end;
 
+   declare
+      Bucket : constant String := "version-list-bucket";
+      Result : Flyology.Object_Storage.Status;
+      Outcome : Backends.Version_Delete_Outcome;
+      Retained_ID : US.Unbounded_String;
+      First_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("max-keys", "2"),
+         SigV4.Pair ("prefix", "alpha"),
+         SigV4.Pair ("versions", ""));
+   begin
+      Require
+        (Has
+           (Run (Signed_Create_Bucket_Request ("/" & Bucket, "")),
+            "200 OK"),
+         "ListObjectVersions bucket setup failed");
+      Store.Put_Bucket_Versioning
+        (Bucket,
+         (Status => Flyology.Object_Storage.Versioning_Enabled,
+          others => <>),
+         null,
+         Ada.Real_Time.Time_Last, Result);
+      Require (Result = Flyology.Object_Storage.Success,
+               "ListObjectVersions versioning setup failed");
+      Require
+        (Has
+           (Run (Signed_Request ("PUT", "/" & Bucket & "/alpha", "one")),
+            "200 OK"),
+         "ListObjectVersions first generation setup failed");
+      Require
+        (Has
+           (Run (Signed_Request ("PUT", "/" & Bucket & "/alpha", "two")),
+            "200 OK"),
+         "ListObjectVersions second generation setup failed");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("PUT", "/" & Bucket & "/encoded+key", "encoded")),
+            "200 OK"),
+         "ListObjectVersions encoded-key setup failed");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Delete_Object_Request
+                ("/" & Bucket & "/alpha"));
+      begin
+         Require
+           (Has (Response, "204 No Content")
+            and then Has (Response, "x-amz-delete-marker: true" & CRLF)
+            and then Has (Response, "x-amz-version-id:"),
+            "versioned DeleteObject marker setup failed");
+      end;
+
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/" & Bucket, First_Query));
+         First : constant Versions.List_Object_Versions_Result :=
+           Versions.Parse_List_Object_Versions (Response_Body (Response));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "Content-Length:")
+            and then not Has (Response, "Transfer-Encoding:")
+            and then First.Has_Name
+            and then US.To_String (First.Name) = Bucket
+            and then First.Has_Prefix
+            and then US.To_String (First.Prefix) = "alpha"
+            and then First.Max_Keys = 2
+            and then First.Is_Truncated
+            and then First.Has_Next_Key_Marker
+            and then First.Has_Next_Version_ID_Marker
+            and then First.Versions.Length = 1
+            and then First.Delete_Markers.Length = 1
+            and then US.To_String (First.Versions (1).Key) = "alpha"
+            and then US.To_String (First.Versions (1).Entity_Tag) =
+              """b8a9f715dbb64fd5c56e7783c6820a61"""
+            and then First.Versions (1).Size = 3
+            and then First.Delete_Markers (1).Is_Latest,
+            "ListObjectVersions first server page mismatch");
+         declare
+            Version_Query : constant SigV4.Name_Value_Array :=
+              (1 => SigV4.Pair
+                 ("versionId",
+                  US.To_String (First.Versions (1).Version_ID)));
+            Head_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("HEAD", "/" & Bucket & "/alpha", Version_Query));
+         begin
+            Require
+              (Has (Head_Response, "200 OK")
+               and then Has (Head_Response, "Content-Length: 3" & CRLF)
+               and then Has
+                 (Head_Response,
+                  "x-amz-version-id: " &
+                    US.To_String (First.Versions (1).Version_ID) & CRLF),
+               "version-selected HeadObject server mismatch");
+         end;
+         declare
+            Next_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair
+                 ("key-marker", US.To_String (First.Next_Key_Marker)),
+               SigV4.Pair ("max-keys", "2"),
+               SigV4.Pair ("prefix", "alpha"),
+               SigV4.Pair
+                 ("version-id-marker",
+                  US.To_String (First.Next_Version_ID_Marker)),
+               SigV4.Pair ("versions", ""));
+            Next_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", "/" & Bucket, Next_Query));
+            Next : constant Versions.List_Object_Versions_Result :=
+              Versions.Parse_List_Object_Versions
+                (Response_Body (Next_Response));
+         begin
+            Retained_ID := Next.Versions (1).Version_ID;
+            Require
+              (Has (Next_Response, "200 OK")
+               and then not Next.Is_Truncated
+               and then Next.Versions.Length = 1
+               and then Next.Delete_Markers.Is_Empty
+               and then not Next.Has_Next_Key_Marker
+               and then not Next.Has_Next_Version_ID_Marker,
+               "ListObjectVersions paired-cursor server page mismatch");
+            declare
+               Version_Query : constant SigV4.Name_Value_Array :=
+                 (1 => SigV4.Pair
+                    ("versionId",
+                     US.To_String (Next.Versions (1).Version_ID)));
+               Get_Response : constant String :=
+                 Run
+                   (Signed_Query_Request
+                      ("GET", "/" & Bucket & "/alpha", Version_Query));
+            begin
+               Require
+                 (Has (Get_Response, "200 OK")
+                  and then Response_Body (Get_Response) = "one"
+                  and then Has
+                    (Get_Response,
+                     "x-amz-version-id: " &
+                       US.To_String (Next.Versions (1).Version_ID) & CRLF),
+                  "version-selected GetObject server mismatch");
+            end;
+            declare
+               Version_Query : constant SigV4.Name_Value_Array :=
+                 (1 => SigV4.Pair
+                    ("versionId", US.To_String (Retained_ID)));
+               Delete_Response : constant String :=
+                 Run
+                   (Signed_Delete_Object_Request
+                      ("/" & Bucket & "/alpha", Version_Query,
+                       Header_Name => "if-match",
+                       Header_Value => """mismatch"""));
+               Get_Response : constant String :=
+                 Run
+                   (Signed_Query_Request
+                      ("GET", "/" & Bucket & "/alpha", Version_Query));
+            begin
+               if not Has (Delete_Response, "HTTP/1.1 412 ")
+                 or else not Has
+                   (Delete_Response, "<Code>PreconditionFailed</Code>")
+                 or else Response_Body (Get_Response) /= "one"
+               then
+                  Ada.Text_IO.Put_Line
+                    (Ada.Text_IO.Standard_Error,
+                     "unexpected conditional exact DeleteObject response: " &
+                       Delete_Response);
+                  Ada.Text_IO.Put_Line
+                    (Ada.Text_IO.Standard_Error,
+                     "unexpected retained generation response: " &
+                       Get_Response);
+               end if;
+               Require
+                 (Has (Delete_Response, "HTTP/1.1 412 ")
+                  and then Has
+                    (Delete_Response, "<Code>PreconditionFailed</Code>")
+                  and then Response_Body (Get_Response) = "one",
+                  "conditional exact DeleteObject rejection mutated data");
+            end;
+         end;
+
+         declare
+            Marker_Query : constant SigV4.Name_Value_Array :=
+              (1 => SigV4.Pair
+                 ("versionId",
+                  US.To_String (First.Delete_Markers (1).Version_ID)));
+            Delete_Response : constant String :=
+              Run
+                (Signed_Delete_Object_Request
+                   ("/" & Bucket & "/alpha", Marker_Query));
+         begin
+            Require
+              (Has (Delete_Response, "204 No Content")
+               and then Has
+                 (Delete_Response, "x-amz-delete-marker: true" & CRLF)
+               and then Has
+                 (Delete_Response,
+                  "x-amz-version-id: " &
+                    US.To_String (First.Delete_Markers (1).Version_ID) &
+                    CRLF)
+               and then Has
+                 (Run
+                    (Signed_Request
+                       ("HEAD", "/" & Bucket & "/alpha", "")),
+                  "200 OK"),
+               "exact DeleteObject marker removal mismatch");
+         end;
+      end;
+
+      declare
+         Zero_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("max-keys", "0"),
+            SigV4.Pair ("versions", ""));
+         Zero : constant Versions.List_Object_Versions_Result :=
+           Versions.Parse_List_Object_Versions
+             (Response_Body
+                (Run
+                   (Signed_Query_Request
+                      ("GET", "/" & Bucket, Zero_Query))));
+      begin
+         Require
+           (Zero.Max_Keys = 0 and then not Zero.Is_Truncated
+            and then Zero.Versions.Is_Empty
+            and then Zero.Delete_Markers.Is_Empty,
+            "ListObjectVersions zero-sized server page mismatch");
+      end;
+
+      declare
+         Encoded_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("encoding-type", "url"),
+            SigV4.Pair ("prefix", "encoded+"),
+            SigV4.Pair ("versions", ""),
+            SigV4.Pair ("x-id", "ListObjectVersions"));
+         Encoded_Page : constant Versions.List_Object_Versions_Result :=
+           Versions.Parse_List_Object_Versions
+             (Response_Body
+                (Run
+                   (Signed_Query_Request
+                      ("GET", "/" & Bucket, Encoded_Query))));
+      begin
+         Require
+           (Encoded_Page.Has_Encoding_Type
+            and then US.To_String (Encoded_Page.Encoding_Type) = "url"
+            and then Encoded_Page.Has_Prefix
+            and then US.To_String (Encoded_Page.Prefix) = "encoded%2B"
+            and then Encoded_Page.Versions.Length = 1
+            and then US.To_String (Encoded_Page.Versions (1).Key) =
+              "encoded%2Bkey",
+            "ListObjectVersions URL encoding or x-id routing mismatch");
+      end;
+
+      declare
+         Duplicate : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("versions", ""), SigV4.Pair ("versions", ""));
+         Unpaired : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("version-id-marker", "v1"),
+            SigV4.Pair ("versions", ""));
+         Delimiter : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("delimiter", "/"), SigV4.Pair ("versions", ""));
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/" & Bucket, Duplicate)),
+               "InvalidArgument"),
+            "ListObjectVersions duplicate marker was accepted");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/" & Bucket, Unpaired)),
+               "InvalidArgument"),
+            "ListObjectVersions unpaired cursor was accepted");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/" & Bucket, Delimiter)),
+               "501 Not Implemented"),
+            "ListObjectVersions delimiter did not fail closed");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/" & Bucket, First_Query,
+                     "x-amz-expected-bucket-owner", "other-principal")),
+               "403 Forbidden"),
+            "ListObjectVersions mismatched owner was accepted");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/" & Bucket, First_Query,
+                     "x-amz-request-payer", "owner")),
+               "InvalidArgument"),
+            "ListObjectVersions invalid request payer was accepted");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/" & Bucket, First_Query,
+                     "x-amz-optional-object-attributes", "Unknown")),
+               "InvalidArgument"),
+            "ListObjectVersions invalid optional attributes were accepted");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/missing-version-list-bucket", First_Query)),
+               "404 Not Found"),
+            "ListObjectVersions absent bucket mismatch");
+      end;
+
+      Store.Put_Bucket_Versioning
+        (Bucket,
+         (Status => Flyology.Object_Storage.Versioning_Enabled,
+          MFA_Delete => Flyology.Object_Storage.MFA_Delete_Enabled),
+         null, Ada.Real_Time.Time_Last, Result,
+         MFA_Validated => True);
+      Require
+        (Result = Flyology.Object_Storage.Success,
+         "ListObjectVersions MFA Delete setup failed");
+      declare
+         Version_Query : constant SigV4.Name_Value_Array :=
+           (1 => SigV4.Pair ("versionId", US.To_String (Retained_ID)));
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Delete_Object_Request
+                    ("/" & Bucket & "/alpha", Version_Query)),
+               "403 Forbidden"),
+            "MFA Delete admitted an exact version without MFA");
+         declare
+            Response : constant String :=
+              Run
+                (Signed_Delete_Object_Request
+                   ("/" & Bucket & "/alpha", Version_Query,
+                    Header_Name => "x-amz-mfa",
+                    Header_Value => "device 123456"),
+                 Scheme => Flyology.HTTP.Secure_HTTPS);
+         begin
+            Require
+              (Has (Response, "204 No Content")
+               and then Has
+                 (Response,
+                  "x-amz-version-id: " & US.To_String (Retained_ID) & CRLF),
+               "MFA-attested exact DeleteObject mismatch");
+         end;
+      end;
+
+      declare
+         Page : Backends.List_Versions_Page;
+         Options : constant Backends.List_Versions_Options := (others => <>);
+      begin
+         Store.List_Object_Versions
+           (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
+         Require
+           (Result = Flyology.Object_Storage.Success
+            and then Page.Entries.Length = 2,
+            "ListObjectVersions cleanup inventory mismatch");
+         for Generation of Page.Entries loop
+            Store.Delete_Selected_Object
+               (Bucket, US.To_String (Generation.Key),
+                (Kind => Backends.Exact_Version, ID => Generation.Version_ID),
+               Backends.No_Delete_Object_Conditions, True, null,
+               Ada.Real_Time.Time_Last, Outcome, Result);
+            Require
+              (Result = Flyology.Object_Storage.Success,
+               "ListObjectVersions cleanup generation failed");
+         end loop;
+         Store.Delete_Bucket
+           (Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Require
+           (Result = Flyology.Object_Storage.Success,
+            "ListObjectVersions bucket cleanup failed");
+      end;
+   end;
+
    Require
      (Has
         (Run
@@ -8297,20 +8680,31 @@ begin
                  ("PUT", "/test-bucket/delete-policy", "preserve")),
             "200 OK"),
          "DeleteObject policy setup failed");
-      Require
-        (Has
-           (Run
-              (Signed_Delete_Object_Request
-                 ("/test-bucket/delete-policy", Version)),
-            "501 Not Implemented"),
-         "DeleteObject silently ignored versionId");
-      Require
-        (Has
-           (Run
-              (Signed_Delete_Object_Request
-                 ("/test-bucket/delete-policy", Version_With_ID)),
-            "501 Not Implemented"),
-         "DeleteObject misrouted versionId with the SDK operation ID");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Delete_Object_Request
+                ("/test-bucket/delete-policy", Version));
+      begin
+         Require
+           (Has (Response, "204 No Content")
+            and then Has
+              (Response, "x-amz-version-id: version-one" & CRLF)
+            and then not Has (Response, "x-amz-delete-marker:"),
+            "DeleteObject missing exact-version result mismatch");
+      end;
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Delete_Object_Request
+                ("/test-bucket/delete-policy", Version_With_ID));
+      begin
+         Require
+           (Has (Response, "204 No Content")
+            and then Has
+              (Response, "x-amz-version-id: version-one" & CRLF),
+            "DeleteObject misrouted versionId with the SDK operation ID");
+      end;
       Require
         (Has
            (Run
@@ -8553,8 +8947,8 @@ begin
                   Header_Name => "x-amz-mfa",
                   Header_Value => "device 123456"),
                 Scheme => Flyology.HTTP.Secure_HTTPS),
-            "501 Not Implemented"),
-         "verified MFA silently enabled object-version deletion");
+            "204 No Content"),
+         "verified MFA exact-version deletion was rejected");
       Require
         (Has
            (Run
@@ -8685,23 +9079,54 @@ begin
          Require
            (Backend_Result = Flyology.Object_Storage.Success,
             "configured DeleteObject versioning setup failed");
-         Require
-           (Has
-              (Run
-                 (Signed_Delete_Object_Request
-                    ("/delete-versioned/current")),
-               "501 Not Implemented"),
-            "DeleteObject silently removed configured-version data");
+         declare
+            Response : constant String :=
+              Run
+                (Signed_Delete_Object_Request
+                   ("/delete-versioned/current"));
+         begin
+            Require
+              (Has (Response, "204 No Content")
+               and then Has
+                 (Response, "x-amz-delete-marker: true" & CRLF)
+               and then Has (Response, "x-amz-version-id:"),
+               "configured DeleteObject marker response mismatch");
+         end;
          Require
            (Has
               (Run
                  (Signed_Request
                     ("HEAD", "/delete-versioned/current", "")),
-               "200 OK"),
-            "refused configured DeleteObject mutated current data");
-         Store.Delete_Object
-           ("delete-versioned", "current", null,
-            Ada.Real_Time.Time_Last, Backend_Result);
+               "404 Not Found"),
+            "configured DeleteObject marker did not hide current data");
+         declare
+            Page : Backends.List_Versions_Page;
+            Options : constant Backends.List_Versions_Options :=
+              (others => <>);
+            Delete_Outcome : Backends.Version_Delete_Outcome;
+         begin
+            Store.List_Object_Versions
+              ("delete-versioned", Options, null,
+               Ada.Real_Time.Time_Last, Page, Backend_Result);
+            Require
+              (Backend_Result = Flyology.Object_Storage.Success
+               and then Page.Entries.Length = 2,
+               "configured DeleteObject cleanup inventory mismatch");
+            for Generation of Page.Entries loop
+               Store.Delete_Selected_Object
+                 ("delete-versioned", "current",
+                  (if US.To_String (Generation.Version_ID) = "null"
+                   then Backends.Null_Version_Selector
+                   else
+                     (Kind => Backends.Exact_Version,
+                      ID => Generation.Version_ID)),
+                  Backends.No_Delete_Object_Conditions, True, null,
+                  Ada.Real_Time.Time_Last, Delete_Outcome, Backend_Result);
+               Require
+                 (Backend_Result = Flyology.Object_Storage.Success,
+                  "configured DeleteObject cleanup generation failed");
+            end loop;
+         end;
          Store.Delete_Bucket
            ("delete-versioned", null, Ada.Real_Time.Time_Last,
             Backend_Result);

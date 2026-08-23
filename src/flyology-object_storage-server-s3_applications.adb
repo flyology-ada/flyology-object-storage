@@ -29,6 +29,7 @@ with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.Tagging;
+with Flyology.Object_Storage.S3.Versions;
 with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.S3.Wire_Core;
 with Flyology.Object_Storage.Tags;
@@ -51,6 +52,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Model renames S3.Model;
    package Object_Reads renames S3.Object_Reads;
    package Tagging renames S3.Tagging;
+   package Versions renames S3.Versions;
    package Versioning renames S3.Versioning;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Calendar.Time;
@@ -59,6 +61,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    use type Backends.Length_Kind;
    use type Backends.Copy_Metadata_Directive;
    use type Backends.Copy_Tagging_Directive;
+   use type Backends.Version_Delete_Kind;
    use type Flyology.HTTP.Origin_Scheme;
    use type MFA.Authorization_Status;
    use type MFA.Verifier_Access;
@@ -433,7 +436,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
          Get_Object_Attributes,
          Delete_Objects,
-         List_Objects, List_Objects_V2, List_Multipart_Uploads,
+         List_Objects, List_Objects_V2, List_Object_Versions,
+         List_Multipart_Uploads,
          Create_Multipart, Put_Multipart_Part, Copy_Multipart_Part,
          Complete_Multipart, Abort_Multipart, List_Multipart_Parts);
 
@@ -563,6 +567,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else
           Ada.Strings.Fixed.Index
             (Padded_Query, "&x-id=ListObjectsV2&") /= 0;
+      Is_List_Object_Versions_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&versions&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&versions=&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=ListObjectVersions&") /= 0;
       Is_List_Multipart_Uploads_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&uploads&") /= 0
         or else Ada.Strings.Fixed.Index (Padded_Query, "&uploads=&") /= 0
@@ -587,6 +596,24 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Attributes_Request : Attributes.Attributes_Query;
       Has_Copy_Source : constant Boolean :=
         Apps.Request_Header_Count (X, "x-amz-copy-source") > 0;
+
+      function Read_Version_Selector return Backends.Version_Selector is
+        (if not Object_Read_Request.Has_Version_ID
+         then Backends.Current_Version_Selector
+         elsif US.To_String (Object_Read_Request.Version_ID) = "null"
+         then Backends.Null_Version_Selector
+         else
+           (Kind => Backends.Exact_Version,
+            ID   => Object_Read_Request.Version_ID));
+
+      function Delete_Version_Selector return Backends.Version_Selector is
+        (if not Delete_Request.Has_Version_ID
+         then Backends.Current_Version_Selector
+         elsif US.To_String (Delete_Request.Version_ID) = "null"
+         then Backends.Null_Version_Selector
+         else
+           (Kind => Backends.Exact_Version,
+            ID   => Delete_Request.Version_ID));
 
       function Has_Encryption_Header return Boolean is
       begin
@@ -1000,6 +1027,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             if US.Length (Info.Version) > 0 then
                Apps.Set_Header
                  (X, "x-amz-version-id", US.To_String (Info.Version));
+            elsif Object_Read_Request.Has_Version_ID then
+               Apps.Set_Header (X, "x-amz-version-id", "null");
             end if;
             if Item.Include_Checksum
               and then not
@@ -1416,6 +1445,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then Get_Bucket_Versioning
             elsif Method = "GET" and then Is_List_Objects_V2_Query
             then List_Objects_V2
+            elsif Method = "GET" and then Is_List_Object_Versions_Query
+            then List_Object_Versions
             elsif Method = "GET" and then Is_List_Multipart_Uploads_Query
             then List_Multipart_Uploads
             elsif Method = "GET" then List_Objects
@@ -2941,6 +2972,222 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Send_Error
                        (X, 400, "InvalidArgument",
                         "The ListObjectsV2 request is invalid", Target_Text);
+               end;
+
+            when List_Object_Versions =>
+               begin
+                  declare
+                     Owner_Count : constant Natural :=
+                       Apps.Request_Header_Count
+                         (X, "x-amz-expected-bucket-owner");
+                     Payer_Count : constant Natural :=
+                       Apps.Request_Header_Count (X, "x-amz-request-payer");
+                     Attributes_Count : constant Natural :=
+                       Apps.Request_Header_Count
+                         (X, "x-amz-optional-object-attributes");
+                     Owner_Accepted : Boolean := False;
+                     Request : constant
+                       Versions.List_Object_Versions_Request :=
+                         Versions.Parse_List_Object_Versions_Query
+                           (Query_Text);
+                     Options : constant Backends.List_Versions_Options :=
+                       (Prefix                => Request.Prefix,
+                        Delimiter             => Request.Delimiter,
+                        Has_Key_Marker        => Request.Has_Key_Marker,
+                        Key_Marker            => Request.Key_Marker,
+                        Has_Version_ID_Marker =>
+                          Request.Has_Version_ID_Marker,
+                        Version_ID_Marker     => Request.Version_ID_Marker,
+                        Maximum               =>
+                          Backends.List_Limit (Request.Max_Keys));
+                     Page : Backends.List_Versions_Page;
+
+                     function Encoded (Value : String) return String is
+                       (if Request.URL_Encoding
+                        then Encoding.URI_Encode
+                          (Value, Encode_Slash => False)
+                        else Value);
+                  begin
+                     if Owner_Count > 1 or else Payer_Count > 1
+                       or else Attributes_Count > 1
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "A ListObjectVersions header is duplicated",
+                           Target_Text);
+                        return;
+                     elsif Payer_Count = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-request-payer") /= "requester"
+                     then
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The request payer is invalid", Target_Text);
+                        return;
+                     elsif Attributes_Count = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-optional-object-attributes") /=
+                           "RestoreStatus"
+                     then
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The optional object attributes are invalid",
+                           Target_Text);
+                        return;
+                     end if;
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if not Owner_Accepted then
+                        return;
+                     end if;
+                     Store.List_Object_Versions
+                       (Bucket, Options, Apps.Cancellation (X),
+                        Apps.Deadline (X), Page, Result);
+                     if Result /= Success then
+                        Send_Backend_Error (X, Result, True, Target_Text);
+                        return;
+                     end if;
+                     declare
+                        Response : Versions.List_Object_Versions_Result :=
+                          (Is_Truncated           => Page.Is_Truncated,
+                           Has_Is_Truncated       => True,
+                           Key_Marker             => US.To_Unbounded_String
+                             (Encoded (US.To_String (Request.Key_Marker))),
+                           Has_Key_Marker         => Request.Has_Key_Marker,
+                           Version_ID_Marker      => Request.Version_ID_Marker,
+                           Has_Version_ID_Marker  =>
+                             Request.Has_Version_ID_Marker,
+                           Next_Key_Marker        => US.Null_Unbounded_String,
+                           Has_Next_Key_Marker    => Page.Is_Truncated,
+                           Next_Version_ID_Marker => US.Null_Unbounded_String,
+                           Has_Next_Version_ID_Marker => Page.Is_Truncated,
+                           Versions               => <>,
+                           Delete_Markers         => <>,
+                           Name                   =>
+                             US.To_Unbounded_String (Bucket),
+                           Has_Name               => True,
+                           Prefix                 => US.To_Unbounded_String
+                             (Encoded (US.To_String (Request.Prefix))),
+                           Has_Prefix             => Request.Has_Prefix,
+                           Delimiter              => US.To_Unbounded_String
+                             (Encoded (US.To_String (Request.Delimiter))),
+                           Has_Delimiter          => Request.Has_Delimiter,
+                           Max_Keys               => Request.Max_Keys,
+                           Has_Max_Keys           => True,
+                           Common_Prefixes        => <>,
+                           Encoding_Type          =>
+                             (if Request.URL_Encoding
+                              then US.To_Unbounded_String ("url")
+                              else US.Null_Unbounded_String),
+                           Has_Encoding_Type      => Request.URL_Encoding);
+                     begin
+                        if Page.Is_Truncated then
+                           Response.Next_Key_Marker :=
+                             US.To_Unbounded_String
+                               (Encoded
+                                  (US.To_String (Page.Next_Key_Marker)));
+                           Response.Next_Version_ID_Marker :=
+                             Page.Next_Version_ID_Marker;
+                        end if;
+                        for Generation of Page.Entries loop
+                           if Generation.Is_Delete_Marker then
+                              Response.Delete_Markers.Append
+                                (Versions.Delete_Marker'
+                                   (Has_Owner         => True,
+                                    Owner             =>
+                                      (Display_Name =>
+                                         US.Null_Unbounded_String,
+                                       ID => Auth.Principal),
+                                    Key               =>
+                                      US.To_Unbounded_String
+                                        (Encoded
+                                           (US.To_String (Generation.Key))),
+                                    Has_Key           => True,
+                                    Version_ID        =>
+                                      Generation.Version_ID,
+                                    Has_Version_ID    => True,
+                                    Is_Latest         => Generation.Is_Latest,
+                                    Has_Is_Latest     => True,
+                                    Last_Modified     =>
+                                      US.To_Unbounded_String
+                                        (Last_Modified
+                                           (Generation.Info.Modified)),
+                                    Has_Last_Modified => True));
+                           else
+                              declare
+                                 Version : Versions.Object_Version :=
+                                   (Entity_Tag         =>
+                                      US.To_Unbounded_String
+                                        ('"' & US.To_String
+                                           (Generation.Info.Entity_Tag) & '"'),
+                                    Has_Entity_Tag     => True,
+                                    Checksum_Algorithms => <>,
+                                    Checksum_Type      =>
+                                      US.Null_Unbounded_String,
+                                    Has_Checksum_Type  => False,
+                                    Size               => Generation.Info.Size,
+                                    Has_Size           => True,
+                                    Storage_Class      =>
+                                      US.To_Unbounded_String ("STANDARD"),
+                                    Has_Storage_Class  => True,
+                                    Key                =>
+                                      US.To_Unbounded_String
+                                        (Encoded
+                                           (US.To_String (Generation.Key))),
+                                    Has_Key            => True,
+                                    Version_ID         =>
+                                      Generation.Version_ID,
+                                    Has_Version_ID     => True,
+                                    Is_Latest          => Generation.Is_Latest,
+                                    Has_Is_Latest      => True,
+                                    Last_Modified      =>
+                                      US.To_Unbounded_String
+                                        (Last_Modified
+                                           (Generation.Info.Modified)),
+                                    Has_Last_Modified  => True,
+                                    Has_Owner          => True,
+                                    Owner              =>
+                                      (Display_Name =>
+                                         US.Null_Unbounded_String,
+                                       ID => Auth.Principal),
+                                    Has_Restore_Status => False,
+                                    Restore_Status     => (others => <>));
+                              begin
+                                 if Generation.Info.Checksum.Algorithm /=
+                                   No_Checksum
+                                 then
+                                    Version.Checksum_Algorithms.Append
+                                      (US.To_Unbounded_String
+                                         (Wire_Algorithm
+                                            (Generation.Info.Checksum
+                                               .Algorithm)));
+                                    Version.Checksum_Type :=
+                                      US.To_Unbounded_String
+                                        (Wire_Method
+                                           (Generation.Info.Checksum.Method));
+                                    Version.Has_Checksum_Type := True;
+                                 end if;
+                                 Response.Versions.Append (Version);
+                              end;
+                           end if;
+                        end loop;
+                        for Prefix_Value of Page.Common_Prefixes loop
+                           Response.Common_Prefixes.Append
+                             (US.To_Unbounded_String
+                                (Encoded (US.To_String (Prefix_Value))));
+                        end loop;
+                        Apps.Respond
+                          (X, 200, "application/xml",
+                           Versions.Serialize_List_Object_Versions
+                             (Response));
+                     end;
+                  end;
+               exception
+                  when Versions.Malformed_Version_Request =>
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The ListObjectVersions request is invalid",
+                        Target_Text);
                end;
 
             when List_Multipart_Uploads =>
@@ -6075,14 +6322,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         "A HeadObject response override contains an " &
                         "invalid field value", Target_Text);
                      return;
-                  elsif Object_Read_Request.Has_Version_ID
-                    and then US.To_String
-                      (Object_Read_Request.Version_ID) /= "null"
-                  then
-                     Send_Error
-                       (X, 501, "NotImplemented",
-                        "Object versioning is not implemented", Target_Text);
-                     return;
                   elsif Server_Encryption_Count = 1 then
                      Send_Error
                        (X, 400, "InvalidRequest",
@@ -6192,7 +6431,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Conditions =>
                           (if Valid_SSE_C
                            then Backends.Default_Read_Conditions
-                           else Conditions));
+                           else Conditions),
+                        Selector => Read_Version_Selector);
                      Info := Snapshot.Info;
                      if Result = Success and then Effective_Part /= 0 then
                         if not Snapshot.Is_Multipart then
@@ -6398,14 +6638,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     (US.To_String (Auth.Principal), Owner_OK);
                   if not Owner_OK then
                      return;
-                  elsif Object_Read_Request.Has_Version_ID
-                    and then US.To_String
-                      (Object_Read_Request.Version_ID) /= "null"
-                  then
-                     Send_Error
-                       (X, 501, "NotImplemented",
-                        "Object versioning is not implemented", Target_Text);
-                     return;
                   elsif Object_Read_Request.Has_Part_Number then
                      Send_Error
                        (X, 501, "NotImplemented",
@@ -6509,7 +6741,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Sink.Suppress_Composite_Checksum := Range_Count = 1;
                   Store.Get_Object
                     (Bucket, Key, Requested, Sink, Apps.Cancellation (X),
-                     Apps.Deadline (X), Info, Result, Conditions);
+                     Apps.Deadline (X), Info, Result, Conditions,
+                     Selector => Read_Version_Selector);
                   if Result = Success then
                      if not Sink.Started
                        or else Sink.Observed /= Sink.Expected
@@ -6650,11 +6883,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                              and then MFA_Result /= MFA.Authorized
                            then
                               Send_MFA_Error (MFA_Result);
-                           elsif Delete_Request.Has_Version_ID then
-                              Send_Error
-                                (X, 501, "NotImplemented",
-                                 "Object version deletion is not implemented",
-                                 Target_Text);
                            elsif Payer_Count > 0 then
                               Send_Error
                                 (X, 501, "NotImplemented",
@@ -6671,23 +6899,78 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                  "LastModifiedTime and Size require a " &
                                  "directory bucket", Target_Text);
                            else
-                              Store.Delete_Object
-                                (Bucket, Key, Apps.Cancellation (X),
-                                 Apps.Deadline (X), Result,
-                                 Conditions =>
-                                   (Has_ETag => Match_Count = 1,
-                                    ETag => US.To_Unbounded_String (Match),
-                                    others => <>),
-                                 Requirements =>
-                                   (Require_Unversioned => True));
+                              declare
+                                 Configuration :
+                                   Bucket_Versioning_Configuration;
+                                 Delete_Outcome :
+                                   Backends.Version_Delete_Outcome;
+                                 Conditions : constant
+                                   Backends.Delete_Object_Conditions :=
+                                     (Has_ETag => Match_Count = 1,
+                                      ETag => US.To_Unbounded_String (Match),
+                                      others => <>);
+                              begin
+                                 Store.Get_Bucket_Versioning
+                                   (Bucket, Apps.Cancellation (X),
+                                    Apps.Deadline (X), Configuration, Result);
+                                 if Result = Not_Found then
+                                    Result := Bucket_Not_Found;
+                                 elsif Result = Success
+                                   and then
+                                     (Delete_Request.Has_Version_ID
+                                      or else Configuration.Status /=
+                                        Versioning_Unconfigured)
+                                 then
+                                    Store.Delete_Selected_Object
+                                      (Bucket, Key, Delete_Version_Selector,
+                                       Conditions,
+                                       MFA_Validated =>
+                                         MFA_Count = 1
+                                         and then MFA_Result = MFA.Authorized,
+                                       Token => Apps.Cancellation (X),
+                                       Deadline => Apps.Deadline (X),
+                                       Outcome => Delete_Outcome,
+                                       Result => Result);
+                                    if Result = Success
+                                      and then Delete_Outcome.Has_Version_ID
+                                    then
+                                       Apps.Set_Header
+                                         (X, "x-amz-version-id",
+                                          (if Delete_Outcome.Is_Null_Version
+                                           then "null"
+                                           else US.To_String
+                                             (Delete_Outcome.Version_ID)));
+                                    end if;
+                                    if Result = Success
+                                      and then Delete_Outcome.Kind in
+                                        Backends.Delete_Marker_Created |
+                                        Backends.Delete_Marker_Removed
+                                    then
+                                       Apps.Set_Header
+                                         (X, "x-amz-delete-marker", "true");
+                                    end if;
+                                 elsif Result = Success then
+                                    --  The legacy primitive performs its own
+                                    --  atomic unversioned-state admission, so
+                                    --  a concurrent versioning transition can
+                                    --  only fail closed before deletion.
+                                    Store.Delete_Object
+                                      (Bucket, Key, Apps.Cancellation (X),
+                                       Apps.Deadline (X), Result,
+                                       Conditions => Conditions,
+                                       Requirements =>
+                                         (Require_Unversioned => True));
+                                 end if;
+                              end;
                               if Result = Success then
                                  Apps.Respond (X, 204, "", "");
                               elsif Result = Not_Implemented then
                                  Send_Error
                                    (X, 501, "NotImplemented",
-                                    "Object versions, delete markers, and " &
-                                    "MFA Delete enforcement are not " &
-                                    "implemented", Target_Text);
+                                    "The configured backend does not " &
+                                    "support " &
+                                    "the selected object generation",
+                                    Target_Text);
                               else
                                  Send_Backend_Error
                                    (X, Result, False, Target_Text);

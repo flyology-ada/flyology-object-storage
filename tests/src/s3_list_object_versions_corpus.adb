@@ -94,6 +94,24 @@ procedure S3_List_Object_Versions_Corpus is
       Require (Raised, Message);
    end Expect_Bad;
 
+   procedure Expect_Bad_Query (Query, Message : String) is
+      Raised : Boolean := False;
+   begin
+      begin
+         declare
+            Ignored : constant Versions.List_Object_Versions_Request :=
+              Versions.Parse_List_Object_Versions_Query (Query);
+            pragma Unreferenced (Ignored);
+         begin
+            null;
+         end;
+      exception
+         when Versions.Malformed_Version_Request =>
+            Raised := True;
+      end;
+      Require (Raised, Message);
+   end Expect_Bad_Query;
+
    function Version_With
      (Extra         : String := "";
       Size          : String := "1";
@@ -140,6 +158,103 @@ begin
          and then Value.Delete_Markers (1).Has_Is_Latest
          and then Value.Delete_Markers (1).Is_Latest,
          "complete DeleteMarker projection");
+      declare
+         Roundtrip : constant Versions.List_Object_Versions_Result :=
+           Versions.Parse_List_Object_Versions
+             (Versions.Serialize_List_Object_Versions (Value));
+      begin
+         Require
+           (Roundtrip.Has_Name
+            and then Roundtrip.Max_Keys = 3
+            and then Roundtrip.Is_Truncated
+            and then Roundtrip.Versions.Length = 1
+            and then Roundtrip.Delete_Markers.Length = 1
+            and then Roundtrip.Common_Prefixes.Length = 1
+            and then US.To_String (Roundtrip.Versions (1).Entity_Tag) =
+              """etag""",
+            "ListObjectVersions serialization roundtrip mismatch");
+      end;
+      declare
+         Invalid : Versions.List_Object_Versions_Result := Value;
+         Raised  : Boolean := False;
+      begin
+         Invalid.Versions (1).Has_Size := False;
+         begin
+            declare
+               Ignored : constant String :=
+                 Versions.Serialize_List_Object_Versions (Invalid);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Versions.Malformed_Version_Listing =>
+               Raised := True;
+         end;
+         Require
+           (Raised,
+            "serialized ObjectVersion without required presence state");
+      end;
+   end;
+
+   declare
+      Request : constant Versions.List_Object_Versions_Request :=
+        Versions.Parse_List_Object_Versions_Query
+          ("delimiter=%2F&encoding-type=url&key-marker=logs%2Fa&" &
+           "max-keys=2&prefix=logs%2F&version-id-marker=v%2B1&" &
+           "x-id=ListObjectVersions&versions");
+   begin
+      Require
+        (Request.Has_Delimiter
+         and then US.To_String (Request.Delimiter) = "/"
+         and then Request.URL_Encoding
+         and then Request.Has_Key_Marker
+         and then US.To_String (Request.Key_Marker) = "logs/a"
+         and then Request.Has_Max_Keys
+         and then Request.Max_Keys = 2
+         and then Request.Has_Prefix
+         and then US.To_String (Request.Prefix) = "logs/"
+         and then Request.Has_Version_ID_Marker
+         and then US.To_String (Request.Version_ID_Marker) = "v+1",
+         "complete ListObjectVersions query projection mismatch");
+   end;
+
+   Expect_Bad_Query ("", "accepted empty ListObjectVersions query");
+   Expect_Bad_Query
+     ("versions=value", "accepted valued ListObjectVersions marker");
+   Expect_Bad_Query
+     ("max-keys=1", "accepted missing ListObjectVersions marker");
+   Expect_Bad_Query
+     ("versions&versions", "accepted duplicate ListObjectVersions marker");
+   Expect_Bad_Query
+     ("prefix=%GG&versions", "accepted invalid request percent escape");
+   Expect_Bad_Query
+     ("max-keys=1001&versions", "accepted excessive request page bound");
+   Expect_Bad_Query
+     ("version-id-marker=v1&versions", "accepted unpaired version cursor");
+   Expect_Bad_Query
+     ("unsupported=x&versions", "accepted unsupported request member");
+   Expect_Bad_Query
+     ("x-id=Wrong&versions", "accepted wrong SDK operation identifier");
+   Expect_Bad_Query
+     ("%76ersions", "accepted a percent-encoded query member name");
+   Expect_Bad_Query
+     ("delimiter=&encoding-type=url&key-marker=k&max-keys=1&prefix=&" &
+      "version-id-marker=v&x-id=ListObjectVersions&versions&extra=x",
+      "accepted more than eight query members");
+   declare
+      Exact : constant String (1 .. 8 * 1_024 - 16) := (others => 'p');
+      Request : constant Versions.List_Object_Versions_Request :=
+        Versions.Parse_List_Object_Versions_Query
+          ("prefix=" & Exact & "&versions");
+      Overlong : constant String (1 .. 8 * 1_024 - 15) := (others => 'p');
+   begin
+      Require
+        (Request.Has_Prefix and then US.Length (Request.Prefix) = Exact'Length,
+         "rejected exact 8 KiB ListObjectVersions query");
+      Expect_Bad_Query
+        ("prefix=" & Overlong & "&versions",
+         "accepted one-past 8 KiB ListObjectVersions query");
    end;
 
    Expect_Bad ("<Wrong/>", "accepted wrong root");

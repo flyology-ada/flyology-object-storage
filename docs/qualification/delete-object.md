@@ -3,8 +3,9 @@
 This slice qualifies the pinned S3 `DeleteObject` request and response model,
 atomic current-object deletion, signed low- and high-level clients, and the
 authenticated server route. The coverage ledger remains deliberately
-`partial` for the server: object-version deletion, Requester Pays enforcement,
-governance retention, and directory buckets are not implemented.
+`partial` for the server: retained-generation deletion is qualified only on
+memory, while Requester Pays enforcement, governance retention, directory
+buckets, and durable files/SQLite versions are not implemented.
 
 The complete modeled request surface is represented: bucket, key, MFA,
 version ID, Requester Pays, governance-retention bypass, expected owner,
@@ -23,10 +24,12 @@ deletion under the same protected, publication-gate, or transactional
 boundary. An ordinary missing unversioned key succeeds idempotently. A missing
 key with `If-Match` is `Not_Found`; a mismatched existing object is
 `Precondition_Failed`. Race lanes admit one atomic outcome and preserve exact
-body/metadata on rejection. The server also rechecks the current versioning
-and MFA Delete state at publication. A configured versioning or MFA Delete
-state fails closed rather than pretending that delete markers or version
-selection exist.
+body/metadata on rejection. The memory server maps absent, `null`, and opaque
+version selectors onto the same protected state machine. Enabled and suspended
+simple deletes publish typed markers; exact data or marker removal returns the
+selected version and delete-marker headers; missing exact identities remain
+idempotent; and MFA Delete admission is checked within the mutation. Durable
+backends continue to fail closed for configured versioning.
 
 The files backend treats every required store, bucket, configuration, object,
 and multipart namespace component as an exact nonsymlink kind before using it.
@@ -54,15 +57,15 @@ accepts one conditional DELETE, drops its response, and requires the next
 request to be reconciliation HEAD. The call raises an outcome-unknown transport
 exception; it never converts a replayed 404 into a definite predicate result.
 
-The supported server semantics are ordinary unversioned deletion, atomic
-`If-Match`, expected-owner policy, and pluggable fail-closed MFA authorization.
-A present false governance-bypass value is a no-op. Version selection,
-Requester Pays, and a true governance bypass return explicit modeled
-`NotImplemented`; directory-only time/size predicates return
-`InvalidArgument`. MFA requires secure transport and a bounded non-retained
-verifier decision for the bucket root owner; missing, malformed, duplicate,
-overlong, insecure, non-root, unavailable, null, and raising verifier cases
-fail without mutation.
+The supported server semantics are ordinary unversioned deletion, memory
+version selection and marker publication, atomic `If-Match`, expected-owner
+policy, and pluggable fail-closed MFA authorization. A present false
+governance-bypass value is a no-op. Durable version selection, Requester Pays,
+and a true governance bypass return explicit modeled `NotImplemented`;
+directory-only time/size predicates return `InvalidArgument`. MFA requires
+secure transport and a bounded non-retained verifier decision for the bucket
+root owner; missing, malformed, duplicate, overlong, insecure, non-root,
+unavailable, null, and raising verifier cases fail without mutation.
 
 ## Reproducible gates
 

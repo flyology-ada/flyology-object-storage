@@ -1,11 +1,11 @@
-# ListObjectVersions client qualification
+# ListObjectVersions qualification
 
-This record qualifies the bounded synchronous client, strict wire corpus, and
-the first bounded in-memory retained-generation slice for
+This record qualifies the bounded synchronous client, strict wire codecs,
+authenticated memory-backed server route, and bounded in-memory slice for
 `ListObjectVersions`. The memory slice includes enabled and suspended delete
 markers and permanent selected-generation removal. It does not claim delimiter
-pagination, durable files/SQLite generations, an authenticated Flyology server
-route, or external-server interoperability.
+pagination, durable files/SQLite generations, or external-server
+interoperability.
 
 ## Pinned authority and inventory
 
@@ -83,6 +83,13 @@ key, version ID, latest flag, and timestamp. Duplicate identities within or
 across entry kinds, duplicate common prefixes, duplicate singletons, unknown
 enum values, invalid dates, and scalar overflow are invalid responses.
 
+The server request codec independently requires the empty `versions`
+subresource, accepts only the seven other modeled query members, preserves
+present-empty filters, and rejects duplicate, unsupported, overlong,
+malformed-percent, excessive-page, and unpaired cursor inputs. Its serializer
+revalidates required presence, timestamp, enumeration, checksum, identity, and
+pagination invariants before escaping every XML scalar.
+
 The direct corpus covers every one of the ten pinned checksum algorithms, both
 checksum types, values above 32 bits and at signed 64-bit maximum, one-past
 overflow, exact and one-past document/depth/element/text limits, combined page
@@ -100,7 +107,7 @@ gate repeats the executable three times.
 ## Coverage boundary
 
 The machine ledger records `ListObjectVersions` as `partial / covered /
-missing / covered`. The memory backend now preserves null and opaque object
+partial / covered`. The memory backend preserves null and opaque object
 generations across unconfigured, enabled, and suspended transitions; identical
 overwrites receive distinct opaque IDs; current, null, and exact generation
 reads and tags remain isolated; enabled deletes append unique markers;
@@ -110,11 +117,18 @@ admission; and newest-first paired-cursor pagination is independently
 exercised. Its object capacity counts every retained generation and marker,
 and its protected state is the atomic publication and listing boundary.
 
-The backend cell remains partial because delimiter/common-prefix pagination and
-durable files/SQLite reopen and crash behavior are absent. The server cell
-remains missing. Neither cell can be promoted until shared conformance covers
-version creation, exact generation selection and deletion, pagination,
-persistence, crash recovery, and black-box S3 wire behavior.
+The authenticated server projects the strict query onto the backend snapshot,
+serializes version and marker pages, and supports exact-generation GET/HEAD,
+simple marker publication, and permanent exact deletion on the memory backend.
+Its signed corpus covers paired continuation, zero pages, URL encoding, the
+optional SDK operation ID, expected owner, requester-pays syntax, optional
+attributes, malformed controls, missing buckets, version response headers, and
+marker removal that re-exposes the preceding generation.
+
+The backend and server cells remain partial because delimiter/common-prefix
+pagination and durable files/SQLite reopen and crash behavior are absent.
+Neither cell can be promoted until shared conformance covers persistence,
+crash recovery, durable-server selection, and black-box external S3 behavior.
 
 ## Gate evidence
 
@@ -131,7 +145,7 @@ isolation, enabled and suspended marker publication, repeated-marker identity,
 exact data and marker removal, MFA admission, full ordering, one-entry paired
 pagination, zero-size pages, and malformed or unknown selectors and cursors.
 
-The serialized proof campaign started at 2026-08-23T22:07:16Z with FSF
+The serialized proof campaign started at 2026-08-23T23:23:37Z with FSF
 GNATprove 16.1.0. `./tools/prove.sh` used `--level=0`, output headers, and
 warnings as errors and proved 936/936 checks across all nine manifest units:
 180 flow checks and 756 prover checks, with a maximum of 663 steps. The report

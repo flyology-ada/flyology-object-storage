@@ -1,5 +1,6 @@
 with Ada.Containers;
 with Ada.Exceptions;
+with Ada.Strings.Fixed;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Wire_Core;
 
@@ -11,6 +12,178 @@ package body Flyology.Object_Storage.S3.Versions is
    use type Ada.Containers.Count_Type;
    use type Model.Shape_Kind;
    use type US.Unbounded_String;
+
+   --  This request-target bound matches the established S3 listing parsers;
+   --  larger queries are rejected before allocation or field projection.
+   Maximum_Query_Bytes : constant Natural := 8 * 1_024;
+   --  The pinned ListObjectVersions input has eight distinct query members,
+   --  including its required `versions` marker and optional SDK operation ID.
+   Maximum_Query_Members : constant Positive := 8;
+
+   function Hex_Value (Value : Character) return Natural is
+     (if Value in '0' .. '9' then
+         Character'Pos (Value) - Character'Pos ('0')
+      elsif Value in 'a' .. 'f' then
+         Character'Pos (Value) - Character'Pos ('a') + 10
+      elsif Value in 'A' .. 'F' then
+         Character'Pos (Value) - Character'Pos ('A') + 10
+      else 16);
+
+   function Decode_Component (Value : String) return String is
+      Result : String (1 .. Value'Length);
+      Input  : Natural := 1;
+      Output : Natural := 0;
+      Raw    : constant String (1 .. Value'Length) := Value;
+   begin
+      while Input <= Raw'Length loop
+         Output := Output + 1;
+         if Raw (Input) = '%' then
+            if Input + 2 > Raw'Length
+              or else Hex_Value (Raw (Input + 1)) > 15
+              or else Hex_Value (Raw (Input + 2)) > 15
+            then
+               raise Malformed_Version_Request with
+                 "invalid ListObjectVersions percent escape";
+            end if;
+            Result (Output) := Character'Val
+              (16 * Hex_Value (Raw (Input + 1)) +
+               Hex_Value (Raw (Input + 2)));
+            Input := Input + 3;
+         else
+            Result (Output) := Raw (Input);
+            Input := Input + 1;
+         end if;
+      end loop;
+      return Result (1 .. Output);
+   end Decode_Component;
+
+   function Parse_List_Object_Versions_Query
+     (Query : String) return List_Object_Versions_Request
+   is
+      Result : List_Object_Versions_Request;
+      Seen_Versions, Seen_Delimiter, Seen_Encoding, Seen_Key : Boolean :=
+        False;
+      Seen_Maximum, Seen_Prefix, Seen_Version, Seen_X_ID : Boolean := False;
+      Count : Natural := 1;
+   begin
+      if Query'Length = 0 or else Query'Length > Maximum_Query_Bytes then
+         raise Malformed_Version_Request with
+           "invalid ListObjectVersions query size";
+      end if;
+      for Value of Query loop
+         if Value = '&' then
+            Count := Count + 1;
+         end if;
+      end loop;
+      if Count > Maximum_Query_Members then
+         raise Malformed_Version_Request with
+           "too many ListObjectVersions query parameters";
+      end if;
+      declare
+         Raw   : constant String (1 .. Query'Length) := Query;
+         First : Positive := 1;
+      begin
+         for Index in 1 .. Raw'Last + 1 loop
+            if Index = Raw'Last + 1 or else Raw (Index) = '&' then
+               if Index = First then
+                  raise Malformed_Version_Request with
+                    "empty ListObjectVersions query parameter";
+               end if;
+               declare
+                  Pair_Text : constant String := Raw (First .. Index - 1);
+                  Equals : constant Natural :=
+                    Ada.Strings.Fixed.Index (Pair_Text, "=");
+                  Name : constant String :=
+                    (if Equals = 0 then Pair_Text
+                     elsif Equals = Pair_Text'First then ""
+                     else Pair_Text (Pair_Text'First .. Equals - 1));
+                  Value : constant String := Decode_Component
+                    ((if Equals = 0 or else Equals = Pair_Text'Last then ""
+                      else Pair_Text (Equals + 1 .. Pair_Text'Last)));
+                  Number : Wire_Core.Natural_Result;
+               begin
+                  if Name = "versions" then
+                     if Seen_Versions or else Value'Length /= 0 then
+                        raise Malformed_Version_Request with
+                          "invalid ListObjectVersions marker";
+                     end if;
+                     Seen_Versions := True;
+                  elsif Name = "delimiter" then
+                     if Seen_Delimiter then
+                        raise Malformed_Version_Request with
+                          "duplicate ListObjectVersions delimiter";
+                     end if;
+                     Seen_Delimiter := True;
+                     Result.Has_Delimiter := True;
+                     Result.Delimiter := US.To_Unbounded_String (Value);
+                  elsif Name = "encoding-type" then
+                     if Seen_Encoding or else Value /= "url" then
+                        raise Malformed_Version_Request with
+                          "invalid ListObjectVersions encoding-type";
+                     end if;
+                     Seen_Encoding := True;
+                     Result.URL_Encoding := True;
+                  elsif Name = "key-marker" then
+                     if Seen_Key then
+                        raise Malformed_Version_Request with
+                          "duplicate ListObjectVersions key marker";
+                     end if;
+                     Seen_Key := True;
+                     Result.Has_Key_Marker := True;
+                     Result.Key_Marker := US.To_Unbounded_String (Value);
+                  elsif Name = "max-keys" then
+                     Number := Wire_Core.Parse_Natural (Value);
+                     if Seen_Maximum or else not Number.Valid
+                       or else Number.Value > Core.Page_Size'Last
+                     then
+                        raise Malformed_Version_Request with
+                          "invalid ListObjectVersions max-keys";
+                     end if;
+                     Seen_Maximum := True;
+                     Result.Has_Max_Keys := True;
+                     Result.Max_Keys := Core.Page_Size (Number.Value);
+                  elsif Name = "prefix" then
+                     if Seen_Prefix then
+                        raise Malformed_Version_Request with
+                          "duplicate ListObjectVersions prefix";
+                     end if;
+                     Seen_Prefix := True;
+                     Result.Has_Prefix := True;
+                     Result.Prefix := US.To_Unbounded_String (Value);
+                  elsif Name = "version-id-marker" then
+                     if Seen_Version then
+                        raise Malformed_Version_Request with
+                          "duplicate ListObjectVersions version marker";
+                     end if;
+                     Seen_Version := True;
+                     Result.Has_Version_ID_Marker := True;
+                     Result.Version_ID_Marker :=
+                       US.To_Unbounded_String (Value);
+                  elsif Name = "x-id" then
+                     if Seen_X_ID or else Value /= "ListObjectVersions" then
+                        raise Malformed_Version_Request with
+                          "invalid ListObjectVersions operation identifier";
+                     end if;
+                     Seen_X_ID := True;
+                  else
+                     raise Malformed_Version_Request with
+                       "unsupported ListObjectVersions query parameter";
+                  end if;
+               end;
+               First := Index + 1;
+            end if;
+         end loop;
+      end;
+      if not Seen_Versions then
+         raise Malformed_Version_Request with
+           "ListObjectVersions query lacks versions marker";
+      elsif Result.Has_Version_ID_Marker and then not Result.Has_Key_Marker
+      then
+         raise Malformed_Version_Request with
+           "ListObjectVersions version marker lacks key marker";
+      end if;
+      return Result;
+   end Parse_List_Object_Versions_Query;
 
    type Context_Kind is
      (Root_Context, Version_Context, Delete_Marker_Context, Prefix_Context);
@@ -975,5 +1148,242 @@ package body Flyology.Object_Storage.S3.Versions is
            "malformed ListObjectVersions XML: " &
            Ada.Exceptions.Exception_Message (Occurrence);
    end Parse_List_Object_Versions;
+
+   function Serialize_List_Object_Versions
+     (Value : List_Object_Versions_Result) return String
+   is
+      Result : US.Unbounded_String;
+
+      function Image (Item : Core.Page_Size) return String is
+        (Ada.Strings.Fixed.Trim
+           (Core.Page_Size'Image (Item), Ada.Strings.Both));
+
+      function Image (Item : Byte_Count) return String is
+        (Ada.Strings.Fixed.Trim
+           (Byte_Count'Image (Item), Ada.Strings.Both));
+
+      function Element (Name, Text : String) return String is
+        ("<" & Name & ">" & XML.Escape_Text (Text) & "</" & Name & ">");
+
+      procedure Append_Present
+        (Present : Boolean; Name : String; Text : US.Unbounded_String) is
+      begin
+         if Present then
+            US.Append (Result, Element (Name, US.To_String (Text)));
+         elsif US.Length (Text) > 0 then
+            raise Malformed_Version_Listing with
+              "ListObjectVersions value lacks presence state";
+         end if;
+      end Append_Present;
+
+      procedure Append_Owner
+        (Present : Boolean; Owner : Listings.Object_Owner) is
+      begin
+         if Present then
+            US.Append (Result, "<Owner>");
+            if US.Length (Owner.Display_Name) > 0 then
+               US.Append
+                 (Result,
+                  Element
+                    ("DisplayName", US.To_String (Owner.Display_Name)));
+            end if;
+            if US.Length (Owner.ID) > 0 then
+               US.Append (Result, Element ("ID", US.To_String (Owner.ID)));
+            end if;
+            US.Append (Result, "</Owner>");
+         elsif US.Length (Owner.Display_Name) > 0
+           or else US.Length (Owner.ID) > 0
+         then
+            raise Malformed_Version_Listing with
+              "ListObjectVersions owner lacks presence state";
+         end if;
+      end Append_Owner;
+
+      procedure Validate_Version (Item : Object_Version) is
+      begin
+         if not Item.Has_Key or else US.Length (Item.Key) = 0
+           or else not Item.Has_Version_ID
+           or else US.Length (Item.Version_ID) = 0
+           or else not Item.Has_Is_Latest
+           or else not Item.Has_Last_Modified
+           or else not Valid_ISO_8601_Timestamp
+             (US.To_String (Item.Last_Modified))
+           or else not Item.Has_Size
+           or else not Item.Has_Storage_Class
+           or else not Valid_Enumeration
+             (US.To_String (Item.Storage_Class), Version_Member_Shape (5))
+           or else not Valid_Owner (Item.Has_Owner, Item.Owner)
+           or else
+             (Item.Has_Checksum_Type
+              and then Item.Checksum_Algorithms.Is_Empty)
+           or else
+             (Item.Has_Checksum_Type
+              and then not Valid_Enumeration
+                (US.To_String (Item.Checksum_Type),
+                 Version_Member_Shape (3)))
+           or else
+             (not Item.Has_Checksum_Type
+              and then US.Length (Item.Checksum_Type) > 0)
+           or else
+             (not Item.Has_Restore_Status
+              and then
+                (Item.Restore_Status.Has_Is_Restore_In_Progress
+                 or else Item.Restore_Status.Is_Restore_In_Progress
+                 or else
+                   US.Length
+                     (Item.Restore_Status.Restore_Expiry_Date) > 0))
+           or else
+             (Item.Has_Restore_Status
+              and then Item.Restore_Status.Is_Restore_In_Progress
+              and then not Item.Restore_Status.Has_Is_Restore_In_Progress)
+           or else
+             (US.Length (Item.Restore_Status.Restore_Expiry_Date) > 0
+              and then not Valid_ISO_8601_Timestamp
+                (US.To_String
+                   (Item.Restore_Status.Restore_Expiry_Date)))
+         then
+            raise Malformed_Version_Listing with
+              "incomplete ObjectVersion entry";
+         end if;
+         if not Item.Checksum_Algorithms.Is_Empty then
+            for Left in Item.Checksum_Algorithms.First_Index ..
+              Item.Checksum_Algorithms.Last_Index
+            loop
+               if not Valid_Enumeration
+                 (US.To_String (Item.Checksum_Algorithms (Left)),
+                  Version_Member_Shape (2))
+               then
+                  raise Malformed_Version_Listing with
+                    "invalid ObjectVersion checksum algorithm";
+               end if;
+               if Left < Item.Checksum_Algorithms.Last_Index then
+                  for Right in Positive'Succ (Left) ..
+                    Item.Checksum_Algorithms.Last_Index
+                  loop
+                     if Item.Checksum_Algorithms (Left) =
+                       Item.Checksum_Algorithms (Right)
+                     then
+                        raise Malformed_Version_Listing with
+                          "duplicate ObjectVersion checksum algorithm";
+                     end if;
+                  end loop;
+               end if;
+            end loop;
+         end if;
+      end Validate_Version;
+
+      procedure Validate_Marker (Item : Delete_Marker) is
+      begin
+         if not Item.Has_Key or else US.Length (Item.Key) = 0
+           or else not Item.Has_Version_ID
+           or else US.Length (Item.Version_ID) = 0
+           or else not Item.Has_Is_Latest
+           or else not Item.Has_Last_Modified
+           or else not Valid_ISO_8601_Timestamp
+             (US.To_String (Item.Last_Modified))
+           or else not Valid_Owner (Item.Has_Owner, Item.Owner)
+         then
+            raise Malformed_Version_Listing with
+              "incomplete DeleteMarker entry";
+         end if;
+      end Validate_Marker;
+   begin
+      Validate (Value);
+      US.Append
+        (Result,
+         "<?xml version=""1.0"" encoding=""UTF-8""?>" &
+         "<ListVersionsResult xmlns=""http://s3.amazonaws.com/doc/" &
+         "2006-03-01/"">" &
+         Element
+           ("IsTruncated",
+            (if Value.Is_Truncated then "true" else "false")));
+      Append_Present
+        (Value.Has_Key_Marker, "KeyMarker", Value.Key_Marker);
+      Append_Present
+        (Value.Has_Version_ID_Marker, "VersionIdMarker",
+         Value.Version_ID_Marker);
+      Append_Present
+        (Value.Has_Next_Key_Marker, "NextKeyMarker",
+         Value.Next_Key_Marker);
+      Append_Present
+        (Value.Has_Next_Version_ID_Marker, "NextVersionIdMarker",
+         Value.Next_Version_ID_Marker);
+
+      for Item of Value.Versions loop
+         Validate_Version (Item);
+         US.Append (Result, "<Version>");
+         Append_Present (Item.Has_Entity_Tag, "ETag", Item.Entity_Tag);
+         for Algorithm of Item.Checksum_Algorithms loop
+            US.Append
+              (Result,
+               Element ("ChecksumAlgorithm", US.To_String (Algorithm)));
+         end loop;
+         Append_Present
+           (Item.Has_Checksum_Type, "ChecksumType", Item.Checksum_Type);
+         US.Append (Result, Element ("Size", Image (Item.Size)));
+         US.Append
+           (Result,
+            Element ("StorageClass", US.To_String (Item.Storage_Class)) &
+            Element ("Key", US.To_String (Item.Key)) &
+            Element ("VersionId", US.To_String (Item.Version_ID)) &
+            Element
+              ("IsLatest", (if Item.Is_Latest then "true" else "false")) &
+            Element
+              ("LastModified", US.To_String (Item.Last_Modified)));
+         Append_Owner (Item.Has_Owner, Item.Owner);
+         if Item.Has_Restore_Status then
+            US.Append (Result, "<RestoreStatus>");
+            if Item.Restore_Status.Has_Is_Restore_In_Progress then
+               US.Append
+                 (Result,
+                  Element
+                    ("IsRestoreInProgress",
+                     (if Item.Restore_Status.Is_Restore_In_Progress
+                      then "true" else "false")));
+            end if;
+            if US.Length (Item.Restore_Status.Restore_Expiry_Date) > 0 then
+               US.Append
+                 (Result,
+                  Element
+                    ("RestoreExpiryDate",
+                     US.To_String
+                       (Item.Restore_Status.Restore_Expiry_Date)));
+            end if;
+            US.Append (Result, "</RestoreStatus>");
+         end if;
+         US.Append (Result, "</Version>");
+      end loop;
+
+      for Item of Value.Delete_Markers loop
+         Validate_Marker (Item);
+         US.Append (Result, "<DeleteMarker>");
+         Append_Owner (Item.Has_Owner, Item.Owner);
+         US.Append
+           (Result,
+            Element ("Key", US.To_String (Item.Key)) &
+            Element ("VersionId", US.To_String (Item.Version_ID)) &
+            Element
+              ("IsLatest", (if Item.Is_Latest then "true" else "false")) &
+            Element
+              ("LastModified", US.To_String (Item.Last_Modified)) &
+            "</DeleteMarker>");
+      end loop;
+
+      US.Append (Result, Element ("Name", US.To_String (Value.Name)));
+      Append_Present (Value.Has_Prefix, "Prefix", Value.Prefix);
+      Append_Present (Value.Has_Delimiter, "Delimiter", Value.Delimiter);
+      US.Append (Result, Element ("MaxKeys", Image (Value.Max_Keys)));
+      for Prefix of Value.Common_Prefixes loop
+         US.Append
+           (Result,
+            "<CommonPrefixes>" &
+            Element ("Prefix", US.To_String (Prefix)) &
+            "</CommonPrefixes>");
+      end loop;
+      Append_Present
+        (Value.Has_Encoding_Type, "EncodingType", Value.Encoding_Type);
+      US.Append (Result, "</ListVersionsResult>");
+      return US.To_String (Result);
+   end Serialize_List_Object_Versions;
 
 end Flyology.Object_Storage.S3.Versions;
