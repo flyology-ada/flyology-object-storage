@@ -175,6 +175,29 @@ package Flyology.Object_Storage.Backends.Files is
         No_Delete_Object_Conditions;
       Requirements : Delete_Objects_Requirements := (others => <>));
 
+   --  Delete one selected filesystem generation when qualified.
+   --  @param Item Filesystem backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Selector Current, null, or exact deletion target
+   --  @param Conditions Optional selected-generation predicates
+   --  @param MFA_Validated Caller authorization attestation for MFA Delete
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Outcome Exact publication effect and generation identity
+   --  @param Result Storage-domain outcome
+   overriding procedure Delete_Selected_Object
+     (Item          : in out Store;
+      Bucket        : String;
+      Key           : String;
+      Selector      : Version_Selector;
+      Conditions    : Delete_Object_Conditions;
+      MFA_Validated : Boolean;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Outcome       : out Version_Delete_Outcome;
+      Result        : out Status);
+
    overriding procedure Delete_Objects
      (Item     : in out Store;
       Bucket   : String;

@@ -206,29 +206,16 @@ package body Flyology.Object_Storage.Backends.Memory is
       function Object_Index
         (Bucket : String; Key : String) return Natural
       is
-         Latest : Natural := 0;
+         Selected : constant Natural :=
+           Selected_Generation_Index
+             (Bucket, Key, Current_Version_Selector);
       begin
-         for Index in 1 .. Highest_Object loop
-            if Objects (Index).Used
-              and then Ada.Strings.Unbounded.To_String
-                (Objects (Index).Bucket) = Bucket
-              and then Ada.Strings.Unbounded.To_String
-                (Objects (Index).Key) = Key
-            then
-               if Latest = 0
-                 or else Objects (Index).Publication >
-                   Objects (Latest).Publication
-               then
-                  Latest := Index;
-               end if;
-            end if;
-         end loop;
          return
-           (if Latest /= 0 and then not Objects (Latest).Is_Delete_Marker
-            then Latest else 0);
+           (if Selected /= 0 and then not Objects (Selected).Is_Delete_Marker
+            then Selected else 0);
       end Object_Index;
 
-      function Selected_Object_Index
+      function Selected_Generation_Index
         (Bucket : String; Key : String; Selector : Version_Selector)
          return Natural
       is
@@ -236,9 +223,6 @@ package body Flyology.Object_Storage.Backends.Memory is
          ID : constant String :=
            Ada.Strings.Unbounded.To_String (Selector.ID);
       begin
-         if Selector.Kind = Current_Version then
-            return Object_Index (Bucket, Key);
-         end if;
          for Index in 1 .. Highest_Object loop
             if Objects (Index).Used
               and then Ada.Strings.Unbounded.To_String
@@ -246,19 +230,32 @@ package body Flyology.Object_Storage.Backends.Memory is
               and then Ada.Strings.Unbounded.To_String
                 (Objects (Index).Key) = Key
               and then
-                (if Selector.Kind = Null_Version
-                 then Objects (Index).Is_Null_Version
-                 else not Objects (Index).Is_Null_Version
-                   and then Ada.Strings.Unbounded.To_String
-                     (Objects (Index).Info.Version) = ID)
-              and then
-                (Selected = 0
-                 or else Objects (Index).Publication >
-                   Objects (Selected).Publication)
+                (Selector.Kind = Current_Version
+                 or else
+                   (if Selector.Kind = Null_Version
+                    then Objects (Index).Is_Null_Version
+                    else not Objects (Index).Is_Null_Version
+                      and then Ada.Strings.Unbounded.To_String
+                        (Objects (Index).Info.Version) = ID))
             then
-               Selected := Index;
+               if Selected = 0
+                 or else Objects (Index).Publication >
+                   Objects (Selected).Publication
+               then
+                  Selected := Index;
+               end if;
             end if;
          end loop;
+         return Selected;
+      end Selected_Generation_Index;
+
+      function Selected_Object_Index
+        (Bucket : String; Key : String; Selector : Version_Selector)
+         return Natural
+      is
+         Selected : constant Natural :=
+           Selected_Generation_Index (Bucket, Key, Selector);
+      begin
          return
            (if Selected /= 0
               and then not Objects (Selected).Is_Delete_Marker
@@ -840,6 +837,159 @@ package body Flyology.Object_Storage.Backends.Memory is
          end loop;
          Result := Success;
       end Delete_Many;
+
+      procedure Delete_Selected
+        (Bucket        : String;
+         Key           : String;
+         Selector      : Version_Selector;
+         Conditions    : Delete_Object_Conditions;
+         MFA_Validated : Boolean;
+         Modified      : Unix_Time;
+         Outcome       : out Version_Delete_Outcome;
+         Result        : out Status)
+      is
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
+         Condition_At    : Natural := 0;
+         Target_At       : Natural := 0;
+         Existing        : Byte_Count := 0;
+
+         procedure Shrink_Highest is
+         begin
+            while Highest_Object > 0
+              and then not Objects (Highest_Object).Used
+            loop
+               Highest_Object := Highest_Object - 1;
+            end loop;
+         end Shrink_Highest;
+
+         procedure Remove_Selected is
+         begin
+            if Target_At = 0 then
+               Outcome.Kind := No_Version_Removed;
+               Result := Success;
+               return;
+            end if;
+            Outcome.Kind :=
+              (if Objects (Target_At).Is_Delete_Marker
+               then Delete_Marker_Removed else Object_Version_Removed);
+            Outcome.Has_Version_ID := Selector.Kind /= Current_Version;
+            Outcome.Is_Null_Version :=
+              Outcome.Has_Version_ID
+              and then Objects (Target_At).Is_Null_Version;
+            Outcome.Version_ID := Objects (Target_At).Info.Version;
+            Bytes := Bytes - Byte_Count (Objects (Target_At).Data.Capacity);
+            Objects (Target_At) := (others => <>);
+            Shrink_Highest;
+            Result := Success;
+         end Remove_Selected;
+
+         procedure Publish_Marker (Null_Marker : Boolean) is
+            New_Order : Version_Publication_Order;
+            New_Info  : Object_Information := Empty_Info;
+            Stored_Bucket : constant
+              Ada.Strings.Unbounded.Unbounded_String :=
+                Ada.Strings.Unbounded.To_Unbounded_String (Bucket);
+            Stored_Key : constant Ada.Strings.Unbounded.Unbounded_String :=
+              Ada.Strings.Unbounded.To_Unbounded_String (Key);
+         begin
+            if Next_Version = Version_Publication_Order'Last then
+               Result := Capacity_Exceeded;
+               return;
+            end if;
+            if Null_Marker then
+               Target_At := Selected_Generation_Index
+                 (Bucket, Key, Null_Version_Selector);
+            end if;
+            if Target_At = 0 then
+               for Candidate in 1 .. Highest_Object loop
+                  if not Objects (Candidate).Used then
+                     Target_At := Candidate;
+                     exit;
+                  end if;
+               end loop;
+               if Target_At = 0 and then Highest_Object < Object_Limit then
+                  Highest_Object := Highest_Object + 1;
+                  Target_At := Highest_Object;
+               elsif Target_At = 0 then
+                  Result := Capacity_Exceeded;
+                  return;
+               end if;
+            else
+               Existing := Byte_Count (Objects (Target_At).Data.Capacity);
+            end if;
+            New_Order := Next_Version + 1;
+            New_Info.Modified := Modified;
+            if not Null_Marker then
+               New_Info.Version := Ada.Strings.Unbounded.To_Unbounded_String
+                 (GNAT.SHA256.Digest
+                    ("flyology-object-version" & Character'Val (0) &
+                     Bucket & Character'Val (0) & Key & Character'Val (0) &
+                     Version_Publication_Order'Image (New_Order)));
+            end if;
+
+            Next_Version := New_Order;
+            Objects (Target_At) := (others => <>);
+            Objects (Target_At).Bucket := Stored_Bucket;
+            Objects (Target_At).Key := Stored_Key;
+            Objects (Target_At).Is_Null_Version := Null_Marker;
+            Objects (Target_At).Is_Delete_Marker := True;
+            Objects (Target_At).Publication := New_Order;
+            Objects (Target_At).Info := New_Info;
+            Objects (Target_At).Used := True;
+            Bytes := Bytes - Existing;
+            Outcome :=
+              (Kind            => Delete_Marker_Created,
+               Has_Version_ID  => True,
+               Is_Null_Version => Null_Marker,
+               Version_ID      => New_Info.Version);
+            Result := Success;
+         end Publish_Marker;
+      begin
+         Outcome := (others => <>);
+         if Bucket_Position = 0 then
+            Result := Bucket_Not_Found;
+            return;
+         elsif Selector.Kind /= Current_Version
+           and then Buckets (Bucket_Position).Versioning.MFA_Delete =
+             MFA_Delete_Enabled
+           and then not MFA_Validated
+         then
+            Result := Access_Denied;
+            return;
+         end if;
+
+         Condition_At :=
+           (if Selector.Kind = Current_Version
+            then Object_Index (Bucket, Key)
+            else Selected_Generation_Index (Bucket, Key, Selector));
+         Result := Evaluate_Delete_Object_Conditions
+           (Conditions,
+            Exists => Condition_At /= 0,
+            Info =>
+              (if Condition_At = 0
+               then Empty_Info else Objects (Condition_At).Info));
+         if Result /= Success then
+            return;
+         end if;
+
+         if Selector.Kind /= Current_Version then
+            Target_At := Condition_At;
+            Outcome.Has_Version_ID := True;
+            Outcome.Is_Null_Version := Selector.Kind = Null_Version;
+            Outcome.Version_ID := Selector.ID;
+            Remove_Selected;
+         else
+            case Buckets (Bucket_Position).Versioning.Status is
+               when Versioning_Unconfigured =>
+                  Target_At := Condition_At;
+                  Remove_Selected;
+               when Versioning_Enabled =>
+                  Publish_Marker (Null_Marker => False);
+               when Versioning_Suspended =>
+                  Publish_Marker (Null_Marker => True);
+            end case;
+         end if;
+      end Delete_Selected;
 
       procedure Put_Tags
         (Bucket : String; Key : String; Selector : Version_Selector;
@@ -2373,6 +2523,40 @@ package body Flyology.Object_Storage.Backends.Memory is
          Result := Outcomes.First_Element.Result;
       end if;
    end Delete_Object;
+
+   overriding procedure Delete_Selected_Object
+     (Item          : in out Store;
+      Bucket        : String;
+      Key           : String;
+      Selector      : Version_Selector;
+      Conditions    : Delete_Object_Conditions;
+      MFA_Validated : Boolean;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Outcome       : out Version_Delete_Outcome;
+      Result        : out Status)
+   is
+   begin
+      Outcome := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+        or else
+          ((not Conditions.Has_ETag
+            and then Ada.Strings.Unbounded.Length (Conditions.ETag) > 0)
+           or else
+             (Conditions.Has_ETag
+              and then not Valid_Object_Delete_ETag_Condition
+                (Ada.Strings.Unbounded.To_String (Conditions.ETag))))
+      then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Item.State.Delete_Selected
+        (Bucket, Key, Selector, Conditions, MFA_Validated,
+         Current_Unix_Time, Outcome, Result);
+   end Delete_Selected_Object;
 
    overriding procedure Delete_Objects
      (Item     : in out Store;

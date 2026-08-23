@@ -167,6 +167,29 @@ package Flyology.Object_Storage.Backends.Memory is
         No_Delete_Object_Conditions;
       Requirements : Delete_Objects_Requirements := (others => <>));
 
+   --  Delete or mark one selected in-memory generation atomically.
+   --  @param Item Memory backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Selector Current, null, or exact deletion target
+   --  @param Conditions Optional selected-generation predicates
+   --  @param MFA_Validated Caller authorization attestation for MFA Delete
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Outcome Exact publication effect and generation identity
+   --  @param Result Storage-domain outcome
+   overriding procedure Delete_Selected_Object
+     (Item          : in out Store;
+      Bucket        : String;
+      Key           : String;
+      Selector      : Version_Selector;
+      Conditions    : Delete_Object_Conditions;
+      MFA_Validated : Boolean;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Outcome       : out Version_Delete_Outcome;
+      Result        : out Status);
+
    overriding procedure Delete_Objects
      (Item     : in out Store;
       Bucket   : String;
@@ -456,6 +479,15 @@ private
          Requirements : Delete_Objects_Requirements;
          Outcomes : in out Delete_Object_Outcomes;
          Result   : out Status);
+      procedure Delete_Selected
+        (Bucket        : String;
+         Key           : String;
+         Selector      : Version_Selector;
+         Conditions    : Delete_Object_Conditions;
+         MFA_Validated : Boolean;
+         Modified      : Unix_Time;
+         Outcome       : out Version_Delete_Outcome;
+         Result        : out Status);
       procedure Put_Tags
         (Bucket : String; Key : String; Selector : Version_Selector;
          Tags : Object_Tag_Set;
@@ -531,6 +563,9 @@ private
       function Bucket_Index (Name : String) return Natural;
       function Object_Index
         (Bucket : String; Key : String) return Natural;
+      function Selected_Generation_Index
+        (Bucket : String; Key : String; Selector : Version_Selector)
+         return Natural;
       function Selected_Object_Index
         (Bucket : String; Key : String; Selector : Version_Selector)
          return Natural;

@@ -112,6 +112,7 @@ package body Versioned_Object_Conformance is
       V2     : Object_Information;
       V3     : Object_Information;
       Page   : List_Versions_Page;
+      Delete_Outcome : Version_Delete_Outcome;
 
       procedure Put
         (Key, Payload : String;
@@ -164,6 +165,23 @@ package body Versioned_Object_Conformance is
          and then Version_At (1) = "null"
          and then Page.Entries (1).Is_Latest,
          "unconfigured null version listing");
+
+      Store.Delete_Selected_Object
+        (Bucket, "alpha", Current_Version_Selector,
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Success
+         and then Delete_Outcome.Kind = Object_Version_Removed
+         and then not Delete_Outcome.Has_Version_ID,
+         "unconfigured selected delete");
+      Store.Head_Object
+        (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Info, Result);
+      Require
+        (Result = Not_Found,
+         "unconfigured selected delete retained data");
+      Put ("alpha", "legacy", Legacy);
+      Require (Result = Success, "restore unconfigured null generation");
 
       Store.Put_Bucket_Versioning
         (Bucket, (Status => Versioning_Enabled, others => <>), null,
@@ -319,6 +337,175 @@ package body Versioned_Object_Conformance is
          and then Version_At (2) = US.To_String (V3.Version),
          "suspended null replacement and retained history");
 
+      Store.Delete_Selected_Object
+        (Bucket, "alpha", Current_Version_Selector,
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Success
+         and then Delete_Outcome.Kind = Delete_Marker_Created
+         and then Delete_Outcome.Has_Version_ID
+         and then Delete_Outcome.Is_Null_Version
+         and then US.Length (Delete_Outcome.Version_ID) = 0,
+         "suspended current delete marker publication");
+      Store.Head_Object
+        (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Info, Result);
+      Require (Result = Not_Found, "suspended marker did not hide current");
+      Require_Body ("alpha", "v1", Exact (V1));
+      Store.List_Object_Versions
+        (Bucket, (others => <>), null, Ada.Real_Time.Time_Last, Page,
+         Result);
+      Require
+        (Result = Success and then Page.Entries.Length = 4
+         and then Page.Entries (1).Is_Delete_Marker
+         and then Page.Entries (1).Is_Latest
+         and then Version_At (1) = "null",
+         "suspended null marker listing");
+
+      Store.Delete_Selected_Object
+        (Bucket, "alpha", Current_Version_Selector,
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Success
+         and then Delete_Outcome.Kind = Delete_Marker_Created
+         and then Delete_Outcome.Is_Null_Version,
+         "repeated suspended current delete marker replacement");
+      Store.List_Object_Versions
+        (Bucket, (others => <>), null, Ada.Real_Time.Time_Last, Page,
+         Result);
+      Require
+        (Result = Success and then Page.Entries.Length = 4
+         and then Page.Entries (1).Is_Delete_Marker
+         and then Page.Entries (1).Is_Latest
+         and then Version_At (1) = "null",
+         "repeated suspended delete accumulated null markers");
+
+      Store.Delete_Selected_Object
+        (Bucket, "alpha", Null_Version_Selector,
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Success
+         and then Delete_Outcome.Kind = Delete_Marker_Removed
+         and then Delete_Outcome.Has_Version_ID
+         and then Delete_Outcome.Is_Null_Version,
+         "exact null delete marker removal");
+      Require_Body ("alpha", "v2", Current_Version_Selector);
+
+      Store.Put_Bucket_Versioning
+        (Bucket, (Status => Versioning_Enabled, others => <>), null,
+         Ada.Real_Time.Time_Last, Result);
+      Require (Result = Success, "re-enable versioning for marker history");
+      Store.Delete_Selected_Object
+        (Bucket, "alpha", Current_Version_Selector,
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Success
+         and then Delete_Outcome.Kind = Delete_Marker_Created
+         and then Delete_Outcome.Has_Version_ID
+         and then not Delete_Outcome.Is_Null_Version,
+         "enabled current delete marker publication");
+      declare
+         First_Marker : constant Version_Selector :=
+           (Kind => Exact_Version, ID => Delete_Outcome.Version_ID);
+         First_ID : constant US.Unbounded_String :=
+           Delete_Outcome.Version_ID;
+      begin
+         Store.Delete_Selected_Object
+           (Bucket, "alpha", Current_Version_Selector,
+            No_Delete_Object_Conditions, False, null,
+            Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+         Require
+           (Result = Success
+            and then Delete_Outcome.Kind = Delete_Marker_Created
+            and then Delete_Outcome.Version_ID /= First_ID,
+            "repeated enabled delete marker identity");
+         declare
+            Second_Marker : constant Version_Selector :=
+              (Kind => Exact_Version, ID => Delete_Outcome.Version_ID);
+         begin
+            Store.Delete_Selected_Object
+              (Bucket, "alpha", First_Marker,
+               No_Delete_Object_Conditions, False, null,
+               Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+            Require
+              (Result = Success
+               and then Delete_Outcome.Kind = Delete_Marker_Removed,
+               "noncurrent exact marker removal");
+            Store.Head_Object
+              (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Info,
+               Result);
+            Require
+              (Result = Not_Found,
+               "removing noncurrent marker exposed object");
+            Store.Delete_Selected_Object
+              (Bucket, "alpha", Second_Marker,
+               No_Delete_Object_Conditions, False, null,
+               Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+            Require
+              (Result = Success
+               and then Delete_Outcome.Kind = Delete_Marker_Removed,
+               "current exact marker removal");
+         end;
+      end;
+      Require_Body ("alpha", "v2", Current_Version_Selector);
+
+      Store.Delete_Selected_Object
+        (Bucket, "alpha", Exact (V2),
+         (Has_ETag => True,
+          ETag => US.To_Unbounded_String ("""mismatch"""),
+          others => <>),
+         False, null, Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Precondition_Failed,
+         "exact generation conditional delete mismatch");
+      Require_Body ("alpha", "v2", Exact (V2));
+      Store.Delete_Selected_Object
+        (Bucket, "alpha", Exact (V2), No_Delete_Object_Conditions,
+         False, null, Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Success
+         and then Delete_Outcome.Kind = Object_Version_Removed
+         and then Delete_Outcome.Version_ID = V2.Version,
+         "exact object generation removal");
+      Store.Head_Object
+        (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Info, Result,
+         Selector => Exact (V2));
+      Require (Result = Not_Found, "removed exact generation remains visible");
+
+      Store.Delete_Selected_Object
+        (Bucket, "alpha",
+         (Kind => Exact_Version,
+          ID => US.To_Unbounded_String ("missing-generation")),
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Success
+         and then Delete_Outcome.Kind = No_Version_Removed
+         and then Delete_Outcome.Has_Version_ID,
+         "missing exact deletion is not idempotent");
+
+      Store.Put_Bucket_Versioning
+        (Bucket,
+         (Status => Versioning_Unconfigured,
+          MFA_Delete => MFA_Delete_Enabled),
+         null, Ada.Real_Time.Time_Last, Result, MFA_Validated => True);
+      Require (Result = Success, "enable MFA Delete for exact generation");
+      Store.Delete_Selected_Object
+        (Bucket, "alpha", Exact (V1), No_Delete_Object_Conditions,
+         False, null, Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require (Result = Access_Denied, "MFA Delete admitted without MFA");
+      Require_Body ("alpha", "v1", Exact (V1));
+      Store.Delete_Selected_Object
+        (Bucket, "alpha", Exact (V1), No_Delete_Object_Conditions,
+         True, null, Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Success
+         and then Delete_Outcome.Kind = Object_Version_Removed,
+         "MFA-attested exact delete");
+
       Store.Head_Object
         (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Info, Result,
          Selector =>
@@ -350,6 +537,35 @@ package body Versioned_Object_Conformance is
             ID   => US.To_Unbounded_String
               ((1 .. Maximum_Version_ID_Length + 1 => 'x'))));
       Require (Result = Invalid_Request, "overlong exact selector accepted");
+
+      Store.Delete_Selected_Object
+        (Bucket, "alpha",
+         (Kind => Current_Version,
+          ID   => US.To_Unbounded_String ("forbidden")),
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Invalid_Request,
+         "selected delete admitted malformed current selector");
+      Store.Delete_Selected_Object
+        (Bucket, "alpha",
+         (Kind => Exact_Version,
+          ID   => US.To_Unbounded_String
+            ((1 .. Maximum_Version_ID_Length + 1 => 'x'))),
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Invalid_Request,
+         "selected delete admitted overlong exact selector");
+      Store.Delete_Selected_Object
+        (Bucket, "alpha", Current_Version_Selector,
+         (Has_ETag => True,
+          ETag => US.To_Unbounded_String ("""unterminated"),
+          others => <>),
+         False, null, Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+      Require
+        (Result = Invalid_Request,
+         "selected delete admitted malformed ETag condition");
 
       declare
          Ordered_Bucket : constant String := Bucket & "-ordering";
@@ -424,5 +640,95 @@ package body Versioned_Object_Conformance is
             "unqualified delimiter projection did not fail closed");
       end;
    end Exercise;
+
+   procedure Exercise_Capacity
+     (Store  : in out Backend'Class;
+      Bucket : String)
+   is
+      Result  : Status;
+      First   : Object_Information;
+      Info    : Object_Information;
+      Outcome : Version_Delete_Outcome;
+      Page    : List_Versions_Page;
+
+      procedure Put (Payload : String) is
+         Source : Buffer_Source :=
+           (Data => Flyology.Bytes.From_Byte_String (Payload),
+            Position => 0);
+      begin
+         Store.Put_Object
+           (Bucket, "only-key", Source, Default_Put_Options, null,
+            Ada.Real_Time.Time_Last, Info, Result);
+      end Put;
+   begin
+      Store.Create_Bucket
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Require (Result = Success, "capacity bucket setup");
+      Store.Put_Bucket_Versioning
+        (Bucket, (Status => Versioning_Enabled, others => <>), null,
+         Ada.Real_Time.Time_Last, Result);
+      Require (Result = Success, "capacity bucket versioning enable");
+
+      Put ("first");
+      Require (Result = Success, "capacity first generation");
+      First := Info;
+      Put ("second");
+      Require (Result = Capacity_Exceeded, "retained history exceeded slot");
+      Store.Head_Object
+        (Bucket, "only-key", null, Ada.Real_Time.Time_Last, Info, Result);
+      Require
+        (Result = Success and then Info.Version = First.Version,
+         "failed retained publication changed current generation");
+
+      Store.Delete_Selected_Object
+        (Bucket, "only-key", Current_Version_Selector,
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Outcome, Result);
+      Require
+        (Result = Capacity_Exceeded,
+         "delete marker exceeded retained slot capacity");
+      Store.Head_Object
+        (Bucket, "only-key", null, Ada.Real_Time.Time_Last, Info, Result);
+      Require
+        (Result = Success and then Info.Version = First.Version,
+         "failed marker publication hid current generation");
+
+      Store.Delete_Selected_Object
+        (Bucket, "only-key",
+         (Kind => Exact_Version, ID => First.Version),
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Outcome, Result);
+      Require
+        (Result = Success and then Outcome.Kind = Object_Version_Removed,
+         "exact removal did not release retained slot");
+      Store.Delete_Selected_Object
+        (Bucket, "only-key", Current_Version_Selector,
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Outcome, Result);
+      Require
+        (Result = Success and then Outcome.Kind = Delete_Marker_Created,
+         "released slot did not admit marker");
+      Store.List_Object_Versions
+        (Bucket, (others => <>), null, Ada.Real_Time.Time_Last, Page,
+         Result);
+      Require
+        (Result = Success and then Page.Entries.Length = 1
+         and then Page.Entries (1).Is_Delete_Marker,
+         "one-slot marker listing");
+      Put ("blocked-by-marker");
+      Require
+        (Result = Capacity_Exceeded,
+         "marker did not consume retained object slot");
+      Store.Delete_Selected_Object
+        (Bucket, "only-key",
+         (Kind => Exact_Version, ID => Outcome.Version_ID),
+         No_Delete_Object_Conditions, False, null,
+         Ada.Real_Time.Time_Last, Outcome, Result);
+      Require
+        (Result = Success and then Outcome.Kind = Delete_Marker_Removed,
+         "exact marker removal did not release slot");
+      Put ("after-marker");
+      Require (Result = Success, "released marker slot rejected generation");
+   end Exercise_Capacity;
 
 end Versioned_Object_Conformance;

@@ -7,4 +7,8 @@ package Versioned_Object_Conformance is
      (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
       Bucket : String);
 
+   procedure Exercise_Capacity
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String);
+
 end Versioned_Object_Conformance;

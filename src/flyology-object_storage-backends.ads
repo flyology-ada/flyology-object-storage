@@ -260,6 +260,30 @@ package Flyology.Object_Storage.Backends is
      (Index_Type => Positive, Element_Type => Delete_Object_Outcome);
    subtype Delete_Object_Outcomes is Delete_Object_Outcome_Vectors.Vector;
 
+   --  Publication effect of one generation-aware deletion.
+   --  @enum No_Version_Removed The selected generation did not exist
+   --  @enum Object_Version_Removed One retained payload generation was removed
+   --  @enum Delete_Marker_Created A simple versioned delete published a marker
+   --  @enum Delete_Marker_Removed One exact retained marker was removed
+   type Version_Delete_Kind is
+     (No_Version_Removed,
+      Object_Version_Removed,
+      Delete_Marker_Created,
+      Delete_Marker_Removed);
+
+   --  Exact result of one generation-aware delete publication.  Null version
+   --  identity remains typed and never uses the S3 wire spelling `null`.
+   --  @field Kind Publication effect
+   --  @field Has_Version_ID Whether the response identifies a generation
+   --  @field Is_Null_Version Whether that identity is the distinguished null
+   --  @field Version_ID Opaque non-null identity when present and non-null
+   type Version_Delete_Outcome is record
+      Kind            : Version_Delete_Kind := No_Version_Removed;
+      Has_Version_ID  : Boolean := False;
+      Is_Null_Version : Boolean := False;
+      Version_ID      : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  Conditional-read timestamps are signed so valid HTTP dates before the
    --  Unix epoch can be compared without lossy clamping.
    type Optional_Condition_Time (Is_Set : Boolean := False) is record
@@ -731,6 +755,36 @@ package Flyology.Object_Storage.Backends is
    --  the deletion was not published: a directory durability confirmation
    --  can fail after the name is gone. Callers requiring certainty must
    --  reconcile with Head_Object or Get_Object before retrying.
+
+   --  Delete one selected generation or publish the bucket-versioning delete
+   --  marker required by a Current selector.  Current preserves legacy
+   --  unversioned physical deletion, appends an opaque marker when enabled,
+   --  and replaces any null generation with a null marker when suspended.
+   --  Null and Exact permanently remove only that selected generation.  A
+   --  missing unconditioned selection is an idempotent success.  When bucket
+   --  MFA Delete is enabled, permanent Null or Exact deletion requires the
+   --  caller's atomic MFA_Validated attestation.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Selector Current, null, or exact deletion target
+   --  @param Conditions Optional selected-generation predicates
+   --  @param MFA_Validated Caller authorization attestation for MFA Delete
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Outcome Exact publication effect and generation identity
+   --  @param Result Storage-domain outcome
+   procedure Delete_Selected_Object
+     (Item          : in out Backend;
+      Bucket        : String;
+      Key           : String;
+      Selector      : Version_Selector;
+      Conditions    : Delete_Object_Conditions;
+      MFA_Validated : Boolean;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Outcome       : out Version_Delete_Outcome;
+      Result        : out Status) is abstract;
 
    --  Evaluate and publish a bounded ordered batch under one backend batch
    --  boundary. Outcomes align one-for-one with Entries when Result is

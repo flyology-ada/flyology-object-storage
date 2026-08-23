@@ -5215,6 +5215,20 @@ package body Object_Storage_Test_Cases is
         (Store, "memory-object-versions-bucket");
    end Check_Memory_Object_Versions;
 
+   procedure Check_Memory_Object_Version_Capacity
+     (Unused : in out Fixture)
+   is
+      pragma Unreferenced (Unused);
+      package Memory renames Flyology.Object_Storage.Backends.Memory;
+      Store : Memory.Store
+        (Bucket_Capacity => 1,
+         Object_Capacity => 1,
+         Byte_Capacity   => 64);
+   begin
+      Versioned_Object_Conformance.Exercise_Capacity
+        (Store, "memory-version-capacity-bucket");
+   end Check_Memory_Object_Version_Capacity;
+
    procedure Check_Backend_Conditional_Put (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
@@ -17350,6 +17364,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("memory.object-version-conformance",
             Check_Memory_Object_Versions'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("memory.object-version-capacity",
+            Check_Memory_Object_Version_Capacity'Access));
       Result.Add_Test
         (Caller.Create
            ("backends.conditional-put-conformance",

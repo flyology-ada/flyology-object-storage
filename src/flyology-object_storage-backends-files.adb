@@ -3225,6 +3225,39 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
    end Delete_Object;
 
+   overriding procedure Delete_Selected_Object
+     (Item          : in out Store;
+      Bucket        : String;
+      Key           : String;
+      Selector      : Version_Selector;
+      Conditions    : Delete_Object_Conditions;
+      MFA_Validated : Boolean;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Outcome       : out Version_Delete_Outcome;
+      Result        : out Status)
+   is
+      pragma Unreferenced (Item, MFA_Validated);
+   begin
+      Outcome := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+        or else
+          ((not Conditions.Has_ETag
+            and then Ada.Strings.Unbounded.Length (Conditions.ETag) > 0)
+           or else
+             (Conditions.Has_ETag
+              and then not Valid_Object_Delete_ETag_Condition
+                (Ada.Strings.Unbounded.To_String (Conditions.ETag))))
+      then
+         Result := Invalid_Request;
+      else
+         Result := Not_Implemented;
+      end if;
+   end Delete_Selected_Object;
+
    overriding procedure Delete_Objects
      (Item     : in out Store;
       Bucket   : String;

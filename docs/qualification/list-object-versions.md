@@ -2,9 +2,10 @@
 
 This record qualifies the bounded synchronous client, strict wire corpus, and
 the first bounded in-memory retained-generation slice for
-`ListObjectVersions`. It does not claim delete markers, delimiter pagination,
-durable files/SQLite generations, an authenticated Flyology server route, or
-external-server interoperability.
+`ListObjectVersions`. The memory slice includes enabled and suspended delete
+markers and permanent selected-generation removal. It does not claim delimiter
+pagination, durable files/SQLite generations, an authenticated Flyology server
+route, or external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -102,20 +103,22 @@ The machine ledger records `ListObjectVersions` as `partial / covered /
 missing / covered`. The memory backend now preserves null and opaque object
 generations across unconfigured, enabled, and suspended transitions; identical
 overwrites receive distinct opaque IDs; current, null, and exact generation
-reads and tags remain isolated; and newest-first paired-cursor pagination is
-independently exercised. Its object capacity counts every retained generation,
+reads and tags remain isolated; enabled deletes append unique markers;
+suspended deletes replace the null generation with a null marker; exact data
+versions and markers can be removed permanently with atomic MFA Delete
+admission; and newest-first paired-cursor pagination is independently
+exercised. Its object capacity counts every retained generation and marker,
 and its protected state is the atomic publication and listing boundary.
 
-The backend cell remains partial because delete markers, delimiter/common-prefix
-pagination, and durable files/SQLite reopen and crash behavior are absent. The
-server cell remains missing. Neither cell can be promoted until shared
-conformance covers version creation, deletion markers, exact generation
-selection, pagination, persistence, crash recovery, and black-box S3 wire
-behavior.
+The backend cell remains partial because delimiter/common-prefix pagination and
+durable files/SQLite reopen and crash behavior are absent. The server cell
+remains missing. Neither cell can be promoted until shared conformance covers
+version creation, exact generation selection and deletion, pagination,
+persistence, crash recovery, and black-box S3 wire behavior.
 
 ## Gate evidence
 
-The warning-strict root gate passed 39/39 AUnit tests with zero failed
+The warning-strict root gate passed 40/40 AUnit tests with zero failed
 assertions or unexpected errors, the 88-case files crash matrix, 320 checksum
 oracle vectors, 210 chunk boundaries, the strict server application corpus,
 and three repetitions of the native/lightweight socket and TLS corpora. The
@@ -124,8 +127,9 @@ The inventory verifier reported 45 modeled members across seven shapes and 23
 reciprocal vectors; the 116-operation coverage verifier and its negative oracle
 also passed. The new backend-neutral memory corpus covers state transitions,
 unique identical overwrites, null/current/exact reads, per-version tag
-isolation, full ordering, one-entry paired pagination, zero-size pages, and
-malformed or unknown selectors and cursors.
+isolation, enabled and suspended marker publication, repeated-marker identity,
+exact data and marker removal, MFA admission, full ordering, one-entry paired
+pagination, zero-size pages, and malformed or unknown selectors and cursors.
 
 The serialized proof campaign started at 2026-08-23T22:07:16Z with FSF
 GNATprove 16.1.0. `./tools/prove.sh` used `--level=0`, output headers, and
