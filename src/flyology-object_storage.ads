@@ -146,9 +146,10 @@ is
    type MFA_Delete_Status is
      (MFA_Delete_Unconfigured, MFA_Delete_Enabled, MFA_Delete_Disabled);
 
-   --  Atomic configuration associated with one bucket. This controls only
-   --  configuration reporting until version creation and retrieval are
-   --  implemented separately.
+   --  Atomic configuration associated with one bucket. Version-aware
+   --  backends apply Status to object publication and selection under the
+   --  same backend state boundary; a backend that has not qualified those
+   --  semantics returns Not_Implemented from its version-specific surface.
    type Bucket_Versioning_Configuration is record
       Status     : Bucket_Versioning_Status := Versioning_Unconfigured;
       MFA_Delete : MFA_Delete_Status := MFA_Delete_Unconfigured;

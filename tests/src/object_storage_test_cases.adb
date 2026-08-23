@@ -13,6 +13,7 @@ with AUnit.Test_Fixtures;
 with Conditional_Put_Conformance;
 with Copy_Object_Conformance;
 with Multipart_Part_Conformance;
+with Versioned_Object_Conformance;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP;
@@ -5201,6 +5202,18 @@ package body Object_Storage_Test_Cases is
          Clean;
          raise;
    end Check_Backend_Delete_Objects;
+
+   procedure Check_Memory_Object_Versions (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      package Memory renames Flyology.Object_Storage.Backends.Memory;
+      Store : Memory.Store
+        (Bucket_Capacity => 2,
+         Object_Capacity => 32,
+         Byte_Capacity   => 1_024);
+   begin
+      Versioned_Object_Conformance.Exercise
+        (Store, "memory-object-versions-bucket");
+   end Check_Memory_Object_Versions;
 
    procedure Check_Backend_Conditional_Put (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
@@ -17333,6 +17346,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("backends.delete-objects-conformance",
             Check_Backend_Delete_Objects'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("memory.object-version-conformance",
+            Check_Memory_Object_Versions'Access));
       Result.Add_Test
         (Caller.Create
            ("backends.conditional-put-conformance",

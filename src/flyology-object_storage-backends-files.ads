@@ -122,6 +122,8 @@ package Flyology.Object_Storage.Backends.Files is
       Info               : out Object_Information;
       Result             : out Status);
 
+   --  Read one selected filesystem metadata generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Head_Object
      (Item     : in out Store;
       Bucket   : String;
@@ -130,8 +132,11 @@ package Flyology.Object_Storage.Backends.Files is
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
       Result   : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions);
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector);
 
+   --  Stream one selected filesystem object generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Get_Object
      (Item      : in out Store;
       Bucket    : String;
@@ -142,8 +147,11 @@ package Flyology.Object_Storage.Backends.Files is
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
       Result    : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions);
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector);
 
+   --  Read attributes from one selected filesystem generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Get_Object_Attributes
      (Item     : in out Store;
       Bucket   : String;
@@ -153,7 +161,8 @@ package Flyology.Object_Storage.Backends.Files is
       Deadline : Ada.Real_Time.Time;
       Snapshot : out Object_Attribute_Snapshot;
       Result   : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions);
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector);
 
    overriding procedure Delete_Object
      (Item     : in out Store;
@@ -176,23 +185,32 @@ package Flyology.Object_Storage.Backends.Files is
       Outcomes : out Delete_Object_Outcomes;
       Result   : out Status);
 
+   --  Replace tags on one selected filesystem generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result : out Status);
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
 
+   --  Read tags from one selected filesystem generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Get_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Tags : out Object_Tag_Set; Result : out Status);
+      Tags : out Object_Tag_Set; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
 
+   --  Clear tags on one selected filesystem generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Delete_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result : out Status);
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
 
    overriding procedure List_Objects
      (Item     : in out Store;
@@ -201,6 +219,23 @@ package Flyology.Object_Storage.Backends.Files is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Page     : out List_Page;
+      Result   : out Status);
+
+   --  Return one bounded filesystem generation page when qualified.
+   --  @param Item Filesystem backend instance
+   --  @param Bucket Bucket name
+   --  @param Options Prefix, delimiter, paired cursor, and page bound
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Atomic bounded result page
+   --  @param Result Storage-domain outcome
+   overriding procedure List_Object_Versions
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Versions_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out List_Versions_Page;
       Result   : out Status);
 
    overriding procedure Create_Multipart_Upload

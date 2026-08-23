@@ -40,6 +40,91 @@ package Flyology.Object_Storage.Backends is
       Next_After      : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  AWS defines object-version identifiers as opaque, URL-ready UTF-8
+   --  strings no longer than 1,024 bytes.  The storage boundary keeps that
+   --  externally fixed limit even though Flyology-generated identifiers use
+   --  a smaller private representation.
+   Maximum_Version_ID_Length : constant := 1_024;
+
+   --  Kind of retained generation selected by a read or metadata operation.
+   --  @enum Current_Version Select the newest visible non-delete generation
+   --  @enum Null_Version Select the distinguished S3 null generation
+   --  @enum Exact_Version Select one generated opaque version identifier
+   type Version_Selector_Kind is
+     (Current_Version, Null_Version, Exact_Version);
+
+   --  Select the current generation, the distinguished S3 null generation,
+   --  or one exact non-null opaque version.  Keeping Null_Version distinct
+   --  prevents protocol adapters from leaking the wire literal "null" into
+   --  backend lookup policy.
+   --  @field Kind Selection mode
+   --  @field ID Exact opaque ID only when Kind is Exact_Version
+   type Version_Selector is record
+      Kind : Version_Selector_Kind := Current_Version;
+      ID   : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Canonical selector for the newest visible generation.
+   Current_Version_Selector : constant Version_Selector;
+   --  Canonical selector for the distinguished null generation.
+   Null_Version_Selector    : constant Version_Selector;
+
+   --  Check selector structure and the externally fixed version-ID bound.
+   --  @param Selector Candidate selector
+   --  @return True only for a canonical current, null, or exact selector
+   function Valid_Version_Selector
+     (Selector : Version_Selector) return Boolean;
+
+   --  One retained object generation or delete marker in listing order.
+   --  @field Key Exact object key
+   --  @field Version_ID Opaque identifier or the S3 value `null`
+   --  @field Info Immutable metadata for this generation
+   --  @field Is_Latest Whether this is the newest retained generation
+   --  @field Is_Delete_Marker Whether the entry has no object body
+   type Listed_Version is record
+      Key              : Ada.Strings.Unbounded.Unbounded_String;
+      Version_ID       : Ada.Strings.Unbounded.Unbounded_String;
+      Info             : Object_Information;
+      Is_Latest        : Boolean := False;
+      Is_Delete_Marker : Boolean := False;
+   end record;
+
+   --  Bounded by backend capacity before exposure in a page.
+   package Listed_Version_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Listed_Version);
+
+   --  HTTP-independent ListObjectVersions selection and paired cursor.
+   --  @field Prefix Required bytewise key prefix
+   --  @field Delimiter Optional common-prefix delimiter
+   --  @field Has_Key_Marker Whether Key_Marker was supplied
+   --  @field Key_Marker Key component of the exclusive cursor
+   --  @field Has_Version_ID_Marker Whether Version_ID_Marker was supplied
+   --  @field Version_ID_Marker Version component of the exclusive cursor
+   --  @field Maximum Combined version, marker, and prefix page bound
+   type List_Versions_Options is record
+      Prefix                : Ada.Strings.Unbounded.Unbounded_String;
+      Delimiter             : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Key_Marker        : Boolean := False;
+      Key_Marker            : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Version_ID_Marker : Boolean := False;
+      Version_ID_Marker     : Ada.Strings.Unbounded.Unbounded_String;
+      Maximum               : List_Limit := List_Limit'Last;
+   end record;
+
+   --  One bounded retained-generation page from an atomic backend snapshot.
+   --  @field Entries Ordered object versions and delete markers
+   --  @field Common_Prefixes Ordered delimiter projections
+   --  @field Is_Truncated Whether additional results remain
+   --  @field Next_Key_Marker Key component for the next request
+   --  @field Next_Version_ID_Marker Version component for the next request
+   type List_Versions_Page is record
+      Entries                : Listed_Version_Vectors.Vector;
+      Common_Prefixes        : Common_Prefix_Vectors.Vector;
+      Is_Truncated           : Boolean := False;
+      Next_Key_Marker        : Ada.Strings.Unbounded.Unbounded_String;
+      Next_Version_ID_Marker : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  Account-level bucket listing is independently bounded by the pinned S3
    --  MaxBuckets range. After is an exclusive internal lexical cursor; the
    --  S3 boundary is responsible for opaque continuation tokens.
@@ -436,8 +521,9 @@ package Flyology.Object_Storage.Backends is
 
    --  Atomically apply one bucket's versioning configuration. Unconfigured
    --  fields are left unchanged, allowing status and MFA-delete policy to be
-   --  changed independently. This does not create object versions or change
-   --  object mutation semantics. MFA_Validated is a fail-closed attestation
+   --  changed independently. Qualified version-aware backends apply the new
+   --  status to subsequent object mutations without rewriting retained
+   --  generations. MFA_Validated is a fail-closed attestation
    --  from the caller's authorization policy. False rejects any MFA-delete
    --  change and every status change while current MFA Delete is enabled;
    --  the check and configuration publication are one atomic boundary.
@@ -553,6 +639,17 @@ package Flyology.Object_Storage.Backends is
       Info               : out Object_Information;
       Result             : out Status) is abstract;
 
+   --  Return one selected immutable metadata snapshot. Conditions are
+   --  evaluated against the same snapshot and retained on conditional failure.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Selected metadata snapshot
+   --  @param Result Storage-domain outcome
+   --  @param Conditions Conditional-read predicates
+   --  @param Selector Current, null, or exact generation selection
    procedure Head_Object
      (Item   : in out Backend;
       Bucket : String;
@@ -561,10 +658,21 @@ package Flyology.Object_Storage.Backends is
       Deadline : Ada.Real_Time.Time;
       Info   : out Object_Information;
       Result : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions) is abstract;
-   --  Conditions are evaluated against the exact immutable metadata snapshot
-   --  returned in Info. Conditional failures retain that snapshot in Info.
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
 
+   --  Stream one selected immutable object snapshot through Sink.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Requested Whole or partial byte selection
+   --  @param Sink Destination for the selected bytes
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Selected metadata snapshot
+   --  @param Result Storage-domain outcome
+   --  @param Conditions Conditional-read predicates
+   --  @param Selector Current, null, or exact generation selection
    procedure Get_Object
      (Item     : in out Backend;
       Bucket   : String;
@@ -575,7 +683,8 @@ package Flyology.Object_Storage.Backends is
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
       Result   : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions) is abstract;
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
    --  A successful implementation calls Begin_Object exactly once, then
    --  writes exactly its announced Content_Length. When Result is
    --  Invalid_Range, Info is the immutable object snapshot against which
@@ -586,6 +695,7 @@ package Flyology.Object_Storage.Backends is
    --  COPY objects report Is_Multipart false and no parts. A successful
    --  multipart completion reports its total selected part count even when
    --  the requested page is empty.
+   --  @param Selector Current, null, or exact generation selection
    procedure Get_Object_Attributes
      (Item     : in out Backend;
       Bucket   : String;
@@ -595,7 +705,8 @@ package Flyology.Object_Storage.Backends is
       Deadline : Ada.Real_Time.Time;
       Snapshot : out Object_Attribute_Snapshot;
       Result   : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions) is abstract;
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
    --  Conditions are evaluated against Snapshot.Info within the same atomic
    --  metadata boundary used to collect the completed-part snapshot.
 
@@ -644,8 +755,9 @@ package Flyology.Object_Storage.Backends is
       Outcomes : out Delete_Object_Outcomes;
       Result   : out Status) is abstract;
 
-   --  Atomically replace, read, or clear the complete tag set associated with
-   --  one current object. Missing buckets and objects remain distinguishable.
+   --  Atomically replace the complete tag set associated with one selected
+   --  object generation. Missing buckets and objects remain distinguishable.
+   --  @param Selector Current, null, or exact generation selection
    procedure Put_Object_Tags
      (Item     : in out Backend;
       Bucket   : String;
@@ -653,8 +765,18 @@ package Flyology.Object_Storage.Backends is
       Tags     : Object_Tag_Set;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result   : out Status) is abstract;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
 
+   --  Return the complete tag set for one selected generation.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Tags Complete selected tag set
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
    procedure Get_Object_Tags
      (Item     : in out Backend;
       Bucket   : String;
@@ -662,15 +784,25 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Tags     : out Object_Tag_Set;
-      Result   : out Status) is abstract;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
 
+   --  Clear the complete tag set for one selected generation.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
    procedure Delete_Object_Tags
      (Item     : in out Backend;
       Bucket   : String;
       Key      : String;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result   : out Status) is abstract;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is abstract;
    --  Not_Found means the bucket exists but the key does not.
    --  Bucket_Not_Found means the bucket itself does not exist. Backends must
    --  classify and delete under one namespace-publication boundary.
@@ -685,6 +817,27 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Page     : out List_Page;
+      Result   : out Status) is abstract;
+
+   --  Return at most Options.Maximum combined versions, delete markers, and
+   --  common prefixes.  Keys use unsigned bytewise lexical order; retained
+   --  generations of one key use newest-publication-first order.  A version
+   --  marker is valid only with a key marker and resumes after that exact
+   --  generation of the marked key.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Options Prefix, delimiter, paired cursor, and page bound
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Atomic bounded result page
+   --  @param Result Storage-domain outcome
+   procedure List_Object_Versions
+     (Item     : in out Backend;
+      Bucket   : String;
+      Options  : List_Versions_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out List_Versions_Page;
       Result   : out Status) is abstract;
 
    --  Start one upload. Upload identifiers are backend-generated, opaque,
@@ -815,6 +968,20 @@ package Flyology.Object_Storage.Backends is
       Result    : out Status) is abstract;
 
 private
+   --  Monotonic publication order is backend-private metadata, not a wire or
+   --  caller-visible value.  It disambiguates generations that share a
+   --  one-second timestamp without expanding the listing API.
+   subtype Version_Publication_Order is
+     Long_Long_Integer range 0 .. Long_Long_Integer'Last;
+
+   Current_Version_Selector : constant Version_Selector :=
+     (Kind => Current_Version,
+      ID   => Ada.Strings.Unbounded.Null_Unbounded_String);
+
+   Null_Version_Selector : constant Version_Selector :=
+     (Kind => Null_Version,
+      ID   => Ada.Strings.Unbounded.Null_Unbounded_String);
+
    Default_Multipart_Options : constant Multipart_Options :=
      (Content_Type =>
         Ada.Strings.Unbounded.To_Unbounded_String

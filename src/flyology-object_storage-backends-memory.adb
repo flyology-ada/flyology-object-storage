@@ -1,6 +1,7 @@
 with Ada.Calendar;
 with Ada.Calendar.Formatting;
 with Ada.Containers;
+with Ada.Containers.Vectors;
 with Ada.Strings;
 with Ada.Strings.Fixed;
 with Ada.Unchecked_Deallocation;
@@ -205,6 +206,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       function Object_Index
         (Bucket : String; Key : String) return Natural
       is
+         Latest : Natural := 0;
       begin
          for Index in 1 .. Highest_Object loop
             if Objects (Index).Used
@@ -213,11 +215,55 @@ package body Flyology.Object_Storage.Backends.Memory is
               and then Ada.Strings.Unbounded.To_String
                 (Objects (Index).Key) = Key
             then
-               return Index;
+               if Latest = 0
+                 or else Objects (Index).Publication >
+                   Objects (Latest).Publication
+               then
+                  Latest := Index;
+               end if;
             end if;
          end loop;
-         return 0;
+         return
+           (if Latest /= 0 and then not Objects (Latest).Is_Delete_Marker
+            then Latest else 0);
       end Object_Index;
+
+      function Selected_Object_Index
+        (Bucket : String; Key : String; Selector : Version_Selector)
+         return Natural
+      is
+         Selected : Natural := 0;
+         ID : constant String :=
+           Ada.Strings.Unbounded.To_String (Selector.ID);
+      begin
+         if Selector.Kind = Current_Version then
+            return Object_Index (Bucket, Key);
+         end if;
+         for Index in 1 .. Highest_Object loop
+            if Objects (Index).Used
+              and then Ada.Strings.Unbounded.To_String
+                (Objects (Index).Bucket) = Bucket
+              and then Ada.Strings.Unbounded.To_String
+                (Objects (Index).Key) = Key
+              and then
+                (if Selector.Kind = Null_Version
+                 then Objects (Index).Is_Null_Version
+                 else not Objects (Index).Is_Null_Version
+                   and then Ada.Strings.Unbounded.To_String
+                     (Objects (Index).Info.Version) = ID)
+              and then
+                (Selected = 0
+                 or else Objects (Index).Publication >
+                   Objects (Selected).Publication)
+            then
+               Selected := Index;
+            end if;
+         end loop;
+         return
+           (if Selected /= 0
+              and then not Objects (Selected).Is_Delete_Marker
+            then Selected else 0);
+      end Selected_Object_Index;
 
       function Upload_Index
         (Bucket : String; Key : String; Upload_ID : String) return Natural
@@ -443,29 +489,70 @@ package body Flyology.Object_Storage.Backends.Memory is
          Stored : out Object_Information;
          Result : out Status)
       is
-         Index        : Natural := Object_Index (Bucket, Key);
+         Bucket_At    : constant Natural := Bucket_Index (Bucket);
+         Current_At   : constant Natural := Object_Index (Bucket, Key);
+         Index        : Natural := 0;
          Existing     : Byte_Count := 0;
          Incoming     : constant Byte_Count :=
            Byte_Count (Data.Capacity);
          Reservation  : constant Byte_Count :=
            Byte_Count (Data.Capacity);
          Available    : Byte_Count;
+         New_Order    : Version_Publication_Order;
+         New_Info     : Object_Information := Info;
+         Is_Null      : Boolean := True;
       begin
          Stored := Empty_Info;
-         if Bucket_Index (Bucket) = 0 then
+         if Bucket_At = 0 then
             Result := Not_Found;
             return;
          end if;
          Result := Evaluate_Write_Conditions
            (Conditions,
-            Exists     => Index /= 0,
+            Exists     => Current_At /= 0,
             Entity_Tag =>
-              (if Index = 0 then ""
+              (if Current_At = 0 then ""
                else Ada.Strings.Unbounded.To_String
-                 (Objects (Index).Info.Entity_Tag)));
+                 (Objects (Current_At).Info.Entity_Tag)));
          if Result /= Success then
             return;
          end if;
+
+         if Next_Version = Version_Publication_Order'Last then
+            Result := Capacity_Exceeded;
+            return;
+         end if;
+         New_Order := Next_Version + 1;
+
+         case Buckets (Bucket_At).Versioning.Status is
+            when Versioning_Unconfigured =>
+               Index := Current_At;
+               New_Info.Version :=
+                 Ada.Strings.Unbounded.Null_Unbounded_String;
+            when Versioning_Enabled =>
+               Is_Null := False;
+               New_Info.Version := Ada.Strings.Unbounded.To_Unbounded_String
+                 (GNAT.SHA256.Digest
+                    ("flyology-object-version" & Character'Val (0) &
+                     Bucket & Character'Val (0) & Key & Character'Val (0) &
+                     Version_Publication_Order'Image (New_Order)));
+            when Versioning_Suspended =>
+               New_Info.Version :=
+                 Ada.Strings.Unbounded.Null_Unbounded_String;
+               for Candidate in 1 .. Highest_Object loop
+                  if Objects (Candidate).Used
+                    and then Objects (Candidate).Is_Null_Version
+                    and then Ada.Strings.Unbounded.To_String
+                      (Objects (Candidate).Bucket) = Bucket
+                    and then Ada.Strings.Unbounded.To_String
+                      (Objects (Candidate).Key) = Key
+                  then
+                     Index := Candidate;
+                     exit;
+                  end if;
+               end loop;
+         end case;
+
          if Index /= 0 then
             Existing := Byte_Count (Objects (Index).Data.Capacity);
          else
@@ -500,12 +587,18 @@ package body Flyology.Object_Storage.Backends.Memory is
             Stored_Key : constant Ada.Strings.Unbounded.Unbounded_String :=
               Ada.Strings.Unbounded.To_Unbounded_String (Key);
          begin
+            --  Burn publication orders before the first target mutation so
+            --  an allocation exception can skip an ID but can never reuse it.
+            Next_Version := New_Order;
             Objects (Index).Bucket := Stored_Bucket;
             Objects (Index).Key := Stored_Key;
-            Objects (Index).Info := Info;
+            Objects (Index).Info := New_Info;
             Objects (Index).Tags := Tags;
             Objects (Index).Completed_Parts.Clear;
-            Stored := Info;
+            Objects (Index).Is_Null_Version := Is_Null;
+            Objects (Index).Is_Delete_Marker := False;
+            Objects (Index).Publication := New_Order;
+            Stored := New_Info;
             Move (Objects (Index).Data, Data);
             Reserved_Bytes := Reserved_Bytes - Reservation;
             Bytes := Bytes - Existing + Incoming;
@@ -517,12 +610,14 @@ package body Flyology.Object_Storage.Backends.Memory is
       procedure Fetch
         (Bucket : String;
          Key    : String;
+         Selector : Version_Selector;
          Data   : out Owned_Bytes;
          Info   : out Object_Information;
          Tags   : out Object_Tag_Set;
          Result : out Status)
       is
-         Index : constant Natural := Object_Index (Bucket, Key);
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
          Snapshot : Byte_Count := 0;
          Copied : Boolean := False;
       begin
@@ -629,10 +724,12 @@ package body Flyology.Object_Storage.Backends.Memory is
       procedure Head
         (Bucket : String;
          Key    : String;
+         Selector : Version_Selector;
          Info   : out Object_Information;
          Result : out Status)
       is
-         Index : constant Natural := Object_Index (Bucket, Key);
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
       begin
          Info := Empty_Info;
          if Index = 0 then
@@ -646,12 +743,14 @@ package body Flyology.Object_Storage.Backends.Memory is
       procedure Attributes
         (Bucket   : String;
          Key      : String;
+         Selector : Version_Selector;
          Options  : Object_Attribute_Options;
          Conditions : Read_Conditions;
          Snapshot : out Object_Attribute_Snapshot;
          Result   : out Status)
       is
-         Index : constant Natural := Object_Index (Bucket, Key);
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
       begin
          Snapshot := (others => <>);
          if Index = 0 then
@@ -743,10 +842,12 @@ package body Flyology.Object_Storage.Backends.Memory is
       end Delete_Many;
 
       procedure Put_Tags
-        (Bucket : String; Key : String; Tags : Object_Tag_Set;
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Tags : Object_Tag_Set;
          Result : out Status)
       is
-         Index : constant Natural := Object_Index (Bucket, Key);
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
       begin
          if Bucket_Index (Bucket) = 0 then
             Result := Bucket_Not_Found;
@@ -759,10 +860,12 @@ package body Flyology.Object_Storage.Backends.Memory is
       end Put_Tags;
 
       procedure Get_Tags
-        (Bucket : String; Key : String; Tags : out Object_Tag_Set;
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Tags : out Object_Tag_Set;
          Result : out Status)
       is
-         Index : constant Natural := Object_Index (Bucket, Key);
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
       begin
          Tags := Empty_Object_Tags;
          if Bucket_Index (Bucket) = 0 then
@@ -776,9 +879,11 @@ package body Flyology.Object_Storage.Backends.Memory is
       end Get_Tags;
 
       procedure Delete_Tags
-        (Bucket : String; Key : String; Result : out Status)
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Result : out Status)
       is
-         Index : constant Natural := Object_Index (Bucket, Key);
+         Index : constant Natural :=
+           Selected_Object_Index (Bucket, Key, Selector);
       begin
          if Bucket_Index (Bucket) = 0 then
             Result := Bucket_Not_Found;
@@ -808,6 +913,9 @@ package body Flyology.Object_Storage.Backends.Memory is
             if Objects (Index).Used
               and then Ada.Strings.Unbounded.To_String
                 (Objects (Index).Bucket) = Bucket
+              and then Object_Index
+                (Bucket, Ada.Strings.Unbounded.To_String
+                   (Objects (Index).Key)) = Index
             then
                Listing.Consider
                  (Builder,
@@ -818,6 +926,170 @@ package body Flyology.Object_Storage.Backends.Memory is
          Page := Listing.Finish (Builder);
          Result := Success;
       end List;
+
+      procedure List_Versions
+        (Bucket  : String;
+         Options : List_Versions_Options;
+         Page    : out List_Versions_Page;
+         Result  : out Status)
+      is
+         type Candidate is record
+            Value       : Listed_Version;
+            Publication : Version_Publication_Order;
+         end record;
+
+         package Candidate_Vectors is new Ada.Containers.Vectors
+           (Index_Type => Positive, Element_Type => Candidate);
+
+         Candidates : Candidate_Vectors.Vector;
+         Start_At   : Natural := 1;
+         Marker_At  : Natural := 0;
+         Returned   : Natural := 0;
+
+         function Before (Left, Right : Candidate) return Boolean is
+            Left_Key  : constant String :=
+              Ada.Strings.Unbounded.To_String (Left.Value.Key);
+            Right_Key : constant String :=
+              Ada.Strings.Unbounded.To_String (Right.Value.Key);
+         begin
+            return Left_Key < Right_Key
+              or else
+                (Left_Key = Right_Key
+                 and then Left.Publication > Right.Publication);
+         end Before;
+
+         procedure Insert (Value : Candidate) is
+            Position : Natural := 0;
+         begin
+            if not Candidates.Is_Empty then
+               for Index in Candidates.First_Index .. Candidates.Last_Index
+               loop
+                  if Before (Value, Candidates (Index)) then
+                     Position := Index;
+                     exit;
+                  end if;
+               end loop;
+            end if;
+            if Position = 0 then
+               Candidates.Append (Value);
+            else
+               Candidates.Insert (Position, Value);
+            end if;
+         end Insert;
+
+         function Is_Latest (Index : Positive) return Boolean is
+         begin
+            for Other in 1 .. Highest_Object loop
+               if Objects (Other).Used
+                 and then Objects (Other).Bucket = Objects (Index).Bucket
+                 and then Objects (Other).Key = Objects (Index).Key
+                 and then Objects (Other).Publication >
+                   Objects (Index).Publication
+               then
+                  return False;
+               end if;
+            end loop;
+            return True;
+         end Is_Latest;
+      begin
+         Page := (others => <>);
+         if Bucket_Index (Bucket) = 0 then
+            Result := Not_Found;
+            return;
+         elsif Ada.Strings.Unbounded.Length (Options.Delimiter) > 0 then
+            --  Delimiter/common-prefix pagination is qualified separately;
+            --  do not manufacture a paired version cursor for a prefix.
+            Result := Not_Implemented;
+            return;
+         elsif Options.Has_Version_ID_Marker and then
+           not Options.Has_Key_Marker
+         then
+            Result := Invalid_Request;
+            return;
+         elsif Options.Has_Version_ID_Marker
+           and then
+             (Ada.Strings.Unbounded.Length (Options.Version_ID_Marker) = 0
+              or else Ada.Strings.Unbounded.Length
+                (Options.Version_ID_Marker) > Maximum_Version_ID_Length)
+         then
+            Result := Invalid_Request;
+            return;
+         end if;
+
+         Candidates.Reserve_Capacity
+           (Ada.Containers.Count_Type (Highest_Object));
+         for Index in 1 .. Highest_Object loop
+            if Objects (Index).Used
+              and then Ada.Strings.Unbounded.To_String
+                (Objects (Index).Bucket) = Bucket
+              and then Listing_Matches_Prefix
+                (Ada.Strings.Unbounded.To_String (Objects (Index).Key),
+                 Ada.Strings.Unbounded.To_String (Options.Prefix))
+            then
+               Insert
+                  ((Value =>
+                      (Key              => Objects (Index).Key,
+                       Version_ID       =>
+                         (if Objects (Index).Is_Null_Version
+                          then Ada.Strings.Unbounded.To_Unbounded_String
+                            ("null")
+                          else Objects (Index).Info.Version),
+                       Info             => Objects (Index).Info,
+                       Is_Latest        => Is_Latest (Index),
+                       Is_Delete_Marker => Objects (Index).Is_Delete_Marker),
+                    Publication => Objects (Index).Publication));
+            end if;
+         end loop;
+
+         if Options.Has_Key_Marker then
+            if Options.Has_Version_ID_Marker then
+               for Index in 1 .. Natural (Candidates.Length) loop
+                  if Candidates (Index).Value.Key = Options.Key_Marker
+                    and then Candidates (Index).Value.Version_ID =
+                      Options.Version_ID_Marker
+                  then
+                     Marker_At := Index;
+                     exit;
+                  end if;
+               end loop;
+               if Marker_At = 0 then
+                  Result := Invalid_Request;
+                  return;
+               end if;
+               Start_At := Marker_At + 1;
+            else
+               Start_At := Natural (Candidates.Length) + 1;
+               for Index in 1 .. Natural (Candidates.Length) loop
+                  if Ada.Strings.Unbounded.To_String
+                    (Candidates (Index).Value.Key) >
+                      Ada.Strings.Unbounded.To_String (Options.Key_Marker)
+                  then
+                     Start_At := Index;
+                     exit;
+                  end if;
+               end loop;
+            end if;
+         end if;
+
+         if Options.Maximum > 0
+           and then Start_At <= Natural (Candidates.Length)
+         then
+            Returned := Natural'Min
+              (Natural (Options.Maximum),
+               Natural (Candidates.Length) - Start_At + 1);
+            for Offset in 0 .. Returned - 1 loop
+               Page.Entries.Append (Candidates (Start_At + Offset).Value);
+            end loop;
+            Page.Is_Truncated :=
+              Start_At + Returned <= Natural (Candidates.Length);
+            if Page.Is_Truncated then
+               Page.Next_Key_Marker := Page.Entries.Last_Element.Key;
+               Page.Next_Version_ID_Marker :=
+                 Page.Entries.Last_Element.Version_ID;
+            end if;
+         end if;
+         Result := Success;
+      end List_Versions;
 
       procedure Start_Multipart
         (Bucket    : String;
@@ -1838,8 +2110,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       end if;
 
       Item.State.Fetch
-        (Source_Bucket, Source_Key, Snapshot, Source_Info, Source_Tags,
-         Result);
+        (Source_Bucket, Source_Key, Current_Version_Selector, Snapshot,
+         Source_Info, Source_Tags, Result);
       if Result = Bucket_Not_Found then
          Result := Source_Bucket_Not_Found;
          return;
@@ -1911,17 +2183,19 @@ package body Flyology.Object_Storage.Backends.Memory is
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
       Result   : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions)
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector)
    is
    begin
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
       then
          Info := Empty_Info;
          Result := Invalid_Request;
       else
-         Item.State.Head (Bucket, Key, Info, Result);
+         Item.State.Head (Bucket, Key, Selector, Info, Result);
          Check_Context (Token, Deadline);
          if Result = Success then
             Result := Evaluate_Read_Conditions
@@ -1941,18 +2215,20 @@ package body Flyology.Object_Storage.Backends.Memory is
       Deadline : Ada.Real_Time.Time;
       Snapshot : out Object_Attribute_Snapshot;
       Result   : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions)
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector)
    is
    begin
       Snapshot := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
       else
          Item.State.Attributes
-           (Bucket, Key, Options, Conditions, Snapshot, Result);
+           (Bucket, Key, Selector, Options, Conditions, Snapshot, Result);
          Check_Context (Token, Deadline);
       end if;
    end Get_Object_Attributes;
@@ -1967,7 +2243,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
       Result    : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions)
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector)
    is
       Data       : Owned_Bytes;
       Resolution : Range_Resolution;
@@ -1980,12 +2257,14 @@ package body Flyology.Object_Storage.Backends.Memory is
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
       then
          Info := Empty_Info;
          Result := Invalid_Request;
          return;
       end if;
-      Item.State.Fetch (Bucket, Key, Data, Info, Ignored_Tags, Result);
+      Item.State.Fetch
+        (Bucket, Key, Selector, Data, Info, Ignored_Tags, Result);
       if Result /= Success then
          return;
       end if;
@@ -2141,15 +2420,17 @@ package body Flyology.Object_Storage.Backends.Memory is
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result : out Status) is
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is
    begin
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
         or else not Valid_Object_Tag_Set (Tags)
+        or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
       else
-         Item.State.Put_Tags (Bucket, Key, Tags, Result);
+         Item.State.Put_Tags (Bucket, Key, Selector, Tags, Result);
       end if;
    end Put_Object_Tags;
 
@@ -2157,16 +2438,18 @@ package body Flyology.Object_Storage.Backends.Memory is
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Tags : out Object_Tag_Set; Result : out Status) is
+      Tags : out Object_Tag_Set; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is
    begin
       Tags := Empty_Object_Tags;
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
       else
-         Item.State.Get_Tags (Bucket, Key, Tags, Result);
+         Item.State.Get_Tags (Bucket, Key, Selector, Tags, Result);
       end if;
    end Get_Object_Tags;
 
@@ -2174,15 +2457,17 @@ package body Flyology.Object_Storage.Backends.Memory is
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result : out Status) is
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector) is
    begin
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
       else
-         Item.State.Delete_Tags (Bucket, Key, Result);
+         Item.State.Delete_Tags (Bucket, Key, Selector, Result);
       end if;
    end Delete_Object_Tags;
 
@@ -2212,6 +2497,33 @@ package body Flyology.Object_Storage.Backends.Memory is
          Page := (others => <>);
          Result := Backend_Unavailable;
    end List_Objects;
+
+   overriding procedure List_Object_Versions
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Versions_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out List_Versions_Page;
+      Result   : out Status)
+   is
+   begin
+      Page := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.List_Versions (Bucket, Options, Page, Result);
+      end if;
+      Check_Context (Token, Deadline);
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Page := (others => <>);
+         Result := Backend_Unavailable;
+   end List_Object_Versions;
 
    overriding procedure Create_Multipart_Upload
      (Item      : in out Store;

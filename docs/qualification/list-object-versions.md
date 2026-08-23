@@ -1,9 +1,10 @@
 # ListObjectVersions client qualification
 
-This record qualifies the bounded synchronous client and strict corpus for
-`ListObjectVersions`. It does not claim object-version creation, a versioned
-backend, an authenticated Flyology server route, or external-server
-interoperability.
+This record qualifies the bounded synchronous client, strict wire corpus, and
+the first bounded in-memory retained-generation slice for
+`ListObjectVersions`. It does not claim delete markers, delimiter pagination,
+durable files/SQLite generations, an authenticated Flyology server route, or
+external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -97,29 +98,42 @@ gate repeats the executable three times.
 
 ## Coverage boundary
 
-The machine ledger records `ListObjectVersions` as `missing / covered /
-missing / covered`. That is deliberate: client and corpus evidence do not
-manufacture a versioned backend or server route. The current implementation
-matrix is therefore not cited as an interoperability oracle for this operation.
-Adding backend or server coverage requires independent version-creation,
-delete-marker, exact-generation, pagination, persistence, crash, and
-black-box wire tests before either cell can be promoted.
+The machine ledger records `ListObjectVersions` as `partial / covered /
+missing / covered`. The memory backend now preserves null and opaque object
+generations across unconfigured, enabled, and suspended transitions; identical
+overwrites receive distinct opaque IDs; current, null, and exact generation
+reads and tags remain isolated; and newest-first paired-cursor pagination is
+independently exercised. Its object capacity counts every retained generation,
+and its protected state is the atomic publication and listing boundary.
+
+The backend cell remains partial because delete markers, delimiter/common-prefix
+pagination, and durable files/SQLite reopen and crash behavior are absent. The
+server cell remains missing. Neither cell can be promoted until shared
+conformance covers version creation, deletion markers, exact generation
+selection, pagination, persistence, crash recovery, and black-box S3 wire
+behavior.
 
 ## Gate evidence
 
-The final warning-strict root gate passed 38/38 AUnit tests with zero failed
+The warning-strict root gate passed 39/39 AUnit tests with zero failed
 assertions or unexpected errors, the 88-case files crash matrix, 320 checksum
 oracle vectors, 210 chunk boundaries, the strict server application corpus,
 and three repetitions of the native/lightweight socket and TLS corpora. The
 SQLite wrapper, catalog, backend, reopen, and upgrade gate passed separately.
 The inventory verifier reported 45 modeled members across seven shapes and 23
 reciprocal vectors; the 116-operation coverage verifier and its negative oracle
-also passed.
+also passed. The new backend-neutral memory corpus covers state transitions,
+unique identical overwrites, null/current/exact reads, per-version tag
+isolation, full ordering, one-entry paired pagination, zero-size pages, and
+malformed or unknown selectors and cursors.
 
-The serialized proof campaign started at 2026-08-23T16:59:10Z with FSF
+The serialized proof campaign started at 2026-08-23T22:07:16Z with FSF
 GNATprove 16.1.0. `./tools/prove.sh` used `--level=0`, output headers, and
 warnings as errors and proved 936/936 checks across all nine manifest units:
 180 flow checks and 756 prover checks, with a maximum of 663 steps. The report
 contains zero warnings, unproved or justified checks, and `pragma Assume`
 statements. The source suppression audit and post-run GNATprove/Why3/SMT
-process audit were clean.
+process audit were clean. GNATdoc generated and exposed the new public API
+without warnings for any added entity or selector parameter; its command still
+reports the eight inherited bounded-channel internal diagnostics already
+tracked outside this slice.

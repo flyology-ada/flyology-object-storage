@@ -5,12 +5,14 @@ with Ada.Streams;
 with Flyology.Cancellation;
 with Flyology.Object_Storage.Tags;
 
---  Provides a bounded concurrent in-memory backend. Byte_Capacity covers
---  retained committed, staged, and in-progress payload buffer capacity;
---  atomic overwrite and multipart assembly therefore require coexistence
---  headroom. It implements the same contract as durable backends and is the
---  reference oracle for conformance tests; capacity exhaustion is an ordinary
---  reported outcome.
+--  Provides a bounded concurrent in-memory backend. Object_Capacity
+--  independently bounds retained object generations (including markers),
+--  uploads, and parts; retaining history therefore consumes object slots.
+--  Byte_Capacity covers retained committed, staged, and in-progress payload
+--  buffer capacity; atomic overwrite and multipart assembly therefore require
+--  coexistence headroom. It implements the same contract as durable backends
+--  and is the reference oracle for conformance tests; capacity exhaustion is
+--  an ordinary reported outcome.
 package Flyology.Object_Storage.Backends.Memory is
 
    type Store
@@ -112,6 +114,8 @@ package Flyology.Object_Storage.Backends.Memory is
       Info               : out Object_Information;
       Result             : out Status);
 
+   --  Read one selected in-memory metadata generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Head_Object
      (Item     : in out Store;
       Bucket   : String;
@@ -120,8 +124,11 @@ package Flyology.Object_Storage.Backends.Memory is
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
       Result   : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions);
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector);
 
+   --  Stream one selected in-memory object generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Get_Object
      (Item      : in out Store;
       Bucket    : String;
@@ -132,8 +139,11 @@ package Flyology.Object_Storage.Backends.Memory is
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
       Result    : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions);
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector);
 
+   --  Read attributes from one selected in-memory generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Get_Object_Attributes
      (Item     : in out Store;
       Bucket   : String;
@@ -143,7 +153,8 @@ package Flyology.Object_Storage.Backends.Memory is
       Deadline : Ada.Real_Time.Time;
       Snapshot : out Object_Attribute_Snapshot;
       Result   : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions);
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector);
 
    overriding procedure Delete_Object
      (Item     : in out Store;
@@ -166,23 +177,32 @@ package Flyology.Object_Storage.Backends.Memory is
       Outcomes : out Delete_Object_Outcomes;
       Result   : out Status);
 
+   --  Replace tags on one selected in-memory generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result : out Status);
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
 
+   --  Read tags from one selected in-memory generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Get_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Tags : out Object_Tag_Set; Result : out Status);
+      Tags : out Object_Tag_Set; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
 
+   --  Clear tags on one selected in-memory generation.
+   --  @param Selector Current, null, or exact generation selection
    overriding procedure Delete_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result : out Status);
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
 
    overriding procedure List_Objects
      (Item     : in out Store;
@@ -191,6 +211,23 @@ package Flyology.Object_Storage.Backends.Memory is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Page     : out List_Page;
+      Result   : out Status);
+
+   --  Return one bounded, atomically ordered in-memory generation page.
+   --  @param Item Memory backend instance
+   --  @param Bucket Bucket name
+   --  @param Options Prefix, delimiter, paired cursor, and page bound
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Page Atomic bounded result page
+   --  @param Result Storage-domain outcome
+   overriding procedure List_Object_Versions
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Versions_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out List_Versions_Page;
       Result   : out Status);
 
    overriding procedure Create_Multipart_Upload
@@ -313,6 +350,12 @@ private
       Used   : Boolean := False;
       Bucket : Ada.Strings.Unbounded.Unbounded_String;
       Key    : Ada.Strings.Unbounded.Unbounded_String;
+      --  Null generations are distinct from generated opaque versions even
+      --  though legacy current-object APIs expose both through the same
+      --  Object_Information.Version string representation.
+      Is_Null_Version : Boolean := True;
+      Is_Delete_Marker : Boolean := False;
+      Publication : Version_Publication_Order := 0;
       Info   : Object_Information;
       Tags   : Object_Tag_Set;
       Completed_Parts : Completed_Object_Part_List;
@@ -381,6 +424,7 @@ private
       procedure Fetch
         (Bucket : String;
          Key    : String;
+         Selector : Version_Selector;
          Data   : out Owned_Bytes;
          Info   : out Object_Information;
          Tags   : out Object_Tag_Set;
@@ -395,11 +439,13 @@ private
       procedure Head
         (Bucket : String;
          Key    : String;
+         Selector : Version_Selector;
          Info   : out Object_Information;
          Result : out Status);
       procedure Attributes
         (Bucket   : String;
          Key      : String;
+         Selector : Version_Selector;
          Options  : Object_Attribute_Options;
          Conditions : Read_Conditions;
          Snapshot : out Object_Attribute_Snapshot;
@@ -411,17 +457,25 @@ private
          Outcomes : in out Delete_Object_Outcomes;
          Result   : out Status);
       procedure Put_Tags
-        (Bucket : String; Key : String; Tags : Object_Tag_Set;
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Tags : Object_Tag_Set;
          Result : out Status);
       procedure Get_Tags
-        (Bucket : String; Key : String; Tags : out Object_Tag_Set;
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Tags : out Object_Tag_Set;
          Result : out Status);
       procedure Delete_Tags
-        (Bucket : String; Key : String; Result : out Status);
+        (Bucket : String; Key : String; Selector : Version_Selector;
+         Result : out Status);
       procedure List
         (Bucket  : String;
          Options : List_Options;
          Page    : out List_Page;
+         Result  : out Status);
+      procedure List_Versions
+        (Bucket  : String;
+         Options : List_Versions_Options;
+         Page    : out List_Versions_Page;
          Result  : out Status);
       procedure Start_Multipart
         (Bucket    : String;
@@ -477,6 +531,9 @@ private
       function Bucket_Index (Name : String) return Natural;
       function Object_Index
         (Bucket : String; Key : String) return Natural;
+      function Selected_Object_Index
+        (Bucket : String; Key : String; Selector : Version_Selector)
+         return Natural;
       function Upload_Index
         (Bucket : String; Key : String; Upload_ID : String) return Natural;
       function Part_Index
@@ -491,6 +548,9 @@ private
       Bytes   : Byte_Count := 0;
       Reserved_Bytes : Byte_Count := 0;
       Next_Upload : Long_Long_Integer := 0;
+      --  Every retained generation receives one strictly increasing order.
+      --  Exhaustion fails closed rather than reusing a version identity.
+      Next_Version : Version_Publication_Order := 0;
    end Memory_State;
 
    type Store

@@ -2899,7 +2899,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
       Result   : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions)
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector)
    is
       File : SIO.File_Type;
       Body_At : SIO.Positive_Count;
@@ -2911,8 +2912,12 @@ package body Flyology.Object_Storage.Backends.Files is
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
+         return;
+      elsif Selector.Kind /= Current_Version then
+         Result := Not_Implemented;
          return;
       end if;
       Acquire_Publication (Item, Token, Deadline);
@@ -2960,7 +2965,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Deadline : Ada.Real_Time.Time;
       Snapshot : out Object_Attribute_Snapshot;
       Result   : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions)
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector)
    is
       File    : SIO.File_Type;
       Body_At : SIO.Positive_Count;
@@ -2973,8 +2979,12 @@ package body Flyology.Object_Storage.Backends.Files is
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
+         return;
+      elsif Selector.Kind /= Current_Version then
+         Result := Not_Implemented;
          return;
       end if;
       Acquire_Publication (Item, Token, Deadline);
@@ -3053,7 +3063,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Deadline  : Ada.Real_Time.Time;
       Info      : out Object_Information;
       Result    : out Status;
-      Conditions : Read_Conditions := Default_Read_Conditions)
+      Conditions : Read_Conditions := Default_Read_Conditions;
+      Selector : Version_Selector := Current_Version_Selector)
    is
       File      : SIO.File_Type;
       Body_At   : SIO.Positive_Count;
@@ -3068,8 +3079,13 @@ package body Flyology.Object_Storage.Backends.Files is
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
-      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key) then
+      if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
+      then
          Result := Invalid_Request;
+         return;
+      elsif Selector.Kind /= Current_Version then
+         Result := Not_Implemented;
          return;
       end if;
       Acquire_Publication (Item, Token, Deadline);
@@ -3383,7 +3399,8 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result : out Status)
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
    is
       Path      : constant String := Object_Path (Item, Bucket, Key);
       Source    : SIO.File_Type;
@@ -3407,8 +3424,12 @@ package body Flyology.Object_Storage.Backends.Files is
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
         or else not Valid_Object_Tag_Set (Tags)
+        or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
+         return;
+      elsif Selector.Kind /= Current_Version then
+         Result := Not_Implemented;
          return;
       end if;
       Acquire_Publication (Item, Token, Deadline);
@@ -3526,7 +3547,8 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Tags : out Object_Tag_Set; Result : out Status)
+      Tags : out Object_Tag_Set; Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
    is
       Path    : constant String := Object_Path (Item, Bucket, Key);
       File    : SIO.File_Type;
@@ -3540,8 +3562,12 @@ package body Flyology.Object_Storage.Backends.Files is
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+        or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
+         return;
+      elsif Selector.Kind /= Current_Version then
+         Result := Not_Implemented;
          return;
       end if;
       Acquire_Publication (Item, Token, Deadline);
@@ -3596,11 +3622,13 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Result : out Status)
+      Result : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
    is
    begin
       Put_Object_Tags
-        (Item, Bucket, Key, Empty_Object_Tags, Token, Deadline, Result);
+        (Item, Bucket, Key, Empty_Object_Tags, Token, Deadline, Result,
+         Selector);
    end Delete_Object_Tags;
 
    overriding procedure List_Objects
@@ -3743,6 +3771,26 @@ package body Flyology.Object_Storage.Backends.Files is
          Page := (others => <>);
          Result := Backend_Unavailable;
    end List_Objects;
+
+   overriding procedure List_Object_Versions
+     (Item     : in out Store;
+      Bucket   : String;
+      Options  : List_Versions_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Page     : out List_Versions_Page;
+      Result   : out Status)
+   is
+      pragma Unreferenced (Item, Options);
+   begin
+      Page := (others => <>);
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Result := Not_Implemented;
+      end if;
+   end List_Object_Versions;
 
    overriding procedure Create_Multipart_Upload
      (Item      : in out Store;

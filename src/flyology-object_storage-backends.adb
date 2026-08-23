@@ -1,5 +1,20 @@
 package body Flyology.Object_Storage.Backends is
 
+   function Valid_Version_Selector
+     (Selector : Version_Selector) return Boolean
+   is
+      ID : constant String :=
+        Ada.Strings.Unbounded.To_String (Selector.ID);
+   begin
+      case Selector.Kind is
+         when Current_Version | Null_Version =>
+            return ID'Length = 0;
+         when Exact_Version =>
+            return ID'Length in 1 .. Maximum_Version_ID_Length
+              and then ID /= "null";
+      end case;
+   end Valid_Version_Selector;
+
    procedure Put_Multipart_Part
      (Item        : in out Backend'Class;
       Bucket      : String;
