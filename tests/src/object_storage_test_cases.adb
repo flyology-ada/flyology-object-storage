@@ -1985,6 +1985,32 @@ package body Object_Storage_Test_Cases is
 
       declare
          Metadata : Object_Metadata;
+         Content_Type : constant String := "text/plain";
+         Cache_Control : constant String := "max-age=0";
+         Content_Language_Bytes : constant Positive :=
+           Maximum_System_Metadata_Bytes -
+           (12 + Content_Type'Length +
+            13 + Cache_Control'Length +
+            16);
+      begin
+         Metadata.Cache_Control :=
+           (Is_Set => True,
+            Value => US.To_Unbounded_String (Cache_Control));
+         Metadata.Content_Language :=
+           (Is_Set => True,
+            Value => US.To_Unbounded_String
+              (String'(1 .. Content_Language_Bytes => 'x')));
+         Assert
+           (Valid_Object_Metadata (Metadata, Content_Type),
+            "cumulative exact system metadata budget was rejected");
+         US.Append (Metadata.Content_Language.Value, "x");
+         Assert
+           (not Valid_Object_Metadata (Metadata, Content_Type),
+            "cumulative system metadata budget +1 was accepted");
+      end;
+
+      declare
+         Metadata : Object_Metadata;
       begin
          Metadata.User.Length := 1;
          Metadata.User.Items (1) :=
@@ -5433,6 +5459,98 @@ package body Object_Storage_Test_Cases is
            (not IMF_Dates.Parse
               ("Fri, 31 Dec 9999 23:59:60 GMT").Valid,
             "terminal year-9999 leap second exceeded typed Expires range");
+      end;
+
+      declare
+         subtype Canonical_Year is Positive range 1 .. 9_999;
+         subtype Canonical_Month is Positive range 1 .. 12;
+         type Year_Vector is array (Positive range <>) of Canonical_Year;
+         Pattern_Years : constant Year_Vector :=
+           [1, 4, 100, 400, 1_900, 1_960, 1_970, 2_000, 2_100,
+            9_996, 9_999];
+
+         function Leap (Year : Canonical_Year) return Boolean is
+           (Year mod 4 = 0
+            and then (Year mod 100 /= 0 or else Year mod 400 = 0));
+
+         function Days_In_Year (Year : Canonical_Year) return Positive is
+           (if Leap (Year) then 366 else 365);
+
+         function Days_In_Month
+           (Year : Canonical_Year; Month : Canonical_Month) return Positive is
+           (case Month is
+              when 2 => (if Leap (Year) then 29 else 28),
+              when 4 | 6 | 9 | 11 => 30,
+              when others => 31);
+
+         function Days_Before_Year (Year : Canonical_Year) return Natural is
+            Previous : constant Natural := Year - 1;
+         begin
+            return
+              365 * Previous + Previous / 4 - Previous / 100 +
+              Previous / 400;
+         end Days_Before_Year;
+
+         procedure Require_Round_Trip
+           (Value : Metadata_Time; Context : String)
+         is
+            Rendered : constant String := IMF_Dates.Image (Value);
+            Parsed : constant IMF_Dates.Metadata_Time_Result :=
+              IMF_Dates.Parse (Rendered);
+         begin
+            Assert
+              (Rendered'Length = 29
+               and then Parsed.Valid
+               and then Parsed.Value = Value,
+               "canonical Expires round trip failed at " & Context);
+         end Require_Round_Trip;
+
+         Year_Start : Long_Long_Integer :=
+           Long_Long_Integer (Metadata_Time'First);
+      begin
+         for Year in Canonical_Year loop
+            declare
+               Span : constant Long_Long_Integer :=
+                 Long_Long_Integer (Days_In_Year (Year)) * 86_400;
+            begin
+               Require_Round_Trip
+                 (Metadata_Time (Year_Start), "year start" & Year'Image);
+               Require_Round_Trip
+                 (Metadata_Time (Year_Start + Span / 2),
+                  "year midpoint" & Year'Image);
+               Require_Round_Trip
+                 (Metadata_Time (Year_Start + Span - 1),
+                  "year end" & Year'Image);
+               Year_Start := Year_Start + Span;
+            end;
+         end loop;
+         Assert
+           (Year_Start = Long_Long_Integer (Metadata_Time'Last) + 1,
+            "canonical Expires patterned year sweep ended at wrong bound");
+
+         for Year of Pattern_Years loop
+            declare
+               Month_Start : Long_Long_Integer :=
+                 Long_Long_Integer (Metadata_Time'First) +
+                 Long_Long_Integer (Days_Before_Year (Year)) * 86_400;
+            begin
+               for Month in Canonical_Month loop
+                  declare
+                     Span : constant Long_Long_Integer :=
+                       Long_Long_Integer (Days_In_Month (Year, Month)) *
+                       86_400;
+                  begin
+                     Require_Round_Trip
+                       (Metadata_Time (Month_Start),
+                        "month start" & Year'Image & Month'Image);
+                     Require_Round_Trip
+                       (Metadata_Time (Month_Start + Span - 1),
+                        "month end" & Year'Image & Month'Image);
+                     Month_Start := Month_Start + Span;
+                  end;
+               end loop;
+            end;
+         end loop;
       end;
 
       Assert
