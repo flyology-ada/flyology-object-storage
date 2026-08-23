@@ -1,4 +1,8 @@
 operation	direction	shape	ordinal	member	member_shape	wire_location	required	vector_ids
+GetBucketAbac	request	222	1	Bucket	60	uri-label	true	GBC-MD-001,GBC-RQ-001
+GetBucketAbac	request	222	2	ExpectedBucketOwner	15	header	false	GBC-MD-001,GBC-RQ-002
+GetBucketAbac	output	221	1	AbacStatus	1	body	false	GBC-MD-001,GBC-RS-001,GBC-RS-003,GBC-RS-006
+GetBucketAbac	nested	1	1	Status	48	body	false	GBC-MD-001,GBC-RS-001,GBC-RS-003
 GetBucketAccelerateConfiguration	request	224	1	Bucket	60	uri-label	true	GBC-MD-001,GBC-RQ-001
 GetBucketAccelerateConfiguration	request	224	2	ExpectedBucketOwner	15	header	false	GBC-MD-001,GBC-RQ-002
 GetBucketAccelerateConfiguration	request	224	3	RequestPayer	599	header	false	GBC-MD-001,GBC-RQ-003

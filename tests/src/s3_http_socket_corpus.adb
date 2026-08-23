@@ -80,6 +80,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Buckets.Delete_Outcome_Kind;
    use type Low_Level.Delete_Bucket_CORS_Outcome_Kind;
    use type Low_Level.Get_Bucket_Control_Outcome_Kind;
+   use type Low_Level.Put_Bucket_Control_Outcome_Kind;
+   use type Bucket_Controls.Abac_Status;
    use type Bucket_Controls.Accelerate_Status;
    use type Bucket_Controls.Payer;
    use type Tags.Tag_Vectors.Vector;
@@ -3094,6 +3096,35 @@ procedure S3_HTTP_Socket_Corpus is
                "<RestrictPublicBuckets>false</RestrictPublicBuckets>" &
                "</PublicAccessBlockConfiguration>"),
             "GET", "/example-bucket?publicAccessBlock",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AbacStatus><Status>Enabled</Status></AbacStatus>"),
+            "GET", "/example-bucket?abac",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT", "/example-bucket?abac",
+            Expected_Body_Root => "<AbacStatus",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket?accelerate",
+            Expected_Body_Root => "<AccelerateConfiguration",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket?requestPayment",
+            Expected_Body_Root => "<RequestPaymentConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket?publicAccessBlock",
+            Expected_Body_Root => "<PublicAccessBlockConfiguration",
+            Expected_Content_MD5 => "*",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
@@ -7447,6 +7478,53 @@ procedure S3_HTTP_Socket_Corpus is
             then
                raise Program_Error with
                  "GetPublicAccessBlock socket mismatch";
+            end if;
+         end;
+         declare
+            Result : constant Low_Level.Get_Bucket_Abac_Outcome :=
+              Buckets.Get_ABAC
+                (HTTP, Origin, "example-bucket", Identity,
+                 Expected_Bucket_Owner => "123456789012", Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Configuration /= Bucket_Controls.Abac_Enabled
+            then
+               raise Program_Error with "GetBucketAbac socket mismatch";
+            end if;
+         end;
+         declare
+            Abac : constant Low_Level.Put_Bucket_Control_Outcome :=
+              Buckets.Set_ABAC
+                (HTTP, Origin, "example-bucket", Bucket_Controls.Abac_Enabled,
+                 Identity, Checksum_Algorithm => "CRC32",
+                 Expected_Bucket_Owner => "123456789012", Timeout => 5.0);
+            Accelerate : constant Low_Level.Put_Bucket_Control_Outcome :=
+              Buckets.Set_Accelerate_Configuration
+                (HTTP, Origin, "example-bucket",
+                 Bucket_Controls.Accelerate_Suspended, Identity,
+                 Expected_Bucket_Owner => "123456789012", Timeout => 5.0);
+            Payment : constant Low_Level.Put_Bucket_Control_Outcome :=
+              Buckets.Set_Request_Payment
+                (HTTP, Origin, "example-bucket", Bucket_Controls.Bucket_Owner,
+                 Identity, Expected_Bucket_Owner => "123456789012",
+                 Timeout => 5.0);
+            Public_Access : constant Low_Level.Put_Bucket_Control_Outcome :=
+              Buckets.Set_Public_Access_Block
+                (HTTP, Origin, "example-bucket",
+                 (Block_Public_ACLs => (Is_Set => True, Value => True),
+                  Ignore_Public_ACLs => (Is_Set => True, Value => False),
+                  Block_Public_Policy => (Is_Set => True, Value => True),
+                  Restrict_Public_Buckets =>
+                    (Is_Set => True, Value => False)),
+                 Identity, Expected_Bucket_Owner => "123456789012",
+                 Timeout => 5.0);
+         begin
+            if Abac.Kind /= Low_Level.Bucket_Control_Updated
+              or else Accelerate.Kind /= Low_Level.Bucket_Control_Updated
+              or else Payment.Kind /= Low_Level.Bucket_Control_Updated
+              or else Public_Access.Kind /= Low_Level.Bucket_Control_Updated
+            then
+               raise Program_Error with "bucket-control PUT socket mismatch";
             end if;
          end;
          declare

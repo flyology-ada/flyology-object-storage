@@ -5,7 +5,8 @@ package body Flyology.Object_Storage.S3.Bucket_Controls is
    package US renames Ada.Strings.Unbounded;
 
    type Document_Kind is
-     (Accelerate_Document,
+     (Abac_Document,
+      Accelerate_Document,
       Policy_Status_Document,
       Request_Payment_Document,
       Public_Access_Block_Document);
@@ -29,6 +30,10 @@ package body Flyology.Object_Storage.S3.Bucket_Controls is
       Seen       : Field_Seen_Array := (others => False);
       Text_Value : US.Unbounded_String;
       Root_Seen  : Boolean := False;
+      --  Parser-state representation: absent is the pinned optional-member
+      --  sentinel until an exact Status event arrives; this affects decoded
+      --  presence, not provider policy.
+      Abac       : Abac_Status := Abac_Status_Absent;
       Accelerate : Accelerate_Status := Accelerate_Status_Absent;
       Is_Public  : Optional_Boolean;
       Payment    : Payer := Payer_Absent;
@@ -49,8 +54,12 @@ package body Flyology.Object_Storage.S3.Bucket_Controls is
    --  External REST/XML contract from the pinned generated S3 model: these
    --  root, member, enumeration, boolean, and namespace spellings are exact;
    --  changing them changes provider wire compatibility.
+   Namespace_Attribute : constant String :=
+     " xmlns=""http://s3.amazonaws.com/doc/2006-03-01/""";
+
    function Root_Name (Kind : Document_Kind) return String is
      (case Kind is
+         when Abac_Document => "AbacStatus",
          when Accelerate_Document => "AccelerateConfiguration",
          when Policy_Status_Document => "PolicyStatus",
          when Request_Payment_Document => "RequestPaymentConfiguration",
@@ -89,6 +98,8 @@ package body Flyology.Object_Storage.S3.Bucket_Controls is
    is
    begin
       case Kind is
+         when Abac_Document =>
+            return (if Local_Name = "Status" then Status_Field else No_Field);
          when Accelerate_Document =>
             return (if Local_Name = "Status" then Status_Field else No_Field);
          when Policy_Status_Document =>
@@ -173,14 +184,29 @@ package body Flyology.Object_Storage.S3.Bucket_Controls is
          end if;
          case Item.Field is
             when Status_Field =>
-               if Value = "Enabled" then
-                  Item.Accelerate := Accelerate_Enabled;
-               elsif Value = "Suspended" then
-                  Item.Accelerate := Accelerate_Suspended;
-               else
-                  raise Malformed_Configuration with
-                    "invalid accelerate status";
-               end if;
+               case Item.Kind is
+                  when Abac_Document =>
+                     if Value = "Enabled" then
+                        Item.Abac := Abac_Enabled;
+                     elsif Value = "Disabled" then
+                        Item.Abac := Abac_Disabled;
+                     else
+                        raise Malformed_Configuration with
+                          "invalid ABAC status";
+                     end if;
+                  when Accelerate_Document =>
+                     if Value = "Enabled" then
+                        Item.Accelerate := Accelerate_Enabled;
+                     elsif Value = "Suspended" then
+                        Item.Accelerate := Accelerate_Suspended;
+                     else
+                        raise Malformed_Configuration with
+                          "invalid accelerate status";
+                     end if;
+                  when others =>
+                     raise Malformed_Configuration with
+                       "status is not valid for bucket-control document";
+               end case;
             when Is_Public_Field =>
                Item.Is_Public := Parse_Boolean (Value);
             when Payer_Field =>
@@ -242,6 +268,17 @@ package body Flyology.Object_Storage.S3.Bucket_Controls is
       return Handler.Accelerate;
    end Parse_Accelerate;
 
+   function Parse_Abac
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Abac_Status
+   is
+      Handler : aliased Configuration_Handler (Abac_Document);
+   begin
+      Parse (Document, Limits, Handler);
+      return Handler.Abac;
+   end Parse_Abac;
+
    function Parse_Policy_Status
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
@@ -274,5 +311,60 @@ package body Flyology.Object_Storage.S3.Bucket_Controls is
       Parse (Document, Limits, Handler);
       return Handler.Public_Access;
    end Parse_Public_Access_Block;
+
+   function Serialize_Abac (Value : Abac_Status) return String is
+      Status : constant String :=
+        (case Value is
+            when Abac_Status_Absent => "",
+            when Abac_Enabled => "<Status>Enabled</Status>",
+            when Abac_Disabled => "<Status>Disabled</Status>");
+   begin
+      return "<AbacStatus" & Namespace_Attribute & ">" & Status &
+        "</AbacStatus>";
+   end Serialize_Abac;
+
+   function Serialize_Accelerate (Value : Accelerate_Status) return String is
+      Status : constant String :=
+        (case Value is
+            when Accelerate_Status_Absent => "",
+            when Accelerate_Enabled => "<Status>Enabled</Status>",
+            when Accelerate_Suspended => "<Status>Suspended</Status>");
+   begin
+      return "<AccelerateConfiguration" & Namespace_Attribute & ">" & Status &
+        "</AccelerateConfiguration>";
+   end Serialize_Accelerate;
+
+   function Serialize_Request_Payment (Value : Payer) return String is
+      Payer_Text : constant String :=
+        (case Value is
+            when Payer_Absent => "",
+            when Requester => "Requester",
+            when Bucket_Owner => "BucketOwner");
+   begin
+      if Value = Payer_Absent then
+         raise Malformed_Configuration with "payer is required";
+      end if;
+      return "<RequestPaymentConfiguration" & Namespace_Attribute & ">" &
+        "<Payer>" & Payer_Text & "</Payer>" &
+        "</RequestPaymentConfiguration>";
+   end Serialize_Request_Payment;
+
+   function Boolean_Element
+     (Name : String; Value : Optional_Boolean) return String is
+     (if not Value.Is_Set then ""
+      else "<" & Name & ">" & (if Value.Value then "true" else "false") &
+        "</" & Name & ">");
+
+   function Serialize_Public_Access_Block
+     (Value : Public_Access_Block_Configuration) return String is
+   begin
+      return "<PublicAccessBlockConfiguration" & Namespace_Attribute & ">" &
+        Boolean_Element ("BlockPublicAcls", Value.Block_Public_ACLs) &
+        Boolean_Element ("IgnorePublicAcls", Value.Ignore_Public_ACLs) &
+        Boolean_Element ("BlockPublicPolicy", Value.Block_Public_Policy) &
+        Boolean_Element
+          ("RestrictPublicBuckets", Value.Restrict_Public_Buckets) &
+        "</PublicAccessBlockConfiguration>";
+   end Serialize_Public_Access_Block;
 
 end Flyology.Object_Storage.S3.Bucket_Controls;

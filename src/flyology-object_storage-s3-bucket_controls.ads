@@ -13,6 +13,12 @@ package Flyology.Object_Storage.S3.Bucket_Controls is
    type Accelerate_Status is
      (Accelerate_Status_Absent, Accelerate_Enabled, Accelerate_Suspended);
 
+   --  Pinned S3 model contract for the optional Get/PutBucketAbac Status.
+   --  @enum Abac_Status_Absent Status member was absent
+   --  @enum Abac_Enabled Exact external Enabled value
+   --  @enum Abac_Disabled Exact external Disabled value
+   type Abac_Status is (Abac_Status_Absent, Abac_Enabled, Abac_Disabled);
+
    --  Pinned S3 model contract: Payer is optional and has exactly the two
    --  external values below; changing the set changes response compatibility.
    --  @enum Payer_Absent Payer member was absent
@@ -54,6 +60,16 @@ package Flyology.Object_Storage.S3.Bucket_Controls is
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Accelerate_Status;
 
+   --  Parse one exact GetBucketAbac response document.
+   --  @param Document Complete same-response XML payload
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Presence-preserving ABAC status
+   --  @exception Malformed_Configuration Document violates the exact model
+   function Parse_Abac
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Abac_Status;
+
    --  Parse one exact GetBucketPolicyStatus response document. Absence of
    --  IsPublic is preserved rather than treated as false.
    --  @param Document Complete same-response XML payload
@@ -86,5 +102,19 @@ package Flyology.Object_Storage.S3.Bucket_Controls is
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Public_Access_Block_Configuration;
+
+   --  Serialize one exact PutBucketAbac request document.
+   function Serialize_Abac (Value : Abac_Status) return String;
+
+   --  Serialize one exact PutBucketAccelerateConfiguration request document.
+   function Serialize_Accelerate (Value : Accelerate_Status) return String;
+
+   --  Serialize one exact PutBucketRequestPayment request document.
+   --  @exception Malformed_Configuration Payer is absent
+   function Serialize_Request_Payment (Value : Payer) return String;
+
+   --  Serialize one exact PutPublicAccessBlock request document.
+   function Serialize_Public_Access_Block
+     (Value : Public_Access_Block_Configuration) return String;
 
 end Flyology.Object_Storage.S3.Bucket_Controls;

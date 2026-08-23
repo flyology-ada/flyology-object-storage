@@ -1604,6 +1604,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String; Parameters : Get_Bucket_Accelerate_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
+   --  Prepare one exactly bound GetBucketAbac request.
+   function Prepare_Get_Bucket_Abac
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
    --  Prepare one exactly bound GetBucketPolicy request.
    function Prepare_Get_Bucket_Policy
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -1651,6 +1657,23 @@ package Flyology.Object_Storage.Client.Low_Level is
          when Bucket_Control_Found =>
             Configuration : S3.Bucket_Controls.Accelerate_Status;
             Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+         when Get_Bucket_Control_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Presence-preserving GetBucketAbac outcome.
+   --  @field Status Physical HTTP status
+   --  @field Configuration Optional modeled ABAC status on success
+   --  @field Error Structured S3 error on rejection
+   type Get_Bucket_Abac_Outcome
+     (Kind : Get_Bucket_Control_Outcome_Kind :=
+       Get_Bucket_Control_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Control_Found =>
+            Configuration : S3.Bucket_Controls.Abac_Status;
          when Get_Bucket_Control_Rejected =>
             Error : S3.Errors.Error_Response;
       end case;
@@ -1732,6 +1755,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_Charged : String := "";
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Accelerate_Outcome;
+   --  Decode one complete bounded GetBucketAbac XML response.
+   function Decode_Get_Bucket_Abac_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Abac_Outcome;
    --  Decode one complete bounded raw GetBucketPolicy response.
    function Decode_Get_Bucket_Policy_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
@@ -1764,6 +1793,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Accelerate_Outcome;
+   --  Execute one exact prepared GetBucketAbac request.
+   function Execute_Get_Bucket_Abac
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Abac_Outcome;
    --  Execute one exact prepared GetBucketPolicy request.
    function Execute_Get_Bucket_Policy
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -1792,6 +1828,108 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Public_Access_Block_Outcome;
+
+   --  Shared physical controls for small bucket-configuration PUTs.
+   --  Empty Content_MD5 requests automatic generation where the model admits
+   --  that member; accelerate rejects a supplied value because it has none.
+   --  @field Content_MD5 Optional exact base64 MD5 override
+   --  @field Checksum_Algorithm Optional one of the ten modeled algorithms
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Put_Bucket_Control_Parameters is record
+      Content_MD5           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare one exact PutBucketAbac request.
+   function Prepare_Put_Bucket_Abac
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Value : S3.Bucket_Controls.Abac_Status;
+      Parameters : Put_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+
+   --  Prepare one exact PutBucketAccelerateConfiguration request.
+   function Prepare_Put_Bucket_Accelerate_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Value : S3.Bucket_Controls.Accelerate_Status;
+      Parameters : Put_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+
+   --  Prepare one exact PutBucketRequestPayment request.
+   function Prepare_Put_Bucket_Request_Payment
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Value : S3.Bucket_Controls.Payer;
+      Parameters : Put_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+
+   --  Prepare one exact PutPublicAccessBlock request.
+   function Prepare_Put_Public_Access_Block
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Bucket_Controls.Public_Access_Block_Configuration;
+      Parameters : Put_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+
+   type Put_Bucket_Control_Outcome_Kind is
+     (Bucket_Control_Updated, Put_Bucket_Control_Rejected);
+
+   --  Terminal result shared by body-only bucket-control updates.
+   --  Existing API-policy classification: 500 is the aggregate sentinel;
+   --  decoded outcomes preserve the physical status.
+   --  @field Status Physical HTTP status
+   --  @field Error Structured S3 error on rejection
+   type Put_Bucket_Control_Outcome
+     (Kind : Put_Bucket_Control_Outcome_Kind :=
+       Put_Bucket_Control_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Control_Updated =>
+            null;
+         when Put_Bucket_Control_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode one bounded bodyless bucket-control PUT response.
+   function Decode_Put_Bucket_Control_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome;
+
+   --  Execute one exact prepared PutBucketAbac request.
+   function Execute_Put_Bucket_Abac
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome;
+   --  Execute one exact prepared PutBucketAccelerateConfiguration request.
+   function Execute_Put_Bucket_Accelerate_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome;
+   --  Execute one exact prepared PutBucketRequestPayment request.
+   function Execute_Put_Bucket_Request_Payment
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome;
+   --  Execute one exact prepared PutPublicAccessBlock request.
+   function Execute_Put_Public_Access_Block
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome;
 
    --  Every input member in the pinned DeleteObject request shape.
    type Delete_Object_Parameters is record
@@ -2838,6 +2976,7 @@ private
       Delete_Bucket_Operation,
       Delete_Bucket_Configuration_Operation,
       Get_Bucket_Control_Operation,
+      Put_Bucket_Control_Operation,
       Delete_Object_Operation,
       Delete_Objects_Operation,
       Create_Multipart_Operation,

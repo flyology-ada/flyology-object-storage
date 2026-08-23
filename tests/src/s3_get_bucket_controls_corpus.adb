@@ -14,6 +14,7 @@ procedure S3_Get_Bucket_Controls_Corpus is
    package XML renames Flyology.Object_Storage.S3.XML;
    package US renames Ada.Strings.Unbounded;
    use type Controls.Accelerate_Status;
+   use type Controls.Abac_Status;
    use type Controls.Payer;
    use type Low_Level.Addressing_Style;
    use type Low_Level.Get_Bucket_Control_Outcome_Kind;
@@ -40,7 +41,8 @@ procedure S3_Get_Bucket_Controls_Corpus is
    Maximum_Header_Text_Bytes : constant Positive := 8_192;
 
    type Response_Kind is
-     (Accelerate_Response,
+     (Abac_Response,
+      Accelerate_Response,
       Policy_Response,
       Policy_Status_Response,
       Request_Payment_Response,
@@ -55,6 +57,7 @@ procedure S3_Get_Bucket_Controls_Corpus is
 
    function Expected_Target (Kind : Response_Kind) return String is
      (case Kind is
+         when Abac_Response => "/?abac",
          when Accelerate_Response => "/?accelerate",
          when Policy_Response => "/?policy",
          when Policy_Status_Response => "/?policyStatus",
@@ -75,6 +78,10 @@ procedure S3_Get_Bucket_Controls_Corpus is
         (Expected_Bucket_Owner => US.To_Unbounded_String (Owner_Value));
    begin
       case Kind is
+         when Abac_Response =>
+            return Low_Level.Prepare_Get_Bucket_Abac
+              (Request_Origin, Style, "example-bucket", Common,
+               Identity, "us-east-1", "20130524T000000Z");
          when Accelerate_Response =>
             return Low_Level.Prepare_Get_Bucket_Accelerate_Configuration
               (Request_Origin, Style, "example-bucket",
@@ -116,6 +123,15 @@ procedure S3_Get_Bucket_Controls_Corpus is
    begin
       begin
          case Kind is
+            when Abac_Response =>
+               declare
+                  Ignored : constant Low_Level.Get_Bucket_Abac_Outcome :=
+                    Low_Level.Decode_Get_Bucket_Abac_Response
+                      (200, Payload, Limits => Limits);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
             when Accelerate_Response =>
                declare
                   Ignored : constant Low_Level.Get_Bucket_Accelerate_Outcome :=
@@ -236,6 +252,11 @@ begin
    end loop;
 
    declare
+      Abac : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Get_Bucket_Abac
+          (Origin, Low_Level.Path_Style, "example-bucket",
+           (Expected_Bucket_Owner => US.To_Unbounded_String (Owner)),
+           Identity, "us-east-1", "20130524T000000Z");
       Accelerate : constant Low_Level.Prepared_Request :=
         Low_Level.Prepare_Get_Bucket_Accelerate_Configuration
           (Origin, Low_Level.Path_Style, "example-bucket",
@@ -264,7 +285,8 @@ begin
            Identity, "us-east-1", "20130524T000000Z");
    begin
       Require
-        (Low_Level.Target (Accelerate) = "/example-bucket?accelerate"
+        (Low_Level.Target (Abac) = "/example-bucket?abac"
+         and then Low_Level.Target (Accelerate) = "/example-bucket?accelerate"
          and then Low_Level.Target (Policy) = "/example-bucket?policy"
          and then Low_Level.Target (Policy_Status) =
            "/example-bucket?policyStatus"
@@ -304,6 +326,9 @@ begin
    end;
 
    declare
+      Abac_XML : constant String :=
+        "<AbacStatus" & Namespace & ">" &
+        "<Status>Enabled</Status></AbacStatus>";
       Accelerate_XML : constant String :=
         "<AccelerateConfiguration" & Namespace & ">" &
         "<Status>Enabled</Status></AccelerateConfiguration>";
@@ -320,6 +345,8 @@ begin
         "<BlockPublicPolicy>true</BlockPublicPolicy>" &
         "<RestrictPublicBuckets>false</RestrictPublicBuckets>" &
         "</PublicAccessBlockConfiguration>";
+      Abac : constant Low_Level.Get_Bucket_Abac_Outcome :=
+        Low_Level.Decode_Get_Bucket_Abac_Response (200, Abac_XML);
       Accelerate : constant Low_Level.Get_Bucket_Accelerate_Outcome :=
         Low_Level.Decode_Get_Bucket_Accelerate_Response
           (200, Accelerate_XML, Request_Charged => "requester");
@@ -336,6 +363,10 @@ begin
         Low_Level.Decode_Get_Public_Access_Block_Response
           (200, Public_Access_XML);
    begin
+      Require
+        (Abac.Kind = Low_Level.Bucket_Control_Found
+         and then Abac.Configuration = Controls.Abac_Enabled,
+         "ABAC response mismatch");
       Require
         (Accelerate.Kind = Low_Level.Bucket_Control_Found
          and then Accelerate.Configuration = Controls.Accelerate_Enabled
@@ -371,6 +402,9 @@ begin
    end;
 
    declare
+      Disabled : constant Low_Level.Get_Bucket_Abac_Outcome :=
+        Low_Level.Decode_Get_Bucket_Abac_Response
+          (200, "<AbacStatus><Status>Disabled</Status></AbacStatus>");
       Suspended : constant Low_Level.Get_Bucket_Accelerate_Outcome :=
         Low_Level.Decode_Get_Bucket_Accelerate_Response
           (200, "<AccelerateConfiguration><Status>Suspended</Status>" &
@@ -381,7 +415,8 @@ begin
              "</RequestPaymentConfiguration>");
    begin
       Require
-        (Suspended.Configuration = Controls.Accelerate_Suspended
+        (Disabled.Configuration = Controls.Abac_Disabled
+         and then Suspended.Configuration = Controls.Accelerate_Suspended
          and then Bucket_Owner.Payment = Controls.Bucket_Owner,
          "secondary bucket-control enum values mismatch");
    end;
@@ -399,6 +434,8 @@ begin
    --  model. An exact empty 200 therefore maps to presence-free defaults;
    --  nonempty whitespace remains a malformed XML document.
    declare
+      Abac : constant Low_Level.Get_Bucket_Abac_Outcome :=
+        Low_Level.Decode_Get_Bucket_Abac_Response (200, "");
       Accelerate : constant Low_Level.Get_Bucket_Accelerate_Outcome :=
         Low_Level.Decode_Get_Bucket_Accelerate_Response (200, "");
       Policy_Status : constant Low_Level.Get_Bucket_Policy_Status_Outcome :=
@@ -409,7 +446,8 @@ begin
         Low_Level.Decode_Get_Public_Access_Block_Response (200, "");
    begin
       Require
-        (Accelerate.Configuration = Controls.Accelerate_Status_Absent
+        (Abac.Configuration = Controls.Abac_Status_Absent
+         and then Accelerate.Configuration = Controls.Accelerate_Status_Absent
          and then not Policy_Status.Is_Public.Is_Set
          and then Payment.Payment = Controls.Payer_Absent
          and then not Public_Access.Configuration.Block_Public_ACLs.Is_Set
@@ -419,6 +457,9 @@ begin
            Public_Access.Configuration.Restrict_Public_Buckets.Is_Set,
          "absent bucket-control success members were not preserved");
    end;
+   Expect_Invalid_Response
+     (Abac_Response,
+      "<AbacStatus><Status>Suspended</Status></AbacStatus>");
    Expect_Invalid_Response
      (Accelerate_Response,
       "<AccelerateConfiguration><Status>Enabled</Status>" &

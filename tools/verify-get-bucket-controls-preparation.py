@@ -27,6 +27,8 @@ EXPECTED_SHA256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcd
 # Each tuple records the reviewed pinned-model projection and exact public API
 # binding. Shape numbers are persisted corpus identifiers, not product limits.
 EXPECTED = [
+    ("GetBucketAbac", "Get_Bucket_Abac", 222, 221, "/{Bucket}?abac",
+     "Prepare_Get_Bucket_Abac", "Execute_Get_Bucket_Abac", "Get_ABAC"),
     ("GetBucketAccelerateConfiguration", "Get_Bucket_Accelerate_Configuration",
      224, 223, "/{Bucket}?accelerate",
      "Prepare_Get_Bucket_Accelerate_Configuration",
@@ -49,6 +51,11 @@ EXPECTED = [
 # Operation ownership is repeated for shared nested shapes so the reciprocal
 # corpus graph proves which public result exposes each generated member.
 EXPECTED_MEMBERS = [
+    ("GetBucketAbac", "request", 222, 1, "Bucket", 60, "uri-label", "true"),
+    ("GetBucketAbac", "request", 222, 2, "ExpectedBucketOwner", 15,
+     "header", "false"),
+    ("GetBucketAbac", "output", 221, 1, "AbacStatus", 1, "body", "false"),
+    ("GetBucketAbac", "nested", 1, 1, "Status", 48, "body", "false"),
     ("GetBucketAccelerateConfiguration", "request", 224, 1, "Bucket", 60,
      "uri-label", "true"),
     ("GetBucketAccelerateConfiguration", "request", 224, 2,
@@ -95,6 +102,7 @@ EXPECTED_MEMBERS = [
 
 # Exact external enum domains are compatibility input from the pinned model.
 EXPECTED_ENUMS = {
+    48: ["Enabled", "Disabled"],
     49: ["Enabled", "Suspended"],
     513: ["Requester", "BucketOwner"],
     598: ["requester"],
@@ -327,8 +335,8 @@ def main() -> int:
                 fail(f"{member['operation']}:{member['member']}: bad vector {vector_id}")
 
     print(
-        "bucket-control GET preparation: 5 operations, 22 request/output/nested "
-        f"members, 4 exact enum domains, {len(vectors)} reciprocal vectors; "
+        "bucket-control GET preparation: 6 operations, 26 request/output/nested "
+        f"members, 5 exact enum domains, {len(vectors)} reciprocal vectors; "
         "pinned model and exact public APIs match"
     )
     return 0

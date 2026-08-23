@@ -85,9 +85,9 @@ allow a prepared request to be executed as another operation. These are
 client-only wire boundaries and make no backend, Flyology server, or external
 provider interoperability claim.
 
-Five small bucket-control reads use a second shared synchronous state machine:
-transfer acceleration, raw bucket policy, policy status, requester-pays, and
-public-access block. Their public preparers, executors, outcomes, and
+Six small bucket-control reads use a second shared synchronous state machine:
+ABAC, transfer acceleration, raw bucket policy, policy status, requester-pays,
+and public-access block. Their public preparers, executors, outcomes, and
 convenience calls remain operation-specific. Optional modeled fields preserve
 absence, including each of the four public-access-block booleans; enum and
 boolean spellings are exact. Policy is returned as the bounded same-response
@@ -97,3 +97,12 @@ AWS S3 namespace, while rejecting foreign namespaces, attributes, unknown or
 duplicate fields, nesting, DTDs, and entities. This is a client-only boundary:
 Flyology backends and the authenticated server do not implement these five
 operations, and external-provider interoperability is not claimed.
+
+The scalar write companion covers ABAC, acceleration, requester payment, and
+public-access block. It serializes exact AWS-namespaced XML, generates
+Content-MD5 for the three operations that model it, and can compute and sign
+each of the ten modeled concrete checksum algorithms. Acceleration rejects a
+supplied Content-MD5 because that member is absent from its pinned request
+shape. Exact operation binding is checked again before HTTP, and 200 success
+must contain only an empty or whitespace body. These remain client-only
+configuration calls with no backend or authenticated-server claim.

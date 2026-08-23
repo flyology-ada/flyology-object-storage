@@ -1,4 +1,5 @@
 operation	input_shape	output_shape	request_uri	member_count	prepare	execute	high_level	vector_ids
+GetBucketAbac	222	221	/{Bucket}?abac	4	Prepare_Get_Bucket_Abac	Execute_Get_Bucket_Abac	Get_ABAC	GBC-MD-001,GBC-RQ-001,GBC-RQ-002,GBC-RQ-004,GBC-RS-001,GBC-RS-003,GBC-RS-005,GBC-RS-006,GBC-TR-001,GBC-TR-002
 GetBucketAccelerateConfiguration	224	223	/{Bucket}?accelerate	5	Prepare_Get_Bucket_Accelerate_Configuration	Execute_Get_Bucket_Accelerate_Configuration	Get_Accelerate_Configuration	GBC-MD-001,GBC-RQ-001,GBC-RQ-002,GBC-RQ-003,GBC-RQ-004,GBC-RS-001,GBC-RS-003,GBC-RS-004,GBC-RS-005,GBC-RS-006,GBC-TR-001,GBC-TR-002
 GetBucketPolicy	257	256	/{Bucket}?policy	3	Prepare_Get_Bucket_Policy	Execute_Get_Bucket_Policy	Get_Policy	GBC-MD-001,GBC-RQ-001,GBC-RQ-002,GBC-RQ-004,GBC-RS-002,GBC-RS-005,GBC-TR-001,GBC-TR-002
 GetBucketPolicyStatus	259	258	/{Bucket}?policyStatus	4	Prepare_Get_Bucket_Policy_Status	Execute_Get_Bucket_Policy_Status	Get_Policy_Status	GBC-MD-001,GBC-RQ-001,GBC-RQ-002,GBC-RQ-004,GBC-RS-001,GBC-RS-003,GBC-RS-005,GBC-RS-006,GBC-TR-001,GBC-TR-002

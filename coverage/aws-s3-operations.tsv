@@ -27,7 +27,7 @@ DeleteObjectAnnotation	extended	missing	partial	missing	missing
 DeleteObjectTagging	core	covered	covered	partial	covered
 DeleteObjects	core	partial	covered	partial	covered
 DeletePublicAccessBlock	extended	missing	covered	missing	covered
-GetBucketAbac	extended	missing	partial	missing	missing
+GetBucketAbac	extended	missing	covered	missing	covered
 GetBucketAccelerateConfiguration	extended	missing	covered	missing	covered
 GetBucketAcl	extended	missing	partial	missing	missing
 GetBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
@@ -76,8 +76,8 @@ ListObjectVersions	core	missing	covered	missing	covered
 ListObjects	core	covered	covered	covered	covered
 ListObjectsV2	core	covered	covered	covered	covered
 ListParts	core	covered	covered	partial	covered
-PutBucketAbac	extended	missing	partial	missing	missing
-PutBucketAccelerateConfiguration	extended	missing	partial	missing	missing
+PutBucketAbac	extended	missing	covered	missing	covered
+PutBucketAccelerateConfiguration	extended	missing	covered	missing	covered
 PutBucketAcl	extended	missing	partial	missing	missing
 PutBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
 PutBucketCors	extended	missing	partial	missing	missing
@@ -93,7 +93,7 @@ PutBucketNotificationConfiguration	extended	missing	partial	missing	missing
 PutBucketOwnershipControls	extended	missing	partial	missing	missing
 PutBucketPolicy	extended	missing	partial	missing	missing
 PutBucketReplication	extended	missing	partial	missing	missing
-PutBucketRequestPayment	extended	missing	partial	missing	missing
+PutBucketRequestPayment	extended	missing	covered	missing	covered
 PutBucketTagging	core	covered	covered	covered	covered
 PutBucketVersioning	core	covered	covered	covered	covered
 PutBucketWebsite	extended	missing	partial	missing	missing
@@ -104,7 +104,7 @@ PutObjectLegalHold	extended	missing	partial	missing	missing
 PutObjectLockConfiguration	extended	missing	partial	missing	missing
 PutObjectRetention	extended	missing	partial	missing	missing
 PutObjectTagging	core	covered	covered	partial	covered
-PutPublicAccessBlock	extended	missing	partial	missing	missing
+PutPublicAccessBlock	extended	missing	covered	missing	covered
 RenameObject	extended	missing	partial	missing	missing
 RestoreObject	extended	missing	partial	missing	missing
 SelectObjectContent	extended	missing	partial	missing	missing

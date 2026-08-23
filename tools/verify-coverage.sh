@@ -70,7 +70,9 @@ do
   if [ "$client_state" = covered ]; then
     require_evidence "$operation_name" client "$pattern" \
       "$PROJECT_DIR/tests/src/object_storage_test_cases.adb" \
-      "$PROJECT_DIR/tests/src/s3_http_socket_corpus.adb"
+      "$PROJECT_DIR/tests/src/s3_http_socket_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_controls_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_bucket_controls_corpus.adb"
   fi
   if [ "$server_state" = covered ]; then
     require_evidence "$operation_name" server "$pattern" \
@@ -82,6 +84,7 @@ do
       "$PROJECT_DIR/tests/src/s3_implementation_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_delete_bucket_configurations_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_controls_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_bucket_controls_corpus.adb" \
       "$PROJECT_DIR/tests/scripts"
   fi
 done
