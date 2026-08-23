@@ -97,7 +97,7 @@ PutBucketRequestPayment	extended	missing	partial	missing	missing
 PutBucketTagging	core	covered	covered	covered	covered
 PutBucketVersioning	core	covered	covered	covered	covered
 PutBucketWebsite	extended	missing	partial	missing	missing
-PutObject	core	partial	partial	partial	partial
+PutObject	core	covered	covered	partial	covered
 PutObjectAcl	extended	missing	partial	missing	missing
 PutObjectAnnotation	extended	missing	partial	missing	missing
 PutObjectLegalHold	extended	missing	partial	missing	missing

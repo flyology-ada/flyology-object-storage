@@ -71,6 +71,10 @@ The core crate includes:
   SQLite, with `If-None-Match: *` create-if-absent and opaque `If-Match`
   compare-and-swap semantics (see
   [conditional PutObject qualification](docs/qualification/conditional-put.md));
+- complete backend and client PutObject semantics for bounded metadata, tags,
+  ten direct checksums, owner policy, and one-shot no-replay publication, with
+  the server's explicit unsupported controls retained as a partial profile
+  (see [PutObject qualification](docs/qualification/put-object.md));
 - exhaustive request projection and a raw streaming-response execution
   boundary for all 116 pinned operations, while operation-specific typed
   codecs and interoperability gates remain tracked as incomplete;
