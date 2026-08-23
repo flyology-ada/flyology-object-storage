@@ -13894,6 +13894,155 @@ package body Object_Storage_Test_Cases is
          "special unsigned S3 operation traits changed");
    end Check_Generated_S3_Model;
 
+   procedure Check_Put_Object_Required_Disposition
+     (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Model renames Flyology.Object_Storage.S3.Model;
+
+      --  This is a required-behavior inventory, not qualification evidence.
+      --  Each row needs an independent behavioral oracle before PutObject can
+      --  be promoted in the compatibility ledger.
+      type Input_Disposition is
+        (Requires_Implemented_Semantics, Requires_Qualified_No_Op,
+         Requires_Authenticated_Rejection);
+      type Output_Disposition is
+        (Requires_Server_Projection, Requires_External_Decode);
+
+      Input : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Input_Shape (Model.Put_Object_Operation));
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.Put_Object_Operation));
+
+      function Expected_Input_Name (Index : Positive) return String is
+        (case Index is
+            when 1  => "ACL",
+            when 2  => "Body",
+            when 3  => "Bucket",
+            when 4  => "CacheControl",
+            when 5  => "ContentDisposition",
+            when 6  => "ContentEncoding",
+            when 7  => "ContentLanguage",
+            when 8  => "ContentLength",
+            when 9  => "ContentMD5",
+            when 10 => "ContentType",
+            when 11 => "ChecksumAlgorithm",
+            when 12 => "ChecksumCRC32",
+            when 13 => "ChecksumCRC32C",
+            when 14 => "ChecksumCRC64NVME",
+            when 15 => "ChecksumSHA1",
+            when 16 => "ChecksumSHA256",
+            when 17 => "ChecksumSHA512",
+            when 18 => "ChecksumMD5",
+            when 19 => "ChecksumXXHASH64",
+            when 20 => "ChecksumXXHASH3",
+            when 21 => "ChecksumXXHASH128",
+            when 22 => "Expires",
+            when 23 => "IfMatch",
+            when 24 => "IfNoneMatch",
+            when 25 => "GrantFullControl",
+            when 26 => "GrantRead",
+            when 27 => "GrantReadACP",
+            when 28 => "GrantWriteACP",
+            when 29 => "Key",
+            when 30 => "WriteOffsetBytes",
+            when 31 => "Metadata",
+            when 32 => "ServerSideEncryption",
+            when 33 => "StorageClass",
+            when 34 => "WebsiteRedirectLocation",
+            when 35 => "SSECustomerAlgorithm",
+            when 36 => "SSECustomerKey",
+            when 37 => "SSECustomerKeyMD5",
+            when 38 => "SSEKMSKeyId",
+            when 39 => "SSEKMSEncryptionContext",
+            when 40 => "BucketKeyEnabled",
+            when 41 => "RequestPayer",
+            when 42 => "Tagging",
+            when 43 => "ObjectLockMode",
+            when 44 => "ObjectLockRetainUntilDate",
+            when 45 => "ObjectLockLegalHoldStatus",
+            when 46 => "ExpectedBucketOwner",
+            when others => "");
+
+      function Input_Disposition_For
+        (Index : Positive) return Input_Disposition is
+        (case Index is
+            when 1 | 25 .. 28 | 30 | 32 | 35 .. 41 | 43 .. 45 =>
+              Requires_Authenticated_Rejection,
+            when 33 => Requires_Qualified_No_Op,
+            when others => Requires_Implemented_Semantics);
+
+      function Expected_Output_Name (Index : Positive) return String is
+        (case Index is
+            when 1  => "Expiration",
+            when 2  => "ETag",
+            when 3  => "ChecksumCRC32",
+            when 4  => "ChecksumCRC32C",
+            when 5  => "ChecksumCRC64NVME",
+            when 6  => "ChecksumSHA1",
+            when 7  => "ChecksumSHA256",
+            when 8  => "ChecksumSHA512",
+            when 9  => "ChecksumMD5",
+            when 10 => "ChecksumXXHASH64",
+            when 11 => "ChecksumXXHASH3",
+            when 12 => "ChecksumXXHASH128",
+            when 13 => "ChecksumType",
+            when 14 => "ServerSideEncryption",
+            when 15 => "VersionId",
+            when 16 => "SSECustomerAlgorithm",
+            when 17 => "SSECustomerKeyMD5",
+            when 18 => "SSEKMSKeyId",
+            when 19 => "SSEKMSEncryptionContext",
+            when 20 => "BucketKeyEnabled",
+            when 21 => "Size",
+            when 22 => "RequestCharged",
+            when others => "");
+
+      function Output_Disposition_For
+        (Index : Positive) return Output_Disposition is
+        (case Index is
+            when 1 | 14 | 16 .. 20 | 22 => Requires_External_Decode,
+            when others => Requires_Server_Projection);
+
+      Implemented : Natural := 0;
+      No_Op       : Natural := 0;
+      Rejected    : Natural := 0;
+      Projected   : Natural := 0;
+      External    : Natural := 0;
+   begin
+      Assert (Model.Member_Count (Input) = 46, "PutObject input count drift");
+      for Index in 1 .. Model.Member_Count (Input) loop
+         Assert
+           (Model.Member_Name (Input, Index) = Expected_Input_Name (Index),
+            "PutObject input disposition drift at" & Positive'Image (Index));
+         case Input_Disposition_For (Index) is
+            when Requires_Implemented_Semantics =>
+               Implemented := Implemented + 1;
+            when Requires_Qualified_No_Op => No_Op := No_Op + 1;
+            when Requires_Authenticated_Rejection =>
+               Rejected := Rejected + 1;
+         end case;
+      end loop;
+      Assert
+        (Implemented = 28 and then No_Op = 1 and then Rejected = 17,
+         "PutObject required input disposition totals changed");
+
+      Assert
+        (Model.Member_Count (Output) = 22, "PutObject output count drift");
+      for Index in 1 .. Model.Member_Count (Output) loop
+         Assert
+           (Model.Member_Name (Output, Index) = Expected_Output_Name (Index),
+            "PutObject output disposition drift at" & Positive'Image (Index));
+         case Output_Disposition_For (Index) is
+            when Requires_Server_Projection => Projected := Projected + 1;
+            when Requires_External_Decode => External := External + 1;
+         end case;
+      end loop;
+      Assert
+        (Projected = 14 and then External = 8,
+         "PutObject required output disposition totals changed");
+   end Check_Put_Object_Required_Disposition;
+
    procedure Check_Model_Request_Projection (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
@@ -15549,6 +15698,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.generated-model-exhaustive",
             Check_Generated_S3_Model'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.put-object-required-disposition",
+            Check_Put_Object_Required_Disposition'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.model-request-projection-all-operations",
