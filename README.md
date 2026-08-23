@@ -153,11 +153,13 @@ alr build
 ```
 
 The composable client rollout temporarily uses Flyology HTTP PR #33 at exact
-commit `5f23f559fe392530be1cdea55899314b079dd38c`. Because its
+commit `db0346bbd5866a740362381c72ba2f9b4579c12d`. Because its
 `flyology_quic=0.1.2-dev` dependency is not yet indexed, every independently
 solved Alire root pins that subcrate from the same repository and commit. These
 immutable git pins are provisional until the reviewed HTTP merge and dev-index
-publication; committed machine-local path pins remain prohibited.
+publication; committed machine-local path pins remain prohibited. This child
+commit changes only the macOS close-only timeout/cancellation fixture, whose
+native and lightweight boundary program completed 100/100 repetitions.
 
 The independent S3 interoperability matrix uses digest-pinned RustFS and
 SeaweedFS servers as its permissively licensed primary targets, MinIO as an

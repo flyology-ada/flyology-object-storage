@@ -228,11 +228,13 @@ high-level child must not expose or duplicate signed request fields merely to
 cross the sibling-package privacy boundary.
 
 The consumer-approved PR #33 baseline is pinned at
-`5f23f559fe392530be1cdea55899314b079dd38c`. Its qualification includes the
+`db0346bbd5866a740362381c72ba2f9b4579c12d`. Its qualification includes the
 established-child lifecycle, typed buffer restoration, admission certainty,
 and owner-driven HTTP/1.1, HTTP/2, and HTTP/3 exchange behavior required by
-this design. Object Storage still independently gates its semantic mappings
-and ownership restoration before claiming the higher-level surface.
+this design. Its fixture-only child also qualifies the macOS close-only typed
+peer-reset boundary for 100/100 native and lightweight repetitions. Object
+Storage still independently gates its semantic mappings and ownership
+restoration before claiming the higher-level surface.
 
 ### Publication mapping oracle
 
