@@ -1,0 +1,41 @@
+direction	shape	ordinal	member	wire_location	current_boundary	required_closure	vector_ids
+request	708	1	Body	payload	partial	Borrow a bounded source; validate the entire admitted body before atomic part publication; retain no body after completion.	UP-RQ-004,UP-RQ-005,UP-RQ-006,UP-RQ-021,UP-RQ-022,UP-RQ-023
+request	708	2	Bucket	uri-label	projected	Validate the exact bucket before body admission and bind authorization and expected-owner checks to it.	UP-RQ-001,UP-RQ-018,UP-RQ-020
+request	708	3	ContentLength	header	transport_owned	Require one 64-bit length consistent with the source and framing; reject premature EOF and overrun without publication.	UP-RQ-004,UP-RQ-006
+request	708	4	ContentMD5	header	client_only	Validate Base64 width and the selected AWS integrity precedence; a mismatch must not replace an existing part.	UP-RQ-007,UP-LC-002
+request	708	5	ChecksumAlgorithm	header	partial	Validate the modeled enum and require the matching concrete header or physical trailer; preserve individual-checksum precedence.	UP-RQ-009,UP-RQ-010,UP-RQ-011,UP-RQ-012,UP-RQ-013,UP-RQ-014
+request	708	6	ChecksumCRC32	header-or-trailer	partial	Validate exact Base64 width, compute over admitted bytes, enforce initiation policy, and return the same algorithm on success.	UP-RQ-009,UP-RQ-010,UP-RQ-012,UP-RQ-013,UP-RQ-014
+request	708	7	ChecksumCRC32C	header-or-trailer	partial	Validate exact Base64 width, compute over admitted bytes, enforce initiation policy, and return the same algorithm on success.	UP-RQ-009,UP-RQ-010,UP-RQ-012,UP-RQ-013,UP-RQ-014
+request	708	8	ChecksumCRC64NVME	header-or-trailer	partial	Validate exact Base64 width, compute over admitted bytes, enforce initiation policy, and return the same algorithm on success.	UP-RQ-009,UP-RQ-010,UP-RQ-012,UP-RQ-013,UP-RQ-014
+request	708	9	ChecksumSHA1	header-or-trailer	partial	Validate exact Base64 width, compute over admitted bytes, enforce initiation policy, and return the same algorithm on success.	UP-RQ-009,UP-RQ-010,UP-RQ-012,UP-RQ-013,UP-RQ-014
+request	708	10	ChecksumSHA256	header-or-trailer	partial	Validate exact Base64 width, compute over admitted bytes, enforce initiation policy, and return the same algorithm on success.	UP-RQ-009,UP-RQ-010,UP-RQ-012,UP-RQ-013,UP-RQ-014
+request	708	11	ChecksumSHA512	header-or-trailer	partial	Validate exact Base64 width, compute over admitted bytes, enforce initiation policy, and return the same algorithm on success.	UP-RQ-009,UP-RQ-010,UP-RQ-012,UP-RQ-013,UP-RQ-014
+request	708	12	ChecksumMD5	header-or-trailer	partial	Validate exact Base64 width, compute over admitted bytes, enforce initiation policy, and return the same algorithm on success.	UP-RQ-009,UP-RQ-010,UP-RQ-012,UP-RQ-013,UP-RQ-014
+request	708	13	ChecksumXXHASH64	header-or-trailer	partial	Validate exact Base64 width, compute over admitted bytes, enforce initiation policy, and return the same algorithm on success.	UP-RQ-009,UP-RQ-010,UP-RQ-012,UP-RQ-013,UP-RQ-014
+request	708	14	ChecksumXXHASH3	header-or-trailer	partial	Validate exact Base64 width, compute over admitted bytes, enforce initiation policy, and return the same algorithm on success.	UP-RQ-009,UP-RQ-010,UP-RQ-012,UP-RQ-013,UP-RQ-014
+request	708	15	ChecksumXXHASH128	header-or-trailer	partial	Validate exact Base64 width, compute over admitted bytes, enforce initiation policy, and return the same algorithm on success.	UP-RQ-009,UP-RQ-010,UP-RQ-012,UP-RQ-013,UP-RQ-014
+request	708	16	Key	uri-label	projected	Preserve exact decoded object-key bytes and reject invalid or ambiguous targets before body admission.	UP-RQ-001,UP-RQ-020
+request	708	17	PartNumber	query	projected	Require exactly one canonical integer from 1 through 10000 and use it in the atomic replacement key.	UP-RQ-002,UP-LC-001
+request	708	18	UploadId	query	projected	Require exactly one bounded nonempty upload identifier and bind it to bucket, key, initiation checksum, and encryption state.	UP-RQ-003,UP-RQ-014,UP-RQ-017,UP-LC-001
+request	708	19	SSECustomerAlgorithm	header	client_only	Treat the SSE-C triplet as one secure-transport-only group and require an exact match with initiation state or fail closed.	UP-RQ-015,UP-RQ-016,UP-RQ-017
+request	708	20	SSECustomerKey	header	client_only	Borrow sensitive input without logging or retention; validate the group and initiation match, then release transport-owned header storage.	UP-RQ-015,UP-RQ-016,UP-RQ-017
+request	708	21	SSECustomerKeyMD5	header	client_only	Validate the Base64 MD5 of the supplied SSE-C key and the initiation match; reject mismatch before publication.	UP-RQ-015,UP-RQ-016,UP-RQ-017
+request	708	22	RequestPayer	header	client_only	Accept only requester; apply configured requester-pays policy or return an authenticated explicit unsupported response.	UP-RQ-019,UP-RQ-020
+request	708	23	ExpectedBucketOwner	header	client_only	Reject duplicate or mismatched owner with the modeled authenticated error before reading the body.	UP-RQ-018,UP-RQ-020
+response	707	1	ServerSideEncryption	header	partial	Distinguish omission from present-empty or duplicate and validate the modeled encryption enum.	UP-RS-004
+response	707	2	ETag	header	partial	Require exactly one nonempty entity tag on success; preserve it opaquely and reject duplicate or present-empty values.	UP-RS-002
+response	707	3	ChecksumCRC32	header	partial	Accept at most one checksum result selected by the request and initiation policy; validate exact Base64 width and presence.	UP-RS-003
+response	707	4	ChecksumCRC32C	header	partial	Accept at most one checksum result selected by the request and initiation policy; validate exact Base64 width and presence.	UP-RS-003
+response	707	5	ChecksumCRC64NVME	header	partial	Accept at most one checksum result selected by the request and initiation policy; validate exact Base64 width and presence.	UP-RS-003
+response	707	6	ChecksumSHA1	header	partial	Accept at most one checksum result selected by the request and initiation policy; validate exact Base64 width and presence.	UP-RS-003
+response	707	7	ChecksumSHA256	header	partial	Accept at most one checksum result selected by the request and initiation policy; validate exact Base64 width and presence.	UP-RS-003
+response	707	8	ChecksumSHA512	header	partial	Accept at most one checksum result selected by the request and initiation policy; validate exact Base64 width and presence.	UP-RS-003
+response	707	9	ChecksumMD5	header	partial	Accept at most one checksum result selected by the request and initiation policy; validate exact Base64 width and presence.	UP-RS-003
+response	707	10	ChecksumXXHASH64	header	partial	Accept at most one checksum result selected by the request and initiation policy; validate exact Base64 width and presence.	UP-RS-003
+response	707	11	ChecksumXXHASH3	header	partial	Accept at most one checksum result selected by the request and initiation policy; validate exact Base64 width and presence.	UP-RS-003
+response	707	12	ChecksumXXHASH128	header	partial	Accept at most one checksum result selected by the request and initiation policy; validate exact Base64 width and presence.	UP-RS-003
+response	707	13	SSECustomerAlgorithm	header	partial	Distinguish omission from present-empty or duplicate and validate the supported SSE-C algorithm.	UP-RS-005
+response	707	14	SSECustomerKeyMD5	header	partial	Distinguish omission from present-empty or duplicate and validate the exact Base64 MD5 width.	UP-RS-005
+response	707	15	SSEKMSKeyId	header	partial	Distinguish omission from present-empty or duplicate and retain only bounded non-secret provider text.	UP-RS-006
+response	707	16	BucketKeyEnabled	header	partial	Distinguish omission from present-empty or duplicate and accept only a canonical modeled boolean.	UP-RS-007
+response	707	17	RequestCharged	header	partial	Distinguish omission from present-empty or duplicate and accept only requester.	UP-RS-008
