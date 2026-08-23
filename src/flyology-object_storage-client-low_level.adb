@@ -32,6 +32,34 @@ package body Flyology.Object_Storage.Client.Low_Level is
    use type Model.Shape_Kind;
    use type S3.Core.Range_Parse_Status;
 
+   --  DELETE is method-idempotent at the HTTP layer, but replay is not safe
+   --  for a conditional S3 mutation after the first request may have been
+   --  accepted.  Supplying a known-empty, deliberately non-rewindable source
+   --  preserves the empty signed payload while deliberately selecting
+   --  zero-length streaming framing and Flyology.HTTP's one-shot policy.
+   type Non_Replayable_Empty_Source is new
+     Flyology.HTTP.Client.Request_Body_Source with null record;
+
+   overriding function Declared_Length
+     (Item : Non_Replayable_Empty_Source)
+      return Flyology.HTTP.Client.Body_Length is
+     (Flyology.HTTP.Client.Known_Length (0));
+
+   overriding procedure Read
+     (Item     : in out Non_Replayable_Empty_Source;
+      Data     : out Ada.Streams.Stream_Element_Array;
+      Last     : out Ada.Streams.Stream_Element_Offset;
+      Finished : out Boolean;
+      Timeout  : Duration;
+      Token    : access Flyology.Cancellation.Token)
+   is
+      pragma Unreferenced (Item, Timeout, Token);
+   begin
+      Data := (others => 0);
+      Last := Ada.Streams.Stream_Element_Offset'Pred (Data'First);
+      Finished := True;
+   end Read;
+
    function Authority (Origin : Flyology.HTTP.Origin) return String;
    function Wire_Query (Canonical : String) return String;
    function Valid_Optional_Checksum
@@ -4557,9 +4585,10 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
+         Source : Non_Replayable_Empty_Source;
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
-             (Client, Prepared.Message, Timeout, Token);
+             (Client, Prepared.Message, Source, Timeout, Token);
          Status : constant Flyology.HTTP.Status_Code :=
            Flyology.HTTP.Client.Status (Response);
          Request_ID : constant String :=

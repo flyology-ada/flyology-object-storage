@@ -232,7 +232,10 @@ package Flyology.Object_Storage.Client.Objects is
    --  unversioned key as a successful idempotent deletion. Every modeled
    --  DeleteObject control is available here; optional boolean/count values
    --  distinguish an omitted header from an explicitly supplied false or
-   --  zero value.
+   --  zero value. Transport, timeout, and cancellation exceptions after
+   --  request admission may mean the deletion was published. The call is not
+   --  transparently replayed; reconcile the exact key/generation before any
+   --  conditional retry.
    --  @param Client Configured, caller-owned Flyology HTTP client
    --  @param Origin Exact origin used to configure Client and sign requests
    --  @param Bucket Bucket containing the object

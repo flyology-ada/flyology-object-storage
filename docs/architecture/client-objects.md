@@ -53,6 +53,10 @@ required by S3. It optionally selects a version, applies an entity-tag
 precondition, checks the expected bucket owner, and opts into Requester Pays.
 Success preserves the delete-marker flag, version ID, and request-charged
 header; rejection preserves the structured S3 error and request identifiers.
+Delete requests use a one-shot empty HTTP source and are never transparently
+replayed after a reused transport fails. A transport, timeout, or cancellation
+exception after request admission is publication-ambiguous; callers must
+reconcile the exact key or generation before retrying a conditional deletion.
 
 The high-level call exposes every modeled request control: version ID,
 If-Match, expected owner, Requester Pays, MFA, optional governance-retention

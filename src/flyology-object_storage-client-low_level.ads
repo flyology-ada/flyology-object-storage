@@ -1258,6 +1258,10 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null;
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Object_Outcome;
+   --  DeleteObject is never transparently replayed, including after a reused
+   --  HTTP transport is lost before a response.  A transport, timeout, or
+   --  cancellation exception may therefore mean that deletion was published;
+   --  callers must reconcile the exact key/generation before retrying.
 
    --  Complete modeled inputs for the three object-tagging operations.
    type Put_Object_Tagging_Parameters is record

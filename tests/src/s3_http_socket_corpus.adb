@@ -458,16 +458,23 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Checksum : String := "";
          Expected_Checksum_Type : String := "";
          Expected_Mpu_Object_Size : String := "";
-         Fragmented         : Boolean := False)
+         Require_Zero_Content_Length : Boolean := False;
+         Fragmented         : Boolean := False;
+         Reuse_Peer         : Boolean := False;
+         Keep_Open          : Boolean := False)
       is
          Buffer : Stream_Element_Array (1 .. 4_096);
          Last   : Stream_Element_Offset;
          Head   : US.Unbounded_String;
       begin
-         Sockets.Accept_Socket
-           (Listener, Peer, Address, Timeout => 5.0, Status => Status);
-         if Status /= Sockets.Completed then
-            raise Program_Error with "socket accept timed out";
+         if not Reuse_Peer then
+            Sockets.Accept_Socket
+              (Listener, Peer, Address, Timeout => 5.0, Status => Status);
+            if Status /= Sockets.Completed then
+               raise Program_Error with "socket accept timed out";
+            end if;
+         elsif not Sockets.Is_Open (Peer) then
+            raise Program_Error with "socket peer is unavailable for reuse";
          end if;
          loop
             Sockets.Receive (Peer, Buffer, Last, Timeout => 5.0);
@@ -504,6 +511,9 @@ procedure S3_HTTP_Socket_Corpus is
                 (Lower, "host: 127.0.0.1:" & Decimal (Natural (Port))) = 0
               or else Ada.Strings.Fixed.Index
                 (Lower, "authorization: aws4-hmac-sha256 credential=") = 0
+              or else
+                (Require_Zero_Content_Length
+                 and then Header_Value (Lower, "content-length") /= "0")
               or else
                 (if Expected_Checksum_Algorithm_Header'Length > 0
                    or else Expected_Checksum_Header'Length > 0
@@ -871,7 +881,9 @@ procedure S3_HTTP_Socket_Corpus is
                end;
             end if;
          end;
-         if Fragmented then
+         if Response'Length = 0 then
+            null;
+         elsif Fragmented then
             for Character_Value of Response loop
                Sockets.Send_All
                  (Peer, Bytes (String'(1 => Character_Value)), Timeout => 5.0);
@@ -879,7 +891,9 @@ procedure S3_HTTP_Socket_Corpus is
          else
             Sockets.Send_All (Peer, Bytes (Response), Timeout => 5.0);
          end if;
-         Sockets.Close_Socket (Peer);
+         if not Keep_Open then
+            Sockets.Close_Socket (Peer);
+         end if;
       end Serve;
 
       Success_XML : constant String :=
@@ -1325,6 +1339,26 @@ procedure S3_HTTP_Socket_Corpus is
                "<Error><Code>OperationAborted</Code>" &
                "<Message>conflict</Message></Error>"),
             "DELETE", "/example-bucket/conflict-delete");
+         --  Prime one reusable HTTP/1.1 connection, accept a conditional
+         --  delete on that connection, and then lose the response.  The next
+         --  accepted request must be reconciliation HEAD; a transparent
+         --  replay would instead fail this exact request sequence.
+         Serve
+           ("HTTP/1.1 200 OK" & CRLF &
+            "Content-Length: 1" & CRLF &
+            "ETag: ""lost-delete-etag""" & CRLF &
+            "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+            "Connection: keep-alive" & CRLF & CRLF,
+            "HEAD", "/example-bucket/lost-delete",
+            Keep_Open => True);
+         Serve
+           ("", "DELETE", "/example-bucket/lost-delete",
+            Expected_If_Match => "*", Require_Zero_Content_Length => True,
+            Reuse_Peer => True);
+         Serve
+           (HTTP_Response
+              ("404 Not Found", "", Omit_Content_Length => True),
+            "HEAD", "/example-bucket/lost-delete");
          Serve
            (HTTP_Response
               ("200 OK", Delete_Objects_XML,
@@ -2885,6 +2919,69 @@ procedure S3_HTTP_Socket_Corpus is
                raise Program_Error with
                  "DeleteObject socket conflict was not typed";
             end if;
+         end;
+         declare
+            Head_Parameters : Low_Level.Head_Object_Parameters;
+            Delete_Parameters : Low_Level.Delete_Object_Parameters;
+            Head_Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Head_Object
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 "lost-delete", Head_Parameters, Identity, "us-east-1",
+                 "20130524T000000Z");
+            Lost_Response : Boolean := False;
+         begin
+            declare
+               Before : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Execute_Head_Object
+                   (HTTP, Head_Prepared, Timeout => 5.0);
+            begin
+               if Before.Kind /= Low_Level.Object_Found
+                 or else Before.Status /= 200
+               then
+                  raise Program_Error with
+                    "lost-response DeleteObject priming HEAD mismatch";
+               end if;
+            end;
+            Delete_Parameters.If_Match := US.To_Unbounded_String ("*");
+            declare
+               Delete_Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Object
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "lost-delete", Delete_Parameters, Identity,
+                    "us-east-1", "20130524T000000Z");
+            begin
+               begin
+                  declare
+                     Ignored : constant Low_Level.Delete_Object_Outcome :=
+                       Low_Level.Execute_Delete_Object
+                         (HTTP, Delete_Prepared, Timeout => 5.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when others =>
+                     --  No response means publication is unknown, never a
+                     --  typed precondition rejection or replayed 404.
+                     Lost_Response := True;
+               end;
+            end;
+            if not Lost_Response then
+               raise Program_Error with
+                 "lost DeleteObject response was classified conclusively";
+            end if;
+            declare
+               After : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Execute_Head_Object
+                   (HTTP, Head_Prepared, Timeout => 5.0);
+            begin
+               if After.Kind /= Low_Level.Head_Object_Rejected
+                 or else After.Status /= 404
+               then
+                  raise Program_Error with
+                    "lost-response DeleteObject reconciliation mismatch";
+               end if;
+            end;
          end;
          declare
             Request : Deletions.Delete_Objects_Request;

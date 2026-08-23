@@ -51,7 +51,7 @@ The core crate includes:
   HeadBucket, CreateBucket, GetBucketLocation, DeleteBucket, and bucket-tag
   convenience
   APIs (see [bucket convenience client](docs/architecture/client-buckets.md));
-- high-level GetObjectAttributes and idempotent DeleteObject clients that
+- high-level GetObjectAttributes and non-replaying DeleteObject clients that
   preserve selected metadata, version,
   delete-marker, requester-charged, and structured error outcomes (see
   [object convenience client](docs/architecture/client-objects.md));
