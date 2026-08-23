@@ -722,6 +722,46 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            "</" & Root & ">";
       end Copy_Result_XML;
 
+      --  Project every retained metadata field from the same immutable
+      --  Object_Information snapshot that supplies the body and generation.
+      --  Content-Type is passed separately to Begin_Stream so that the HTTP
+      --  application owns its singleton framing header.
+      procedure Set_Object_Metadata_Headers
+        (Info : Object_Information)
+      is
+         procedure Set_Optional
+           (Name : String; Value : Optional_Metadata_Value) is
+         begin
+            if Value.Is_Set then
+               Apps.Set_Header (X, Name, US.To_String (Value.Value));
+            end if;
+         end Set_Optional;
+      begin
+         Set_Optional ("Cache-Control", Info.Metadata.Cache_Control);
+         Set_Optional
+           ("Content-Disposition", Info.Metadata.Content_Disposition);
+         Set_Optional ("Content-Encoding", Info.Metadata.Content_Encoding);
+         Set_Optional ("Content-Language", Info.Metadata.Content_Language);
+         if Info.Metadata.Expires.Is_Set then
+            Apps.Set_Header
+              (X, "Expires", IMF_Dates.Image (Info.Metadata.Expires.Value));
+         end if;
+         Set_Optional
+           ("x-amz-website-redirect-location",
+            Info.Metadata.Website_Redirect_Location);
+         for Index in 1 .. Info.Metadata.User.Length loop
+            Apps.Set_Header
+              (X,
+               "x-amz-meta-" &
+                 US.To_String
+                   (Info.Metadata.User.Items
+                      (User_Metadata_Index (Index)).Key),
+               US.To_String
+                 (Info.Metadata.User.Items
+                    (User_Metadata_Index (Index)).Value));
+         end loop;
+      end Set_Object_Metadata_Headers;
+
       package Request_IO is
          type Request_Source
            (Checksum_Kind : Checksum_Policy.Algorithm := S3.Core.CRC64NVME)
@@ -964,6 +1004,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             then
                Set_Checksum_Headers (X, Info.Checksum);
             end if;
+            Set_Object_Metadata_Headers (Info);
             if Partial then
                Apps.Set_Header
                  (X, "Content-Range",
@@ -5863,7 +5904,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                 (Natural'Image (Snapshot.Total_Parts),
                                  Ada.Strings.Both));
                         end if;
-                        Set_Response_Overrides;
                         if Has_Range then
                            declare
                               Resolved : constant Range_Resolution :=
@@ -5877,6 +5917,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                    (X, Invalid_Range, False, Target_Text);
                                  return;
                               end if;
+                              Set_Object_Metadata_Headers (Info);
+                              Set_Response_Overrides;
                               Apps.Begin_Stream
                                 (X, 200,
                                  (if Object_Read_Request
@@ -5888,6 +5930,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                  Flyology.HTTP.Body_Size (Resolved.Length));
                            end;
                         else
+                           Set_Object_Metadata_Headers (Info);
+                           Set_Response_Overrides;
                            Apps.Begin_Stream
                              (X, 200,
                               (if Object_Read_Request

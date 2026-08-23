@@ -2907,6 +2907,97 @@ begin
       end loop;
 
       declare
+         Expected_Entity_Tag : constant String :=
+           """1ecc80380555e9370144fbf65a47c423""";
+         Expected_ETag : constant String :=
+           "ETag: " & Expected_Entity_Tag & CRLF;
+         Head_Response : constant String := Run
+           (Signed_Request
+              ("HEAD", "/test-bucket/put-complete", "",
+               Extra_Headers => "x-amz-checksum-mode: ENABLED" & CRLF));
+         Get_Response : constant String := Run
+           (Signed_Request
+              ("GET", "/test-bucket/put-complete", "",
+               Extra_Headers => "x-amz-checksum-mode: ENABLED" & CRLF));
+         Failed_Response : constant String := Run
+           (Signed_Request
+              ("HEAD", "/test-bucket/put-complete", "",
+               Extra_Headers => "If-Match: ""other""" & CRLF));
+         Unsatisfied_Response : constant String := Run
+           (Signed_Request
+              ("HEAD", "/test-bucket/put-complete", "",
+               Extra_Headers => "Range: bytes=99-100" & CRLF));
+         Not_Modified_Response : constant String := Run
+           (Signed_Request
+              ("HEAD", "/test-bucket/put-complete", "",
+               Extra_Headers =>
+                 "If-None-Match: " & Expected_Entity_Tag & CRLF));
+
+         function Has_Complete_Metadata (Response : String) return Boolean is
+           (Has (Response, Expected_ETag)
+            and then Has (Response, "Content-Type: application/put" & CRLF)
+            and then Has (Response, "Cache-Control: max-age=60" & CRLF)
+            and then Has (Response, "Content-Disposition: inline" & CRLF)
+            and then Has (Response, "Content-Encoding: identity" & CRLF)
+            and then Has (Response, "Content-Language: en-CA" & CRLF)
+            and then Has
+              (Response, "Expires: Fri, 24 May 2013 00:00:00 GMT" & CRLF)
+            and then Has
+              (Response,
+               "x-amz-website-redirect-location: /put" & CRLF)
+            and then Has
+              (Response, "x-amz-meta-team: storage" & CRLF)
+            and then Has
+              (Response,
+               "x-amz-checksum-xxhash128: " &
+                 US.To_String (Last_Checksum) & CRLF)
+            and then Has
+              (Response, "x-amz-checksum-type: FULL_OBJECT" & CRLF)
+            and then not Has (Response, "x-amz-tagging-count:"));
+
+         function Has_Representation_Metadata
+           (Response : String) return Boolean is
+           (Has (Response, "Cache-Control:")
+            or else Has (Response, "Content-Disposition:")
+            or else Has (Response, "Content-Encoding:")
+            or else Has (Response, "Content-Language:")
+            or else Has (Response, "Expires:")
+            or else Has (Response, "x-amz-website-redirect-location:")
+            or else Has (Response, "x-amz-meta-"));
+      begin
+         Require
+           (Has (Head_Response, "200 OK")
+            and then Has_Complete_Metadata (Head_Response)
+            and then Response_Body (Head_Response) = "",
+            "HeadObject did not project the complete immutable Put tuple: " &
+              Head_Response);
+         Require
+           (Has (Get_Response, "200 OK")
+            and then Has_Complete_Metadata (Get_Response)
+            and then Response_Body (Get_Response) = Payload,
+            "GetObject did not project the complete immutable Put tuple: " &
+              Get_Response);
+         Require
+           (Has (Failed_Response, "HTTP/1.1 412 ")
+            and then not Has_Representation_Metadata (Failed_Response),
+            "HeadObject 412 inherited stored representation metadata: " &
+              Failed_Response);
+         Require
+           (Has (Unsatisfied_Response, "HTTP/1.1 416 ")
+            and then not Has_Representation_Metadata
+              (Unsatisfied_Response),
+            "HeadObject 416 inherited stored representation metadata: " &
+              Unsatisfied_Response);
+         Require
+           (Has (Not_Modified_Response, "HTTP/1.1 304 ")
+            and then Has (Not_Modified_Response, Expected_ETag)
+            and then not Has_Representation_Metadata
+              (Not_Modified_Response),
+            "HeadObject 304 projected more than validators: " &
+              Not_Modified_Response);
+      end;
+
+      declare
          MD5_Rejected : constant String := Run
            (Signed_Request
               ("PUT", "/test-bucket/put-complete", "mutated",
