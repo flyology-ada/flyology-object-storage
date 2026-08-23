@@ -64,6 +64,8 @@ procedure S3_Server_Application_Corpus is
    use type Ada.Containers.Count_Type;
    use type Ada.Calendar.Time;
    use type Flyology.Object_Storage.Status;
+   use type Flyology.Object_Storage.Metadata_Time;
+   use type Flyology.Object_Storage.Checksum_Algorithm;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type MFA.Authorization_Status;
    use type Tags.Tag_Vectors.Vector;
@@ -639,6 +641,104 @@ procedure S3_Server_Application_Corpus is
         "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
         "Content-Length: 0" & CRLF & "Connection: close" & CRLF & CRLF;
    end Signed_Copy_Request;
+
+   function Signed_Copy_Member_Request
+     (Target       : String;
+      Copy_Source  : String;
+      Header_Name  : String;
+      Header_Value : String;
+      Second_Value : String := "") return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex ("");
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair ("x-amz-copy-source", Copy_Source),
+         SigV4.Pair ("x-amz-date", Timestamp),
+         SigV4.Pair
+           (Header_Name,
+            Header_Value &
+              (if Second_Value'Length = 0
+               then "" else ", " & Second_Value)));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+   begin
+      return "PUT " & Target & " HTTP/1.1" & CRLF &
+        "Host: " & Host & CRLF & "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "x-amz-copy-source: " & Copy_Source & CRLF &
+        Header_Name & ": " & Header_Value & CRLF &
+        (if Second_Value'Length = 0 then ""
+         else Header_Name & ": " & Second_Value & CRLF) &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Content-Length: 0" & CRLF & "Connection: close" & CRLF & CRLF;
+   end Signed_Copy_Member_Request;
+
+   function Signed_Copy_Headers_Request
+     (Target      : String;
+      Copy_Source : String;
+      Extra       : SigV4.Name_Value_Array) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex ("");
+      Headers : SigV4.Name_Value_Array (1 .. 4 + Extra'Length);
+      Request : US.Unbounded_String;
+   begin
+      Headers (1) := SigV4.Pair ("host", Host);
+      Headers (2) := SigV4.Pair ("x-amz-content-sha256", Payload_Hash);
+      Headers (3) := SigV4.Pair ("x-amz-copy-source", Copy_Source);
+      Headers (4) := SigV4.Pair ("x-amz-date", Timestamp);
+      for Index in Extra'Range loop
+         Headers (4 + Index - Extra'First + 1) := Extra (Index);
+      end loop;
+      declare
+         Signing : constant SigV4.Signing_Result := SigV4.Sign
+           ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
+            Secret_Key, Region, Timestamp);
+      begin
+         Request := US.To_Unbounded_String
+           ("PUT " & Target & " HTTP/1.1" & CRLF &
+            "Host: " & Host & CRLF & "x-amz-date: " & Timestamp & CRLF &
+            "x-amz-content-sha256: " & Payload_Hash & CRLF &
+            "x-amz-copy-source: " & Copy_Source & CRLF);
+         for Item of Extra loop
+            US.Append
+              (Request, US.To_String (Item.Name) & ": " &
+               US.To_String (Item.Value) & CRLF);
+         end loop;
+         US.Append
+           (Request,
+            "Authorization: " & US.To_String (Signing.Authorization) &
+            CRLF & "Content-Length: 0" & CRLF & "Connection: close" &
+            CRLF & CRLF);
+         return US.To_String (Request);
+      end;
+   end Signed_Copy_Headers_Request;
+
+   function Signed_Duplicate_Copy_Source_Request
+     (Target : String) return String
+   is
+      Payload_Hash : constant String := SigV4.SHA256_Hex ("");
+      First_Source : constant String := "test-bucket/object";
+      Second_Source : constant String := "test-bucket/other";
+      Headers : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("host", Host),
+         SigV4.Pair ("x-amz-content-sha256", Payload_Hash),
+         SigV4.Pair
+           ("x-amz-copy-source", First_Source & ", " & Second_Source),
+         SigV4.Pair ("x-amz-date", Timestamp));
+      Signing : constant SigV4.Signing_Result := SigV4.Sign
+        ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
+         Secret_Key, Region, Timestamp);
+   begin
+      return "PUT " & Target & " HTTP/1.1" & CRLF &
+        "Host: " & Host & CRLF & "x-amz-date: " & Timestamp & CRLF &
+        "x-amz-content-sha256: " & Payload_Hash & CRLF &
+        "x-amz-copy-source: " & First_Source & CRLF &
+        "x-amz-copy-source: " & Second_Source & CRLF &
+        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Content-Length: 0" & CRLF & "Connection: close" & CRLF & CRLF;
+   end Signed_Duplicate_Copy_Source_Request;
 
    function Signed_Upload_Part_Copy_Request
      (Target      : String;
@@ -1592,6 +1692,7 @@ procedure S3_Server_Application_Corpus is
          Require
            (Has (Copy_Response, "200 OK")
             and then Has (Copy_Response, "<CopyPartResult")
+            and then not Has (Copy_Response, "<ChecksumType>")
             and then Has
               (Copy_Response,
                "<ETag>&quot;" & Copy_ETag & "&quot;</ETag>"),
@@ -3809,13 +3910,27 @@ begin
             "CopyObject failed-condition response mismatch: " &
             Failed_Response);
       end;
-      Require
-        (Has
-           (Run
-              (Signed_Copy_Request
-                 ("/test-bucket/copy-missing", "test-bucket/missing")),
-            "NoSuchKey"),
-         "CopyObject source absence was not reported as NoSuchKey");
+      declare
+         Missing_Key : constant String := Run
+           (Signed_Copy_Request
+              ("/test-bucket/copy-missing", "test-bucket/missing"));
+         Missing_Bucket : constant String := Run
+           (Signed_Copy_Request
+              ("/test-bucket/copy-missing-bucket",
+               "missing-source-bucket/object"));
+      begin
+         Require
+           (Has (Missing_Key, "NoSuchKey")
+            and then Has
+              (Missing_Key, "<Resource>/test-bucket/missing</Resource>"),
+            "CopyObject source absence resource mismatch");
+         Require
+           (Has (Missing_Bucket, "NoSuchBucket")
+            and then Has
+              (Missing_Bucket,
+               "<Resource>/missing-source-bucket/object</Resource>"),
+            "CopyObject source-bucket absence resource mismatch");
+      end;
       Require
         (Has
            (Run
@@ -3823,6 +3938,613 @@ begin
                  ("/test-bucket/object", "test-bucket/object")),
             "InvalidRequest"),
          "metadata-preserving CopyObject accepted a self copy");
+
+      Require
+        (Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-date-ok", "test-bucket/object",
+                  "x-amz-copy-source-if-modified-since",
+                  "Sat, 01 Jan 2000 00:00:00 GMT")),
+            "200 OK")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-date-failed", "test-bucket/object",
+                  "x-amz-copy-source-if-modified-since",
+                  "Tue, 01 Jan 2030 00:00:00 GMT")),
+            "HTTP/1.1 412 ")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-date-invalid", "test-bucket/object",
+                  "x-amz-copy-source-if-unmodified-since", "not-a-date")),
+            "400 Bad Request"),
+         "CopyObject source date-condition semantics mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copied", "test-bucket/object", "if-match",
+                  ETag)),
+            "200 OK")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copied", "test-bucket/object", "if-match",
+                  """stale""")),
+            "HTTP/1.1 412 ")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-create-only", "test-bucket/object",
+                  "if-none-match", "*")),
+            "200 OK")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-create-only", "test-bucket/object",
+                  "if-none-match", "*")),
+            "HTTP/1.1 412 "),
+         "CopyObject destination conditions were not atomic");
+      Require
+        (Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-source-none-failed",
+                  "test-bucket/object", "x-amz-copy-source-if-none-match",
+                  ETag)),
+            "HTTP/1.1 412 ")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-missing-destination",
+                  "test-bucket/object", "if-match", ETag)),
+            "HTTP/1.1 412 "),
+         "CopyObject source If-None-Match or missing If-Match mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Copy_Headers_Request
+                 ("/test-bucket/copy-etag-date-precedence-a",
+                  "test-bucket/object",
+                  (SigV4.Pair ("x-amz-copy-source-if-match", ETag),
+                   SigV4.Pair
+                     ("x-amz-copy-source-if-unmodified-since",
+                      "Sat, 01 Jan 2000 00:00:00 GMT")))),
+            "200 OK")
+         and then Has
+           (Run
+              (Signed_Copy_Headers_Request
+                 ("/test-bucket/copy-etag-date-precedence-b",
+                  "test-bucket/object",
+                  (SigV4.Pair ("x-amz-copy-source-if-none-match", ETag),
+                   SigV4.Pair
+                     ("x-amz-copy-source-if-modified-since",
+                      "Sat, 01 Jan 2000 00:00:00 GMT")))),
+            "HTTP/1.1 412 "),
+         "CopyObject ETag/date precedence mismatch");
+      declare
+         Empty_Conditions : constant Key_Array :=
+           (US.To_Unbounded_String ("x-amz-copy-source-if-match"),
+            US.To_Unbounded_String ("x-amz-copy-source-if-none-match"),
+            US.To_Unbounded_String ("if-match"),
+            US.To_Unbounded_String ("if-none-match"));
+         Status : Flyology.Object_Storage.Status;
+         Info   : Flyology.Object_Storage.Object_Information;
+      begin
+         for Header of Empty_Conditions loop
+            Require
+              (Has
+                 (Run
+                    (Signed_Copy_Member_Request
+                       ("/test-bucket/copy-empty-condition",
+                        "test-bucket/object", US.To_String (Header), "")),
+                  "400 Bad Request"),
+               "CopyObject accepted empty condition " &
+               US.To_String (Header));
+         end loop;
+         Store.Head_Object
+           ("test-bucket", "copy-empty-condition", null,
+            Ada.Real_Time.Time_Last, Info, Status);
+         Require
+           (Status = Flyology.Object_Storage.Not_Found,
+            "empty CopyObject condition published a destination");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-owner", "test-bucket/object",
+                  "x-amz-expected-bucket-owner", "test-principal")),
+            "200 OK")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-owner", "test-bucket/object",
+                  "x-amz-source-expected-bucket-owner", "other")),
+            "403 Forbidden")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-owner", "test-bucket/object",
+                  "x-amz-expected-bucket-owner", "other")),
+            "403 Forbidden"),
+         "CopyObject expected-owner policy mismatch");
+
+      declare
+         Status : Flyology.Object_Storage.Status;
+         Info   : Flyology.Object_Storage.Object_Information;
+      begin
+         Require
+           (Has
+              (Run
+                 (Signed_Copy_Member_Request
+                    ("/test-bucket/copy-invalid-copy-metadata",
+                     "test-bucket/object", "cache-control", "max-age=60")),
+               "400 Bad Request")
+            and then Has
+              (Run
+                 (Signed_Copy_Member_Request
+                    ("/test-bucket/copy-invalid-copy-metadata",
+                     "test-bucket/object", "x-amz-meta-team", "storage")),
+               "400 Bad Request"),
+            "COPY silently ignored supplied replacement metadata");
+         Store.Head_Object
+           ("test-bucket", "copy-invalid-copy-metadata", null,
+            Ada.Real_Time.Time_Last, Info, Status);
+         Require
+           (Status = Flyology.Object_Storage.Not_Found,
+            "invalid COPY metadata mutated the destination");
+      end;
+
+      declare
+         Complete_Headers : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("x-amz-metadata-directive", "REPLACE"),
+            SigV4.Pair ("cache-control", "max-age=60"),
+            SigV4.Pair ("content-disposition", "inline"),
+            SigV4.Pair ("content-encoding", "identity"),
+            SigV4.Pair ("content-language", "en"),
+            SigV4.Pair ("content-type", "application/json"),
+            SigV4.Pair
+              ("expires", "Fri, 01 Jan 1960 12:34:60 GMT"),
+            SigV4.Pair
+              ("x-amz-website-redirect-location", "/explicit"),
+            SigV4.Pair ("x-amz-meta-team", "storage"),
+            SigV4.Pair ("x-amz-tagging-directive", "REPLACE"),
+            SigV4.Pair ("x-amz-tagging", "team=storage%2Fcore"),
+            SigV4.Pair ("x-amz-checksum-algorithm", "SHA256"));
+         Complete_Response : constant String := Run
+           (Signed_Copy_Headers_Request
+              ("/test-bucket/copy-complete", "test-bucket/object",
+               Complete_Headers));
+         Info : Flyology.Object_Storage.Object_Information;
+         Status : Flyology.Object_Storage.Status;
+         Copied_Tags : Flyology.Object_Storage.Object_Tag_Set;
+      begin
+         Require
+           (Has (Complete_Response, "200 OK")
+            and then Has
+              (Complete_Response, "<ChecksumType>FULL_OBJECT</ChecksumType>")
+            and then Has
+              (Complete_Response,
+               "<ChecksumSHA256>" & SHA256_Checksum ("hello world") &
+               "</ChecksumSHA256>")
+            and then not Has (Complete_Response, "x-amz-expiration")
+            and then not Has
+              (Complete_Response, "x-amz-copy-source-version-id")
+            and then not Has (Complete_Response, "x-amz-version-id")
+            and then not Has
+              (Complete_Response, "x-amz-server-side-encryption")
+            and then not Has (Complete_Response, "x-amz-request-charged"),
+            "complete CopyObject response omitted selected checksum");
+         Store.Head_Object
+           ("test-bucket", "copy-complete", null, Ada.Real_Time.Time_Last,
+            Info, Status);
+         Store.Get_Object_Tags
+           ("test-bucket", "copy-complete", null,
+            Ada.Real_Time.Time_Last, Copied_Tags, Status);
+         Require
+           (Status = Flyology.Object_Storage.Success
+            and then US.To_String (Info.Content_Type) = "application/json"
+            and then Info.Metadata.Cache_Control.Is_Set
+            and then US.To_String (Info.Metadata.Cache_Control.Value) =
+              "max-age=60"
+            and then Info.Metadata.Content_Disposition.Is_Set
+            and then US.To_String
+              (Info.Metadata.Content_Disposition.Value) = "inline"
+            and then Info.Metadata.Content_Encoding.Is_Set
+            and then US.To_String (Info.Metadata.Content_Encoding.Value) =
+              "identity"
+            and then Info.Metadata.Content_Language.Is_Set
+            and then US.To_String (Info.Metadata.Content_Language.Value) =
+              "en"
+            and then Info.Metadata.Expires.Is_Set
+            and then Info.Metadata.Expires.Value = -315_573_900
+            and then Info.Metadata.Website_Redirect_Location.Is_Set
+            and then Info.Metadata.User.Length = 1
+            and then US.To_String (Info.Metadata.User.Items (1).Key) = "team"
+            and then Copied_Tags.Length = 1
+            and then US.To_String (Copied_Tags.Items (1).Value) =
+              "storage/core"
+            and then Info.Checksum.Algorithm =
+              Flyology.Object_Storage.Checksum_SHA256,
+            "CopyObject REPLACE did not atomically persist full tuple");
+
+         declare
+            Default_Response : constant String := Run
+              (Signed_Copy_Request
+                 ("/test-bucket/copy-default", "test-bucket/copy-complete"));
+         begin
+            Require
+              (Has (Default_Response, "<ChecksumSHA256>")
+               and then Has
+                 (Default_Response,
+                  "<ChecksumType>FULL_OBJECT</ChecksumType>"),
+               "default CopyObject did not inherit source checksum choice");
+         end;
+         Store.Head_Object
+           ("test-bucket", "copy-default", null, Ada.Real_Time.Time_Last,
+            Info, Status);
+         Store.Get_Object_Tags
+           ("test-bucket", "copy-default", null,
+            Ada.Real_Time.Time_Last, Copied_Tags, Status);
+         Require
+           (Status = Flyology.Object_Storage.Success
+            and then Info.Metadata.Cache_Control.Is_Set
+            and then not Info.Metadata.Website_Redirect_Location.Is_Set
+            and then Info.Metadata.User.Length = 1
+            and then Copied_Tags.Length = 1
+            and then Info.Checksum.Algorithm =
+              Flyology.Object_Storage.Checksum_SHA256,
+            "default CopyObject lost metadata/tags/checksum or copied " &
+            "redirect");
+
+         Require
+           (Has
+              (Run
+                 (Signed_Copy_Headers_Request
+                    ("/test-bucket/copy-empty-replace",
+                     "test-bucket/copy-complete",
+                     (SigV4.Pair
+                        ("x-amz-metadata-directive", "REPLACE"),
+                      SigV4.Pair
+                        ("x-amz-tagging-directive", "REPLACE")))),
+               "200 OK"),
+            "CopyObject empty replacement was rejected");
+         Store.Head_Object
+           ("test-bucket", "copy-empty-replace", null,
+            Ada.Real_Time.Time_Last, Info, Status);
+         Store.Get_Object_Tags
+           ("test-bucket", "copy-empty-replace", null,
+            Ada.Real_Time.Time_Last, Copied_Tags, Status);
+         Require
+           (Status = Flyology.Object_Storage.Success
+            and then US.To_String (Info.Content_Type) =
+              "application/octet-stream"
+            and then not Info.Metadata.Cache_Control.Is_Set
+            and then Info.Metadata.User.Length = 0
+            and then Copied_Tags.Length = 0,
+            "CopyObject empty REPLACE retained source metadata or tags");
+      end;
+
+      declare
+         Algorithms : constant array (Positive range <>) of
+           Checksum_Policy.Algorithm :=
+             (Core.CRC32, Core.CRC32C, Core.CRC64NVME, Core.SHA1,
+              Core.SHA256, Core.SHA512, Core.MD5, Core.XXHASH64,
+              Core.XXHASH3, Core.XXHASH128);
+      begin
+         for Algorithm of Algorithms loop
+            declare
+               Name : constant String := Checksum_Policy.Wire_Name
+                 (Algorithm);
+               Response_Value : constant String := Run
+                 (Signed_Copy_Member_Request
+                    ("/test-bucket/copy-checksum", "test-bucket/object",
+                     "x-amz-checksum-algorithm", Name));
+            begin
+               Require
+                 (Has (Response_Value, "200 OK")
+                  and then Has
+                    (Response_Value,
+                     "<ChecksumType>FULL_OBJECT</ChecksumType>")
+                  and then Has
+                    (Response_Value,
+                     "<Checksum" & Name & ">" &
+                     Checksum_Value (Algorithm, "hello world") &
+                     "</Checksum" & Name & ">"),
+                  "CopyObject rejected direct checksum " & Name);
+            end;
+         end loop;
+      end;
+
+      Require
+        (Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-policy", "test-bucket/object",
+                  "x-amz-acl", "private")),
+            "200 OK")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-public", "test-bucket/object",
+                  "x-amz-acl", "public-read")),
+            "501 Not Implemented")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-policy", "test-bucket/object",
+                  "x-amz-storage-class", "STANDARD")),
+            "200 OK")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-glacier", "test-bucket/object",
+                  "x-amz-storage-class", "GLACIER")),
+            "501 Not Implemented")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-policy", "test-bucket/object",
+                  "x-amz-object-annotation-directive", "COPY")),
+            "200 OK")
+         and then Has
+           (Run
+              (Signed_Copy_Member_Request
+                 ("/test-bucket/copy-policy", "test-bucket/object",
+                  "x-amz-object-annotation-directive", "EXCLUDE")),
+            "200 OK"),
+         "CopyObject ACL/storage-class/annotation disposition mismatch");
+
+      declare
+         Encryption_Algorithms : constant Key_Array :=
+           (US.To_Unbounded_String ("AES256"),
+            US.To_Unbounded_String ("aws:kms"),
+            US.To_Unbounded_String ("aws:kms:dsse"),
+            US.To_Unbounded_String ("aws:fsx"),
+            US.To_Unbounded_String ("aws:backup"));
+      begin
+         for Algorithm of Encryption_Algorithms loop
+            Require
+              (Has
+                 (Run
+                    (Signed_Copy_Member_Request
+                       ("/test-bucket/copy-encrypted",
+                        "test-bucket/object", "x-amz-server-side-encryption",
+                        US.To_String (Algorithm))),
+                  "501 Not Implemented"),
+               "modeled CopyObject encryption value was not validated: " &
+               US.To_String (Algorithm));
+         end loop;
+      end;
+
+      declare
+         Invalid : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("x-amz-metadata-directive", "MERGE"),
+            SigV4.Pair ("x-amz-tagging-directive", "MERGE"),
+            SigV4.Pair ("x-amz-checksum-algorithm", "UNKNOWN"),
+            SigV4.Pair ("x-amz-request-payer", "owner"),
+            SigV4.Pair ("x-amz-object-annotation-directive", "MERGE"),
+            SigV4.Pair ("x-amz-server-side-encryption", "UNKNOWN"),
+            SigV4.Pair
+              ("x-amz-server-side-encryption-customer-algorithm", "AES256"),
+            SigV4.Pair ("x-amz-copy-source-if-match", "bare"),
+            SigV4.Pair ("if-none-match", "bare"),
+            SigV4.Pair ("expires", "not-a-date"),
+            SigV4.Pair ("x-amz-tagging", "missing-equals"));
+      begin
+         for Item of Invalid loop
+            declare
+               Invalid_Response : constant String := Run
+                 (Signed_Copy_Member_Request
+                    ("/test-bucket/copy-invalid-member",
+                     "test-bucket/object", US.To_String (Item.Name),
+                     US.To_String (Item.Value)));
+            begin
+               Require
+                 (Has (Invalid_Response, "400 Bad Request"),
+                  "CopyObject accepted malformed member " &
+                  US.To_String (Item.Name) & ": " & Invalid_Response);
+            end;
+         end loop;
+      end;
+
+      declare
+         Duplicate_Headers : constant Key_Array :=
+           (US.To_Unbounded_String ("x-amz-acl"),
+            US.To_Unbounded_String ("cache-control"),
+            US.To_Unbounded_String ("x-amz-checksum-algorithm"),
+            US.To_Unbounded_String ("content-disposition"),
+            US.To_Unbounded_String ("content-encoding"),
+            US.To_Unbounded_String ("content-language"),
+            US.To_Unbounded_String ("content-type"),
+            US.To_Unbounded_String ("x-amz-copy-source-if-match"),
+            US.To_Unbounded_String
+              ("x-amz-copy-source-if-modified-since"),
+            US.To_Unbounded_String ("x-amz-copy-source-if-none-match"),
+            US.To_Unbounded_String
+              ("x-amz-copy-source-if-unmodified-since"),
+            US.To_Unbounded_String ("expires"),
+            US.To_Unbounded_String ("x-amz-grant-full-control"),
+            US.To_Unbounded_String ("x-amz-grant-read"),
+            US.To_Unbounded_String ("x-amz-grant-read-acp"),
+            US.To_Unbounded_String ("x-amz-grant-write-acp"),
+            US.To_Unbounded_String ("if-match"),
+            US.To_Unbounded_String ("if-none-match"),
+            US.To_Unbounded_String ("x-amz-meta-team"),
+            US.To_Unbounded_String ("x-amz-metadata-directive"),
+            US.To_Unbounded_String ("x-amz-tagging-directive"),
+            US.To_Unbounded_String ("x-amz-object-annotation-directive"),
+            US.To_Unbounded_String ("x-amz-server-side-encryption"),
+            US.To_Unbounded_String ("x-amz-storage-class"),
+            US.To_Unbounded_String ("x-amz-website-redirect-location"),
+            US.To_Unbounded_String
+              ("x-amz-server-side-encryption-customer-algorithm"),
+            US.To_Unbounded_String
+              ("x-amz-server-side-encryption-customer-key"),
+            US.To_Unbounded_String
+              ("x-amz-server-side-encryption-customer-key-md5"),
+            US.To_Unbounded_String
+              ("x-amz-server-side-encryption-aws-kms-key-id"),
+            US.To_Unbounded_String
+              ("x-amz-server-side-encryption-context"),
+            US.To_Unbounded_String
+              ("x-amz-server-side-encryption-bucket-key-enabled"),
+            US.To_Unbounded_String
+              ("x-amz-copy-source-server-side-encryption-" &
+               "customer-algorithm"),
+            US.To_Unbounded_String
+              ("x-amz-copy-source-server-side-encryption-customer-key"),
+            US.To_Unbounded_String
+              ("x-amz-copy-source-server-side-encryption-customer-key-md5"),
+            US.To_Unbounded_String ("x-amz-request-payer"),
+            US.To_Unbounded_String ("x-amz-tagging"),
+            US.To_Unbounded_String ("x-amz-object-lock-mode"),
+            US.To_Unbounded_String
+              ("x-amz-object-lock-retain-until-date"),
+            US.To_Unbounded_String ("x-amz-object-lock-legal-hold"),
+            US.To_Unbounded_String ("x-amz-expected-bucket-owner"),
+            US.To_Unbounded_String
+              ("x-amz-source-expected-bucket-owner"));
+         Status : Flyology.Object_Storage.Status;
+         Info   : Flyology.Object_Storage.Object_Information;
+      begin
+         declare
+            Duplicate_Source_Response : constant String := Run
+              (Signed_Duplicate_Copy_Source_Request
+                 ("/test-bucket/copy-duplicate-member"));
+         begin
+            Require
+              (Has (Duplicate_Source_Response, "400 Bad Request"),
+               "CopyObject accepted duplicate copy source: " &
+               Duplicate_Source_Response);
+         end;
+         for Header of Duplicate_Headers loop
+            Require
+              (Has
+                 (Run
+                    (Signed_Copy_Member_Request
+                       ("/test-bucket/copy-duplicate-member",
+                        "test-bucket/object", US.To_String (Header),
+                        "first", "second")),
+                  "400 Bad Request"),
+               "CopyObject accepted duplicate modeled header " &
+               US.To_String (Header));
+         end loop;
+         Store.Head_Object
+           ("test-bucket", "copy-duplicate-member", null,
+            Ada.Real_Time.Time_Last, Info, Status);
+         Require
+           (Status = Flyology.Object_Storage.Not_Found,
+            "duplicate CopyObject member mutated the destination");
+      end;
+
+      declare
+         Unsupported : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("x-amz-grant-full-control", "id=owner"),
+            SigV4.Pair ("x-amz-grant-read", "id=reader"),
+            SigV4.Pair ("x-amz-grant-read-acp", "id=reader"),
+            SigV4.Pair ("x-amz-grant-write-acp", "id=writer"),
+            SigV4.Pair ("x-amz-server-side-encryption", "AES256"),
+            SigV4.Pair
+              ("x-amz-server-side-encryption-aws-kms-key-id", "kms-key"),
+            SigV4.Pair
+              ("x-amz-server-side-encryption-context", "e30="),
+            SigV4.Pair
+              ("x-amz-server-side-encryption-bucket-key-enabled", "true"),
+            SigV4.Pair ("x-amz-request-payer", "requester"),
+            SigV4.Pair ("x-amz-object-lock-mode", "GOVERNANCE"),
+            SigV4.Pair
+              ("x-amz-object-lock-retain-until-date",
+               "2030-01-01T00:00:00Z"),
+            SigV4.Pair ("x-amz-object-lock-legal-hold", "ON"));
+      begin
+         for Item of Unsupported loop
+            Require
+              (Has
+                 (Run
+                    (Signed_Copy_Member_Request
+                       ("/test-bucket/copy-unsupported",
+                        "test-bucket/object", US.To_String (Item.Name),
+                        US.To_String (Item.Value))),
+                  "501 Not Implemented"),
+               "CopyObject silently ignored unsupported member " &
+               US.To_String (Item.Name));
+         end loop;
+         Require
+           (Has
+              (Run
+                 (Signed_Copy_Headers_Request
+                    ("/test-bucket/copy-unsupported",
+                     "test-bucket/object",
+                     (SigV4.Pair
+                        ("x-amz-server-side-encryption-customer-algorithm",
+                         "AES256"),
+                      SigV4.Pair
+                        ("x-amz-server-side-encryption-customer-key",
+                         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+                      SigV4.Pair
+                        ("x-amz-server-side-encryption-customer-key-md5",
+                         "AAAAAAAAAAAAAAAAAAAAAA==")))),
+               "501 Not Implemented")
+            and then Has
+              (Run
+                 (Signed_Copy_Headers_Request
+                    ("/test-bucket/copy-unsupported",
+                     "test-bucket/object",
+                     (SigV4.Pair
+                        ("x-amz-copy-source-server-side-encryption-" &
+                         "customer-algorithm", "AES256"),
+                      SigV4.Pair
+                        ("x-amz-copy-source-server-side-encryption-" &
+                         "customer-key",
+                         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+                      SigV4.Pair
+                        ("x-amz-copy-source-server-side-encryption-" &
+                         "customer-key-md5",
+                         "AAAAAAAAAAAAAAAAAAAAAA==")))),
+               "501 Not Implemented"),
+            "CopyObject accepted a modeled SSE-C policy");
+         declare
+            Status : Flyology.Object_Storage.Status;
+            Info   : Flyology.Object_Storage.Object_Information;
+         begin
+            Store.Head_Object
+              ("test-bucket", "copy-unsupported", null,
+               Ada.Real_Time.Time_Last, Info, Status);
+            Require
+              (Status = Flyology.Object_Storage.Not_Found,
+               "unsupported CopyObject member mutated the destination");
+         end;
+      end;
+
+      declare
+         Created : constant Key_Array :=
+           (US.To_Unbounded_String ("copied"),
+            US.To_Unbounded_String ("copy-match"),
+            US.To_Unbounded_String ("copy-date-ok"),
+            US.To_Unbounded_String ("copy-etag-date-precedence-a"),
+            US.To_Unbounded_String ("copy-create-only"),
+            US.To_Unbounded_String ("copy-owner"),
+            US.To_Unbounded_String ("copy-complete"),
+            US.To_Unbounded_String ("copy-default"),
+            US.To_Unbounded_String ("copy-empty-replace"),
+            US.To_Unbounded_String ("copy-checksum"),
+            US.To_Unbounded_String ("copy-policy"));
+         Delete_Status : Flyology.Object_Storage.Status;
+      begin
+         for Created_Key of Created loop
+            Store.Delete_Object
+              ("test-bucket", US.To_String (Created_Key), null,
+               Ada.Real_Time.Time_Last, Delete_Status);
+            Require
+              (Delete_Status = Flyology.Object_Storage.Success,
+               "CopyObject corpus cleanup failed for " &
+               US.To_String (Created_Key));
+         end loop;
+      end;
    end;
 
    declare

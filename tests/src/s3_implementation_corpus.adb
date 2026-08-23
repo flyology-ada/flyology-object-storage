@@ -44,6 +44,7 @@ procedure S3_Implementation_Corpus is
    use Ada.Streams;
    use type Ada.Containers.Count_Type;
    use type Ada.Directories.File_Kind;
+   use type Stream_IO.Count;
    use type Low_Level.Abort_Multipart_Outcome_Kind;
    use type Low_Level.Complete_Multipart_Outcome_Kind;
    use type Low_Level.Copy_Object_Outcome_Kind;
@@ -339,6 +340,29 @@ procedure S3_Implementation_Corpus is
    Conditional_Get_Oracle_Mode : constant
      Conditional_Get_Oracle_Mode_Kind :=
        Read_Conditional_Get_Oracle_Mode;
+
+   type Copy_Object_Oracle_Mode_Kind is
+     (Complete_Copy_Object,
+      SeaweedFS_443_Bare_Result_ETag);
+
+   function Read_Copy_Object_Oracle_Mode
+      return Copy_Object_Oracle_Mode_Kind
+   is
+      Name : constant String := "FLYOLOGY_COPY_OBJECT_ORACLE_MODE";
+   begin
+      if not Ada.Environment_Variables.Exists (Name) then
+         return Complete_Copy_Object;
+      elsif Ada.Environment_Variables.Value (Name) =
+        "seaweedfs-4.43-bare-result-etag"
+      then
+         return SeaweedFS_443_Bare_Result_ETag;
+      else
+         raise Program_Error with "unknown CopyObject oracle mode";
+      end if;
+   end Read_Copy_Object_Oracle_Mode;
+
+   Copy_Object_Oracle_Mode : constant Copy_Object_Oracle_Mode_Kind :=
+     Read_Copy_Object_Oracle_Mode;
 
    type Upload_Source
      (Value : not null access constant String) is
@@ -1301,6 +1325,88 @@ procedure S3_Implementation_Corpus is
             raise;
       end Require_Get_Object;
 
+      procedure Require_Exact_Object
+        (Object_Key : String;
+         Expected   : String)
+      is
+         Download_Path : constant String :=
+           Temporary_Path
+             ("flyology-object-storage-copy-oracle-" & Bucket & "-" &
+              Key & ".bin");
+         Input : Stream_IO.File_Type;
+      begin
+         declare
+            Result : constant Transfers.Download_Outcome :=
+              Transfers.Download_File
+                (HTTP, Origin, Bucket, Object_Key, Download_Path, Identity,
+                 Timeout => 60.0);
+         begin
+            if Result.Kind /= Transfers.File_Downloaded
+              or else Result.Status /= 200
+              or else Result.Bytes /=
+                Flyology.Object_Storage.Byte_Count (Expected'Length)
+            then
+               raise Program_Error with
+                 "CopyObject publication oracle could not read " &
+                 Object_Key;
+            end if;
+         end;
+         Stream_IO.Open (Input, Stream_IO.In_File, Download_Path);
+         if Stream_IO.Size (Input) /= Stream_IO.Count (Expected'Length) then
+            raise Program_Error with
+              "CopyObject publication oracle returned the wrong size";
+         end if;
+         declare
+            Data  : Stream_Element_Array (1 .. 64 * 1_024);
+            Last  : Stream_Element_Offset;
+            Total : Natural := 0;
+         begin
+            loop
+               Stream_IO.Read (Input, Data, Last);
+               exit when Last < Data'First;
+               for Index in Data'First .. Last loop
+                  if Character'Val (Data (Index)) /=
+                    Expected
+                      (Expected'First + Total +
+                         Natural (Index - Data'First))
+                  then
+                     raise Program_Error with
+                       "CopyObject publication oracle changed body bytes";
+                  end if;
+               end loop;
+               Total := Total + Natural (Last - Data'First + 1);
+            end loop;
+            if Total /= Expected'Length then
+               raise Program_Error with
+                 "CopyObject publication oracle returned the wrong length";
+            end if;
+         end;
+         Stream_IO.Close (Input);
+         Ada.Directories.Delete_File (Download_Path);
+      exception
+         when others =>
+            if Stream_IO.Is_Open (Input) then
+               Stream_IO.Close (Input);
+            end if;
+            if Ada.Directories.Exists (Download_Path) then
+               Ada.Directories.Delete_File (Download_Path);
+            end if;
+            raise;
+      end Require_Exact_Object;
+
+      procedure Require_Object_Absent (Object_Key : String) is
+         Outcome : constant Transfers.Head_Outcome :=
+           Transfers.Head_Object
+             (HTTP, Origin, Bucket, Object_Key, Identity, Timeout => 30.0);
+      begin
+         if Outcome.Kind /= Transfers.Head_Rejected
+           or else Outcome.Status /= 404
+         then
+            raise Program_Error with
+              "DeleteObjects absence oracle still found " & Object_Key;
+         end if;
+      end Require_Object_Absent;
+
       procedure Require_Object_Tagging is
          Wanted : Flyology.Object_Storage.Object_Tag_Set :=
            Flyology.Object_Storage.Empty_Object_Tags;
@@ -1788,43 +1894,88 @@ procedure S3_Implementation_Corpus is
          Parameters.Copy_Source :=
            US.To_Unbounded_String (Bucket & "/" & Key);
          declare
-            Prepared : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_Copy_Object
-                (Origin, Low_Level.Path_Style, Bucket, Copy_Key, Parameters,
-                 Identity, "us-east-1", Timestamp);
-            Copied : constant Low_Level.Copy_Object_Outcome :=
-              Low_Level.Execute_Copy_Object
-                (HTTP, Prepared, Timeout => 60.0);
+            Rejected : Boolean := False;
          begin
-            if Copied.Kind /= Low_Level.Object_Copied
-              or else US.Length (Copied.Result.Copy_Result.Entity_Tag) = 0
-              or else US.Length
-                (Copied.Result.Copy_Result.Last_Modified) = 0
+            begin
+               declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Copy_Object
+                      (Origin, Low_Level.Path_Style, Bucket, Copy_Key,
+                       Parameters, Identity, "us-east-1", Timestamp);
+                  Copied : constant Low_Level.Copy_Object_Outcome :=
+                    Low_Level.Execute_Copy_Object
+                      (HTTP, Prepared, Timeout => 60.0);
+               begin
+                  if Copy_Object_Oracle_Mode /= Complete_Copy_Object then
+                     raise Program_Error with
+                       "malformed CopyObject result was accepted";
+                  elsif Copied.Kind /= Low_Level.Object_Copied
+                    or else US.Length
+                      (Copied.Result.Copy_Result.Entity_Tag) = 0
+                    or else US.Length
+                      (Copied.Result.Copy_Result.Last_Modified) = 0
+                  then
+                     raise Program_Error with
+                       "S3 implementation rejected typed CopyObject";
+                  end if;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  if Copy_Object_Oracle_Mode = Complete_Copy_Object then
+                     raise;
+                  end if;
+                  Rejected := True;
+            end;
+            if Copy_Object_Oracle_Mode /= Complete_Copy_Object
+              and then not Rejected
             then
                raise Program_Error with
-                 "S3 implementation rejected typed CopyObject";
+                 "malformed CopyObject result was not rejected";
             end if;
          end;
+         Require_Exact_Object (Copy_Key, Payload);
          declare
-            Copied : constant Transfers.Copy_Outcome :=
-              Transfers.Copy_Object
-                (HTTP, Origin, Bucket, Key & "-high level+%25", Bucket,
-                 Convenience_Key, Identity, Timeout => 60.0);
+            Rejected : Boolean := False;
          begin
-            if Copied.Kind = Transfers.Copy_Rejected then
-               raise Program_Error with
-                 "S3 implementation rejected high-level CopyObject: " &
-                 Copied.Status'Image & " " &
-                 US.To_String (Copied.Error.Code) & " " &
-                 US.To_String (Copied.Error.Message);
-            elsif US.Length (Copied.Entity_Tag) = 0
-              or else US.Length (Copied.Last_Modified) = 0
+            begin
+               declare
+                  Copied : constant Transfers.Copy_Outcome :=
+                    Transfers.Copy_Object
+                      (HTTP, Origin, Bucket, Key & "-high level+%25", Bucket,
+                       Convenience_Key, Identity, Timeout => 60.0);
+               begin
+                  if Copy_Object_Oracle_Mode /= Complete_Copy_Object then
+                     raise Program_Error with
+                       "malformed high-level CopyObject result was accepted";
+                  elsif Copied.Kind = Transfers.Copy_Rejected then
+                     raise Program_Error with
+                       "S3 implementation rejected high-level CopyObject: " &
+                       Copied.Status'Image & " " &
+                       US.To_String (Copied.Error.Code) & " " &
+                       US.To_String (Copied.Error.Message);
+                  elsif US.Length (Copied.Entity_Tag) = 0
+                    or else US.Length (Copied.Last_Modified) = 0
+                  then
+                     raise Program_Error with
+                       "S3 implementation returned incomplete high-level " &
+                       "CopyObject metadata";
+                  end if;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  if Copy_Object_Oracle_Mode = Complete_Copy_Object then
+                     raise;
+                  end if;
+                  Rejected := True;
+            end;
+            if Copy_Object_Oracle_Mode /= Complete_Copy_Object
+              and then not Rejected
             then
                raise Program_Error with
-                 "S3 implementation returned incomplete high-level " &
-                 "CopyObject metadata";
+                 "malformed high-level CopyObject result was not rejected";
             end if;
          end;
+         Require_Exact_Object (Convenience_Key, Payload);
       end Copy_Whole_Object;
 
       procedure Delete_Many is
@@ -1834,15 +1985,37 @@ procedure S3_Implementation_Corpus is
          Parameters : Low_Level.Delete_Objects_Parameters;
 
          procedure Create_Copy (Destination : String) is
-            Copied : constant Transfers.Copy_Outcome :=
-              Transfers.Copy_Object
-                (HTTP, Origin, Bucket, Key, Bucket, Destination, Identity,
-                 Timeout => 60.0);
+            Rejected : Boolean := False;
          begin
-            if Copied.Kind /= Transfers.Object_Copied then
+            begin
+               declare
+                  Copied : constant Transfers.Copy_Outcome :=
+                    Transfers.Copy_Object
+                      (HTTP, Origin, Bucket, Key, Bucket, Destination,
+                       Identity, Timeout => 60.0);
+               begin
+                  if Copy_Object_Oracle_Mode /= Complete_Copy_Object then
+                     raise Program_Error with
+                       "malformed setup CopyObject result was accepted";
+                  elsif Copied.Kind /= Transfers.Object_Copied then
+                     raise Program_Error with
+                       "S3 implementation could not set up DeleteObjects";
+                  end if;
+               end;
+            exception
+               when Low_Level.Invalid_Response =>
+                  if Copy_Object_Oracle_Mode = Complete_Copy_Object then
+                     raise;
+                  end if;
+                  Rejected := True;
+            end;
+            if Copy_Object_Oracle_Mode /= Complete_Copy_Object
+              and then not Rejected
+            then
                raise Program_Error with
-                 "S3 implementation could not set up DeleteObjects";
+                 "malformed setup CopyObject result was not rejected";
             end if;
+            Require_Exact_Object (Destination, Payload);
          end Create_Copy;
       begin
          Create_Copy (First_Key);
@@ -1874,6 +2047,8 @@ procedure S3_Implementation_Corpus is
                  "S3 implementation rejected typed DeleteObjects";
             end if;
          end;
+         Require_Object_Absent (First_Key);
+         Require_Object_Absent (Second_Key);
       end Delete_Many;
 
       procedure Require_Conditional_Put is

@@ -2767,16 +2767,22 @@ package body Flyology.Object_Storage.Backends.Files is
          return;
       end if;
       Item.Temp_Sequence.Next (Number);
-      Snapshot_Path := US.To_Unbounded_String
-        (Join
-           (Temp_Path (Item),
-            GNAT.SHA256.Digest
-              ("copy-snapshot" & Character'Val (0) & Source_Bucket
-               & Character'Val (0) & Source_Key
-               & Long_Long_Integer'Image (Number)
-               & Ada.Calendar.Time'Image (Ada.Calendar.Clock))
-            & ".tmp"));
-      SIO.Create (Snapshot, SIO.Out_File, US.To_String (Snapshot_Path));
+      declare
+         Candidate : constant String :=
+           Join
+             (Temp_Path (Item),
+              GNAT.SHA256.Digest
+                ("copy-snapshot" & Character'Val (0) & Source_Bucket
+                 & Character'Val (0) & Source_Key
+                 & Long_Long_Integer'Image (Number)
+                 & Ada.Calendar.Time'Image (Ada.Calendar.Clock))
+              & ".tmp");
+      begin
+         Validate_New_Temp_Target (Item, Candidate);
+         SIO.Create (Snapshot, SIO.Out_File, Candidate);
+         --  Cleanup owns only a target this operation created successfully.
+         Snapshot_Path := US.To_Unbounded_String (Candidate);
+      end;
       SIO.Set_Index (Original, Body_At);
       Remaining := Source_Info.Size;
       while Remaining > 0 loop

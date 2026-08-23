@@ -146,9 +146,11 @@ package Flyology.Object_Storage.Client.Transfers is
    --  are raw application strings; this operation owns the required
    --  x-amz-copy-source URI encoding and signs the resulting header. Client
    --  must already be configured for Origin. Advanced metadata, tagging,
-   --  ACL, encryption, lock, metadata, tagging, and version-selection
-   --  controls are carried by Options. The successful Details value preserves
-   --  every modeled CopyObject output position.
+   --  ACL, encryption, lock, metadata, and tagging controls are carried by
+   --  Options. This overload always replaces Options.Copy_Source with the
+   --  encoded Source_Bucket and Source_Key; use Low_Level directly for a raw
+   --  version-specific copy-source value. The successful Details value
+   --  preserves every modeled CopyObject output position.
    --  @param Client Configured, caller-owned Flyology HTTP client
    --  @param Origin Exact origin used to configure Client and sign requests
    --  @param Source_Bucket Source S3 bucket, before URI encoding

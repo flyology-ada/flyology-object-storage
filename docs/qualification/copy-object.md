@@ -18,9 +18,10 @@ Disposition meanings:
   value have no additional state to store.
 - **Authenticated NotImplemented** means a supplied value is rejected only
   after route sealing and authentication. It is never ignored.
-- **Checksum rebase** is intentionally gated on the active shared checksum
-  persistence slice; CopyObject will not introduce a competing object format
-  or SQLite schema.
+- **Persist** for a checksum means recomputing a full-object digest over the
+  copied bytes and publishing it in the same body/metadata/tag tuple. A
+  multipart composite checksum is never transplanted onto the ordinary
+  destination object.
 
 ## Request members (44)
 
@@ -29,7 +30,7 @@ Disposition meanings:
 | 1 | `ACL` / `x-amz-acl` | Validate/no-op for `private`; authenticated NotImplemented for every other modeled ACL. |
 | 2 | `Bucket` / destination host or path | Persist as the destination namespace. |
 | 3 | `CacheControl` / `Cache-Control` | Persist on `REPLACE`; copy on `COPY`. |
-| 4 | `ChecksumAlgorithm` / `x-amz-checksum-algorithm` | Checksum rebase; validate all ten pinned algorithms and compute the selected destination checksum. |
+| 4 | `ChecksumAlgorithm` / `x-amz-checksum-algorithm` | Persist; validate all ten pinned algorithms and compute the selected destination full-object checksum. If absent, inherit the source algorithm or use CRC64NVME. |
 | 5 | `ContentDisposition` / `Content-Disposition` | Persist on `REPLACE`; copy on `COPY`. |
 | 6 | `ContentEncoding` / `Content-Encoding` | Persist on `REPLACE`; copy on `COPY`. |
 | 7 | `ContentLanguage` / `Content-Language` | Persist on `REPLACE`; copy on `COPY`. |
@@ -71,6 +72,20 @@ Disposition meanings:
 | 43 | `ExpectedBucketOwner` / destination owner | Validate exactly against the authenticated destination owner; mismatch is 403. |
 | 44 | `ExpectedSourceBucketOwner` / `x-amz-source-expected-bucket-owner` | Validate exactly against the authenticated source owner; mismatch is 403. |
 
+`Expires` uses the S3 SDK's canonical IMF-fixdate wire representation, not a
+generic HTTP-date recipient parser. The backend stores a signed typed instant
+covering canonical years 0001 through 9999. A written leap second is accepted
+and normalized after validating the written weekday; the terminal
+`Fri, 31 Dec 9999 23:59:60 GMT` is rejected because its normalized instant
+cannot be rendered in the four-digit domain. Source conditional-date headers
+remain HTTP recipients and accept the three RFC 9110 date forms.
+
+When `MetadataDirective` is absent or `COPY`, supplying a replacement cache,
+content, Expires, or user-metadata field is an `InvalidRequest`; no supplied
+member is silently discarded. Website redirect is the AWS-specific exception:
+it is applied only when explicitly supplied and is never inherited by `COPY`.
+Likewise, `x-amz-tagging` is accepted only with `TaggingDirective=REPLACE`.
+
 ## Output positions (24)
 
 | # | Pinned output position | Required disposition |
@@ -88,17 +103,17 @@ Disposition meanings:
 | 11 | `RequestCharged` header | Omit because Requester Pays requests are rejected. |
 | 12 | result `ETag` | Emit the quoted destination entity tag. |
 | 13 | result `LastModified` | Emit the destination publication timestamp in S3 timestamp form. |
-| 14 | result `ChecksumType` | Checksum rebase; emit the persisted destination checksum type. |
-| 15 | result `ChecksumCRC32` | Checksum rebase; emit only when selected/preserved. |
-| 16 | result `ChecksumCRC32C` | Checksum rebase; emit only when selected/preserved. |
-| 17 | result `ChecksumCRC64NVME` | Checksum rebase; emit only when selected/preserved. |
-| 18 | result `ChecksumSHA1` | Checksum rebase; emit only when selected/preserved. |
-| 19 | result `ChecksumSHA256` | Checksum rebase; emit only when selected/preserved. |
-| 20 | result `ChecksumSHA512` | Checksum rebase; emit only when selected/preserved. |
-| 21 | result `ChecksumMD5` | Checksum rebase; emit only when selected/preserved. |
-| 22 | result `ChecksumXXHASH64` | Checksum rebase; emit only when selected/preserved. |
-| 23 | result `ChecksumXXHASH3` | Checksum rebase; emit only when selected/preserved. |
-| 24 | result `ChecksumXXHASH128` | Checksum rebase; emit only when selected/preserved. |
+| 14 | result `ChecksumType` | Emit `FULL_OBJECT` for the ordinary copied destination. |
+| 15 | result `ChecksumCRC32` | Emit only when selected or inherited. |
+| 16 | result `ChecksumCRC32C` | Emit only when selected or inherited. |
+| 17 | result `ChecksumCRC64NVME` | Emit only when selected, inherited, or defaulted. |
+| 18 | result `ChecksumSHA1` | Emit only when selected or inherited. |
+| 19 | result `ChecksumSHA256` | Emit only when selected or inherited. |
+| 20 | result `ChecksumSHA512` | Emit only when selected or inherited. |
+| 21 | result `ChecksumMD5` | Emit only when selected or inherited. |
+| 22 | result `ChecksumXXHASH64` | Emit only when selected or inherited. |
+| 23 | result `ChecksumXXHASH3` | Emit only when selected or inherited. |
+| 24 | result `ChecksumXXHASH128` | Emit only when selected or inherited. |
 
 ## Snapshot and size boundary
 
@@ -114,6 +129,18 @@ allows overwrite, delete, and same-key races on Windows.
 `Maximum_Copy_Object_Size` is exactly `5 * 1_024 * 1_024 * 1_024` bytes. The
 pure boundary predicate accepts that value and rejects the following byte, so
 the off-by-one policy is tested without allocating a 5 GiB body.
+
+## Publication certainty
+
+`Success` confirms that the complete body, information, metadata, tags, and
+checksum tuple was published. A synchronous `Backend_Unavailable`, transport
+failure, timeout, or cancellation is not evidence of nonpublication once the
+destination publication boundary may have been crossed. In particular, the
+pure-files backend can rename the complete temporary object successfully and
+then fail a directory synchronization or cleanup step. Callers that require
+certainty must reconcile by an exact generation-bound read; they must not
+blindly replay a conditional mutation. Preflight validation and failed source
+or destination predicates remain conclusively before publication.
 
 ## Pure-files serialization cost
 
@@ -133,3 +160,11 @@ not physical device traffic. An unqualified Apple arm64 smoke run on
 (0.905429 seconds). This is developer evidence, not a portable threshold or a
 power-loss-durable result. The cross-implementation S3 benchmark remains the
 release performance oracle once the full wire feature disposition is closed.
+
+The pinned SeaweedFS 4.43 image at revision
+`6c7f184381e3c4f7908934f4c1d8cb7dcca41894` publishes the copy but emits a
+bare `ETag` value in `CopyObjectResult`. Its generated response type serializes
+that value without adding quotes. The matrix therefore requires both typed
+client layers to reject the response as invalid while independently checking
+the published destination bytes. This is a narrow oracle profile; the
+production decoder continues to require one strong quoted entity-tag.

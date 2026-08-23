@@ -209,6 +209,116 @@ package body Flyology.Object_Storage.S3.Copies is
       end;
    end Validate_Checksum;
 
+   function Valid_Strong_Entity_Tag (Value : String) return Boolean is
+   begin
+      if Value'Length < 2
+        or else Value (Value'First) /= '"'
+        or else Value (Value'Last) /= '"'
+      then
+         return False;
+      end if;
+      for Index in Value'First + 1 .. Value'Last - 1 loop
+         if Character'Pos (Value (Index)) < 16#21#
+           or else Value (Index) = '"'
+           or else Character'Pos (Value (Index)) = 16#7F#
+         then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Valid_Strong_Entity_Tag;
+
+   function Valid_ISO_8601_Timestamp (Value : String) return Boolean is
+      Text : constant String (1 .. Value'Length) := Value;
+
+      function Decimal (First, Last : Positive) return Natural is
+         Result : Natural := 0;
+      begin
+         for Index in First .. Last loop
+            if Text (Index) not in '0' .. '9' then
+               return Natural'Last;
+            end if;
+            Result := Result * 10 +
+              Character'Pos (Text (Index)) - Character'Pos ('0');
+         end loop;
+         return Result;
+      end Decimal;
+
+      Year   : Natural;
+      Month  : Natural;
+      Day    : Natural;
+      Hour   : Natural;
+      Minute : Natural;
+      Second : Natural;
+      Zone   : Positive := 20;
+      Maximum_Day : Natural;
+   begin
+      if Text'Length not in 20 .. 35
+        or else Text (5) /= '-'
+        or else Text (8) /= '-'
+        or else Text (11) /= 'T'
+        or else Text (14) /= ':'
+        or else Text (17) /= ':'
+      then
+         return False;
+      end if;
+      Year := Decimal (1, 4);
+      Month := Decimal (6, 7);
+      Day := Decimal (9, 10);
+      Hour := Decimal (12, 13);
+      Minute := Decimal (15, 16);
+      Second := Decimal (18, 19);
+      if Year not in 1 .. 9_999
+        or else Month not in 1 .. 12
+        or else Hour > 23
+        or else Minute > 59
+        or else Second > 59
+      then
+         return False;
+      end if;
+      Maximum_Day :=
+        (case Month is
+            when 2 =>
+              (if Year mod 400 = 0
+                 or else (Year mod 4 = 0 and then Year mod 100 /= 0)
+               then 29 else 28),
+            when 4 | 6 | 9 | 11 => 30,
+            when others => 31);
+      if Day not in 1 .. Maximum_Day then
+         return False;
+      end if;
+
+      if Text (Zone) = '.' then
+         Zone := Zone + 1;
+         declare
+            First_Fraction : constant Positive := Zone;
+         begin
+            while Zone <= Text'Last and then Text (Zone) in '0' .. '9' loop
+               Zone := Zone + 1;
+            end loop;
+            if Zone = First_Fraction or else Zone - First_Fraction > 9 then
+               return False;
+            end if;
+         end;
+      end if;
+      if Zone = Text'Last and then Text (Zone) = 'Z' then
+         return True;
+      elsif Zone + 5 = Text'Last
+        and then Text (Zone) in '+' | '-'
+        and then Text (Zone + 3) = ':'
+      then
+         declare
+            Offset_Hour : constant Natural := Decimal (Zone + 1, Zone + 2);
+            Offset_Minute : constant Natural :=
+              Decimal (Zone + 4, Zone + 5);
+         begin
+            return Offset_Hour <= 23 and then Offset_Minute <= 59;
+         end;
+      else
+         return False;
+      end if;
+   end Valid_ISO_8601_Timestamp;
+
    procedure Validate (Value : Copy_Object_Result) is
       Kind : constant String := US.To_String (Value.Checksum_Type);
       Count : constant Natural :=
@@ -223,8 +333,9 @@ package body Flyology.Object_Storage.S3.Copies is
         Boolean'Pos (US.Length (Value.Checksum_XXHASH3) > 0) +
         Boolean'Pos (US.Length (Value.Checksum_XXHASH128) > 0);
    begin
-      if US.Length (Value.Entity_Tag) = 0
-        or else US.Length (Value.Last_Modified) = 0
+      if not Valid_Strong_Entity_Tag (US.To_String (Value.Entity_Tag))
+        or else not Valid_ISO_8601_Timestamp
+          (US.To_String (Value.Last_Modified))
       then
          raise Malformed_Copy with "incomplete CopyObject result";
       elsif Kind not in "" | "COMPOSITE" | "FULL_OBJECT" then

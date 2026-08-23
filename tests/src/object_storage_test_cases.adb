@@ -10814,7 +10814,7 @@ package body Object_Storage_Test_Cases is
                  Low_Level.Decode_Copy_Object_Response
                    (200, "<CopyObjectResult>" &
                     "<LastModified>2026-08-21T17:00:00Z</LastModified>" &
-                    "<ETag>etag</ETag>" &
+                    "<ETag>&quot;etag&quot;</ETag>" &
                     "<ChecksumType>UNKNOWN</ChecksumType>" &
                     "</CopyObjectResult>", Headers);
                pragma Unreferenced (Ignored);
@@ -10840,7 +10840,8 @@ package body Object_Storage_Test_Cases is
                     Low_Level.Decode_Copy_Object_Response
                       (200, "<CopyObjectResult>" &
                        "<LastModified>2026-08-21T17:00:00Z" &
-                       "</LastModified><ETag>etag</ETag>" & Fields &
+                       "</LastModified><ETag>&quot;etag&quot;</ETag>" &
+                       Fields &
                        "</CopyObjectResult>", Headers);
                   pragma Unreferenced (Ignored);
                begin
@@ -10887,7 +10888,8 @@ package body Object_Storage_Test_Cases is
                  Low_Level.Decode_Copy_Object_Response
                    (200, "<CopyObjectResult>" &
                     "<LastModified>2026-08-21T17:00:00Z</LastModified>" &
-                    "<ETag>etag</ETag></CopyObjectResult>", Headers);
+                    "<ETag>&quot;etag&quot;</ETag></CopyObjectResult>",
+                    Headers);
                pragma Unreferenced (Ignored);
             begin
                null;
@@ -10897,6 +10899,103 @@ package body Object_Storage_Test_Cases is
                Raised := True;
          end;
          Assert (Raised, "invalid CopyObject encryption response accepted");
+      end;
+
+      declare
+         Headers : Low_Level.Copy_Object_Result;
+
+         procedure Reject_ETag (Value, Message : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Copy_Object_Outcome :=
+                    Low_Level.Decode_Copy_Object_Response
+                      (200, "<CopyObjectResult>" &
+                       "<LastModified>2026-08-21T17:00:00Z" &
+                       "</LastModified><ETag>" & Value & "</ETag>" &
+                       "</CopyObjectResult>", Headers);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response => Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Reject_ETag;
+      begin
+         Reject_ETag ("etag", "unquoted CopyObject ETag accepted");
+         Reject_ETag
+           ("W/&quot;etag&quot;", "weak CopyObject ETag accepted");
+         Reject_ETag ("*", "wildcard CopyObject ETag accepted");
+         Reject_ETag
+           ("&quot;a&quot;, &quot;b&quot;",
+            "multiple CopyObject ETags accepted");
+         Reject_ETag
+           ("&quot;a" & Character'Val (10) & "b&quot;",
+            "control-bearing CopyObject ETag accepted");
+      end;
+
+      declare
+         Headers : Low_Level.Copy_Object_Result;
+
+         procedure Reject_Time (Value, Message : String) is
+            Raised : Boolean := False;
+         begin
+            begin
+               declare
+                  Ignored : constant Low_Level.Copy_Object_Outcome :=
+                    Low_Level.Decode_Copy_Object_Response
+                      (200, "<CopyObjectResult><LastModified>" & Value &
+                       "</LastModified><ETag>&quot;etag&quot;</ETag>" &
+                       "</CopyObjectResult>", Headers);
+                  pragma Unreferenced (Ignored);
+               begin
+                  null;
+               end;
+            exception
+               when Low_Level.Invalid_Response => Raised := True;
+            end;
+            Assert (Raised, Message);
+         end Reject_Time;
+      begin
+         declare
+            Offset_Result : constant Low_Level.Copy_Object_Outcome :=
+              Low_Level.Decode_Copy_Object_Response
+                (200, "<CopyObjectResult>" &
+                 "<LastModified>2024-02-29T23:59:59.123456789+05:30" &
+                 "</LastModified><ETag>&quot;etag&quot;</ETag>" &
+                 "</CopyObjectResult>", Headers);
+         begin
+            Assert
+              (Offset_Result.Kind = Low_Level.Object_Copied,
+               "valid offset CopyObject timestamp rejected");
+         end;
+         Reject_Time ("not-a-time", "non-time CopyObject date accepted");
+         Reject_Time
+           ("2023-02-29T00:00:00Z",
+            "invalid CopyObject calendar day accepted");
+         Reject_Time
+           ("2024-13-01T00:00:00Z", "invalid CopyObject month accepted");
+         Reject_Time
+           ("2024-01-01T24:00:00Z", "invalid CopyObject hour accepted");
+         Reject_Time
+           ("2024-01-01T00:60:00Z", "invalid CopyObject minute accepted");
+         Reject_Time
+           ("2024-01-01T00:00:60Z", "invalid CopyObject second accepted");
+         Reject_Time
+           ("2024-01-01T00:00:00+24:00",
+            "invalid CopyObject offset accepted");
+         Reject_Time
+           ("2024-01-01T00:00:00." & String'(1 .. 10 => '1') & "Z",
+            "oversized CopyObject fraction accepted");
+         Reject_Time
+           ("2024-01-01T00:00:" & Character'Val (9) & "0Z",
+            "control-bearing CopyObject timestamp accepted");
+         Reject_Time
+           (String'(1 .. 100 => '1'),
+            "oversized CopyObject timestamp accepted");
       end;
    end Check_Low_Level_Copy_Object;
 
@@ -14305,12 +14404,111 @@ package body Object_Storage_Test_Cases is
          end;
          Assert (Raised, Label);
       end Rejects_Query;
+
+      procedure Rejects_Header (Value : String; Label : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Flyology.Object_Storage.Object_Tag_Set :=
+                 Tagging.Parse_Header (Value);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Tagging.Malformed_Tagging_Query =>
+               Raised := True;
+         end;
+         Assert (Raised, Label);
+      end Rejects_Header;
    begin
       Assert
         (Tags.Length = 2
          and then US.To_String (Tags.Items (1).Value) = "x+y"
          and then Tagging.Parse (Tagging.Serialize (Tags)) = Tags,
          "object tagging XML round trip");
+      declare
+         Header_Tags : constant Flyology.Object_Storage.Object_Tag_Set :=
+           Tagging.Parse_Header ("a_b=x%2By&team=storage%2Fcore");
+         Raw_Plus : constant Flyology.Object_Storage.Object_Tag_Set :=
+           Tagging.Parse_Header ("literal=x+y");
+         Numeric : constant Flyology.Object_Storage.Object_Tag_Set :=
+           Tagging.Parse_Header ("number=%E2%85%A7%C2%B2");
+         Numeric_Value : constant String :=
+           Character'Val (16#E2#) & Character'Val (16#85#) &
+           Character'Val (16#A7#) & Character'Val (16#C2#) &
+           Character'Val (16#B2#);
+      begin
+         Assert
+           (Header_Tags.Length = 2
+            and then US.To_String (Header_Tags.Items (1).Value) = "x+y"
+            and then US.To_String (Header_Tags.Items (2).Value) =
+              "storage/core"
+            and then Raw_Plus.Length = 1
+            and then US.To_String (Raw_Plus.Items (1).Value) = "x+y"
+            and then Numeric.Length = 1
+            and then US.To_String (Numeric.Items (1).Value) = Numeric_Value,
+            "CopyObject tagging header decode");
+      end;
+      declare
+         Ten : constant Flyology.Object_Storage.Object_Tag_Set :=
+           Tagging.Parse_Header
+             ("a=1&b=2&c=3&d=4&e=5&f=6&g=7&h=8&i=9&j=10");
+      begin
+         Assert (Ten.Length = 10, "ten CopyObject tags were rejected");
+      end;
+      Rejects_Header ("missing-equals", "tag header without equals accepted");
+      Rejects_Header ("a=1&a=2", "duplicate CopyObject tag key accepted");
+      Rejects_Header ("a=%GG", "malformed CopyObject tag escape accepted");
+      Rejects_Header
+        ("a=%C0%AF", "invalid percent-decoded UTF-8 tag accepted");
+      Rejects_Header
+        ("a=%E2%82", "truncated percent-decoded UTF-8 tag accepted");
+      Rejects_Header
+        ("a=%ED%A0%80", "UTF-8 surrogate tag accepted");
+      Rejects_Header
+        ("a=%F4%90%80%80", "out-of-range UTF-8 tag accepted");
+      Rejects_Header ("=value", "empty CopyObject tag key accepted");
+      Rejects_Header
+        ("a=1&b=2&c=3&d=4&e=5&f=6&g=7&h=8&i=9&j=10&k=11",
+         "eleven CopyObject tags accepted");
+      declare
+         Header : US.Unbounded_String;
+         First_Characters : constant String := "bcdefgh";
+      begin
+         for Tag_Number in First_Characters'Range loop
+            if Tag_Number /= First_Characters'First then
+               US.Append (Header, "&");
+            end if;
+            US.Append (Header, First_Characters (Tag_Number));
+            for Index in 1 .. 127 loop
+               US.Append (Header, "%61");
+            end loop;
+            US.Append (Header, "=");
+            for Index in 1 .. 256 loop
+               US.Append (Header, "%78");
+            end loop;
+         end loop;
+         US.Append (Header, "&i=");
+         for Index in 1 .. 126 loop
+            US.Append (Header, "x");
+         end loop;
+         Assert
+           (US.Length (Header) = Tagging.Maximum_Query_Bytes,
+            "CopyObject tag header boundary fixture is not exact");
+         declare
+            Boundary : constant Flyology.Object_Storage.Object_Tag_Set :=
+              Tagging.Parse_Header (US.To_String (Header));
+         begin
+            Assert
+              (Boundary.Length = 8,
+               "exact-limit CopyObject tag header was rejected");
+         end;
+         Rejects_Header
+           (US.To_String (Header) & "x",
+            "over-limit CopyObject tag header was accepted");
+      end;
       declare
          Query : constant Tagging.Tagging_Query := Tagging.Parse_Query
            ("versionId=v%20%2B%2F%3D&tagging=&x-id=GetObjectTagging",

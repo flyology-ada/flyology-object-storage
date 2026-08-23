@@ -1,15 +1,10 @@
 with Ada.Containers;
 with Ada.Strings.Fixed;
-with Ada.Strings.UTF_Encoding;
-with Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
-with Ada.Wide_Wide_Characters.Handling;
 with Flyology.Object_Storage.S3.Deletions;
 
 package body Flyology.Object_Storage.S3.Tagging is
 
    package US renames Ada.Strings.Unbounded;
-   package UTF8 renames Ada.Strings.UTF_Encoding.Wide_Wide_Strings;
-   package Handling renames Ada.Wide_Wide_Characters.Handling;
    use type Ada.Containers.Count_Type;
 
    type Field_Kind is (No_Field, Key_Field, Value_Field);
@@ -135,40 +130,18 @@ package body Flyology.Object_Storage.S3.Tagging is
       Item.Depth := Item.Depth - 1;
    end End_Element;
 
-   function Valid_Character (Item : Wide_Wide_Character) return Boolean is
-     (Handling.Is_Letter (Item)
-      or else Handling.Is_Digit (Item)
-      or else Handling.Is_Space (Item)
-      or else Item in '_' | '.' | ':' | '/' | '=' | '+' | '-' | '@');
-
-   function Valid_Field
-     (Value : String; Minimum, Maximum : Natural) return Boolean
-   is
-      Decoded : constant Wide_Wide_String := UTF8.Decode (Value);
-   begin
-      if Decoded'Length not in Minimum .. Maximum then
-         return False;
-      end if;
-      for Character_Value of Decoded loop
-         if not Valid_Character (Character_Value) then
-            return False;
-         end if;
-      end loop;
-      return True;
-   exception
-      when Ada.Strings.UTF_Encoding.Encoding_Error =>
-         return False;
-   end Valid_Field;
-
    function Valid_S3_Tags (Tags : Object_Tag_Set) return Boolean is
    begin
       if not Valid_Object_Tag_Set (Tags) then
          return False;
       end if;
       for Index in 1 .. Tags.Length loop
-         if not Valid_Field (US.To_String (Tags.Items (Index).Key), 1, 128)
-           or else not Valid_Field
-             (US.To_String (Tags.Items (Index).Value), 0, 256)
+         if not Valid_Tag_Text
+           (US.To_String (Tags.Items (Index).Key), 128,
+            Empty_Allowed => False)
+           or else not Valid_Tag_Text
+             (US.To_String (Tags.Items (Index).Value), 256,
+              Empty_Allowed => True)
          then
             return False;
          end if;
@@ -343,6 +316,58 @@ package body Flyology.Object_Storage.S3.Tagging is
       end if;
       return Result;
    end Parse_Query;
+
+   function Parse_Header (Value : String) return Object_Tag_Set is
+      Result : Object_Tag_Set;
+   begin
+      if Value'Length > Maximum_Query_Bytes then
+         raise Malformed_Tagging_Query with
+           "CopyObject tagging header is too large";
+      elsif Value'Length = 0 then
+         return Result;
+      end if;
+
+      declare
+         Raw   : constant String (1 .. Value'Length) := Value;
+         First : Positive := 1;
+      begin
+         for Index in 1 .. Raw'Last + 1 loop
+            if Index = Raw'Last + 1 or else Raw (Index) = '&' then
+               if Index = First or else Result.Length = Maximum_Object_Tags
+               then
+                  raise Malformed_Tagging_Query with
+                    "invalid CopyObject tagging entry count";
+               end if;
+               declare
+                  Pair_Text : constant String := Raw (First .. Index - 1);
+                  Equals    : constant Natural :=
+                    Ada.Strings.Fixed.Index (Pair_Text, "=");
+                  Key       : constant String := Decode_Component
+                    ((if Equals = 0 or else Equals = Pair_Text'First then ""
+                      else Pair_Text (Pair_Text'First .. Equals - 1)));
+                  Item_Value : constant String := Decode_Component
+                    ((if Equals = 0 or else Equals = Pair_Text'Last then ""
+                      else Pair_Text (Equals + 1 .. Pair_Text'Last)));
+               begin
+                  if Equals = 0 then
+                     raise Malformed_Tagging_Query with
+                       "CopyObject tagging entry is missing '='";
+                  end if;
+                  Result.Length := Result.Length + 1;
+                  Result.Items (Result.Length) :=
+                    (Key   => US.To_Unbounded_String (Key),
+                     Value => US.To_Unbounded_String (Item_Value));
+               end;
+               First := Index + 1;
+            end if;
+         end loop;
+      end;
+      if not Valid_S3_Tags (Result) then
+         raise Malformed_Tagging_Query with
+           "invalid CopyObject tagging value";
+      end if;
+      return Result;
+   end Parse_Header;
 
    type Bucket_Tagging_Handler is new XML.Event_Handler with record
       Result        : Tags.Tag_Set;

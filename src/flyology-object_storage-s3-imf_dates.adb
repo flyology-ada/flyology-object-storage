@@ -120,7 +120,8 @@ is
    end Parse;
 
    function Image (Value : Metadata_Time) return String is
-      Seconds : constant Natural := Natural (Long_Long_Integer (Value) mod 86_400);
+      Seconds : constant Natural :=
+        Natural (Long_Long_Integer (Value) mod 86_400);
       Epoch_Delta : constant Long_Long_Integer :=
         (if Value >= 0
          then Long_Long_Integer (Value) / 86_400

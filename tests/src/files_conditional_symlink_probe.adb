@@ -12,11 +12,14 @@ with Flyology.Cancellation;
 with Flyology.Object_Storage;
 with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.Files;
+with Flyology.Object_Storage.Backends.Files.Testing;
 with Flyology.Object_Storage.Tags;
 with GNAT.SHA256;
 
 procedure Files_Conditional_Symlink_Probe is
    package Files renames Flyology.Object_Storage.Backends.Files;
+   package Files_Testing renames
+     Flyology.Object_Storage.Backends.Files.Testing;
    package Storage renames Flyology.Object_Storage;
    package Backends renames Flyology.Object_Storage.Backends;
    package Tags renames Flyology.Object_Storage.Tags;
@@ -391,6 +394,43 @@ procedure Files_Conditional_Symlink_Probe is
    end Expect_Object_Namespace_Failure;
 begin
    Require (Mode in "live" | "dangling", "invalid probe mode");
+   declare
+      Existing_Temp : constant String :=
+        Join (Join (Root, "tmp"), "preexisting-copy-snapshot.tmp");
+   begin
+      if Mode = "live" then
+         declare
+            File : Ada.Text_IO.File_Type;
+         begin
+            Ada.Text_IO.Create (File, Ada.Text_IO.Out_File, Existing_Temp);
+            Ada.Text_IO.Put_Line (File, "preexisting-temp-sentinel");
+            Ada.Text_IO.Close (File);
+         end;
+      else
+         Create_Symlink
+           (Missing, Existing_Temp, "preexisting-copy-snapshot");
+      end if;
+      Require
+        (Files_Testing.Rejects_Temp_Target (Store, Existing_Temp),
+         "preexisting CopyObject snapshot target was accepted");
+      if Mode = "live" then
+         declare
+            File : Ada.Text_IO.File_Type;
+         begin
+            Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Existing_Temp);
+            Require
+              (Ada.Text_IO.Get_Line (File) = "preexisting-temp-sentinel",
+               "temp-target validation modified the existing file");
+            Ada.Text_IO.Close (File);
+         end;
+      else
+         Require
+           (GNAT.OS_Lib.Is_Symbolic_Link (Existing_Temp)
+            and then not Ada.Directories.Exists (Missing),
+            "temp-target validation followed or removed the symlink");
+      end if;
+      Ada.Directories.Delete_File (Existing_Temp);
+   end;
    Store.Create_Bucket
      ("symlink-bucket", null, Ada.Real_Time.Time_Last, Result);
    Require (Result = Storage.Success, "could not create probe bucket");

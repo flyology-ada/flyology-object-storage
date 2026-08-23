@@ -286,6 +286,8 @@ package Flyology.Object_Storage.Backends.Files is
    function Root_Directory (Item : Store) return String;
 
 private
+   procedure Validate_New_Temp_Target (Item : Store; Path : String);
+
    protected type Sequence is
       procedure Next (Value : out Long_Long_Integer);
    private

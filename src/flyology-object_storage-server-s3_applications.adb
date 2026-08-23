@@ -17,9 +17,11 @@ with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
+with Flyology.Object_Storage.S3.IMF_Dates;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
+with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Object_Reads;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4;
@@ -40,9 +42,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Checksums renames S3.Checksums;
    package Encoding renames S3.SigV4_Encoding;
    package Deletions renames S3.Deletions;
+   package IMF_Dates renames S3.IMF_Dates;
    package Listings renames S3.Listings;
    package Multipart renames S3.Multipart;
    package Multipart_Uploads renames S3.Multipart_Uploads;
+   package Model renames S3.Model;
    package Object_Reads renames S3.Object_Reads;
    package Tagging renames S3.Tagging;
    package Versioning renames S3.Versioning;
@@ -51,6 +55,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    use type Apps.Response_State;
    use type Authentication.Outcome_Status;
    use type Backends.Length_Kind;
+   use type Backends.Copy_Metadata_Directive;
+   use type Backends.Copy_Tagging_Directive;
    use type Flyology.HTTP.Origin_Scheme;
    use type MFA.Authorization_Status;
    use type MFA.Verifier_Access;
@@ -574,24 +580,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Has_Copy_Source : constant Boolean :=
         Apps.Request_Header_Count (X, "x-amz-copy-source") > 0;
 
-      function Has_User_Metadata return Boolean is
-      begin
-         for Index in 1 .. Apps.Request_Header_Count (X) loop
-            declare
-               Name : constant String := Ada.Characters.Handling.To_Lower
-                 (Apps.Request_Header_Name (X, Index));
-            begin
-               if Name'Length >= 11
-                 and then Name (Name'First .. Name'First + 10) =
-                   "x-amz-meta-"
-               then
-                  return True;
-               end if;
-            end;
-         end loop;
-         return False;
-      end Has_User_Metadata;
-
       function Has_Encryption_Header return Boolean is
       begin
          for Index in 1 .. Apps.Request_Header_Count (X) loop
@@ -704,9 +692,16 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       function Copy_Result_XML
         (Root : String; Value : Object_Information) return String
       is
+         Checksum_Type_XML : constant String :=
+           (if Value.Checksum.Algorithm = No_Checksum
+              or else Root /= "CopyObjectResult"
+            then ""
+            else "<ChecksumType>" & Wire_Method (Value.Checksum.Method) &
+              "</ChecksumType>");
          Checksum_XML : constant String :=
            (if Value.Checksum.Algorithm = No_Checksum then ""
-            else "<Checksum" & Wire_Algorithm (Value.Checksum.Algorithm) &
+            else Checksum_Type_XML & "<Checksum" &
+              Wire_Algorithm (Value.Checksum.Algorithm) &
               ">" & US.To_String (Value.Checksum.Value) & "</Checksum" &
               Wire_Algorithm (Value.Checksum.Algorithm) & ">");
       begin
@@ -1454,7 +1449,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Apps.Set_Principal (X, US.To_String (Auth.Principal));
 
       if Has_Encryption_Header
-        and then Operation not in Head_Object | Get_Object |
+        and then Operation not in Copy_Object | Head_Object | Get_Object |
           Get_Object_Attributes
       then
          Send_Error
@@ -3335,7 +3330,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Apps.Respond
                        (X, 200, "application/xml",
                         Copy_Result_XML ("CopyPartResult", Info));
-                  elsif Result = Source_Not_Found then
+                  elsif Result in Source_Bucket_Not_Found | Source_Not_Found
+                  then
                      Send_Backend_Error
                        (X, Result, False, Source_Target);
                   elsif Result = Not_Found then
@@ -3760,50 +3756,130 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                end;
 
             when Copy_Object =>
-               if Apps.Request_Header_Count (X, "x-amz-copy-source") /= 1
-                 or else Apps.Request_Header_Count
-                   (X, "x-amz-metadata-directive") > 1
-                 or else Apps.Request_Header_Count
-                   (X, "x-amz-copy-source-if-match") > 1
-                 or else Apps.Request_Header_Count
-                   (X, "x-amz-copy-source-if-none-match") > 1
-                 or else Apps.Request_Header_Count (X, "content-type") > 1
-               then
-                  Send_Error
-                    (X, 400, "InvalidRequest",
-                     "A CopyObject header is missing or duplicated",
-                     Target_Text);
-                  return;
-               elsif Apps.Request_Header_Count
-                   (X, "x-amz-copy-source-if-modified-since") > 0
-                 or else Apps.Request_Header_Count
-                   (X, "x-amz-copy-source-if-unmodified-since") > 0
-                 or else Apps.Request_Header_Count (X, "x-amz-acl") > 0
-                 or else Has_User_Metadata
-               then
-                  Send_Error
-                    (X, 501, "NotImplemented",
-                     "This CopyObject metadata or condition is not " &
-                     "implemented", Target_Text);
-                  return;
-               end if;
-               if (Apps.Request_Header_Count
-                     (X, "x-amz-copy-source-if-match") = 1
-                   and then Apps.Request_Header
-                     (X, "x-amz-copy-source-if-match")'Length = 0)
-                 or else
-                   (Apps.Request_Header_Count
-                      (X, "x-amz-copy-source-if-none-match") = 1
-                    and then Apps.Request_Header
-                      (X, "x-amz-copy-source-if-none-match")'Length = 0)
-               then
-                  Send_Error
-                    (X, 400, "InvalidArgument",
-                     "A copy source entity-tag condition is empty",
-                     Target_Text);
-                  return;
-               end if;
                declare
+                  function Count (Name : String) return Natural is
+                    (Apps.Request_Header_Count (X, Name));
+
+                  function Duplicate_User_Metadata return Boolean is
+                  begin
+                     for Index in 1 .. Apps.Request_Header_Count (X) loop
+                        declare
+                           Name : constant String :=
+                             Ada.Characters.Handling.To_Lower
+                               (Apps.Request_Header_Name (X, Index));
+                        begin
+                           if Name'Length >= 11
+                             and then Name (Name'First .. Name'First + 10) =
+                               "x-amz-meta-"
+                             and then Count (Name) > 1
+                           then
+                              return True;
+                           end if;
+                        end;
+                     end loop;
+                     return False;
+                  end Duplicate_User_Metadata;
+
+                  function Has_User_Metadata_Header return Boolean is
+                  begin
+                     for Index in 1 .. Apps.Request_Header_Count (X) loop
+                        declare
+                           Name : constant String :=
+                             Ada.Characters.Handling.To_Lower
+                               (Apps.Request_Header_Name (X, Index));
+                        begin
+                           if Name'Length >= 11
+                             and then Name (Name'First .. Name'First + 10) =
+                               "x-amz-meta-"
+                           then
+                              return True;
+                           end if;
+                        end;
+                     end loop;
+                     return False;
+                  end Has_User_Metadata_Header;
+
+                  function Any_Duplicate return Boolean is
+                    (Count ("x-amz-copy-source") > 1
+                     or else Count ("x-amz-acl") > 1
+                     or else Count ("cache-control") > 1
+                     or else Count ("x-amz-checksum-algorithm") > 1
+                     or else Count ("content-disposition") > 1
+                     or else Count ("content-encoding") > 1
+                     or else Count ("content-language") > 1
+                     or else Count ("content-type") > 1
+                     or else Count ("x-amz-copy-source-if-match") > 1
+                     or else Count
+                       ("x-amz-copy-source-if-modified-since") > 1
+                     or else Count ("x-amz-copy-source-if-none-match") > 1
+                     or else Count
+                       ("x-amz-copy-source-if-unmodified-since") > 1
+                     or else Count ("expires") > 1
+                     or else Count ("x-amz-grant-full-control") > 1
+                     or else Count ("x-amz-grant-read") > 1
+                     or else Count ("x-amz-grant-read-acp") > 1
+                     or else Count ("x-amz-grant-write-acp") > 1
+                     or else Count ("if-match") > 1
+                     or else Count ("if-none-match") > 1
+                     or else Count ("x-amz-metadata-directive") > 1
+                     or else Count ("x-amz-tagging-directive") > 1
+                     or else Count
+                       ("x-amz-object-annotation-directive") > 1
+                     or else Count ("x-amz-server-side-encryption") > 1
+                     or else Count ("x-amz-storage-class") > 1
+                     or else Count
+                       ("x-amz-website-redirect-location") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-customer-algorithm") >
+                         1
+                     or else Count
+                       ("x-amz-server-side-encryption-customer-key") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-customer-key-md5") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-aws-kms-key-id") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-context") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-bucket-key-enabled") >
+                         1
+                     or else Count
+                       ("x-amz-copy-source-server-side-encryption-" &
+                        "customer-algorithm") > 1
+                     or else Count
+                       ("x-amz-copy-source-server-side-encryption-" &
+                        "customer-key") > 1
+                     or else Count
+                       ("x-amz-copy-source-server-side-encryption-" &
+                        "customer-key-md5") > 1
+                     or else Count ("x-amz-request-payer") > 1
+                     or else Count ("x-amz-tagging") > 1
+                     or else Count ("x-amz-object-lock-mode") > 1
+                     or else Count
+                       ("x-amz-object-lock-retain-until-date") > 1
+                     or else Count
+                       ("x-amz-object-lock-legal-hold") > 1
+                     or else Count ("x-amz-expected-bucket-owner") > 1
+                     or else Count
+                       ("x-amz-source-expected-bucket-owner") > 1
+                     or else Duplicate_User_Metadata);
+
+                  function Valid_Enumeration
+                    (Member : Positive; Value : String) return Boolean
+                  is
+                     Input : constant Model.Shape_Index := Model.Shape_Index
+                       (Model.Input_Shape (Model.Copy_Object_Operation));
+                     Shape : constant Model.Shape_Index :=
+                       Model.Member_Shape (Input, Member);
+                  begin
+                     for Index in 1 .. Model.Enumeration_Count (Shape) loop
+                        if Value = Model.Enumeration_Value (Shape, Index) then
+                           return True;
+                        end if;
+                     end loop;
+                     return False;
+                  end Valid_Enumeration;
+
                   Raw_Source : constant String :=
                     Apps.Request_Header (X, "x-amz-copy-source");
                   Source_Target : constant String :=
@@ -3812,12 +3888,74 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      then Raw_Source else '/' & Raw_Source);
                   Source_Parsed : constant Requests.Target_Result :=
                     Requests.Parse_Target (Source_Target);
-                  Directive : Backends.Copy_Metadata_Directive :=
-                    Backends.Copy_Metadata;
                   Copy_Options_Value : Backends.Copy_Options :=
                     Backends.Default_Copy_Options;
+                  Modified_Date : constant
+                    Object_Reads.Conditional_Date_Result :=
+                      (if Count
+                         ("x-amz-copy-source-if-modified-since") = 1
+                       then Object_Reads.Parse_Conditional_Date
+                         (Apps.Request_Header
+                            (X, "x-amz-copy-source-if-modified-since"),
+                          Clock)
+                       else (Valid => False));
+                  Unmodified_Date : constant
+                    Object_Reads.Conditional_Date_Result :=
+                      (if Count
+                         ("x-amz-copy-source-if-unmodified-since") = 1
+                       then Object_Reads.Parse_Conditional_Date
+                         (Apps.Request_Header
+                            (X, "x-amz-copy-source-if-unmodified-since"),
+                          Clock)
+                       else (Valid => False));
+                  Metadata_OK : Boolean := True;
+                  Owner_OK    : Boolean := False;
+
+                  procedure Set_Metadata_Value
+                    (Name : String; Target : out Optional_Metadata_Value) is
+                  begin
+                     if Count (Name) = 1 then
+                        Target :=
+                          (Is_Set => True,
+                           Value => US.To_Unbounded_String
+                             (Apps.Request_Header (X, Name)));
+                     else
+                        Target := (others => <>);
+                     end if;
+                  end Set_Metadata_Value;
                begin
-                  if Source_Parsed.Status /= Requests.Target_Parsed
+                  if Count ("x-amz-copy-source") /= 1 or else Any_Duplicate
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A CopyObject header is missing or duplicated",
+                        Target_Text);
+                     return;
+                  elsif Length.Kind = Backends.Known
+                    and then Length.Bytes /= 0
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "CopyObject does not accept a request body",
+                        Target_Text);
+                     return;
+                  elsif Count ("x-amz-copy-source-if-modified-since") = 1
+                    and then not Modified_Date.Valid
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The copy source modified date is invalid",
+                        Target_Text);
+                     return;
+                  elsif Count ("x-amz-copy-source-if-unmodified-since") = 1
+                    and then not Unmodified_Date.Valid
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The copy source unmodified date is invalid",
+                        Target_Text);
+                     return;
+                  elsif Source_Parsed.Status /= Requests.Target_Parsed
                     or else Source_Parsed.Kind /= Requests.Object_Target
                   then
                      Send_Error
@@ -3831,49 +3969,443 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         "implemented", Target_Text);
                      return;
                   end if;
-                  if Apps.Request_Header_Count
-                    (X, "x-amz-metadata-directive") = 1
+
+                  if Count ("x-amz-metadata-directive") = 1
+                    and then not Valid_Enumeration
+                      (23, Apps.Request_Header
+                         (X, "x-amz-metadata-directive"))
                   then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The metadata directive is invalid", Target_Text);
+                     return;
+                  elsif Count ("x-amz-tagging-directive") = 1
+                    and then not Valid_Enumeration
+                      (24, Apps.Request_Header
+                         (X, "x-amz-tagging-directive"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The tagging directive is invalid", Target_Text);
+                     return;
+                  elsif Count ("x-amz-checksum-algorithm") = 1 then
                      declare
-                        Value : constant String :=
-                          Apps.Request_Header
-                            (X, "x-amz-metadata-directive");
+                        Valid : Boolean;
+                        Algorithm : constant Checksum_Algorithm :=
+                          Parse_Checksum_Algorithm
+                            (Apps.Request_Header
+                               (X, "x-amz-checksum-algorithm"), Valid);
                      begin
-                        if Value = "COPY" then
-                           Directive := Backends.Copy_Metadata;
-                        elsif Value = "REPLACE" then
-                           Directive := Backends.Replace_Metadata;
-                        else
+                        if not Valid then
                            Send_Error
                              (X, 400, "InvalidArgument",
-                              "The metadata directive is invalid",
+                              "The checksum algorithm is invalid",
+                              Target_Text);
+                           return;
+                        end if;
+                        Copy_Options_Value.Selected_Checksum := Algorithm;
+                     end;
+                  end if;
+
+                  if Count ("x-amz-request-payer") = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer is invalid", Target_Text);
+                     return;
+                  elsif Count ("x-amz-server-side-encryption") = 1
+                    and then not Valid_Enumeration
+                      (26, Apps.Request_Header
+                         (X, "x-amz-server-side-encryption"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The encryption algorithm is invalid", Target_Text);
+                     return;
+                  elsif Count
+                      ("x-amz-server-side-encryption-bucket-key-enabled") = 1
+                    and then not S3.Wire_Core.Parse_Boolean
+                      (Apps.Request_Header
+                         (X, "x-amz-server-side-encryption-" &
+                          "bucket-key-enabled")).Valid
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The bucket-key flag is invalid", Target_Text);
+                     return;
+                  elsif Count ("x-amz-object-lock-mode") = 1
+                    and then not Valid_Enumeration
+                      (40, Apps.Request_Header (X, "x-amz-object-lock-mode"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The object-lock mode is invalid", Target_Text);
+                     return;
+                  elsif Count ("x-amz-object-lock-legal-hold") = 1
+                    and then not Valid_Enumeration
+                      (42, Apps.Request_Header
+                         (X, "x-amz-object-lock-legal-hold"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The legal-hold status is invalid", Target_Text);
+                     return;
+                  end if;
+
+                  declare
+                     Source_Match : constant String :=
+                       (if Count ("x-amz-copy-source-if-match") = 1
+                        then Apps.Request_Header
+                          (X, "x-amz-copy-source-if-match") else "");
+                     Source_None : constant String :=
+                       (if Count ("x-amz-copy-source-if-none-match") = 1
+                        then Apps.Request_Header
+                          (X, "x-amz-copy-source-if-none-match") else "");
+                     Destination_Match : constant String :=
+                       (if Count ("if-match") = 1
+                        then Apps.Request_Header (X, "if-match") else "");
+                     Destination_None : constant String :=
+                       (if Count ("if-none-match") = 1
+                        then Apps.Request_Header (X, "if-none-match")
+                        else "");
+                  begin
+                     if (Count ("x-amz-copy-source-if-match") = 1
+                           and then Source_Match'Length = 0)
+                       or else
+                         (Count ("x-amz-copy-source-if-none-match") = 1
+                          and then Source_None'Length = 0)
+                       or else
+                         (Count ("if-match") = 1
+                          and then Destination_Match'Length = 0)
+                       or else
+                         (Count ("if-none-match") = 1
+                          and then Destination_None'Length = 0)
+                       or else not Backends.Valid_Copy_Conditions
+                       ((If_Match => US.To_Unbounded_String (Source_Match),
+                         If_None_Match =>
+                           US.To_Unbounded_String (Source_None),
+                         others => <>))
+                       or else not Backends.Valid_Write_Conditions
+                         ((If_Match =>
+                             US.To_Unbounded_String (Destination_Match),
+                           If_None_Match =>
+                             US.To_Unbounded_String (Destination_None)))
+                     then
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "A CopyObject entity-tag condition is invalid",
+                           Target_Text);
+                        return;
+                     end if;
+                  end;
+
+                  declare
+                     Destination_SSE_Count : constant Natural :=
+                       Count
+                         ("x-amz-server-side-encryption-customer-algorithm") +
+                       Count ("x-amz-server-side-encryption-customer-key") +
+                       Count
+                         ("x-amz-server-side-encryption-customer-key-md5");
+                     Source_SSE_Count : constant Natural :=
+                       Count
+                         ("x-amz-copy-source-server-side-encryption-" &
+                          "customer-algorithm") +
+                       Count
+                         ("x-amz-copy-source-server-side-encryption-" &
+                          "customer-key") +
+                       Count
+                         ("x-amz-copy-source-server-side-encryption-" &
+                          "customer-key-md5");
+                  begin
+                     if Destination_SSE_Count not in 0 | 3
+                       or else Source_SSE_Count not in 0 | 3
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The SSE-C header group is incomplete",
+                           Target_Text);
+                        return;
+                     elsif Destination_SSE_Count = 3
+                       and then
+                         (Apps.Request_Header
+                            (X, "x-amz-server-side-encryption-" &
+                             "customer-algorithm") /= "AES256"
+                          or else not S3.Wire_Core.Valid_Base64
+                            (Apps.Request_Header
+                               (X, "x-amz-server-side-encryption-" &
+                                "customer-key"), 32)
+                          or else not S3.Wire_Core.Valid_Base64
+                            (Apps.Request_Header
+                               (X, "x-amz-server-side-encryption-" &
+                                "customer-key-md5"), 16))
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The destination SSE-C group is invalid",
+                           Target_Text);
+                        return;
+                     elsif Source_SSE_Count = 3
+                       and then
+                         (Apps.Request_Header
+                            (X, "x-amz-copy-source-server-side-encryption-" &
+                             "customer-algorithm") /= "AES256"
+                          or else not S3.Wire_Core.Valid_Base64
+                            (Apps.Request_Header
+                               (X, "x-amz-copy-source-server-side-" &
+                                "encryption-customer-key"), 32)
+                          or else not S3.Wire_Core.Valid_Base64
+                            (Apps.Request_Header
+                               (X, "x-amz-copy-source-server-side-" &
+                                "encryption-customer-key-md5"), 16))
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The source SSE-C group is invalid", Target_Text);
+                        return;
+                     end if;
+                  end;
+
+                  if Count ("x-amz-acl") = 1 then
+                     declare
+                        Value : constant String :=
+                          Apps.Request_Header (X, "x-amz-acl");
+                     begin
+                        if not Valid_Enumeration (1, Value) then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The canned ACL is invalid", Target_Text);
+                           return;
+                        elsif Value /= "private" then
+                           Send_Error
+                             (X, 501, "NotImplemented",
+                              "This canned ACL is not implemented",
                               Target_Text);
                            return;
                         end if;
                      end;
                   end if;
-                  Copy_Options_Value.Metadata_Directive := Directive;
+                  if Count ("x-amz-storage-class") = 1 then
+                     declare
+                        Value : constant String :=
+                          Apps.Request_Header (X, "x-amz-storage-class");
+                     begin
+                        if not Valid_Enumeration (27, Value) then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The storage class is invalid", Target_Text);
+                           return;
+                        elsif Value /= "STANDARD" then
+                           Send_Error
+                             (X, 501, "NotImplemented",
+                              "This storage class is not implemented",
+                              Target_Text);
+                           return;
+                        end if;
+                     end;
+                  end if;
+                  if Count ("x-amz-object-annotation-directive") = 1
+                    and then not Valid_Enumeration
+                      (25, Apps.Request_Header
+                         (X, "x-amz-object-annotation-directive"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The annotation directive is invalid", Target_Text);
+                     return;
+                  end if;
+
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  elsif Count ("x-amz-source-expected-bucket-owner") = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-source-expected-bucket-owner") /=
+                        US.To_String (Auth.Principal)
+                  then
+                     Send_Error
+                       (X, 403, "AccessDenied", "Access Denied", Target_Text);
+                     return;
+                  end if;
+
+                  if Count ("x-amz-grant-full-control") > 0
+                    or else Count ("x-amz-grant-read") > 0
+                    or else Count ("x-amz-grant-read-acp") > 0
+                    or else Count ("x-amz-grant-write-acp") > 0
+                    or else Has_Encryption_Header
+                    or else Count ("x-amz-request-payer") > 0
+                    or else Count ("x-amz-object-lock-mode") > 0
+                    or else Count
+                      ("x-amz-object-lock-retain-until-date") > 0
+                    or else Count ("x-amz-object-lock-legal-hold") > 0
+                  then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "This modeled CopyObject member is not implemented",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  Copy_Options_Value.Metadata_Directive :=
+                    (if Count ("x-amz-metadata-directive") = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-metadata-directive") = "REPLACE"
+                     then Backends.Replace_Metadata
+                     else Backends.Copy_Metadata);
+                  if Copy_Options_Value.Metadata_Directive =
+                    Backends.Copy_Metadata
+                    and then
+                      (Count ("cache-control") > 0
+                       or else Count ("content-disposition") > 0
+                       or else Count ("content-encoding") > 0
+                       or else Count ("content-language") > 0
+                       or else Count ("content-type") > 0
+                       or else Count ("expires") > 0
+                       or else Has_User_Metadata_Header)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "Replacement metadata requires REPLACE",
+                        Target_Text);
+                     return;
+                  end if;
                   Copy_Options_Value.Content_Type :=
-                    (if Apps.Request_Header_Count (X, "content-type") = 1
+                    (if Count ("content-type") = 1
                      then US.To_Unbounded_String
                        (Apps.Request_Header (X, "content-type"))
                      else US.To_Unbounded_String
                        ("application/octet-stream"));
-                  if Apps.Request_Header_Count
-                    (X, "x-amz-copy-source-if-match") = 1
+
+                  Set_Metadata_Value
+                    ("cache-control",
+                     Copy_Options_Value.Metadata.Cache_Control);
+                  Set_Metadata_Value
+                    ("content-disposition",
+                     Copy_Options_Value.Metadata.Content_Disposition);
+                  Set_Metadata_Value
+                    ("content-encoding",
+                     Copy_Options_Value.Metadata.Content_Encoding);
+                  Set_Metadata_Value
+                    ("content-language",
+                     Copy_Options_Value.Metadata.Content_Language);
+                  Set_Metadata_Value
+                    ("x-amz-website-redirect-location",
+                     Copy_Options_Value.Metadata.Website_Redirect_Location);
+                  if Count ("expires") = 1 then
+                     declare
+                        Parsed_Expires : constant
+                          IMF_Dates.Metadata_Time_Result := IMF_Dates.Parse
+                            (Apps.Request_Header (X, "expires"));
+                     begin
+                        if not Parsed_Expires.Valid then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The Expires metadata is not canonical",
+                              Target_Text);
+                           return;
+                        end if;
+                        Copy_Options_Value.Metadata.Expires :=
+                          (Is_Set => True, Value => Parsed_Expires.Value);
+                     end;
+                  end if;
+                  for Index in 1 .. Apps.Request_Header_Count (X) loop
+                     declare
+                        Header_Name : constant String :=
+                          Apps.Request_Header_Name (X, Index);
+                        Name : constant String :=
+                          Ada.Characters.Handling.To_Lower (Header_Name);
+                     begin
+                        if Name'Length >= 11
+                          and then Name (Name'First .. Name'First + 10) =
+                            "x-amz-meta-"
+                        then
+                           if Copy_Options_Value.Metadata.User.Length =
+                             Maximum_User_Metadata_Entries
+                           then
+                              Metadata_OK := False;
+                           else
+                              Copy_Options_Value.Metadata.User.Length :=
+                                Copy_Options_Value.Metadata.User.Length + 1;
+                              Copy_Options_Value.Metadata.User.Items
+                                (Copy_Options_Value.Metadata.User.Length) :=
+                                  (Key => US.To_Unbounded_String
+                                     (Name (Name'First + 11 .. Name'Last)),
+                                   Value => US.To_Unbounded_String
+                                     (Apps.Request_Header (X, Header_Name)));
+                           end if;
+                        end if;
+                     end;
+                  end loop;
+                  Metadata_OK := Metadata_OK and then Valid_Object_Metadata
+                    (Copy_Options_Value.Metadata,
+                     US.To_String (Copy_Options_Value.Content_Type));
+                  if not Metadata_OK then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The CopyObject metadata is invalid", Target_Text);
+                     return;
+                  end if;
+
+                  Copy_Options_Value.Tagging_Directive :=
+                    (if Count ("x-amz-tagging-directive") = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-tagging-directive") = "REPLACE"
+                     then Backends.Replace_Tags else Backends.Copy_Tags);
+                  if Count ("x-amz-tagging") = 1
+                    and then Copy_Options_Value.Tagging_Directive /=
+                      Backends.Replace_Tags
                   then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "x-amz-tagging requires REPLACE", Target_Text);
+                     return;
+                  elsif Count ("x-amz-tagging") = 1 then
+                     begin
+                        Copy_Options_Value.Tags := Tagging.Parse_Header
+                          (Apps.Request_Header (X, "x-amz-tagging"));
+                     exception
+                        when Tagging.Malformed_Tagging_Query =>
+                           Send_Error
+                             (X, 400, "InvalidTag",
+                              "The CopyObject tag set is invalid",
+                              Target_Text);
+                           return;
+                     end;
+                  end if;
+
+                  if Count ("x-amz-copy-source-if-match") = 1 then
                      Copy_Options_Value.Conditions.If_Match :=
                        US.To_Unbounded_String
                          (Apps.Request_Header
                             (X, "x-amz-copy-source-if-match"));
                   end if;
-                  if Apps.Request_Header_Count
-                    (X, "x-amz-copy-source-if-none-match") = 1
-                  then
+                  if Modified_Date.Valid then
+                     Copy_Options_Value.Conditions.If_Modified_Since :=
+                       (Is_Set => True,
+                        Value => Modified_Date.Seconds_Since_Epoch);
+                  end if;
+                  if Unmodified_Date.Valid then
+                     Copy_Options_Value.Conditions.If_Unmodified_Since :=
+                       (Is_Set => True,
+                        Value => Unmodified_Date.Seconds_Since_Epoch);
+                  end if;
+                  if Count ("x-amz-copy-source-if-none-match") = 1 then
                      Copy_Options_Value.Conditions.If_None_Match :=
                        US.To_Unbounded_String
                          (Apps.Request_Header
                             (X, "x-amz-copy-source-if-none-match"));
+                  end if;
+                  if Count ("if-match") = 1 then
+                     Copy_Options_Value.Destination_Conditions.If_Match :=
+                       US.To_Unbounded_String
+                         (Apps.Request_Header (X, "if-match"));
+                  end if;
+                  if Count ("if-none-match") = 1 then
+                     Copy_Options_Value.Destination_Conditions.If_None_Match :=
+                       US.To_Unbounded_String
+                         (Apps.Request_Header (X, "if-none-match"));
                   end if;
                   Store.Copy_Object
                     (Requests.Bucket_Name (Source_Target, Source_Parsed),
@@ -3884,7 +4416,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Apps.Respond
                        (X, 200, "application/xml",
                         Copy_Result_XML ("CopyObjectResult", Info));
-                  elsif Result = Source_Not_Found then
+                  elsif Result in Source_Bucket_Not_Found | Source_Not_Found
+                  then
                      Send_Backend_Error
                        (X, Result, False, Source_Target);
                   else

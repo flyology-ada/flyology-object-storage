@@ -518,9 +518,29 @@ package Flyology.Object_Storage.Backends is
    --  metadata. Callers that lose this result must reconcile with one atomic
    --  Get_Object body-and-information snapshot before any conditional retry.
 
-   --  Copy one immutable source snapshot to the destination. Source absence
-   --  is Source_Not_Found; destination-bucket absence remains Not_Found.
-   --  Conditions are evaluated atomically against the copied snapshot.
+   --  Copy one immutable source snapshot to the destination. The snapshot
+   --  contains the exact body, Object_Information, metadata, and tags from one
+   --  source generation; source predicates are evaluated against that same
+   --  generation. Source_Bucket_Not_Found and Source_Not_Found remain
+   --  distinct, while destination-bucket absence is Not_Found.
+   --
+   --  Copy_Metadata preserves source Content_Type and metadata except that
+   --  Website_Redirect_Location always comes from Options and is therefore
+   --  inherited only when explicitly supplied. Replace_Metadata uses the
+   --  complete Content_Type and Metadata in Options. Copy_Tags preserves the
+   --  source tag set; Replace_Tags uses the complete Options.Tags set.
+   --  Selected_Checksum chooses the destination full-object checksum. When it
+   --  is No_Checksum, the source algorithm is inherited, or CRC64NVME is used
+   --  for an unchecksummed source. A multipart composite value or method is
+   --  never transplanted: the destination digest is recomputed over the exact
+   --  copied bytes and its method is Full_Object_Checksum.
+   --
+   --  Destination_Conditions are evaluated in the atomic publication boundary
+   --  that publishes the complete body/information/metadata/tags/checksum
+   --  tuple. Validation, source-condition failure, source read failure, and
+   --  rejection before that boundary leave the prior destination unchanged.
+   --  Backend_Unavailable, cancellation, or timeout after publication may be
+   --  ambiguous; callers must not infer nonpublication from those outcomes.
    procedure Copy_Object
      (Item               : in out Backend;
       Source_Bucket      : String;
