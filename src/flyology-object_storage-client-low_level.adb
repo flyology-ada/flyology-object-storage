@@ -5139,10 +5139,10 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Client, Prepared.Message, Timeout, Token);
    end Execute_Get_Object;
 
-   function Decode_Get_Object_Response_Head
-     (Response : in out Flyology.HTTP.Client.Response;
-      Token    : access Flyology.Cancellation.Token := null;
-      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+   function Decode_Get_Object_Complete_Response
+     (Response      : Flyology.HTTP.Client.Response;
+      Error_Payload : String;
+      Limits        : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Head_Outcome
    is
       Status : constant Flyology.HTTP.Status_Code :=
@@ -5158,11 +5158,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    begin
       if Status not in 200 | 206 then
          declare
-            Payload : constant Flyology.Bytes.Unbounded_Bytes :=
-              Flyology.HTTP.Client.Read_All
-                (Response, Limits.Maximum_Document_Bytes, Token);
-            Text : constant String :=
-              Flyology.Bytes.To_Byte_String (Payload);
+            Text : constant String := Error_Payload;
          begin
             if Whitespace_Only (Text) then
                return
@@ -5284,6 +5280,29 @@ package body Flyology.Object_Storage.Client.Low_Level is
             Validate_Get_Object_Headers (Result, Status);
             return (Kind => Object_Opened, Status => Status, Result => Result);
          end;
+      end;
+   end Decode_Get_Object_Complete_Response;
+
+   function Decode_Get_Object_Response_Head
+     (Response : in out Flyology.HTTP.Client.Response;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Head_Outcome
+   is
+      Status : constant Flyology.HTTP.Status_Code :=
+        Flyology.HTTP.Client.Status (Response);
+   begin
+      if Status in 200 | 206 then
+         return Decode_Get_Object_Complete_Response
+           (Response, "", Limits);
+      end if;
+      declare
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Get_Object_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
@@ -5705,6 +5724,99 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "malformed PutObject error response";
    end Decode_Put_Object_Response;
 
+   function Decode_Put_Object_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Outcome
+   is
+      Status : constant Flyology.HTTP.Status_Code :=
+        Flyology.HTTP.Client.Status (Response);
+
+      function Singleton_Header
+        (Name : String; Required : Boolean := False) return String
+      is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 or else (Required and then Count /= 1) then
+            raise Invalid_Response with
+              "invalid PutObject response header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else Value'Length > Maximum_Put_Object_Response_Header_Bytes
+            then
+               raise Invalid_Response with
+                 "invalid PutObject response header value";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+
+      function Put_Size_Header (Value : String) return Optional_Byte_Count is
+      begin
+         if Value'Length > 1 and then Value (Value'First) = '0' then
+            raise Invalid_Response with
+              "non-canonical PutObject object-size header";
+         end if;
+         return Optional_Byte_Count_Header (Value);
+      end Put_Size_Header;
+
+      Request_ID : constant String := Singleton_Header ("x-amz-request-id");
+      Host_ID : constant String := Singleton_Header ("x-amz-id-2");
+   begin
+      if Status = 200 then
+         declare
+            function H
+              (Name : String; Required : Boolean := False)
+               return US.Unbounded_String is
+              (US.To_Unbounded_String (Singleton_Header (Name, Required)));
+
+            Bucket_Key : constant String := Singleton_Header
+              ("x-amz-server-side-encryption-bucket-key-enabled");
+            Size : constant String := Singleton_Header ("x-amz-object-size");
+            Headers : constant Put_Object_Result :=
+              (Expiration => H ("x-amz-expiration"),
+               Entity_Tag => H ("etag", Required => True),
+               Checksum_CRC32 => H ("x-amz-checksum-crc32"),
+               Checksum_CRC32C => H ("x-amz-checksum-crc32c"),
+               Checksum_CRC64NVME => H ("x-amz-checksum-crc64nvme"),
+               Checksum_SHA1 => H ("x-amz-checksum-sha1"),
+               Checksum_SHA256 => H ("x-amz-checksum-sha256"),
+               Checksum_SHA512 => H ("x-amz-checksum-sha512"),
+               Checksum_MD5 => H ("x-amz-checksum-md5"),
+               Checksum_XXHASH64 => H ("x-amz-checksum-xxhash64"),
+               Checksum_XXHASH3 => H ("x-amz-checksum-xxhash3"),
+               Checksum_XXHASH128 => H ("x-amz-checksum-xxhash128"),
+               Checksum_Type => H ("x-amz-checksum-type"),
+               Server_Side_Encryption => H ("x-amz-server-side-encryption"),
+               Version_ID => H ("x-amz-version-id"),
+               SSE_Customer_Algorithm => H
+                 ("x-amz-server-side-encryption-customer-algorithm"),
+               SSE_Customer_Key_MD5 => H
+                 ("x-amz-server-side-encryption-customer-key-md5"),
+               SSE_KMS_Key_ID => H
+                 ("x-amz-server-side-encryption-aws-kms-key-id"),
+               SSE_KMS_Encryption_Context => H
+                 ("x-amz-server-side-encryption-context"),
+               Bucket_Key_Enabled => Optional_Boolean_Header (Bucket_Key),
+               Size => Put_Size_Header (Size),
+               Request_Charged => H ("x-amz-request-charged"));
+         begin
+            return Decode_Put_Object_Response
+              (Status, Payload, Headers, Request_ID, Host_ID, Limits);
+         end;
+      end if;
+      return Decode_Put_Object_Response
+        (Status, Payload, (others => <>), Request_ID, Host_ID, Limits);
+   end Decode_Put_Object_Complete_Response;
+
    function Execute_Put_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -5724,100 +5836,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
              (Client, Prepared.Message, Source, Timeout, Token);
          Status : constant Flyology.HTTP.Status_Code :=
            Flyology.HTTP.Client.Status (Response);
-         function Singleton_Header
-           (Name : String; Required : Boolean := False) return String
-         is
-            Count : constant Natural :=
-              Flyology.HTTP.Client.Header_Count (Response, Name);
-         begin
-            if Count > 1 or else (Required and then Count /= 1) then
-               raise Invalid_Response with
-                 "invalid PutObject response header multiplicity";
-            elsif Count = 0 then
-               return "";
-            end if;
-            declare
-               Value : constant String :=
-                 Flyology.HTTP.Client.Header (Response, Name);
-            begin
-               if Value'Length = 0
-                 or else Value'Length >
-                   Maximum_Put_Object_Response_Header_Bytes
-               then
-                  raise Invalid_Response with
-                    "invalid PutObject response header value";
-               end if;
-               return Value;
-            end;
-         end Singleton_Header;
-
-         function Put_Size_Header (Value : String)
-            return Optional_Byte_Count is
-         begin
-            if Value'Length > 1 and then Value (Value'First) = '0' then
-               raise Invalid_Response with
-                 "non-canonical PutObject object-size header";
-            end if;
-            return Optional_Byte_Count_Header (Value);
-         end Put_Size_Header;
-
-         Request_ID : constant String :=
-           Singleton_Header ("x-amz-request-id");
-         Host_ID : constant String := Singleton_Header ("x-amz-id-2");
          Maximum : constant Natural :=
            (if Status = 200 then 1 else Limits.Maximum_Document_Bytes);
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All (Response, Maximum, Token);
       begin
-         if Status = 200 then
-            declare
-               function H
-                 (Name : String; Required : Boolean := False)
-                  return US.Unbounded_String is
-                 (US.To_Unbounded_String
-                    (Singleton_Header (Name, Required)));
-
-               Bucket_Key : constant String := Singleton_Header
-                 ("x-amz-server-side-encryption-bucket-key-enabled");
-               Size : constant String :=
-                 Singleton_Header ("x-amz-object-size");
-               Headers : constant Put_Object_Result :=
-                 (Expiration => H ("x-amz-expiration"),
-                  Entity_Tag => H ("etag", Required => True),
-                  Checksum_CRC32 => H ("x-amz-checksum-crc32"),
-                  Checksum_CRC32C => H ("x-amz-checksum-crc32c"),
-                  Checksum_CRC64NVME => H ("x-amz-checksum-crc64nvme"),
-                  Checksum_SHA1 => H ("x-amz-checksum-sha1"),
-                  Checksum_SHA256 => H ("x-amz-checksum-sha256"),
-                  Checksum_SHA512 => H ("x-amz-checksum-sha512"),
-                  Checksum_MD5 => H ("x-amz-checksum-md5"),
-                  Checksum_XXHASH64 => H ("x-amz-checksum-xxhash64"),
-                  Checksum_XXHASH3 => H ("x-amz-checksum-xxhash3"),
-                  Checksum_XXHASH128 => H ("x-amz-checksum-xxhash128"),
-                  Checksum_Type => H ("x-amz-checksum-type"),
-                  Server_Side_Encryption =>
-                    H ("x-amz-server-side-encryption"),
-                  Version_ID => H ("x-amz-version-id"),
-                  SSE_Customer_Algorithm => H
-                    ("x-amz-server-side-encryption-customer-algorithm"),
-                  SSE_Customer_Key_MD5 => H
-                    ("x-amz-server-side-encryption-customer-key-md5"),
-                  SSE_KMS_Key_ID => H
-                    ("x-amz-server-side-encryption-aws-kms-key-id"),
-                  SSE_KMS_Encryption_Context => H
-                    ("x-amz-server-side-encryption-context"),
-                  Bucket_Key_Enabled => Optional_Boolean_Header (Bucket_Key),
-                  Size => Put_Size_Header (Size),
-                  Request_Charged => H ("x-amz-request-charged"));
-            begin
-               return Decode_Put_Object_Response
-                 (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-                  Request_ID, Host_ID, Limits);
-            end;
-         end if;
-         return Decode_Put_Object_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload),
-            (others => <>), Request_ID, Host_ID, Limits);
+         return Decode_Put_Object_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

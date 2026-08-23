@@ -13,8 +13,8 @@ fail() {
 # The five independently solved Alire roots must all use the same reviewed PR
 # commit until Flyology.HTTP 0.1.3-dev and its QUIC dependency are indexed.
 HTTP_DEPENDENCY='flyology_http = "=0.1.3-dev"'
-HTTP_PIN='flyology_http = { url = "https://github.com/flyology-ada/flyology-http.git", commit = "aba55512bfa751e0c91a2e18fb70cde0a3e0f909" }'
-QUIC_PIN='flyology_quic = { url = "https://github.com/flyology-ada/flyology-http.git", subdir = "flyology_quic", commit = "aba55512bfa751e0c91a2e18fb70cde0a3e0f909" }'
+HTTP_PIN='flyology_http = { url = "https://github.com/flyology-ada/flyology-http.git", commit = "8a527902148487d8d80af15aa0dac66774c6cc90" }'
+QUIC_PIN='flyology_quic = { url = "https://github.com/flyology-ada/flyology-http.git", subdir = "flyology_quic", commit = "8a527902148487d8d80af15aa0dac66774c6cc90" }'
 test "$(git grep -h -F "$HTTP_DEPENDENCY" -- '*alire.toml' | wc -l | tr -d ' ')" -eq 2 ||
   fail "root and server must require exact flyology_http=0.1.3-dev"
 test "$(git grep -h -F "$HTTP_PIN" -- '*alire.toml' | wc -l | tr -d ' ')" -eq 5 ||

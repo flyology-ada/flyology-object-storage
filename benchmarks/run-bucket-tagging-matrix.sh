@@ -71,7 +71,7 @@ fi
   echo "cycles=$CYCLES"
   echo "repetitions=$REPETITIONS"
   echo "warmup_cycles=$WARMUP"
-  echo "client=persistent-flyology-http-pr33-aba55512"
+  echo "client=persistent-flyology-http-pr33-8a52790"
   echo "corpora_lock_sha256=$(hash_file "$PROJECT_DIR/coverage/corpora.lock.toml")"
   echo "workload=sequential-put-get-delete-get-absent-with-alternating-values"
 } >"$OUTPUT_ROOT/metadata.txt"

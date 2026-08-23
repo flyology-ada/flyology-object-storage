@@ -1133,6 +1133,19 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Head_Outcome;
 
+   --  Decode complete GetObject response metadata after a scoped exchange has
+   --  already retained the full response body. Error_Payload is decoded only
+   --  for rejected statuses; successful object bytes remain caller-owned.
+   --  @param Response Complete lease-free HTTP response metadata
+   --  @param Error_Payload Bounded complete body for a rejected response
+   --  @param Limits Structured S3 error parsing limits
+   --  @return Validated success metadata or structured S3 rejection
+   function Decode_Get_Object_Complete_Response
+     (Response      : Flyology.HTTP.Client.Response;
+      Error_Payload : String;
+      Limits        : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Head_Outcome;
+
    --  Every non-body, non-ContentLength member in the pinned PutObject input
    --  shape. The borrowed request source supplies Body and ContentLength.
    type Put_Object_Parameters is record
@@ -1247,6 +1260,18 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String := "";
       Host_ID    : String := "";
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Outcome;
+
+   --  Project and validate all PutObject response headers after a scoped
+   --  exchange has already retained the bounded complete response body.
+   --  @param Response Complete lease-free HTTP response metadata
+   --  @param Payload Bounded complete response representation
+   --  @param Limits Structured S3 error parsing limits
+   --  @return Validated PutObject result or structured S3 rejection
+   function Decode_Put_Object_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Object_Outcome;
 
    --  Execute a prepared PutObject request and enforce physical singleton and
@@ -3022,7 +3047,7 @@ private
       Operation : Operation_Kind := List_Objects_V2_Operation;
       Modeled_Operation : S3.Model.Operation_Id :=
         S3.Model.Operation_Id'First;
-      Message   : Flyology.HTTP.Client.Request;
+      Message   : aliased Flyology.HTTP.Client.Request;
       Target_Value    : Ada.Strings.Unbounded.Unbounded_String;
       Authority_Value : Ada.Strings.Unbounded.Unbounded_String;
       Signing   : S3.SigV4.Signing_Result;

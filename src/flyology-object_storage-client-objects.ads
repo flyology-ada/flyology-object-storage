@@ -1,9 +1,11 @@
 with Ada.Strings.Unbounded;
+with Flyology.Buffers;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.Client.Scoped;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Core;
@@ -275,6 +277,42 @@ package Flyology.Object_Storage.Client.Objects is
       Token    : access Flyology.Cancellation.Token := null)
       return Conditional_Put_Outcome;
 
+   --  Blocking buffer-owned conditional PUT implemented by waiting on the
+   --  composable operation. Unlike the legacy one-shot source overload, its
+   --  result preserves HTTP admission and publication certainty. Its defaults
+   --  intentionally match the established source-based overload; changing
+   --  them would be a source and wire-compatibility change.
+   --  @param Client Configured origin client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination key
+   --  @param Payload_Buffer Acquired bytes restored before return
+   --  @param Payload_SHA256 Exact lowercase digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only during signing
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Content_Type Optional content type
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Complete operation timeout
+   --  @param Token Optional cancellation source
+   --  @return Typed publication certainty and terminal result
+   function Put_If_Absent
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Content_Type : String := "";
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Conditional_Put_Result
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
+
    --  Replace a complete current object only when its opaque HTTP entity tag
    --  exactly matches Expected_Entity_Tag. Pass the quoted ETag returned by
    --  Put_If_Absent, Put_If_Matches, Get_Whole, or HeadObject unchanged.
@@ -295,6 +333,43 @@ package Flyology.Object_Storage.Client.Objects is
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
       return Conditional_Put_Outcome;
+
+   --  Blocking buffer-owned compare-and-swap PUT implemented by waiting on
+   --  the composable operation and preserving its exact certainty mapping.
+   --  Defaults match the established source-based overload so buffer
+   --  ownership does not select different wire policy.
+   --  @param Client Configured origin client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination key
+   --  @param Expected_Entity_Tag Exact strong opaque generation validator
+   --  @param Payload_Buffer Acquired bytes restored before return
+   --  @param Payload_SHA256 Exact lowercase digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only during signing
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Content_Type Optional content type
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Timeout Complete operation timeout
+   --  @param Token Optional cancellation source
+   --  @return Typed publication certainty and terminal result
+   function Put_If_Matches
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Expected_Entity_Tag : String;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Content_Type : String := "";
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Conditional_Put_Result
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
 
    type Whole_Get_Outcome_Kind is (Whole_Object_Read, Whole_Get_Rejected);
 
@@ -335,6 +410,45 @@ package Flyology.Object_Storage.Client.Objects is
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
       return Whole_Get_Outcome;
+
+   --  Blocking bounded same-response GET implemented by waiting on the
+   --  composable operation. Destination contains bytes only for Object_Opened.
+   --  Defaults match the established owned-bytes overload so the bounded
+   --  representation does not select different wire policy.
+   --  @param Client Configured origin client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Destination Acquired bounded output buffer
+   --  @param Identity Credentials used only during signing
+   --  @param Expected_Entity_Tag Optional exact strong ETag validator
+   --  @param Version_ID Optional exact provider version selector
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Checksum_Mode Whether to request provider checksum headers
+   --  @param Timeout Complete operation timeout
+   --  @param Token Optional cancellation source
+   --  @return Typed same-response metadata or bounded exchange failure
+   function Get_Whole
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Destination : aliased in out Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Expected_Entity_Tag : String := "";
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Whole_Get_Result
+     with Pre => Flyology.Buffers.Has_Buffer (Destination);
 
    type Delete_Outcome_Kind is (Object_Removed, Delete_Rejected);
 

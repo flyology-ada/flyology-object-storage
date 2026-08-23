@@ -1,10 +1,11 @@
 # Composable object client operations
 
-This note records the contract for the first completion-set-aware convenience
-client slice. It is a design and qualification boundary, not a claim that the
-Object Storage API is implemented. Development proceeds against the reviewed
-Flyology HTTP PR #33 commit; publication remains deferred until that dependency
-is merged, released, and available through the Flyology Alire index.
+This note records the implemented contract for the first completion-set-aware
+convenience client slice: conditional complete-object Put and generation-bound
+whole Get. Exact-range Get and Head remain additive follow-on work. Development
+proceeds against the reviewed Flyology HTTP PR #33 commit; publication remains
+deferred until that dependency is merged, released, and available through the
+Flyology Alire index.
 
 ## Upstream basis
 
@@ -23,15 +24,11 @@ operation model:
 - `Continue_After` for an outer operation to drive and consume a hidden child
   operation on the owner task's stack.
 
-Flyology HTTP main at
-`f4fd9c3ee5c4cb52a046b0b124a8bbf705a34871` contains composable server
-request-head and request-body operations. Its public client still exposes only
-blocking `Execute`, `Read_Body`, and `Read_All`. The indexed
-`flyology_http=0.1.2` source at
-`8f34e73b49b1f6b61e3f4a86a56fe2650d0ff1ca` also depends on
-`flyology=0.1.0`, before completion sets existed. A genuine object client
-operation therefore requires the separate HTTP client-operation prerequisite;
-it must not be simulated with a helper task or a retained borrowed source.
+The indexed `flyology_http=0.1.2` source predates completion-set client
+exchanges. The temporary reviewed PR #33 pin supplies that prerequisite while
+the index remains unchanged. The Object Storage implementation uses those
+exchanges directly; it does not simulate composition with a helper task or a
+retained borrowed source.
 
 ## Intended public boundary
 
@@ -48,11 +45,12 @@ The initial operation order is:
 3. generation-bound exact-range `Get_Object`; and
 4. `Head_Object`.
 
-Each operation has both a limited constructor taking a completion set and an
-established-operation `Start` overload suitable for a reusable component in a
-larger state machine. Initiation performs bounded validation and state setup,
-then returns without waiting. The established overload accepts only a fresh,
-released, or consumed nonterminal operation.
+The implemented Put and whole-Get operations each have both a limited
+constructor taking a completion set and an established-operation `Start`
+overload suitable for a reusable component in a larger state machine.
+Initiation performs bounded validation and state setup, then returns without
+waiting. The established overload accepts only a fresh, released, or consumed
+nonterminal operation.
 
 Each body call moves an acquired `Flyology.Buffers.Unique_Buffer` into the
 operation. The public handle is vacant on successful initiation. Validation or
@@ -144,15 +142,15 @@ The Flyology.DB recovery sequence enabled by these operations is:
 The sequence never retries automatically and never infers commit state from a
 listing.
 
-## Interim synchronous integration
+## Synchronous convergence
 
-Before the scoped HTTP prerequisite is released,
-`Client.Objects.Put_If_Absent` and `Put_If_Matches` expose the conditional
-publication algorithm through the synchronous S3 client. The latter accepts
-the exact quoted ETag returned by the prior response. Both return the complete
-modeled `Put_Object_Outcome`, including ETag and version ID, but do not expose
-transport admission certainty. A caller therefore treats every exception as
-an unknown publication outcome and reconciles before choosing any later retry.
+The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, and
+`Get_Whole` overloads are literal waits on the same `Client.Scoped` state
+machines and retain their typed certainty, capacity, and ownership results.
+The older one-shot source and owned-bytes overloads remain source compatible.
+Because they do not expose transport admission certainty, a caller treats
+every mutation exception after call entry as an unknown publication outcome
+and reconciles before choosing any later retry.
 
 A conditional synchronous Put must use a one-shot type derived directly from
 `Flyology.HTTP.Client.Request_Body_Source`. The stock array, string, bytes,
@@ -164,18 +162,17 @@ a later 412, so it is not an acceptable mutation source. The
 native/lightweight socket corpus and the six-server implementation corpus use
 a direct non-rewindable source for this reason.
 
-`Client.Objects.Get_Whole` performs reconciliation with `If_Match` equal to
-the exact quoted ETag and no range, decodes the successful head, and consumes a
-caller-bounded body from that same response. Its result retains the ETag and
-version ID as separate opaque generation fields. The response retains the
-original HTTP execution deadline while its body is consumed; a parent with a
-broader absolute budget computes the remaining synchronous timeout after
-signing. Head remains useful for existence and size checks, but it is not
-substituted for this same-response whole Get in recovery.
+The buffer-owned `Client.Objects.Get_Whole` performs reconciliation with
+`If_Match` equal to the exact quoted ETag and no range, decodes the successful
+head, and consumes a caller-bounded body from that same response. Its result
+retains the ETag and version ID as separate opaque generation fields. The
+single absolute HTTP deadline covers the complete body exchange. Head remains
+useful for existence and size checks, but it is not substituted for this
+same-response whole Get in recovery.
 
-## HTTP prerequisite
+## Provisional HTTP dependency
 
-The HTTP client slice must provide completion-set operations for request
+The pinned HTTP client slice provides completion-set operations for request
 execution and complete response consumption over HTTP/1.1, HTTP/2, and
 HTTP/3. It must retain the existing pool, redirect, stale-transport,
 cancellation, deadline, and limited-response semantics. It must also expose a
@@ -183,7 +180,7 @@ bounded semantic observation sufficient to distinguish failure before any
 possible server admission from failure after possible admission. This is not
 a public wire-progress counter.
 
-An outer object operation must be able to keep an HTTP operation as an
+An outer object operation keeps an HTTP operation as an
 established child, call `Continue_After`, consume it with typed Finish, release
 its slot, and continue response-body work without blocking or moving work to a
 helper task. A synthetic parent regression in HTTP must prove this lifecycle,
@@ -216,13 +213,13 @@ and caller cancellation. The prerequisite must raise the proven bound or
 coalesce sources without losing their distinct wake semantics. It must never
 truncate or silently omit a source when the current bound is insufficient.
 
-The object-storage implementation can derive its visible operations from the
-HTTP exchange operation instead of adding a second scheduling slot. Put owns
-its caller buffer in a detached provider handle and presents a nonblocking
-source component to an HTTP sink exchange; the sink retains only a bounded S3
-error body. Get passes the caller's acquired destination directly to the HTTP
-buffer exchange. Typed object Finish delegates to HTTP Finish first, then maps
-the body-complete response and restores object-level ownership invariants.
+The object-storage implementation uses a visible parent operation with one
+hidden HTTP exchange child. Put owns its caller buffer in a detached provider
+handle and presents a nonblocking source component to an HTTP sink exchange;
+the sink retains only a bounded S3 error body. Get passes the caller's acquired
+destination directly to the HTTP buffer exchange. Typed object Finish first
+consumes and releases the hidden child, then maps the body-complete response and
+restores object-level ownership invariants.
 
 The private `Prepared_Request` message remains encapsulated. A low-level scoped
 bridge should start an HTTP exchange from that prepared value; the public
@@ -230,7 +227,7 @@ high-level child must not expose or duplicate signed request fields merely to
 cross the sibling-package privacy boundary.
 
 The consumer-approved PR #33 baseline is pinned at
-`aba55512bfa751e0c91a2e18fb70cde0a3e0f909`. Its qualification includes the
+`8a527902148487d8d80af15aa0dac66774c6cc90`. Its qualification includes the
 established-child lifecycle, typed buffer restoration, admission certainty,
 and owner-driven HTTP/1.1, HTTP/2, and HTTP/3 exchange behavior required by
 this design. Object Storage still independently gates its semantic mappings

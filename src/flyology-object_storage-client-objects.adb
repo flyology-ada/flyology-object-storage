@@ -3,6 +3,7 @@ with Ada.Calendar.Formatting;
 with Flyology.Object_Storage.S3.Checksum_Policy;
 with Flyology.Object_Storage.S3.IMF_Dates;
 with Flyology.Object_Storage.S3.Tagging;
+with Flyology.Operations;
 
 package body Flyology.Object_Storage.Client.Objects is
 
@@ -558,6 +559,71 @@ package body Flyology.Object_Storage.Client.Objects is
          Expected_Bucket_Owner, Timeout, Token);
    end Put_If_Matches;
 
+   function Put_If_Absent
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Content_Type : String := "";
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Conditional_Put_Result
+   is
+      --  The object operation, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+      Operation : Scoped.Conditional_Put_Operation :=
+        Scoped.Put_If_Absent
+          (Set'Access, Client'Access, Origin, Bucket, Key, Payload_Buffer,
+           Payload_SHA256, Identity,
+           Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+           Content_Type, Expected_Bucket_Owner, Token);
+      Result : Scoped.Conditional_Put_Result;
+   begin
+      Flyology.Operations.Wait_All (Set);
+      Scoped.Finish (Operation, Result, Payload_Buffer);
+      return Result;
+   end Put_If_Absent;
+
+   function Put_If_Matches
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Expected_Entity_Tag : String;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Content_Type : String := "";
+      Expected_Bucket_Owner : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Conditional_Put_Result
+   is
+      --  The object operation, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+      Operation : Scoped.Conditional_Put_Operation :=
+        Scoped.Put_If_Matches
+          (Set'Access, Client'Access, Origin, Bucket, Key,
+           Expected_Entity_Tag, Payload_Buffer, Payload_SHA256, Identity,
+           Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+           Content_Type, Expected_Bucket_Owner, Token);
+      Result : Scoped.Conditional_Put_Result;
+   begin
+      Flyology.Operations.Wait_All (Set);
+      Scoped.Finish (Operation, Result, Payload_Buffer);
+      return Result;
+   end Put_If_Matches;
+
    function Get_Whole
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;
@@ -641,6 +707,40 @@ package body Flyology.Object_Storage.Client.Objects is
                Object_Bytes => Object_Bytes);
          end;
       end;
+   end Get_Whole;
+
+   function Get_Whole
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Destination : aliased in out Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Expected_Entity_Tag : String := "";
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Whole_Get_Result
+   is
+      --  The object operation, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+      Operation : Scoped.Whole_Get_Operation := Scoped.Get_Whole
+        (Set'Access, Client'Access, Origin, Bucket, Key,
+         Destination'Access, Identity,
+         Flyology.HTTP.Client.Deadline_After (Timeout),
+         Expected_Entity_Tag, Version_ID, Region, Style,
+         Expected_Bucket_Owner, Request_Payer, Checksum_Mode, Token);
+      Result : Scoped.Whole_Get_Result;
+   begin
+      Flyology.Operations.Wait_All (Set);
+      Scoped.Finish (Operation, Result);
+      return Result;
    end Get_Whole;
 
    function Delete

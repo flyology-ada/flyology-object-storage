@@ -7,6 +7,7 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Flyology;
+with Flyology.Buffers;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP;
@@ -15,6 +16,8 @@ with Flyology.IO;
 with Flyology.IO.Sockets;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Client.Objects;
+with Flyology.Object_Storage.Client.Scoped;
+with Flyology.Object_Storage.Client.Scoped.Testing;
 with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.S3.Deletions;
@@ -26,11 +29,15 @@ with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.Tags;
+with Flyology.Operations;
 
 procedure S3_HTTP_Socket_Corpus is
    package HTTP_Client renames Flyology.HTTP.Client;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
    package Objects renames Flyology.Object_Storage.Client.Objects;
+   package Scoped renames Flyology.Object_Storage.Client.Scoped;
+   package Buffers renames Flyology.Buffers;
+   package Operations renames Flyology.Operations;
    package Buckets renames Flyology.Object_Storage.Client.Buckets;
    package Client_Buckets renames
      Flyology.Object_Storage.Client.Buckets;
@@ -72,6 +79,10 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Object_Tagging_Outcome_Kind;
    use type Objects.Tagging_Outcome_Kind;
    use type Objects.Whole_Get_Outcome_Kind;
+   use type Scoped.Conditional_Put_Result_Kind;
+   use type Scoped.Failure_Reason;
+   use type Scoped.Publication_Disposition;
+   use type Scoped.Whole_Get_Result_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Buckets.Put_Tags_Outcome_Kind;
@@ -230,6 +241,20 @@ procedure S3_HTTP_Socket_Corpus is
       end loop;
       return Result;
    end Bytes;
+
+   function Buffer_String (Item : Buffers.Unique_Buffer) return String is
+      Value : US.Unbounded_String;
+
+      procedure Copy (Data : Stream_Element_Array) is
+      begin
+         for Element of Data loop
+            US.Append (Value, Character'Val (Element));
+         end loop;
+      end Copy;
+   begin
+      Buffers.With_Readable_Data (Item, Copy'Access);
+      return US.To_String (Value);
+   end Buffer_String;
 
    High_Level_File_Payload : constant String := "high-level file payload";
    High_Level_CRC32 : constant String :=
@@ -1591,6 +1616,32 @@ procedure S3_HTTP_Socket_Corpus is
       Port := Sockets.Get_Socket_Name (Listener).Port;
       State.Publish (Port);
       for Round in 1 .. 2 loop
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "etag: ""scoped-generation""" & CRLF),
+            "PUT", "/example-bucket/scoped-put",
+            Expected_Body_Root => "scoped-put-body",
+            Expected_If_None_Match => "*");
+         Serve
+           (HTTP_Response
+              ("412 Precondition Failed",
+               "<Error><Code>PreconditionFailed</Code>" &
+                 "<Message>condition failed</Message></Error>"),
+            "PUT", "/example-bucket/scoped-cas",
+            Expected_Body_Root => "scoped-cas-body",
+            Expected_If_Match => """scoped-generation""");
+         Serve
+           (HTTP_Response
+              ("200 OK", "scoped-get-body",
+               "etag: ""scoped-generation""" & CRLF &
+                 "x-amz-version-id: scoped-version" & CRLF),
+            "GET", "/example-bucket/scoped-get",
+            Expected_If_Match => """scoped-generation""");
+         Serve
+           (HTTP_Response
+              ("200 OK", String'(1 .. 80 => 'x'),
+               "etag: ""oversized-generation""" & CRLF),
+            "GET", "/example-bucket/scoped-oversized");
          Serve
            (HTTP_Response ("200 OK", List_Buckets_XML),
             "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
@@ -3917,6 +3968,118 @@ procedure S3_HTTP_Socket_Corpus is
          end Run_Lost_Put_Reconciliation;
       begin
          HTTP_Client.Configure (HTTP, Origin);
+         declare
+            --  Test-reference geometry: two tokens cover one retained request
+            --  and one response destination. A 64-byte block holds every
+            --  success fixture, while the maintained 80-byte response proves
+            --  the typed overflow lane; changing either changes corpus scope.
+            Pool : aliased Buffers.Pool (Block_Size => 64, Capacity => 2);
+            Payload_Buffer : Buffers.Unique_Buffer (Pool'Access);
+            Destination : aliased Buffers.Unique_Buffer (Pool'Access);
+         begin
+            Buffers.Acquire (Payload_Buffer);
+            Buffers.Copy_From
+              (Payload_Buffer, Bytes ("scoped-put-body"));
+            declare
+               --  Object, HTTP exchange, and its single transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Scoped.Conditional_Put_Operation :=
+                 Scoped.Put_If_Absent
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "scoped-put", Payload_Buffer,
+                    SigV4.SHA256_Hex ("scoped-put-body"), Identity,
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.Conditional_Put_Result;
+            begin
+               if Buffers.Has_Buffer (Payload_Buffer) then
+                  raise Program_Error with
+                    "scoped PutObject did not move its input token";
+               end if;
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result, Payload_Buffer);
+               if Result.Kind /= Scoped.Put_Response_Available
+                 or else Result.Disposition /= Scoped.Published
+                 or else Result.Response.Kind /= Low_Level.Object_Put
+                 or else US.To_String
+                   (Result.Response.Result.Entity_Tag) /=
+                     """scoped-generation"""
+                 or else not Buffers.Has_Buffer (Payload_Buffer)
+                 or else Buffer_String (Payload_Buffer) /= "scoped-put-body"
+               then
+                  raise Program_Error with
+                    "scoped PutObject success/ownership mismatch";
+               end if;
+            end;
+
+            Buffers.Copy_From
+              (Payload_Buffer, Bytes ("scoped-cas-body"));
+            declare
+               Result : constant Scoped.Conditional_Put_Result :=
+                 Objects.Put_If_Matches
+                   (HTTP, Origin, "example-bucket", "scoped-cas",
+                    """scoped-generation""", Payload_Buffer,
+                    SigV4.SHA256_Hex ("scoped-cas-body"), Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Put_Response_Available
+                 or else Result.Disposition /= Scoped.Precondition_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Put_Object_Rejected
+                 or else not Buffers.Has_Buffer (Payload_Buffer)
+                 or else Buffer_String (Payload_Buffer) /= "scoped-cas-body"
+               then
+                  raise Program_Error with
+                    "synchronous composable CAS mapping mismatch";
+               end if;
+            end;
+
+            Buffers.Acquire (Destination);
+            declare
+               --  Object, HTTP exchange, and its single transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Scoped.Whole_Get_Operation := Scoped.Get_Whole
+                 (Set'Access, HTTP'Access, Origin, "example-bucket",
+                  "scoped-get", Destination'Access, Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Expected_Entity_Tag => """scoped-generation""");
+               Result : Scoped.Whole_Get_Result;
+            begin
+               if Buffers.Has_Buffer (Destination) then
+                  raise Program_Error with
+                    "scoped GetObject did not move its output token";
+               end if;
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.Whole_Get_Response_Available
+                 or else Result.Response.Kind /= Low_Level.Object_Opened
+                 or else US.To_String (Result.Response.Result.Entity_Tag) /=
+                   """scoped-generation"""
+                 or else US.To_String (Result.Response.Result.Version_ID) /=
+                   "scoped-version"
+                 or else Buffer_String (Destination) /= "scoped-get-body"
+               then
+                  raise Program_Error with
+                    "scoped same-response GetObject mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Scoped.Whole_Get_Result :=
+                 Objects.Get_Whole
+                   (HTTP, Origin, "example-bucket", "scoped-oversized",
+                    Destination, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Whole_Get_Exchange_Failed
+                 or else Result.Failure /= Scoped.Response_Too_Large
+                 or else not Result.Required_Body_Length.Known
+                 or else Result.Required_Body_Length.Bytes /= 80
+                 or else Buffers.Length (Destination) /= 0
+               then
+                  raise Program_Error with
+                    "scoped GetObject capacity mapping mismatch";
+               end if;
+            end;
+         end;
          declare
             Bucket_Parameters : constant Low_Level.List_Buckets_Parameters :=
               (Max_Buckets            => 1,
@@ -7679,6 +7842,7 @@ procedure S3_HTTP_Socket_Corpus is
    Server_Detail : US.Unbounded_String;
    Client_Detail : US.Unbounded_String;
 begin
+   Flyology.Object_Storage.Client.Scoped.Testing.Check_Put_Certainty_Corpus;
    Run_And_Report;
    declare
       task Lightweight_Client is
