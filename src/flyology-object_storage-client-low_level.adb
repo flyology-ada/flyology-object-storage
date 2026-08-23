@@ -29,6 +29,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    use type Flyology.HTTP.Origin_Scheme;
    use type Flyology.HTTP.Port_Number;
    use type Model.Member_Location;
+   use type Model.HTTP_Method;
    use type Model.Operation_Id;
    use type Model.Shape_Kind;
    use type S3.Core.Range_Parse_Status;
@@ -5906,85 +5907,253 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "DeleteBucket response exceeds XML limit";
    end Execute_Delete_Bucket;
 
-   function Prepare_Delete_Bucket_CORS
-     (Origin     : Flyology.HTTP.Origin;
+   function Prepare_Bucket_Configuration_Deletion
+     (Operation  : Model.Operation_Id;
+      Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
       Bucket     : String;
-      Parameters : Delete_Bucket_CORS_Parameters;
+      ID         : US.Unbounded_String;
+      Has_ID     : Boolean;
+      Owner      : US.Unbounded_String;
       Identity   : Credentials;
       Region     : String;
       Timestamp  : String) return Prepared_Request
    is
-      Owner : constant String :=
-        US.To_String (Parameters.Expected_Bucket_Owner);
+      ID_Text : constant String := US.To_String (ID);
+      Owner_Text : constant String := US.To_String (Owner);
       Values : Model_Value_Array
-        (1 .. 1 + Boolean'Pos (Owner'Length > 0));
+        (1 .. 1 + Boolean'Pos (Has_ID) +
+           Boolean'Pos (Owner_Text'Length > 0));
+      Last : Positive := 1;
    begin
       if not Valid_Bucket_Name (Bucket)
-        or else not Valid_List_Response_Header_Text (Owner)
+        or else (Has_ID and then ID_Text'Length = 0)
+        or else (not Has_ID and then ID_Text'Length > 0)
+        or else not Valid_List_Response_Header_Text (ID_Text)
+        or else not Valid_List_Response_Header_Text (Owner_Text)
+        or else Model.Method (Operation) /= Model.Delete_Method
+        or else Model.Output_Shape (Operation) /= Model.No_Shape
+        or else Model.Response_Code (Operation) /= 204
       then
-         raise Invalid_Request with "invalid DeleteBucketCors parameters";
+         raise Invalid_Request with
+           "invalid bucket-configuration deletion parameters";
       end if;
       Values (1) :=
         (Member_Name => US.To_Unbounded_String ("Bucket"),
          Map_Key     => US.Null_Unbounded_String,
          Value       => US.To_Unbounded_String (Bucket));
-      if Owner'Length > 0 then
-         Values (2) :=
+      if Has_ID then
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String ("Id"),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => ID);
+      end if;
+      if Owner_Text'Length > 0 then
+         Last := Last + 1;
+         Values (Last) :=
            (Member_Name =>
               US.To_Unbounded_String ("ExpectedBucketOwner"),
             Map_Key     => US.Null_Unbounded_String,
-            Value       => Parameters.Expected_Bucket_Owner);
+            Value       => Owner);
       end if;
       return Result : Prepared_Request := Prepare_Model_Request
-        (Model.Delete_Bucket_Cors_Operation, Origin, Style, Values, "",
+        (Operation, Origin, Style, Values, "",
          False, SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
       do
-         Result.Operation := Delete_Bucket_CORS_Operation;
+         Result.Operation := Delete_Bucket_Configuration_Operation;
       end return;
-   end Prepare_Delete_Bucket_CORS;
+   end Prepare_Bucket_Configuration_Deletion;
 
-   function Decode_Delete_Bucket_CORS_Response
+   function Prepare_Delete_Bucket_CORS
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_CORS_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Cors_Operation, Origin, Style, Bucket,
+         US.Null_Unbounded_String, False,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Analytics_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Parameters : Delete_Bucket_Configuration_With_ID_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Analytics_Configuration_Operation,
+         Origin, Style, Bucket, Parameters.ID, True,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Encryption
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Encryption_Operation, Origin, Style, Bucket,
+         US.Null_Unbounded_String, False,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Intelligent_Tiering_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Parameters : Delete_Bucket_Configuration_With_ID_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Intelligent_Tiering_Configuration_Operation,
+         Origin, Style, Bucket, Parameters.ID, True,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Inventory_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Parameters : Delete_Bucket_Configuration_With_ID_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Inventory_Configuration_Operation,
+         Origin, Style, Bucket, Parameters.ID, True,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Lifecycle
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Lifecycle_Operation, Origin, Style, Bucket,
+         US.Null_Unbounded_String, False,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Metadata_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Metadata_Configuration_Operation,
+         Origin, Style, Bucket, US.Null_Unbounded_String, False,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Metadata_Table_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Metadata_Table_Configuration_Operation,
+         Origin, Style, Bucket, US.Null_Unbounded_String, False,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Metrics_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Parameters : Delete_Bucket_Configuration_With_ID_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Metrics_Configuration_Operation,
+         Origin, Style, Bucket, Parameters.ID, True,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Ownership_Controls
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Ownership_Controls_Operation,
+         Origin, Style, Bucket, US.Null_Unbounded_String, False,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Policy
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Policy_Operation, Origin, Style, Bucket,
+         US.Null_Unbounded_String, False,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Replication
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Replication_Operation, Origin, Style, Bucket,
+         US.Null_Unbounded_String, False,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Bucket_Website
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Bucket_Website_Operation, Origin, Style, Bucket,
+         US.Null_Unbounded_String, False,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Prepare_Delete_Public_Access_Block
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Configuration_Deletion
+        (Model.Delete_Public_Access_Block_Operation, Origin, Style, Bucket,
+         US.Null_Unbounded_String, False,
+         Parameters.Expected_Bucket_Owner, Identity, Region, Timestamp));
+
+   function Decode_Delete_Bucket_Configuration_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
       Request_ID : String := "";
       Host_ID    : String := "";
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
-      return Delete_Bucket_CORS_Outcome
+      return Delete_Bucket_Configuration_Outcome
    is
    begin
       if not Valid_List_Response_Header_Text (Request_ID)
         or else not Valid_List_Response_Header_Text (Host_ID)
       then
          raise Invalid_Response with
-           "invalid DeleteBucketCors response identifiers";
+           "invalid bucket-configuration deletion response identifiers";
       elsif Status = 204 then
          if Payload'Length /= 0 then
             raise Invalid_Response with
-              "DeleteBucketCors success contains a response body";
+              "bucket-configuration deletion success contains a body";
          end if;
-         return (Kind => Bucket_CORS_Deleted, Status => Status);
+         return (Kind => Configuration_Deleted, Status => Status);
       end if;
       return
-        (Kind   => Delete_Bucket_CORS_Rejected,
+        (Kind   => Delete_Configuration_Rejected,
          Status => Status,
          Error  => Error_Response
            (Payload, Request_ID, Host_ID, Limits));
    exception
       when S3.Errors.Malformed_Error =>
-         raise Invalid_Response with "malformed DeleteBucketCors response";
-   end Decode_Delete_Bucket_CORS_Response;
+         raise Invalid_Response with
+           "malformed bucket-configuration deletion response";
+   end Decode_Delete_Bucket_Configuration_Response;
 
-   function Execute_Delete_Bucket_CORS
+   function Execute_Bucket_Configuration_Deletion
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
+      Operation : Model.Operation_Id;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null;
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
-      return Delete_Bucket_CORS_Outcome
+      return Delete_Bucket_Configuration_Outcome
    is
    begin
-      if Prepared.Operation /= Delete_Bucket_CORS_Operation then
+      if Prepared.Operation /= Delete_Bucket_Configuration_Operation
+        or else Prepared.Modeled_Operation /= Operation
+      then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
@@ -6000,7 +6169,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          begin
             if Count > 1 then
                raise Invalid_Response with
-                 "invalid DeleteBucketCors response header multiplicity";
+                 "invalid configuration-delete header multiplicity";
             elsif Count = 0 then
                return "";
             end if;
@@ -6012,7 +6181,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
                  or else not Valid_List_Response_Header_Text (Value)
                then
                   raise Invalid_Response with
-                    "invalid DeleteBucketCors response header value";
+                    "invalid configuration-delete response header value";
                end if;
                return Value;
             end;
@@ -6025,15 +6194,162 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_Delete_Bucket_CORS_Response
+         return Decode_Delete_Bucket_Configuration_Response
            (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
             Host_ID, Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
          raise Invalid_Response with
-           "DeleteBucketCors response exceeds XML limit";
-   end Execute_Delete_Bucket_CORS;
+           "bucket-configuration deletion response exceeds XML limit";
+   end Execute_Bucket_Configuration_Deletion;
+
+   function Execute_Delete_Bucket_CORS
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_CORS_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared, Model.Delete_Bucket_Cors_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Analytics_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared,
+         Model.Delete_Bucket_Analytics_Configuration_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Encryption
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared, Model.Delete_Bucket_Encryption_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Intelligent_Tiering_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared,
+         Model.Delete_Bucket_Intelligent_Tiering_Configuration_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Inventory_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared,
+         Model.Delete_Bucket_Inventory_Configuration_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Lifecycle
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared, Model.Delete_Bucket_Lifecycle_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Metadata_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared,
+         Model.Delete_Bucket_Metadata_Configuration_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Metadata_Table_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared,
+         Model.Delete_Bucket_Metadata_Table_Configuration_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Metrics_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared,
+         Model.Delete_Bucket_Metrics_Configuration_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Ownership_Controls
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared,
+         Model.Delete_Bucket_Ownership_Controls_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Policy
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared, Model.Delete_Bucket_Policy_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Replication
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared, Model.Delete_Bucket_Replication_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Bucket_Website
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared, Model.Delete_Bucket_Website_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Delete_Public_Access_Block
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome is
+     (Execute_Bucket_Configuration_Deletion
+        (Client, Prepared, Model.Delete_Public_Access_Block_Operation,
+         Timeout, Token, Limits));
 
    function Prepare_Delete_Object
      (Origin     : Flyology.HTTP.Origin;

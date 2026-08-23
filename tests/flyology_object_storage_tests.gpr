@@ -22,6 +22,7 @@ project Flyology_Object_Storage_Tests is
       "s3_http_socket_corpus.adb",
       "s3_list_object_versions_corpus.adb",
       "s3_delete_bucket_cors_corpus.adb",
+      "s3_delete_bucket_configurations_corpus.adb",
       "s3_create_session_tls_corpus.adb",
       "s3_transfer_many_corpus.adb",
       "s3_implementation_corpus.adb",

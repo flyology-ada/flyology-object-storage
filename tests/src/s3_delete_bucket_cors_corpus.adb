@@ -81,6 +81,16 @@ procedure S3_Delete_Bucket_CORS_Corpus is
 
 begin
    declare
+      Legacy_Kind : constant Low_Level.Delete_Bucket_CORS_Outcome_Kind :=
+        Low_Level.Delete_Bucket_CORS_Outcome_Kind'Value
+          ("BUCKET_CORS_DELETED");
+   begin
+      Require
+        (Legacy_Kind = Low_Level.Bucket_CORS_Deleted,
+         "DeleteBucketCors public enumeration literals changed");
+   end;
+
+   declare
       Parameters : constant Low_Level.Delete_Bucket_CORS_Parameters :=
         (Expected_Bucket_Owner =>
            US.To_Unbounded_String ("123456789012"));

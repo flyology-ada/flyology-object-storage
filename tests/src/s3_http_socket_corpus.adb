@@ -2998,6 +2998,58 @@ procedure S3_HTTP_Socket_Corpus is
             "DELETE", "/example-bucket?cors",
             Expected_Bucket_Owner => "123456789012");
          Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?analytics&id=config%20id",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?encryption",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?id=config%20id&intelligent-tiering",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?id=config%20id&inventory",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?lifecycle",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?metadataConfiguration",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?metadataTable",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?id=config%20id&metrics",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?ownershipControls",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?policy",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?replication",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?website",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/example-bucket?publicAccessBlock",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
            (HTTP_Response
               ("403 Forbidden", Error_XML,
                "x-amz-request-id: cors-request" & CRLF &
@@ -3070,6 +3122,17 @@ procedure S3_HTTP_Socket_Corpus is
            Low_Level.Prepare_List_Objects_V2
              (Origin, Low_Level.Path_Style, "example-bucket", Parameters,
               Identity, "us-east-1", "20130524T000000Z");
+
+         procedure Require_Configuration_Deletion
+           (Result    : Buckets.Delete_Outcome;
+            Operation : String) is
+         begin
+            if Result.Kind /= Buckets.Deletion_Completed
+              or else Result.Status /= 204
+            then
+               raise Program_Error with Operation & " socket mismatch";
+            end if;
+         end Require_Configuration_Deletion;
 
          procedure Require_Put_Response
            (Key           : String;
@@ -7190,6 +7253,71 @@ procedure S3_HTTP_Socket_Corpus is
                  "DeleteBucketCors convenience success mismatch";
             end if;
          end;
+         Require_Configuration_Deletion
+           (Buckets.Delete_Analytics_Configuration
+              (HTTP, Origin, "example-bucket", "config id", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketAnalyticsConfiguration");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Encryption
+              (HTTP, Origin, "example-bucket", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketEncryption");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Intelligent_Tiering_Configuration
+              (HTTP, Origin, "example-bucket", "config id", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketIntelligentTieringConfiguration");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Inventory_Configuration
+              (HTTP, Origin, "example-bucket", "config id", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketInventoryConfiguration");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Lifecycle
+              (HTTP, Origin, "example-bucket", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketLifecycle");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Metadata_Configuration
+              (HTTP, Origin, "example-bucket", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketMetadataConfiguration");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Metadata_Table_Configuration
+              (HTTP, Origin, "example-bucket", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketMetadataTableConfiguration");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Metrics_Configuration
+              (HTTP, Origin, "example-bucket", "config id", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketMetricsConfiguration");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Ownership_Controls
+              (HTTP, Origin, "example-bucket", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketOwnershipControls");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Policy
+              (HTTP, Origin, "example-bucket", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketPolicy");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Replication
+              (HTTP, Origin, "example-bucket", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketReplication");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Website
+              (HTTP, Origin, "example-bucket", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeleteBucketWebsite");
+         Require_Configuration_Deletion
+           (Buckets.Delete_Public_Access_Block
+              (HTTP, Origin, "example-bucket", Identity,
+               Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
+            "DeletePublicAccessBlock");
          declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Delete_Bucket_CORS

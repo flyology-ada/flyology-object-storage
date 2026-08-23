@@ -4,10 +4,11 @@ with Ada.Calendar.Formatting;
 package body Flyology.Object_Storage.Client.Buckets is
 
    package US renames Ada.Strings.Unbounded;
+   package LL renames Low_Level;
    use type Low_Level.List_Buckets_Outcome_Kind;
    use type Low_Level.Create_Bucket_Outcome_Kind;
    use type Low_Level.Delete_Bucket_Outcome_Kind;
-   use type Low_Level.Delete_Bucket_CORS_Outcome_Kind;
+   use type Low_Level.Delete_Bucket_Configuration_Outcome_Kind;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
    use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.Put_Bucket_Tagging_Outcome_Kind;
@@ -139,6 +140,174 @@ package body Flyology.Object_Storage.Client.Buckets is
       return (Kind => Deletion_Completed, Status => Outcome.Status);
    end Delete;
 
+   type Configuration_Deletion_Kind is
+     (CORS_Configuration,
+      Analytics_Configuration,
+      Encryption_Configuration,
+      Intelligent_Tiering_Configuration,
+      Inventory_Configuration,
+      Lifecycle_Configuration,
+      Metadata_Configuration,
+      Metadata_Table_Configuration,
+      Metrics_Configuration,
+      Ownership_Controls_Configuration,
+      Policy_Configuration,
+      Replication_Configuration,
+      Website_Configuration,
+      Public_Access_Block_Configuration);
+
+   function Delete_Configuration
+     (Kind       : Configuration_Deletion_Kind;
+      Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Identifier : String;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Expected_Bucket_Owner : String;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token)
+      return Delete_Outcome
+   is
+      Parameters : constant Low_Level.Delete_Bucket_Configuration_Parameters :=
+        (Expected_Bucket_Owner =>
+           US.To_Unbounded_String (Expected_Bucket_Owner));
+      Parameters_With_ID : constant
+        Low_Level.Delete_Bucket_Configuration_With_ID_Parameters :=
+          (ID                    => US.To_Unbounded_String (Identifier),
+           Expected_Bucket_Owner =>
+             US.To_Unbounded_String (Expected_Bucket_Owner));
+
+      function Prepare return Low_Level.Prepared_Request is
+      begin
+         case Kind is
+            when CORS_Configuration =>
+               return Low_Level.Prepare_Delete_Bucket_CORS
+                 (Origin, Style, Bucket, Parameters, Identity, Region,
+                  Timestamp);
+            when Analytics_Configuration =>
+               return
+                 Low_Level.Prepare_Delete_Bucket_Analytics_Configuration
+                   (Origin, Style, Bucket, Parameters_With_ID, Identity,
+                    Region, Timestamp);
+            when Encryption_Configuration =>
+               return Low_Level.Prepare_Delete_Bucket_Encryption
+                 (Origin, Style, Bucket, Parameters, Identity, Region,
+                  Timestamp);
+            when Intelligent_Tiering_Configuration =>
+               return
+                 LL.Prepare_Delete_Bucket_Intelligent_Tiering_Configuration
+                   (Origin, Style, Bucket, Parameters_With_ID, Identity,
+                    Region, Timestamp);
+            when Inventory_Configuration =>
+               return Low_Level.Prepare_Delete_Bucket_Inventory_Configuration
+                 (Origin, Style, Bucket, Parameters_With_ID, Identity, Region,
+                  Timestamp);
+            when Lifecycle_Configuration =>
+               return Low_Level.Prepare_Delete_Bucket_Lifecycle
+                 (Origin, Style, Bucket, Parameters, Identity, Region,
+                  Timestamp);
+            when Metadata_Configuration =>
+               return Low_Level.Prepare_Delete_Bucket_Metadata_Configuration
+                 (Origin, Style, Bucket, Parameters, Identity, Region,
+                  Timestamp);
+            when Metadata_Table_Configuration =>
+               return
+                 Low_Level.Prepare_Delete_Bucket_Metadata_Table_Configuration
+                   (Origin, Style, Bucket, Parameters, Identity, Region,
+                    Timestamp);
+            when Metrics_Configuration =>
+               return Low_Level.Prepare_Delete_Bucket_Metrics_Configuration
+                 (Origin, Style, Bucket, Parameters_With_ID, Identity, Region,
+                  Timestamp);
+            when Ownership_Controls_Configuration =>
+               return Low_Level.Prepare_Delete_Bucket_Ownership_Controls
+                 (Origin, Style, Bucket, Parameters, Identity, Region,
+                  Timestamp);
+            when Policy_Configuration =>
+               return Low_Level.Prepare_Delete_Bucket_Policy
+                 (Origin, Style, Bucket, Parameters, Identity, Region,
+                  Timestamp);
+            when Replication_Configuration =>
+               return Low_Level.Prepare_Delete_Bucket_Replication
+                 (Origin, Style, Bucket, Parameters, Identity, Region,
+                  Timestamp);
+            when Website_Configuration =>
+               return Low_Level.Prepare_Delete_Bucket_Website
+                 (Origin, Style, Bucket, Parameters, Identity, Region,
+                  Timestamp);
+            when Public_Access_Block_Configuration =>
+               return Low_Level.Prepare_Delete_Public_Access_Block
+                 (Origin, Style, Bucket, Parameters, Identity, Region,
+                  Timestamp);
+         end case;
+      end Prepare;
+
+      Prepared : constant Low_Level.Prepared_Request := Prepare;
+
+      function Execute return Low_Level.Delete_Bucket_Configuration_Outcome is
+      begin
+         case Kind is
+            when CORS_Configuration =>
+               return Low_Level.Execute_Delete_Bucket_CORS
+                 (Client, Prepared, Timeout, Token);
+            when Analytics_Configuration =>
+               return
+                 Low_Level.Execute_Delete_Bucket_Analytics_Configuration
+                   (Client, Prepared, Timeout, Token);
+            when Encryption_Configuration =>
+               return Low_Level.Execute_Delete_Bucket_Encryption
+                 (Client, Prepared, Timeout, Token);
+            when Intelligent_Tiering_Configuration =>
+               return
+                 LL.Execute_Delete_Bucket_Intelligent_Tiering_Configuration
+                   (Client, Prepared, Timeout, Token);
+            when Inventory_Configuration =>
+               return Low_Level.Execute_Delete_Bucket_Inventory_Configuration
+                 (Client, Prepared, Timeout, Token);
+            when Lifecycle_Configuration =>
+               return Low_Level.Execute_Delete_Bucket_Lifecycle
+                 (Client, Prepared, Timeout, Token);
+            when Metadata_Configuration =>
+               return Low_Level.Execute_Delete_Bucket_Metadata_Configuration
+                 (Client, Prepared, Timeout, Token);
+            when Metadata_Table_Configuration =>
+               return
+                 Low_Level.Execute_Delete_Bucket_Metadata_Table_Configuration
+                   (Client, Prepared, Timeout, Token);
+            when Metrics_Configuration =>
+               return Low_Level.Execute_Delete_Bucket_Metrics_Configuration
+                 (Client, Prepared, Timeout, Token);
+            when Ownership_Controls_Configuration =>
+               return Low_Level.Execute_Delete_Bucket_Ownership_Controls
+                 (Client, Prepared, Timeout, Token);
+            when Policy_Configuration =>
+               return Low_Level.Execute_Delete_Bucket_Policy
+                 (Client, Prepared, Timeout, Token);
+            when Replication_Configuration =>
+               return Low_Level.Execute_Delete_Bucket_Replication
+                 (Client, Prepared, Timeout, Token);
+            when Website_Configuration =>
+               return Low_Level.Execute_Delete_Bucket_Website
+                 (Client, Prepared, Timeout, Token);
+            when Public_Access_Block_Configuration =>
+               return Low_Level.Execute_Delete_Public_Access_Block
+                 (Client, Prepared, Timeout, Token);
+         end case;
+      end Execute;
+
+      Outcome : constant Low_Level.Delete_Bucket_Configuration_Outcome :=
+        Execute;
+   begin
+      if Outcome.Kind = Low_Level.Delete_Configuration_Rejected then
+         return
+           (Kind => Delete_Rejected, Status => Outcome.Status,
+            Error => Outcome.Error);
+      end if;
+      return (Kind => Deletion_Completed, Status => Outcome.Status);
+   end Delete_Configuration;
+
    function Delete_CORS
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;
@@ -150,24 +319,166 @@ package body Flyology.Object_Storage.Client.Buckets is
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
       return Delete_Outcome
-   is
-      Prepared : constant Low_Level.Prepared_Request :=
-        Low_Level.Prepare_Delete_Bucket_CORS
-          (Origin, Style, Bucket,
-           (Expected_Bucket_Owner =>
-              US.To_Unbounded_String (Expected_Bucket_Owner)),
-           Identity, Region, Timestamp);
-      Outcome : constant Low_Level.Delete_Bucket_CORS_Outcome :=
-        Low_Level.Execute_Delete_Bucket_CORS
-          (Client, Prepared, Timeout, Token);
-   begin
-      if Outcome.Kind = Low_Level.Delete_Bucket_CORS_Rejected then
-         return
-           (Kind => Delete_Rejected, Status => Outcome.Status,
-            Error => Outcome.Error);
-      end if;
-      return (Kind => Deletion_Completed, Status => Outcome.Status);
-   end Delete_CORS;
+   is (Delete_Configuration
+         (CORS_Configuration, Client, Origin, Bucket, "", Identity, Region,
+          Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Analytics_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Analytics_Configuration, Client, Origin, Bucket, Identifier,
+          Identity, Region, Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Encryption
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Encryption_Configuration, Client, Origin, Bucket, "", Identity,
+          Region, Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Intelligent_Tiering_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Intelligent_Tiering_Configuration, Client, Origin, Bucket,
+          Identifier, Identity, Region, Style, Expected_Bucket_Owner,
+          Timeout, Token));
+
+   function Delete_Inventory_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Inventory_Configuration, Client, Origin, Bucket, Identifier,
+          Identity, Region, Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Lifecycle
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Lifecycle_Configuration, Client, Origin, Bucket, "", Identity,
+          Region, Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Metadata_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Metadata_Configuration, Client, Origin, Bucket, "", Identity,
+          Region, Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Metadata_Table_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Metadata_Table_Configuration, Client, Origin, Bucket, "", Identity,
+          Region, Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Metrics_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Metrics_Configuration, Client, Origin, Bucket, Identifier, Identity,
+          Region, Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Ownership_Controls
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Ownership_Controls_Configuration, Client, Origin, Bucket, "",
+          Identity, Region, Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Policy
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Policy_Configuration, Client, Origin, Bucket, "", Identity, Region,
+          Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Replication
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Replication_Configuration, Client, Origin, Bucket, "", Identity,
+          Region, Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Website
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Website_Configuration, Client, Origin, Bucket, "", Identity,
+          Region, Style, Expected_Bucket_Owner, Timeout, Token));
+
+   function Delete_Public_Access_Block
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome
+   is (Delete_Configuration
+         (Public_Access_Block_Configuration, Client, Origin, Bucket, "",
+          Identity, Region, Style, Expected_Bucket_Owner, Timeout, Token));
 
    function Head
      (Client   : aliased in out Flyology.HTTP.Client.Client;

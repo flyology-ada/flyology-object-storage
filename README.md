@@ -61,7 +61,8 @@ The core crate includes:
   PutBucketTagging, GetBucketTagging, DeleteBucketTagging, GetObject,
   HeadObject, PutObject,
   ListBuckets, ListObjects, ListObjectsV2, ListObjectVersions, DeleteBucket,
-  DeleteBucketCors, DeleteObject, DeleteObjects REST/XML, and multipart
+  DeleteBucketCors, all thirteen remaining bodyless bucket-configuration
+  deletes, DeleteObject, DeleteObjects REST/XML, and multipart
   initiate/upload/complete/abort/ListParts/ListMultipartUploads low-level
   operations over caller-owned `flyology_http` clients, plus a synchronous
   one-shot UploadPart API whose bodies are borrowed from forward-only streaming

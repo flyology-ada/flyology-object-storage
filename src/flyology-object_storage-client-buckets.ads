@@ -154,6 +154,136 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Delete_Outcome;
 
+   --  Remove one named analytics configuration.
+   function Delete_Analytics_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove the complete default encryption configuration.
+   function Delete_Encryption
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove one named intelligent-tiering configuration.
+   function Delete_Intelligent_Tiering_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove one named inventory configuration.
+   function Delete_Inventory_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove the complete lifecycle configuration.
+   function Delete_Lifecycle
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove the complete metadata configuration.
+   function Delete_Metadata_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove the complete metadata-table configuration.
+   function Delete_Metadata_Table_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove one named metrics configuration.
+   function Delete_Metrics_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Identifier : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove the complete ownership-controls configuration.
+   function Delete_Ownership_Controls
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove the complete bucket policy.
+   function Delete_Policy
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove the complete replication configuration.
+   function Delete_Replication
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove the complete website configuration.
+   function Delete_Website
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
+   --  Remove the complete public-access-block configuration.
+   function Delete_Public_Access_Block
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket : String;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Delete_Outcome;
+
    type Head_Outcome_Kind is (Bucket_Available, Head_Rejected);
 
    type Head_Outcome

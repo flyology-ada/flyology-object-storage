@@ -1305,9 +1305,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Delete_Bucket_Outcome;
 
    --  Every member in the pinned DeleteBucketCors request shape.
+   --  @field Expected_Bucket_Owner Optional owner precondition header
    type Delete_Bucket_CORS_Parameters is record
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
+
+   subtype Delete_Bucket_Configuration_Parameters is
+     Delete_Bucket_CORS_Parameters;
 
    --  Build and sign one bodyless DeleteBucketCors request.
    --  @param Origin Exact HTTP origin used by the caller-owned client
@@ -1327,9 +1331,17 @@ package Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request;
 
+   --  Terminal response category for DeleteBucketCors.
+   --  @enum Bucket_CORS_Deleted Exact empty 204 response
+   --  @enum Delete_Bucket_CORS_Rejected Structured non-204 S3 response
    type Delete_Bucket_CORS_Outcome_Kind is
      (Bucket_CORS_Deleted, Delete_Bucket_CORS_Rejected);
 
+   --  Typed DeleteBucketCors result retained as the compatibility base for
+   --  the shared bodyless bucket-configuration response family.
+   --  @field Kind Terminal response category
+   --  @field Status Exact HTTP response status
+   --  @field Error Structured S3 error for a rejected response
    type Delete_Bucket_CORS_Outcome
      (Kind : Delete_Bucket_CORS_Outcome_Kind :=
        Delete_Bucket_CORS_Rejected)
@@ -1343,15 +1355,36 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
-   --  Decode a bounded DeleteBucketCors response. Only 204 with an empty
-   --  body is successful; other statuses require a structured S3 error.
+   --  Shared aliases preserve the original CORS type and literals while the
+   --  exact operation-specific executors reuse one response implementation.
+   subtype Delete_Bucket_Configuration_Outcome_Kind is
+     Delete_Bucket_CORS_Outcome_Kind;
+   Configuration_Deleted : constant
+     Delete_Bucket_Configuration_Outcome_Kind := Bucket_CORS_Deleted;
+   Delete_Configuration_Rejected : constant
+     Delete_Bucket_Configuration_Outcome_Kind :=
+       Delete_Bucket_CORS_Rejected;
+   subtype Delete_Bucket_Configuration_Outcome is
+     Delete_Bucket_CORS_Outcome;
+
+   --  Decode the common generated 204/no-output response shape.
+   function Decode_Delete_Bucket_Configuration_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+
+   --  DeleteBucketCors uses the common bodyless configuration response.
    function Decode_Delete_Bucket_CORS_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;
       Request_ID : String := "";
       Host_ID    : String := "";
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
-      return Delete_Bucket_CORS_Outcome;
+      return Delete_Bucket_CORS_Outcome
+      renames Decode_Delete_Bucket_Configuration_Response;
 
    --  Execute one prepared synchronous DeleteBucketCors request and release
    --  its response before return.
@@ -1362,6 +1395,193 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null;
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Bucket_CORS_Outcome;
+
+   --  Parameters for a named bodyless bucket-configuration delete.
+   --  @field ID Required generated Id query value
+   --  @field Expected_Bucket_Owner Optional owner precondition header
+   type Delete_Bucket_Configuration_With_ID_Parameters is record
+      ID                    : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Build and sign one exact DeleteBucketAnalyticsConfiguration request.
+   function Prepare_Delete_Bucket_Analytics_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Parameters : Delete_Bucket_Configuration_With_ID_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeleteBucketEncryption request.
+   function Prepare_Delete_Bucket_Encryption
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeleteBucketIntelligentTieringConfiguration
+   --  request.
+   function Prepare_Delete_Bucket_Intelligent_Tiering_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Parameters : Delete_Bucket_Configuration_With_ID_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeleteBucketInventoryConfiguration request.
+   function Prepare_Delete_Bucket_Inventory_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Parameters : Delete_Bucket_Configuration_With_ID_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeleteBucketLifecycle request.
+   function Prepare_Delete_Bucket_Lifecycle
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeleteBucketMetadataConfiguration request.
+   function Prepare_Delete_Bucket_Metadata_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeleteBucketMetadataTableConfiguration
+   --  request.
+   function Prepare_Delete_Bucket_Metadata_Table_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeleteBucketMetricsConfiguration request.
+   function Prepare_Delete_Bucket_Metrics_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Parameters : Delete_Bucket_Configuration_With_ID_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeleteBucketOwnershipControls request.
+   function Prepare_Delete_Bucket_Ownership_Controls
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeleteBucketPolicy request.
+   function Prepare_Delete_Bucket_Policy
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeleteBucketReplication request.
+   function Prepare_Delete_Bucket_Replication
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeleteBucketWebsite request.
+   function Prepare_Delete_Bucket_Website
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Build and sign one exact DeletePublicAccessBlock request.
+   function Prepare_Delete_Public_Access_Block
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Delete_Bucket_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+
+   --  Execute one exact prepared DeleteBucketAnalyticsConfiguration request.
+   function Execute_Delete_Bucket_Analytics_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeleteBucketEncryption request.
+   function Execute_Delete_Bucket_Encryption
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeleteBucketIntelligentTieringConfiguration
+   --  request.
+   function Execute_Delete_Bucket_Intelligent_Tiering_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeleteBucketInventoryConfiguration request.
+   function Execute_Delete_Bucket_Inventory_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeleteBucketLifecycle request.
+   function Execute_Delete_Bucket_Lifecycle
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeleteBucketMetadataConfiguration request.
+   function Execute_Delete_Bucket_Metadata_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeleteBucketMetadataTableConfiguration
+   --  request.
+   function Execute_Delete_Bucket_Metadata_Table_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeleteBucketMetricsConfiguration request.
+   function Execute_Delete_Bucket_Metrics_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeleteBucketOwnershipControls request.
+   function Execute_Delete_Bucket_Ownership_Controls
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeleteBucketPolicy request.
+   function Execute_Delete_Bucket_Policy
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeleteBucketReplication request.
+   function Execute_Delete_Bucket_Replication
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeleteBucketWebsite request.
+   function Execute_Delete_Bucket_Website
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
+   --  Execute one exact prepared DeletePublicAccessBlock request.
+   function Execute_Delete_Public_Access_Block
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Bucket_Configuration_Outcome;
 
    --  Every input member in the pinned DeleteObject request shape.
    type Delete_Object_Parameters is record
@@ -2406,7 +2626,7 @@ private
       Get_Object_Attributes_Operation,
       Put_Object_Operation,
       Delete_Bucket_Operation,
-      Delete_Bucket_CORS_Operation,
+      Delete_Bucket_Configuration_Operation,
       Delete_Object_Operation,
       Delete_Objects_Operation,
       Create_Multipart_Operation,
