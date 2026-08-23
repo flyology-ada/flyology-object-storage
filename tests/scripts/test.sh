@@ -7,6 +7,7 @@ PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 "$PROJECT_DIR/tools/test-coverage-verifier.sh"
 "$PROJECT_DIR/tools/verify-composable-client-fixtures.sh"
 "$PROJECT_DIR/tools/test-composable-client-fixtures-verifier.sh"
+python3 "$PROJECT_DIR/tools/verify-create-session-preparation.py"
 cd "$PROJECT_DIR/tests"
 alr -n build
 
@@ -141,5 +142,6 @@ echo "files abrupt-crash matrix: 88 pre/post-barrier cases including conditional
 for run in 1 2 3
 do
   ./bin/s3_http_socket_corpus
+  ./bin/s3_create_session_tls_corpus
   ./bin/s3_transfer_many_corpus
 done

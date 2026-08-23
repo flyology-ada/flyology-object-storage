@@ -465,6 +465,11 @@ package body Flyology.Object_Storage.Client.Low_Level is
    function Session_Token (Item : Credentials) return String is
      (Item.Session_Token_Data (1 .. Item.Session_Token_Length));
 
+   function Session_Token_Header (Item : Credentials) return String is
+     (case Item.Token_Kind is
+         when Security_Token => "x-amz-security-token",
+         when S3_Session_Token => "x-amz-s3session-token");
+
    overriding procedure Finalize (Item : in out Credentials) is
    begin
       Flyology.Object_Storage.Secrets.Wipe (Item.Access_Key_Data);
@@ -473,11 +478,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Item.Access_Key_Length := 0;
       Item.Secret_Key_Length := 0;
       Item.Session_Token_Length := 0;
+      Item.Token_Kind := Security_Token;
    end Finalize;
 
-   function Make_Credentials
+   function Build_Credentials
      (Access_Key, Secret_Key : String;
-      Session_Token         : String := "") return Credentials
+      Session_Token         : String;
+      Token_Kind            : Session_Token_Kind) return Credentials
    is
    begin
       if not Encoding.Valid_Access_Key (Access_Key)
@@ -492,6 +499,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Result.Access_Key_Length := Access_Key'Length;
          Result.Secret_Key_Length := Secret_Key'Length;
          Result.Session_Token_Length := Session_Token'Length;
+         Result.Token_Kind := Token_Kind;
          Result.Access_Key_Data (1 .. Access_Key'Length) := Access_Key;
          Result.Secret_Key_Data (1 .. Secret_Key'Length) := Secret_Key;
          if Session_Token'Length > 0 then
@@ -499,7 +507,18 @@ package body Flyology.Object_Storage.Client.Low_Level is
               Session_Token;
          end if;
       end return;
-   end Make_Credentials;
+   end Build_Credentials;
+
+   function Make_Credentials
+     (Access_Key, Secret_Key : String;
+      Session_Token         : String := "") return Credentials is
+     (Build_Credentials
+        (Access_Key, Secret_Key, Session_Token, Security_Token));
+
+   function Make_S3_Session_Credentials
+     (Access_Key, Secret_Key, Session_Token : String) return Credentials is
+     (Build_Credentials
+        (Access_Key, Secret_Key, Session_Token, S3_Session_Token));
 
    function Target (Item : Prepared_Request) return String is
      (US.To_String (Item.Target_Value));
@@ -1053,6 +1072,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Query : SigV4.Name_Value_Array (1 .. Query_Count);
          Query_Last : Natural := 0;
          Token_Value : constant String := Session_Token (Identity);
+         Token_Header : constant String := Session_Token_Header (Identity);
          Headers : SigV4.Name_Value_Array
            (1 .. 3 + Boolean'Pos (Token_Value'Length > 0) + Header_Count);
          Header_Last : Natural := 3;
@@ -1099,7 +1119,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          if Token_Value'Length > 0 then
             Header_Last := Header_Last + 1;
             Headers (Header_Last) :=
-              SigV4.Pair ("x-amz-security-token", Token_Value);
+              SigV4.Pair (Token_Header, Token_Value);
          end if;
          for Value_Index in Values'Range loop
             declare
@@ -1148,7 +1168,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
               (Message, "x-amz-date", Timestamp);
             if Token_Value'Length > 0 then
                Flyology.HTTP.Client.Add_Header
-                 (Message, "x-amz-security-token", Token_Value);
+                 (Message, Token_Header, Token_Value);
             end if;
             for Index in 4 + Boolean'Pos (Token_Value'Length > 0) ..
               Headers'Last
@@ -1308,6 +1328,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          elsif Payload'Length = 0 then SigV4.Empty_Payload_Hash
          else SigV4.SHA256_Hex (Payload));
       Token : constant String := Session_Token (Identity);
+      Token_Header : constant String := Session_Token_Header (Identity);
       Headers : SigV4.Name_Value_Array
         (1 .. (if Token'Length = 0 then 3 else 4) +
            Additional_Headers'Length);
@@ -1327,7 +1348,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Headers (2) := SigV4.Pair ("x-amz-content-sha256", Payload_Hash);
       Headers (3) := SigV4.Pair ("x-amz-date", Timestamp);
       if Token'Length > 0 then
-         Headers (4) := SigV4.Pair ("x-amz-security-token", Token);
+         Headers (4) := SigV4.Pair (Token_Header, Token);
          Last := 4;
       end if;
       for Header of Additional_Headers loop
@@ -1345,7 +1366,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Flyology.HTTP.Client.Add_Header (Message, "x-amz-date", Timestamp);
       if Token'Length > 0 then
          Flyology.HTTP.Client.Add_Header
-           (Message, "x-amz-security-token", Token);
+           (Message, Token_Header, Token);
       end if;
       for Header of Additional_Headers loop
          Flyology.HTTP.Client.Add_Header
@@ -1726,6 +1747,516 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end if;
       return Value;
    end Error_Response;
+
+   Maximum_Create_Session_Header_Bytes : constant Positive := 8_192;
+
+   function Valid_Create_Session_Header_Text
+     (Value : US.Unbounded_String) return Boolean
+   is
+      Text : constant String := US.To_String (Value);
+   begin
+      if Text'Length > Maximum_Create_Session_Header_Bytes then
+         return False;
+      end if;
+      for Character_Value of Text loop
+         if Character'Pos (Character_Value) < 32
+           or else Character'Pos (Character_Value) = 127
+         then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Valid_Create_Session_Header_Text;
+
+   function Create_Session_KMS_Mode (Value : String) return Boolean is
+     (Value in "aws:kms" | "aws:kms:dsse");
+
+   procedure Validate_Create_Session_Policy
+     (Server_Side_Encryption     : US.Unbounded_String;
+      SSE_KMS_Key_ID              : US.Unbounded_String;
+      SSE_KMS_Encryption_Context : US.Unbounded_String;
+      Bucket_Key_Enabled         : Optional_Boolean;
+      Failure                    : String)
+   is
+      Encryption : constant String := US.To_String (Server_Side_Encryption);
+      Key_ID : constant String := US.To_String (SSE_KMS_Key_ID);
+      Context : constant String :=
+        US.To_String (SSE_KMS_Encryption_Context);
+      KMS : constant Boolean := Create_Session_KMS_Mode (Encryption);
+      Has_Companion : constant Boolean :=
+        Key_ID'Length > 0 or else Context'Length > 0
+        or else Bucket_Key_Enabled.Is_Set;
+   begin
+      if not Valid_Create_Session_Header_Text (Server_Side_Encryption)
+        or else not Valid_Create_Session_Header_Text (SSE_KMS_Key_ID)
+        or else not Valid_Create_Session_Header_Text
+          (SSE_KMS_Encryption_Context)
+        or else (Has_Companion and then not KMS)
+        or else (KMS and then Key_ID'Length = 0)
+        or else (Context'Length > 0
+                 and then not Valid_Canonical_Base64 (Context))
+        or else (Bucket_Key_Enabled.Is_Set
+                 and then not Bucket_Key_Enabled.Value)
+      then
+         raise Invalid_Response with Failure;
+      end if;
+   end Validate_Create_Session_Policy;
+
+   function Prepare_Create_Session
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Create_Session_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Optional_Count : constant Natural :=
+        Boolean'Pos (US.Length (Parameters.Session_Mode) > 0) +
+        Boolean'Pos (US.Length (Parameters.Server_Side_Encryption) > 0) +
+        Boolean'Pos (US.Length (Parameters.SSE_KMS_Key_ID) > 0) +
+        Boolean'Pos
+          (US.Length (Parameters.SSE_KMS_Encryption_Context) > 0) +
+        Boolean'Pos (Parameters.Bucket_Key_Enabled.Is_Set);
+      Values : Model_Value_Array (1 .. 1 + Optional_Count);
+      Last : Natural := 1;
+
+      procedure Add_Optional
+        (Name : String; Value : US.Unbounded_String) is
+      begin
+         if US.Length (Value) > 0 then
+            Last := Last + 1;
+            Values (Last) :=
+              (Member_Name => US.To_Unbounded_String (Name),
+               Map_Key => US.Null_Unbounded_String,
+               Value => Value);
+         end if;
+      end Add_Optional;
+   begin
+      if Style /= Virtual_Hosted_Style
+        or else Flyology.HTTP.Scheme (Origin) /= Flyology.HTTP.Secure_HTTPS
+      then
+         raise Invalid_Request with
+           "CreateSession requires a secure virtual-hosted endpoint";
+      end if;
+      begin
+         Validate_Create_Session_Policy
+           (Parameters.Server_Side_Encryption,
+            Parameters.SSE_KMS_Key_ID,
+            Parameters.SSE_KMS_Encryption_Context,
+            Parameters.Bucket_Key_Enabled,
+            "invalid CreateSession request policy");
+      exception
+         when Invalid_Response =>
+            raise Invalid_Request with "invalid CreateSession parameters";
+      end;
+
+      Values (1) :=
+        (Member_Name => US.To_Unbounded_String ("Bucket"),
+         Map_Key => US.Null_Unbounded_String,
+         Value => US.To_Unbounded_String (Bucket));
+      Add_Optional ("SessionMode", Parameters.Session_Mode);
+      Add_Optional
+        ("ServerSideEncryption", Parameters.Server_Side_Encryption);
+      Add_Optional ("SSEKMSKeyId", Parameters.SSE_KMS_Key_ID);
+      Add_Optional
+        ("SSEKMSEncryptionContext", Parameters.SSE_KMS_Encryption_Context);
+      if Parameters.Bucket_Key_Enabled.Is_Set then
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String ("BucketKeyEnabled"),
+            Map_Key => US.Null_Unbounded_String,
+            Value => US.To_Unbounded_String ("true"));
+      end if;
+
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Create_Session_Operation, Origin, Style, Values, "", False,
+         SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := Create_Session_Operation;
+         Result.Requested_Session_Server_Side_Encryption :=
+           Parameters.Server_Side_Encryption;
+         Result.Requested_Session_SSE_KMS_Key_ID := Parameters.SSE_KMS_Key_ID;
+         Result.Requested_Session_SSE_KMS_Encryption_Context :=
+           Parameters.SSE_KMS_Encryption_Context;
+         Result.Requested_Session_Bucket_Key_Enabled :=
+           Parameters.Bucket_Key_Enabled;
+      end return;
+   exception
+      when Constraint_Error =>
+         raise Invalid_Request with "invalid CreateSession parameters";
+   end Prepare_Create_Session;
+
+   type Create_Session_XML_Field is
+     (No_Session_Field, Access_Key_Field, Secret_Key_Field,
+      Session_Token_Field, Expiration_Field);
+
+   type Raw_Create_Session_Credentials is record
+      Access_Key    : US.Unbounded_String;
+      Secret_Key    : US.Unbounded_String;
+      Session_Token : US.Unbounded_String;
+      Expiration    : US.Unbounded_String;
+   end record;
+
+   type Create_Session_Handler is new S3.XML.Event_Handler with record
+      Value : Raw_Create_Session_Credentials;
+      Depth : Natural := 0;
+      Field : Create_Session_XML_Field := No_Session_Field;
+      Root_Seen : Boolean := False;
+      Credentials_Seen : Boolean := False;
+      Access_Key_Seen : Boolean := False;
+      Secret_Key_Seen : Boolean := False;
+      Session_Token_Seen : Boolean := False;
+      Expiration_Seen : Boolean := False;
+   end record;
+
+   Malformed_Create_Session : exception;
+
+   overriding procedure Start_Element
+     (Item : in out Create_Session_Handler; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out Create_Session_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
+   overriding procedure Text
+     (Item : in out Create_Session_Handler; Value : String);
+   overriding procedure End_Element
+     (Item : in out Create_Session_Handler; Local_Name : String);
+
+   overriding procedure Start_Element_Details
+     (Item            : in out Create_Session_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural)
+   is
+      pragma Unreferenced (Item);
+   begin
+      if Namespace_URI not in
+        "" | "http://s3.amazonaws.com/doc/2006-03-01/"
+        or else Attribute_Count /= 0
+      then
+         raise Malformed_Create_Session with
+           "CreateSession namespace or attributes are invalid";
+      end if;
+   end Start_Element_Details;
+
+   overriding procedure Start_Element
+     (Item : in out Create_Session_Handler; Local_Name : String) is
+   begin
+      if Item.Depth = Natural'Last then
+         raise Malformed_Create_Session with "CreateSession depth overflow";
+      end if;
+      Item.Depth := Item.Depth + 1;
+      if Item.Depth = 1 then
+         if Item.Root_Seen or else Local_Name /= "CreateSessionResult" then
+            raise Malformed_Create_Session with
+              "invalid CreateSession response root";
+         end if;
+         Item.Root_Seen := True;
+      elsif Item.Depth = 2 then
+         if Item.Credentials_Seen or else Local_Name /= "Credentials" then
+            raise Malformed_Create_Session with
+              "invalid CreateSession credentials element";
+         end if;
+         Item.Credentials_Seen := True;
+      elsif Item.Depth = 3 then
+         if Local_Name = "AccessKeyId" and then not Item.Access_Key_Seen then
+            Item.Access_Key_Seen := True;
+            Item.Field := Access_Key_Field;
+         elsif Local_Name = "SecretAccessKey"
+           and then not Item.Secret_Key_Seen
+         then
+            Item.Secret_Key_Seen := True;
+            Item.Field := Secret_Key_Field;
+         elsif Local_Name = "SessionToken"
+           and then not Item.Session_Token_Seen
+         then
+            Item.Session_Token_Seen := True;
+            Item.Field := Session_Token_Field;
+         elsif Local_Name = "Expiration" and then not Item.Expiration_Seen then
+            Item.Expiration_Seen := True;
+            Item.Field := Expiration_Field;
+         else
+            raise Malformed_Create_Session with
+              "unknown or duplicate CreateSession credential field";
+         end if;
+      else
+         raise Malformed_Create_Session with
+           "nested CreateSession credential field";
+      end if;
+   end Start_Element;
+
+   overriding procedure Text
+     (Item : in out Create_Session_Handler; Value : String) is
+   begin
+      if Item.Depth = 3 then
+         case Item.Field is
+            when Access_Key_Field =>
+               US.Append (Item.Value.Access_Key, Value);
+            when Secret_Key_Field =>
+               US.Append (Item.Value.Secret_Key, Value);
+            when Session_Token_Field =>
+               US.Append (Item.Value.Session_Token, Value);
+            when Expiration_Field =>
+               US.Append (Item.Value.Expiration, Value);
+            when No_Session_Field =>
+               raise Malformed_Create_Session with
+                 "CreateSession text has no credential field";
+         end case;
+      elsif not Whitespace_Only (Value) then
+         raise Malformed_Create_Session with
+           "text outside CreateSession credential fields";
+      end if;
+   end Text;
+
+   overriding procedure End_Element
+     (Item : in out Create_Session_Handler; Local_Name : String) is
+   begin
+      if Item.Depth = 3 then
+         if (Item.Field = Access_Key_Field
+             and then Local_Name /= "AccessKeyId")
+           or else (Item.Field = Secret_Key_Field
+                    and then Local_Name /= "SecretAccessKey")
+           or else (Item.Field = Session_Token_Field
+                    and then Local_Name /= "SessionToken")
+           or else (Item.Field = Expiration_Field
+                    and then Local_Name /= "Expiration")
+           or else Item.Field = No_Session_Field
+         then
+            raise Malformed_Create_Session with
+              "mismatched CreateSession credential close";
+         end if;
+         Item.Field := No_Session_Field;
+      elsif Item.Depth = 2 and then Local_Name /= "Credentials" then
+         raise Malformed_Create_Session with
+           "mismatched CreateSession credentials close";
+      elsif Item.Depth = 1 and then Local_Name /= "CreateSessionResult" then
+         raise Malformed_Create_Session with
+           "mismatched CreateSession response close";
+      elsif Item.Depth = 0 then
+         raise Malformed_Create_Session with
+           "CreateSession response stack underflow";
+      end if;
+      Item.Depth := Item.Depth - 1;
+   end End_Element;
+
+   function Parse_Create_Session_Credentials
+     (Payload : String; Limits : S3.XML.Parse_Limits)
+      return Raw_Create_Session_Credentials
+   is
+      Handler : aliased Create_Session_Handler;
+   begin
+      S3.XML.Parse (Payload, Handler, Limits);
+      if Handler.Depth /= 0
+        or else not Handler.Root_Seen
+        or else not Handler.Credentials_Seen
+        or else not Handler.Access_Key_Seen
+        or else not Handler.Secret_Key_Seen
+        or else not Handler.Session_Token_Seen
+        or else not Handler.Expiration_Seen
+        or else US.Length (Handler.Value.Access_Key) = 0
+        or else US.Length (Handler.Value.Secret_Key) = 0
+        or else US.Length (Handler.Value.Session_Token) = 0
+        or else not Valid_ISO_8601_Timestamp
+          (US.To_String (Handler.Value.Expiration))
+      then
+         raise Malformed_Create_Session with
+           "incomplete CreateSession response";
+      end if;
+      return Handler.Value;
+   exception
+      when S3.XML.XML_Error =>
+         raise Malformed_Create_Session with
+           "malformed CreateSession XML";
+   end Parse_Create_Session_Credentials;
+
+   function Decode_Create_Session_Response_Internal
+     (Status        : Flyology.HTTP.Status_Code;
+      Payload       : String;
+      Headers       : Create_Session_Response_Headers;
+      Expected      : Create_Session_Response_Headers;
+      Bind_Expected : Boolean;
+      Request_ID    : String;
+      Host_ID       : String;
+      Limits        : S3.XML.Parse_Limits)
+      return Create_Session_Outcome
+   is
+      Output : constant Model.Shape_Index := Model.Shape_Index
+        (Model.Output_Shape (Model.Create_Session_Operation));
+
+      function Valid_Optional
+        (Value : US.Unbounded_String; Member : Positive) return Boolean is
+        (US.Length (Value) = 0
+         or else Valid_Model_Scalar
+           (Model.Member_Shape (Output, Member), US.To_String (Value)));
+
+      function Matches
+        (Returned, Requested : US.Unbounded_String) return Boolean is
+        (US.Length (Requested) = 0
+         or else US.Length (Returned) = 0
+         or else Returned = Requested);
+   begin
+      if Status = 200 then
+         Validate_Create_Session_Policy
+           (Headers.Server_Side_Encryption, Headers.SSE_KMS_Key_ID,
+            Headers.SSE_KMS_Encryption_Context, Headers.Bucket_Key_Enabled,
+            "invalid CreateSession response policy");
+         if not Valid_Optional (Headers.Server_Side_Encryption, 1)
+           or else not Valid_Optional (Headers.SSE_KMS_Key_ID, 2)
+           or else not Valid_Optional (Headers.SSE_KMS_Encryption_Context, 3)
+           or else (Bind_Expected
+                    and then
+                      (not Matches
+                         (Headers.Server_Side_Encryption,
+                          Expected.Server_Side_Encryption)
+                       or else not Matches
+                         (Headers.SSE_KMS_Key_ID, Expected.SSE_KMS_Key_ID)
+                       or else not Matches
+                         (Headers.SSE_KMS_Encryption_Context,
+                          Expected.SSE_KMS_Encryption_Context)
+                       or else
+                         (Expected.Bucket_Key_Enabled.Is_Set
+                          and then Headers.Bucket_Key_Enabled.Is_Set
+                          and then Expected.Bucket_Key_Enabled.Value /=
+                            Headers.Bucket_Key_Enabled.Value)))
+         then
+            raise Invalid_Response with
+              "CreateSession response does not match request";
+         end if;
+         declare
+            Parsed : constant Raw_Create_Session_Credentials :=
+              Parse_Create_Session_Credentials (Payload, Limits);
+         begin
+            return
+              (Kind => Session_Created,
+               Status => Status,
+               Result =>
+                 (Server_Side_Encryption => Headers.Server_Side_Encryption,
+                  SSE_KMS_Key_ID => Headers.SSE_KMS_Key_ID,
+                  SSE_KMS_Encryption_Context =>
+                    Headers.SSE_KMS_Encryption_Context,
+                  Bucket_Key_Enabled => Headers.Bucket_Key_Enabled,
+                  Identity => Make_S3_Session_Credentials
+                    (US.To_String (Parsed.Access_Key),
+                     US.To_String (Parsed.Secret_Key),
+                     US.To_String (Parsed.Session_Token)),
+                  Expiration => Parsed.Expiration));
+         end;
+      else
+         if Request_ID'Length > Maximum_Create_Session_Header_Bytes
+           or else Host_ID'Length > Maximum_Create_Session_Header_Bytes
+         then
+            raise Invalid_Response with
+              "CreateSession error identifiers exceed limit";
+         end if;
+         return
+           (Kind => Create_Session_Rejected,
+            Status => Status,
+            Error => Error_Response
+              (Payload, Request_ID, Host_ID, Limits));
+      end if;
+   exception
+      when Malformed_Create_Session | S3.Errors.Malformed_Error |
+           Invalid_Request =>
+         raise Invalid_Response with "malformed CreateSession response";
+   end Decode_Create_Session_Response_Internal;
+
+   function Decode_Create_Session_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Create_Session_Response_Headers := (others => <>);
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Create_Session_Outcome is
+     (Decode_Create_Session_Response_Internal
+        (Status, Payload, Headers, (others => <>), False,
+         Request_ID, Host_ID, Limits));
+
+   function Execute_Create_Session
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Create_Session_Outcome
+   is
+   begin
+      if Prepared.Operation /= Create_Session_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Status : constant Flyology.HTTP.Status_Code :=
+           Flyology.HTTP.Client.Status (Response);
+
+         function Singleton_Header (Name : String) return String is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count (Response, Name);
+         begin
+            if Count > 1 then
+               raise Invalid_Response with
+                 "duplicate CreateSession response header";
+            elsif Count = 0 then
+               return "";
+            end if;
+            declare
+               Value : constant String :=
+                 Flyology.HTTP.Client.Header (Response, Name);
+            begin
+               if Value'Length = 0
+                 or else Value'Length > Maximum_Create_Session_Header_Bytes
+               then
+                  raise Invalid_Response with
+                    "invalid CreateSession response header";
+               end if;
+               for Character_Value of Value loop
+                  if Character'Pos (Character_Value) < 32
+                    or else Character'Pos (Character_Value) = 127
+                  then
+                     raise Invalid_Response with
+                       "invalid CreateSession response header";
+                  end if;
+               end loop;
+               return Value;
+            end;
+         end Singleton_Header;
+
+         Request_ID : constant String := Singleton_Header ("x-amz-request-id");
+         Host_ID : constant String := Singleton_Header ("x-amz-id-2");
+         Bucket_Key : constant String := Singleton_Header
+           ("x-amz-server-side-encryption-bucket-key-enabled");
+         Headers : constant Create_Session_Response_Headers :=
+           (Server_Side_Encryption => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-server-side-encryption")),
+            SSE_KMS_Key_ID => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-aws-kms-key-id")),
+            SSE_KMS_Encryption_Context => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-server-side-encryption-context")),
+            Bucket_Key_Enabled => Optional_Boolean_Header (Bucket_Key));
+         Expected : constant Create_Session_Response_Headers :=
+           (Server_Side_Encryption =>
+              Prepared.Requested_Session_Server_Side_Encryption,
+            SSE_KMS_Key_ID => Prepared.Requested_Session_SSE_KMS_Key_ID,
+            SSE_KMS_Encryption_Context =>
+              Prepared.Requested_Session_SSE_KMS_Encryption_Context,
+            Bucket_Key_Enabled =>
+              Prepared.Requested_Session_Bucket_Key_Enabled);
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Create_Session_Response_Internal
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers, Expected,
+            True, Request_ID, Host_ID, Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "CreateSession response exceeds XML limit";
+   end Execute_Create_Session;
 
    function Prepare_Create_Multipart_Upload
      (Origin    : Flyology.HTTP.Origin;

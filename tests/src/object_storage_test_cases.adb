@@ -11116,6 +11116,363 @@ package body Object_Storage_Test_Cases is
       end;
    end Check_Low_Level_Multipart_Request;
 
+   procedure Check_Low_Level_Create_Session (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+      package US renames Ada.Strings.Unbounded;
+      use type Low_Level.Create_Session_Outcome_Kind;
+      Identity : constant Low_Level.Credentials := Low_Level.Make_Credentials
+        ("AKIAIOSFODNN7EXAMPLE",
+         "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
+      Bucket : constant String := "directory--usw2-az1--x-s3";
+      Origin_Text : constant String :=
+        "https://" & Bucket &
+        ".s3express-zone-id.us-west-2.amazonaws.com";
+      Valid_XML : constant String :=
+        "<CreateSessionResult xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">" &
+        "<Credentials><AccessKeyId>ASIAIOSFODNN7EXAMPLE</AccessKeyId>" &
+        "<SecretAccessKey>session-secret</SecretAccessKey>" &
+        "<SessionToken>session-token</SessionToken>" &
+        "<Expiration>2026-08-23T15:30:00Z</Expiration>" &
+        "</Credentials></CreateSessionResult>";
+
+      procedure Reject_Prepare
+        (Parameters : Low_Level.Create_Session_Parameters;
+         Message    : String;
+         Origin     : String := Origin_Text;
+         Style      : Low_Level.Addressing_Style :=
+           Low_Level.Virtual_Hosted_Style)
+      is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Create_Session
+                   (Flyology.HTTP.Parse_Origin (Origin), Style, Bucket,
+                    Parameters, Identity, "us-west-2",
+                    "20260823T150000Z");
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Reject_Prepare;
+
+      procedure Reject_XML (Payload, Message : String) is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Create_Session_Outcome :=
+                 Low_Level.Decode_Create_Session_Response (200, Payload);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Reject_XML;
+
+      procedure Reject_Headers
+        (Headers : Low_Level.Create_Session_Response_Headers;
+         Message : String)
+      is
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Create_Session_Outcome :=
+                 Low_Level.Decode_Create_Session_Response
+                   (200, Valid_XML, Headers);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Response =>
+               Raised := True;
+         end;
+         Assert (Raised, Message);
+      end Reject_Headers;
+   begin
+      declare
+         Parameters : Low_Level.Create_Session_Parameters;
+      begin
+         Parameters.Session_Mode := US.To_Unbounded_String ("ReadOnly");
+         Parameters.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Parameters.SSE_KMS_Key_ID :=
+           US.To_Unbounded_String ("arn:aws:kms:key/session");
+         Parameters.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String ("e30=");
+         Parameters.Bucket_Key_Enabled :=
+           (Is_Set => True, Value => True);
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Create_Session
+                (Flyology.HTTP.Parse_Origin (Origin_Text),
+                 Low_Level.Virtual_Hosted_Style, Bucket, Parameters,
+                 Identity, "us-west-2", "20260823T150000Z");
+            Canonical : constant String :=
+              Low_Level.Canonical_Request (Prepared);
+         begin
+            Assert
+              (Low_Level.Target (Prepared) = "/?session",
+               "CreateSession exact virtual-hosted target");
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Canonical, "x-amz-create-session-mode:ReadOnly") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Canonical, "x-amz-server-side-encryption:aws:kms") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Canonical,
+                  "x-amz-server-side-encryption-aws-kms-key-id:" &
+                    "arn:aws:kms:key/session") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Canonical,
+                  "x-amz-server-side-encryption-context:e30=") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Canonical,
+                  "x-amz-server-side-encryption-bucket-key-enabled:true") > 0,
+               "CreateSession did not sign every modeled policy header");
+         end;
+      end;
+
+      Reject_Prepare
+        ((others => <>),
+         Origin => "http://" & Bucket & ".example.test",
+         Message => "CreateSession accepted plaintext HTTP");
+      Reject_Prepare
+        ((others => <>), Style => Low_Level.Path_Style,
+         Message => "CreateSession accepted path-style addressing");
+      declare
+         Parameters : Low_Level.Create_Session_Parameters;
+      begin
+         Parameters.Session_Mode := US.To_Unbounded_String ("read-only");
+         Reject_Prepare
+           (Parameters, Message => "CreateSession accepted invalid mode");
+         Parameters := (others => <>);
+         Parameters.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Reject_Prepare
+           (Parameters, Message => "CreateSession accepted KMS without key");
+         Parameters := (others => <>);
+         Parameters.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Reject_Prepare
+           (Parameters, Message => "CreateSession accepted orphan KMS key");
+         Parameters.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Parameters.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String ("not-base64");
+         Reject_Prepare
+           (Parameters, Message => "CreateSession accepted invalid context");
+         Parameters.SSE_KMS_Encryption_Context := US.Null_Unbounded_String;
+         Parameters.Bucket_Key_Enabled :=
+           (Is_Set => True, Value => False);
+         Reject_Prepare
+           (Parameters,
+            Message => "CreateSession accepted disabled bucket key");
+         Parameters := (others => <>);
+         Parameters.Server_Side_Encryption :=
+           US.To_Unbounded_String ("AES256");
+         Parameters.SSE_KMS_Key_ID := US.To_Unbounded_String ("kms-key");
+         Reject_Prepare
+           (Parameters, Message => "CreateSession accepted mixed SSE policy");
+         Parameters := (others => <>);
+         Parameters.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Parameters.SSE_KMS_Key_ID := US.To_Unbounded_String
+           (String'(1 .. 8_193 => 'k'));
+         Reject_Prepare
+           (Parameters, Message => "CreateSession accepted overlong KMS key");
+         Parameters.SSE_KMS_Key_ID :=
+           US.To_Unbounded_String ("key" & Character'Val (10));
+         Reject_Prepare
+           (Parameters, Message => "CreateSession accepted header control");
+      end;
+
+      declare
+         Headers : constant Low_Level.Create_Session_Response_Headers :=
+           (Server_Side_Encryption => US.To_Unbounded_String ("aws:kms"),
+            SSE_KMS_Key_ID => US.To_Unbounded_String
+              ("arn:aws:kms:key/session"),
+            SSE_KMS_Encryption_Context => US.To_Unbounded_String ("e30="),
+            Bucket_Key_Enabled => (Is_Set => True, Value => True));
+         Outcome : constant Low_Level.Create_Session_Outcome :=
+           Low_Level.Decode_Create_Session_Response
+             (200, Valid_XML, Headers);
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Session_Created
+            and then US.To_String (Outcome.Result.Expiration) =
+              "2026-08-23T15:30:00Z"
+            and then US.To_String
+              (Outcome.Result.Server_Side_Encryption) = "aws:kms"
+            and then Outcome.Result.Bucket_Key_Enabled.Is_Set
+            and then Outcome.Result.Bucket_Key_Enabled.Value,
+            "CreateSession complete typed response mismatch");
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Create_Session
+                (Flyology.HTTP.Parse_Origin (Origin_Text),
+                 Low_Level.Virtual_Hosted_Style, Bucket, (others => <>),
+                 Outcome.Result.Identity, "us-west-2", "20260823T150000Z");
+         begin
+            Assert
+              (Ada.Strings.Fixed.Index
+                 (Low_Level.Signed_Headers (Prepared),
+                  "x-amz-s3session-token") > 0
+               and then Ada.Strings.Fixed.Index
+                 (Low_Level.Signed_Headers (Prepared),
+                  "x-amz-security-token") = 0,
+               "returned CreateSession identity used the wrong token header");
+         end;
+      end;
+
+      declare
+         Outcome : constant Low_Level.Create_Session_Outcome :=
+           Low_Level.Decode_Create_Session_Response
+             (403, "<Error><Code>AccessDenied</Code>" &
+              "<Message>denied</Message></Error>",
+              Request_ID => "session-request", Host_ID => "session-host");
+      begin
+         Assert
+           (Outcome.Kind = Low_Level.Create_Session_Rejected
+            and then US.To_String (Outcome.Error.Code) = "AccessDenied"
+            and then US.To_String (Outcome.Error.Request_ID) =
+              "session-request"
+            and then US.To_String (Outcome.Error.Host_ID) = "session-host",
+            "CreateSession structured error mismatch");
+      end;
+
+      Reject_XML
+        ("<Wrong><Credentials><AccessKeyId>A</AccessKeyId>" &
+         "<SecretAccessKey>S</SecretAccessKey>" &
+         "<SessionToken>T</SessionToken>" &
+         "<Expiration>2026-08-23T15:30:00Z</Expiration>" &
+         "</Credentials></Wrong>",
+         "CreateSession accepted wrong root");
+      Reject_XML
+        ("<CreateSessionResult xmlns=""urn:foreign"">" &
+         "<Credentials/></CreateSessionResult>",
+         "CreateSession accepted foreign namespace");
+      Reject_XML
+        ("<CreateSessionResult bad=""1""><Credentials/>" &
+         "</CreateSessionResult>",
+         "CreateSession accepted attributes");
+      Reject_XML
+        ("<CreateSessionResult><Credentials>" &
+         "<AccessKeyId>ASIAIOSFODNN7EXAMPLE</AccessKeyId>" &
+         "<AccessKeyId>ASIAIOSFODNN7EXAMPLE</AccessKeyId>" &
+         "<SecretAccessKey>S</SecretAccessKey>" &
+         "<SessionToken>T</SessionToken>" &
+         "<Expiration>2026-08-23T15:30:00Z</Expiration>" &
+         "</Credentials></CreateSessionResult>",
+         "CreateSession accepted duplicate credential field");
+      Reject_XML
+        ("<CreateSessionResult><Credentials>" &
+         "<AccessKeyId>ASIAIOSFODNN7EXAMPLE</AccessKeyId>" &
+         "<SecretAccessKey>S</SecretAccessKey>" &
+         "<SessionToken>T</SessionToken>" &
+         "<Expiration>2026-02-29T15:30:00Z</Expiration>" &
+         "</Credentials></CreateSessionResult>",
+         "CreateSession accepted invalid expiration date");
+      Reject_XML
+        ("<CreateSessionResult><Credentials>" &
+         "<AccessKeyId>ASIAIOSFODNN7EXAMPLE</AccessKeyId>" &
+         "<SecretAccessKey></SecretAccessKey>" &
+         "<SessionToken>T</SessionToken>" &
+         "<Expiration>2026-08-23T15:30:00Z</Expiration>" &
+         "</Credentials></CreateSessionResult>",
+         "CreateSession accepted empty secret");
+      Reject_XML
+        ("<CreateSessionResult><Credentials>" &
+         "<AccessKeyId>ASIAIOSFODNN7EXAMPLE</AccessKeyId>" &
+         "<SecretAccessKey>" & String'(1 .. 1_025 => 's') &
+         "</SecretAccessKey><SessionToken>T</SessionToken>" &
+         "<Expiration>2026-08-23T15:30:00Z</Expiration>" &
+         "</Credentials></CreateSessionResult>",
+         "CreateSession accepted overlong secret");
+      Reject_XML
+        ("<CreateSessionResult><Credentials>" &
+         "<AccessKeyId>ASIAIOSFODNN7EXAMPLE</AccessKeyId>" &
+         "<SecretAccessKey>S</SecretAccessKey><SessionToken>" &
+         String'(1 .. 8_193 => 't') & "</SessionToken>" &
+         "<Expiration>2026-08-23T15:30:00Z</Expiration>" &
+         "</Credentials></CreateSessionResult>",
+         "CreateSession accepted overlong token");
+
+      declare
+         Headers : Low_Level.Create_Session_Response_Headers;
+      begin
+         Headers.Server_Side_Encryption := US.To_Unbounded_String ("bogus");
+         Reject_Headers
+           (Headers, "CreateSession accepted invalid response encryption");
+         Headers := (others => <>);
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("aws:kms");
+         Reject_Headers
+           (Headers, "CreateSession accepted response KMS without key");
+         Headers.SSE_KMS_Key_ID := US.To_Unbounded_String ("key");
+         Headers.SSE_KMS_Encryption_Context :=
+           US.To_Unbounded_String ("not-base64");
+         Reject_Headers
+           (Headers, "CreateSession accepted invalid response context");
+         Headers.SSE_KMS_Encryption_Context := US.Null_Unbounded_String;
+         Headers.Bucket_Key_Enabled := (Is_Set => True, Value => False);
+         Reject_Headers
+           (Headers, "CreateSession accepted disabled response bucket key");
+         Headers := (others => <>);
+         Headers.Server_Side_Encryption := US.To_Unbounded_String ("AES256");
+         Headers.SSE_KMS_Key_ID := US.To_Unbounded_String ("key");
+         Reject_Headers
+           (Headers, "CreateSession accepted mixed response policy");
+         Headers := (others => <>);
+         Headers.Server_Side_Encryption := US.To_Unbounded_String
+           (String'(1 .. 8_193 => 'a'));
+         Reject_Headers
+           (Headers, "CreateSession accepted overlong response header");
+         Headers.Server_Side_Encryption :=
+           US.To_Unbounded_String ("AES256" & Character'Val (10));
+         Reject_Headers
+           (Headers, "CreateSession accepted response control byte");
+      end;
+
+      declare
+         HTTP : aliased Flyology.HTTP.Client.Client (Capacity => 1);
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_Create_Multipart_Upload
+             (Flyology.HTTP.Parse_Origin ("http://localhost:9000"),
+              Low_Level.Path_Style, "example-bucket", "key", Identity,
+              "us-east-1", "20130524T000000Z");
+         Raised : Boolean := False;
+      begin
+         begin
+            declare
+               Ignored : constant Low_Level.Create_Session_Outcome :=
+                 Low_Level.Execute_Create_Session (HTTP, Prepared);
+               pragma Unreferenced (Ignored);
+            begin
+               null;
+            end;
+         exception
+            when Low_Level.Invalid_Request =>
+               Raised := True;
+         end;
+         Assert (Raised, "CreateSession operation mismatch reached HTTP");
+      end;
+   end Check_Low_Level_Create_Session;
+
    procedure Check_Low_Level_Copy_Object (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       use AUnit.Assertions;
@@ -17046,6 +17403,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("s3.low-level-multipart-request",
             Check_Low_Level_Multipart_Request'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("s3.low-level-create-session",
+            Check_Low_Level_Create_Session'Access));
       Result.Add_Test
         (Caller.Create
            ("s3.low-level-copy-object",

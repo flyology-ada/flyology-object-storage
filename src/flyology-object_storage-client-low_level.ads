@@ -1407,6 +1407,79 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Objects_Outcome;
 
+   --  Every non-resource member in the pinned CreateSession input. Empty
+   --  strings preserve omission; Bucket_Key_Enabled preserves absent versus
+   --  explicit false.
+   type Create_Session_Parameters is record
+      Session_Mode               : Ada.Strings.Unbounded.Unbounded_String;
+      Server_Side_Encryption     : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID              : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Encryption_Context : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled         : Optional_Boolean;
+   end record;
+
+   function Prepare_Create_Session
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Create_Session_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   type Create_Session_Response_Headers is record
+      Server_Side_Encryption     : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID              : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Encryption_Context : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled         : Optional_Boolean;
+   end record;
+
+   --  All five top-level output members and all four nested credential
+   --  members. Access key, secret, and token are held by the zeroizing
+   --  Credentials type; expiration remains separately observable. Requests
+   --  prepared with the returned identity use x-amz-s3session-token rather
+   --  than the generic x-amz-security-token header.
+   type Create_Session_Result is limited record
+      Server_Side_Encryption     : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Key_ID              : Ada.Strings.Unbounded.Unbounded_String;
+      SSE_KMS_Encryption_Context : Ada.Strings.Unbounded.Unbounded_String;
+      Bucket_Key_Enabled         : Optional_Boolean;
+      Identity                   : Credentials;
+      Expiration                 : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   type Create_Session_Outcome_Kind is
+     (Session_Created, Create_Session_Rejected);
+
+   type Create_Session_Outcome
+     (Kind : Create_Session_Outcome_Kind := Create_Session_Rejected)
+   is limited record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Session_Created =>
+            Result : Create_Session_Result;
+         when Create_Session_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   function Decode_Create_Session_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Create_Session_Response_Headers := (others => <>);
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Create_Session_Outcome;
+
+   function Execute_Create_Session
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Create_Session_Outcome;
+
    --  Every non-resource member in the pinned CreateMultipartUpload input.
    --  Empty optional strings preserve omission; Bucket_Key_Enabled preserves
    --  absent versus explicit false. Metadata entries project as x-amz-meta-*
@@ -2141,6 +2214,8 @@ private
    Maximum_Credential_Bytes : constant := 1_024;
    Maximum_Session_Token_Bytes : constant := 8_192;
 
+   type Session_Token_Kind is (Security_Token, S3_Session_Token);
+
    type Credentials is new Ada.Finalization.Limited_Controlled with record
       Access_Key_Length : Natural range 0 .. Maximum_Credential_Bytes := 0;
       Secret_Key_Length : Natural range 0 .. Maximum_Credential_Bytes := 0;
@@ -2152,6 +2227,7 @@ private
         (others => Character'Val (0));
       Session_Token_Data : String (1 .. Maximum_Session_Token_Bytes) :=
         (others => Character'Val (0));
+      Token_Kind : Session_Token_Kind := Security_Token;
    end record;
 
    overriding procedure Finalize (Item : in out Credentials);
@@ -2183,7 +2259,8 @@ private
       List_Multipart_Uploads_Operation,
       Upload_Part_Operation,
       Upload_Part_Copy_Operation,
-      Copy_Object_Operation);
+      Copy_Object_Operation,
+      Create_Session_Operation);
 
    type Prepared_Request is record
       Operation : Operation_Kind := List_Objects_V2_Operation;
@@ -2225,6 +2302,13 @@ private
         Ada.Strings.Unbounded.Unbounded_String;
       Requested_Create_Checksum_Type :
         Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Session_Server_Side_Encryption :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Session_SSE_KMS_Key_ID :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Session_SSE_KMS_Encryption_Context :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Session_Bucket_Key_Enabled : Optional_Boolean;
    end record;
 
 end Flyology.Object_Storage.Client.Low_Level;

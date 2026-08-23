@@ -424,4 +424,36 @@ package body Flyology.Object_Storage.Client.Buckets is
          Configuration => Outcome.Configuration);
    end Get_Versioning;
 
+   function Create_Session
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Session_Mode : String := "";
+      Server_Side_Encryption : String := "";
+      SSE_KMS_Key_ID : String := "";
+      SSE_KMS_Encryption_Context : String := "";
+      Bucket_Key_Enabled : Low_Level.Optional_Boolean := (others => <>);
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Virtual_Hosted_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Low_Level.Create_Session_Outcome
+   is
+      Parameters : constant Low_Level.Create_Session_Parameters :=
+        (Session_Mode => US.To_Unbounded_String (Session_Mode),
+         Server_Side_Encryption =>
+           US.To_Unbounded_String (Server_Side_Encryption),
+         SSE_KMS_Key_ID => US.To_Unbounded_String (SSE_KMS_Key_ID),
+         SSE_KMS_Encryption_Context =>
+           US.To_Unbounded_String (SSE_KMS_Encryption_Context),
+         Bucket_Key_Enabled => Bucket_Key_Enabled);
+      Prepared : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Create_Session
+          (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
+   begin
+      return Low_Level.Execute_Create_Session
+        (Client, Prepared, Timeout, Token);
+   end Create_Session;
+
 end Flyology.Object_Storage.Client.Buckets;

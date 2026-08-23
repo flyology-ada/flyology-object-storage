@@ -1,0 +1,16 @@
+direction	shape	ordinal	member	wire_location	current_boundary	required_contract	vector_ids
+request	137	1	SessionMode	header	projected	Preserve omission or sign exactly one ReadOnly or ReadWrite mode.	CS-RQ-002,CS-RQ-005,CS-TR-001
+request	137	2	Bucket	uri-label	projected	Require a secure virtual-hosted target and bind the exact bucket to signing.	CS-RQ-001,CS-TR-001
+request	137	3	ServerSideEncryption	header	projected	Preserve omission or validate one pinned encryption enum with coherent companions.	CS-RQ-003,CS-RQ-004,CS-RQ-005,CS-RS-007
+request	137	4	SSEKMSKeyId	header	projected	Bound the opaque key identifier and require an explicit compatible KMS mode.	CS-RQ-004,CS-RQ-005,CS-RS-007
+request	137	5	SSEKMSEncryptionContext	header	projected	Require bounded canonical Base64 and an explicit compatible KMS mode.	CS-RQ-004,CS-RQ-005,CS-RS-007
+request	137	6	BucketKeyEnabled	header	projected	Preserve omission and accept only explicit true with a compatible KMS mode.	CS-RQ-004,CS-RS-007
+response	136	1	ServerSideEncryption	header	decoded	Preserve omission or decode one bounded singleton enum coherent with other encryption headers.	CS-RS-005,CS-RS-006,CS-RS-007,CS-TR-001
+response	136	2	SSEKMSKeyId	header	decoded	Preserve omission or decode one bounded singleton identifier only with KMS encryption.	CS-RS-005,CS-RS-006,CS-RS-007,CS-TR-001
+response	136	3	SSEKMSEncryptionContext	header	decoded	Preserve omission or decode one bounded canonical Base64 singleton only with KMS encryption.	CS-RS-005,CS-RS-006,CS-RS-007,CS-TR-001
+response	136	4	BucketKeyEnabled	header	decoded	Preserve omission or decode canonical true only with KMS encryption.	CS-RS-005,CS-RS-006,CS-RS-007,CS-TR-001
+response	136	5	Credentials	body	decoded	Require exactly one strict bounded Credentials element containing every required nested member.	CS-RS-001,CS-RS-002,CS-RS-003,CS-TR-001
+credential	652	1	AccessKeyId	body	zeroizing	Require exactly one bounded nonempty access key and retain it only in the limited credentials object.	CS-RS-001,CS-RS-003,CS-TR-002
+credential	652	2	SecretAccessKey	body	zeroizing	Require exactly one bounded nonempty secret and clear owned storage on finalization.	CS-RS-001,CS-RS-003,CS-TR-002
+credential	652	3	SessionToken	body	zeroizing	Require exactly one bounded nonempty token and sign its exact value as x-amz-s3session-token on later requests.	CS-RS-001,CS-RS-003,CS-TR-002
+credential	652	4	Expiration	body	decoded	Require exactly one strict valid ISO-8601 timestamp and preserve its exact text.	CS-RS-001,CS-RS-003,CS-RS-004

@@ -454,4 +454,40 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Get_Versioning_Outcome;
 
+   --  Create one five-minute directory-bucket authorization session through
+   --  the secure virtual-hosted CreateSession endpoint. Returned access,
+   --  secret, and token values remain inside the zeroizing low-level
+   --  Credentials object; the outcome cannot be copied. This layer creates no
+   --  refresh task and retains no session state after the call. Transport
+   --  retry behavior remains the configured Flyology HTTP client's policy.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Secure zonal endpoint used to configure and sign Client
+   --  @param Bucket Directory bucket encoded in Origin's virtual host
+   --  @param Identity Long-term credentials used only for this request
+   --  @param Session_Mode Optional ReadOnly or ReadWrite mode
+   --  @param Server_Side_Encryption Optional modeled encryption selection
+   --  @param SSE_KMS_Key_ID Required customer key for an explicit KMS mode
+   --  @param SSE_KMS_Encryption_Context Optional canonical base64 context
+   --  @param Bucket_Key_Enabled Absent or explicit true for a KMS session
+   --  @param Region SigV4 signing region
+   --  @param Style Must remain virtual-hosted for CreateSession
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Zeroizing temporary identity, expiration, policy, or S3 error
+   function Create_Session
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Identity : Low_Level.Credentials;
+      Session_Mode : String := "";
+      Server_Side_Encryption : String := "";
+      SSE_KMS_Key_ID : String := "";
+      SSE_KMS_Encryption_Context : String := "";
+      Bucket_Key_Enabled : Low_Level.Optional_Boolean := (others => <>);
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Virtual_Hosted_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Low_Level.Create_Session_Outcome;
+
 end Flyology.Object_Storage.Client.Buckets;
