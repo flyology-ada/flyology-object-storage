@@ -1,0 +1,27 @@
+direction	shape	ordinal	member	wire_location	current_boundary	required_closure	vector_ids
+request	401	1	Bucket	uri-label	projected	Validate the exact bucket and bind authentication, owner policy, and upload lookup before returning storage semantics.	LP-RQ-001,LP-RQ-005,LP-RQ-008
+request	401	2	Key	uri-label	projected	Preserve exact decoded key bytes and reject invalid or ambiguous targets before backend observation.	LP-RQ-001,LP-RQ-008
+request	401	3	MaxParts	query	projected	Require one canonical integer from 0 through 1000 and bind response count and truncation invariants to it.	LP-RQ-002,LP-RS-006,LP-RS-007,LP-RS-008
+request	401	4	PartNumberMarker	query	projected	Require one canonical integer from 0 through 10000 and return only strictly greater part numbers; feed NextPartNumberMarker to the next request.	LP-RQ-003,LP-RS-006,LP-RS-007,LP-LC-001,LP-LC-002
+request	401	5	UploadId	query	projected	Require one bounded nonempty identifier and bind every page to the exact bucket, key, upload state, and initiation policy.	LP-RQ-004,LP-LC-001,LP-LC-003
+request	401	6	RequestPayer	header	client_only	Accept only requester; apply configured requester-pays policy or return an authenticated explicit unsupported response.	LP-RQ-006,LP-RQ-008
+request	401	7	ExpectedBucketOwner	header	client_only	Reject duplicate or mismatched owner with the modeled authenticated response before multipart state is observed.	LP-RQ-005,LP-RQ-008
+request	401	8	SSECustomerAlgorithm	header	client_only	Treat the SSE-C triplet as one secure-transport-only group and compare it with initiation state or fail closed.	LP-RQ-007,LP-RQ-008
+request	401	9	SSECustomerKey	header	client_only	Borrow sensitive input without logging or retention; validate the group and upload-state match before listing.	LP-RQ-007,LP-RQ-008
+request	401	10	SSECustomerKeyMD5	header	client_only	Validate the Base64 MD5 of the supplied SSE-C key and its match to initiation state; never return key material.	LP-RQ-007,LP-RQ-008
+response	400	1	AbortDate	header	partial	Preserve omission separately; if present require one bounded valid HTTP date associated with lifecycle abort policy.	LP-RS-002,LP-RS-017
+response	400	2	AbortRuleId	header	partial	Preserve omission separately; if present require one bounded nonempty singleton and retain it opaquely.	LP-RS-002,LP-RS-017
+response	400	3	Bucket	body	partial	Require one bounded nonempty identity equal to the requested bucket after XML entity decoding.	LP-RS-004,LP-RS-005,LP-RS-017,LP-RS-018
+response	400	4	Key	body	partial	Require one bounded nonempty identity equal to the requested key after XML entity decoding.	LP-RS-004,LP-RS-005,LP-RS-017,LP-RS-018
+response	400	5	UploadId	body	partial	Require one bounded nonempty identity equal to the requested upload identifier on every page.	LP-RS-004,LP-RS-005,LP-RS-017,LP-RS-018
+response	400	6	PartNumberMarker	body	partial	Require one canonical marker equal to the request marker and use it as the strict lower bound for returned part numbers.	LP-RS-006,LP-RS-007,LP-RS-017
+response	400	7	NextPartNumberMarker	body	partial	Require it exactly when truncated, equal to the last returned part, greater than the request marker, and use it for continuation.	LP-RS-006,LP-RS-007,LP-RS-017
+response	400	8	MaxParts	body	partial	Require one canonical value consistent with the admitted page limit and returned part count.	LP-RS-006,LP-RS-007,LP-RS-008,LP-RS-017
+response	400	9	IsTruncated	body	partial	Require one canonical boolean consistent with NextPartNumberMarker, MaxParts, and the returned part sequence.	LP-RS-006,LP-RS-007,LP-RS-008,LP-RS-017
+response	400	10	Parts	body	partial	Bound the flattened sequence to the admitted page limit; require complete strictly increasing part records with exact 64-bit sizes and modeled checksums.	LP-RS-007,LP-RS-009,LP-RS-010,LP-RS-011,LP-RS-012,LP-RS-013,LP-RS-019
+response	400	11	Initiator	body	partial	Preserve omission; if present require one bounded nonduplicated identity structure and retain modeled fields without invention.	LP-RS-015,LP-RS-017,LP-RS-018
+response	400	12	Owner	body	partial	Preserve omission; if present require one bounded nonduplicated identity structure and retain modeled fields without invention.	LP-RS-015,LP-RS-017,LP-RS-018
+response	400	13	StorageClass	body	partial	Preserve omission; if present validate the exact pinned storage-class enum and singleton position.	LP-RS-016,LP-RS-017,LP-RS-018
+response	400	14	RequestCharged	header	partial	Preserve omission separately and accept only one modeled requester value.	LP-RS-003,LP-RS-017
+response	400	15	ChecksumAlgorithm	body	partial	Preserve omission; if present validate the pinned checksum enum and consistency with ChecksumType and part checksum fields.	LP-RS-013,LP-RS-014,LP-RS-017,LP-OR-002
+response	400	16	ChecksumType	body	partial	Preserve omission; if present validate COMPOSITE or FULL_OBJECT and its compatibility with the selected algorithm.	LP-RS-013,LP-RS-014,LP-RS-017,LP-OR-002
