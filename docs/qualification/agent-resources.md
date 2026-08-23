@@ -11,7 +11,7 @@ codex` generated the committed `AGENTS.md`.
 - shared package source: `https://github.com/flyology-ada/agents.git`
 - shared profile: `packages/profiles/ada-library`
 - manifest update channel: `main`
-- resolved shared commit: `de62e63dbb25fff1b21b71673c9eefd6f5f38c38`
+- resolved shared commit: `1b5f7ec32a8672a92dfe658b62faa2ec98d1abb8`
 - Codex: `codex-cli 0.147.0`, fresh `codex exec --ephemeral` sessions with
   read-only sandboxing
 - Claude: `2.1.238 (Claude Code)`, fresh `claude -p
@@ -117,6 +117,20 @@ codex`, `apm compile --validate`, `apm audit --ci` with 10/10 checks, and `git
 diff --check`. The compile emitted only the expected seven global-instruction
 placement notices; validation and audit reported no primitive, integrity, or
 deployment drift.
+
+After PR #3 merged the same day, `main` advanced to
+`1b5f7ec32a8672a92dfe658b62faa2ec98d1abb8`. All eight shared lock entries now
+resolve to that exact commit while the root manifest retains `ref: main`.
+The deployed `ada-hardcoded-constants` skill is version 0.2.0 and adds durable
+adjacent source-comment requirements for consequential approved, externally
+fixed, persisted-format, derived, project-policy, and test/reference values.
+The generated `AGENTS.md` remained byte-for-byte unchanged because the update
+changes the native skill resource rather than compiled instruction text.
+
+The PR #3 refresh passed `apm install --frozen`, `apm compile --target codex`,
+`apm compile --validate`, `apm audit --ci` with 10/10 checks, and `git diff
+--check`. Compilation emitted only the seven expected global-instruction
+placement notices; frozen replay and audit reported no drift.
 
 ## Update policy
 
