@@ -11,7 +11,7 @@ codex` generated the committed `AGENTS.md`.
 - shared package source: `https://github.com/flyology-ada/agents.git`
 - shared profile: `packages/profiles/ada-library`
 - manifest update channel: `main`
-- resolved shared commit: `ac2e1793ea620fa567ed3b4f8b7cb9a058c07682`
+- resolved shared commit: `62eff321af50d7d6162fdcc042c32cb7ee5d5bca`
 - Codex: `codex-cli 0.147.0`, fresh `codex exec --ephemeral` sessions with
   read-only sandboxing
 - Claude: `2.1.238 (Claude Code)`, fresh `claude -p
@@ -89,6 +89,19 @@ already loaded project rule. The negative-control discovery criterion passed.
   read-only execution, and all four behavioral outcomes still completed.
 
 No discovery or adherence failure remained after the corrected invocations.
+
+## Shared-main refresh
+
+After flyology-ada/agents PR #1 merged on 2026-08-23, the reviewed `main`
+channel advanced to
+`62eff321af50d7d6162fdcc042c32cb7ee5d5bca`. `apm update
+flyology-ada/agents --yes` updated all seven shared package lock entries to that
+commit without changing the root manifest's `ref: main`. The generated Codex
+instructions were byte-for-byte unchanged; the shared
+`maintain-agent-instructions` skill and deployment metadata changed in the
+lock. The refresh passed `apm compile --target codex`, `apm compile
+--validate`, frozen replay, CI audit, generated-file diff, and whitespace
+validation before its focused commit.
 
 ## Update policy
 
