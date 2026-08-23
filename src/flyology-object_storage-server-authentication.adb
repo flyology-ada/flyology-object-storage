@@ -13,6 +13,8 @@ package body Flyology.Object_Storage.Server.Authentication is
    use type Flyology.HTTP.Origin_Scheme;
    use type Verification.Parse_Status;
 
+   Maximum_Signed_Header_Occurrences : constant := 256;
+
    function Valid_Principal (Value : String) return Boolean is
    begin
       if Value'Length = 0 or else Value'Length > 256 then
@@ -86,6 +88,44 @@ package body Flyology.Object_Storage.Server.Authentication is
         Applications.Request_Header_Count (X, "authorization");
       Timestamp_Valid : Boolean;
       Request_Time : Ada.Calendar.Time;
+
+      function All_Amazon_Headers_Signed return Boolean is
+      begin
+         for Index in 1 .. Applications.Request_Header_Count (X) loop
+            declare
+               Name : constant String := Encoding.Lowercase
+                 (Applications.Request_Header_Name (X, Index));
+            begin
+               if Name'Length >= 6
+                 and then Name (Name'First .. Name'First + 5) = "x-amz-"
+                 and then not Verification.Header_Is_Signed
+                   (Parsed.Data, Name)
+               then
+                  return False;
+               end if;
+            end;
+         end loop;
+         return True;
+      end All_Amazon_Headers_Signed;
+
+      function Signed_Physical_Header_Count return Natural is
+         Result : Natural := 0;
+      begin
+         for Index in 1 .. Verification.Signed_Header_Count (Parsed.Data) loop
+            declare
+               Occurrences : constant Natural :=
+                 Applications.Request_Header_Count
+                   (X, Verification.Signed_Header_Name (Parsed.Data, Index));
+            begin
+               if Occurrences > Maximum_Signed_Header_Occurrences - Result
+               then
+                  return Maximum_Signed_Header_Occurrences + 1;
+               end if;
+               Result := Result + Occurrences;
+            end;
+         end loop;
+         return Result;
+      end Signed_Physical_Header_Count;
    begin
       if Authorization_Count = 0 then
          return (Status => Missing_Credentials, others => <>);
@@ -94,6 +134,7 @@ package body Flyology.Object_Storage.Server.Authentication is
         or else Applications.Request_Header_Count
           (X, "x-amz-content-sha256") /= 1
         or else Applications.Request_Header_Count (X, "x-amz-date") /= 1
+        or else not All_Amazon_Headers_Signed
         or else
           (Payload_Hash /= SigV4.Unsigned_Payload
            and then not Encoding.Valid_SHA256_Hex (Payload_Hash))
@@ -134,32 +175,47 @@ package body Flyology.Object_Storage.Server.Authentication is
          return (Status => Insecure_Unsigned_Payload, others => <>);
       end if;
       declare
-         Headers : SigV4.Name_Value_Array
-           (1 .. Verification.Signed_Header_Count (Parsed.Data));
+         Physical_Count : constant Natural := Signed_Physical_Header_Count;
+         Last : Natural := 0;
          Principal : US.Unbounded_String;
          Allowed : Boolean;
       begin
-         for Index in Headers'Range loop
-            declare
-               Name : constant String :=
-                 Verification.Signed_Header_Name (Parsed.Data, Index);
-            begin
-               if Applications.Request_Header_Count (X, Name) = 0 then
-                  return (Status => Malformed_Credentials, others => <>);
-               end if;
-               Headers (Index) := SigV4.Pair
-                 (Name, Applications.Request_Header (X, Name));
-            end;
-         end loop;
-         Credentials.Authenticate
-           (Parsed.Data, Applications.Request_Method (X),
-            Applications.Request_Target (X), Headers, Payload_Hash,
-            Session_Token, Allowed, Principal);
-         if not Allowed
-           or else not Valid_Principal (US.To_String (Principal))
-         then
-            return (Status => Credential_Rejected, others => <>);
+         if Physical_Count > Maximum_Signed_Header_Occurrences then
+            return (Status => Malformed_Credentials, others => <>);
          end if;
+         declare
+            Headers : SigV4.Name_Value_Array (1 .. Physical_Count);
+         begin
+            for Index in 1 ..
+              Verification.Signed_Header_Count (Parsed.Data)
+            loop
+               declare
+                  Name : constant String :=
+                    Verification.Signed_Header_Name (Parsed.Data, Index);
+               begin
+                  if Applications.Request_Header_Count (X, Name) = 0 then
+                     return (Status => Malformed_Credentials, others => <>);
+                  end if;
+                  for Occurrence in 1 ..
+                    Applications.Request_Header_Count (X, Name)
+                  loop
+                     Last := Last + 1;
+                     Headers (Last) := SigV4.Pair
+                       (Name, Applications.Request_Header
+                          (X, Name, Occurrence));
+                  end loop;
+               end;
+            end loop;
+            Credentials.Authenticate
+              (Parsed.Data, Applications.Request_Method (X),
+               Applications.Request_Target (X), Headers, Payload_Hash,
+               Session_Token, Allowed, Principal);
+            if not Allowed
+              or else not Valid_Principal (US.To_String (Principal))
+            then
+               return (Status => Credential_Rejected, others => <>);
+            end if;
+         end;
          return
            (Status       => Authenticated,
             Principal    => Principal,

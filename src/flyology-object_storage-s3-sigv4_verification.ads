@@ -63,7 +63,9 @@ package Flyology.Object_Storage.S3.SigV4_Verification is
       Secret_Key   : String) return Boolean;
 
 private
-   Maximum_Signed_Headers : constant := 64;
+   --  A PutObject request can carry the full 64-entry user-metadata map in
+   --  addition to the required SigV4 and modeled control headers.
+   Maximum_Signed_Headers : constant := 128;
    Maximum_Header_Name    : constant := 128;
 
    subtype Header_Length is Natural range 0 .. Maximum_Header_Name;
