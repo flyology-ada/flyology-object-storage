@@ -1,0 +1,8 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	538	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind it into the exact signed ownershipControls target.	PBO-RQ-001,PBO-RQ-005,PBO-RQ-006
+request	538	2	ContentMD5	111	header	false	projected	Generate the exact payload MD5 when omitted or validate and sign one exact 16-byte base64 override.	PBO-RQ-003,PBO-RQ-004,PBO-RQ-005,PBO-RQ-006
+request	538	3	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	PBO-RQ-003,PBO-RQ-005,PBO-RQ-006
+request	538	4	OwnershipControls	501	body	true	encoded	Require and encode one bounded exact OwnershipControls document.	PBO-RQ-002,PBO-RQ-004,PBO-RQ-005,PBO-RQ-006,PBO-TR-001,PBO-TR-002
+request	538	5	ChecksumAlgorithm	77	header	false	projected	Preserve omission or sign one exact modeled algorithm and matching payload digest header.	PBO-RQ-003,PBO-RQ-004,PBO-RQ-005,PBO-RQ-006
+nested	501	1	Rules	503	body	true	encoded	Require a nonempty flattened Rule list and preserve caller order without inventing a list ceiling.	PBO-RQ-002,PBO-RQ-004,PBO-RQ-005,PBO-TR-001,PBO-TR-002
+nested	502	1	ObjectOwnership	485	body	true	encoded	Encode every rule with exactly one required pinned ownership enum value.	PBO-RQ-002,PBO-RQ-004,PBO-RQ-005,PBO-TR-001,PBO-TR-002

@@ -2649,6 +2649,26 @@ package Flyology.Object_Storage.Client.Low_Level is
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
 
+   --  Prepare one exact PutBucketOwnershipControls request.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Value Required nonempty ownership-control rules
+   --  @param Parameters Optional MD5, SDK checksum, and owner controls
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Fully signed request bound to PutBucketOwnershipControls
+   function Prepare_Put_Bucket_Ownership_Controls
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Bucket_Controls.Ownership_Controls_Configuration;
+      Parameters : Put_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request;
+
    type Put_Bucket_Control_Outcome_Kind is
      (Bucket_Control_Updated, Put_Bucket_Control_Rejected);
 
@@ -2700,6 +2720,22 @@ package Flyology.Object_Storage.Client.Low_Level is
       return Put_Bucket_Control_Outcome;
    --  Execute one exact prepared PutPublicAccessBlock request.
    function Execute_Put_Public_Access_Block
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome;
+
+   --  Execute one exact prepared PutBucketOwnershipControls request.  The
+   --  30-second default is the established low-level synchronous-client
+   --  compatibility budget; callers may select a different absolute budget.
+   --  @param Client Caller-owned synchronous HTTP client
+   --  @param Prepared Request from Prepare_Put_Bucket_Ownership_Controls
+   --  @param Timeout Caller-selected absolute operation budget
+   --  @param Token Optional cooperative cancellation token
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Typed update success or strict S3 rejection
+   function Execute_Put_Bucket_Ownership_Controls
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null;

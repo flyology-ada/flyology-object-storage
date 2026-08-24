@@ -90,7 +90,7 @@ PutBucketLogging	extended	missing	partial	missing	missing
 PutBucketMetricsConfiguration	extended	missing	partial	missing	missing
 PutBucketNotification	extended	missing	partial	missing	missing
 PutBucketNotificationConfiguration	extended	missing	partial	missing	missing
-PutBucketOwnershipControls	extended	missing	partial	missing	missing
+PutBucketOwnershipControls	extended	missing	covered	missing	covered
 PutBucketPolicy	extended	missing	covered	missing	covered
 PutBucketReplication	extended	missing	partial	missing	missing
 PutBucketRequestPayment	extended	missing	covered	missing	covered

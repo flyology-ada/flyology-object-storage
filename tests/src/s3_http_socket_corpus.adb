@@ -3681,6 +3681,55 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Bucket_Owner => "123456789012",
             Expected_Confirm_Remove_Self_Access => "true");
          Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket?ownershipControls",
+            Expected_Body_Root => "<OwnershipControls",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: put-ownership-request" & CRLF &
+               "x-amz-id-2: put-ownership-host" & CRLF),
+            "PUT", "/example-bucket?ownershipControls",
+            Expected_Body_Root => "<OwnershipControls",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", "x"), "PUT",
+            "/example-bucket?ownershipControls",
+            Expected_Body_Root => "<OwnershipControls",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-request-id: first" & CRLF &
+                 "x-amz-request-id: second" & CRLF),
+            "PUT", "/example-bucket?ownershipControls",
+            Expected_Body_Root => "<OwnershipControls",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-id-2: first" & CRLF &
+                 "x-amz-id-2: second" & CRLF),
+            "PUT", "/example-bucket?ownershipControls",
+            Expected_Body_Root => "<OwnershipControls",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-request-id:" & CRLF),
+            "PUT", "/example-bucket?ownershipControls",
+            Expected_Body_Root => "<OwnershipControls",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              --  Test-only whitespace body is semantically bodyless but one
+              --  byte above the caller-selected 64-byte response ceiling.
+              ("200 OK", String'(1 .. 65 => ' ')),
+            "PUT", "/example-bucket?ownershipControls",
+            Expected_Body_Root => "<OwnershipControls",
+            Expected_Content_MD5 => "*");
+         Serve
            (HTTP_Response
               ("200 OK", "<AccelerateConfiguration/>",
                "x-amz-request-charged: requester" & CRLF &
@@ -9463,6 +9512,111 @@ procedure S3_HTTP_Socket_Corpus is
             then
                raise Program_Error with "bucket-control PUT socket mismatch";
             end if;
+         end;
+         declare
+            function Configuration
+              return Bucket_Controls.Ownership_Controls_Configuration
+            is
+            begin
+               return Value :
+                 Bucket_Controls.Ownership_Controls_Configuration :=
+                   (Is_Set => True, others => <>)
+               do
+                  Value.Rules.Append
+                    (Bucket_Controls.Ownership_Control_Rule'
+                       (Ownership => Bucket_Controls.Bucket_Owner_Preferred));
+                  Value.Rules.Append
+                    (Bucket_Controls.Ownership_Control_Rule'
+                       (Ownership => Bucket_Controls.Object_Writer));
+               end return;
+            end Configuration;
+
+            function Prepare
+              (Checksum : String := ""; Owner : String := "")
+               return Low_Level.Prepared_Request is
+              (Low_Level.Prepare_Put_Bucket_Ownership_Controls
+                 (Origin, Low_Level.Path_Style, "example-bucket",
+                  Configuration,
+                  (Content_MD5 => US.Null_Unbounded_String,
+                   Checksum_Algorithm => US.To_Unbounded_String (Checksum),
+                   Expected_Bucket_Owner => US.To_Unbounded_String (Owner)),
+                  Identity, "us-east-1", "20130524T000000Z"));
+
+            procedure Must_Reject_Put_Ownership
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Prepared : constant Low_Level.Prepared_Request := Prepare;
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant Low_Level.Put_Bucket_Control_Outcome :=
+                       (if Small_Limits
+                        then Low_Level.Execute_Put_Bucket_Ownership_Controls
+                          (HTTP, Prepared, Timeout => 5.0,
+                           Limits =>
+                             --  Test-only caller response ceiling paired
+                             --  with the 65-byte server fixture above.
+                             (Maximum_Document_Bytes => 64,
+                              Maximum_Depth          => 8,
+                              Maximum_Elements       => 32,
+                              Maximum_Text_Bytes     => 64))
+                        else
+                          Low_Level.Execute_Put_Bucket_Ownership_Controls
+                            (HTTP, Prepared, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response => Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_Put_Ownership;
+         begin
+            declare
+               Result : constant Low_Level.Put_Bucket_Control_Outcome :=
+                 Low_Level.Execute_Put_Bucket_Ownership_Controls
+                   (HTTP, Prepare ("CRC32", "123456789012"),
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Bucket_Control_Updated
+                 or else Result.Status /= 200
+               then
+                  raise Program_Error with
+                    "PutBucketOwnershipControls socket success mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Low_Level.Put_Bucket_Control_Outcome :=
+                 Low_Level.Execute_Put_Bucket_Ownership_Controls
+                   (HTTP, Prepare, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Put_Bucket_Control_Rejected
+                 or else Result.Status /= 403
+                 or else US.To_String (Result.Error.Code) /= "AccessDenied"
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "put-ownership-request"
+                 or else US.To_String (Result.Error.Host_ID) /=
+                   "put-ownership-host"
+               then
+                  raise Program_Error with
+                    "PutBucketOwnershipControls socket rejection mismatch";
+               end if;
+            end;
+            Must_Reject_Put_Ownership
+              ("PutBucketOwnershipControls accepted success body");
+            Must_Reject_Put_Ownership
+              ("PutBucketOwnershipControls accepted duplicate request ID");
+            Must_Reject_Put_Ownership
+              ("PutBucketOwnershipControls accepted duplicate host ID");
+            Must_Reject_Put_Ownership
+              ("PutBucketOwnershipControls accepted empty request ID");
+            Must_Reject_Put_Ownership
+              ("PutBucketOwnershipControls accepted oversized response",
+               Small_Limits => True);
          end;
          declare
             Raised : Boolean := False;

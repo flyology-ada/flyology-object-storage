@@ -8150,6 +8150,28 @@ package body Flyology.Object_Storage.Client.Low_Level is
          True, (others => <>), False, Parameters, Identity, Region,
          Timestamp));
 
+   function Prepare_Put_Bucket_Ownership_Controls
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : Bucket_Controls.Ownership_Controls_Configuration;
+      Parameters : Put_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request
+   is
+   begin
+      return Prepare_Bucket_Control_Put
+        (Model.Put_Bucket_Ownership_Controls_Operation,
+         "ownershipControls", Origin, Style, Bucket,
+         Bucket_Controls.Serialize_Ownership_Controls (Value, Limits),
+         True, (others => <>), False, Parameters, Identity, Region,
+         Timestamp);
+   exception
+      when Bucket_Controls.Malformed_Configuration =>
+         raise Invalid_Request with
+           "invalid PutBucketOwnershipControls configuration";
+   end Prepare_Put_Bucket_Ownership_Controls;
+
    function Prepare_Put_Bucket_Policy
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Policy : String;
@@ -8291,6 +8313,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Put_Bucket_Control_Outcome is
      (Execute_Bucket_Control_Put
         (Client, Prepared, Model.Put_Public_Access_Block_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Put_Bucket_Ownership_Controls
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome is
+     (Execute_Bucket_Control_Put
+        (Client, Prepared, Model.Put_Bucket_Ownership_Controls_Operation,
          Timeout, Token, Limits));
 
    function Execute_Put_Bucket_Policy

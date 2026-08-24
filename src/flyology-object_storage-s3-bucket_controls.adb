@@ -1,6 +1,7 @@
 package body Flyology.Object_Storage.S3.Bucket_Controls is
 
    package US renames Ada.Strings.Unbounded;
+   use type Ada.Containers.Count_Type;
 
    type Document_Kind is
      (Abac_Document,
@@ -510,6 +511,73 @@ package body Flyology.Object_Storage.S3.Bucket_Controls is
          raise Malformed_Configuration with
            "malformed OwnershipControls XML";
    end Parse_Ownership_Controls;
+
+   function Serialize_Ownership_Controls
+     (Value  : Ownership_Controls_Configuration;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String
+   is
+      Result : US.Unbounded_String;
+      Text_Bytes : Natural := 0;
+      --  Pinned shape graph: OwnershipControls / Rule / ObjectOwnership is
+      --  exactly three elements deep, with one root and two elements per rule.
+      Required_Depth    : constant Positive := 3;
+      Root_Elements     : constant Positive := 1;
+      Elements_Per_Rule : constant Positive := 2;
+      --  Exact external REST/XML namespace and member spellings from the
+      --  pinned PutBucketOwnershipControls model.
+      Prefix : constant String :=
+        "<OwnershipControls xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/"">";
+      Rule_Open : constant String := "<Rule><ObjectOwnership>";
+      Rule_Close : constant String := "</ObjectOwnership></Rule>";
+      Suffix : constant String := "</OwnershipControls>";
+
+      function Wire_Value (Item : Object_Ownership) return String is
+        (case Item is
+            when Bucket_Owner_Preferred => "BucketOwnerPreferred",
+            when Object_Writer => "ObjectWriter",
+            when Bucket_Owner_Enforced => "BucketOwnerEnforced");
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Configuration with
+              "ownership-controls document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+   begin
+      if not Value.Is_Set or else Value.Rules.Is_Empty then
+         raise Malformed_Configuration with
+           "ownership-controls rules are required";
+      elsif Limits.Maximum_Depth < Required_Depth
+        or else Value.Rules.Length >
+          Ada.Containers.Count_Type
+            ((Limits.Maximum_Elements - Root_Elements) / Elements_Per_Rule)
+      then
+         raise Malformed_Configuration with
+           "ownership-controls structure exceeds caller limit";
+      end if;
+
+      Append_Bounded (Prefix);
+      for Rule of Value.Rules loop
+         declare
+            Item : constant String := Wire_Value (Rule.Ownership);
+         begin
+            if Item'Length > Limits.Maximum_Text_Bytes - Text_Bytes then
+               raise Malformed_Configuration with
+                 "ownership-controls text exceeds caller limit";
+            end if;
+            Text_Bytes := Text_Bytes + Item'Length;
+            Append_Bounded (Rule_Open);
+            Append_Bounded (Item);
+            Append_Bounded (Rule_Close);
+         end;
+      end loop;
+      Append_Bounded (Suffix);
+      return US.To_String (Result);
+   end Serialize_Ownership_Controls;
 
    function Valid_Integer_Text (Value : String) return Boolean is
       Index : Integer := Value'First;

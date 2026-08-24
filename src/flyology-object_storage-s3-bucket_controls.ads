@@ -203,6 +203,17 @@ package Flyology.Object_Storage.S3.Bucket_Controls is
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Ownership_Controls_Configuration;
 
+   --  Serialize one exact required PutBucketOwnershipControls payload within
+   --  caller-selected shared XML resource limits.
+   --  @param Value Present configuration with one or more required rules
+   --  @param Limits Caller-selected document, depth, element, and text limits
+   --  @return Exact S3 OwnershipControls XML document
+   --  @exception Malformed_Configuration Value or encoded document exceeds
+   --   the pinned schema or caller limits
+   function Serialize_Ownership_Controls
+     (Value  : Ownership_Controls_Configuration;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String;
+
    --  Parse one exact GetBucketCors response document.
    --  @param Document Complete nonempty same-response XML payload
    --  @param Limits Caller-selected shared S3 XML resource limits
