@@ -1,0 +1,11 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	232	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind its exact value into the signed encryption target.	GBE-RQ-001,GBE-RQ-003,GBE-RQ-004
+request	232	2	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	GBE-RQ-002,GBE-RQ-003,GBE-RQ-004
+output	231	1	ServerSideEncryptionConfiguration	648	body	false	decoded	Preserve absent body versus a present configuration and decode the required flattened Rules list.	GBE-RS-001,GBE-RS-002,GBE-RS-005,GBE-TR-001,GBE-TR-002
+nested	648	1	Rules	650	body	true	decoded	Require at least one flattened Rule whenever the outer configuration is present.	GBE-RS-001,GBE-RS-002,GBE-RS-005
+nested	649	1	ApplyServerSideEncryptionByDefault	647	body	false	decoded	Preserve optional default-encryption structure presence and its required algorithm.	GBE-RS-001,GBE-RS-002,GBE-RS-005,GBE-RS-007
+nested	649	2	BucketKeyEnabled	54	body	false	decoded	Preserve optional exact Boolean presence without assigning a bucket-key policy.	GBE-RS-001,GBE-RS-002,GBE-RS-005
+nested	649	3	BlockedEncryptionTypes	45	body	false	decoded	Preserve optional blocked-types structure and flattened values within shared XML limits.	GBE-RS-001,GBE-RS-002,GBE-RS-005,GBE-RS-007
+nested	647	1	SSEAlgorithm	646	body	true	decoded	Require exactly one of the five pinned encryption algorithm values when the default structure is present.	GBE-RS-001,GBE-RS-002,GBE-RS-005,GBE-RS-007
+nested	647	2	KMSMasterKeyID	639	body	false	decoded	Preserve omission or exact unbounded key identifier text.	GBE-RS-001,GBE-RS-002,GBE-RS-005
+nested	45	1	EncryptionType	190	body	false	decoded	Preserve the optional flattened NONE or SSE-C values in wire order.	GBE-RS-001,GBE-RS-002,GBE-RS-005,GBE-RS-007

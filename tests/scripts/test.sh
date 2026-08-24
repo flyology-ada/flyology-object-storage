@@ -19,6 +19,7 @@ python3 "$PROJECT_DIR/tools/verify-get-object-retention-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-object-lock-configuration-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-bucket-ownership-controls-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-bucket-cors-preparation.py"
+python3 "$PROJECT_DIR/tools/verify-get-bucket-encryption-preparation.py"
 cd "$PROJECT_DIR/tests"
 alr -n build
 
@@ -164,6 +165,7 @@ do
   ./bin/s3_get_object_lock_configuration_corpus
   ./bin/s3_get_bucket_ownership_controls_corpus
   ./bin/s3_get_bucket_cors_corpus
+  ./bin/s3_get_bucket_encryption_corpus
   ./bin/s3_http_socket_corpus
   ./bin/s3_create_session_tls_corpus
   ./bin/s3_transfer_many_corpus
