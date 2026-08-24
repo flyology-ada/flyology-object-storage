@@ -1,15 +1,16 @@
 # Bucket versioning configuration evidence
 
 This slice qualifies configuration semantics for `PutBucketVersioning` and
-`GetBucketVersioning`. Retained memory generations, delete markers,
-version-addressed reads/deletes, and ListObjectVersions are qualified
-separately; durable files/SQLite generations remain absent.
+`GetBucketVersioning`. Retained memory generations and SQLite ordinary PUT,
+delete-marker, version-addressed read/tag/delete, and ListObjectVersions
+behavior are qualified separately. Retained-generation multipart completion
+and durable files generations remain absent.
 
 The machine ledger records both configuration operations as `covered` for the
 backend, client, server, and corpus columns. The separately qualified
-`ListObjectVersions` boundary is `partial / covered / partial / covered`;
-configuring a durable backend still fails closed rather than silently enabling
-an unimplemented retained-generation data plane.
+`ListObjectVersions` boundary is `partial / covered / partial / covered`; the
+independently qualified SQLite generation data plane consumes the same
+transactional configuration state.
 
 Evidence is reproducible with these exact repository gates:
 

@@ -4,10 +4,12 @@ This record qualifies the bounded synchronous client, strict wire codecs,
 authenticated memory-backed server route, and bounded in-memory slice for
 `ListObjectVersions`. The memory slice includes enabled and suspended delete
 markers, permanent selected-generation removal, and delimiter/common-prefix
-pagination. The SQLite slice additionally qualifies durable catalog ordering,
-paired cursors, delimiter projection, and backend exposure of the current null
-generation. It does not yet claim SQLite versioned mutation/selection, durable
-server behavior, files generations, or external-server interoperability.
+pagination. The SQLite slice additionally qualifies durable ordinary PUT,
+current/null/exact selection and tags, enabled and suspended delete-marker
+transitions, permanent selected-generation deletion, catalog ordering, paired
+cursors, delimiter projection, and reopen recovery. It does not yet claim
+retained-generation multipart completion, durable server behavior, files
+generations, or external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -135,12 +137,16 @@ escaped common prefix.
 The SQLite catalog corpus reopens a three-generation fixture containing a null
 data generation, one exact data generation, and a latest exact delete marker.
 It gates newest-first ordering, typed null/exact identities, `Is_Latest`, paired
-resume, prefix-scoped cursor rejection, delimiter collapse, backend null-mirror
-exposure, and fail-closed marker metadata. The backend and server cells remain
-partial because SQLite version-aware publication/selection and files durable
-generations are absent. Neither cell can be promoted until shared conformance
-covers those mutations, crash recovery, durable-server selection, and
-black-box external S3 behavior.
+resume, prefix-scoped cursor rejection, delimiter collapse, and fail-closed
+marker metadata. The backend then runs the complete shared generation-state
+corpus and a second reopen oracle. Those gates cover unique ordinary
+publication, current/null/exact reads, per-generation tags, enabled and
+suspended marker transitions, permanent exact data and marker deletion, MFA
+admission, prior-generation re-exposure, payload-reference recovery, and
+generation/file cardinality after startup collection. The backend and server
+cells remain partial until retained-generation multipart completion, durable
+server selection, files generations, and black-box external S3 behavior are
+independently qualified.
 
 ## Gate evidence
 

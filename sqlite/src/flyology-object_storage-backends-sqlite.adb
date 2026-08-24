@@ -952,12 +952,9 @@ package body Flyology.Object_Storage.Backends.SQLite is
       then
          Result := Invalid_Request;
          return;
-      elsif Selector.Kind /= Current_Version then
-         Result := Not_Implemented;
-         return;
       end if;
-      Catalogs.Find_Object
-        (Item.Catalog, Bucket, Key, Payload, Info, Result,
+      Catalogs.Find_Selected_Object
+        (Item.Catalog, Bucket, Key, Selector, Payload, Info, Result,
          Check_Payload'Access);
       if Result /= Success then
          return;
@@ -1042,11 +1039,9 @@ package body Flyology.Object_Storage.Backends.SQLite is
       then
          Result := Invalid_Request;
          return;
-      elsif Selector.Kind /= Current_Version then
-         Result := Not_Implemented;
-         return;
       end if;
-      Catalogs.Find_Object (Item.Catalog, Bucket, Key, Payload, Info, Result);
+      Catalogs.Find_Selected_Object
+        (Item.Catalog, Bucket, Key, Selector, Payload, Info, Result);
       if Result /= Success then
          return;
       elsif not Is_Payload_Name (US.To_String (Payload)) then
@@ -1180,7 +1175,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Outcome       : out Version_Delete_Outcome;
       Result        : out Status)
    is
-      pragma Unreferenced (Item, MFA_Validated);
+      Retired : US.Unbounded_String;
    begin
       Outcome := (others => <>);
       Check_Context (Token, Deadline);
@@ -1197,8 +1192,28 @@ package body Flyology.Object_Storage.Backends.SQLite is
       then
          Result := Invalid_Request;
       else
-         Result := Not_Implemented;
+         Catalogs.Delete_Selected_Object
+           (Item.Catalog, Bucket, Key, Selector, Conditions, MFA_Validated,
+            Unix_Seconds (Ada.Calendar.Clock), Retired, Outcome, Result);
+         if Result = Success and then US.Length (Retired) > 0 then
+            begin
+               Delete_Payload_If_Present (Item, US.To_String (Retired));
+               Sync_Path (Objects_Path (Item), Directory => True);
+            exception
+               when others =>
+                  --  The catalog commit already retired the payload. Startup
+                  --  garbage collection safely removes any durable residue.
+                  null;
+            end;
+         end if;
       end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled
+         | Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Outcome := (others => <>);
+         Result := Backend_Unavailable;
    end Delete_Selected_Object;
 
    overriding procedure Delete_Objects
@@ -1266,10 +1281,9 @@ package body Flyology.Object_Storage.Backends.SQLite is
         or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
-      elsif Selector.Kind /= Current_Version then
-         Result := Not_Implemented;
       else
-         Catalogs.Put_Object_Tags (Item.Catalog, Bucket, Key, Tags, Result);
+         Catalogs.Put_Object_Tags
+           (Item.Catalog, Bucket, Key, Tags, Result, Selector);
       end if;
    exception
       when Flyology.Cancellation.Operation_Cancelled
@@ -1293,10 +1307,9 @@ package body Flyology.Object_Storage.Backends.SQLite is
         or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
-      elsif Selector.Kind /= Current_Version then
-         Result := Not_Implemented;
       else
-         Catalogs.Get_Object_Tags (Item.Catalog, Bucket, Key, Tags, Result);
+         Catalogs.Get_Object_Tags
+           (Item.Catalog, Bucket, Key, Tags, Result, Selector);
       end if;
    exception
       when Flyology.Cancellation.Operation_Cancelled
@@ -1320,10 +1333,9 @@ package body Flyology.Object_Storage.Backends.SQLite is
         or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
-      elsif Selector.Kind /= Current_Version then
-         Result := Not_Implemented;
       else
-         Catalogs.Delete_Object_Tags (Item.Catalog, Bucket, Key, Result);
+         Catalogs.Delete_Object_Tags
+           (Item.Catalog, Bucket, Key, Result, Selector);
       end if;
    exception
       when Flyology.Cancellation.Operation_Cancelled

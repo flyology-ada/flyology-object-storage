@@ -10,6 +10,7 @@ with Ada.Text_IO;
 with Conditional_Put_Conformance;
 with Copy_Object_Conformance;
 with Multipart_Part_Conformance;
+with Versioned_Object_Conformance;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.IO;
@@ -55,6 +56,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    Backend_Root : constant String := "obj/sqlite-backend";
    Conditional_Root : constant String := "obj/sqlite-conditional-backend";
    Copy_Root : constant String := "obj/sqlite-copy-object-backend";
+   Versioned_Root : constant String := "obj/sqlite-versioned-backend";
    SQLite_Upload_ID : US.Unbounded_String;
    SQLite_Part_ETag : US.Unbounded_String;
    SQLite_Abort_ID  : US.Unbounded_String;
@@ -1712,6 +1714,11 @@ begin
          (Status => Flyology.Object_Storage.Versioning_Enabled,
           MFA_Delete => Flyology.Object_Storage.MFA_Delete_Enabled),
          Result, MFA_Validated => True);
+      Catalogs.Put_Bucket_Versioning
+        (Catalog, "catalog-bucket",
+         (Status => Flyology.Object_Storage.Versioning_Suspended,
+          MFA_Delete => Flyology.Object_Storage.MFA_Delete_Unconfigured),
+         Result, MFA_Validated => True);
 
       Info :=
         (Size         => 42,
@@ -1890,6 +1897,18 @@ begin
    end;
    Assert (Monitor.Failures = 0,
            "concurrent catalog operations were not serialized safely");
+   declare
+      Restore_Result : Flyology.Object_Storage.Status;
+   begin
+      Catalogs.Put_Bucket_Versioning
+        (Catalog, "catalog-bucket",
+         (Status => Flyology.Object_Storage.Versioning_Enabled,
+          MFA_Delete => Flyology.Object_Storage.MFA_Delete_Unconfigured),
+         Restore_Result, MFA_Validated => True);
+      Assert
+        (Restore_Result = Flyology.Object_Storage.Success,
+         "catalog versioning restore before reopen failed");
+   end;
    Catalogs.Close (Catalog);
 
    Databases.Open (Database, Database_Path);
@@ -2129,7 +2148,7 @@ begin
    declare
       use Flyology.Object_Storage;
       use Flyology.Object_Storage.Backends;
-      Info     : constant Object_Information :=
+      Info     : Object_Information :=
         (Size         => 1,
          Modified     => 1,
          Entity_Tag   => US.To_Unbounded_String ("null-etag"),
@@ -3006,6 +3025,77 @@ begin
          "SQLite boundary bucket cleanup failed");
    end;
    Ada.Directories.Delete_Tree ("obj/sqlite-part-boundary");
+
+   if Ada.Directories.Exists (Versioned_Root) then
+      Ada.Directories.Delete_Tree (Versioned_Root);
+   end if;
+   declare
+      package Backend renames Flyology.Object_Storage.Backends.SQLite;
+      Store : Backend.Store := Backend.Open (Versioned_Root);
+   begin
+      Versioned_Object_Conformance.Exercise
+        (Store, "sqlite-versioned-conformance");
+   end;
+   declare
+      package Backend renames Flyology.Object_Storage.Backends.SQLite;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      Store   : Backend.Store := Backend.Open (Versioned_Root);
+      Page    : List_Versions_Page;
+      Result  : Status;
+      Info    : Object_Information;
+      Outcome : Version_Delete_Outcome;
+      Sink    : Buffer_Sink;
+   begin
+      Store.List_Object_Versions
+        ("sqlite-versioned-conformance", (others => <>), null,
+         Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Entries.Length = 1
+         and then Page.Entries.First_Element.Is_Latest
+         and then not Page.Entries.First_Element.Is_Delete_Marker
+         and then US.Length (Page.Entries.First_Element.Version_ID) > 0
+         and then US.To_String (Page.Entries.First_Element.Version_ID) /=
+           "null",
+         "SQLite retained generation did not survive reopen");
+      declare
+         Exact : constant Version_Selector :=
+           (Kind => Exact_Version,
+            ID   => Page.Entries.First_Element.Version_ID);
+      begin
+         Store.Get_Object
+           ("sqlite-versioned-conformance", "alpha", Whole_Object, Sink,
+            null, Ada.Real_Time.Time_Last, Info, Result, Selector => Exact);
+         Assert
+           (Result = Success
+            and then Flyology.Bytes.To_Byte_String (Sink.Data) = "v2"
+            and then Info.Version = Exact.ID,
+            "SQLite exact retained body changed across reopen");
+         Store.Delete_Selected_Object
+           ("sqlite-versioned-conformance", "alpha", Exact,
+            No_Delete_Object_Conditions, False, null,
+            Ada.Real_Time.Time_Last, Outcome, Result);
+         Assert
+           (Result = Access_Denied,
+            "SQLite reopen lost MFA Delete exact-version policy");
+         Store.Delete_Selected_Object
+           ("sqlite-versioned-conformance", "alpha", Exact,
+            No_Delete_Object_Conditions, True, null,
+            Ada.Real_Time.Time_Last, Outcome, Result);
+         Assert
+           (Result = Success
+            and then Outcome.Kind = Object_Version_Removed,
+            "SQLite reopen exact-generation deletion failed");
+      end;
+      Store.List_Object_Versions
+        ("sqlite-versioned-conformance-ordering", (others => <>), null,
+         Ada.Real_Time.Time_Last, Page, Result);
+      Assert
+        (Result = Success and then Page.Entries.Length = 7
+         and then Regular_File_Count (Versioned_Root & "/objects") = 7,
+         "SQLite startup recovery lost or retained generation payloads");
+   end;
+   Ada.Directories.Delete_Tree (Versioned_Root);
 
    if Ada.Directories.Exists (Backend_Root) then
       Ada.Directories.Delete_Tree (Backend_Root);
@@ -4448,6 +4538,9 @@ exception
       end if;
       if Ada.Directories.Exists (Copy_Root) then
          Ada.Directories.Delete_Tree (Copy_Root);
+      end if;
+      if Ada.Directories.Exists (Versioned_Root) then
+         Ada.Directories.Delete_Tree (Versioned_Root);
       end if;
       Ada.Text_IO.Put_Line
         (Ada.Text_IO.Standard_Error,

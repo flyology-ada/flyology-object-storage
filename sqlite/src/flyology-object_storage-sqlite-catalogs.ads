@@ -69,7 +69,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket           : String;
       Key              : String;
       Payload          : String;
-      Info             : Object_Information;
+      Info             : in out Object_Information;
       Tags             : Object_Tag_Set;
       Previous_Payload : out Ada.Strings.Unbounded.Unbounded_String;
       Result           : out Status;
@@ -104,6 +104,27 @@ package Flyology.Object_Storage.SQLite.Catalogs is
    --  present, Check runs while that snapshot and external payload lifetime
    --  remain protected by the catalog operation gate.
 
+   --  Select one retained data generation from an atomic catalog snapshot.
+   --  Delete markers are reported as absent object data.
+   --  @param Item Open catalog
+   --  @param Bucket Bucket containing the object
+   --  @param Key Exact object key
+   --  @param Selector Current, null, or exact retained generation
+   --  @param Payload Immutable external payload name
+   --  @param Info Metadata bound to the selected payload
+   --  @param Result Operation status
+   --  @param Check Optional payload validation while the gate is held
+   procedure Find_Selected_Object
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Selector : Backends.Version_Selector;
+      Payload  : out Ada.Strings.Unbounded.Unbounded_String;
+      Info     : out Object_Information;
+      Result   : out Status;
+      Check    : access procedure
+        (Payload : String; Info : Object_Information) := null);
+
    procedure Get_Object_Attributes
      (Item     : in out Catalog;
       Bucket   : String;
@@ -131,16 +152,45 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Outcomes : out Backends.Delete_Object_Outcomes;
       Result   : out Status);
 
+   --  Remove one selected generation or publish the versioning-mode marker.
+   --  @param Item Open catalog
+   --  @param Bucket Bucket containing the key
+   --  @param Key Exact object key
+   --  @param Selector Current, null, or exact generation selection
+   --  @param Conditions Atomic object deletion predicates
+   --  @param MFA_Validated Caller authorization attestation for MFA Delete
+   --  @param Modified Commit timestamp for a newly published marker
+   --  @param Retired_Payload Payload made unreachable by this transaction
+   --  @param Outcome Exact generation-aware deletion effect
+   --  @param Result Operation status
+   procedure Delete_Selected_Object
+     (Item            : in out Catalog;
+      Bucket          : String;
+      Key             : String;
+      Selector        : Backends.Version_Selector;
+      Conditions      : Backends.Delete_Object_Conditions;
+      MFA_Validated   : Boolean;
+      Modified        : Unix_Time;
+      Retired_Payload : out Ada.Strings.Unbounded.Unbounded_String;
+      Outcome         : out Backends.Version_Delete_Outcome;
+      Result          : out Status);
+
    procedure Put_Object_Tags
      (Item : in out Catalog; Bucket, Key : String;
-      Tags : Object_Tag_Set; Result : out Status);
+      Tags : Object_Tag_Set; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector);
 
    procedure Get_Object_Tags
      (Item : in out Catalog; Bucket, Key : String;
-      Tags : out Object_Tag_Set; Result : out Status);
+      Tags : out Object_Tag_Set; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector);
 
    procedure Delete_Object_Tags
-     (Item : in out Catalog; Bucket, Key : String; Result : out Status);
+     (Item : in out Catalog; Bucket, Key : String; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector);
 
    procedure List_Objects
      (Item    : in out Catalog;
