@@ -7,6 +7,15 @@ behavior are qualified separately. SQLite retained-generation multipart
 completion and selected part attributes are also qualified; durable files
 generations remain absent.
 
+Object tagging returns the current, null, or opaque retained identity from the
+same locked or transactional snapshot that reads or mutates the complete tag
+set. The authenticated memory corpus covers current and exact identities,
+exact-version isolation, missing selectors, and explicit null selection; the
+shared backend conformance repeats the identity contract on memory and SQLite,
+and SQLite reopens a suspended null generation without losing its tags or
+identity. Pure files exposes only current and explicit null aliases and rejects
+opaque retained IDs.
+
 The machine ledger records both configuration operations as `covered` for the
 backend, client, server, and corpus columns. The separately qualified
 `ListObjectVersions` boundary is `partial / covered / partial / covered`; the

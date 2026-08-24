@@ -75,6 +75,21 @@ package Flyology.Object_Storage.Backends is
    function Valid_Version_Selector
      (Selector : Version_Selector) return Boolean;
 
+   --  Version identity selected by one atomic metadata operation.  On
+   --  Success, a present null identity is kept distinct from an omitted
+   --  identity so protocol adapters can emit S3's `null` sentinel only when
+   --  it is authoritative.  Non-success outcomes return the default record.
+   --  A present non-null identity has a nonempty Version_ID; all other forms
+   --  have an empty Version_ID.
+   --  @field Has_Version_ID Whether the selected object exposes an identity
+   --  @field Is_Null_Version Whether that identity is the distinguished null
+   --  @field Version_ID Opaque non-null identity when present and non-null
+   type Version_Identity is record
+      Has_Version_ID  : Boolean := False;
+      Is_Null_Version : Boolean := False;
+      Version_ID      : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  One retained object generation or delete marker in listing order.
    --  @field Key Exact object key
    --  @field Version_ID Opaque identifier or the S3 value `null`
@@ -811,6 +826,15 @@ package Flyology.Object_Storage.Backends is
 
    --  Atomically replace the complete tag set associated with one selected
    --  object generation. Missing buckets and objects remain distinguishable.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Tags Complete replacement tag set
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Identity Selected generation from the mutation snapshot on
+   --    success
+   --  @param Result Storage-domain outcome
    --  @param Selector Current, null, or exact generation selection
    procedure Put_Object_Tags
      (Item     : in out Backend;
@@ -819,8 +843,29 @@ package Flyology.Object_Storage.Backends is
       Tags     : Object_Tag_Set;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result   : out Status;
       Selector : Version_Selector := Current_Version_Selector) is abstract;
+
+   --  Compatibility convenience when the selected version identity is not
+   --  needed by the caller.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Tags Complete replacement tag set
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   procedure Put_Object_Tags
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Tags     : Object_Tag_Set;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
 
    --  Return the complete tag set for one selected generation.
    --  @param Item Backend instance
@@ -829,6 +874,7 @@ package Flyology.Object_Storage.Backends is
    --  @param Token Optional cooperative-cancellation token
    --  @param Deadline Absolute operation deadline
    --  @param Tags Complete selected tag set
+   --  @param Identity Selected generation from the read snapshot on success
    --  @param Result Storage-domain outcome
    --  @param Selector Current, null, or exact generation selection
    procedure Get_Object_Tags
@@ -838,8 +884,29 @@ package Flyology.Object_Storage.Backends is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Tags     : out Object_Tag_Set;
+      Identity : out Version_Identity;
       Result   : out Status;
       Selector : Version_Selector := Current_Version_Selector) is abstract;
+
+   --  Compatibility convenience when the selected version identity is not
+   --  needed by the caller.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Tags Complete selected tag set
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   procedure Get_Object_Tags
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Tags     : out Object_Tag_Set;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
 
    --  Clear the complete tag set for one selected generation.
    --  @param Item Backend instance
@@ -847,6 +914,8 @@ package Flyology.Object_Storage.Backends is
    --  @param Key Object key
    --  @param Token Optional cooperative-cancellation token
    --  @param Deadline Absolute operation deadline
+   --  @param Identity Selected generation from the mutation snapshot on
+   --    success
    --  @param Result Storage-domain outcome
    --  @param Selector Current, null, or exact generation selection
    procedure Delete_Object_Tags
@@ -855,8 +924,27 @@ package Flyology.Object_Storage.Backends is
       Key      : String;
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result   : out Status;
       Selector : Version_Selector := Current_Version_Selector) is abstract;
+
+   --  Compatibility convenience when the selected version identity is not
+   --  needed by the caller.
+   --  @param Item Backend instance
+   --  @param Bucket Bucket name
+   --  @param Key Object key
+   --  @param Token Optional cooperative-cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Storage-domain outcome
+   --  @param Selector Current, null, or exact generation selection
+   procedure Delete_Object_Tags
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector);
    --  Not_Found means the bucket exists but the key does not.
    --  Bucket_Not_Found means the bucket itself does not exist. Backends must
    --  classify and delete under one namespace-publication boundary.

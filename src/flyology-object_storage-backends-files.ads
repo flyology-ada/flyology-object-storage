@@ -213,31 +213,37 @@ package Flyology.Object_Storage.Backends.Files is
 
    --  Replace tags on the current/null filesystem generation. Opaque exact
    --  versions are not retained and return Not_Implemented.
+   --  @param Identity Selected current or null generation on success
    --  @param Selector Current or null generation selection
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
    --  Read tags from the current/null filesystem generation. Opaque exact
    --  versions are not retained and return Not_Implemented.
+   --  @param Identity Selected current or null generation on success
    --  @param Selector Current or null generation selection
    overriding procedure Get_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Tags : out Object_Tag_Set; Result : out Status;
+      Tags : out Object_Tag_Set; Identity : out Version_Identity;
+      Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
    --  Clear tags on the current/null filesystem generation. Opaque exact
    --  versions are not retained and return Not_Implemented.
+   --  @param Identity Selected current or null generation on success
    --  @param Selector Current or null generation selection
    overriding procedure Delete_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 

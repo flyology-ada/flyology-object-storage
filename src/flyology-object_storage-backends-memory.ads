@@ -201,29 +201,35 @@ package Flyology.Object_Storage.Backends.Memory is
       Result   : out Status);
 
    --  Replace tags on one selected in-memory generation.
+   --  @param Identity Selected generation from the mutation snapshot
    --  @param Selector Current, null, or exact generation selection
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
    --  Read tags from one selected in-memory generation.
+   --  @param Identity Selected generation from the read snapshot
    --  @param Selector Current, null, or exact generation selection
    overriding procedure Get_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Tags : out Object_Tag_Set; Result : out Status;
+      Tags : out Object_Tag_Set; Identity : out Version_Identity;
+      Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
    --  Clear tags on one selected in-memory generation.
+   --  @param Identity Selected generation from the mutation snapshot
    --  @param Selector Current, null, or exact generation selection
    overriding procedure Delete_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
@@ -491,13 +497,16 @@ private
       procedure Put_Tags
         (Bucket : String; Key : String; Selector : Version_Selector;
          Tags : Object_Tag_Set;
+         Identity : out Version_Identity;
          Result : out Status);
       procedure Get_Tags
         (Bucket : String; Key : String; Selector : Version_Selector;
          Tags : out Object_Tag_Set;
+         Identity : out Version_Identity;
          Result : out Status);
       procedure Delete_Tags
         (Bucket : String; Key : String; Selector : Version_Selector;
+         Identity : out Version_Identity;
          Result : out Status);
       procedure List
         (Bucket  : String;

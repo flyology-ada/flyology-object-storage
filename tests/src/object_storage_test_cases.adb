@@ -3778,6 +3778,7 @@ package body Object_Storage_Test_Cases is
             Null_Sink : Buffer_Sink;
             Null_Tags : Object_Tag_Set := Empty_Object_Tags;
             Read_Tags : Object_Tag_Set;
+            Identity  : Version_Identity;
             --  Test-reference opaque ID: pure-files must distinguish an
             --  unsupported retained identity from its supported null alias.
             Opaque : constant Version_Selector :=
@@ -3805,31 +3806,57 @@ package body Object_Storage_Test_Cases is
                Value => US.To_Unbounded_String ("null"));
             Store.Put_Object_Tags
               ("file-bucket", Key, Null_Tags, null,
-               Ada.Real_Time.Time_Last, Result,
+               Ada.Real_Time.Time_Last, Identity, Result,
                Selector => Null_Version_Selector);
-            Assert (Result = Success, "files null PutObjectTagging");
+            Assert
+              (Result = Success and then Identity.Has_Version_ID
+               and then Identity.Is_Null_Version
+               and then US.Length (Identity.Version_ID) = 0,
+               "files null PutObjectTagging identity");
             Store.Get_Object_Tags
               ("file-bucket", Key, null, Ada.Real_Time.Time_Last,
-               Read_Tags, Result, Selector => Null_Version_Selector);
+               Read_Tags, Identity, Result,
+               Selector => Null_Version_Selector);
             Assert
-              (Result = Success and then Read_Tags = Null_Tags,
-               "files null GetObjectTagging");
+              (Result = Success and then Read_Tags = Null_Tags
+               and then Identity.Has_Version_ID
+               and then Identity.Is_Null_Version,
+               "files null GetObjectTagging identity");
             Store.Delete_Object_Tags
-              ("file-bucket", Key, null, Ada.Real_Time.Time_Last, Result,
+              ("file-bucket", Key, null, Ada.Real_Time.Time_Last, Identity,
+               Result,
                Selector => Null_Version_Selector);
-            Assert (Result = Success, "files null DeleteObjectTagging");
+            Assert
+              (Result = Success and then Identity.Has_Version_ID
+               and then Identity.Is_Null_Version,
+               "files null DeleteObjectTagging identity");
             Store.Get_Object_Tags
               ("file-bucket", Key, null, Ada.Real_Time.Time_Last,
-               Read_Tags, Result);
+               Read_Tags, Identity, Result);
             Assert
-              (Result = Success and then Read_Tags = Empty_Object_Tags,
-               "files null tag deletion did not update current alias");
+              (Result = Success and then Read_Tags = Empty_Object_Tags
+               and then not Identity.Has_Version_ID,
+               "files null tag deletion or current identity mismatch");
             Store.Head_Object
               ("file-bucket", Key, null, Ada.Real_Time.Time_Last,
                Null_Info, Result, Selector => Opaque);
             Assert
               (Result = Not_Implemented,
                "files opaque retained HeadObject did not fail closed");
+            Identity :=
+              (Has_Version_ID  => True,
+               Is_Null_Version => True,
+               Version_ID      => US.Null_Unbounded_String);
+            Store.Get_Object_Tags
+              ("file-bucket", Key, null, Ada.Real_Time.Time_Last,
+               Read_Tags, Identity, Result, Selector => Opaque);
+            Assert
+              (Result = Not_Implemented
+               and then Read_Tags = Empty_Object_Tags
+               and then not Identity.Has_Version_ID
+               and then not Identity.Is_Null_Version
+               and then US.Length (Identity.Version_ID) = 0,
+               "files opaque tag rejection retained output state");
          end;
          declare
             Snapshot : Object_Attribute_Snapshot;

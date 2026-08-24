@@ -15,6 +15,53 @@ package body Flyology.Object_Storage.Backends is
       end case;
    end Valid_Version_Selector;
 
+   procedure Put_Object_Tags
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Tags     : Object_Tag_Set;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Identity : Version_Identity;
+   begin
+      Item.Put_Object_Tags
+        (Bucket, Key, Tags, Token, Deadline, Identity, Result, Selector);
+   end Put_Object_Tags;
+
+   procedure Get_Object_Tags
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Tags     : out Object_Tag_Set;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Identity : Version_Identity;
+   begin
+      Item.Get_Object_Tags
+        (Bucket, Key, Token, Deadline, Tags, Identity, Result, Selector);
+   end Get_Object_Tags;
+
+   procedure Delete_Object_Tags
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status;
+      Selector : Version_Selector := Current_Version_Selector)
+   is
+      Identity : Version_Identity;
+   begin
+      Item.Delete_Object_Tags
+        (Bucket, Key, Token, Deadline, Identity, Result, Selector);
+   end Delete_Object_Tags;
+
    procedure Put_Multipart_Part
      (Item        : in out Backend'Class;
       Bucket      : String;

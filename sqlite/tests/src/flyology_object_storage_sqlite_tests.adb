@@ -4205,13 +4205,26 @@ begin
       Wanted.Items (2) :=
         (Key => US.To_Unbounded_String ("team"),
          Value => US.To_Unbounded_String ("storage/core"));
-      Store.Get_Object_Tags
-        ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Tags, Result);
-      Assert
-        (Result = Success and then Tags = Wanted,
-         "SQLite backend object tags did not persist across reopen");
-      Store.Delete_Object_Tags
-        ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Result);
+      declare
+         Identity : Version_Identity;
+      begin
+         Store.Get_Object_Tags
+           ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Tags,
+            Identity, Result);
+         Assert
+           (Result = Success and then Tags = Wanted
+            and then Identity.Has_Version_ID
+            and then Identity.Is_Null_Version
+            and then US.Length (Identity.Version_ID) = 0,
+            "SQLite null-version tags or identity did not survive reopen");
+         Store.Delete_Object_Tags
+           ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Identity,
+            Result);
+         Assert
+           (Result = Success and then Identity.Has_Version_ID
+            and then Identity.Is_Null_Version,
+            "SQLite null-version tag deletion lost its identity");
+      end;
       Store.Get_Object_Tags
         ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Tags, Result);
       Assert

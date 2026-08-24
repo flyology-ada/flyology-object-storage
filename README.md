@@ -92,8 +92,10 @@ The core crate includes:
 - an authenticated path-style S3 server application for the initial
   Create/GetLocation/Head/DeleteBucket, Put/Get/DeleteBucketTagging,
   ListObjects v1/v2, DeleteObjects,
-  Put/Copy/Get/Head/GetAttributes/DeleteObject, and core multipart/ListParts/
-  ListMultipartUploads slice, with SigV4 admission before body acceptance,
+  Put/Copy/Get/Head/GetAttributes/DeleteObject,
+  Put/Get/DeleteObjectTagging, and core multipart/ListParts/
+  ListMultipartUploads slice, with current/null/exact generation routing,
+  SigV4 admission before body acceptance,
   streamed payload-hash verification before commit, atomic suffix-range
   resolution, and typed S3 error responses;
 - the namespace for the low-level and convenience clients.

@@ -3337,14 +3337,19 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Selector   : Backends.Version_Selector;
       Version_ID : out US.Unbounded_String;
       Is_Current : out Boolean;
+      Identity   : out Backends.Version_Identity;
       Result     : out Status)
    is
       Payload : US.Unbounded_String;
       Info    : Object_Information;
       Query   : DB.Statement;
+      Versioning_Query : DB.Statement;
+      Versioning_Value : Long_Long_Integer := 0;
+      Versioning : Bucket_Versioning_Status := Versioning_Unconfigured;
    begin
       Version_ID := US.Null_Unbounded_String;
       Is_Current := False;
+      Identity := (others => <>);
       Find_Selected_Object_Internal
         (Item, Bucket, Key, Selector, Payload, Info, Result);
       if Result /= Success then
@@ -3353,6 +3358,38 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Version_ID :=
         (if US.Length (Info.Version) = 0
          then US.To_Unbounded_String ("null") else Info.Version);
+      DB.Prepare
+        (Versioning_Query, Item.Database,
+         "SELECT versioning_status FROM buckets WHERE name=?1");
+      DB.Bind (Versioning_Query, 1, Bucket);
+      if DB.Step (Versioning_Query) /= DB.Row then
+         raise Catalog_Error with
+           "selected generation bucket policy disappeared";
+      end if;
+      Versioning_Value := DB.Column (Versioning_Query, 0);
+      --  The catalog schema persists the Bucket_Versioning_Status position.
+      --  Deriving these bounds from the Ada enum preserves that established
+      --  on-disk authority if the source representation is reviewed later.
+      if Versioning_Value <
+           Long_Long_Integer
+             (Bucket_Versioning_Status'Pos
+                (Bucket_Versioning_Status'First))
+        or else Versioning_Value >
+          Long_Long_Integer
+            (Bucket_Versioning_Status'Pos
+               (Bucket_Versioning_Status'Last))
+      then
+         raise Catalog_Error with "invalid selected generation policy";
+      end if;
+      Versioning := Bucket_Versioning_Status'Val
+        (Natural (Versioning_Value));
+      Identity.Has_Version_ID :=
+        Selector.Kind /= Backends.Current_Version
+        or else US.Length (Info.Version) > 0
+        or else Versioning /= Versioning_Unconfigured;
+      Identity.Is_Null_Version :=
+        Identity.Has_Version_ID and then US.Length (Info.Version) = 0;
+      Identity.Version_ID := Info.Version;
       DB.Prepare
         (Query, Item.Database,
          "SELECT EXISTS(SELECT 1 FROM current_object_versions WHERE " &
@@ -3368,7 +3405,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
 
    procedure Put_Object_Tags
      (Item : in out Catalog; Bucket, Key : String;
-      Tags : Object_Tag_Set; Result : out Status;
+      Tags : Object_Tag_Set; Identity : out Backends.Version_Identity;
+      Result : out Status;
       Selector : Backends.Version_Selector :=
         Backends.Current_Version_Selector)
    is
@@ -3379,12 +3417,14 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Locked         : Boolean := False;
       In_Transaction : Boolean := False;
    begin
+      Identity := (others => <>);
       Item.Gate.Acquire;
       Locked := True;
       DB.Begin_Transaction (Item.Database);
       In_Transaction := True;
       Selected_Data_Version_Internal
-        (Item, Bucket, Key, Selector, Version_ID, Is_Current, Result);
+        (Item, Bucket, Key, Selector, Version_ID, Is_Current, Identity,
+         Result);
       if Result /= Success then
          DB.Rollback (Item.Database);
          In_Transaction := False;
@@ -3437,12 +3477,26 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          if Locked then
             Item.Gate.Release;
          end if;
+         Identity := (others => <>);
          raise;
+   end Put_Object_Tags;
+
+   procedure Put_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String;
+      Tags : Object_Tag_Set; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector)
+   is
+      Identity : Backends.Version_Identity;
+   begin
+      Put_Object_Tags
+        (Item, Bucket, Key, Tags, Identity, Result, Selector);
    end Put_Object_Tags;
 
    procedure Get_Object_Tags
      (Item : in out Catalog; Bucket, Key : String;
-      Tags : out Object_Tag_Set; Result : out Status;
+      Tags : out Object_Tag_Set; Identity : out Backends.Version_Identity;
+      Result : out Status;
       Selector : Backends.Version_Selector :=
         Backends.Current_Version_Selector)
    is
@@ -3452,10 +3506,12 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Locked   : Boolean := False;
    begin
       Tags := Empty_Object_Tags;
+      Identity := (others => <>);
       Item.Gate.Acquire;
       Locked := True;
       Selected_Data_Version_Internal
-        (Item, Bucket, Key, Selector, Version_ID, Is_Current, Result);
+        (Item, Bucket, Key, Selector, Version_ID, Is_Current, Identity,
+         Result);
       if Result /= Success then
          Item.Gate.Release;
          Locked := False;
@@ -3486,20 +3542,46 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    exception
       when others =>
          Tags := Empty_Object_Tags;
+         Identity := (others => <>);
          if Locked then
             Item.Gate.Release;
          end if;
          raise;
    end Get_Object_Tags;
 
+   procedure Get_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String;
+      Tags : out Object_Tag_Set; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector)
+   is
+      Identity : Backends.Version_Identity;
+   begin
+      Get_Object_Tags
+        (Item, Bucket, Key, Tags, Identity, Result, Selector);
+   end Get_Object_Tags;
+
    procedure Delete_Object_Tags
-     (Item : in out Catalog; Bucket, Key : String; Result : out Status;
+     (Item : in out Catalog; Bucket, Key : String;
+      Identity : out Backends.Version_Identity; Result : out Status;
       Selector : Backends.Version_Selector :=
         Backends.Current_Version_Selector)
    is
       Tags : constant Object_Tag_Set := Empty_Object_Tags;
    begin
-      Put_Object_Tags (Item, Bucket, Key, Tags, Result, Selector);
+      Put_Object_Tags
+        (Item, Bucket, Key, Tags, Identity, Result, Selector);
+   end Delete_Object_Tags;
+
+   procedure Delete_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector)
+   is
+      Identity : Backends.Version_Identity;
+   begin
+      Delete_Object_Tags
+        (Item, Bucket, Key, Identity, Result, Selector);
    end Delete_Object_Tags;
 
    procedure List_Objects

@@ -176,18 +176,44 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Outcome         : out Backends.Version_Delete_Outcome;
       Result          : out Status);
 
+   --  Replace tags and return the selected generation from one transaction.
+   procedure Put_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String;
+      Tags : Object_Tag_Set; Identity : out Backends.Version_Identity;
+      Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector);
+
+   --  Compatibility form when the selected identity is not needed.
    procedure Put_Object_Tags
      (Item : in out Catalog; Bucket, Key : String;
       Tags : Object_Tag_Set; Result : out Status;
       Selector : Backends.Version_Selector :=
         Backends.Current_Version_Selector);
 
+   --  Read tags and identity from one serialized catalog snapshot.
+   procedure Get_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String;
+      Tags : out Object_Tag_Set; Identity : out Backends.Version_Identity;
+      Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector);
+
+   --  Compatibility form when the selected identity is not needed.
    procedure Get_Object_Tags
      (Item : in out Catalog; Bucket, Key : String;
       Tags : out Object_Tag_Set; Result : out Status;
       Selector : Backends.Version_Selector :=
         Backends.Current_Version_Selector);
 
+   --  Clear tags and return the selected generation from one transaction.
+   procedure Delete_Object_Tags
+     (Item : in out Catalog; Bucket, Key : String;
+      Identity : out Backends.Version_Identity; Result : out Status;
+      Selector : Backends.Version_Selector :=
+        Backends.Current_Version_Selector);
+
+   --  Compatibility form when the selected identity is not needed.
    procedure Delete_Object_Tags
      (Item : in out Catalog; Bucket, Key : String; Result : out Status;
       Selector : Backends.Version_Selector :=

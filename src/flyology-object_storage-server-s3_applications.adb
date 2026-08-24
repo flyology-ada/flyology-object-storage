@@ -597,34 +597,38 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Has_Copy_Source : constant Boolean :=
         Apps.Request_Header_Count (X, "x-amz-copy-source") > 0;
 
-      function Read_Version_Selector return Backends.Version_Selector is
-        (if not Object_Read_Request.Has_Version_ID
+      --  S3 defines the exact `null` wire value as the distinguished null
+      --  generation.  All object-version routes share this protocol mapping;
+      --  every other present value remains an opaque backend identity.
+      function To_Version_Selector
+        (Has_Version_ID : Boolean;
+         Version_ID     : US.Unbounded_String)
+         return Backends.Version_Selector is
+        (if not Has_Version_ID
          then Backends.Current_Version_Selector
-         elsif US.To_String (Object_Read_Request.Version_ID) = "null"
+         elsif US.To_String (Version_ID) = "null"
          then Backends.Null_Version_Selector
          else
            (Kind => Backends.Exact_Version,
-            ID   => Object_Read_Request.Version_ID));
+            ID   => Version_ID));
+
+      function Read_Version_Selector return Backends.Version_Selector is
+        (To_Version_Selector
+           (Object_Read_Request.Has_Version_ID,
+            Object_Read_Request.Version_ID));
 
       function Delete_Version_Selector return Backends.Version_Selector is
-        (if not Delete_Request.Has_Version_ID
-         then Backends.Current_Version_Selector
-         elsif US.To_String (Delete_Request.Version_ID) = "null"
-         then Backends.Null_Version_Selector
-         else
-           (Kind => Backends.Exact_Version,
-            ID   => Delete_Request.Version_ID));
+        (To_Version_Selector
+           (Delete_Request.Has_Version_ID, Delete_Request.Version_ID));
 
-      --  S3's versionId=null wire sentinel selects the distinguished null
-      --  generation; every other present value remains an opaque backend ID.
+      function Tagging_Version_Selector return Backends.Version_Selector is
+        (To_Version_Selector
+           (Tagging_Request.Has_Version_ID, Tagging_Request.Version_ID));
+
       function Attributes_Version_Selector return Backends.Version_Selector is
-        (if not Attributes_Request.Has_Version_ID
-         then Backends.Current_Version_Selector
-         elsif US.To_String (Attributes_Request.Version_ID) = "null"
-         then Backends.Null_Version_Selector
-         else
-           (Kind => Backends.Exact_Version,
-            ID   => Attributes_Request.Version_ID));
+        (To_Version_Selector
+           (Attributes_Request.Has_Version_ID,
+            Attributes_Request.Version_ID));
 
       function Has_Encryption_Header return Boolean is
       begin
@@ -5733,6 +5737,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Algorithm_Count : constant Natural :=
                     Apps.Request_Header_Count
                       (X, "x-amz-sdk-checksum-algorithm");
+                  Identity : Backends.Version_Identity;
+
+                  procedure Set_Version_Header is
+                  begin
+                     if Identity.Has_Version_ID then
+                        Apps.Set_Header
+                          (X, "x-amz-version-id",
+                           (if Identity.Is_Null_Version
+                            then "null"
+                            else US.To_String (Identity.Version_ID)));
+                     end if;
+                  end Set_Version_Header;
                begin
                   if Payer_Count > 1 or else Algorithm_Count > 1
                     or else MD5_Count > 1 or else Kind_Count > 1
@@ -5746,11 +5762,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Check_Expected_Bucket_Owner
                     (US.To_String (Auth.Principal), Owner_OK);
                   if not Owner_OK then
-                     return;
-                  elsif Tagging_Request.Has_Version_ID then
-                     Send_Error
-                       (X, 501, "NotImplemented",
-                        "Object versioning is not implemented", Target_Text);
                      return;
                   elsif Payer_Count = 1
                     and then Apps.Request_Header
@@ -5829,7 +5840,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         begin
                            Store.Put_Object_Tags
                              (Bucket, Key, Tags, Apps.Cancellation (X),
-                              Apps.Deadline (X), Result);
+                              Apps.Deadline (X), Identity, Result,
+                              Selector => Tagging_Version_Selector);
                         end;
                      exception
                         when Tagging.Malformed_Tagging =>
@@ -5840,6 +5852,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            return;
                      end;
                      if Result = Success then
+                        Set_Version_Header;
                         Apps.Respond (X, 200, "", "");
                      else
                         Send_Backend_Error (X, Result, False, Target_Text);
@@ -5850,8 +5863,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      begin
                         Store.Get_Object_Tags
                           (Bucket, Key, Apps.Cancellation (X),
-                           Apps.Deadline (X), Tags, Result);
+                           Apps.Deadline (X), Tags, Identity, Result,
+                           Selector => Tagging_Version_Selector);
                         if Result = Success then
+                           Set_Version_Header;
                            Apps.Respond
                              (X, 200, "application/xml",
                               Tagging.Serialize (Tags));
@@ -5863,8 +5878,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   else
                      Store.Delete_Object_Tags
                        (Bucket, Key, Apps.Cancellation (X), Apps.Deadline (X),
-                        Result);
+                        Identity, Result,
+                        Selector => Tagging_Version_Selector);
                      if Result = Success then
+                        Set_Version_Header;
                         Apps.Respond (X, 204, "", "");
                      else
                         Send_Backend_Error (X, Result, False, Target_Text);

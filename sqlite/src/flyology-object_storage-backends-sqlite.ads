@@ -199,29 +199,35 @@ package Flyology.Object_Storage.Backends.SQLite is
       Result   : out Status);
 
    --  Replace tags on one selected SQLite generation.
+   --  @param Identity Selected generation from the mutation transaction
    --  @param Selector Current, null, or exact generation selection
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
    --  Read tags from one selected SQLite generation.
+   --  @param Identity Selected generation from the catalog snapshot
    --  @param Selector Current, null, or exact generation selection
    overriding procedure Get_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Tags : out Object_Tag_Set; Result : out Status;
+      Tags : out Object_Tag_Set; Identity : out Version_Identity;
+      Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
    --  Clear tags on one selected SQLite generation.
+   --  @param Identity Selected generation from the mutation transaction
    --  @param Selector Current, null, or exact generation selection
    overriding procedure Delete_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 

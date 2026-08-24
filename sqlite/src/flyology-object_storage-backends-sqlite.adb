@@ -1298,9 +1298,11 @@ package body Flyology.Object_Storage.Backends.SQLite is
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector) is
    begin
+      Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
         or else not Valid_Object_Tag_Set (Tags)
@@ -1309,13 +1311,14 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Invalid_Request;
       else
          Catalogs.Put_Object_Tags
-           (Item.Catalog, Bucket, Key, Tags, Result, Selector);
+           (Item.Catalog, Bucket, Key, Tags, Identity, Result, Selector);
       end if;
    exception
       when Flyology.Cancellation.Operation_Cancelled
          | Flyology.IO.Timeout_Error =>
          raise;
       when others =>
+         Identity := (others => <>);
          Result := Backend_Unavailable;
    end Put_Object_Tags;
 
@@ -1323,10 +1326,12 @@ package body Flyology.Object_Storage.Backends.SQLite is
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Tags : out Object_Tag_Set; Result : out Status;
+      Tags : out Object_Tag_Set; Identity : out Version_Identity;
+      Result : out Status;
       Selector : Version_Selector := Current_Version_Selector) is
    begin
       Tags := Empty_Object_Tags;
+      Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
@@ -1335,7 +1340,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Invalid_Request;
       else
          Catalogs.Get_Object_Tags
-           (Item.Catalog, Bucket, Key, Tags, Result, Selector);
+           (Item.Catalog, Bucket, Key, Tags, Identity, Result, Selector);
       end if;
    exception
       when Flyology.Cancellation.Operation_Cancelled
@@ -1343,6 +1348,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
          raise;
       when others =>
          Tags := Empty_Object_Tags;
+         Identity := (others => <>);
          Result := Backend_Unavailable;
    end Get_Object_Tags;
 
@@ -1350,9 +1356,11 @@ package body Flyology.Object_Storage.Backends.SQLite is
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector) is
    begin
+      Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
@@ -1361,13 +1369,14 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Invalid_Request;
       else
          Catalogs.Delete_Object_Tags
-           (Item.Catalog, Bucket, Key, Result, Selector);
+           (Item.Catalog, Bucket, Key, Identity, Result, Selector);
       end if;
    exception
       when Flyology.Cancellation.Operation_Cancelled
          | Flyology.IO.Timeout_Error =>
          raise;
       when others =>
+         Identity := (others => <>);
          Result := Backend_Unavailable;
    end Delete_Object_Tags;
 

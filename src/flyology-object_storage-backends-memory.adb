@@ -994,17 +994,29 @@ package body Flyology.Object_Storage.Backends.Memory is
       procedure Put_Tags
         (Bucket : String; Key : String; Selector : Version_Selector;
          Tags : Object_Tag_Set;
+         Identity : out Version_Identity;
          Result : out Status)
       is
          Index : constant Natural :=
            Selected_Object_Index (Bucket, Key, Selector);
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
       begin
-         if Bucket_Index (Bucket) = 0 then
+         Identity := (others => <>);
+         if Bucket_Position = 0 then
             Result := Bucket_Not_Found;
          elsif Index = 0 then
             Result := Not_Found;
          else
             Objects (Index).Tags := Tags;
+            Identity.Has_Version_ID :=
+              Selector.Kind /= Current_Version
+              or else Ada.Strings.Unbounded.Length
+                (Objects (Index).Info.Version) > 0
+              or else Buckets (Bucket_Position).Versioning.Status /=
+                Versioning_Unconfigured;
+            Identity.Is_Null_Version :=
+              Identity.Has_Version_ID and then Objects (Index).Is_Null_Version;
+            Identity.Version_ID := Objects (Index).Info.Version;
             Result := Success;
          end if;
       end Put_Tags;
@@ -1012,35 +1024,59 @@ package body Flyology.Object_Storage.Backends.Memory is
       procedure Get_Tags
         (Bucket : String; Key : String; Selector : Version_Selector;
          Tags : out Object_Tag_Set;
+         Identity : out Version_Identity;
          Result : out Status)
       is
          Index : constant Natural :=
            Selected_Object_Index (Bucket, Key, Selector);
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
       begin
          Tags := Empty_Object_Tags;
-         if Bucket_Index (Bucket) = 0 then
+         Identity := (others => <>);
+         if Bucket_Position = 0 then
             Result := Bucket_Not_Found;
          elsif Index = 0 then
             Result := Not_Found;
          else
             Tags := Objects (Index).Tags;
+            Identity.Has_Version_ID :=
+              Selector.Kind /= Current_Version
+              or else Ada.Strings.Unbounded.Length
+                (Objects (Index).Info.Version) > 0
+              or else Buckets (Bucket_Position).Versioning.Status /=
+                Versioning_Unconfigured;
+            Identity.Is_Null_Version :=
+              Identity.Has_Version_ID and then Objects (Index).Is_Null_Version;
+            Identity.Version_ID := Objects (Index).Info.Version;
             Result := Success;
          end if;
       end Get_Tags;
 
       procedure Delete_Tags
         (Bucket : String; Key : String; Selector : Version_Selector;
+         Identity : out Version_Identity;
          Result : out Status)
       is
          Index : constant Natural :=
            Selected_Object_Index (Bucket, Key, Selector);
+         Bucket_Position : constant Natural := Bucket_Index (Bucket);
       begin
-         if Bucket_Index (Bucket) = 0 then
+         Identity := (others => <>);
+         if Bucket_Position = 0 then
             Result := Bucket_Not_Found;
          elsif Index = 0 then
             Result := Not_Found;
          else
             Objects (Index).Tags := Empty_Object_Tags;
+            Identity.Has_Version_ID :=
+              Selector.Kind /= Current_Version
+              or else Ada.Strings.Unbounded.Length
+                (Objects (Index).Info.Version) > 0
+              or else Buckets (Bucket_Position).Versioning.Status /=
+                Versioning_Unconfigured;
+            Identity.Is_Null_Version :=
+              Identity.Has_Version_ID and then Objects (Index).Is_Null_Version;
+            Identity.Version_ID := Objects (Index).Info.Version;
             Result := Success;
          end if;
       end Delete_Tags;
@@ -2690,9 +2726,11 @@ package body Flyology.Object_Storage.Backends.Memory is
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector) is
    begin
+      Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
         or else not Valid_Object_Tag_Set (Tags)
@@ -2700,7 +2738,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       then
          Result := Invalid_Request;
       else
-         Item.State.Put_Tags (Bucket, Key, Selector, Tags, Result);
+         Item.State.Put_Tags
+           (Bucket, Key, Selector, Tags, Identity, Result);
       end if;
    end Put_Object_Tags;
 
@@ -2708,10 +2747,12 @@ package body Flyology.Object_Storage.Backends.Memory is
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Tags : out Object_Tag_Set; Result : out Status;
+      Tags : out Object_Tag_Set; Identity : out Version_Identity;
+      Result : out Status;
       Selector : Version_Selector := Current_Version_Selector) is
    begin
       Tags := Empty_Object_Tags;
+      Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
@@ -2719,7 +2760,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       then
          Result := Invalid_Request;
       else
-         Item.State.Get_Tags (Bucket, Key, Selector, Tags, Result);
+         Item.State.Get_Tags
+           (Bucket, Key, Selector, Tags, Identity, Result);
       end if;
    end Get_Object_Tags;
 
@@ -2727,9 +2769,11 @@ package body Flyology.Object_Storage.Backends.Memory is
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector) is
    begin
+      Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
@@ -2737,7 +2781,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       then
          Result := Invalid_Request;
       else
-         Item.State.Delete_Tags (Bucket, Key, Selector, Result);
+         Item.State.Delete_Tags
+           (Bucket, Key, Selector, Identity, Result);
       end if;
    end Delete_Object_Tags;
 

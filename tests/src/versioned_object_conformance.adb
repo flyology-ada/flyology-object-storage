@@ -183,6 +183,25 @@ package body Versioned_Object_Conformance is
          "unconfigured selected delete retained data");
       Put ("alpha", "legacy", Legacy);
       Require (Result = Success, "restore unconfigured null generation");
+      declare
+         Tags     : Object_Tag_Set;
+         Identity : Version_Identity;
+      begin
+         Store.Get_Object_Tags
+           (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Tags, Identity,
+            Result);
+         Require
+           (Result = Success and then not Identity.Has_Version_ID,
+            "unconfigured current tagging invented a version identity");
+         Store.Get_Object_Tags
+           (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Tags, Identity,
+            Result, Selector => Null_Version_Selector);
+         Require
+           (Result = Success and then Identity.Has_Version_ID
+            and then Identity.Is_Null_Version
+            and then US.Length (Identity.Version_ID) = 0,
+            "explicit null tagging lost its version identity");
+      end;
 
       Store.Put_Bucket_Versioning
         (Bucket, (Status => Versioning_Enabled, others => <>), null,
@@ -219,6 +238,14 @@ package body Versioned_Object_Conformance is
       declare
          Tags : Object_Tag_Set;
          V1_Tags : Object_Tag_Set := Empty_Object_Tags;
+         Current_Tags : Object_Tag_Set := Empty_Object_Tags;
+         Null_Tags : Object_Tag_Set := Empty_Object_Tags;
+         Identity : Version_Identity;
+         --  Test-reference selector: this opaque identity is deliberately
+         --  absent so all three tag operations must return clean outputs.
+         Missing : constant Version_Selector :=
+           (Kind => Exact_Version,
+            ID   => US.To_Unbounded_String ("missing-generation"));
       begin
          V1_Tags.Length := 1;
          V1_Tags.Items (1) :=
@@ -226,20 +253,115 @@ package body Versioned_Object_Conformance is
             Value => US.To_Unbounded_String ("v1"));
          Store.Put_Object_Tags
            (Bucket, "alpha", V1_Tags, null, Ada.Real_Time.Time_Last,
+            Identity, Result, Exact (V1));
+         Require
+           (Result = Success and then Identity.Has_Version_ID
+            and then not Identity.Is_Null_Version
+            and then Identity.Version_ID = V1.Version,
+            "exact-version PutObjectTagging identity");
+         Store.Get_Object_Tags
+           (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Tags, Identity,
             Result, Exact (V1));
-         Require (Result = Success, "exact-version PutObjectTagging");
+         Require
+           (Result = Success and then Tags = V1_Tags
+            and then Identity.Has_Version_ID
+            and then Identity.Version_ID = V1.Version,
+            "exact-version GetObjectTagging identity");
+         Store.Get_Object_Tags
+           (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Tags, Identity,
+            Result, Exact (V2));
+         Require
+           (Result = Success and then Tags = Empty_Object_Tags
+            and then Identity.Version_ID = V2.Version,
+            "version tag isolation");
+
+         Store.Delete_Object_Tags
+           (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Identity,
+            Result, Exact (V1));
+         Require
+           (Result = Success and then Identity.Has_Version_ID
+            and then not Identity.Is_Null_Version
+            and then Identity.Version_ID = V1.Version,
+            "exact-version DeleteObjectTagging identity");
          Store.Get_Object_Tags
            (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Tags, Result,
             Exact (V1));
          Require
-           (Result = Success and then Tags = V1_Tags,
-            "exact-version GetObjectTagging");
-         Store.Get_Object_Tags
-           (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Tags, Result,
-            Exact (V2));
-         Require
            (Result = Success and then Tags = Empty_Object_Tags,
-            "version tag isolation");
+            "exact-version DeleteObjectTagging isolation");
+
+         Current_Tags.Length := 1;
+         Current_Tags.Items (1) :=
+           (Key => US.To_Unbounded_String ("generation"),
+            Value => US.To_Unbounded_String ("current"));
+         Store.Put_Object_Tags
+           (Bucket, "alpha", Current_Tags, null, Ada.Real_Time.Time_Last,
+            Identity, Result);
+         Require
+           (Result = Success and then Identity.Has_Version_ID
+            and then not Identity.Is_Null_Version
+            and then Identity.Version_ID = V3.Version,
+            "current enabled tagging returned the wrong generation");
+
+         Null_Tags.Length := 1;
+         Null_Tags.Items (1) :=
+           (Key => US.To_Unbounded_String ("generation"),
+            Value => US.To_Unbounded_String ("null"));
+         Store.Put_Object_Tags
+           (Bucket, "alpha", Null_Tags, null, Ada.Real_Time.Time_Last,
+            Identity, Result, Null_Version_Selector);
+         Require
+           (Result = Success and then Identity.Has_Version_ID
+            and then Identity.Is_Null_Version
+            and then US.Length (Identity.Version_ID) = 0,
+            "null-version PutObjectTagging identity");
+         Store.Get_Object_Tags
+           (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Tags, Identity,
+            Result, Null_Version_Selector);
+         Require
+           (Result = Success and then Tags = Null_Tags
+            and then Identity.Has_Version_ID
+            and then Identity.Is_Null_Version,
+            "null-version GetObjectTagging identity or isolation");
+
+         Identity :=
+           (Has_Version_ID  => True,
+            Is_Null_Version => False,
+            Version_ID      => Missing.ID);
+         Store.Put_Object_Tags
+           (Bucket, "alpha", V1_Tags, null, Ada.Real_Time.Time_Last,
+            Identity, Result, Missing);
+         Require
+           (Result = Not_Found and then not Identity.Has_Version_ID
+            and then not Identity.Is_Null_Version
+            and then US.Length (Identity.Version_ID) = 0,
+            "missing PutObjectTagging retained an identity");
+         Tags := V1_Tags;
+         Identity :=
+           (Has_Version_ID  => True,
+            Is_Null_Version => False,
+            Version_ID      => Missing.ID);
+         Store.Get_Object_Tags
+           (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Tags, Identity,
+            Result, Missing);
+         Require
+           (Result = Not_Found and then Tags = Empty_Object_Tags
+            and then not Identity.Has_Version_ID
+            and then not Identity.Is_Null_Version
+            and then US.Length (Identity.Version_ID) = 0,
+            "missing GetObjectTagging retained output state");
+         Identity :=
+           (Has_Version_ID  => True,
+            Is_Null_Version => False,
+            Version_ID      => Missing.ID);
+         Store.Delete_Object_Tags
+           (Bucket, "alpha", null, Ada.Real_Time.Time_Last, Identity,
+            Result, Missing);
+         Require
+           (Result = Not_Found and then not Identity.Has_Version_ID
+            and then not Identity.Is_Null_Version
+            and then US.Length (Identity.Version_ID) = 0,
+            "missing DeleteObjectTagging retained an identity");
       end;
 
       Store.List_Object_Versions

@@ -3439,6 +3439,7 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector)
    is
@@ -3461,6 +3462,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Renamed   : Boolean;
       Exists    : Boolean := False;
    begin
+      Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket) or else not Valid_Object_Key (Key)
         or else not Valid_Object_Tag_Set (Tags)
@@ -3546,6 +3548,10 @@ package body Flyology.Object_Storage.Backends.Files is
       Sync_Directory (Item, Temp_Path (Item));
       Item.Publication.Release;
       Locked := False;
+      Identity :=
+        (Has_Version_ID  => Selector.Kind = Null_Version,
+         Is_Null_Version => Selector.Kind = Null_Version,
+         Version_ID      => US.Null_Unbounded_String);
       Result := Success;
    exception
       when Flyology.Cancellation.Operation_Cancelled |
@@ -3564,6 +3570,7 @@ package body Flyology.Object_Storage.Backends.Files is
          then
             Ada.Directories.Delete_File (US.To_String (Temp));
          end if;
+         Identity := (others => <>);
          raise;
       when others =>
          if Source_Open then
@@ -3580,6 +3587,7 @@ package body Flyology.Object_Storage.Backends.Files is
          then
             Ada.Directories.Delete_File (US.To_String (Temp));
          end if;
+         Identity := (others => <>);
          Result := Backend_Unavailable;
    end Put_Object_Tags;
 
@@ -3587,7 +3595,8 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
-      Tags : out Object_Tag_Set; Result : out Status;
+      Tags : out Object_Tag_Set; Identity : out Version_Identity;
+      Result : out Status;
       Selector : Version_Selector := Current_Version_Selector)
    is
       Path    : constant String := Object_Path (Item, Bucket, Key);
@@ -3599,6 +3608,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Exists  : Boolean := False;
    begin
       Tags := Empty_Object_Tags;
+      Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
@@ -3632,6 +3642,10 @@ package body Flyology.Object_Storage.Backends.Files is
             if US.To_String (Key_In_File) /= Key then
                raise Ada.IO_Exceptions.Data_Error;
             end if;
+            Identity :=
+              (Has_Version_ID  => Selector.Kind = Null_Version,
+               Is_Null_Version => Selector.Kind = Null_Version,
+               Version_ID      => US.Null_Unbounded_String);
             Result := Success;
          end if;
       end if;
@@ -3655,6 +3669,7 @@ package body Flyology.Object_Storage.Backends.Files is
             Item.Publication.Release;
          end if;
          Tags := Empty_Object_Tags;
+         Identity := (others => <>);
          Result := Backend_Unavailable;
    end Get_Object_Tags;
 
@@ -3662,13 +3677,14 @@ package body Flyology.Object_Storage.Backends.Files is
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
+      Identity : out Version_Identity;
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector)
    is
    begin
       Put_Object_Tags
-        (Item, Bucket, Key, Empty_Object_Tags, Token, Deadline, Result,
-         Selector);
+        (Item, Bucket, Key, Empty_Object_Tags, Token, Deadline, Identity,
+         Result, Selector);
    end Delete_Object_Tags;
 
    overriding procedure List_Objects

@@ -6436,8 +6436,8 @@ begin
       Require
         (Has (Run (Signed_Query_Request
            ("GET", "/test-bucket/object", Versioned)),
-           "501 Not Implemented"),
-         "GetObjectTagging silently accepted versioning");
+           "<Code>NoSuchKey</Code>"),
+         "GetObjectTagging did not route an unknown exact version");
       Require
         (Has
            (Run
@@ -8434,6 +8434,99 @@ begin
          end;
 
          declare
+            Target_ID : constant String := US.To_String (Retained_ID);
+            Other_ID  : constant String :=
+              US.To_String (First.Versions (1).Version_ID);
+            Target_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("tagging", ""),
+               SigV4.Pair ("versionId", Target_ID));
+            Other_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("tagging", ""),
+               SigV4.Pair ("versionId", Other_ID));
+            Unknown_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("tagging", ""),
+               SigV4.Pair ("versionId", "unknown-generation"));
+            Document : constant String :=
+              "<Tagging><TagSet><Tag><Key>generation</Key>" &
+              "<Value>retained</Value></Tag></TagSet></Tagging>";
+            Put_Response : constant String :=
+              Run
+                (Signed_Query_Body_Request
+                   ("PUT", "/" & Bucket & "/alpha", Target_Query,
+                    Document,
+                    "Content-MD5: " & Content_MD5 (Document) & CRLF));
+            Get_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", "/" & Bucket & "/alpha", Target_Query));
+            Other_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", "/" & Bucket & "/alpha", Other_Query));
+            Delete_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("DELETE", "/" & Bucket & "/alpha", Target_Query));
+            Cleared_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", "/" & Bucket & "/alpha", Target_Query));
+            Missing_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", "/" & Bucket & "/alpha", Unknown_Query));
+            Missing_Put_Response : constant String :=
+              Run
+                (Signed_Query_Body_Request
+                   ("PUT", "/" & Bucket & "/alpha", Unknown_Query,
+                    Document,
+                    "Content-MD5: " & Content_MD5 (Document) & CRLF));
+            Missing_Delete_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("DELETE", "/" & Bucket & "/alpha", Unknown_Query));
+         begin
+            Require
+              (Has (Put_Response, "200 OK")
+               and then Has
+                 (Put_Response, "x-amz-version-id: " & Target_ID & CRLF)
+               and then Has (Get_Response, "200 OK")
+               and then Has
+                 (Get_Response, "x-amz-version-id: " & Target_ID & CRLF)
+               and then Has (Get_Response, "<Key>generation</Key>")
+               and then Has (Get_Response, "<Value>retained</Value>"),
+               "exact-version object tagging route or identity mismatch");
+            Require
+              (Has (Other_Response, "200 OK")
+               and then Has
+                 (Other_Response, "x-amz-version-id: " & Other_ID & CRLF)
+               and then Has (Other_Response, "<TagSet></TagSet>")
+               and then not Has (Other_Response, "<Key>"),
+               "exact-version object tagging isolation mismatch");
+            Require
+              (Has (Delete_Response, "204 No Content")
+               and then Has
+                 (Delete_Response,
+                  "x-amz-version-id: " & Target_ID & CRLF)
+               and then Has (Cleared_Response, "<TagSet></TagSet>")
+               and then not Has (Cleared_Response, "<Key>"),
+               "exact-version DeleteObjectTagging mismatch");
+            Require
+              (Has (Missing_Response, "<Code>NoSuchKey</Code>")
+               and then not Has
+                 (Missing_Response, "x-amz-version-id:")
+               and then Has
+                 (Missing_Put_Response, "<Code>NoSuchKey</Code>")
+               and then not Has
+                 (Missing_Put_Response, "x-amz-version-id:")
+               and then Has
+                 (Missing_Delete_Response, "<Code>NoSuchKey</Code>")
+               and then not Has
+                 (Missing_Delete_Response, "x-amz-version-id:"),
+               "unknown exact-version tagging leaked success identity");
+         end;
+
+         declare
             Marker_Query : constant SigV4.Name_Value_Array :=
               (1 => SigV4.Pair
                  ("versionId",
@@ -8459,7 +8552,130 @@ begin
                   "200 OK"),
                "exact DeleteObject marker removal mismatch");
          end;
+
+         declare
+            Current_ID : constant String :=
+              US.To_String (First.Versions (1).Version_ID);
+            Current_Query : constant SigV4.Name_Value_Array :=
+              (1 => SigV4.Pair ("tagging", ""));
+            Exact_Query : constant SigV4.Name_Value_Array :=
+              (SigV4.Pair ("tagging", ""),
+               SigV4.Pair ("versionId", Current_ID));
+            Document : constant String :=
+              "<Tagging><TagSet><Tag><Key>generation</Key>" &
+              "<Value>current</Value></Tag></TagSet></Tagging>";
+            Put_Response : constant String :=
+              Run
+                (Signed_Query_Body_Request
+                   ("PUT", "/" & Bucket & "/alpha", Current_Query,
+                    Document,
+                    "Content-MD5: " & Content_MD5 (Document) & CRLF));
+            Current_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", "/" & Bucket & "/alpha", Current_Query));
+            Exact_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("GET", "/" & Bucket & "/alpha", Exact_Query));
+            Delete_Response : constant String :=
+              Run
+                (Signed_Query_Request
+                   ("DELETE", "/" & Bucket & "/alpha", Current_Query));
+         begin
+            Require
+              (Has (Put_Response, "200 OK")
+               and then Has
+                 (Put_Response, "x-amz-version-id: " & Current_ID & CRLF)
+               and then Has
+                 (Current_Response,
+                  "x-amz-version-id: " & Current_ID & CRLF)
+               and then Has (Current_Response, "<Value>current</Value>")
+               and then Has
+                 (Exact_Response,
+                  "x-amz-version-id: " & Current_ID & CRLF)
+               and then Has (Exact_Response, "<Value>current</Value>")
+               and then Has (Delete_Response, "204 No Content")
+               and then Has
+                 (Delete_Response,
+                  "x-amz-version-id: " & Current_ID & CRLF),
+               "current-version object tagging identity or isolation " &
+               "mismatch");
+         end;
       end;
+
+      Store.Put_Bucket_Versioning
+        (Bucket,
+         (Status => Flyology.Object_Storage.Versioning_Suspended,
+          others => <>),
+         null, Ada.Real_Time.Time_Last, Result);
+      Require
+        (Result = Flyology.Object_Storage.Success,
+         "null-version tagging suspension setup failed");
+      declare
+         Put_Object_Response : constant String :=
+           Run (Signed_Request ("PUT", "/" & Bucket & "/alpha", "null"));
+         Null_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("tagging", ""),
+            SigV4.Pair ("versionId", "null"));
+         Document : constant String :=
+           "<Tagging><TagSet><Tag><Key>generation</Key>" &
+           "<Value>null</Value></Tag></TagSet></Tagging>";
+         Put_Tags_Response : constant String :=
+           Run
+             (Signed_Query_Body_Request
+                ("PUT", "/" & Bucket & "/alpha", Null_Query, Document,
+                 "Content-MD5: " & Content_MD5 (Document) & CRLF));
+         Get_Tags_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/" & Bucket & "/alpha", Null_Query));
+         Current_Query : constant SigV4.Name_Value_Array :=
+           (1 => SigV4.Pair ("tagging", ""));
+         Current_Get_Tags_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/" & Bucket & "/alpha", Current_Query));
+         Delete_Tags_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("DELETE", "/" & Bucket & "/alpha", Null_Query));
+         Delete_Object_Query : constant SigV4.Name_Value_Array :=
+           (1 => SigV4.Pair ("versionId", "null"));
+         Delete_Object_Response : constant String :=
+           Run
+             (Signed_Delete_Object_Request
+                ("/" & Bucket & "/alpha", Delete_Object_Query));
+      begin
+         Require
+           (Has (Put_Object_Response, "200 OK")
+            and then Has (Put_Tags_Response, "200 OK")
+            and then Has
+              (Put_Tags_Response, "x-amz-version-id: null" & CRLF)
+            and then Has
+              (Get_Tags_Response, "x-amz-version-id: null" & CRLF)
+            and then Has (Get_Tags_Response, "<Value>null</Value>")
+            and then Has
+              (Current_Get_Tags_Response,
+               "x-amz-version-id: null" & CRLF)
+            and then Has
+              (Current_Get_Tags_Response, "<Value>null</Value>")
+            and then Has (Delete_Tags_Response, "204 No Content")
+            and then Has
+              (Delete_Tags_Response, "x-amz-version-id: null" & CRLF)
+            and then Has (Delete_Object_Response, "204 No Content")
+            and then Has
+              (Delete_Object_Response, "x-amz-version-id: null" & CRLF),
+            "null-version object tagging route or identity mismatch");
+      end;
+      Store.Put_Bucket_Versioning
+        (Bucket,
+         (Status => Flyology.Object_Storage.Versioning_Enabled,
+          others => <>),
+         null, Ada.Real_Time.Time_Last, Result);
+      Require
+        (Result = Flyology.Object_Storage.Success,
+         "null-version tagging restore failed");
 
       declare
          Zero_Query : constant SigV4.Name_Value_Array :=
