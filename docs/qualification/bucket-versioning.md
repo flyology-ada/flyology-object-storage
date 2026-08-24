@@ -23,6 +23,12 @@ and suspended memory/files/SQLite publication returns the distinguished null
 identity. Pure files rejects enabled publication before rename because storing
 configuration does not provide retained generations.
 
+CopyObject uses the same identity model at both ends. Memory and SQLite select
+current, null, or exact retained sources; files supports current and null only.
+The successful mutation returns both the selected source identity and the
+published destination identity atomically, including the distinguished
+`null` value while suspended.
+
 The machine ledger records both configuration operations as `covered` for the
 backend, client, server, and corpus columns. The separately qualified
 `ListObjectVersions` boundary is `partial / covered / partial / covered`; the

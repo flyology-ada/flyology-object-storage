@@ -37,6 +37,11 @@ unavailable, the operation returns `Capacity_Exceeded`; a failed
 multipart completion does not consume the upload and can be retried after
 capacity is freed or the store is replaced with a larger instance.
 
+CopyObject source selection and identity are captured in that same protected
+snapshot. Current, null, and exact retained selectors therefore bind the body,
+metadata, tags, and source version together, while the destination identity is
+returned by the protected PutObject publication without a follow-up read.
+
 These rules make the volatile backend resistant to concurrent body-retention
 exhaustion, but they do not turn it into a durable store. Use the files or
 SQLite backend for restart persistence.

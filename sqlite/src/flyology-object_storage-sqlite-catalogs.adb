@@ -560,6 +560,40 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       end if;
    end Read_Object_Tags_Internal;
 
+   procedure Read_Version_Object_Tags_Internal
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Key        : String;
+      Version_ID : String;
+      Tags       : out Object_Tag_Set)
+   is
+      Query : DB.Statement;
+   begin
+      Tags := Empty_Object_Tags;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT tag_index,tag_key,tag_value FROM object_version_tags " &
+         "WHERE bucket_name=?1 AND object_key=?2 AND version_id=?3 " &
+         "ORDER BY tag_index");
+      DB.Bind (Query, 1, Bucket);
+      DB.Bind_Bytes (Query, 2, Key);
+      DB.Bind_Bytes (Query, 3, Version_ID);
+      while DB.Step (Query) = DB.Row loop
+         if Tags.Length = Maximum_Object_Tags
+           or else DB.Column (Query, 0) /= Long_Long_Integer (Tags.Length + 1)
+         then
+            raise Catalog_Error with "invalid object tag ordering";
+         end if;
+         Tags.Length := Tags.Length + 1;
+         Tags.Items (Tags.Length) :=
+           (Key   => US.To_Unbounded_String (DB.Column_Bytes (Query, 1)),
+            Value => US.To_Unbounded_String (DB.Column_Bytes (Query, 2)));
+      end loop;
+      if not Valid_Object_Tag_Set (Tags) then
+         raise Catalog_Error with "invalid version object tag catalog value";
+      end if;
+   end Read_Version_Object_Tags_Internal;
+
    protected body Operation_Gate is
       entry Acquire when not Held is
       begin
@@ -3362,18 +3396,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Delete_Objects;
 
-   procedure Selected_Data_Version_Internal
+   procedure Selected_Version_Identity_Internal
      (Item       : in out Catalog;
       Bucket     : String;
       Key        : String;
       Selector   : Backends.Version_Selector;
+      Info       : Object_Information;
       Version_ID : out US.Unbounded_String;
       Is_Current : out Boolean;
-      Identity   : out Backends.Version_Identity;
-      Result     : out Status)
+      Identity   : out Backends.Version_Identity)
    is
-      Payload : US.Unbounded_String;
-      Info    : Object_Information;
       Query   : DB.Statement;
       Versioning_Query : DB.Statement;
       Versioning_Value : Long_Long_Integer := 0;
@@ -3382,11 +3414,6 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Version_ID := US.Null_Unbounded_String;
       Is_Current := False;
       Identity := (others => <>);
-      Find_Selected_Object_Internal
-        (Item, Bucket, Key, Selector, Payload, Info, Result);
-      if Result /= Success then
-         return;
-      end if;
       Version_ID :=
         (if US.Length (Info.Version) = 0
          then US.To_Unbounded_String ("null") else Info.Version);
@@ -3433,7 +3460,85 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise Catalog_Error with "current generation query returned no row";
       end if;
       Is_Current := DB.Column (Query, 0) = 1;
+   end Selected_Version_Identity_Internal;
+
+   procedure Selected_Data_Version_Internal
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Key        : String;
+      Selector   : Backends.Version_Selector;
+      Version_ID : out US.Unbounded_String;
+      Is_Current : out Boolean;
+      Identity   : out Backends.Version_Identity;
+      Result     : out Status)
+   is
+      Payload : US.Unbounded_String;
+      Info    : Object_Information;
+   begin
+      Version_ID := US.Null_Unbounded_String;
+      Is_Current := False;
+      Identity := (others => <>);
+      Find_Selected_Object_Internal
+        (Item, Bucket, Key, Selector, Payload, Info, Result);
+      if Result = Success then
+         Selected_Version_Identity_Internal
+           (Item, Bucket, Key, Selector, Info, Version_ID, Is_Current,
+            Identity);
+      end if;
    end Selected_Data_Version_Internal;
+
+   procedure Find_Selected_Object
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Selector : Backends.Version_Selector;
+      Payload  : out US.Unbounded_String;
+      Info     : out Object_Information;
+      Tags     : out Object_Tag_Set;
+      Identity : out Backends.Version_Identity;
+      Result   : out Status;
+      Check    : access procedure
+        (Payload : String;
+         Info    : Object_Information;
+         Tags    : Object_Tag_Set) := null)
+   is
+      Version_ID : US.Unbounded_String;
+      Is_Current : Boolean;
+      Locked     : Boolean := False;
+   begin
+      Payload := US.Null_Unbounded_String;
+      Info := Empty_Info;
+      Tags := Empty_Object_Tags;
+      Identity := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      Find_Selected_Object_Internal
+        (Item, Bucket, Key, Selector, Payload, Info, Result);
+      if Result = Success then
+         Selected_Version_Identity_Internal
+           (Item, Bucket, Key, Selector, Info, Version_ID, Is_Current,
+            Identity);
+      end if;
+      if Result = Success then
+         Read_Version_Object_Tags_Internal
+           (Item, Bucket, Key, US.To_String (Version_ID), Tags);
+         if Check /= null then
+            Check.all (US.To_String (Payload), Info, Tags);
+         end if;
+      end if;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Payload := US.Null_Unbounded_String;
+         Info := Empty_Info;
+         Tags := Empty_Object_Tags;
+         Identity := (others => <>);
+         raise;
+   end Find_Selected_Object;
 
    procedure Put_Object_Tags
      (Item : in out Catalog; Bucket, Key : String;
@@ -3534,7 +3639,6 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    is
       Version_ID : US.Unbounded_String;
       Is_Current : Boolean;
-      Query    : DB.Statement;
       Locked   : Boolean := False;
    begin
       Tags := Empty_Object_Tags;
@@ -3549,25 +3653,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Locked := False;
          return;
       end if;
-      DB.Prepare
-        (Query, Item.Database,
-         "SELECT tag_index,tag_key,tag_value FROM object_version_tags " &
-         "WHERE bucket_name=?1 AND object_key=?2 AND version_id=?3 " &
-         "ORDER BY tag_index");
-      DB.Bind (Query, 1, Bucket);
-      DB.Bind_Bytes (Query, 2, Key);
-      DB.Bind_Bytes (Query, 3, US.To_String (Version_ID));
-      while DB.Step (Query) = DB.Row loop
-         if Tags.Length = Maximum_Object_Tags
-           or else DB.Column (Query, 0) /= Long_Long_Integer (Tags.Length + 1)
-         then
-            raise Catalog_Error with "invalid object tag ordering";
-         end if;
-         Tags.Length := Tags.Length + 1;
-         Tags.Items (Tags.Length) :=
-           (Key   => US.To_Unbounded_String (DB.Column_Bytes (Query, 1)),
-            Value => US.To_Unbounded_String (DB.Column_Bytes (Query, 2)));
-      end loop;
+      Read_Version_Object_Tags_Internal
+        (Item, Bucket, Key, US.To_String (Version_ID), Tags);
       Result := Success;
       Item.Gate.Release;
       Locked := False;

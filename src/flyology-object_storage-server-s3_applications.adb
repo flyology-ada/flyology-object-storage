@@ -4617,6 +4617,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     Requests.Parse_Target (Source_Target);
                   Copy_Options_Value : Backends.Copy_Options :=
                     Backends.Default_Copy_Options;
+                  Source_Read_Request : Object_Reads.Object_Read_Request;
+                  Source_Identity : Backends.Version_Identity;
+                  Destination_Identity : Backends.Version_Identity;
                   Modified_Date : constant
                     Object_Reads.Conditional_Date_Result :=
                       (if Count
@@ -4689,12 +4692,38 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (X, 400, "InvalidArgument",
                         "The copy source is invalid", Target_Text);
                      return;
-                  elsif Source_Parsed.Has_Query then
-                     Send_Error
-                       (X, 501, "NotImplemented",
-                        "Copying a specific object version is not " &
-                        "implemented", Target_Text);
-                     return;
+                  end if;
+
+                  if Source_Parsed.Has_Query then
+                     declare
+                        Source_Query : constant String :=
+                          Requests.Query_String
+                            (Source_Target, Source_Parsed);
+                     begin
+                        if Ada.Strings.Fixed.Index (Source_Query, "&") /= 0
+                        then
+                           raise Object_Reads.Malformed_Object_Read_Request;
+                        end if;
+                        Source_Read_Request := Object_Reads.Parse_Query
+                          (Source_Query, Object_Reads.Get_Object);
+                        if not Source_Read_Request.Has_Version_ID
+                          or else Source_Read_Request.Has_Part_Number
+                          or else
+                            Source_Read_Request.Has_Response_Overrides
+                        then
+                           raise Object_Reads.Malformed_Object_Read_Request;
+                        end if;
+                        Copy_Options_Value.Source_Selector :=
+                          To_Version_Selector
+                            (True, Source_Read_Request.Version_ID);
+                     exception
+                        when Object_Reads.Malformed_Object_Read_Request =>
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The copy source version is invalid",
+                              Target_Text);
+                           return;
+                     end;
                   end if;
 
                   if Count ("x-amz-metadata-directive") = 1
@@ -5138,8 +5167,23 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     (Requests.Bucket_Name (Source_Target, Source_Parsed),
                      Requests.Object_Key (Source_Target, Source_Parsed),
                      Bucket, Key, Copy_Options_Value,
-                     Apps.Cancellation (X), Apps.Deadline (X), Info, Result);
+                     Apps.Cancellation (X), Apps.Deadline (X), Info,
+                     Source_Identity, Destination_Identity, Result);
                   if Result = Success then
+                     if Source_Identity.Has_Version_ID then
+                        Apps.Set_Header
+                          (X, "x-amz-copy-source-version-id",
+                           (if Source_Identity.Is_Null_Version then "null"
+                            else US.To_String (Source_Identity.Version_ID)));
+                     end if;
+                     if Destination_Identity.Has_Version_ID then
+                        Apps.Set_Header
+                          (X, "x-amz-version-id",
+                           (if Destination_Identity.Is_Null_Version
+                            then "null"
+                            else US.To_String
+                              (Destination_Identity.Version_ID)));
+                     end if;
                      Apps.Respond
                        (X, 200, "application/xml",
                         Copy_Result_XML ("CopyObjectResult", Info));

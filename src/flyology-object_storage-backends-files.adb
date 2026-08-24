@@ -2645,6 +2645,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Token              : access Flyology.Cancellation.Token;
       Deadline           : Ada.Real_Time.Time;
       Info               : out Object_Information;
+      Source_Identity    : out Version_Identity;
+      Destination_Identity : out Version_Identity;
       Result             : out Status)
    is
       type File_Source is limited new Byte_Source with record
@@ -2695,6 +2697,9 @@ package body Flyology.Object_Storage.Backends.Files is
       Snapshot_Path : US.Unbounded_String;
       Source_Info : Object_Information;
       Source_Tags : Object_Tag_Set;
+      Source_Configuration : Bucket_Versioning_Configuration := (others => <>);
+      Selected_Source : Version_Identity;
+      Published_Destination : Version_Identity;
       Source_Parts : Completed_Object_Part_List;
       Body_At     : SIO.Positive_Count;
       Source_Path : US.Unbounded_String;
@@ -2724,11 +2729,14 @@ package body Flyology.Object_Storage.Backends.Files is
       end Retire_Snapshot;
    begin
       Info := Empty_Info;
+      Source_Identity := (others => <>);
+      Destination_Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Source_Bucket)
         or else not Valid_Object_Key (Source_Key)
         or else not Valid_Bucket_Name (Destination_Bucket)
         or else not Valid_Object_Key (Destination_Key)
+        or else not Valid_Version_Selector (Options.Source_Selector)
         or else not Valid_Copy_Conditions (Options.Conditions)
         or else not Valid_Write_Conditions (Options.Destination_Conditions)
         or else not Valid_Object_Metadata
@@ -2736,6 +2744,9 @@ package body Flyology.Object_Storage.Backends.Files is
         or else not Valid_Object_Tag_Set (Options.Tags)
       then
          Result := Invalid_Request;
+         return;
+      elsif not Supported_Object_Selector (Options.Source_Selector) then
+         Result := Not_Implemented;
          return;
       elsif Source_Bucket = Destination_Bucket
         and then Source_Key = Destination_Key
@@ -2764,6 +2775,7 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          raise Ada.IO_Exceptions.Data_Error;
       end if;
+      Source_Configuration := Read_Versioning (Item, Source_Bucket);
       Inspect_Object_Path
         (Item, Source_Bucket, Source_Key, Source_Exists);
       if not Source_Exists then
@@ -2777,6 +2789,10 @@ package body Flyology.Object_Storage.Backends.Files is
       Read_Header_With_Tags
         (Original, Source_Key, Source_Info, Source_Tags, Source_Parts,
          Body_At);
+      Selected_Source.Has_Version_ID :=
+        Options.Source_Selector.Kind /= Current_Version
+        or else Source_Configuration.Status /= Versioning_Unconfigured;
+      Selected_Source.Is_Null_Version := Selected_Source.Has_Version_ID;
       if not Valid_Copy_Object_Size (Source_Info.Size) then
          SIO.Close (Original);
          Item.Publication.Release;
@@ -2878,9 +2894,14 @@ package body Flyology.Object_Storage.Backends.Files is
       begin
          Item.Put_Object
            (Destination_Bucket, Destination_Key, Source,
-            Put_Options_Value, Token, Deadline, Info, Result,
+            Put_Options_Value, Token, Deadline, Info, Published_Destination,
+            Result,
             Options.Destination_Conditions);
       end;
+      if Result = Success then
+         Source_Identity := Selected_Source;
+         Destination_Identity := Published_Destination;
+      end if;
       SIO.Close (File);
       Retire_Snapshot;
    exception
@@ -2899,6 +2920,8 @@ package body Flyology.Object_Storage.Backends.Files is
             Item.Publication.Release;
          end if;
          Retire_Snapshot;
+         Source_Identity := (others => <>);
+         Destination_Identity := (others => <>);
          raise;
       when others =>
          if SIO.Is_Open (File) then
@@ -2915,6 +2938,8 @@ package body Flyology.Object_Storage.Backends.Files is
          end if;
          Retire_Snapshot;
          Info := Empty_Info;
+         Source_Identity := (others => <>);
+         Destination_Identity := (others => <>);
          Result := Backend_Unavailable;
    end Copy_Object;
 

@@ -114,6 +114,9 @@ package body Versioned_Object_Conformance is
       Nested : Object_Information;
       Page   : List_Versions_Page;
       Delete_Outcome : Version_Delete_Outcome;
+      --  Derived test namespace: keep copy destinations out of the source
+      --  version-list oracle while preserving the caller-supplied bucket.
+      Copy_Bucket : constant String := Bucket & "-copy";
 
       procedure Put_With_Identity
         (Key, Payload : String;
@@ -164,6 +167,9 @@ package body Versioned_Object_Conformance is
       Store.Create_Bucket
         (Bucket, null, Ada.Real_Time.Time_Last, Result);
       Require (Result = Success, "versioning bucket setup");
+      Store.Create_Bucket
+        (Copy_Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Require (Result = Success, "version-aware copy bucket setup");
 
       Put ("alpha", "legacy", Legacy);
       Require
@@ -224,6 +230,10 @@ package body Versioned_Object_Conformance is
         (Bucket, (Status => Versioning_Enabled, others => <>), null,
          Ada.Real_Time.Time_Last, Result);
       Require (Result = Success, "enable versioning");
+      Store.Put_Bucket_Versioning
+        (Copy_Bucket, (Status => Versioning_Enabled, others => <>), null,
+         Ada.Real_Time.Time_Last, Result);
+      Require (Result = Success, "enable copy destination versioning");
 
       declare
          I1 : Version_Identity;
@@ -248,6 +258,64 @@ package body Versioned_Object_Conformance is
             and then not I3.Is_Null_Version
             and then I3.Version_ID = V3.Version,
             "identical enabled PutObject identity was not atomic");
+      end;
+
+      declare
+         Options : Copy_Options := Default_Copy_Options;
+         Copied  : Object_Information;
+         Existing : Object_Information;
+         Source_Identity : Version_Identity;
+         Destination_Identity : Version_Identity;
+         Sink : Buffer_Sink;
+      begin
+         Options.Source_Selector := Exact (V1);
+         Store.Copy_Object
+           (Bucket, "alpha", Copy_Bucket, "exact", Options, null,
+            Ada.Real_Time.Time_Last, Copied, Source_Identity,
+            Destination_Identity, Result);
+         Require
+           (Result = Success
+            and then Source_Identity.Has_Version_ID
+            and then not Source_Identity.Is_Null_Version
+            and then Source_Identity.Version_ID = V1.Version
+            and then Destination_Identity.Has_Version_ID
+            and then not Destination_Identity.Is_Null_Version
+            and then Destination_Identity.Version_ID = Copied.Version,
+            "exact CopyObject identities were not atomic");
+         Store.Get_Object
+           (Copy_Bucket, "exact", Whole_Object, Sink, null,
+            Ada.Real_Time.Time_Last, Info, Result,
+            Selector =>
+              (Kind => Exact_Version,
+               ID   => Destination_Identity.Version_ID));
+         Require
+           (Result = Success
+            and then Flyology.Bytes.To_Byte_String (Sink.Data) = "v1",
+            "exact CopyObject selected the wrong retained source");
+         Existing := Copied;
+
+         Options.Source_Selector :=
+           (Kind => Exact_Version,
+            ID   => US.To_Unbounded_String ("missing-copy-source"));
+         Source_Identity :=
+           (Has_Version_ID => True, Is_Null_Version => False,
+            Version_ID => V1.Version);
+         Destination_Identity := Source_Identity;
+         Store.Copy_Object
+           (Bucket, "alpha", Copy_Bucket, "exact", Options, null,
+            Ada.Real_Time.Time_Last, Copied, Source_Identity,
+            Destination_Identity, Result);
+         Require
+           (Result = Source_Not_Found
+            and then not Source_Identity.Has_Version_ID
+            and then not Destination_Identity.Has_Version_ID,
+            "failed exact CopyObject retained version identities");
+         Store.Head_Object
+           (Copy_Bucket, "exact", null, Ada.Real_Time.Time_Last, Copied,
+            Result);
+         Require
+           (Result = Success and then Copied.Version = Existing.Version,
+            "failed exact CopyObject replaced its destination");
       end;
       Require
         (US.Length (V1.Version) > 0
@@ -489,6 +557,10 @@ package body Versioned_Object_Conformance is
         (Bucket, (Status => Versioning_Suspended, others => <>), null,
          Ada.Real_Time.Time_Last, Result);
       Require (Result = Success, "suspend versioning");
+      Store.Put_Bucket_Versioning
+        (Copy_Bucket, (Status => Versioning_Suspended, others => <>), null,
+         Ada.Real_Time.Time_Last, Result);
+      Require (Result = Success, "suspend copy destination versioning");
       declare
          Identity : Version_Identity;
       begin
@@ -510,6 +582,35 @@ package body Versioned_Object_Conformance is
       Require_Body ("alpha", "null-two", Null_Version_Selector);
       Require_Body ("alpha", "null-two", Current_Version_Selector);
       Require_Body ("alpha", "v1", Exact (V1));
+
+      declare
+         Options : Copy_Options := Default_Copy_Options;
+         Copied  : Object_Information;
+         Source_Identity : Version_Identity;
+         Destination_Identity : Version_Identity;
+         Sink : Buffer_Sink;
+      begin
+         Options.Source_Selector := Null_Version_Selector;
+         Store.Copy_Object
+           (Bucket, "alpha", Copy_Bucket, "null", Options, null,
+            Ada.Real_Time.Time_Last, Copied, Source_Identity,
+            Destination_Identity, Result);
+         Require
+           (Result = Success
+            and then Source_Identity.Has_Version_ID
+            and then Source_Identity.Is_Null_Version
+            and then Destination_Identity.Has_Version_ID
+            and then Destination_Identity.Is_Null_Version,
+            "suspended CopyObject lost null identities");
+         Store.Get_Object
+           (Copy_Bucket, "null", Whole_Object, Sink, null,
+            Ada.Real_Time.Time_Last, Info, Result,
+            Selector => Null_Version_Selector);
+         Require
+           (Result = Success
+            and then Flyology.Bytes.To_Byte_String (Sink.Data) = "null-two",
+            "null CopyObject selected the wrong source generation");
+      end;
 
       Store.List_Object_Versions
         (Bucket, (others => <>), null, Ada.Real_Time.Time_Last, Page,
@@ -907,6 +1008,29 @@ package body Versioned_Object_Conformance is
             and then Page.Common_Prefixes.Is_Empty,
             "paired cursor repeated its enclosing common prefix");
       end;
+
+      Store.List_Object_Versions
+        (Copy_Bucket, (others => <>), null, Ada.Real_Time.Time_Last, Page,
+         Result);
+      Require
+        (Result = Success and then Page.Entries.Length = 2,
+         "version-aware copy cleanup inventory");
+      for Generation of Page.Entries loop
+         Store.Delete_Selected_Object
+           (Copy_Bucket, US.To_String (Generation.Key),
+            (if US.To_String (Generation.Version_ID) = "null"
+             then Null_Version_Selector
+             else (Kind => Exact_Version, ID => Generation.Version_ID)),
+            No_Delete_Object_Conditions, False, null,
+            Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+         Require
+           (Result = Success
+            and then Delete_Outcome.Kind = Object_Version_Removed,
+            "version-aware copy generation cleanup");
+      end loop;
+      Store.Delete_Bucket
+        (Copy_Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Require (Result = Success, "version-aware copy bucket cleanup");
    end Exercise;
 
    procedure Exercise_Capacity

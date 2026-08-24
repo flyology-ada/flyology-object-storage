@@ -159,6 +159,33 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Check    : access procedure
         (Payload : String; Info : Object_Information) := null);
 
+   --  Select body, metadata, tags, and version identity from one protected
+   --  retained-generation snapshot.
+   --  @param Item Open catalog
+   --  @param Bucket Bucket containing the object
+   --  @param Key Exact object key
+   --  @param Selector Current, null, or exact retained generation
+   --  @param Payload Immutable external payload name
+   --  @param Info Metadata bound to the selected payload
+   --  @param Tags Tags bound to the selected generation
+   --  @param Identity Selected generation identity
+   --  @param Result Operation status
+   --  @param Check Optional payload validation while the gate is held
+   procedure Find_Selected_Object
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Key      : String;
+      Selector : Backends.Version_Selector;
+      Payload  : out Ada.Strings.Unbounded.Unbounded_String;
+      Info     : out Object_Information;
+      Tags     : out Object_Tag_Set;
+      Identity : out Backends.Version_Identity;
+      Result   : out Status;
+      Check    : access procedure
+        (Payload : String;
+         Info    : Object_Information;
+         Tags    : Object_Tag_Set) := null);
+
    procedure Get_Object_Attributes
      (Item     : in out Catalog;
       Bucket   : String;

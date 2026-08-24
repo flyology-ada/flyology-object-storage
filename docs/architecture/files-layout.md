@@ -112,6 +112,10 @@ Ordinary PUT therefore returns no version identity while unconfigured, returns
 the null identity while suspended, and fails with `Not_Implemented` before its
 publication rename while enabled. A fully staged source may already have been
 consumed, but the prior object remains unchanged on that capability rejection.
+CopyObject follows the same capability boundary: current and explicit `null`
+sources return an omitted or null source identity from the locked snapshot,
+opaque exact selectors fail before snapshot creation, and the destination
+identity comes from the subsequent atomic PutObject publication.
 
 DeleteObjects holds the publication gate and performs a complete nonmutating
 preflight before the first removal. Conditions therefore observe one stable

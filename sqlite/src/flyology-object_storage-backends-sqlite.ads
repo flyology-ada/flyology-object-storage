@@ -114,6 +114,20 @@ package Flyology.Object_Storage.Backends.SQLite is
       Result   : out Status;
       Conditions : Write_Conditions := Default_Write_Conditions);
 
+   --  Copy one selected SQLite generation and return source/publication
+   --  identities from their protected catalog boundaries.
+   --  @param Item SQLite backend instance
+   --  @param Source_Bucket Source bucket name
+   --  @param Source_Key Source key
+   --  @param Destination_Bucket Destination bucket name
+   --  @param Destination_Key Destination key
+   --  @param Options Source selection and copy policy
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Published destination metadata on success
+   --  @param Source_Identity Selected source generation on success
+   --  @param Destination_Identity Published destination generation on success
+   --  @param Result Storage-domain outcome
    overriding procedure Copy_Object
      (Item               : in out Store;
       Source_Bucket      : String;
@@ -124,6 +138,8 @@ package Flyology.Object_Storage.Backends.SQLite is
       Token              : access Flyology.Cancellation.Token;
       Deadline           : Ada.Real_Time.Time;
       Info               : out Object_Information;
+      Source_Identity    : out Version_Identity;
+      Destination_Identity : out Version_Identity;
       Result             : out Status);
 
    --  Read one selected SQLite metadata generation.

@@ -195,7 +195,18 @@ package Flyology.Object_Storage.Backends is
    type Copy_Metadata_Directive is (Copy_Metadata, Replace_Metadata);
    type Copy_Tagging_Directive is (Copy_Tags, Replace_Tags);
 
+   --  HTTP-independent atomic copy policy.
+   --  @field Source_Selector Current, null, or exact source generation
+   --  @field Metadata_Directive Copy or replace source metadata
+   --  @field Content_Type Replacement content type
+   --  @field Metadata Replacement system and user metadata
+   --  @field Tagging_Directive Copy or replace source tags
+   --  @field Tags Replacement tag set
+   --  @field Selected_Checksum Destination full-object checksum algorithm
+   --  @field Conditions Predicates on the selected source snapshot
+   --  @field Destination_Conditions Atomic destination ETag predicates
    type Copy_Options is record
+      Source_Selector    : Version_Selector := Current_Version_Selector;
       Metadata_Directive : Copy_Metadata_Directive := Copy_Metadata;
       Content_Type       : Ada.Strings.Unbounded.Unbounded_String;
       Metadata           : Object_Metadata;
@@ -705,8 +716,24 @@ package Flyology.Object_Storage.Backends is
    --  that publishes the complete body/information/metadata/tags/checksum
    --  tuple. Validation, source-condition failure, source read failure, and
    --  rejection before that boundary leave the prior destination unchanged.
-   --  Backend_Unavailable, cancellation, or timeout after publication may be
+   --  Source_Identity and Destination_Identity are returned only on Success
+   --  and describe the selected source snapshot and published destination
+   --  generation without a follow-up read. Backend_Unavailable, cancellation,
+   --  or timeout after publication may be
    --  ambiguous; callers must not infer nonpublication from those outcomes.
+   --  @param Item Backend instance
+   --  @param Source_Bucket Source bucket name
+   --  @param Source_Key Source object key
+   --  @param Destination_Bucket Destination bucket name
+   --  @param Destination_Key Destination object key
+   --  @param Options Source selection, predicates, metadata, tags, and
+   --    checksum
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Metadata of the destination generation published on success
+   --  @param Source_Identity Selected source generation on success
+   --  @param Destination_Identity Published destination generation on success
+   --  @param Result Copy result; Backend_Unavailable may be ambiguous
    procedure Copy_Object
      (Item               : in out Backend;
       Source_Bucket      : String;
@@ -717,7 +744,33 @@ package Flyology.Object_Storage.Backends is
       Token              : access Flyology.Cancellation.Token;
       Deadline           : Ada.Real_Time.Time;
       Info               : out Object_Information;
+      Source_Identity    : out Version_Identity;
+      Destination_Identity : out Version_Identity;
       Result             : out Status) is abstract;
+
+   --  Compatibility convenience when version identities are not needed.
+   --  @param Item Backend instance
+   --  @param Source_Bucket Source bucket name
+   --  @param Source_Key Source object key
+   --  @param Destination_Bucket Destination bucket name
+   --  @param Destination_Key Destination object key
+   --  @param Options Source selection, predicates, metadata, tags, and
+   --    checksum
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Metadata of the destination generation published on success
+   --  @param Result Copy result; Backend_Unavailable may be ambiguous
+   procedure Copy_Object
+     (Item               : in out Backend'Class;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Copy_Options;
+      Token              : access Flyology.Cancellation.Token;
+      Deadline           : Ada.Real_Time.Time;
+      Info               : out Object_Information;
+      Result             : out Status);
 
    --  Return one selected immutable metadata snapshot. Conditions are
    --  evaluated against the same snapshot and retained on conditional failure.
@@ -1183,7 +1236,8 @@ private
      (others => <>);
 
    Default_Copy_Options : constant Copy_Options :=
-     (Metadata_Directive => Copy_Metadata,
+     (Source_Selector    => Current_Version_Selector,
+      Metadata_Directive => Copy_Metadata,
       Content_Type       =>
         Ada.Strings.Unbounded.To_Unbounded_String
           ("application/octet-stream"),

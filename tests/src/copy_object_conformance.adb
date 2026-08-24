@@ -394,6 +394,8 @@ package body Copy_Object_Conformance is
       Options : Copy_Options := Default_Copy_Options;
       Copy_Race_Result : Status;
       Mutation_Race_Result : Status;
+      Source_Identity : Version_Identity;
+      Destination_Identity : Version_Identity;
    begin
       Store.Create_Bucket (Bucket, null, Ada.Real_Time.Time_Last, Result);
       Require (Result = Success, "CopyObject bucket setup failed");
@@ -404,8 +406,13 @@ package body Copy_Object_Conformance is
 
       Store.Copy_Object
         (Bucket, Source_Key, Bucket, Destination_Key, Options, null,
-         Ada.Real_Time.Time_Last, Destination_Info, Result);
-      Require (Result = Success, "ordinary CopyObject failed");
+         Ada.Real_Time.Time_Last, Destination_Info, Source_Identity,
+         Destination_Identity, Result);
+      Require
+        (Result = Success
+         and then not Source_Identity.Has_Version_ID
+         and then not Destination_Identity.Has_Version_ID,
+         "ordinary unconfigured CopyObject identity mismatch");
       Require_State
         (Destination_Key, "source-body", "source/type",
          "ordinary CopyObject did not preserve one snapshot");
@@ -524,11 +531,18 @@ package body Copy_Object_Conformance is
       Options.Conditions.If_Modified_Since :=
         (Is_Set => True,
          Value => Long_Long_Integer (Source_Info.Modified) - 1);
+      Source_Identity :=
+        (Has_Version_ID => True, Is_Null_Version => False,
+         Version_ID => US.To_Unbounded_String ("stale-source"));
+      Destination_Identity := Source_Identity;
       Store.Copy_Object
         (Bucket, Source_Key, Bucket, Destination_Key, Options, null,
-         Ada.Real_Time.Time_Last, Info, Result);
+         Ada.Real_Time.Time_Last, Info, Source_Identity,
+         Destination_Identity, Result);
       Require
-        (Result = Precondition_Failed,
+        (Result = Precondition_Failed
+         and then not Source_Identity.Has_Version_ID
+         and then not Destination_Identity.Has_Version_ID,
          "source If-None-Match did not override If-Modified-Since");
       Require_State
         (Destination_Key, "source-body", "source/type",

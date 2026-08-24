@@ -70,6 +70,7 @@ procedure S3_Server_Application_Corpus is
    use type Flyology.Object_Storage.Checksum_Algorithm;
    use type Checksum_Policy.Algorithm;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
+   use type Backends.Version_Delete_Kind;
    use type MFA.Authorization_Status;
    use type Tags.Tag_Vectors.Vector;
 
@@ -327,9 +328,11 @@ procedure S3_Server_Application_Corpus is
       end if;
    end Verify;
 
+   --  Test-reference generation capacity: the established sixteen corpus
+   --  generations plus one retained-version CopyObject destination.
    Store : Flyology.Object_Storage.Backends.Memory.Store
      (Bucket_Capacity => 8,
-      Object_Capacity => 16,
+      Object_Capacity => 17,
       Byte_Capacity   => 24 * 1_024 * 1_024);
    Credentials : Static_Credentials.Provider :=
      Static_Credentials.Create
@@ -8396,6 +8399,93 @@ begin
                   "version-selected GetObject server mismatch");
             end;
             declare
+               Source_ID : constant String :=
+                 US.To_String (Next.Versions (1).Version_ID);
+               Copy_Response : constant String :=
+                 Run
+                   (Signed_Copy_Request
+                      ("/" & Bucket & "/copied-retained",
+                       "/" & Bucket & "/alpha?versionId=" & Source_ID));
+               Malformed_Response : constant String :=
+                 Run
+                   (Signed_Copy_Request
+                      ("/" & Bucket & "/copy-invalid",
+                       "/" & Bucket & "/alpha?versionId="));
+               Extra_Query_Response : constant String :=
+                 Run
+                   (Signed_Copy_Request
+                      ("/" & Bucket & "/copy-extra-query",
+                       "/" & Bucket & "/alpha?versionId=" & Source_ID &
+                         "&x-id=GetObject"));
+               Copied_Get : constant String :=
+                 Run
+                   (Signed_Request
+                      ("GET", "/" & Bucket & "/copied-retained", ""));
+               Cleanup_Info : Flyology.Object_Storage.Object_Information;
+            begin
+               if not Has (Copy_Response, "200 OK")
+                 or else not Has
+                   (Copy_Response,
+                    "x-amz-copy-source-version-id: " & Source_ID & CRLF)
+                 or else not Has (Copy_Response, "x-amz-version-id:")
+                 or else Response_Body (Copied_Get) /= "one"
+               then
+                  Ada.Text_IO.Put_Line
+                    (Ada.Text_IO.Standard_Error,
+                     "unexpected versioned CopyObject response: " &
+                       Copy_Response);
+                  Ada.Text_IO.Put_Line
+                    (Ada.Text_IO.Standard_Error,
+                     "unexpected copied retained GET: " & Copied_Get);
+               end if;
+               Require
+                 (Has (Copy_Response, "200 OK")
+                  and then Has
+                    (Copy_Response,
+                     "x-amz-copy-source-version-id: " & Source_ID & CRLF)
+                  and then Has (Copy_Response, "x-amz-version-id:")
+                  and then
+                    Response_Body (Copied_Get) = "one",
+                  "version-selected CopyObject identity or body mismatch");
+               Require
+                 (Has (Malformed_Response, "400 Bad Request")
+                  and then Has
+                    (Malformed_Response, "<Code>InvalidArgument</Code>")
+                  and then Has
+                    (Run
+                       (Signed_Request
+                          ("HEAD", "/" & Bucket & "/copy-invalid", "")),
+                     "404 Not Found"),
+                  "malformed CopyObject version query mutated storage");
+               Require
+                 (Has (Extra_Query_Response, "400 Bad Request")
+                  and then Has
+                    (Extra_Query_Response, "<Code>InvalidArgument</Code>")
+                  and then Has
+                    (Run
+                       (Signed_Request
+                          ("HEAD", "/" & Bucket & "/copy-extra-query", "")),
+                     "404 Not Found"),
+                  "multi-field CopyObject version query mutated storage");
+               Store.Head_Object
+                 (Bucket, "copied-retained", null, Ada.Real_Time.Time_Last,
+                  Cleanup_Info, Result);
+               Require
+                 (Result = Flyology.Object_Storage.Success
+                  and then US.Length (Cleanup_Info.Version) > 0,
+                  "versioned CopyObject cleanup identity lookup failed");
+               Store.Delete_Selected_Object
+                 (Bucket, "copied-retained",
+                  (Kind => Backends.Exact_Version,
+                   ID   => Cleanup_Info.Version),
+                  Backends.No_Delete_Object_Conditions, False, null,
+                  Ada.Real_Time.Time_Last, Outcome, Result);
+               Require
+                 (Result = Flyology.Object_Storage.Success
+                  and then Outcome.Kind = Backends.Object_Version_Removed,
+                  "versioned CopyObject retained-destination cleanup failed");
+            end;
+            declare
                Version_Query : constant SigV4.Name_Value_Array :=
                  (1 => SigV4.Pair
                     ("versionId", US.To_String (Retained_ID)));
@@ -8640,6 +8730,11 @@ begin
            Run
              (Signed_Query_Request
                 ("DELETE", "/" & Bucket & "/alpha", Null_Query));
+         Copy_Response : constant String :=
+           Run
+             (Signed_Copy_Request
+                ("/" & Bucket & "/copied-null",
+                 "/" & Bucket & "/alpha?versionId=null"));
          Delete_Object_Query : constant SigV4.Name_Value_Array :=
            (1 => SigV4.Pair ("versionId", "null"));
          Delete_Object_Response : constant String :=
@@ -8665,10 +8760,25 @@ begin
             and then Has (Delete_Tags_Response, "204 No Content")
             and then Has
               (Delete_Tags_Response, "x-amz-version-id: null" & CRLF)
+            and then Has (Copy_Response, "200 OK")
+            and then Has
+              (Copy_Response,
+               "x-amz-copy-source-version-id: null" & CRLF)
+            and then Has
+              (Copy_Response, "x-amz-version-id: null" & CRLF)
             and then Has (Delete_Object_Response, "204 No Content")
             and then Has
               (Delete_Object_Response, "x-amz-version-id: null" & CRLF),
             "null-version PutObject or tagging identity mismatch");
+         Store.Delete_Selected_Object
+           (Bucket, "copied-null", Backends.Null_Version_Selector,
+            Backends.No_Delete_Object_Conditions, False, null,
+            Ada.Real_Time.Time_Last, Outcome, Result);
+         Require
+           (Result = Flyology.Object_Storage.Success
+            and then Outcome.Kind = Backends.Object_Version_Removed
+            and then Outcome.Is_Null_Version,
+            "null CopyObject destination cleanup failed");
       end;
       Store.Put_Bucket_Versioning
         (Bucket,

@@ -64,6 +64,11 @@ appends a unique delete marker, suspended deletion replaces only the null
 marker, and exact deletion permanently removes the selected data or marker;
 removing the latest generation re-exposes the preceding snapshot.
 
+CopyObject selects the source payload, metadata, tags, and version identity
+under one catalog gate for current, null, or exact selectors. Its destination
+publication returns the new identity from the PutObject transaction, so both
+wire version headers are constructed without a second catalog observation.
+
 Generation listing reads the normalized rows in bytewise key and
 newest-publication order, applies prefix and delimiter projection, and resumes
 only from an exact paired key/version cursor. It fails closed on noncanonical

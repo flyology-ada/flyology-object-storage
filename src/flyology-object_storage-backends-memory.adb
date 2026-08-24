@@ -619,6 +619,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Data   : out Owned_Bytes;
          Info   : out Object_Information;
          Tags   : out Object_Tag_Set;
+         Identity : out Version_Identity;
          Result : out Status)
       is
          Index : constant Natural :=
@@ -629,6 +630,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Data := (Ada.Finalization.Controlled with others => <>);
          Info := Empty_Info;
          Tags := Empty_Object_Tags;
+         Identity := (others => <>);
          if Bucket_Index (Bucket) = 0 then
             Result := Bucket_Not_Found;
          elsif Index = 0 then
@@ -646,6 +648,13 @@ package body Flyology.Object_Storage.Backends.Memory is
             Copied := True;
             Info := Objects (Index).Info;
             Tags := Objects (Index).Tags;
+            Identity.Has_Version_ID :=
+              Selector.Kind /= Current_Version
+              or else Buckets (Bucket_Index (Bucket)).Versioning.Status /=
+                Versioning_Unconfigured;
+            Identity.Is_Null_Version :=
+              Identity.Has_Version_ID and then Objects (Index).Is_Null_Version;
+            Identity.Version_ID := Objects (Index).Info.Version;
             Result := Success;
          end if;
       exception
@@ -2323,6 +2332,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       Token              : access Flyology.Cancellation.Token;
       Deadline           : Ada.Real_Time.Time;
       Info               : out Object_Information;
+      Source_Identity    : out Version_Identity;
+      Destination_Identity : out Version_Identity;
       Result             : out Status)
    is
       type Snapshot_Source is limited new Byte_Source with record
@@ -2365,14 +2376,19 @@ package body Flyology.Object_Storage.Backends.Memory is
       Snapshot      : aliased Owned_Bytes;
       Source_Info   : Object_Information;
       Source_Tags   : Object_Tag_Set;
+      Selected_Source : Version_Identity;
+      Published_Destination : Version_Identity;
       Put_Options_Value : Put_Options;
    begin
       Info := Empty_Info;
+      Source_Identity := (others => <>);
+      Destination_Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Source_Bucket)
         or else not Valid_Object_Key (Source_Key)
         or else not Valid_Bucket_Name (Destination_Bucket)
         or else not Valid_Object_Key (Destination_Key)
+        or else not Valid_Version_Selector (Options.Source_Selector)
         or else not Valid_Copy_Conditions (Options.Conditions)
         or else not Valid_Write_Conditions (Options.Destination_Conditions)
         or else not Valid_Object_Metadata
@@ -2394,8 +2410,8 @@ package body Flyology.Object_Storage.Backends.Memory is
       end if;
 
       Item.State.Fetch
-        (Source_Bucket, Source_Key, Current_Version_Selector, Snapshot,
-         Source_Info, Source_Tags, Result);
+        (Source_Bucket, Source_Key, Options.Source_Selector, Snapshot,
+         Source_Info, Source_Tags, Selected_Source, Result);
       if Result = Bucket_Not_Found then
          Result := Source_Bucket_Not_Found;
          return;
@@ -2449,13 +2465,20 @@ package body Flyology.Object_Storage.Backends.Memory is
       begin
          Item.Put_Object
            (Destination_Bucket, Destination_Key, Source,
-            Put_Options_Value, Token, Deadline, Info, Result,
+            Put_Options_Value, Token, Deadline, Info, Published_Destination,
+            Result,
             Options.Destination_Conditions);
       end;
+      if Result = Success then
+         Source_Identity := Selected_Source;
+         Destination_Identity := Published_Destination;
+      end if;
       Release_Buffer (Item.State, Snapshot);
    exception
       when others =>
          Release_Buffer (Item.State, Snapshot);
+         Source_Identity := (others => <>);
+         Destination_Identity := (others => <>);
          raise;
    end Copy_Object;
 
@@ -2537,6 +2560,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       Sent       : Byte_Count := 0;
       Buffer     : Ada.Streams.Stream_Element_Array (1 .. 16 * 1_024);
       Ignored_Tags : Object_Tag_Set;
+      Ignored_Identity : Version_Identity;
    begin
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
@@ -2548,7 +2572,8 @@ package body Flyology.Object_Storage.Backends.Memory is
          return;
       end if;
       Item.State.Fetch
-        (Bucket, Key, Selector, Data, Info, Ignored_Tags, Result);
+        (Bucket, Key, Selector, Data, Info, Ignored_Tags, Ignored_Identity,
+         Result);
       if Result /= Success then
          return;
       end if;

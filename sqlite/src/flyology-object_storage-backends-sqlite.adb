@@ -772,6 +772,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Token              : access Flyology.Cancellation.Token;
       Deadline           : Ada.Real_Time.Time;
       Info               : out Object_Information;
+      Source_Identity    : out Version_Identity;
+      Destination_Identity : out Version_Identity;
       Result             : out Status)
    is
       type File_Source is limited new Byte_Source with record
@@ -820,6 +822,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
       File        : aliased SIO.File_Type;
       Source_Info : Object_Information;
       Source_Tags : Object_Tag_Set;
+      Selected_Source : Version_Identity;
+      Published_Destination : Version_Identity;
       Put_Options_Value : Put_Options;
 
       procedure Open_Source
@@ -847,11 +851,14 @@ package body Flyology.Object_Storage.Backends.SQLite is
       end Open_Source;
    begin
       Info := Empty_Info;
+      Source_Identity := (others => <>);
+      Destination_Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Source_Bucket)
         or else not Valid_Object_Key (Source_Key)
         or else not Valid_Bucket_Name (Destination_Bucket)
         or else not Valid_Object_Key (Destination_Key)
+        or else not Valid_Version_Selector (Options.Source_Selector)
         or else not Valid_Copy_Conditions (Options.Conditions)
         or else not Valid_Write_Conditions (Options.Destination_Conditions)
         or else not Valid_Object_Metadata
@@ -871,9 +878,10 @@ package body Flyology.Object_Storage.Backends.SQLite is
          return;
       end if;
 
-      Catalogs.Find_Object
-        (Item.Catalog, Source_Bucket, Source_Key,
-         Payload, Source_Info, Source_Tags, Result, Open_Source'Access);
+      Catalogs.Find_Selected_Object
+        (Item.Catalog, Source_Bucket, Source_Key, Options.Source_Selector,
+         Payload, Source_Info, Source_Tags, Selected_Source, Result,
+         Open_Source'Access);
       if Result = Bucket_Not_Found then
          Result := Source_Bucket_Not_Found;
          return;
@@ -928,9 +936,14 @@ package body Flyology.Object_Storage.Backends.SQLite is
       begin
          Item.Put_Object
            (Destination_Bucket, Destination_Key, Source,
-            Put_Options_Value, Token, Deadline, Info, Result,
+            Put_Options_Value, Token, Deadline, Info, Published_Destination,
+            Result,
             Options.Destination_Conditions);
       end;
+      if Result = Success then
+         Source_Identity := Selected_Source;
+         Destination_Identity := Published_Destination;
+      end if;
       SIO.Close (File);
    exception
       when Flyology.Cancellation.Operation_Cancelled
@@ -938,12 +951,16 @@ package body Flyology.Object_Storage.Backends.SQLite is
          if SIO.Is_Open (File) then
             SIO.Close (File);
          end if;
+         Source_Identity := (others => <>);
+         Destination_Identity := (others => <>);
          raise;
       when others =>
          if SIO.Is_Open (File) then
             SIO.Close (File);
          end if;
          Info := Empty_Info;
+         Source_Identity := (others => <>);
+         Destination_Identity := (others => <>);
          Result := Backend_Unavailable;
    end Copy_Object;
 

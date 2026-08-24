@@ -5292,8 +5292,10 @@ package body Object_Storage_Test_Cases is
    procedure Check_Memory_Object_Versions (Unused : in out Fixture) is
       pragma Unreferenced (Unused);
       package Memory renames Flyology.Object_Storage.Backends.Memory;
+      --  Test-reference capacity: source, isolated copy destination, and
+      --  ordered-list buckets are all live during the shared state machine.
       Store : Memory.Store
-        (Bucket_Capacity => 2,
+        (Bucket_Capacity => 3,
          Object_Capacity => 32,
          Byte_Capacity   => 1_024);
    begin
@@ -17249,10 +17251,48 @@ package body Object_Storage_Test_Cases is
             and then Publication.Is_Null_Version
             and then US.Length (Publication.Version_ID) = 0,
             "files suspended PutObject lost its atomic null identity");
+         declare
+            Options : Copy_Options := Default_Copy_Options;
+            Copied  : Object_Information;
+            Source_Identity : Version_Identity;
+            Destination_Identity : Version_Identity;
+         begin
+            Options.Source_Selector := Null_Version_Selector;
+            Store.Copy_Object
+              ("versioning-bucket", "suspended", "versioning-bucket",
+               "suspended-copy", Options, null, Ada.Real_Time.Time_Last,
+               Copied, Source_Identity, Destination_Identity, Result);
+            Assert
+              (Result = Success
+               and then Source_Identity.Has_Version_ID
+               and then Source_Identity.Is_Null_Version
+               and then Destination_Identity.Has_Version_ID
+               and then Destination_Identity.Is_Null_Version,
+               "files suspended CopyObject lost null identities");
+
+            Options.Source_Selector :=
+              (Kind => Exact_Version,
+               ID   => US.To_Unbounded_String ("opaque-version"));
+            Source_Identity := Publication;
+            Destination_Identity := Publication;
+            Store.Copy_Object
+              ("versioning-bucket", "suspended", "versioning-bucket",
+               "unsupported-copy", Options, null, Ada.Real_Time.Time_Last,
+               Copied, Source_Identity, Destination_Identity, Result);
+            Assert
+              (Result = Not_Implemented
+               and then not Source_Identity.Has_Version_ID
+               and then not Destination_Identity.Has_Version_ID,
+               "files exact CopyObject did not fail closed");
+         end;
          Store.Delete_Object
            ("versioning-bucket", "suspended", null,
             Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "files null identity cleanup failed");
+         Store.Delete_Object
+           ("versioning-bucket", "suspended-copy", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files null copy cleanup failed");
          Store.Delete_Bucket
            ("versioning-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert

@@ -19,6 +19,27 @@ package body Flyology.Object_Storage.Backends is
          Result, Conditions);
    end Put_Object;
 
+   procedure Copy_Object
+     (Item               : in out Backend'Class;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Copy_Options;
+      Token              : access Flyology.Cancellation.Token;
+      Deadline           : Ada.Real_Time.Time;
+      Info               : out Object_Information;
+      Result             : out Status)
+   is
+      Source_Identity      : Version_Identity;
+      Destination_Identity : Version_Identity;
+   begin
+      Item.Copy_Object
+        (Source_Bucket, Source_Key, Destination_Bucket, Destination_Key,
+         Options, Token, Deadline, Info, Source_Identity,
+         Destination_Identity, Result);
+   end Copy_Object;
+
    function Valid_Version_Selector
      (Selector : Version_Selector) return Boolean
    is
