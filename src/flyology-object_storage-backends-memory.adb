@@ -1091,7 +1091,19 @@ package body Flyology.Object_Storage.Backends.Memory is
          package Candidate_Vectors is new Ada.Containers.Vectors
            (Index_Type => Positive, Element_Type => Candidate);
 
+         type Page_Candidate is record
+            Is_Prefix      : Boolean := False;
+            Value          : Listed_Version;
+            Common_Prefix  : Ada.Strings.Unbounded.Unbounded_String;
+            Cursor_Key     : Ada.Strings.Unbounded.Unbounded_String;
+            Cursor_Version : Ada.Strings.Unbounded.Unbounded_String;
+         end record;
+
+         package Page_Candidate_Vectors is new Ada.Containers.Vectors
+           (Index_Type => Positive, Element_Type => Page_Candidate);
+
          Candidates : Candidate_Vectors.Vector;
+         Projected  : Page_Candidate_Vectors.Vector;
          Start_At   : Natural := 1;
          Marker_At  : Natural := 0;
          Returned   : Natural := 0;
@@ -1145,11 +1157,6 @@ package body Flyology.Object_Storage.Backends.Memory is
          Page := (others => <>);
          if Bucket_Index (Bucket) = 0 then
             Result := Not_Found;
-            return;
-         elsif Ada.Strings.Unbounded.Length (Options.Delimiter) > 0 then
-            --  Delimiter/common-prefix pagination is qualified separately;
-            --  do not manufacture a paired version cursor for a prefix.
-            Result := Not_Implemented;
             return;
          elsif Options.Has_Version_ID_Marker and then
            not Options.Has_Key_Marker
@@ -1221,21 +1228,100 @@ package body Flyology.Object_Storage.Backends.Memory is
             end if;
          end if;
 
+         if Start_At <= Natural (Candidates.Length) then
+            declare
+               Prefix : constant String :=
+                 Ada.Strings.Unbounded.To_String (Options.Prefix);
+               Delimiter : constant String :=
+                 Ada.Strings.Unbounded.To_String (Options.Delimiter);
+            begin
+               for Index in Start_At .. Natural (Candidates.Length) loop
+                  declare
+                     Key : constant String :=
+                       Ada.Strings.Unbounded.To_String
+                         (Candidates (Index).Value.Key);
+                     Delimiter_At : constant Natural :=
+                       (if Delimiter'Length = 0 or else Prefix'Length >=
+                           Key'Length
+                        then 0
+                        else Ada.Strings.Fixed.Index
+                          (Key, Delimiter,
+                           From => Key'First + Prefix'Length));
+                  begin
+                     if Delimiter_At = 0 then
+                        Projected.Append
+                          (Page_Candidate'
+                           (Is_Prefix      => False,
+                            Value          => Candidates (Index).Value,
+                            Common_Prefix  =>
+                              Ada.Strings.Unbounded.Null_Unbounded_String,
+                            Cursor_Key     => Candidates (Index).Value.Key,
+                            Cursor_Version =>
+                              Candidates (Index).Value.Version_ID));
+                     else
+                        declare
+                           Common : constant String :=
+                             Key
+                               (Key'First .. Delimiter_At +
+                                  Delimiter'Length - 1);
+                        begin
+                           if Options.Has_Key_Marker
+                             and then not Listing_Follows_Cursor
+                               (Common,
+                                Ada.Strings.Unbounded.To_String
+                                  (Options.Key_Marker))
+                           then
+                              null;
+                           elsif not Projected.Is_Empty
+                             and then Projected.Last_Element.Is_Prefix
+                             and then Ada.Strings.Unbounded.To_String
+                               (Projected.Last_Element.Common_Prefix) = Common
+                           then
+                              Projected.Reference (Projected.Last_Index).
+                                Cursor_Key := Candidates (Index).Value.Key;
+                              Projected.Reference (Projected.Last_Index).
+                                Cursor_Version :=
+                                  Candidates (Index).Value.Version_ID;
+                           else
+                              Projected.Append
+                                (Page_Candidate'
+                                 (Is_Prefix      => True,
+                                  Value          => (others => <>),
+                                  Common_Prefix  =>
+                                    Ada.Strings.Unbounded.To_Unbounded_String
+                                      (Common),
+                                  Cursor_Key     =>
+                                    Candidates (Index).Value.Key,
+                                  Cursor_Version =>
+                                    Candidates (Index).Value.Version_ID));
+                           end if;
+                        end;
+                     end if;
+                  end;
+               end loop;
+            end;
+         end if;
+
          if Options.Maximum > 0
-           and then Start_At <= Natural (Candidates.Length)
+           and then not Projected.Is_Empty
          then
             Returned := Natural'Min
               (Natural (Options.Maximum),
-               Natural (Candidates.Length) - Start_At + 1);
-            for Offset in 0 .. Returned - 1 loop
-               Page.Entries.Append (Candidates (Start_At + Offset).Value);
+               Natural (Projected.Length));
+            for Index in 1 .. Returned loop
+               if Projected (Index).Is_Prefix then
+                  Page.Common_Prefixes.Append
+                    (Projected (Index).Common_Prefix);
+               else
+                  Page.Entries.Append (Projected (Index).Value);
+               end if;
             end loop;
             Page.Is_Truncated :=
-              Start_At + Returned <= Natural (Candidates.Length);
+              Returned < Natural (Projected.Length);
             if Page.Is_Truncated then
-               Page.Next_Key_Marker := Page.Entries.Last_Element.Key;
+               Page.Next_Key_Marker := Projected (Returned).Cursor_Key;
                Page.Next_Version_ID_Marker :=
-                 Page.Entries.Last_Element.Version_ID;
+                 Projected (Returned).Cursor_Version;
             end if;
          end if;
          Result := Success;

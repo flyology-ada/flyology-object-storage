@@ -8284,6 +8284,13 @@ begin
                  ("PUT", "/" & Bucket & "/encoded+key", "encoded")),
             "200 OK"),
          "ListObjectVersions encoded-key setup failed");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("PUT", "/" & Bucket & "/nested/key", "nested")),
+            "200 OK"),
+         "ListObjectVersions delimited-key setup failed");
       declare
          Response : constant String :=
            Run
@@ -8504,6 +8511,13 @@ begin
             SigV4.Pair ("versions", ""));
          Delimiter : constant SigV4.Name_Value_Array :=
            (SigV4.Pair ("delimiter", "/"), SigV4.Pair ("versions", ""));
+         Delimiter_Response : constant String :=
+           Run
+             (Signed_Query_Request
+                ("GET", "/" & Bucket, Delimiter));
+         Delimiter_Page : constant Versions.List_Object_Versions_Result :=
+           Versions.Parse_List_Object_Versions
+             (Response_Body (Delimiter_Response));
       begin
          Require
            (Has
@@ -8520,12 +8534,12 @@ begin
                "InvalidArgument"),
             "ListObjectVersions unpaired cursor was accepted");
          Require
-           (Has
-              (Run
-                 (Signed_Query_Request
-                    ("GET", "/" & Bucket, Delimiter)),
-               "501 Not Implemented"),
-            "ListObjectVersions delimiter did not fail closed");
+           (Has (Delimiter_Response, "200 OK")
+            and then Delimiter_Page.Versions.Length = 3
+            and then Delimiter_Page.Common_Prefixes.Length = 1
+            and then US.To_String
+              (Delimiter_Page.Common_Prefixes (1)) = "nested/",
+            "ListObjectVersions delimiter projection mismatch");
          Require
            (Has
               (Run
@@ -8605,7 +8619,7 @@ begin
            (Bucket, Options, null, Ada.Real_Time.Time_Last, Page, Result);
          Require
            (Result = Flyology.Object_Storage.Success
-            and then Page.Entries.Length = 2,
+            and then Page.Entries.Length = 3,
             "ListObjectVersions cleanup inventory mismatch");
          for Generation of Page.Entries loop
             Store.Delete_Selected_Object

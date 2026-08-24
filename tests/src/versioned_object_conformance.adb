@@ -111,6 +111,7 @@ package body Versioned_Object_Conformance is
       V1     : Object_Information;
       V2     : Object_Information;
       V3     : Object_Information;
+      Nested : Object_Information;
       Page   : List_Versions_Page;
       Delete_Outcome : Version_Delete_Outcome;
 
@@ -630,14 +631,98 @@ package body Versioned_Object_Conformance is
             and then US.To_String (Page.Entries (1).Key) = "zeta",
             "key-only version cursor");
 
+         declare
+            Discarded : Object_Information;
+
+            procedure Put_Delimited
+              (Key, Payload : String; Stored : out Object_Information)
+            is
+               Source : Buffer_Source :=
+                 (Data => Flyology.Bytes.From_Byte_String (Payload),
+                  Position => 0);
+            begin
+               Store.Put_Object
+                 (Ordered_Bucket, Key, Source, Default_Put_Options, null,
+                  Ada.Real_Time.Time_Last, Stored, Result);
+               Require (Result = Success, "delimited version publication");
+            end Put_Delimited;
+         begin
+            Put_Delimited ("logs/a", "l1", Discarded);
+            Put_Delimited ("logs/a", "l2", Discarded);
+            Put_Delimited ("logs/nested/b", "n", Nested);
+         end;
+
          Options := (others => <>);
+         Options.Delimiter := US.To_Unbounded_String ("/");
+         Options.Maximum := 4;
+         Store.List_Object_Versions
+           (Ordered_Bucket, Options, null, Ada.Real_Time.Time_Last, Page,
+            Result);
+         Require
+           (Result = Success and then Page.Is_Truncated
+            and then Page.Entries.Length = 3
+            and then Page.Common_Prefixes.Length = 1
+            and then US.To_String (Page.Entries (1).Key) = "alpha"
+            and then US.To_String (Page.Entries (2).Key) = "beta"
+            and then US.To_String (Page.Entries (3).Key) = "beta"
+            and then US.To_String (Page.Common_Prefixes (1)) = "logs/"
+            and then US.Length (Page.Next_Key_Marker) > 0
+            and then US.Length (Page.Next_Version_ID_Marker) > 0,
+            "delimited version page projection");
+
+         Options.Has_Key_Marker := True;
+         Options.Key_Marker := Page.Next_Key_Marker;
+         Options.Has_Version_ID_Marker := True;
+         Options.Version_ID_Marker := Page.Next_Version_ID_Marker;
+         Store.List_Object_Versions
+           (Ordered_Bucket, Options, null, Ada.Real_Time.Time_Last, Page,
+            Result);
+         Require
+           (Result = Success and then not Page.Is_Truncated
+            and then Page.Entries.Length = 1
+            and then Page.Common_Prefixes.Is_Empty
+            and then US.To_String (Page.Entries (1).Key) = "zeta",
+            "delimited version paired continuation");
+
+         Options := (others => <>);
+         Options.Delimiter := US.To_Unbounded_String ("/");
+         Options.Has_Key_Marker := True;
+         Options.Key_Marker := US.To_Unbounded_String ("logs/");
+         Store.List_Object_Versions
+           (Ordered_Bucket, Options, null, Ada.Real_Time.Time_Last, Page,
+            Result);
+         Require
+           (Result = Success and then Page.Entries.Length = 1
+            and then Page.Common_Prefixes.Is_Empty
+            and then US.To_String (Page.Entries (1).Key) = "zeta",
+            "key-only common-prefix cursor repeated its prefix");
+
+         Options := (others => <>);
+         Options.Prefix := US.To_Unbounded_String ("logs/");
          Options.Delimiter := US.To_Unbounded_String ("/");
          Store.List_Object_Versions
            (Ordered_Bucket, Options, null, Ada.Real_Time.Time_Last, Page,
             Result);
          Require
-           (Result = Not_Implemented and then Page.Entries.Is_Empty,
-            "unqualified delimiter projection did not fail closed");
+           (Result = Success and then Page.Entries.Length = 2
+            and then Page.Common_Prefixes.Length = 1
+            and then US.To_String (Page.Entries (1).Key) = "logs/a"
+            and then US.To_String (Page.Entries (2).Key) = "logs/a"
+            and then US.To_String (Page.Common_Prefixes (1)) =
+              "logs/nested/",
+            "delimited version prefix scope");
+
+         Options.Has_Key_Marker := True;
+         Options.Key_Marker := US.To_Unbounded_String ("logs/nested/b");
+         Options.Has_Version_ID_Marker := True;
+         Options.Version_ID_Marker := Nested.Version;
+         Store.List_Object_Versions
+           (Ordered_Bucket, Options, null, Ada.Real_Time.Time_Last, Page,
+            Result);
+         Require
+           (Result = Success and then Page.Entries.Is_Empty
+            and then Page.Common_Prefixes.Is_Empty,
+            "paired cursor repeated its enclosing common prefix");
       end;
    end Exercise;
 

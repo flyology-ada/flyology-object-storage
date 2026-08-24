@@ -3,9 +3,9 @@
 This record qualifies the bounded synchronous client, strict wire codecs,
 authenticated memory-backed server route, and bounded in-memory slice for
 `ListObjectVersions`. The memory slice includes enabled and suspended delete
-markers and permanent selected-generation removal. It does not claim delimiter
-pagination, durable files/SQLite generations, or external-server
-interoperability.
+markers, permanent selected-generation removal, and delimiter/common-prefix
+pagination. It does not claim durable files/SQLite generations or
+external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -114,8 +114,11 @@ reads and tags remain isolated; enabled deletes append unique markers;
 suspended deletes replace the null generation with a null marker; exact data
 versions and markers can be removed permanently with atomic MFA Delete
 admission; and newest-first paired-cursor pagination is independently
-exercised. Its object capacity counts every retained generation and marker,
-and its protected state is the atomic publication and listing boundary.
+exercised. Delimiter projection collapses all matching generations beneath a
+common prefix, counts the prefix once against the combined page maximum, and
+uses the last hidden generation as the paired continuation boundary. Its
+object capacity counts every retained generation and marker, and its protected
+state is the atomic publication and listing boundary.
 
 The authenticated server projects the strict query onto the backend snapshot,
 serializes version and marker pages, and supports exact-generation GET/HEAD,
@@ -123,12 +126,14 @@ simple marker publication, and permanent exact deletion on the memory backend.
 Its signed corpus covers paired continuation, zero pages, URL encoding, the
 optional SDK operation ID, expected owner, requester-pays syntax, optional
 attributes, malformed controls, missing buckets, version response headers, and
-marker removal that re-exposes the preceding generation.
+marker removal that re-exposes the preceding generation. It also covers a
+signed delimiter request whose response combines object versions and one
+escaped common prefix.
 
-The backend and server cells remain partial because delimiter/common-prefix
-pagination and durable files/SQLite reopen and crash behavior are absent.
-Neither cell can be promoted until shared conformance covers persistence,
-crash recovery, durable-server selection, and black-box external S3 behavior.
+The backend and server cells remain partial because durable files/SQLite reopen
+and crash behavior are absent. Neither cell can be promoted until shared
+conformance covers persistence, crash recovery, durable-server selection, and
+black-box external S3 behavior.
 
 ## Gate evidence
 
@@ -143,9 +148,13 @@ also passed. The new backend-neutral memory corpus covers state transitions,
 unique identical overwrites, null/current/exact reads, per-version tag
 isolation, enabled and suspended marker publication, repeated-marker identity,
 exact data and marker removal, MFA admission, full ordering, one-entry paired
-pagination, zero-size pages, and malformed or unknown selectors and cursors.
+pagination, delimiter collapse at a page boundary, paired and key-only
+continuation past a collapsed prefix, suppression after a caller-supplied
+paired cursor inside a nested prefix while remaining generations of its exact
+key stay visible, prefix-scoped delimiter projection, zero-size pages, and
+malformed or unknown selectors and cursors.
 
-The serialized proof campaign started at 2026-08-23T23:23:37Z with FSF
+The serialized proof campaign completed at 2026-08-24T00:36:06Z with FSF
 GNATprove 16.1.0. `./tools/prove.sh` used `--level=0`, output headers, and
 warnings as errors and proved 936/936 checks across all nine manifest units:
 180 flow checks and 756 prover checks, with a maximum of 663 steps. The report
