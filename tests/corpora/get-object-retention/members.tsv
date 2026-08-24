@@ -1,0 +1,9 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	285	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind its exact value into the signed retention target.	GOR-RQ-001,GOR-RQ-003,GOR-RQ-004
+request	285	2	Key	471	uri-label	true	projected	Require one valid object key and preserve its exact path encoding before the retention subresource.	GOR-RQ-001,GOR-RQ-003,GOR-RQ-004
+request	285	3	VersionId	492	query	false	projected	Preserve omission or one bounded opaque generation selector in the exact versionId query member.	GOR-RQ-002,GOR-RQ-003,GOR-RQ-004
+request	285	4	RequestPayer	599	header	false	projected	Preserve omission or sign the sole modeled requester value exactly once.	GOR-RQ-002,GOR-RQ-003,GOR-RQ-004
+request	285	5	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	GOR-RQ-002,GOR-RQ-003,GOR-RQ-004
+output	284	1	Retention	480	body	false	decoded	Preserve absence or decode one exact Retention payload without assigning a default policy.	GOR-RS-001,GOR-RS-002,GOR-RS-005,GOR-TR-001,GOR-TR-002
+nested	480	1	Mode	481	body	false	decoded	Preserve absence or decode exactly GOVERNANCE or COMPLIANCE with case-sensitive wire semantics.	GOR-RS-001,GOR-RS-002,GOR-RS-005,GOR-TR-001,GOR-TR-002
+nested	480	2	RetainUntilDate	140	body	false	decoded	Preserve absence or one exact validated ISO-8601 timestamp without normalizing its wire text.	GOR-RS-001,GOR-RS-002,GOR-RS-005,GOR-RS-007,GOR-TR-001,GOR-TR-002

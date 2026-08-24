@@ -90,7 +90,9 @@ procedure S3_HTTP_Socket_Corpus is
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Low_Level.Get_Object_Legal_Hold_Outcome_Kind;
+   use type Low_Level.Get_Object_Retention_Outcome_Kind;
    use type Object_Lock.Legal_Hold_Status;
+   use type Object_Lock.Retention_Mode;
    use type Buckets.Put_Tags_Outcome_Kind;
    use type Buckets.Get_Tags_Outcome_Kind;
    use type Buckets.Delete_Tags_Outcome_Kind;
@@ -3347,6 +3349,52 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "<LegalHold>" & String'(1 .. 42 => ' ') &
                "</LegalHold>"),
             "GET", "/example-bucket/object?legal-hold");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<Retention><Mode>GOVERNANCE</Mode>" &
+               "<RetainUntilDate>2027-01-02T03:04:05Z" &
+               "</RetainUntilDate></Retention>",
+               "x-amz-request-id: retention-request" & CRLF &
+               "x-amz-id-2: retention-host" & CRLF),
+            "GET",
+            "/example-bucket/object?retention&versionId=version%20one",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", "<Retention/>"),
+            "GET", "/example-bucket/object?retention");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: retention-error-request" & CRLF &
+               "x-amz-id-2: retention-error-host" & CRLF),
+            "GET", "/example-bucket/object?retention");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<Retention/>",
+               "x-amz-request-id: first" & CRLF &
+               "x-amz-request-id: second" & CRLF),
+            "GET", "/example-bucket/object?retention");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<Retention/>",
+               "x-amz-id-2: first" & CRLF &
+               "x-amz-id-2: second" & CRLF),
+            "GET", "/example-bucket/object?retention");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<Retention/>", "x-amz-request-id:" & CRLF),
+            "GET", "/example-bucket/object?retention");
+         Serve
+           (HTTP_Response ("200 OK", "<Retention><Unknown/></Retention>"),
+            "GET", "/example-bucket/object?retention");
+         Serve
+           (HTTP_Response
+              --  42 text bytes plus 23 markup bytes are one past the paired
+              --  caller-selected 64-byte document limit.
+              ("200 OK", "<Retention>" & String'(1 .. 42 => ' ') &
+               "</Retention>"),
+            "GET", "/example-bucket/object?retention");
          Serve
            (HTTP_Response
               ("403 Forbidden", Error_XML,
@@ -8373,6 +8421,122 @@ procedure S3_HTTP_Socket_Corpus is
               ("GetObjectLegalHold accepted malformed success XML");
             Must_Reject_Legal_Hold
               ("GetObjectLegalHold accepted oversized success XML",
+               Small_Limits => True);
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Retention
+                (Origin, Low_Level.Path_Style, "example-bucket", "object",
+                 (Version_ID => US.To_Unbounded_String ("version one"),
+                  Request_Payer => US.To_Unbounded_String ("requester"),
+                  Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity, "us-east-1", "20130524T000000Z");
+            Result : constant Low_Level.Get_Object_Retention_Outcome :=
+              Low_Level.Execute_Get_Object_Retention
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Object_Retention_Found
+              or else not Result.Retention.Is_Set
+              or else Result.Retention.Mode /=
+                Object_Lock.Governance_Retention
+              or else US.To_String (Result.Retention.Retain_Until_Date) /=
+                "2027-01-02T03:04:05Z"
+            then
+               raise Program_Error with
+                 "GetObjectRetention socket success mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Retention
+                (Origin, Low_Level.Path_Style, "example-bucket", "object",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant Low_Level.Get_Object_Retention_Outcome :=
+              Low_Level.Execute_Get_Object_Retention
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Object_Retention_Found
+              or else not Result.Retention.Is_Set
+              or else Result.Retention.Mode /=
+                Object_Lock.Retention_Mode_Absent
+              or else US.Length (Result.Retention.Retain_Until_Date) /= 0
+            then
+               raise Program_Error with
+                 "GetObjectRetention nested absence mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Retention
+                (Origin, Low_Level.Path_Style, "example-bucket", "object",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant Low_Level.Get_Object_Retention_Outcome :=
+              Low_Level.Execute_Get_Object_Retention
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Get_Object_Retention_Rejected
+              or else Result.Status /= 403
+              or else US.To_String (Result.Error.Code) /= "AccessDenied"
+              or else US.To_String (Result.Error.Request_ID) /=
+                "retention-error-request"
+              or else US.To_String (Result.Error.Host_ID) /=
+                "retention-error-host"
+            then
+               raise Program_Error with
+                 "GetObjectRetention socket rejection mismatch";
+            end if;
+         end;
+         declare
+            procedure Must_Reject_Retention
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object_Retention
+                   (Origin, Low_Level.Path_Style, "example-bucket", "object",
+                    (others => <>), Identity, "us-east-1",
+                    "20130524T000000Z");
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant
+                       Low_Level.Get_Object_Retention_Outcome :=
+                         (if Small_Limits
+                          then Low_Level.Execute_Get_Object_Retention
+                            (HTTP, Prepared, Timeout => 5.0,
+                             Limits =>
+                               (Maximum_Document_Bytes => 64,
+                                Maximum_Depth          => 8,
+                                Maximum_Elements       => 32,
+                                Maximum_Text_Bytes     => 64))
+                          else Low_Level.Execute_Get_Object_Retention
+                            (HTTP, Prepared, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_Retention;
+         begin
+            Must_Reject_Retention
+              ("GetObjectRetention accepted duplicate request identifier");
+            Must_Reject_Retention
+              ("GetObjectRetention accepted duplicate host identifier");
+            Must_Reject_Retention
+              ("GetObjectRetention accepted empty request identifier");
+            Must_Reject_Retention
+              ("GetObjectRetention accepted malformed success XML");
+            Must_Reject_Retention
+              ("GetObjectRetention accepted oversized success XML",
                Small_Limits => True);
          end;
          declare

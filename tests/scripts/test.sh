@@ -15,6 +15,7 @@ python3 "$PROJECT_DIR/tools/verify-get-bucket-controls-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-put-bucket-controls-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-object-torrent-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-object-legal-hold-preparation.py"
+python3 "$PROJECT_DIR/tools/verify-get-object-retention-preparation.py"
 cd "$PROJECT_DIR/tests"
 alr -n build
 
@@ -156,6 +157,7 @@ do
   ./bin/s3_get_object_torrent_corpus
   ./bin/s3_get_object_torrent_socket_corpus
   ./bin/s3_get_object_legal_hold_corpus
+  ./bin/s3_get_object_retention_corpus
   ./bin/s3_http_socket_corpus
   ./bin/s3_create_session_tls_corpus
   ./bin/s3_transfer_many_corpus

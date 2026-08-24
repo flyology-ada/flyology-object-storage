@@ -1253,6 +1253,93 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Legal_Hold_Outcome;
 
+   --  Every non-resource member in the pinned GetObjectRetention request.
+   --  @field Version_ID Optional exact generation selector
+   --  @field Request_Payer Empty or the sole modeled value, requester
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Get_Object_Retention_Parameters is record
+      Version_ID            : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare one exact signed GetObjectRetention request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Object key whose retention state is requested
+   --  @param Parameters Optional version, payer, and owner selectors
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared request
+   function Prepare_Get_Object_Retention
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Get_Object_Retention_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   --  Terminal interpretation of a GetObjectRetention response.
+   --  @enum Object_Retention_Found Exact 200 response decoded successfully
+   --  @enum Get_Object_Retention_Rejected Bounded non-200 S3 rejection
+   type Get_Object_Retention_Outcome_Kind is
+     (Object_Retention_Found, Get_Object_Retention_Rejected);
+
+   --  Presence-preserving retention result or structured rejection.  Status
+   --  uses the established low-level local rejection initializer and is never
+   --  transmitted as an HTTP value.
+   --  @field Kind Whether retention state or an S3 error was returned
+   --  @field Status Exact HTTP response status
+   --  @field Retention Optional outer payload and independent nested members
+   --  @field Error Structured rejected-response diagnostics
+   type Get_Object_Retention_Outcome
+     (Kind : Get_Object_Retention_Outcome_Kind :=
+        Get_Object_Retention_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Retention_Found =>
+            Retention : S3.Object_Lock.Retention;
+         when Get_Object_Retention_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode a complete bounded retention or structured S3 error body.
+   --  @param Status Exact HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Optional physical request identifier
+   --  @param Host_ID Optional physical host identifier
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Presence-preserving retention or structured S3 rejection
+   function Decode_Get_Object_Retention_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Retention_Outcome;
+
+   --  Execute and fully decode one matching request within caller-selected
+   --  XML limits.  The timeout is the established synchronous client default.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Request returned by Prepare_Get_Object_Retention
+   --  @param Timeout Whole-operation timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Presence-preserving retention or structured S3 rejection
+   function Execute_Get_Object_Retention
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Retention_Outcome;
+
    --  Every non-resource member in the pinned GetObjectAttributes request.
    --  Presence flags preserve omission for optional numeric headers.
    type Get_Object_Attributes_Parameters is record
@@ -3240,6 +3327,7 @@ private
       Put_Bucket_Control_Operation,
       Get_Object_Torrent_Operation,
       Get_Object_Legal_Hold_Operation,
+      Get_Object_Retention_Operation,
       Delete_Object_Operation,
       Delete_Objects_Operation,
       Create_Multipart_Operation,

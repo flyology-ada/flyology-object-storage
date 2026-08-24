@@ -58,7 +58,7 @@ GetObjectAnnotation	extended	missing	partial	missing	missing
 GetObjectAttributes	core	covered	covered	covered	covered
 GetObjectLegalHold	extended	missing	covered	missing	covered
 GetObjectLockConfiguration	extended	missing	partial	missing	missing
-GetObjectRetention	extended	missing	partial	missing	missing
+GetObjectRetention	extended	missing	covered	missing	covered
 GetObjectTagging	core	covered	covered	covered	covered
 GetObjectTorrent	extended	missing	covered	missing	covered
 GetPublicAccessBlock	extended	missing	covered	missing	covered
