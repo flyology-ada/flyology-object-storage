@@ -21,12 +21,14 @@ reset_fixtures() {
   cp "$SOURCE_DIR/range-get.tsv" "$WORK_DIR/range.tsv"
   cp "$SOURCE_DIR/head-object.tsv" "$WORK_DIR/head.tsv"
   cp "$SOURCE_DIR/delete-certainty.tsv" "$WORK_DIR/delete.tsv"
+  cp "$SOURCE_DIR/create-multipart-certainty.tsv" "$WORK_DIR/create.tsv"
 }
 
 expect_rejection() {
   label=$1
   if "$VERIFIER" "$WORK_DIR/put.tsv" "$WORK_DIR/parent.tsv" \
       "$WORK_DIR/range.tsv" "$WORK_DIR/head.tsv" "$WORK_DIR/delete.tsv" \
+      "$WORK_DIR/create.tsv" \
       >"$WORK_DIR/stdout" 2>"$WORK_DIR/stderr"; then
     printf '%s\n' "verifier accepted invalid fixture: $label" >&2
     exit 1
@@ -40,7 +42,7 @@ expect_rejection() {
 reset_fixtures
 "$VERIFIER" "$WORK_DIR/put.tsv" "$WORK_DIR/parent.tsv" \
   "$WORK_DIR/range.tsv" "$WORK_DIR/head.tsv" \
-  "$WORK_DIR/delete.tsv" >/dev/null
+  "$WORK_DIR/delete.tsv" "$WORK_DIR/create.tsv" >/dev/null
 
 reset_fixtures
 awk 'NR == 2 { duplicate = $0 } { print } END { print duplicate }' \
@@ -125,5 +127,23 @@ awk -F '\t' 'BEGIN { OFS = "\t" } $5 == "Deletion_Outcome_Unknown" && !done { $7
   "$WORK_DIR/delete.tsv" >"$WORK_DIR/mutated.tsv"
 mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/delete.tsv"
 expect_rejection "unknown deletion without reconciliation"
+
+reset_fixtures
+awk 'NR == 2 { duplicate = $0 } { print } END { print duplicate }' \
+  "$WORK_DIR/create.tsv" >"$WORK_DIR/mutated.tsv"
+mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/create.tsv"
+expect_rejection "duplicate CreateMultipartUpload input tuple"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" } $5 == "Creation_Outcome_Unknown" && !done { $7 = "no"; done = 1 } { print }' \
+  "$WORK_DIR/create.tsv" >"$WORK_DIR/mutated.tsv"
+mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/create.tsv"
+expect_rejection "unknown creation without reconciliation"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" } $4 == "InvalidRequest" { $4 = "missing" } { print }' \
+  "$WORK_DIR/create.tsv" >"$WORK_DIR/mutated.tsv"
+mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/create.tsv"
+expect_rejection "status-only CreateMultipartUpload rejection"
 
 printf '%s\n' "composable client fixture verifier self-tests: OK"

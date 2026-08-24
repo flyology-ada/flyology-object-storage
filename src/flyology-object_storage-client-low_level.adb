@@ -3016,11 +3016,10 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "malformed CreateMultipartUpload response";
    end Decode_Create_Multipart_Response;
 
-   function Execute_Create_Multipart_Upload
-     (Client   : aliased in out Flyology.HTTP.Client.Client;
+   function Decode_Create_Multipart_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
       Prepared : Prepared_Request;
-      Timeout  : Duration := 30.0;
-      Token    : access Flyology.Cancellation.Token := null;
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Create_Multipart_Outcome
    is
@@ -3029,9 +3028,6 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
-         Response : Flyology.HTTP.Client.Response :=
-           Flyology.HTTP.Client.Execute
-             (Client, Prepared.Message, Timeout, Token);
          Status : constant Flyology.HTTP.Status_Code :=
            Flyology.HTTP.Client.Status (Response);
          function Singleton_Header (Name : String) return String is
@@ -3095,15 +3091,11 @@ package body Flyology.Object_Storage.Client.Low_Level is
               (Singleton_Header ("x-amz-checksum-algorithm")),
             Checksum_Type => US.To_Unbounded_String
               (Singleton_Header ("x-amz-checksum-type")));
-         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
-           Flyology.HTTP.Client.Read_All
-             (Response, Limits.Maximum_Document_Bytes, Token);
       begin
          declare
             Outcome : constant Create_Multipart_Outcome :=
               Decode_Create_Multipart_Response
-                (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
-                 Host_ID, Limits, Headers);
+                (Status, Payload, Request_ID, Host_ID, Limits, Headers);
          begin
             if Outcome.Kind = Created then
                if Outcome.Result.Bucket /= Prepared.Requested_Bucket then
@@ -3182,6 +3174,25 @@ package body Flyology.Object_Storage.Client.Low_Level is
             return Outcome;
          end;
       end;
+   end Decode_Create_Multipart_Complete_Response;
+
+   function Execute_Create_Multipart_Upload
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Create_Multipart_Outcome
+   is
+      Response : Flyology.HTTP.Client.Response :=
+        Flyology.HTTP.Client.Execute
+          (Client, Prepared.Message, Timeout, Token);
+      Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+        Flyology.HTTP.Client.Read_All
+          (Response, Limits.Maximum_Document_Bytes, Token);
+   begin
+      return Decode_Create_Multipart_Complete_Response
+        (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared, Limits);
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
          raise Invalid_Response with

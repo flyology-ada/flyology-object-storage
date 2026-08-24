@@ -277,6 +277,13 @@ in-flight bytes independently. Flyology's runtime owns multiplexing,
 backpressure and waiting, so the convenience layer does not create one task
 per chunk or retain a massive object.
 
+The completion-set-aware `Client.Scoped` layer currently covers conditional
+Put, whole and exact-range Get, Head, Delete, and CreateMultipartUpload. The
+typed synchronous overloads wait on those same owner-driven state machines.
+Multipart initiation uses a one-shot empty source and preserves HTTP admission
+and creation certainty: after possible admission, a lost or invalid response
+is unknown and must be reconciled before any retry.
+
 A lost response to CompleteMultipartUpload is inherently ambiguous: the
 server may have committed the object. Best-effort abort is cleanup, not
 rollback; applications that require certainty should reconcile with

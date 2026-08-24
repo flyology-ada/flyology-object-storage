@@ -102,6 +102,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Head_Result_Kind;
    use type Scoped.Delete_Result_Kind;
    use type Scoped.Deletion_Disposition;
+   use type Scoped.Create_Multipart_Result_Kind;
+   use type Scoped.Multipart_Creation_Disposition;
    use type HTTP_Client.Admission_Certainty;
    use type HTTP_Client.Exchange_Result_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
@@ -3085,6 +3087,14 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("204 No Content", "", Omit_Content_Length => True),
             "DELETE", "/example-bucket?tagging");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Create_Result_XML
+                 ("example-bucket", "scoped-create", "scoped-create-id"),
+               "x-amz-request-id: scoped-create-request" & CRLF),
+            "POST", "/example-bucket/scoped-create?uploads",
+            Fragmented => True);
          Serve
            ("", "POST", "/example-bucket/create-lost?uploads",
             Keep_Open => False);
@@ -8610,30 +8620,72 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
+            Parameters : Low_Level.Create_Multipart_Parameters;
+            --  Multipart parent, HTTP exchange, and one transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Operation : Scoped.Create_Multipart_Operation :=
+              Scoped.Create_Multipart_Upload
+                (Set'Access, HTTP'Access, Origin, "example-bucket",
+                 "scoped-create", Parameters, Identity,
+                 --  Test/reference value: reuse this corpus's established
+                 --  loopback deadline; it does not set production policy.
+                 HTTP_Client.Deadline_After (5.0));
+            Result : Scoped.Create_Multipart_Result;
+         begin
+            Operations.Wait_All (Set);
+            Scoped.Finish (Operation, Result);
+            if Result.Kind /= Scoped.Create_Multipart_Response_Available
+              or else Result.Disposition /= Scoped.Multipart_Upload_Created
+              or else Result.Failure /= Scoped.No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+              or else Result.Response.Kind /= Low_Level.Created
+              or else US.To_String (Result.Response.Result.Upload_ID) /=
+                "scoped-create-id"
+            then
+               raise Program_Error with
+                 "scoped CreateMultipartUpload success/certainty mismatch";
+            end if;
+         end;
+         declare
+            Stop : aliased Flyology.Cancellation.Token;
+            Parameters : Low_Level.Create_Multipart_Parameters;
+         begin
+            Stop.Request;
+            declare
+               --  Test/reference value: retain the established five-second
+               --  loopback budget; this does not affect the public default.
+               Result : constant Scoped.Create_Multipart_Result :=
+                 Transfers.Create_Multipart_Upload
+                   (HTTP, Origin, "example-bucket", "create-cancelled",
+                    Parameters, Identity, Timeout => 5.0,
+                    Token => Stop'Access);
+            begin
+               if Result.Kind /= Scoped.Create_Multipart_Exchange_Failed
+                 or else Result.Disposition /=
+                   Scoped.Creation_Cancelled_Before_Admission
+                 or else Result.Failure /= Scoped.Cancelled
+                 or else Result.Admission /= HTTP_Client.Not_Admitted
+               then
+                  raise Program_Error with
+                    "pre-admission CreateMultipartUpload cancellation " &
+                    "mismatch";
+               end if;
+            end;
+         end;
+         declare
             Create_Parameters : Low_Level.Create_Multipart_Parameters;
             List_Parameters : Low_Level.List_Multipart_Uploads_Parameters;
-            Ambiguous : Boolean := False;
+            Result : constant Scoped.Create_Multipart_Result :=
+              Transfers.Create_Multipart_Upload
+                (HTTP, Origin, "example-bucket", "create-lost",
+                 Create_Parameters, Identity, Timeout => 5.0);
          begin
-            begin
-               declare
-                  Unexpected : constant Low_Level.Create_Multipart_Outcome :=
-                    Transfers.Create_Multipart_Upload
-                      (HTTP, Origin, "example-bucket", "create-lost",
-                       Create_Parameters, Identity, Timeout => 5.0);
-                  pragma Unreferenced (Unexpected);
-               begin
-                  raise Program_Error with
-                    "lost CreateMultipartUpload returned a definite outcome";
-               end;
-            exception
-               when Low_Level.Invalid_Request | Program_Error =>
-                  raise;
-               when others =>
-                  Ambiguous := True;
-            end;
-            if not Ambiguous then
+            if Result.Kind /= Scoped.Create_Multipart_Exchange_Failed
+              or else Result.Disposition /= Scoped.Creation_Outcome_Unknown
+              or else Result.Admission /= HTTP_Client.Possibly_Admitted
+            then
                raise Program_Error with
-                 "lost CreateMultipartUpload was not ambiguous";
+                 "lost CreateMultipartUpload was classified conclusively";
             end if;
             List_Parameters.Prefix := US.To_Unbounded_String ("create-lost");
             declare
@@ -8672,29 +8724,38 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters.Checksum_Type :=
               US.To_Unbounded_String ("FULL_OBJECT");
             declare
-               Result : constant Low_Level.Create_Multipart_Outcome :=
+               Result : constant Scoped.Create_Multipart_Result :=
                  Transfers.Create_Multipart_Upload
                    (HTTP, Origin, "example-bucket", "object key", Parameters,
                     Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Low_Level.Created
-                 or else US.To_String (Result.Result.Upload_ID) /=
+               if Result.Kind /= Scoped.Create_Multipart_Response_Available
+                 or else Result.Disposition /= Scoped.Multipart_Upload_Created
+                 or else Result.Response.Kind /= Low_Level.Created
+                 or else US.To_String (Result.Response.Result.Upload_ID) /=
                    "socket-upload"
-                 or else US.To_String (Result.Result.Abort_Rule_ID) /=
+                 or else US.To_String
+                   (Result.Response.Result.Abort_Rule_ID) /=
                    "cleanup"
                  or else US.To_String
-                   (Result.Result.Server_Side_Encryption) /= "aws:kms"
-                 or else US.To_String (Result.Result.SSE_KMS_Key_ID) /=
+                   (Result.Response.Result.Server_Side_Encryption) /= "aws:kms"
+                 or else US.To_String
+                   (Result.Response.Result.SSE_KMS_Key_ID) /=
                    "kms-key"
                  or else US.To_String
-                   (Result.Result.SSE_KMS_Encryption_Context) /= "e30="
-                 or else not Result.Result.Bucket_Key_Enabled.Is_Set
-                 or else not Result.Result.Bucket_Key_Enabled.Value
-                 or else US.To_String (Result.Result.Request_Charged) /=
+                   (Result.Response.Result.SSE_KMS_Encryption_Context) /=
+                     "e30="
+                 or else not
+                   Result.Response.Result.Bucket_Key_Enabled.Is_Set
+                 or else not Result.Response.Result.Bucket_Key_Enabled.Value
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /=
                    "requester"
-                 or else US.To_String (Result.Result.Checksum_Algorithm) /=
+                 or else US.To_String
+                   (Result.Response.Result.Checksum_Algorithm) /=
                    "CRC32C"
-                 or else US.To_String (Result.Result.Checksum_Type) /=
+                 or else US.To_String
+                   (Result.Response.Result.Checksum_Type) /=
                    "FULL_OBJECT"
                then
                   raise Program_Error with
@@ -11297,6 +11358,8 @@ procedure S3_HTTP_Socket_Corpus is
 begin
    Flyology.Object_Storage.Client.Scoped.Testing.Check_Put_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.Check_Delete_Certainty_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_Create_Multipart_Certainty_Corpus;
    Run_And_Report;
    declare
       task Lightweight_Client is

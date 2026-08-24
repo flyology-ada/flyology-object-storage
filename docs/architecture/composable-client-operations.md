@@ -2,9 +2,9 @@
 
 This note records the implemented contract for the completion-set-aware object
 client slice: conditional complete-object Put, generation-bound whole and
-single-range Get, bodyless Head, and non-replaying Delete. The prerequisite is
-published through the Flyology Alire index as lockstep HTTP and QUIC 0.1.3
-development crates.
+single-range Get, bodyless Head, non-replaying Delete, and non-replaying
+multipart initiation. The prerequisite is published through the Flyology
+Alire index as lockstep HTTP and QUIC 0.1.3 development crates.
 
 ## Upstream basis
 
@@ -43,7 +43,8 @@ The initial operation order is:
 2. whole `Get_Object`;
 3. generation-bound exact-range `Get_Object`;
 4. `Head_Object`; and
-5. `Delete_Object`.
+5. `Delete_Object`; and
+6. `Create_Multipart_Upload`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -140,6 +141,18 @@ malformed responses, and every failure after possible admission report
 The result retains HTTP admission certainty independently of its bounded
 failure reason, and the operation never retries automatically.
 
+CreateMultipartUpload also uses a deliberately non-replayable known-empty
+source. A complete validated 200 returns the complete modeled initiation
+response and reports `Multipart_Upload_Created`. Exact modeled request,
+authentication, authorization, and missing-bucket rejections report
+`Definitely_Not_Created`. Conflicts, throttling, service failures, malformed
+responses, and every failure after possible admission report
+`Creation_Outcome_Unknown`; pre-admission cancellation has a separate
+spelling. A lost successful response may leave an active upload without its
+identifier. The caller must therefore reconcile before retry, and must not
+assume that an ordinary upload listing uniquely identifies the lost request
+when concurrent indistinguishable initiations are possible.
+
 The Flyology.DB recovery sequence enabled by these operations is:
 
 1. publish an immutable batch with `If-None-Match: *`;
@@ -155,10 +168,11 @@ listing.
 ## Synchronous convergence
 
 The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
-`Get_Range`, and `Head_Object` overloads and the typed-result `Delete` overload
-are literal waits on the same `Client.Scoped` state machines and retain their
-typed certainty, capacity, metadata, and ownership results. The established
-raising `Delete_Outcome`, older one-shot source, owned-bytes, and transfer
+`Get_Range`, and `Head_Object` overloads and the typed-result `Delete` and
+`Create_Multipart_Upload` overloads are literal waits on the same
+`Client.Scoped` state machines and retain their typed certainty, capacity,
+metadata, and ownership results. The established raising `Delete_Outcome` and
+`Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer
 overloads remain source compatible.
 Because they do not expose transport admission certainty, a caller treats
 every mutation exception after call entry as an unknown publication outcome
@@ -277,6 +291,13 @@ separately qualified successor is selected. The mapping rules are:
   `Outcome_Unknown` and record `Unavailable_Or_Retryable`. The convenience
   operation does not retry them. The caller reconciles before choosing a later
   retry.
+
+The parallel compile-independent initiation oracle is
+`tests/corpora/composable-client/create-multipart-certainty.tsv`. It gates the
+complete success identity, exact conclusive S3 rejection pairs, every HTTP
+terminal failure across all admission-certainty states, and the rule that an
+unknown creation disposition always requires caller-selected reconciliation.
+The executable normalization corpus applies the same mapping in Ada.
 
 The sibling `range-get.tsv` and `head-object.tsv` corpora are normative for the
 read surface. They enumerate typed request forms, physical singleton handling,

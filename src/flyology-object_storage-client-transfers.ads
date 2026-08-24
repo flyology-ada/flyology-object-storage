@@ -3,6 +3,7 @@ with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.Client.Scoped;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Checksum_Policy;
@@ -33,6 +34,34 @@ package Flyology.Object_Storage.Client.Transfers is
 
    Default_Upload_Checksum : constant Upload_Checksum_Selection :=
      (others => <>);
+
+   --  Execute CreateMultipartUpload by waiting on the composable operation.
+   --  This result-type overload preserves HTTP admission and upload-creation
+   --  certainty. Selecting the established low-level outcome overload retains
+   --  its raising transport contract. Parameters and defaults are identical.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Destination S3 bucket
+   --  @param Key Destination S3 object key
+   --  @param Parameters Complete modeled initiation controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed upload-creation certainty and terminal response or failure
+   function Create_Multipart_Upload
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.Create_Multipart_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Scoped.Create_Multipart_Result;
 
    --  Create one multipart upload through the synchronous no-body path.
    --  Parameters exposes all non-resource members in the pinned input shape;

@@ -13,6 +13,7 @@ with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
+with Flyology.Operations;
 with Flyology.Task_Scopes;
 with GNAT.OS_Lib;
 with GNAT.SHA256;
@@ -131,6 +132,37 @@ package body Flyology.Object_Storage.Client.Transfers is
         & Image (Image'First + 17 .. Image'First + 18)
         & "Z";
    end Current_Timestamp;
+
+   function Create_Multipart_Upload
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.Create_Multipart_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Scoped.Create_Multipart_Result
+   is
+      --  The multipart parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Create_Multipart_Operation :=
+           Scoped.Create_Multipart_Upload
+             (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
+              Identity, Flyology.HTTP.Client.Deadline_After (Timeout), Region,
+              Style, Token);
+         Result : Scoped.Create_Multipart_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Create_Multipart_Upload;
 
    function Create_Multipart_Upload
      (Client       : aliased in out Flyology.HTTP.Client.Client;

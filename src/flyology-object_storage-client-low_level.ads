@@ -3633,6 +3633,23 @@ package Flyology.Object_Storage.Client.Low_Level is
         (others => <>))
       return Create_Multipart_Outcome;
 
+   --  Decode one body-complete CreateMultipartUpload response and bind every
+   --  modeled success identity and echoed policy field to Prepared.
+   --  @param Response Complete HTTP response metadata
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared CreateMultipartUpload request
+   --  @param Limits Shared bounded XML parse policy
+   --  @return Typed initiation result or structured S3 rejection
+   --  @exception Invalid_Request Prepared is not CreateMultipartUpload
+   --  @exception Invalid_Response Physical headers, XML, identity, or echoed
+   --     policy are invalid
+   function Decode_Create_Multipart_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Create_Multipart_Outcome;
+
    function Execute_Create_Multipart_Upload
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;

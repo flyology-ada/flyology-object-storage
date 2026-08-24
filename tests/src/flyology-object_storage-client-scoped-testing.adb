@@ -318,4 +318,141 @@ package body Flyology.Object_Storage.Client.Scoped.Testing is
       end loop;
    end Check_Delete_Certainty_Corpus;
 
+   procedure Check_Create_Multipart_Response
+     (Status      : Flyology.HTTP.Status_Code;
+      Code        : String;
+      Disposition : Multipart_Creation_Disposition;
+      Failure     : Failure_Reason)
+   is
+      Value : constant Low_Level.Create_Multipart_Outcome :=
+        (if Status = 200
+         then (Kind => Low_Level.Created,
+               Status => Status,
+               Result => (others => <>))
+         else (Kind => Low_Level.Create_Rejected,
+               Status => Status,
+               Error =>
+                 (Code       => US.To_Unbounded_String (Code),
+                  Message    => US.Null_Unbounded_String,
+                  Resource   => US.Null_Unbounded_String,
+                  Request_ID => US.Null_Unbounded_String,
+                  Host_ID    => US.Null_Unbounded_String)));
+      Result : constant Create_Multipart_Result :=
+        Normalize_Create_Multipart_Response
+          (Value, HTTP_Client.Response_Observed);
+   begin
+      if Result.Kind /= Create_Multipart_Response_Available
+        or else Result.Disposition /= Disposition
+        or else Result.Failure /= Failure
+        or else Result.Admission /= HTTP_Client.Response_Observed
+      then
+         raise Program_Error with
+           "CreateMultipartUpload response normalization corpus mismatch";
+      end if;
+   end Check_Create_Multipart_Response;
+
+   procedure Check_Create_Multipart_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty)
+   is
+      Expected_Disposition : constant Multipart_Creation_Disposition :=
+        (if Kind = HTTP_Client.Cancelled
+           and then Admission = HTTP_Client.Not_Admitted
+         then Creation_Cancelled_Before_Admission
+         elsif Admission = HTTP_Client.Not_Admitted
+         then Definitely_Not_Created
+         else Creation_Outcome_Unknown);
+      Expected_Failure : constant Failure_Reason :=
+        (case Kind is
+            when HTTP_Client.Pre_Admission_Rejected => Invalid_Request,
+            when HTTP_Client.Cancelled => Cancelled,
+            when HTTP_Client.Timed_Out => Timed_Out,
+            when HTTP_Client.Client_Unavailable => Client_Unavailable,
+            when HTTP_Client.Connection_Failed => Connection_Failed,
+            when HTTP_Client.Transport_Failed => Transport_Failed,
+            when HTTP_Client.Request_Source_Failed => Request_Source_Failed,
+            when HTTP_Client.Response_Body_Too_Large |
+                 HTTP_Client.Response_Invalid |
+                 HTTP_Client.Response_Sink_Failed =>
+              Corrupt_Or_Invalid_Response,
+            when HTTP_Client.Response_Complete =>
+              raise Program_Error with "complete response is not a failure");
+      Result : constant Create_Multipart_Result :=
+        Normalize_Create_Multipart_Failure
+          (Kind, Admission, HTTP_Client.Receiving_Response_Body);
+   begin
+      if Result.Kind /= Create_Multipart_Exchange_Failed
+        or else Result.Disposition /= Expected_Disposition
+        or else Result.Failure /= Expected_Failure
+        or else Result.Admission /= Admission
+        or else Result.HTTP_Result /= Kind
+      then
+         raise Program_Error with
+           "CreateMultipartUpload exchange normalization corpus mismatch";
+      end if;
+   end Check_Create_Multipart_Failure;
+
+   procedure Check_Create_Multipart_Certainty_Corpus is
+      type Failure_Kind_Array is array (Positive range <>) of
+        HTTP_Client.Exchange_Result_Kind;
+      Failure_Kinds : constant Failure_Kind_Array :=
+        (HTTP_Client.Pre_Admission_Rejected,
+         HTTP_Client.Cancelled,
+         HTTP_Client.Timed_Out,
+         HTTP_Client.Client_Unavailable,
+         HTTP_Client.Connection_Failed,
+         HTTP_Client.Transport_Failed,
+         HTTP_Client.Request_Source_Failed,
+         HTTP_Client.Response_Invalid,
+         HTTP_Client.Response_Body_Too_Large,
+         HTTP_Client.Response_Sink_Failed);
+   begin
+      Check_Create_Multipart_Response
+        (200, "", Multipart_Upload_Created, No_Failure);
+      Check_Create_Multipart_Response
+        (400, "InvalidRequest", Definitely_Not_Created, Invalid_Request);
+      Check_Create_Multipart_Response
+        (401, "InvalidAccessKeyId", Definitely_Not_Created,
+         Authentication_Failed);
+      Check_Create_Multipart_Response
+        (403, "AccessDenied", Definitely_Not_Created,
+         Authorization_Failed);
+      Check_Create_Multipart_Response
+        (404, "NoSuchBucket", Definitely_Not_Created, Not_Found);
+      Check_Create_Multipart_Response
+        (409, "OperationAborted", Creation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Create_Multipart_Response
+        (429, "SlowDown", Creation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Create_Multipart_Response
+        (500, "InternalError", Creation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Create_Multipart_Response
+        (502, "BadGateway", Creation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Create_Multipart_Response
+        (503, "SlowDown", Creation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Create_Multipart_Response
+        (504, "RequestTimeout", Creation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+
+      Check_Create_Multipart_Response
+        (400, "", Creation_Outcome_Unknown, Corrupt_Or_Invalid_Response);
+      Check_Create_Multipart_Response
+        (403, "", Creation_Outcome_Unknown, Corrupt_Or_Invalid_Response);
+      Check_Create_Multipart_Response
+        (404, "", Creation_Outcome_Unknown, Corrupt_Or_Invalid_Response);
+      Check_Create_Multipart_Response
+        (500, "SlowDown", Creation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+
+      for Kind of Failure_Kinds loop
+         for Admission in HTTP_Client.Admission_Certainty loop
+            Check_Create_Multipart_Failure (Kind, Admission);
+         end loop;
+      end loop;
+   end Check_Create_Multipart_Certainty_Corpus;
+
 end Flyology.Object_Storage.Client.Scoped.Testing;

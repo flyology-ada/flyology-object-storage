@@ -81,18 +81,31 @@ confirmation headers may be absent; when present they must be coherent with
 the explicitly requested policy. Error request identifiers are bounded by the
 same 8-KiB limit.
 
-`Client.Transfers.Create_Multipart_Upload` is the public synchronous wrapper.
-It prepares and executes exactly once without a helper task or automatic
-replay. Credentials and sensitive SSE-C material are retained only by the
-bounded synchronous request state and are not durably stored by this layer.
+`Client.Scoped.Create_Multipart_Upload` and
+`Start_Create_Multipart_Upload` are the reusable completion-set-aware forms.
+They copy the complete prepared request before returning, drive one hidden
+HTTP child on the caller's stack, use a one-shot non-replayable known-empty
+source, and bound the response sink by the existing S3 XML parse limits.
+`Client.Transfers.Create_Multipart_Upload` has a typed-result overload that is
+a literal wait on this same operation. The established
+`Low_Level.Create_Multipart_Outcome` overload remains source compatible.
+Neither form creates a helper task or performs automatic replay. Credentials
+and sensitive SSE-C material are retained only by the bounded request state
+and are not durably stored by this layer.
 
 An accepted initiation followed by a lost response is ambiguous: the service
 may have created an upload whose identifier the caller did not receive.
-Transparent retry can create a second active upload. `Invalid_Request` from the
-wrapper is pre-admission and definite non-creation. Any exception after the
-blocking execute call is entered, including timeout, cancellation, transport,
-or invalid-response failure, is conservatively ambiguous. Callers reconcile
-and clean up through ListMultipartUploads; the wrapper never auto-retries.
+Transparent retry can create a second active upload. The typed result preserves
+HTTP admission separately from its bounded failure reason. A pre-admission
+failure is definitely not created, with a distinct spelling for cancellation;
+an exact modeled service rejection is also conclusive. A timeout,
+cancellation, transport failure, malformed response, conflict, throttling, or
+service failure after possible admission is `Creation_Outcome_Unknown`.
+Callers reconcile before retry and the wrapper never auto-retries.
+ListMultipartUploads is a read-only discovery aid, but it cannot uniquely
+identify the lost initiation when concurrent requests for the same key are
+indistinguishable; callers must arrange a stronger application invariant or
+retain the unknown outcome.
 
 ## Isolated artifacts
 
@@ -103,6 +116,9 @@ coverage ledger and this qualification record carry the promoted state.
 `tests/corpora/create-multipart-upload/vectors.tsv` defines target, header-map,
 ACL, metadata, tagging, checksum, encryption, Object Lock, owner/payer,
 response, durability, inheritance, ambiguity, and external-server designs.
+`tests/corpora/composable-client/create-multipart-certainty.tsv` independently
+freezes the typed response, failure, admission, and reconciliation mapping for
+the composable operation and its synchronous result wrapper.
 
 Run:
 
@@ -120,10 +136,12 @@ checksum, ACL/grant, SSE-C, KMS, Object Lock, expiry, and duplicate-metadata
 relations. It preserves both KMS and SSE-C response groups, admits exact
 8-KiB response-header and error-ID boundaries, and rejects one-past and control
 values. Fragmented raw-loopback responses run through native and Flyology
-lightweight clients, use the public wrapper, bind bucket/key and explicit
-policy, and reject duplicate and present-empty physical headers. A dropped
-successful initiation is followed by one read-only ListMultipartUploads
-reconciliation request; the scripted server rejects any automatic POST replay.
+lightweight clients, use both the direct composable constructor and its typed
+synchronous wrapper, bind bucket/key and explicit policy, and reject duplicate
+and present-empty physical headers. A dropped successful initiation returns
+typed unknown creation certainty and is followed by one read-only
+ListMultipartUploads reconciliation request; the scripted server rejects any
+automatic POST replay.
 The original evidence promoted only the client cell. The server-admission
 closure below separately gates every modeled request field without claiming
 advanced backend policy persistence.
@@ -176,6 +194,26 @@ and proved 936/936 checks across all nine manifest units: 180 flow checks and
 warnings, unproved or justified checks, and `pragma Assume` statements;
 the source contains no `pragma Assume`, `pragma Suppress`, `False_Positive`, or
 `SPARK_Mode => Off`. The post-run host process audit was clean.
+
+## Composable initiation addendum
+
+The completion-set-aware initiation slice passed the current root gate with
+41/41 AUnit tests, all 126 abrupt files crash points, the 45-case independent
+creation-certainty fixture and its negative verifier, and three complete
+native/lightweight socket repetitions. The socket corpus includes direct
+constructor success, pre-admission cancellation, exact lost-response admission
+certainty, read-only reconciliation, and rejection of automatic POST replay.
+The SQLite wrapper/backend gate passed.
+
+The six-server implementation matrix passed all 18 implementation/repetition
+lanes across RustFS, SeaweedFS, supplemental MinIO, and Flyology memory, files,
+and SQLite. Its primary CreateMultipartUpload call uses the typed synchronous
+wrapper over the same composable state machine. Pinned external capability
+exclusions remained exact; there was no unexpected failure or unexpected pass.
+GNATdoc generated the public `Client.Scoped` operation, result, constructor,
+restart, and Finish entries. The maintained warning-strict proof gate passed
+936/936, and the post-run process audit was clean before the exclusive formal
+lane was released.
 
 ## Server-admission gate evidence
 

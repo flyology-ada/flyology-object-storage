@@ -82,6 +82,8 @@ procedure S3_Implementation_Corpus is
    use type Client_Objects.Delete_Outcome_Kind;
    use type Scoped.Delete_Result_Kind;
    use type Scoped.Deletion_Disposition;
+   use type Scoped.Create_Multipart_Result_Kind;
+   use type Scoped.Multipart_Creation_Disposition;
    use type Client_Objects.List_Outcome_Kind;
    use type Client_Objects.Whole_Get_Outcome_Kind;
    use type Client_Objects.Tagging_Outcome_Kind;
@@ -2570,18 +2572,21 @@ procedure S3_Implementation_Corpus is
          end;
       end;
       declare
-         Created : constant Low_Level.Create_Multipart_Outcome :=
+         Created : constant Scoped.Create_Multipart_Result :=
            Transfers.Create_Multipart_Upload
              (HTTP, Origin, Bucket, Key, Composite_Create_Parameters,
               Identity, Timeout => 30.0);
       begin
-         if Created.Kind /= Low_Level.Created then
+         if Created.Kind /= Scoped.Create_Multipart_Response_Available
+           or else Created.Disposition /= Scoped.Multipart_Upload_Created
+           or else Created.Response.Kind /= Low_Level.Created
+         then
             raise Program_Error with
               "S3 implementation rejected CreateMultipartUpload";
          end if;
          declare
             Upload_ID : constant String :=
-              US.To_String (Created.Result.Upload_ID);
+              US.To_String (Created.Response.Result.Upload_ID);
             First_Length : constant Natural := 5 * 1_024 * 1_024;
             Second_First : constant Positive :=
               Payload'First + First_Length;
