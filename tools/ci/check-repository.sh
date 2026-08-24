@@ -10,21 +10,18 @@ fail() {
   exit 1
 }
 
-# The five independently solved Alire roots must all use the same reviewed PR
-# commit until Flyology.HTTP 0.1.1-dev and its QUIC dependency are indexed.
-HTTP_DEPENDENCY='flyology_http = "=0.1.1-dev"'
-HTTP_PIN='flyology_http = { url = "https://github.com/flyology-ada/flyology-http.git", commit = "09e95348c8de14cf871e75a1ad6478cce12a2f40" }'
-QUIC_PIN='flyology_quic = { url = "https://github.com/flyology-ada/flyology-http.git", subdir = "flyology_quic", commit = "09e95348c8de14cf871e75a1ad6478cce12a2f40" }'
+#  The two direct consumers use the published lockstep development line.  HTTP
+#  carries the exact QUIC dependency, so Object Storage must not duplicate or
+#  override either indexed origin with a committed pin.
+HTTP_DEPENDENCY='flyology_http = "=0.1.3-dev"'
 test "$(git grep -h -F "$HTTP_DEPENDENCY" -- '*alire.toml' | wc -l | tr -d ' ')" -eq 2 ||
-  fail "root and server must require exact flyology_http=0.1.1-dev"
-test "$(git grep -h -F "$HTTP_PIN" -- '*alire.toml' | wc -l | tr -d ' ')" -eq 5 ||
-  fail "all five Alire roots must pin the approved Flyology.HTTP PR commit"
-test "$(git grep -h -F "$QUIC_PIN" -- '*alire.toml' | wc -l | tr -d ' ')" -eq 5 ||
-  fail "all five Alire roots must pin the matching Flyology QUIC subcrate"
-if git grep -n -E 'flyology_http[[:space:]]*=.*path[[:space:]]*=' -- '*alire.toml'; then
-  fail "flyology_http must never use a committed local path pin"
+  fail "root and server must require exact flyology_http=0.1.3-dev"
+if git grep -n -E \
+  'flyology_(http|quic)[[:space:]]*=[[:space:]]*\{' -- '*alire.toml'
+then
+  fail "flyology_http and flyology_quic must resolve only through the index"
 fi
-echo "dependency policy: immutable Flyology.HTTP PR #33 commit, no local HTTP pin"
+echo "dependency policy: exact indexed Flyology.HTTP 0.1.3-dev, no HTTP/QUIC pin"
 
 while IFS= read -r script
 do

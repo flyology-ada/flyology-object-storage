@@ -7,9 +7,12 @@ and run the SPARK manifest through `tools/prove.sh`. The proof job has a
 repository-wide concurrency lock so two workflow runs never share the proof
 lane logically, even though GitHub gives them separate runners.
 
-Repository integrity is checked before the build jobs. That gate requires all
-five Alire roots to use the exact provisional Flyology HTTP PR #33 commit and
-matching QUIC subcrate without any local HTTP path pin. It also requires
+Repository integrity is checked before the build jobs. That gate requires the
+root and server Alire manifests to use exact indexed
+`flyology_http=0.1.3-dev`, lets HTTP select exact
+`flyology_quic=0.1.3-dev`, and rejects any committed HTTP or QUIC pin. CI also
+solves both indexed crates and requires their reviewed common origin commit.
+The integrity gate additionally requires
 immutable full-commit GitHub Action references, executable and syntax-clean
 scripts, clean changed lines, no merge-conflict markers, valid local Markdown
 links, the exact 116-operation coverage ledger, its negative anti-promotion

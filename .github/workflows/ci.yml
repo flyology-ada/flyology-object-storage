@@ -88,10 +88,14 @@ jobs:
         timeout-minutes: 5
         run: |
           mkdir -p obj/ci
-          alr show flyology_http=0.1.2 --solve \
+          alr show flyology_http=0.1.3-dev --solve \
             2>&1 | tee obj/ci/http-resolution.log
-          grep -Fq 'Origin: commit 8f34e73b49b1f6b61e3f4a86a56fe2650d0ff1ca' \
+          grep -Fq 'Origin: commit a65f24f473bd771356a4fcb355fc10f961202534' \
             obj/ci/http-resolution.log
+          alr show flyology_quic=0.1.3-dev --solve \
+            2>&1 | tee obj/ci/quic-resolution.log
+          grep -Fq 'Origin: commit a65f24f473bd771356a4fcb355fc10f961202534' \
+            obj/ci/quic-resolution.log
       - name: Run root and SQLite gates
         run: ./tools/ci/run-tests.sh
       - name: Upload test logs

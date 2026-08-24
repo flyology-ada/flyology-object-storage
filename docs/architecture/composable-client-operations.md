@@ -2,9 +2,8 @@
 
 This note records the implemented contract for the completion-set-aware object
 client slice: conditional complete-object Put, generation-bound whole and
-single-range Get, and bodyless Head. Development proceeds against the reviewed
-Flyology HTTP PR #33 commit; publication remains deferred until that dependency
-is merged, released, and available through the Flyology Alire index.
+single-range Get, and bodyless Head. The prerequisite is published through the
+Flyology Alire index as lockstep HTTP and QUIC 0.1.3 development crates.
 
 ## Upstream basis
 
@@ -23,11 +22,11 @@ operation model:
 - `Continue_After` for an outer operation to drive and consume a hidden child
   operation on the owner task's stack.
 
-The indexed `flyology_http=0.1.2` source predates completion-set client
-exchanges. The temporary reviewed PR #33 pin supplies that prerequisite while
-the index remains unchanged. The Object Storage implementation uses those
-exchanges directly; it does not simulate composition with a helper task or a
-retained borrowed source.
+The exact indexed `flyology_http=0.1.3-dev` dependency selects
+`flyology_quic=0.1.3-dev`; both resolve to reviewed source commit
+`a65f24f473bd771356a4fcb355fc10f961202534`. The Object Storage implementation
+uses those exchanges directly; it does not simulate composition with a helper
+task or a retained borrowed source, and no committed dependency pin remains.
 
 ## Intended public boundary
 
@@ -171,12 +170,12 @@ single absolute HTTP deadline covers the complete body exchange. Head remains
 useful for existence and size checks, but it is not substituted for this
 same-response whole Get in recovery.
 
-## Provisional HTTP dependency
+## Published HTTP dependency
 
-The pinned HTTP client slice provides completion-set operations for request
+The indexed HTTP client slice provides completion-set operations for request
 execution and complete response consumption over HTTP/1.1, HTTP/2, and
-HTTP/3. It must retain the existing pool, redirect, stale-transport,
-cancellation, deadline, and limited-response semantics. It must also expose a
+HTTP/3. It retains the existing pool, redirect, stale-transport, cancellation,
+deadline, and limited-response semantics. It also exposes a
 bounded semantic observation sufficient to distinguish failure before any
 possible server admission from failure after possible admission. This is not
 a public wire-progress counter.
@@ -227,8 +226,9 @@ bridge should start an HTTP exchange from that prepared value; the public
 high-level child must not expose or duplicate signed request fields merely to
 cross the sibling-package privacy boundary.
 
-The consumer-approved PR #33 baseline is pinned at
-`09e95348c8de14cf871e75a1ad6478cce12a2f40`. Its qualification includes the
+The consumer-approved PR #33 head
+`686094b124338e5609fd5623ea2ac6bae5e4e3f2` merged into indexed source commit
+`a65f24f473bd771356a4fcb355fc10f961202534`. Its qualification includes the
 established-child lifecycle, typed buffer restoration, admission certainty,
 and owner-driven HTTP/1.1, HTTP/2, and HTTP/3 exchange behavior required by
 this design. The revision adds protected bounded round-robin HTTP/2 pump
@@ -244,8 +244,8 @@ restoration before claiming the higher-level surface.
 
 The compile-independent mapping corpus at
 `tests/corpora/composable-client/put-certainty.tsv` is normative for the first
-Put slice. The pinned HTTP names are inputs to be checked again when a stable
-release is indexed. The mapping rules are:
+Put slice. The indexed development coordinates remain exact CI inputs until a
+separately qualified successor is selected. The mapping rules are:
 
 - a complete, valid 200 response is `Published`;
 - a complete 412 plus exact `PreconditionFailed` code is
