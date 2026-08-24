@@ -14,14 +14,7 @@ executables = ["flyology_object_storage_server"]
 flyology = "=0.1.1-dev"
 
 [[depends-on]]
-flyology_http = "=0.1.1-dev"
-
-#  Match the root crate's provisional immutable composable-HTTP baseline.
-[[pins]]
-flyology_http = { url = "https://github.com/flyology-ada/flyology-http.git", commit = "09e95348c8de14cf871e75a1ad6478cce12a2f40" }
-
-[[pins]]
-flyology_quic = { url = "https://github.com/flyology-ada/flyology-http.git", subdir = "flyology_quic", commit = "09e95348c8de14cf871e75a1ad6478cce12a2f40" }
+flyology_http = "=0.1.3-dev"
 
 [[depends-on]]
 flyology_object_storage = "*"
