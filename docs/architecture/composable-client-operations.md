@@ -228,7 +228,7 @@ high-level child must not expose or duplicate signed request fields merely to
 cross the sibling-package privacy boundary.
 
 The consumer-approved PR #33 baseline is pinned at
-`153c9c80c73a07c2cccf5bbb0087e4d95676ce30`. Its qualification includes the
+`09e95348c8de14cf871e75a1ad6478cce12a2f40`. Its qualification includes the
 established-child lifecycle, typed buffer restoration, admission certainty,
 and owner-driven HTTP/1.1, HTTP/2, and HTTP/3 exchange behavior required by
 this design. The revision adds protected bounded round-robin HTTP/2 pump
