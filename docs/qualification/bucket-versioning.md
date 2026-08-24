@@ -16,6 +16,13 @@ and SQLite reopens a suspended null generation without losing its tags or
 identity. Pure files exposes only current and explicit null aliases and rejects
 opaque retained IDs.
 
+Ordinary PutObject likewise returns its success identity from the mutation
+that publishes the complete object tuple. Unconfigured publication omits an
+identity, enabled memory/SQLite publication returns its exact opaque version,
+and suspended memory/files/SQLite publication returns the distinguished null
+identity. Pure files rejects enabled publication before rename because storing
+configuration does not provide retained generations.
+
 The machine ledger records both configuration operations as `covered` for the
 backend, client, server, and corpus columns. The separately qualified
 `ListObjectVersions` boundary is `partial / covered / partial / covered`; the

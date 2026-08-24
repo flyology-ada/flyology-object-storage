@@ -484,6 +484,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Tags   : Object_Tag_Set;
          Conditions : Write_Conditions;
          Stored : out Object_Information;
+         Identity : out Version_Identity;
          Result : out Status)
       is
          Bucket_At    : constant Natural := Bucket_Index (Bucket);
@@ -500,6 +501,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          Is_Null      : Boolean := True;
       begin
          Stored := Empty_Info;
+         Identity := (others => <>);
          if Bucket_At = 0 then
             Result := Not_Found;
             return;
@@ -596,6 +598,12 @@ package body Flyology.Object_Storage.Backends.Memory is
             Objects (Index).Is_Delete_Marker := False;
             Objects (Index).Publication := New_Order;
             Stored := New_Info;
+            Identity.Has_Version_ID :=
+              Buckets (Bucket_At).Versioning.Status /=
+                Versioning_Unconfigured;
+            Identity.Is_Null_Version :=
+              Buckets (Bucket_At).Versioning.Status = Versioning_Suspended;
+            Identity.Version_ID := New_Info.Version;
             Move (Objects (Index).Data, Data);
             Reserved_Bytes := Reserved_Bytes - Reservation;
             Bytes := Bytes - Existing + Incoming;
@@ -2148,6 +2156,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
+      Identity : out Version_Identity;
       Result   : out Status;
       Conditions : Write_Conditions := Default_Write_Conditions)
    is
@@ -2164,6 +2173,7 @@ package body Flyology.Object_Storage.Backends.Memory is
             then Checksum_CRC64NVME else Options.Checksum.Algorithm));
    begin
       Info := Empty_Info;
+      Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
@@ -2293,11 +2303,13 @@ package body Flyology.Object_Storage.Backends.Memory is
          Tags   => Options.Tags,
          Conditions => Conditions,
          Stored => Info,
+         Identity => Identity,
          Result => Result);
       Release_Buffer (Item.State, Data);
    exception
       when others =>
          Release_Buffer (Item.State, Data);
+         Identity := (others => <>);
          raise;
    end Put_Object;
 

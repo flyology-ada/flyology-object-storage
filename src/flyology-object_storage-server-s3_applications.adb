@@ -1367,6 +1367,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Length_OK  : Boolean;
       Length     : Backends.Source_Length;
       Info       : Object_Information;
+      Publication_Identity : Backends.Version_Identity;
       Result     : Status;
    begin
       if Parsed.Status /= Requests.Target_Parsed then
@@ -5700,7 +5701,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   begin
                      Store.Put_Object
                        (Bucket, Key, Source, Options, Apps.Cancellation (X),
-                        Apps.Deadline (X), Info, Result, Conditions);
+                        Apps.Deadline (X), Info, Publication_Identity, Result,
+                        Conditions);
                      if Result = Success and then not Source.Completed then
                         raise Program_Error with
                           "backend committed before validating the whole body";
@@ -5711,9 +5713,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Apps.Set_Header
                     (X, "ETag", '"' & US.To_String (Info.Entity_Tag) & '"');
                   Set_Checksum_Headers (X, Info.Checksum);
-                  if US.Length (Info.Version) > 0 then
+                  if Publication_Identity.Has_Version_ID then
                      Apps.Set_Header
-                       (X, "x-amz-version-id", US.To_String (Info.Version));
+                       (X, "x-amz-version-id",
+                        (if Publication_Identity.Is_Null_Version then "null"
+                         else US.To_String
+                           (Publication_Identity.Version_ID)));
                   end if;
                   Apps.Set_Header
                     (X, "x-amz-object-size", Decimal (Info.Size));

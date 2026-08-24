@@ -1,5 +1,24 @@
 package body Flyology.Object_Storage.Backends is
 
+   procedure Put_Object
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Information;
+      Result   : out Status;
+      Conditions : Write_Conditions := Default_Write_Conditions)
+   is
+      Identity : Version_Identity;
+   begin
+      Item.Put_Object
+        (Bucket, Key, Source, Options, Token, Deadline, Info, Identity,
+         Result, Conditions);
+   end Put_Object;
+
    function Valid_Version_Selector
      (Selector : Version_Selector) return Boolean
    is

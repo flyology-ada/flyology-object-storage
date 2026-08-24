@@ -557,6 +557,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
+      Identity : out Version_Identity;
       Result   : out Status;
       Conditions : Write_Conditions := Default_Write_Conditions)
    is
@@ -580,6 +581,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
             then Checksum_CRC64NVME else Options.Checksum.Algorithm));
    begin
       Info := Empty_Info;
+      Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
@@ -701,7 +703,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Sync_Path (Objects_Path (Item), Directory => True);
       Catalogs.Put_Object
         (Item.Catalog, Bucket, Key, US.To_String (Payload), Info, Options.Tags,
-         Previous, Result, Conditions);
+         Previous, Identity, Result, Conditions);
       if Result /= Success then
          Ada.Directories.Delete_File
            (Join (Objects_Path (Item), US.To_String (Payload)));
@@ -736,6 +738,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
             Ada.Directories.Delete_File
               (Join (Objects_Path (Item), US.To_String (Payload)));
          end if;
+         Identity := (others => <>);
          raise;
       when others =>
          if Opened then
@@ -751,6 +754,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
               (Join (Objects_Path (Item), US.To_String (Payload)));
          end if;
          Info := Empty_Info;
+         Identity := (others => <>);
          if In_Callback then
             raise;
          else

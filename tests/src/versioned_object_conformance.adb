@@ -115,9 +115,10 @@ package body Versioned_Object_Conformance is
       Page   : List_Versions_Page;
       Delete_Outcome : Version_Delete_Outcome;
 
-      procedure Put
+      procedure Put_With_Identity
         (Key, Payload : String;
          Stored       : out Object_Information;
+         Identity     : out Version_Identity;
          Conditions   : Write_Conditions := Default_Write_Conditions)
       is
          Source : Buffer_Source :=
@@ -126,7 +127,17 @@ package body Versioned_Object_Conformance is
       begin
          Store.Put_Object
            (Bucket, Key, Source, Default_Put_Options, null,
-            Ada.Real_Time.Time_Last, Stored, Result, Conditions);
+            Ada.Real_Time.Time_Last, Stored, Identity, Result, Conditions);
+      end Put_With_Identity;
+
+      procedure Put
+        (Key, Payload : String;
+         Stored       : out Object_Information;
+         Conditions   : Write_Conditions := Default_Write_Conditions)
+      is
+         Identity : Version_Identity;
+      begin
+         Put_With_Identity (Key, Payload, Stored, Identity, Conditions);
       end Put;
 
       procedure Require_Body
@@ -181,8 +192,14 @@ package body Versioned_Object_Conformance is
       Require
         (Result = Not_Found,
          "unconfigured selected delete retained data");
-      Put ("alpha", "legacy", Legacy);
-      Require (Result = Success, "restore unconfigured null generation");
+      declare
+         Identity : Version_Identity;
+      begin
+         Put_With_Identity ("alpha", "legacy", Legacy, Identity);
+         Require
+           (Result = Success and then not Identity.Has_Version_ID,
+            "unconfigured PutObject invented a publication identity");
+      end;
       declare
          Tags     : Object_Tag_Set;
          Identity : Version_Identity;
@@ -208,12 +225,30 @@ package body Versioned_Object_Conformance is
          Ada.Real_Time.Time_Last, Result);
       Require (Result = Success, "enable versioning");
 
-      Put ("alpha", "v1", V1);
-      Require (Result = Success, "first enabled PutObject");
-      Put ("alpha", "v2", V2);
-      Require (Result = Success, "second enabled PutObject");
-      Put ("alpha", "v2", V3);
-      Require (Result = Success, "identical enabled PutObject");
+      declare
+         I1 : Version_Identity;
+         I2 : Version_Identity;
+         I3 : Version_Identity;
+      begin
+         Put_With_Identity ("alpha", "v1", V1, I1);
+         Require
+           (Result = Success and then I1.Has_Version_ID
+            and then not I1.Is_Null_Version
+            and then I1.Version_ID = V1.Version,
+            "first enabled PutObject identity was not atomic");
+         Put_With_Identity ("alpha", "v2", V2, I2);
+         Require
+           (Result = Success and then I2.Has_Version_ID
+            and then not I2.Is_Null_Version
+            and then I2.Version_ID = V2.Version,
+            "second enabled PutObject identity was not atomic");
+         Put_With_Identity ("alpha", "v2", V3, I3);
+         Require
+           (Result = Success and then I3.Has_Version_ID
+            and then not I3.Is_Null_Version
+            and then I3.Version_ID = V3.Version,
+            "identical enabled PutObject identity was not atomic");
+      end;
       Require
         (US.Length (V1.Version) > 0
          and then US.Length (V1.Version) <= Maximum_Version_ID_Length
@@ -221,6 +256,22 @@ package body Versioned_Object_Conformance is
          and then V2.Version /= V3.Version
          and then V1.Version /= V3.Version,
          "enabled version IDs are not bounded and unique");
+      declare
+         Rejected : Object_Information;
+         Identity : Version_Identity :=
+           (Has_Version_ID  => True,
+            Is_Null_Version => False,
+            Version_ID      => US.To_Unbounded_String ("stale"));
+         Conditions : Write_Conditions := Default_Write_Conditions;
+      begin
+         Conditions.If_Match := US.To_Unbounded_String ("""missing""");
+         Put_With_Identity
+           ("alpha", "rejected", Rejected, Identity, Conditions);
+         Require
+           (Result = Precondition_Failed
+            and then not Identity.Has_Version_ID,
+            "failed enabled PutObject exposed a stale publication identity");
+      end;
 
       Require_Body ("alpha", "legacy", Null_Version_Selector);
       Require_Body ("alpha", "v1", Exact (V1));
@@ -438,14 +489,24 @@ package body Versioned_Object_Conformance is
         (Bucket, (Status => Versioning_Suspended, others => <>), null,
          Ada.Real_Time.Time_Last, Result);
       Require (Result = Success, "suspend versioning");
-      Put ("alpha", "null-one", Info);
-      Require
-        (Result = Success and then US.Length (Info.Version) = 0,
-         "first suspended null PutObject");
-      Put ("alpha", "null-two", Info);
-      Require
-        (Result = Success and then US.Length (Info.Version) = 0,
-         "replacement suspended null PutObject");
+      declare
+         Identity : Version_Identity;
+      begin
+         Put_With_Identity ("alpha", "null-one", Info, Identity);
+         Require
+           (Result = Success and then US.Length (Info.Version) = 0
+            and then Identity.Has_Version_ID
+            and then Identity.Is_Null_Version
+            and then US.Length (Identity.Version_ID) = 0,
+            "first suspended null PutObject identity");
+         Put_With_Identity ("alpha", "null-two", Info, Identity);
+         Require
+           (Result = Success and then US.Length (Info.Version) = 0
+            and then Identity.Has_Version_ID
+            and then Identity.Is_Null_Version
+            and then US.Length (Identity.Version_ID) = 0,
+            "replacement suspended null PutObject identity");
+      end;
       Require_Body ("alpha", "null-two", Null_Version_Selector);
       Require_Body ("alpha", "null-two", Current_Version_Selector);
       Require_Body ("alpha", "v1", Exact (V1));
@@ -855,6 +916,7 @@ package body Versioned_Object_Conformance is
       Result  : Status;
       First   : Object_Information;
       Info    : Object_Information;
+      Identity : Version_Identity;
       Outcome : Version_Delete_Outcome;
       Page    : List_Versions_Page;
 
@@ -865,7 +927,7 @@ package body Versioned_Object_Conformance is
       begin
          Store.Put_Object
            (Bucket, "only-key", Source, Default_Put_Options, null,
-            Ada.Real_Time.Time_Last, Info, Result);
+            Ada.Real_Time.Time_Last, Info, Identity, Result);
       end Put;
    begin
       Store.Create_Bucket
@@ -877,10 +939,16 @@ package body Versioned_Object_Conformance is
       Require (Result = Success, "capacity bucket versioning enable");
 
       Put ("first");
-      Require (Result = Success, "capacity first generation");
+      Require
+        (Result = Success and then Identity.Has_Version_ID
+         and then not Identity.Is_Null_Version
+         and then Identity.Version_ID = Info.Version,
+         "capacity first generation identity");
       First := Info;
       Put ("second");
-      Require (Result = Capacity_Exceeded, "retained history exceeded slot");
+      Require
+        (Result = Capacity_Exceeded and then not Identity.Has_Version_ID,
+         "failed retained publication exposed an identity");
       Store.Head_Object
         (Bucket, "only-key", null, Ada.Real_Time.Time_Last, Info, Result);
       Require

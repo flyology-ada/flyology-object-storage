@@ -2338,6 +2338,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
+      Identity : out Version_Identity;
       Result   : out Status;
       Conditions : Write_Conditions := Default_Write_Conditions)
    is
@@ -2365,8 +2366,10 @@ package body Flyology.Object_Storage.Backends.Files is
       Initial_Checksum : constant String :=
         (if Options.Checksum.Algorithm = No_Checksum then ""
          else Checksum_Engine.Finish (Direct_Hash));
+      Configuration : Bucket_Versioning_Configuration := (others => <>);
    begin
       Info := Empty_Info;
+      Identity := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
@@ -2533,6 +2536,15 @@ package body Flyology.Object_Storage.Backends.Files is
          Result := Not_Found;
          return;
       end if;
+      Validate_Configuration_Path (Item, Bucket);
+      Configuration := Read_Versioning (Item, Bucket);
+      if Configuration.Status = Versioning_Enabled then
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         Result := Not_Implemented;
+         return;
+      end if;
       declare
          Existing_Info : Object_Information := Empty_Info;
          Existing_File : SIO.File_Type;
@@ -2579,6 +2591,12 @@ package body Flyology.Object_Storage.Backends.Files is
       Sync_Directory (Item, Temp_Path (Item));
       Item.Publication.Release;
       Locked := False;
+      Identity :=
+        (Has_Version_ID  =>
+           Configuration.Status = Versioning_Suspended,
+         Is_Null_Version =>
+           Configuration.Status = Versioning_Suspended,
+         Version_ID      => US.Null_Unbounded_String);
       Result := Success;
    exception
       when Flyology.Cancellation.Operation_Cancelled
@@ -2594,6 +2612,7 @@ package body Flyology.Object_Storage.Backends.Files is
          then
             Ada.Directories.Delete_File (US.To_String (Temp));
          end if;
+         Identity := (others => <>);
          raise;
       when others =>
          if Opened then
@@ -2608,6 +2627,7 @@ package body Flyology.Object_Storage.Backends.Files is
             Ada.Directories.Delete_File (US.To_String (Temp));
          end if;
          Info := Empty_Info;
+         Identity := (others => <>);
          if In_Callback then
             raise;
          else

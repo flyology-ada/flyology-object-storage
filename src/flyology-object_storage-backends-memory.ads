@@ -90,6 +90,19 @@ package Flyology.Object_Storage.Backends.Memory is
       Configuration : out Bucket_Versioning_Configuration;
       Result        : out Status);
 
+   --  Publish one buffered generation and return its version identity from
+   --  the same protected-state commit.
+   --  @param Item In-memory store
+   --  @param Bucket Destination bucket name
+   --  @param Key Destination object key
+   --  @param Source One-shot body source consumed synchronously
+   --  @param Options Complete object publication options
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Metadata published on success
+   --  @param Identity Omitted, opaque, or null identity on success only
+   --  @param Result Publication result
+   --  @param Conditions Atomic destination ETag predicates
    overriding procedure Put_Object
      (Item     : in out Store;
       Bucket   : String;
@@ -99,6 +112,7 @@ package Flyology.Object_Storage.Backends.Memory is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
+      Identity : out Version_Identity;
       Result   : out Status;
       Conditions : Write_Conditions := Default_Write_Conditions);
 
@@ -449,6 +463,7 @@ private
          Tags   : Object_Tag_Set;
          Conditions : Write_Conditions;
          Stored : out Object_Information;
+         Identity : out Version_Identity;
          Result : out Status);
       procedure Fetch
         (Bucket : String;

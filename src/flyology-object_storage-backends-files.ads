@@ -98,6 +98,20 @@ package Flyology.Object_Storage.Backends.Files is
       Configuration : out Bucket_Versioning_Configuration;
       Result        : out Status);
 
+   --  Publish an unversioned or suspended null generation and return its
+   --  identity from the same rename boundary. Enabled retained publication is
+   --  rejected before rename because this backend cannot retain generations.
+   --  @param Item Filesystem store
+   --  @param Bucket Destination bucket name
+   --  @param Key Destination object key
+   --  @param Source One-shot body source consumed synchronously
+   --  @param Options Complete object publication options
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Metadata published on success
+   --  @param Identity Omitted or null identity on success only
+   --  @param Result Publication result
+   --  @param Conditions Atomic destination ETag predicates
    overriding procedure Put_Object
      (Item     : in out Store;
       Bucket   : String;
@@ -107,6 +121,7 @@ package Flyology.Object_Storage.Backends.Files is
       Token    : access Flyology.Cancellation.Token;
       Deadline : Ada.Real_Time.Time;
       Info     : out Object_Information;
+      Identity : out Version_Identity;
       Result   : out Status;
       Conditions : Write_Conditions := Default_Write_Conditions);
 

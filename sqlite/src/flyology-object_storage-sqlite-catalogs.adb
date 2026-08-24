@@ -2621,6 +2621,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Info             : in out Object_Information;
       Tags             : Object_Tag_Set;
       Previous_Payload : out US.Unbounded_String;
+      Identity         : out Backends.Version_Identity;
       Result           : out Status;
       Conditions       : Write_Conditions := Default_Write_Conditions)
    is
@@ -2631,8 +2632,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Versioning : Bucket_Versioning_Status := Versioning_Unconfigured;
       Upsert : DB.Statement;
       Locked : Boolean := False;
+      Published_Identity : Backends.Version_Identity;
    begin
       Previous_Payload := US.Null_Unbounded_String;
+      Identity := (others => <>);
       Item.Gate.Acquire;
       Locked := True;
       DB.Begin_Transaction (Item.Database);
@@ -2771,6 +2774,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       case Versioning is
          when Versioning_Unconfigured =>
             Info.Version := US.Null_Unbounded_String;
+            Published_Identity := (others => <>);
             Publish_Data_Generation_Internal
               (Item, Bucket, Key, "null", Replace_All => True,
                Replace_Null => False);
@@ -2782,18 +2786,27 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                  Generated_Version_ID (Bucket, Key, Publication);
             begin
                Info.Version := US.To_Unbounded_String (Version_ID);
+               Published_Identity :=
+                 (Has_Version_ID  => True,
+                  Is_Null_Version => False,
+                  Version_ID      => Info.Version);
                Publish_Data_Generation_Internal
                  (Item, Bucket, Key, Version_ID, Replace_All => False,
                   Replace_Null => False, Expected_Order => Publication);
             end;
          when Versioning_Suspended =>
             Info.Version := US.Null_Unbounded_String;
+            Published_Identity :=
+              (Has_Version_ID  => True,
+               Is_Null_Version => True,
+               Version_ID      => US.Null_Unbounded_String);
             Publish_Data_Generation_Internal
               (Item, Bucket, Key, "null", Replace_All => False,
                Replace_Null => True);
       end case;
       DB.Commit (Item.Database);
       In_Transaction := False;
+      Identity := Published_Identity;
       Result := Success;
       Item.Gate.Release;
       Locked := False;
@@ -2805,7 +2818,26 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          if Locked then
             Item.Gate.Release;
          end if;
+         Identity := (others => <>);
          raise;
+   end Put_Object;
+
+   procedure Put_Object
+     (Item             : in out Catalog;
+      Bucket           : String;
+      Key              : String;
+      Payload          : String;
+      Info             : in out Object_Information;
+      Tags             : Object_Tag_Set;
+      Previous_Payload : out US.Unbounded_String;
+      Result           : out Status;
+      Conditions       : Write_Conditions := Default_Write_Conditions)
+   is
+      Identity : Backends.Version_Identity;
+   begin
+      Put_Object
+        (Item, Bucket, Key, Payload, Info, Tags, Previous_Payload,
+         Identity, Result, Conditions);
    end Put_Object;
 
    procedure Refresh_Current_Mirror_Internal

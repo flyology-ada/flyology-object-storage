@@ -621,17 +621,6 @@ package Flyology.Object_Storage.Backends is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status) is abstract;
 
-   procedure Put_Object
-     (Item     : in out Backend;
-      Bucket   : String;
-      Key      : String;
-      Source   : in out Byte_Source'Class;
-      Options  : Put_Options;
-      Token    : access Flyology.Cancellation.Token;
-      Deadline : Ada.Real_Time.Time;
-      Info     : out Object_Information;
-      Result   : out Status;
-      Conditions : Write_Conditions := Default_Write_Conditions) is abstract;
    --  A successful implementation consumes Source through Finished, validates
    --  its declared length, and publishes the object only after all source
    --  validation succeeds. Conditions are evaluated atomically against the
@@ -642,6 +631,58 @@ package Flyology.Object_Storage.Backends is
    --  a backend can publish atomically and then fail while confirming durable
    --  metadata. Callers that lose this result must reconcile with one atomic
    --  Get_Object body-and-information snapshot before any conditional retry.
+   --  Identity is returned from the same publication boundary as Info. It is
+   --  omitted for an unversioned bucket, contains the opaque retained version
+   --  for enabled versioning, and represents S3's `null` identity for
+   --  suspended versioning. Every non-success outcome returns its default
+   --  value.
+   --  @param Item Backend that owns the publication boundary
+   --  @param Bucket Destination bucket name
+   --  @param Key Destination object key
+   --  @param Source One-shot body source consumed synchronously
+   --  @param Options Complete object metadata, tags, and checksum policy
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Metadata of the object generation published on success
+   --  @param Identity Version identity published by the same atomic mutation
+   --  @param Result Publication result; Backend_Unavailable is ambiguous
+   --  @param Conditions Atomic destination ETag predicates
+   procedure Put_Object
+     (Item     : in out Backend;
+      Bucket   : String;
+      Key      : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Information;
+      Identity : out Version_Identity;
+      Result   : out Status;
+      Conditions : Write_Conditions := Default_Write_Conditions) is abstract;
+
+   --  Compatibility convenience when the publication identity is not needed.
+   --  This drives the same primitive and discards only its atomic identity.
+   --  @param Item Backend that owns the publication boundary
+   --  @param Bucket Destination bucket name
+   --  @param Key Destination object key
+   --  @param Source One-shot body source consumed synchronously
+   --  @param Options Complete object metadata, tags, and checksum policy
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Info Metadata of the object generation published on success
+   --  @param Result Publication result; Backend_Unavailable is ambiguous
+   --  @param Conditions Atomic destination ETag predicates
+   procedure Put_Object
+     (Item     : in out Backend'Class;
+      Bucket   : String;
+      Key      : String;
+      Source   : in out Byte_Source'Class;
+      Options  : Put_Options;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Info     : out Object_Information;
+      Result   : out Status;
+      Conditions : Write_Conditions := Default_Write_Conditions);
 
    --  Copy one immutable source snapshot to the destination. The snapshot
    --  contains the exact body, Object_Information, metadata, and tags from one

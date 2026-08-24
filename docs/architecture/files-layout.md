@@ -108,6 +108,10 @@ the S3 null generation, so current and explicit `null` selectors are aliases
 for HEAD, GET, attributes, and tag operations, including after reopen. Opaque
 exact selectors return `Not_Implemented`; the backend does not invent version
 IDs or imply that configuration storage supplies retained object versions.
+Ordinary PUT therefore returns no version identity while unconfigured, returns
+the null identity while suspended, and fails with `Not_Implemented` before its
+publication rename while enabled. A fully staged source may already have been
+consumed, but the prior object remains unchanged on that capability rejection.
 
 DeleteObjects holds the publication gate and performs a complete nonmutating
 preflight before the first removal. Conditions therefore observe one stable

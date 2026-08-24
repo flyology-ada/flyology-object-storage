@@ -17187,6 +17187,11 @@ package body Object_Storage_Test_Cases is
            Files.Open (Root, Commit => Files.Process_Crash_Atomic);
          Value : Bucket_Versioning_Configuration;
          Result : Status;
+         Info : Object_Information;
+         Publication : Version_Identity :=
+           (Has_Version_ID  => True,
+            Is_Null_Version => False,
+            Version_ID      => US.To_Unbounded_String ("stale"));
       begin
          Store.Get_Bucket_Versioning
            ("versioning-bucket", null, Ada.Real_Time.Time_Last,
@@ -17196,6 +17201,58 @@ package body Object_Storage_Test_Cases is
             and then Value.Status = Versioning_Enabled
             and then Value.MFA_Delete = MFA_Delete_Enabled,
             "files versioning configuration did not persist");
+         declare
+            Source : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String ("blocked"),
+               Position => 0,
+               Length   => (Kind => Known, Bytes => 7),
+               Bad_Last => False);
+         begin
+            Store.Put_Object
+              ("versioning-bucket", "enabled", Source,
+               Default_Put_Options, null, Ada.Real_Time.Time_Last, Info,
+               Publication, Result);
+         end;
+         Assert
+           (Result = Not_Implemented
+            and then not Publication.Has_Version_ID,
+            "files enabled PutObject was not rejected before publication");
+         Store.Head_Object
+           ("versioning-bucket", "enabled", null,
+            Ada.Real_Time.Time_Last, Info, Result);
+         Assert
+           (Result = Not_Found,
+            "files enabled PutObject published despite capability rejection");
+
+         Store.Put_Bucket_Versioning
+           ("versioning-bucket",
+            (Status => Versioning_Suspended,
+             MFA_Delete => MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Result,
+            MFA_Validated => True);
+         Assert (Result = Success, "files suspension setup failed");
+         declare
+            Source : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String ("null"),
+               Position => 0,
+               Length   => (Kind => Known, Bytes => 4),
+               Bad_Last => False);
+         begin
+            Store.Put_Object
+              ("versioning-bucket", "suspended", Source,
+               Default_Put_Options, null, Ada.Real_Time.Time_Last, Info,
+               Publication, Result);
+         end;
+         Assert
+           (Result = Success
+            and then Publication.Has_Version_ID
+            and then Publication.Is_Null_Version
+            and then US.Length (Publication.Version_ID) = 0,
+            "files suspended PutObject lost its atomic null identity");
+         Store.Delete_Object
+           ("versioning-bucket", "suspended", null,
+            Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "files null identity cleanup failed");
          Store.Delete_Bucket
            ("versioning-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert

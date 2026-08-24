@@ -89,7 +89,7 @@ rather than a payload-hash mismatch proves that the source was not consumed.
 | 12 | `ChecksumXXHASH128` | Emit/decode only as one canonical full-object digest. |
 | 13 | `ChecksumType` | Require `FULL_OBJECT` when a checksum is present; normalize an omitted external type to full-object. |
 | 14 | `ServerSideEncryption` | Strict external decode; omitted by the Flyology server. |
-| 15 | `VersionId` | Bounded decode; omitted for Flyology's unversioned objects. |
+| 15 | `VersionId` | Bounded decode; omitted for unversioned objects, emitted as the exact retained identity for enabled memory/SQLite buckets, and emitted as `null` for suspended memory/files/SQLite buckets. Files rejects enabled publication before rename because it has no retained-generation data plane. |
 | 16 | `SSECustomerAlgorithm` | Strict external decode and relationship checks; omitted by Flyology. |
 | 17 | `SSECustomerKeyMD5` | Canonical Base64 external decode; omitted by Flyology. |
 | 18 | `SSEKMSKeyId` | Bounded external decode and relationship checks; omitted by Flyology. |
@@ -112,6 +112,14 @@ transaction. Every backend commits the body, entity information, system and
 user metadata, tags, and checksum as one tuple. A source exception, malformed
 validator, failed condition, capacity failure, or checksum mismatch leaves the
 prior tuple byte-for-byte and information-for-information unchanged.
+
+The backend returns a success-only `Version_Identity` from that same protected,
+rename, or transactional publication boundary. It distinguishes absence from
+the S3 `null` sentinel, so the authenticated server never performs a racy
+follow-up HEAD merely to construct `x-amz-version-id`. The shared memory/SQLite
+state-machine corpus checks unconfigured, enabled, suspended, replacement, and
+failed-condition identities; the files corpus checks enabled fail-before-rename
+and suspended null publication.
 
 Ordinary complete objects accept all ten pinned full-body algorithms. This is
 deliberately separate from the multipart algorithm/type predicate. HeadObject

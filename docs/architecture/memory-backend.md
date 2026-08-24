@@ -75,6 +75,9 @@ Status and MFA-delete fields can be updated independently inside the same
 protected operation, so readers observe one old-or-new snapshot. The same
 protected action rechecks the current MFA Delete state and a fail-closed caller
 attestation before publishing either field. A two-writer race admits only
-linearizable old/new combinations. This state is configuration metadata only:
-the memory backend does not thereby create object versions or claim
-ListObjectVersions behavior.
+linearizable old/new combinations. Ordinary PUT, multipart completion, current
+deletion, selected reads/tags/deletion, and ListObjectVersions consume that
+state inside the same protected store. Enabled publication appends an opaque
+generation, suspended publication replaces the null generation, and
+unconfigured publication replaces all history. Each successful PUT returns
+the exact omitted, opaque, or null identity from that protected commit.

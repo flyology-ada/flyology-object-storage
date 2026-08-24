@@ -8649,6 +8649,8 @@ begin
       begin
          Require
            (Has (Put_Object_Response, "200 OK")
+            and then Has
+              (Put_Object_Response, "x-amz-version-id: null" & CRLF)
             and then Has (Put_Tags_Response, "200 OK")
             and then Has
               (Put_Tags_Response, "x-amz-version-id: null" & CRLF)
@@ -8666,7 +8668,7 @@ begin
             and then Has (Delete_Object_Response, "204 No Content")
             and then Has
               (Delete_Object_Response, "x-amz-version-id: null" & CRLF),
-            "null-version object tagging route or identity mismatch");
+            "null-version PutObject or tagging identity mismatch");
       end;
       Store.Put_Bucket_Versioning
         (Bucket,

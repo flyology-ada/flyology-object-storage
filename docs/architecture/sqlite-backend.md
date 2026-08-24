@@ -53,7 +53,8 @@ every data generation has exactly one immutable payload reference. Existing
 catalogs migrate each current object as the S3 `null` generation and copy its
 tags, metadata, and parts under one exclusive transaction. Ordinary PUT reads
 the bucket versioning state and publishes its current mirror and retained
-generation in the same transaction: unconfigured buckets replace all history
+generation in the same transaction, returning the matching omitted, opaque,
+or null publication identity: unconfigured buckets replace all history
 with `null`, enabled buckets append a unique opaque generation, and suspended
 buckets replace only the `null` generation. Multipart completion follows the
 same three publication modes and snapshots its completed-part metadata with

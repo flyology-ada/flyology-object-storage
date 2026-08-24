@@ -64,6 +64,40 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket : String;
       Result : out Status);
 
+   --  Commit object state, retained-generation state, and Identity in one
+   --  transaction. Identity has its default value on every non-success path.
+   --  @param Item Catalog transaction owner
+   --  @param Bucket Destination bucket name
+   --  @param Key Destination object key
+   --  @param Payload Immutable external payload identifier
+   --  @param Info Metadata committed and assigned its version on success
+   --  @param Tags Complete object tag set
+   --  @param Previous_Payload Replaced payload eligible for reclamation
+   --  @param Identity Omitted, opaque, or null publication identity
+   --  @param Result Publication result
+   --  @param Conditions Atomic destination ETag predicates
+   procedure Put_Object
+     (Item             : in out Catalog;
+      Bucket           : String;
+      Key              : String;
+      Payload          : String;
+      Info             : in out Object_Information;
+      Tags             : Object_Tag_Set;
+      Previous_Payload : out Ada.Strings.Unbounded.Unbounded_String;
+      Identity         : out Backends.Version_Identity;
+      Result           : out Status;
+      Conditions       : Write_Conditions := Default_Write_Conditions);
+
+   --  Compatibility form when the publication identity is not needed.
+   --  @param Item Catalog transaction owner
+   --  @param Bucket Destination bucket name
+   --  @param Key Destination object key
+   --  @param Payload Immutable external payload identifier
+   --  @param Info Metadata committed and assigned its version on success
+   --  @param Tags Complete object tag set
+   --  @param Previous_Payload Replaced payload eligible for reclamation
+   --  @param Result Publication result
+   --  @param Conditions Atomic destination ETag predicates
    procedure Put_Object
      (Item             : in out Catalog;
       Bucket           : String;
