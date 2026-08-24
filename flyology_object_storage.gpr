@@ -35,4 +35,9 @@ project Flyology_Object_Storage is
       for Artifacts (".") use ("share");
    end Install;
 
+   package Documentation is
+      for Excluded_Project_Files use
+        (external ("FLYOLOGY_ROOT", "") & "/flyology.gpr");
+   end Documentation;
+
 end Flyology_Object_Storage;
