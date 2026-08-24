@@ -855,6 +855,33 @@ package body Flyology.Object_Storage.Client.Objects is
       end;
    end Delete;
 
+   function Delete_Objects
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Request  : S3.Deletions.Delete_Objects_Request;
+      Parameters : Low_Level.Delete_Objects_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Delete_Objects_Result
+   is
+      --  The object operation, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+      Operation : Scoped.Delete_Objects_Operation := Scoped.Delete_Objects
+        (Set'Access, Client'Access, Origin, Bucket, Request, Parameters,
+         Identity, Flyology.HTTP.Client.Deadline_After (Timeout), Region,
+         Style, Token);
+      Result : Scoped.Delete_Objects_Result;
+   begin
+      Flyology.Operations.Wait_All (Set);
+      Scoped.Finish (Operation, Result);
+      return Result;
+   end Delete_Objects;
+
    function Delete
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;

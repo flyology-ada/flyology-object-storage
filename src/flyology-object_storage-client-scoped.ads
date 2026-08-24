@@ -9,6 +9,7 @@ with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.IO;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Operations;
 
@@ -778,6 +779,131 @@ package Flyology.Object_Storage.Client.Scoped is
    procedure Finish
      (Operation : in out Delete_Operation;
       Result    : out Delete_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  What is known about one DeleteObjects batch after terminal drain. A
+   --  validated 200 proves that the server processed the batch, while each
+   --  per-entry Deleted/Error result remains authoritative. Unknown outcomes
+   --  require read-only reconciliation of every requested generation before
+   --  any caller-selected retry.
+   --  @enum Batch_Processed Complete validated response proves processing
+   --  @enum Batch_Definitely_Not_Processed Exact rejection or non-admission
+   --     proves the batch was not processed
+   --  @enum Batch_Outcome_Unknown Some entries may have been durably applied
+   --  @enum Batch_Cancelled_Before_Admission Cancellation preceded admission
+   type Delete_Objects_Disposition is
+     (Batch_Processed,
+      Batch_Definitely_Not_Processed,
+      Batch_Outcome_Unknown,
+      Batch_Cancelled_Before_Admission);
+
+   --  Shape of a terminal DeleteObjects result.
+   --  @enum Delete_Objects_Response_Available Complete modeled response exists
+   --  @enum Delete_Objects_Exchange_Failed No complete response exists
+   type Delete_Objects_Result_Kind is
+     (Delete_Objects_Response_Available, Delete_Objects_Exchange_Failed);
+
+   --  Typed batch-processing certainty plus either the exact per-entry S3
+   --  response or the composable HTTP failure that prevented decoding.
+   --  @field Kind Result shape
+   --  @field Disposition Batch-processing certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Delete_Objects_Result
+     (Kind : Delete_Objects_Result_Kind := Delete_Objects_Exchange_Failed)
+   is record
+      Disposition : Delete_Objects_Disposition := Batch_Outcome_Unknown;
+      Failure     : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Delete_Objects_Response_Available =>
+            Response : Low_Level.Delete_Objects_Outcome;
+         when Delete_Objects_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot DeleteObjects parent with one hidden HTTP child. The exact
+   --  serialized request XML is owned by the operation and cannot be replayed
+   --  after possible server admission.
+   type Delete_Objects_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one bounded non-replaying DeleteObjects operation.
+   --  Request validation, serialization, and signing finish before start.
+   --  @param Operation Fresh or consumed established batch operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose selected entries are deleted
+   --  @param Request Bounded ordered delete request copied before start
+   --  @param Parameters Complete modeled DeleteObjects controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Start_Delete_Objects
+     (Operation : in out Delete_Objects_Operation;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Request  : S3.Deletions.Delete_Objects_Request;
+      Parameters : Low_Level.Delete_Objects_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded non-replaying DeleteObjects operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose selected entries are deleted
+   --  @param Request Bounded ordered delete request copied before start
+   --  @param Parameters Complete modeled DeleteObjects controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven batch deletion operation
+   function Delete_Objects
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Request  : S3.Deletions.Delete_Objects_Request;
+      Parameters : Low_Level.Delete_Objects_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Delete_Objects_Operation;
+
+   --  Consume one terminal DeleteObjects operation.
+   --  @param Operation Terminal batch deletion request
+   --  @param Result Typed per-entry response or bounded ambiguous failure
+   procedure Finish
+     (Operation : in out Delete_Objects_Operation;
+      Result    : out Delete_Objects_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
    --  What is known about one CreateMultipartUpload mutation after terminal
@@ -1889,6 +2015,27 @@ private
    end record;
 
    --  @exclude
+   type Delete_Objects_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Source_Position : Natural := 0;
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Delete_Objects_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
    --  @param Item Internal request source
    --  @return Stable complete-object length
    overriding function Declared_Length
@@ -2034,6 +2181,40 @@ private
    --  @exclude
    --  @param Item Internal DeleteObject parent
    overriding procedure Finalize (Item : in out Delete_Operation);
+
+   --  @exclude
+   overriding function Declared_Length
+     (Item : Delete_Objects_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Delete_Objects_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Delete_Objects_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Delete_Objects_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Delete_Objects_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Delete_Objects_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Delete_Objects_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Delete_Objects_Operation);
 
    --  @exclude
    --  @param Item Internal empty CreateMultipartUpload request source
@@ -2412,6 +2593,20 @@ private
      (Value     : Low_Level.Complete_Multipart_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
       return Multipart_Completion_Result;
+
+   --  Private normalization boundary shared with the strict test child.
+   --  @exclude
+   function Normalize_Delete_Objects_Response
+     (Value     : Low_Level.Delete_Objects_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Delete_Objects_Result;
+
+   --  @exclude
+   function Normalize_Delete_Objects_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Delete_Objects_Result;
 
    --  @exclude
    --  @param Kind Typed HTTP failure

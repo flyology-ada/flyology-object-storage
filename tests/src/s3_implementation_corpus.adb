@@ -84,6 +84,8 @@ procedure S3_Implementation_Corpus is
    use type Client_Objects.Delete_Outcome_Kind;
    use type Scoped.Delete_Result_Kind;
    use type Scoped.Deletion_Disposition;
+   use type Scoped.Delete_Objects_Result_Kind;
+   use type Scoped.Delete_Objects_Disposition;
    use type Scoped.Create_Multipart_Result_Kind;
    use type Scoped.Multipart_Creation_Disposition;
    use type Scoped.Upload_Part_Result_Kind;
@@ -2174,17 +2176,16 @@ procedure S3_Implementation_Corpus is
                Version_ID => US.Null_Unbounded_String,
                others     => <>));
          declare
-            Prepared : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_Delete_Objects
-                (Origin, Low_Level.Path_Style, Bucket, Request, Parameters,
-                 Identity, "us-east-1", Timestamp);
-            Deleted : constant Low_Level.Delete_Objects_Outcome :=
-              Low_Level.Execute_Delete_Objects
-                (HTTP, Prepared, Timeout => 60.0);
+            Deleted : constant Scoped.Delete_Objects_Result :=
+              Client_Objects.Delete_Objects
+                (HTTP, Origin, Bucket, Request, Parameters, Identity,
+                 Timeout => 60.0);
          begin
-            if Deleted.Kind /= Low_Level.Objects_Deleted
-              or else Deleted.Result.Result.Deleted.Length /= 2
-              or else not Deleted.Result.Result.Errors.Is_Empty
+            if Deleted.Kind /= Scoped.Delete_Objects_Response_Available
+              or else Deleted.Disposition /= Scoped.Batch_Processed
+              or else Deleted.Response.Kind /= Low_Level.Objects_Deleted
+              or else Deleted.Response.Result.Result.Deleted.Length /= 2
+              or else not Deleted.Response.Result.Result.Errors.Is_Empty
             then
                raise Program_Error with
                  "S3 implementation rejected typed DeleteObjects";
@@ -3691,33 +3692,41 @@ procedure S3_Implementation_Corpus is
                   Version_ID => Copy_ID,
                   others     => <>));
             declare
-               Prepared : constant Low_Level.Prepared_Request :=
-                 Low_Level.Prepare_Delete_Objects
-                   (Origin, Low_Level.Path_Style, Probe, Request, Parameters,
-                    Identity, "us-east-1", Timestamp);
-               Removed : constant Low_Level.Delete_Objects_Outcome :=
-                 Low_Level.Execute_Delete_Objects
-                   (HTTP, Prepared, Timeout => 30.0);
+               Removed : constant Scoped.Delete_Objects_Result :=
+                 Client_Objects.Delete_Objects
+                   (HTTP, Origin, Probe, Request, Parameters, Identity,
+                    Timeout => 30.0);
             begin
-               if Removed.Kind /= Low_Level.Objects_Deleted
-                 or else Removed.Status /= 200
-                 or else Removed.Result.Result.Deleted.Length /= 3
-                 or else not Removed.Result.Result.Errors.Is_Empty
+               if Removed.Kind /= Scoped.Delete_Objects_Response_Available
+                 or else Removed.Disposition /= Scoped.Batch_Processed
+                 or else Removed.Response.Kind /= Low_Level.Objects_Deleted
+                 or else Removed.Response.Status /= 200
+                 or else Removed.Response.Result.Result.Deleted.Length /= 3
+                 or else not Removed.Response.Result.Result.Errors.Is_Empty
                  or else US.To_String
-                   (Removed.Result.Result.Deleted (1).Key) /= Object_Key
-                 or else Removed.Result.Result.Deleted (1).Version_ID /=
+                   (Removed.Response.Result.Result.Deleted (1).Key) /=
+                     Object_Key
+                 or else Removed.Response.Result.Result.Deleted
+                   (1).Version_ID /=
                    Second_ID
-                 or else Removed.Result.Result.Deleted (1).Delete_Marker.Is_Set
+                 or else Removed.Response.Result.Result.Deleted
+                   (1).Delete_Marker.Is_Set
                  or else US.To_String
-                   (Removed.Result.Result.Deleted (2).Key) /= Batch_Key
-                 or else Removed.Result.Result.Deleted (2).Version_ID /=
+                   (Removed.Response.Result.Result.Deleted (2).Key) /=
+                     Batch_Key
+                 or else Removed.Response.Result.Result.Deleted
+                   (2).Version_ID /=
                    Batch_ID
-                 or else Removed.Result.Result.Deleted (2).Delete_Marker.Is_Set
+                 or else Removed.Response.Result.Result.Deleted
+                   (2).Delete_Marker.Is_Set
                  or else US.To_String
-                   (Removed.Result.Result.Deleted (3).Key) /= Copy_Key
-                 or else Removed.Result.Result.Deleted (3).Version_ID /=
+                   (Removed.Response.Result.Result.Deleted (3).Key) /=
+                     Copy_Key
+                 or else Removed.Response.Result.Result.Deleted
+                   (3).Version_ID /=
                    Copy_ID
-                 or else Removed.Result.Result.Deleted (3).Delete_Marker.Is_Set
+                 or else Removed.Response.Result.Result.Deleted
+                   (3).Delete_Marker.Is_Set
                then
                   raise Program_Error with
                     "durable exact-generation DeleteObjects mismatch";

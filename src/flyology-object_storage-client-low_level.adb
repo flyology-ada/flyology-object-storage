@@ -9905,9 +9905,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
          return Result : Prepared_Request := Prepare_Object_Request
            (Delete_Objects_Operation, "POST", Origin, Style, Bucket, "",
             Query, Headers, Payload, "", Identity, Region, Timestamp,
-            Object_Resource => False)
+            Object_Resource => False, Store_Payload => False)
          do
             Result.Operation := Delete_Objects_Operation;
+            Result.Owned_Request_Payload :=
+              US.To_Unbounded_String (Payload);
+            Result.Requested_Delete_Objects_Request_Payer :=
+              Parameters.Request_Payer;
          end return;
       end;
    exception
@@ -9950,6 +9954,64 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "malformed DeleteObjects response";
    end Decode_Delete_Objects_Response;
 
+   function Decode_Delete_Objects_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Objects_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "invalid DeleteObjects response header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else not Valid_List_Response_Header_Text (Value)
+            then
+               raise Invalid_Response with
+                 "invalid DeleteObjects response header value";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+   begin
+      if Prepared.Operation /= Delete_Objects_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Request_Charged : constant String :=
+           Singleton_Header ("x-amz-request-charged");
+         Outcome : constant Delete_Objects_Outcome :=
+           Decode_Delete_Objects_Response
+             (Flyology.HTTP.Client.Status (Response), Payload,
+              Request_Charged,
+              Singleton_Header ("x-amz-request-id"),
+              Singleton_Header ("x-amz-id-2"), Limits);
+      begin
+         if Request_Charged'Length > 0
+           and then
+             (Request_Charged /= "requester"
+              or else US.To_String
+                (Prepared.Requested_Delete_Objects_Request_Payer) /=
+                  "requester")
+         then
+            raise Invalid_Response with
+              "DeleteObjects charged response was not requested";
+         end if;
+         return Outcome;
+      end;
+   end Decode_Delete_Objects_Complete_Response;
+
    function Execute_Delete_Objects
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -9963,24 +10025,18 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
+         Source : Non_Replayable_Buffer_Source :=
+           (Data => Prepared.Owned_Request_Payload, Next => 1);
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
-             (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         Request_Charged : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-charged");
+             (Client, Prepared.Message, Source, Timeout, Token);
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_Delete_Objects_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload),
-            Request_Charged, Request_ID, Host_ID, Limits);
+         return Decode_Delete_Objects_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

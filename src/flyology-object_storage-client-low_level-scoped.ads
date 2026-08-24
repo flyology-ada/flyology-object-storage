@@ -109,6 +109,28 @@ package Flyology.Object_Storage.Client.Low_Level.Scoped is
       Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
       Token     : access Flyology.Cancellation.Token := null);
 
+   --  Start a prepared DeleteObjects exchange with a nonblocking one-shot
+   --  XML source and a bounded response sink. Prepared, Source, Sink, Client,
+   --  Token, and their owners must outlive terminal typed Finish.
+   --  @param Operation Established HTTP child operation
+   --  @param Client Configured origin client
+   --  @param Prepared Prepared DeleteObjects request
+   --  @param Source Nonblocking one-shot serialized batch source
+   --  @param Sink Bounded complete-response sink
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source
+   --  @exception Invalid_Request Prepared is not DeleteObjects
+   procedure Start_Delete_Objects
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null);
+
    --  Start a prepared CreateMultipartUpload exchange with a deliberately
    --  non-replayable empty source and a bounded immediate response sink.
    --  Prepared, Source, Sink, Client, Token, and their owners must outlive

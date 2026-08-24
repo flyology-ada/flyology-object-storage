@@ -53,6 +53,18 @@ during that loop may leave a prefix applied. No whole-batch cross-file
 atomicity is claimed, and callers must reconcile before retrying an
 indeterminate conditional batch.
 
+The additive composable client owns the exact serialized XML through terminal
+drain and supplies it through a one-shot non-rewindable source. It bounds the
+complete response by the maintained S3 XML parser limit and validates physical
+singleton headers plus Requester Pays binding from the same response snapshot.
+A validated HTTP 200 is `Batch_Processed`; its per-entry Deleted/Error members
+remain authoritative. Exact modeled pre-mutation rejections are
+`Batch_Definitely_Not_Processed`. Cancellation before admission has its own
+typed result, while any admitted timeout, transport failure, malformed or
+oversized response, or inconclusive service result is `Batch_Outcome_Unknown`.
+No automatic retry or helper task is used. The synchronous typed overload
+waits on the same composable state machine.
+
 Executable evidence is provided by:
 
 - `backends.delete-objects-conformance` for memory and files, including
@@ -67,7 +79,8 @@ Executable evidence is provided by:
 - `s3_server_application_corpus` for authenticated Content-MD5/checksum/control
   admission, conditions, ordering, quiet results, exact VersionId echo,
   marker identity, selected-generation nonmutation, and explicit boundaries;
-- `s3_http_socket_corpus` for a signed, checksummed typed request and complete
+- `s3_http_socket_corpus` for a signed, checksummed composable request,
+  pre-admission cancellation, consumed-operation restart, and complete
   Deleted/Error response over fragmented real sockets from both Flyology task
   models; and
 - `s3_implementation_corpus` plus the s5cmd oracle for interoperable batch

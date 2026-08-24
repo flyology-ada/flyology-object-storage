@@ -3435,6 +3435,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Objects_Outcome;
 
+   --  Decode one complete DeleteObjects HTTP response. Physical singleton
+   --  headers and Requester Pays consistency are validated before exposing
+   --  the modeled per-entry result.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared DeleteObjects request
+   --  @param Limits Bounded XML parser limits
+   --  @return Typed batch result or S3 rejection
+   --  @exception Invalid_Request Prepared is not DeleteObjects
+   --  @exception Invalid_Response Complete response is inconsistent
+   function Decode_Delete_Objects_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Objects_Outcome;
+
    function Execute_Delete_Objects
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -4458,6 +4475,11 @@ private
       --  Derived request/response binding: a charged CopyObject response is
       --  valid only when the exact prepared request admitted requester pays.
       Requested_Copy_Request_Payer :
+        Ada.Strings.Unbounded.Unbounded_String;
+      --  Derived request/response binding: a charged DeleteObjects response
+      --  is valid only when the exact prepared request admitted requester
+      --  pays.
+      Requested_Delete_Objects_Request_Payer :
         Ada.Strings.Unbounded.Unbounded_String;
       --  Owned immutable bytes for prepared one-shot mutation bodies; this
       --  private storage prevents retaining caller-borrowed input.

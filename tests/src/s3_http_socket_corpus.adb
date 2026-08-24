@@ -112,6 +112,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Head_Result_Kind;
    use type Scoped.Delete_Result_Kind;
    use type Scoped.Deletion_Disposition;
+   use type Scoped.Delete_Objects_Result_Kind;
+   use type Scoped.Delete_Objects_Disposition;
    use type Scoped.Create_Multipart_Result_Kind;
    use type Scoped.Multipart_Creation_Disposition;
    use type HTTP_Client.Admission_Certainty;
@@ -2672,6 +2674,21 @@ procedure S3_HTTP_Socket_Corpus is
                "<Message>missing bucket</Message></Error>",
                "x-amz-request-id: delete-missing-request" & CRLF),
             "POST", "/missing-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", Delete_Objects_XML),
+            "POST", "/example-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", Delete_Objects_XML),
+            "POST", "/example-bucket?delete", "<Delete",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", Delete_Objects_XML,
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "POST", "/example-bucket?delete", "<Delete",
             Expected_Content_MD5 => "*");
          Serve
            (HTTP_Response
@@ -7544,43 +7561,49 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters.Checksum_Algorithm :=
               US.To_Unbounded_String ("CRC32");
             declare
-               Prepared : constant Low_Level.Prepared_Request :=
-                 Low_Level.Prepare_Delete_Objects
-                   (Origin, Low_Level.Path_Style, "example-bucket", Request,
-                    Parameters, Identity, "us-east-1", "20130524T000000Z");
-               Result : constant Low_Level.Delete_Objects_Outcome :=
-                 Low_Level.Execute_Delete_Objects
-                   (HTTP, Prepared, Timeout => 5.0);
+               Result : constant Scoped.Delete_Objects_Result :=
+                 Objects.Delete_Objects
+                   (HTTP, Origin, "example-bucket", Request, Parameters,
+                    Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Low_Level.Objects_Deleted
-                 or else Natural (Result.Result.Result.Deleted.Length) /= 1
-                 or else Natural (Result.Result.Result.Errors.Length) /= 1
-                 or else US.To_String (Result.Result.Request_Charged) /=
+               if Result.Kind /= Scoped.Delete_Objects_Response_Available
+                 or else Result.Disposition /= Scoped.Batch_Processed
+                 or else Result.Response.Kind /= Low_Level.Objects_Deleted
+                 or else Natural
+                   (Result.Response.Result.Result.Deleted.Length) /= 1
+                 or else Natural
+                   (Result.Response.Result.Result.Errors.Length) /= 1
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /=
                    "requester"
                  or else US.To_String
-                   (Result.Result.Result.Deleted.First_Element.Key) /=
+                   (Result.Response.Result.Result.Deleted.First_Element.Key) /=
                      "socket-delete-a"
                  or else US.To_String
-                   (Result.Result.Result.Deleted.First_Element.Version_ID) /=
+                   (Result.Response.Result.Result.Deleted.First_Element
+                      .Version_ID) /=
                      "version-a"
-                 or else not Result.Result.Result.Deleted.First_Element
-                   .Delete_Marker.Is_Set
-                 or else Result.Result.Result.Deleted.First_Element
+                 or else not
+                   Result.Response.Result.Result.Deleted.First_Element
+                     .Delete_Marker.Is_Set
+                 or else Result.Response.Result.Result.Deleted.First_Element
                    .Delete_Marker.Value
                  or else US.To_String
-                   (Result.Result.Result.Deleted.First_Element
+                   (Result.Response.Result.Result.Deleted.First_Element
                       .Delete_Marker_Version_ID) /= "marker-a"
                  or else US.To_String
-                   (Result.Result.Result.Errors.First_Element.Key) /=
+                   (Result.Response.Result.Result.Errors.First_Element.Key) /=
                      "socket-delete-b"
                  or else US.To_String
-                   (Result.Result.Result.Errors.First_Element.Version_ID) /=
+                   (Result.Response.Result.Result.Errors.First_Element
+                      .Version_ID) /=
                      "version-b"
                  or else US.To_String
-                   (Result.Result.Result.Errors.First_Element.Code) /=
+                   (Result.Response.Result.Result.Errors.First_Element.Code) /=
                      "AccessDenied"
                  or else US.To_String
-                   (Result.Result.Result.Errors.First_Element.Message) /=
+                   (Result.Response.Result.Result.Errors.First_Element
+                      .Message) /=
                      "denied"
                then
                   raise Program_Error with
@@ -7596,22 +7619,91 @@ procedure S3_HTTP_Socket_Corpus is
                   others     => <>));
             Parameters := (others => <>);
             declare
-               Prepared : constant Low_Level.Prepared_Request :=
-                 Low_Level.Prepare_Delete_Objects
-                   (Origin, Low_Level.Path_Style, "missing-bucket", Request,
-                    Parameters, Identity, "us-east-1", "20130524T000000Z");
-               Result : constant Low_Level.Delete_Objects_Outcome :=
-                 Low_Level.Execute_Delete_Objects
-                   (HTTP, Prepared, Timeout => 5.0);
+               Result : constant Scoped.Delete_Objects_Result :=
+                 Objects.Delete_Objects
+                   (HTTP, Origin, "missing-bucket", Request, Parameters,
+                    Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Low_Level.Delete_Objects_Rejected
-                 or else US.To_String (Result.Error.Code) /= "NoSuchBucket"
-                 or else US.To_String (Result.Error.Request_ID) /=
+               if Result.Kind /= Scoped.Delete_Objects_Response_Available
+                 or else Result.Disposition /=
+                   Scoped.Batch_Definitely_Not_Processed
+                 or else Result.Response.Kind /=
+                   Low_Level.Delete_Objects_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "NoSuchBucket"
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
                    "delete-missing-request"
                then
                   raise Program_Error with
                     "all-unsupported DeleteObjects socket classification " &
                     "mismatch";
+               end if;
+            end;
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+            begin
+               Stop.Request;
+               declare
+                  Result : constant Scoped.Delete_Objects_Result :=
+                    Objects.Delete_Objects
+                      (HTTP, Origin, "example-bucket", Request, Parameters,
+                       Identity, Timeout => 5.0, Token => Stop'Access);
+               begin
+                  if Result.Kind /= Scoped.Delete_Objects_Exchange_Failed
+                    or else Result.Disposition /=
+                      Scoped.Batch_Cancelled_Before_Admission
+                    or else Result.Failure /= Scoped.Cancelled
+                    or else Result.Admission /= HTTP_Client.Not_Admitted
+                  then
+                     raise Program_Error with
+                       "pre-admission DeleteObjects cancellation mismatch";
+                  end if;
+               end;
+            end;
+            declare
+               --  Batch parent, HTTP exchange, and one transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Scoped.Delete_Objects_Operation :=
+                 Scoped.Delete_Objects
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    Request, Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.Delete_Objects_Result;
+            begin
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.Delete_Objects_Response_Available
+                 or else Result.Disposition /= Scoped.Batch_Processed
+               then
+                  raise Program_Error with
+                    "direct DeleteObjects completion mismatch";
+               end if;
+               Scoped.Start_Delete_Objects
+                 (Operation, HTTP'Access, Origin, "example-bucket", Request,
+                  Parameters, Identity, HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.Delete_Objects_Response_Available
+                 or else Result.Disposition /= Scoped.Batch_Processed
+               then
+                  raise Program_Error with
+                    "direct DeleteObjects restart mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Scoped.Delete_Objects_Result :=
+                 Objects.Delete_Objects
+                   (HTTP, Origin, "example-bucket", Request, Parameters,
+                    Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Delete_Objects_Exchange_Failed
+                 or else Result.Disposition /= Scoped.Batch_Outcome_Unknown
+                 or else Result.Failure /=
+                   Scoped.Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+               then
+                  raise Program_Error with
+                    "DeleteObjects accepted duplicate response metadata";
                end if;
             end;
          end;
@@ -11863,6 +11955,8 @@ procedure S3_HTTP_Socket_Corpus is
 begin
    Flyology.Object_Storage.Client.Scoped.Testing.Check_Put_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.Check_Delete_Certainty_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_Delete_Objects_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_Create_Multipart_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.

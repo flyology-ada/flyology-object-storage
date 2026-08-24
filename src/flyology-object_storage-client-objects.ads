@@ -6,6 +6,7 @@ with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Client.Scoped;
+with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Core;
@@ -578,6 +579,35 @@ package Flyology.Object_Storage.Client.Objects is
       If_Match_Size : Low_Level.Optional_Byte_Count :=
         (Is_Set => False, Value => 0))
       return Scoped.Delete_Result;
+
+   --  Execute one DeleteObjects request by waiting on the composable
+   --  operation. Request is serialized and copied before admission; the
+   --  resulting one-shot body is never replayed. A processed result retains
+   --  the complete per-entry Deleted/Error response. Unknown outcomes require
+   --  read-only reconciliation of every requested generation before retry.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose selected entries are deleted
+   --  @param Request Bounded ordered delete request
+   --  @param Parameters Complete modeled DeleteObjects controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed batch certainty and per-entry response or failure
+   function Delete_Objects
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Request  : S3.Deletions.Delete_Objects_Request;
+      Parameters : Low_Level.Delete_Objects_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Delete_Objects_Result;
 
    --  Delete one object or a specific object version. S3 treats a missing
    --  unversioned key as a successful idempotent deletion. Every modeled
