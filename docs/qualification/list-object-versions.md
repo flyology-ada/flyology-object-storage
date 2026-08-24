@@ -1,8 +1,9 @@
 # ListObjectVersions qualification
 
 This record qualifies the bounded synchronous client, strict wire codecs,
-authenticated memory and SQLite server routes, and the memory, pure-files,
-and SQLite backend state machines for `ListObjectVersions`. The memory slice
+authenticated memory, pure-files, and SQLite server routes, and the memory,
+pure-files, and SQLite backend state machines for `ListObjectVersions`. The
+memory slice
 includes enabled and suspended delete markers, permanent selected-generation
 removal, and delimiter/common-prefix pagination. The SQLite slice additionally
 qualifies durable ordinary PUT,
@@ -13,9 +14,9 @@ part attributes, reopen recovery, and one authenticated retained-generation
 lifecycle across a real server process restart. The pure-files slice qualifies
 durable immutable generations, same-snapshot exact reads, bounded-memory
 listing, paired cursors, delimiter projection, retained multipart completion,
-reopen recovery, and pre/post durability-barrier publication oracles. It does
-not yet claim an authenticated files-server lifecycle or external-server
-interoperability.
+reopen recovery, pre/post durability-barrier publication oracles, and an
+authenticated retained-generation lifecycle across a real files-server
+restart. External-server interoperability is not claimed.
 
 ## Pinned authority and inventory
 
@@ -117,7 +118,7 @@ gate repeats the executable three times.
 ## Coverage boundary
 
 The machine ledger records `ListObjectVersions` as `covered / covered /
-partial / covered`. The memory backend preserves null and opaque object
+covered / covered`. The memory backend preserves null and opaque object
 generations across unconfigured, enabled, and suspended transitions; identical
 overwrites receive distinct opaque IDs; current, null, and exact generation
 reads and tags remain isolated; enabled deletes append unique markers;
@@ -140,10 +141,14 @@ marker removal that re-exposes the preceding generation. It also covers a
 signed delimiter request whose response combines object versions and one
 escaped common prefix.
 
-The SQLite black-box server gate creates a dedicated version-enabled bucket,
-publishes two ordinary versions through signed PutObject calls, and requires
+The files and SQLite black-box server gates each create a dedicated
+version-enabled bucket, publish two ordinary versions through signed PutObject
+calls, and require
 unique nonempty response version IDs in newest-first ListObjectVersions order.
-It exact-selects the older generation with whole GetObject and
+They also publish a peer generation and remove it together with the newer main
+generation through one signed exact-generation DeleteObjects request, checking
+both returned version identities and the resulting current state.
+They exact-select the older generation with whole GetObject and
 GetObjectAttributes, including its exact ETag and size, and the newer one with
 HeadObject, permanently removes the newer version, and requires the older
 version to become current. A simple delete then publishes a typed marker that
@@ -173,9 +178,9 @@ exact bytes for the older generation after a
 newer generation and delete marker have published, then removes the marker and
 requires the prior generation to become current. The durability matrix covers
 every pre/post barrier of versioned PUT and marker publication and accepts only
-complete old or new generation-bound bytes. Server coverage remains partial
-until the same retained lifecycle is qualified through the authenticated files
-server; external interoperability is not claimed.
+complete old or new generation-bound bytes. The authenticated files-server
+lane repeats the retained lifecycle before and after reopening the same root;
+external interoperability is not claimed.
 
 ## Gate evidence
 
@@ -184,14 +189,14 @@ assertions or unexpected errors, the 126-case files crash matrix, 320 checksum
 oracle vectors, 210 chunk boundaries, the strict server application corpus,
 and three repetitions of the native/lightweight socket and TLS corpora. The
 SQLite wrapper, catalog, backend, reopen, and upgrade gate passed separately.
-The authenticated SQLite black-box server slice passed the signed retained
-generation and delete-marker lifecycle together with its independent s5cmd
-byte, multi-delete, and cleanup oracles. A second lane prepares two retained
-generations, terminates the server process, reopens the same exclusive root,
-and repeats exact listing, whole GET, GetObjectAttributes, HEAD, deletion,
-marker, and cleanup checks through the authenticated endpoint. The lock gate
-also rejects a concurrent same-process root owner while permitting recovery
-after process death.
+The authenticated files and SQLite black-box server slices passed the signed
+retained-generation and delete-marker lifecycle together with their independent
+s5cmd byte, multi-delete, and cleanup oracles. Each restart lane prepares three
+retained generations, terminates the server process, reopens the same exclusive
+root, and repeats exact listing, whole GET, GetObjectAttributes, HEAD, batch
+deletion, marker, and cleanup checks through the authenticated endpoint. The
+lock gate also rejects a concurrent same-process root owner while permitting
+recovery after process death.
 The inventory verifier reported 45 modeled members across seven shapes and 23
 reciprocal vectors; the 116-operation coverage verifier and its negative oracle
 also passed. The backend-neutral memory/files/SQLite corpus covers state

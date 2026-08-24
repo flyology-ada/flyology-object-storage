@@ -72,7 +72,9 @@ Executable evidence is provided by:
   models; and
 - `s3_implementation_corpus` plus the s5cmd oracle for interoperable batch
   deletion across the pinned external servers and Flyology memory, files, and
-  SQLite servers.
+  SQLite servers; the files and SQLite lanes additionally delete two exact
+  retained generations in one signed batch and check the returned identities
+  through a real server restart.
 
 Reproduce the deterministic local qualification with:
 
@@ -82,6 +84,6 @@ Reproduce the deterministic local qualification with:
 ./sqlite/tests/scripts/test.sh
 ```
 
-The coverage ledger marks backend, client, and corpus covered. Server remains
-partial until an authenticated files-server retained-generation batch is added;
-the directory/policy exclusions above remain explicit.
+The coverage ledger marks backend, client, server, and corpus covered. The
+directory and policy exclusions above remain explicit capability boundaries;
+they do not weaken the qualified general-purpose bucket operation.

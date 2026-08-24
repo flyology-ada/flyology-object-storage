@@ -25,7 +25,7 @@ DeleteBucketWebsite	extended	missing	covered	missing	covered
 DeleteObject	core	covered	covered	covered	covered
 DeleteObjectAnnotation	extended	missing	covered	missing	covered
 DeleteObjectTagging	core	covered	covered	covered	covered
-DeleteObjects	core	covered	covered	partial	covered
+DeleteObjects	core	covered	covered	covered	covered
 DeletePublicAccessBlock	extended	missing	covered	missing	covered
 GetBucketAbac	extended	missing	covered	missing	covered
 GetBucketAccelerateConfiguration	extended	missing	covered	missing	covered
@@ -72,7 +72,7 @@ ListBuckets	core	covered	covered	covered	covered
 ListDirectoryBuckets	extended	missing	partial	missing	missing
 ListMultipartUploads	core	covered	covered	covered	covered
 ListObjectAnnotations	extended	missing	partial	missing	missing
-ListObjectVersions	core	covered	covered	partial	covered
+ListObjectVersions	core	covered	covered	covered	covered
 ListObjects	core	covered	covered	covered	covered
 ListObjectsV2	core	covered	covered	covered	covered
 ListParts	core	covered	covered	covered	covered

@@ -1,39 +1,36 @@
 # Bucket versioning configuration evidence
 
 This slice qualifies configuration semantics for `PutBucketVersioning` and
-`GetBucketVersioning`. Retained memory generations and SQLite ordinary PUT,
+`GetBucketVersioning`. Retained memory, pure-files, and SQLite ordinary PUT,
 delete-marker, version-addressed read/tag/delete, and ListObjectVersions
-behavior are qualified separately. SQLite retained-generation multipart
-completion and selected part attributes are also qualified; durable files
-generations remain absent.
+behavior are qualified separately. Pure-files and SQLite retained-generation
+multipart completion and selected part attributes are also qualified.
 
 Object tagging returns the current, null, or opaque retained identity from the
 same locked or transactional snapshot that reads or mutates the complete tag
 set. The authenticated memory corpus covers current and exact identities,
 exact-version isolation, missing selectors, and explicit null selection; the
-shared backend conformance repeats the identity contract on memory and SQLite,
-and SQLite reopens a suspended null generation without losing its tags or
-identity. Pure files exposes only current and explicit null aliases and rejects
-opaque retained IDs.
+shared backend conformance repeats the identity contract on memory, files, and
+SQLite, and both durable backends reopen a suspended null generation without
+losing its tags or identity.
 
 Ordinary PutObject likewise returns its success identity from the mutation
 that publishes the complete object tuple. Unconfigured publication omits an
-identity, enabled memory/SQLite publication returns its exact opaque version,
-and suspended memory/files/SQLite publication returns the distinguished null
-identity. Pure files rejects enabled publication before rename because storing
-configuration does not provide retained generations.
+identity, enabled memory/files/SQLite publication returns its exact opaque
+version, and suspended memory/files/SQLite publication returns the
+distinguished null identity.
 
-CopyObject uses the same identity model at both ends. Memory and SQLite select
-current, null, or exact retained sources; files supports current and null only.
+CopyObject uses the same identity model at both ends. Memory, files, and SQLite
+select current, null, or exact retained sources.
 The successful mutation returns both the selected source identity and the
 published destination identity atomically, including the distinguished
 `null` value while suspended.
 
 The machine ledger records both configuration operations as `covered` for the
 backend, client, server, and corpus columns. The separately qualified
-`ListObjectVersions` boundary is `partial / covered / partial / covered`; the
-independently qualified SQLite generation data plane consumes the same
-transactional configuration state.
+`ListObjectVersions` boundary is `covered / covered / covered / covered`; the
+independently qualified files and SQLite generation data planes consume the
+same durable configuration state.
 
 Evidence is reproducible with these exact repository gates:
 
@@ -70,13 +67,14 @@ a separate GET, and deletes the probe without ever creating a versionable
 object. The pinned RustFS, SeaweedFS, supplemental MinIO, and Flyology
 memory/files/SQLite launchers run this same executable.
 
-When the launcher identifies the authenticated Flyology SQLite server, the
+When the launcher identifies an authenticated Flyology files or SQLite server,
 same setup also creates an independent version-enabled probe and runs the
 retained ordinary-generation, exact GET/HEAD/delete, marker publication,
 listing, re-exposure, and cleanup lifecycle recorded in the
-ListObjectVersions qualification. Other implementations retain the
-configuration-only oracle, so this SQLite evidence does not silently widen an
-external capability claim.
+ListObjectVersions qualification, including a process restart on the same
+storage root. Other implementations retain the configuration-only oracle, so
+this durable-backend evidence does not silently widen an external capability
+claim.
 
 On 2026-08-22, the default three-repeat post-change campaign passed all 18
 lanes: the three digest-pinned external images and Flyology memory, files, and

@@ -3008,33 +3008,39 @@ procedure S3_Implementation_Corpus is
       Bucket, Timestamp : String;
       Phase : Durable_Routing_Phase)
    is
-      --  Test-oracle identity: test-flyology-server.sh assigns this exact
-      --  implementation name to the SQLite-backed authenticated endpoint.
+      --  Test-oracle identities: test-flyology-server.sh assigns these exact
+      --  names to the authenticated endpoints whose catalogs survive a
+      --  process restart.
       Implementation_Variable : constant String :=
         "FLYOLOGY_S3_IMPLEMENTATION";
+      Files_Implementation  : constant String := "flyology-files";
       SQLite_Implementation : constant String := "flyology-sqlite";
    begin
       if not Ada.Environment_Variables.Exists (Implementation_Variable)
-        or else Ada.Environment_Variables.Value (Implementation_Variable) /=
-          SQLite_Implementation
+        or else
+          Ada.Environment_Variables.Value (Implementation_Variable) not in
+            Files_Implementation | SQLite_Implementation
       then
          if Phase = Complete_Durable_Routing then
             return;
          end if;
          raise Program_Error with
-           "durable restart routing requires the SQLite implementation";
+           "durable restart routing requires a persistent implementation";
       end if;
 
       declare
          Probe        : constant String := Bucket & "-durable-versions";
          Object_Key   : constant String := "retained/object";
+         Batch_Key    : constant String := "retained/batch-peer";
          First_Value  : aliased constant String := "durable-first";
          Second_Value : aliased constant String := "durable-second";
+         Batch_Value  : aliased constant String := "durable-batch-peer";
          HTTP         : aliased HTTP_Client.Client (Capacity => 1);
          Identity     : constant Low_Level.Credentials :=
            Low_Level.Make_Credentials (Access_Key, Secret_Key);
          First_ID     : US.Unbounded_String;
          Second_ID    : US.Unbounded_String;
+         Batch_ID     : US.Unbounded_String;
          Marker_ID    : US.Unbounded_String;
          First_ETag   : US.Unbounded_String;
          --  Test-reference bound: each asserted page contains exactly the
@@ -3042,13 +3048,14 @@ procedure S3_Implementation_Corpus is
          Version_Page_Bound : constant S3_Core.Page_Size := 2;
 
          function Put
-           (Value : not null access constant String)
+           (Key   : String;
+            Value : not null access constant String)
             return Low_Level.Put_Object_Outcome
          is
             Source : Upload_Source (Value);
          begin
             return Client_Objects.Put_Object
-              (HTTP, Origin, Probe, Object_Key, Source,
+              (HTTP, Origin, Probe, Key, Source,
                SigV4.SHA256_Hex (Value.all), Identity, Timeout => 30.0);
          end Put;
 
@@ -3137,9 +3144,11 @@ procedure S3_Implementation_Corpus is
 
             declare
                First  : constant Low_Level.Put_Object_Outcome :=
-                 Put (First_Value'Access);
+                 Put (Object_Key, First_Value'Access);
                Second : constant Low_Level.Put_Object_Outcome :=
-                 Put (Second_Value'Access);
+                 Put (Object_Key, Second_Value'Access);
+               Batch : constant Low_Level.Put_Object_Outcome :=
+                 Put (Batch_Key, Batch_Value'Access);
             begin
                if First.Kind /= Low_Level.Object_Put
                  or else First.Status /= 200
@@ -3148,6 +3157,9 @@ procedure S3_Implementation_Corpus is
                  or else Second.Status /= 200
                  or else US.Length (Second.Result.Version_ID) = 0
                  or else First.Result.Version_ID = Second.Result.Version_ID
+                 or else Batch.Kind /= Low_Level.Object_Put
+                 or else Batch.Status /= 200
+                 or else US.Length (Batch.Result.Version_ID) = 0
                then
                   raise Program_Error with
                     "durable version-routing PutObject generations mismatch";
@@ -3186,6 +3198,31 @@ procedure S3_Implementation_Corpus is
             First_ETag := Page.Page.Versions (2).Entity_Tag;
          end;
 
+         declare
+            --  Test-reference bound: the peer key has exactly one retained
+            --  generation and the page must therefore be complete.
+            Batch_Page_Bound : constant S3_Core.Page_Size := 1;
+            Page : constant Client_Objects.List_Versions_Outcome :=
+              Client_Objects.List_Versions_Page
+                (HTTP, Origin, Probe, Identity, Prefix => Batch_Key,
+                 Maximum => Batch_Page_Bound, Timeout => 30.0);
+         begin
+            if Page.Kind /= Client_Objects.Page_Available
+              or else Page.Status /= 200
+              or else Page.Page.Is_Truncated
+              or else Page.Page.Versions.Length /= 1
+              or else not Page.Page.Delete_Markers.Is_Empty
+              or else US.To_String (Page.Page.Versions (1).Key) /= Batch_Key
+              or else not Page.Page.Versions (1).Has_Version_ID
+              or else US.Length (Page.Page.Versions (1).Version_ID) = 0
+              or else not Page.Page.Versions (1).Is_Latest
+            then
+               raise Program_Error with
+                 "durable batch peer generation listing mismatch";
+            end if;
+            Batch_ID := Page.Page.Versions (1).Version_ID;
+         end;
+
          Require_Whole (US.To_String (First_ID), First_Value);
          Require_Current (US.To_String (Second_ID), Second_Value);
          Require_Attributes
@@ -3195,7 +3232,7 @@ procedure S3_Implementation_Corpus is
          if Phase = Prepare_Durable_Restart then
             HTTP_Client.Shutdown (HTTP);
             Ada.Text_IO.Put_Line
-              ("durable SQLite restart fixture prepared");
+              ("durable backend restart fixture prepared");
             return;
          end if;
 
@@ -3224,23 +3261,63 @@ procedure S3_Implementation_Corpus is
          end;
 
          declare
-            Removed : constant Client_Objects.Delete_Outcome :=
-              Client_Objects.Delete
-                (HTTP, Origin, Probe, Object_Key, Identity,
-                 Version_ID => US.To_String (Second_ID), Timeout => 30.0);
+            Request    : Deletions.Delete_Objects_Request;
+            Parameters : Low_Level.Delete_Objects_Parameters;
          begin
-            if Removed.Kind /= Client_Objects.Object_Removed
-              or else Removed.Status /= 204
-              or else Removed.Version_ID /= Second_ID
-              or else
-                (Removed.Delete_Marker.Is_Set
-                 and then Removed.Delete_Marker.Value)
-            then
-               raise Program_Error with
-                 "durable exact version deletion response mismatch";
-            end if;
+            Request.Objects.Append
+              (Deletions.Object_Identifier'
+                 (Key        => US.To_Unbounded_String (Object_Key),
+                  Version_ID => Second_ID,
+                  others     => <>));
+            Request.Objects.Append
+              (Deletions.Object_Identifier'
+                 (Key        => US.To_Unbounded_String (Batch_Key),
+                  Version_ID => Batch_ID,
+                  others     => <>));
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Objects
+                   (Origin, Low_Level.Path_Style, Probe, Request, Parameters,
+                    Identity, "us-east-1", Timestamp);
+               Removed : constant Low_Level.Delete_Objects_Outcome :=
+                 Low_Level.Execute_Delete_Objects
+                   (HTTP, Prepared, Timeout => 30.0);
+            begin
+               if Removed.Kind /= Low_Level.Objects_Deleted
+                 or else Removed.Status /= 200
+                 or else Removed.Result.Result.Deleted.Length /= 2
+                 or else not Removed.Result.Result.Errors.Is_Empty
+                 or else US.To_String
+                   (Removed.Result.Result.Deleted (1).Key) /= Object_Key
+                 or else Removed.Result.Result.Deleted (1).Version_ID /=
+                   Second_ID
+                 or else Removed.Result.Result.Deleted (1).Delete_Marker.Is_Set
+                 or else US.To_String
+                   (Removed.Result.Result.Deleted (2).Key) /= Batch_Key
+                 or else Removed.Result.Result.Deleted (2).Version_ID /=
+                   Batch_ID
+                 or else Removed.Result.Result.Deleted (2).Delete_Marker.Is_Set
+               then
+                  raise Program_Error with
+                    "durable exact-generation DeleteObjects mismatch";
+               end if;
+            end;
          end;
          Require_Current (US.To_String (First_ID), First_Value);
+         declare
+            Missing : constant Client_Objects.Whole_Get_Outcome :=
+              Client_Objects.Get_Whole
+                (HTTP, Origin, Probe, Batch_Key, Batch_Value'Length,
+                 Identity, Timeout => 30.0);
+         begin
+            if Missing.Kind /= Client_Objects.Whole_Get_Rejected
+              or else Missing.Status /= 404
+              or else US.To_String (Missing.Error.Code) /= "NoSuchKey"
+            then
+               raise Program_Error with
+                 "durable DeleteObjects left its peer generation visible";
+            end if;
+         end;
 
          declare
             Deleted : constant Client_Objects.Delete_Outcome :=
@@ -3575,7 +3652,7 @@ begin
            (Origin, Bucket, Timestamp, Complete_Durable_Routing);
          Ada.Text_IO.Put_Line
            ("S3 implementation setup: bucket created, located, headed, " &
-            "listed, and versioning-configured; durable SQLite routing " &
+            "listed, and versioning-configured; durable backend routing " &
             "checked when selected");
       elsif Ada.Command_Line.Argument (4) = "restart-prepare" then
          Require_Durable_Version_Routing
@@ -3584,7 +3661,7 @@ begin
          Require_Durable_Version_Routing
            (Origin, Bucket, Timestamp, Verify_Durable_Restart);
          Ada.Text_IO.Put_Line
-           ("durable SQLite restart fixture verified and removed");
+           ("durable backend restart fixture verified and removed");
       elsif Ada.Command_Line.Argument (4) = "cleanup" then
          Delete_One (Origin, Bucket, "native-object", Timestamp);
          Delete_One

@@ -108,21 +108,21 @@ else
     "http://127.0.0.1:$PORT" \
     "http://host.docker.internal:$PORT" \
     "flyology-$BACKEND-corpus-$$" "$ACCESS_KEY" "$SECRET_KEY" yes
-  if [ "$BACKEND" = sqlite ]; then
-    RESTART_BUCKET="flyology-sqlite-restart-$$"
+  if [ "$BACKEND" = files ] || [ "$BACKEND" = sqlite ]; then
+    RESTART_BUCKET="flyology-$BACKEND-restart-$$"
     TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
-    FLYOLOGY_S3_IMPLEMENTATION=flyology-sqlite \
+    FLYOLOGY_S3_IMPLEMENTATION="flyology-$BACKEND" \
       "$PROJECT_DIR/tests/bin/s3_implementation_corpus" \
       "http://127.0.0.1:$PORT" "$RESTART_BUCKET" "$TIMESTAMP" \
       restart-prepare
     stop_server
     start_server
     TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
-    FLYOLOGY_S3_IMPLEMENTATION=flyology-sqlite \
+    FLYOLOGY_S3_IMPLEMENTATION="flyology-$BACKEND" \
       "$PROJECT_DIR/tests/bin/s3_implementation_corpus" \
       "http://127.0.0.1:$PORT" "$RESTART_BUCKET" "$TIMESTAMP" \
       restart-verify
-    echo "Flyology sqlite authenticated restart routing: OK"
+    echo "Flyology $BACKEND authenticated restart routing: OK"
   fi
   if [ -n "${FLYOLOGY_S3T_BIN:-}" ]; then
     FLYOLOGY_S3_IMPLEMENTATION="flyology-$BACKEND" \
