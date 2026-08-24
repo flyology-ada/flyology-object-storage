@@ -138,8 +138,9 @@ escaped common prefix.
 The SQLite black-box server gate creates a dedicated version-enabled bucket,
 publishes two ordinary versions through signed PutObject calls, and requires
 unique nonempty response version IDs in newest-first ListObjectVersions order.
-It exact-selects the older generation with whole GetObject and the newer one
-with HeadObject, permanently removes the newer version, and requires the older
+It exact-selects the older generation with whole GetObject and
+GetObjectAttributes, including its exact ETag and size, and the newer one with
+HeadObject, permanently removes the newer version, and requires the older
 version to become current. A simple delete then publishes a typed marker that
 hides only current reads; the older exact generation remains readable and both
 entries remain listed. Exact marker removal re-exposes the data generation,

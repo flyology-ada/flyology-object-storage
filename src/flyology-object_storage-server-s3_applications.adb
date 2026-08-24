@@ -615,6 +615,17 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (Kind => Backends.Exact_Version,
             ID   => Delete_Request.Version_ID));
 
+      --  S3's versionId=null wire sentinel selects the distinguished null
+      --  generation; every other present value remains an opaque backend ID.
+      function Attributes_Version_Selector return Backends.Version_Selector is
+        (if not Attributes_Request.Has_Version_ID
+         then Backends.Current_Version_Selector
+         elsif US.To_String (Attributes_Request.Version_ID) = "null"
+         then Backends.Null_Version_Selector
+         else
+           (Kind => Backends.Exact_Version,
+            ID   => Attributes_Request.Version_ID));
+
       function Has_Encryption_Header return Boolean is
       begin
          for Index in 1 .. Apps.Request_Header_Count (X) loop
@@ -5968,14 +5979,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     (US.To_String (Auth.Principal), Owner_OK);
                   if not Owner_OK then
                      return;
-                  elsif Attributes_Request.Has_Version_ID
-                    and then US.To_String (Attributes_Request.Version_ID) /=
-                      "null"
-                  then
-                     Send_Error
-                       (X, 501, "NotImplemented",
-                        "Object versioning is not implemented", Target_Text);
-                     return;
                   elsif Payer_Count = 1 then
                      if Apps.Request_Header
                        (X, "x-amz-request-payer") /= "requester"
@@ -6029,7 +6032,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
                   Store.Get_Object_Attributes
                     (Bucket, Key, Options, Apps.Cancellation (X),
-                     Apps.Deadline (X), Snapshot, Result);
+                     Apps.Deadline (X), Snapshot, Result,
+                     Selector => Attributes_Version_Selector);
                   if Result /= Success then
                      Send_Backend_Error (X, Result, False, Target_Text);
                      return;

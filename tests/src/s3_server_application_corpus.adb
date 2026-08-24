@@ -5539,8 +5539,8 @@ begin
                   (SigV4.Pair ("attributes", ""),
                    SigV4.Pair ("versionId", "version-1")),
                   "x-amz-object-attributes", "ObjectSize")),
-            "501 Not Implemented"),
-         "GetObjectAttributes silently ignored a concrete version");
+            "404 Not Found"),
+         "GetObjectAttributes did not route a concrete version selector");
       Require
         (Has
            (Run

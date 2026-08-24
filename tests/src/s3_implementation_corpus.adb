@@ -3025,6 +3025,7 @@ procedure S3_Implementation_Corpus is
          First_ID     : US.Unbounded_String;
          Second_ID    : US.Unbounded_String;
          Marker_ID    : US.Unbounded_String;
+         First_ETag   : US.Unbounded_String;
          --  Test-reference bound: each asserted page contains exactly the
          --  two retained entries under examination and must not truncate.
          Version_Page_Bound : constant S3_Core.Page_Size := 2;
@@ -3077,6 +3078,35 @@ procedure S3_Implementation_Corpus is
                  "durable current-generation GetObject mismatch";
             end if;
          end Require_Current;
+
+         procedure Require_Attributes
+           (Version_ID, Expected_Header_ETag : String;
+            Expected_Size : Flyology.Object_Storage.Byte_Count)
+         is
+            Selection : constant
+              Flyology.Object_Storage.S3.Attributes.Attribute_Selection :=
+                (Entity_Tag => True, Object_Size => True, others => False);
+            Outcome : constant Client_Objects.Get_Attributes_Outcome :=
+              Client_Objects.Get_Attributes
+                (HTTP, Origin, Probe, Object_Key, Identity,
+                 Attributes => Selection, Version_ID => Version_ID,
+                 Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Low_Level.Object_Attributes_Found
+              or else Outcome.Status /= 200
+              or else US.To_String (Outcome.Result.Version_ID) /= Version_ID
+              or else not Outcome.Result.Attributes.Has_Entity_Tag
+              or else '"' & US.To_String
+                (Outcome.Result.Attributes.Entity_Tag) & '"' /=
+                  Expected_Header_ETag
+              or else not Outcome.Result.Attributes.Object_Size.Is_Set
+              or else Outcome.Result.Attributes.Object_Size.Value /=
+                Expected_Size
+            then
+               raise Program_Error with
+                 "durable version-addressed GetObjectAttributes mismatch";
+            end if;
+         end Require_Attributes;
       begin
          Create_Bucket (Origin, Probe, "");
          HTTP_Client.Configure (HTTP, Origin);
@@ -3112,6 +3142,7 @@ procedure S3_Implementation_Corpus is
             end if;
             First_ID := First.Result.Version_ID;
             Second_ID := Second.Result.Version_ID;
+            First_ETag := First.Result.Entity_Tag;
          end;
 
          declare
@@ -3138,6 +3169,9 @@ procedure S3_Implementation_Corpus is
 
          Require_Whole (US.To_String (First_ID), First_Value);
          Require_Current (US.To_String (Second_ID), Second_Value);
+         Require_Attributes
+           (US.To_String (First_ID), US.To_String (First_ETag),
+            First_Value'Length);
 
          declare
             Parameters : Low_Level.Head_Object_Parameters;
