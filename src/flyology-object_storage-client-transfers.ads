@@ -443,6 +443,38 @@ package Flyology.Object_Storage.Client.Transfers is
       end case;
    end record;
 
+   --  Copy one S3 object by waiting on the composable owner-driven mutation.
+   --  This result-type overload preserves exact publication and HTTP
+   --  admission certainty. Selecting the established Copy_Outcome overload
+   --  retains its raising transport contract; arguments and defaults match.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Source_Bucket Source S3 bucket before URI encoding
+   --  @param Source_Key Source S3 key before URI encoding
+   --  @param Destination_Bucket Destination S3 bucket
+   --  @param Destination_Key Destination S3 key
+   --  @param Options Complete modeled CopyObject controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed publication certainty and response or exchange failure
+   function Copy_Object
+     (Client             : aliased in out Flyology.HTTP.Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout            : Duration := 30.0;
+      Token              : access Flyology.Cancellation.Token := null)
+      return Scoped.Copy_Result;
+
    --  Copy one S3 object without downloading it. Source_Bucket and Source_Key
    --  are raw application strings; this operation owns the required
    --  x-amz-copy-source URI encoding and signs the resulting header. Client

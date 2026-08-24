@@ -4341,6 +4341,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Copy_Object_Outcome;
 
+   --  Decode one complete CopyObject HTTP response. Physical singleton
+   --  headers, bounded values, embedded HTTP-200 errors, and Requester Pays
+   --  consistency are validated before the modeled response is exposed.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared CopyObject request
+   --  @param Limits Bounded XML parser limits
+   --  @return Typed copy success or S3 rejection
+   --  @exception Invalid_Request Prepared is not CopyObject
+   --  @exception Invalid_Response Complete response is inconsistent
+   function Decode_Copy_Object_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Copy_Object_Outcome;
+
    function Execute_Copy_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -4437,6 +4454,10 @@ private
       --  Derived request/response binding: a charged listing response is
       --  valid only when the exact prepared request admitted requester pays.
       Requested_List_Request_Payer :
+        Ada.Strings.Unbounded.Unbounded_String;
+      --  Derived request/response binding: a charged CopyObject response is
+      --  valid only when the exact prepared request admitted requester pays.
+      Requested_Copy_Request_Payer :
         Ada.Strings.Unbounded.Unbounded_String;
       --  Owned immutable bytes for prepared one-shot mutation bodies; this
       --  private storage prevents retaining caller-borrowed input.

@@ -11769,6 +11769,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
       do
          Result.Operation := Copy_Object_Operation;
+         Result.Requested_Copy_Request_Payer := Parameters.Request_Payer;
       end return;
    end Prepare_Copy_Object;
 
@@ -11840,6 +11841,88 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "malformed CopyObject response";
    end Decode_Copy_Object_Response;
 
+   function Decode_Copy_Object_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Copy_Object_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "invalid CopyObject response header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else not Valid_List_Response_Header_Text (Value)
+            then
+               raise Invalid_Response with
+                 "invalid CopyObject response header value";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+
+   begin
+      if Prepared.Operation /= Copy_Object_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Request_Charged : constant String :=
+           Singleton_Header ("x-amz-request-charged");
+         Headers : constant Copy_Object_Result :=
+           (Copy_Result => (others => <>),
+            Expiration => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-expiration")),
+            Copy_Source_Version_ID => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-copy-source-version-id")),
+            Version_ID => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-version-id")),
+            Server_Side_Encryption => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-server-side-encryption")),
+            SSE_Customer_Algorithm => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-customer-algorithm")),
+            SSE_Customer_Key_MD5 => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-customer-key-md5")),
+            SSE_KMS_Key_ID => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-aws-kms-key-id")),
+            SSE_KMS_Encryption_Context => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-server-side-encryption-context")),
+            Bucket_Key_Enabled => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-bucket-key-enabled")),
+            Request_Charged => US.To_Unbounded_String (Request_Charged));
+         Outcome : constant Copy_Object_Outcome :=
+           Decode_Copy_Object_Response
+             (Flyology.HTTP.Client.Status (Response), Payload, Headers,
+              Singleton_Header ("x-amz-request-id"),
+              Singleton_Header ("x-amz-id-2"), Limits);
+      begin
+         if Request_Charged'Length > 0
+           and then
+             (Request_Charged /= "requester"
+              or else US.To_String
+                (Prepared.Requested_Copy_Request_Payer) /= "requester")
+         then
+            raise Invalid_Response with
+              "CopyObject charged response was not requested";
+         end if;
+         return Outcome;
+      end;
+   end Decode_Copy_Object_Complete_Response;
+
    function Execute_Copy_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -11856,51 +11939,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
              (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         Headers : constant Copy_Object_Result :=
-           (Copy_Result => (others => <>),
-            Expiration => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header (Response, "x-amz-expiration")),
-            Copy_Source_Version_ID => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-copy-source-version-id")),
-            Version_ID => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header (Response, "x-amz-version-id")),
-            Server_Side_Encryption => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-server-side-encryption")),
-            SSE_Customer_Algorithm => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response,
-                  "x-amz-server-side-encryption-customer-algorithm")),
-            SSE_Customer_Key_MD5 => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-server-side-encryption-customer-key-md5")),
-            SSE_KMS_Key_ID => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-server-side-encryption-aws-kms-key-id")),
-            SSE_KMS_Encryption_Context => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-server-side-encryption-context")),
-            Bucket_Key_Enabled => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response,
-                  "x-amz-server-side-encryption-bucket-key-enabled")),
-            Request_Charged => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-request-charged")));
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_Copy_Object_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-            Request_ID, Host_ID, Limits);
+         return Decode_Copy_Object_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

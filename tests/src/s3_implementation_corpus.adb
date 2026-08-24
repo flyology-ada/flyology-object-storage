@@ -94,7 +94,10 @@ procedure S3_Implementation_Corpus is
    use type Scoped.Multipart_Abort_Disposition;
    use type Scoped.List_Parts_Result_Kind;
    use type Scoped.List_Multipart_Uploads_Result_Kind;
+   use type Scoped.Copy_Result_Kind;
+   use type Scoped.Publication_Disposition;
    use type Scoped.Failure_Reason;
+   use type HTTP_Client.Exchange_Result_Kind;
    use type Client_Objects.List_Outcome_Kind;
    use type Client_Objects.Whole_Get_Outcome_Kind;
    use type Client_Objects.Tagging_Outcome_Kind;
@@ -2083,45 +2086,37 @@ procedure S3_Implementation_Corpus is
          end;
          Require_Exact_Object (Copy_Key, Payload);
          declare
-            Rejected : Boolean := False;
+            Options : Low_Level.Copy_Object_Parameters;
          begin
+            declare
+               Copied : constant Scoped.Copy_Result := Transfers.Copy_Object
+                 (HTTP, Origin, Bucket, Key & "-high level+%25", Bucket,
+                  Convenience_Key, Options, Identity, Timeout => 60.0);
             begin
-               declare
-                  Copied : constant Transfers.Copy_Outcome :=
-                    Transfers.Copy_Object
-                      (HTTP, Origin, Bucket, Key & "-high level+%25", Bucket,
-                       Convenience_Key, Identity, Timeout => 60.0);
-               begin
-                  if Copy_Object_Oracle_Mode /= Complete_Copy_Object then
-                     raise Program_Error with
-                       "malformed high-level CopyObject result was accepted";
-                  elsif Copied.Kind = Transfers.Copy_Rejected then
-                     raise Program_Error with
-                       "S3 implementation rejected high-level CopyObject: " &
-                       Copied.Status'Image & " " &
-                       US.To_String (Copied.Error.Code) & " " &
-                       US.To_String (Copied.Error.Message);
-                  elsif US.Length (Copied.Entity_Tag) = 0
-                    or else US.Length (Copied.Last_Modified) = 0
-                  then
-                     raise Program_Error with
-                       "S3 implementation returned incomplete high-level " &
-                       "CopyObject metadata";
-                  end if;
-               end;
-            exception
-               when Low_Level.Invalid_Response =>
-                  if Copy_Object_Oracle_Mode = Complete_Copy_Object then
-                     raise;
-                  end if;
-                  Rejected := True;
+               if Copy_Object_Oracle_Mode = Complete_Copy_Object
+                 and then
+                   (Copied.Kind /= Scoped.Copy_Response_Available
+                    or else Copied.Disposition /= Scoped.Published
+                    or else Copied.Failure /= Scoped.No_Failure
+                    or else Copied.Response.Kind /= Low_Level.Object_Copied
+                    or else US.Length
+                      (Copied.Response.Result.Copy_Result.Entity_Tag) = 0
+                    or else US.Length
+                      (Copied.Response.Result.Copy_Result.Last_Modified) = 0)
+               then
+                  raise Program_Error with
+                    "S3 implementation rejected composable CopyObject";
+               elsif Copy_Object_Oracle_Mode /= Complete_Copy_Object
+                 and then
+                   (Copied.Kind /= Scoped.Copy_Exchange_Failed
+                    or else Copied.Disposition /= Scoped.Outcome_Unknown
+                    or else Copied.HTTP_Result /=
+                      HTTP_Client.Response_Invalid)
+               then
+                  raise Program_Error with
+                    "malformed composable CopyObject result was accepted";
+               end if;
             end;
-            if Copy_Object_Oracle_Mode /= Complete_Copy_Object
-              and then not Rejected
-            then
-               raise Program_Error with
-                 "malformed high-level CopyObject result was not rejected";
-            end if;
          end;
          Require_Exact_Object (Convenience_Key, Payload);
       end Copy_Whole_Object;

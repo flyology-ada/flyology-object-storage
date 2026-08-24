@@ -91,6 +91,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.Get_Object_Head_Outcome_Kind;
+   use type Low_Level.Copy_Object_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
    use type Objects.Tagging_Outcome_Kind;
    use type Objects.Whole_Get_Outcome_Kind;
@@ -100,6 +101,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Part_Upload_Disposition;
    use type Scoped.List_Parts_Result_Kind;
    use type Scoped.List_Multipart_Uploads_Result_Kind;
+   use type Scoped.Copy_Result_Kind;
    use type Scoped.Upload_Part_Result_Kind;
    use type Scoped.Multipart_Completion_Disposition;
    use type Scoped.Multipart_Completion_Result_Kind;
@@ -2906,11 +2908,39 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("200 OK", Copy_XML,
                "x-amz-version-id: destination-version" & CRLF &
-               "x-amz-copy-source-version-id: source-version" & CRLF),
+               "x-amz-copy-source-version-id: source-version" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
             "PUT", "/example-bucket/copied%20object%2B%2525",
             Expected_Copy_Source =>
               "source-bucket/source%20key%2B%2525",
-            Expected_Copy_If_Match => """source-etag""");
+            Expected_Copy_If_Match => """source-etag""",
+            Expected_Request_Payer => "requester");
+         Serve
+           (HTTP_Response ("200 OK", Copy_XML), "PUT",
+            "/example-bucket/copy-restart-one",
+            Expected_Copy_Source => "source-bucket/source-key");
+         Serve
+           (HTTP_Response ("200 OK", Copy_XML), "PUT",
+            "/example-bucket/copy-restart-two",
+            Expected_Copy_Source => "source-bucket/source-key");
+         Serve
+           (HTTP_Response
+              ("200 OK", Copy_XML,
+               "x-amz-version-id: first" & CRLF &
+               "x-amz-version-id: second" & CRLF),
+            "PUT", "/example-bucket/copy-invalid-duplicate",
+            Expected_Copy_Source => "source-bucket/source-key");
+         Serve
+           (HTTP_Response
+              ("200 OK", Copy_XML, "x-amz-version-id:" & CRLF),
+            "PUT", "/example-bucket/copy-invalid-empty",
+            Expected_Copy_Source => "source-bucket/source-key");
+         Serve
+           (HTTP_Response
+              ("200 OK", Copy_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT", "/example-bucket/copy-invalid-charged",
+            Expected_Copy_Source => "source-bucket/source-key");
          Serve
            (HTTP_Response ("412 Precondition Failed", Error_XML),
             "PUT", "/example-bucket/copy-rejected",
@@ -8273,34 +8303,111 @@ procedure S3_HTTP_Socket_Corpus is
          begin
             Options.Copy_Source_If_Match :=
               US.To_Unbounded_String ("""source-etag""");
+            Options.Request_Payer := US.To_Unbounded_String ("requester");
             declare
-               Result : constant Transfers.Copy_Outcome :=
-              Transfers.Copy_Object
-                (HTTP, Origin, "source-bucket", "source key+%25",
-                 "example-bucket", "copied object+%25", Options, Identity,
-                 Timeout => 5.0);
+               Result : constant Scoped.Copy_Result :=
+                 Transfers.Copy_Object
+                   (HTTP, Origin, "source-bucket", "source key+%25",
+                    "example-bucket", "copied object+%25", Options, Identity,
+                    Timeout => 5.0);
             begin
-               if Result.Kind /= Transfers.Object_Copied
-                 or else Result.Status /= 200
-                 or else US.To_String (Result.Entity_Tag) /=
-                   """high-level-copy"""
-                 or else US.To_String (Result.Last_Modified) /=
+               if Result.Kind /= Scoped.Copy_Response_Available
+                 or else Result.Disposition /= Scoped.Published
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /= Low_Level.Object_Copied
+                 or else Result.Response.Status /= 200
+                 or else US.To_String
+                   (Result.Response.Result.Copy_Result.Last_Modified) /=
                    "2026-08-21T17:00:00.000Z"
-                 or else US.To_String (Result.Version_ID) /=
+                 or else US.To_String (Result.Response.Result.Version_ID) /=
                    "destination-version"
-                 or else US.To_String (Result.Copy_Source_Version_ID) /=
+                 or else US.To_String
+                   (Result.Response.Result.Copy_Source_Version_ID) /=
                    "source-version"
                  or else US.To_String
-                   (Result.Details.Copy_Result.Entity_Tag) /=
-                     """high-level-copy"""
+                   (Result.Response.Result.Request_Charged) /= "requester"
                  or else US.To_String
-                   (Result.Details.Copy_Source_Version_ID) /=
-                     "source-version"
+                   (Result.Response.Result.Copy_Result.Entity_Tag) /=
+                     """high-level-copy"""
                then
                   raise Program_Error with
-                    "high-level CopyObject result mismatch";
+                    "typed composable CopyObject result mismatch";
                end if;
             end;
+         end;
+         declare
+            Options : Low_Level.Copy_Object_Parameters;
+            Stop : aliased Flyology.Cancellation.Token;
+         begin
+            Stop.Request;
+            declare
+               Result : constant Scoped.Copy_Result := Transfers.Copy_Object
+                 (HTTP, Origin, "source-bucket", "source-key",
+                  "example-bucket", "copy-cancelled", Options, Identity,
+                  Timeout => 5.0, Token => Stop'Access);
+            begin
+               if Result.Kind /= Scoped.Copy_Exchange_Failed
+                 or else Result.Disposition /=
+                   Scoped.Cancelled_Before_Publication
+                 or else Result.Failure /= Scoped.Cancelled
+                 or else Result.Admission /= HTTP_Client.Not_Admitted
+               then
+                  raise Program_Error with
+                    "pre-admission CopyObject cancellation mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Options : Low_Level.Copy_Object_Parameters;
+            --  Copy parent, HTTP exchange, and one transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Operation : Scoped.Copy_Operation := Scoped.Copy_Object
+              (Set'Access, HTTP'Access, Origin, "source-bucket", "source-key",
+               "example-bucket", "copy-restart-one", Options, Identity,
+               HTTP_Client.Deadline_After (5.0));
+            Result : Scoped.Copy_Result;
+         begin
+            Operations.Wait_All (Set);
+            Scoped.Finish (Operation, Result);
+            if Result.Kind /= Scoped.Copy_Response_Available
+              or else Result.Disposition /= Scoped.Published
+            then
+               raise Program_Error with
+                 "direct CopyObject first completion mismatch";
+            end if;
+            Scoped.Start_Copy_Object
+              (Operation, HTTP'Access, Origin, "source-bucket", "source-key",
+               "example-bucket", "copy-restart-two", Options, Identity,
+               HTTP_Client.Deadline_After (5.0));
+            Operations.Wait_All (Set);
+            Scoped.Finish (Operation, Result);
+            if Result.Kind /= Scoped.Copy_Response_Available
+              or else Result.Disposition /= Scoped.Published
+            then
+               raise Program_Error with
+                 "direct CopyObject restart mismatch";
+            end if;
+            for Case_Index in 1 .. 3 loop
+               Scoped.Start_Copy_Object
+                 (Operation, HTTP'Access, Origin, "source-bucket",
+                  "source-key", "example-bucket",
+                  (case Case_Index is
+                     when 1 => "copy-invalid-duplicate",
+                     when 2 => "copy-invalid-empty",
+                     when others => "copy-invalid-charged"),
+                  Options, Identity, HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.Copy_Exchange_Failed
+                 or else Result.Disposition /= Scoped.Outcome_Unknown
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+               then
+                  raise Program_Error with
+                    "invalid complete CopyObject response was accepted";
+               end if;
+            end loop;
          end;
          declare
             Result : constant Transfers.Copy_Outcome :=
@@ -11768,6 +11875,7 @@ begin
      Check_List_Parts_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_List_Multipart_Uploads_Result_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.Check_Copy_Result_Corpus;
    Run_And_Report;
    declare
       task Lightweight_Client is

@@ -5,6 +5,8 @@ with System.Address_To_Access_Conversions;
 with System.Storage_Elements;
 with Flyology.Object_Storage.Client.Low_Level.Scoped;
 with Flyology.Object_Storage.S3.Core;
+with Flyology.Object_Storage.S3.Requests;
+with Flyology.Object_Storage.S3.SigV4_Encoding;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Operations.Drivers;
 
@@ -18,6 +20,9 @@ package body Flyology.Object_Storage.Client.Scoped is
    package Low_Scoped renames
      Flyology.Object_Storage.Client.Low_Level.Scoped;
    package Core renames Flyology.Object_Storage.S3.Core;
+   package Requests renames Flyology.Object_Storage.S3.Requests;
+   package Encoding renames
+     Flyology.Object_Storage.S3.SigV4_Encoding;
    package Byte_Pointers is new System.Address_To_Access_Conversions
      (Ada.Streams.Stream_Element);
 
@@ -30,11 +35,14 @@ package body Flyology.Object_Storage.Client.Scoped is
    use type Low_Level.Abort_Multipart_Outcome_Kind;
    use type Low_Level.List_Parts_Outcome_Kind;
    use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
+   use type Low_Level.Copy_Object_Outcome_Kind;
    use type Low_Level.Delete_Object_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Core.Range_Parse_Status;
    use type Operations.Driver_Event;
+   use type Requests.Target_Kind;
+   use type Requests.Target_Status;
    use type System.Storage_Elements.Storage_Offset;
    use type US.Unbounded_String;
 
@@ -3661,6 +3669,398 @@ package body Flyology.Object_Storage.Client.Scoped is
       elsif not Operation.Has_Final_Result then
          raise Program_Error with
            "ListMultipartUploads has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   --  Exact status/code pairs are S3 wire authority. An embedded HTTP-200
+   --  error is never conclusive publication evidence; only validated success,
+   --  an exact precondition failure, or an exact non-mutating rejection can
+   --  avoid read-only reconciliation.
+   function Normalize_Copy_Response
+     (Value     : Low_Level.Copy_Object_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Copy_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Copy_Object_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Precondition_Rejection : constant Boolean :=
+        Value.Status = 412 and then Code = "PreconditionFailed";
+      Conclusive_Rejection : constant Boolean :=
+        (Value.Status = 400
+         and then Code in "InvalidArgument" | "InvalidRequest")
+        or else (Value.Status = 401 and then Code = "InvalidAccessKeyId")
+        or else (Value.Status = 403 and then Code = "AccessDenied")
+        or else
+          (Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchKey")
+        or else (Value.Status = 501 and then Code = "NotImplemented");
+      Retryable_Response : constant Boolean :=
+        (Value.Status = 409 and then Code = "OperationAborted")
+        or else (Value.Status = 429 and then Code = "SlowDown")
+        or else (Value.Status in 200 | 500 and then Code = "InternalError")
+        or else (Value.Status = 502 and then Code = "BadGateway")
+        or else (Value.Status = 503 and then Code = "SlowDown")
+        or else (Value.Status = 504 and then Code = "RequestTimeout");
+      Failure : constant Failure_Reason :=
+        (if Precondition_Rejection then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchKey"
+         then Not_Found
+         elsif Value.Status = 400
+           and then Code in "InvalidArgument" | "InvalidRequest"
+         then Invalid_Request
+         elsif Value.Status = 501 and then Code = "NotImplemented"
+         then Invalid_Request
+         elsif Retryable_Response
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => Copy_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Outcome_Unknown
+            elsif Value.Kind = Low_Level.Object_Copied
+            then Published
+            elsif Precondition_Rejection
+            then Precondition_Failed
+            elsif Conclusive_Rejection
+            then Definitely_Not_Published
+            else Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Object_Copied
+            then No_Failure
+            else Failure),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Copy_Response;
+
+   function Normalize_Copy_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Copy_Result is
+   begin
+      return
+        (Kind        => Copy_Exchange_Failed,
+         Disposition => Failed_Disposition (Kind, Admission),
+         Failure     =>
+           (if Kind = HTTP_Client.Response_Body_Too_Large
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Copy_Failure;
+
+   overriding function Declared_Length
+     (Item : Copy_Operation) return HTTP_Client.Body_Length is
+   begin
+      pragma Unreferenced (Item);
+      --  S3 CopyObject wire contract: the mutation request has no body. The
+      --  one-shot zero-length source prevents transport-layer replay.
+      return HTTP_Client.Known_Length (0);
+   end Declared_Length;
+
+   overriding procedure Read_Now
+     (Item   : in out Copy_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      pragma Unreferenced (Item);
+      Data := (others => 0);
+      Last := Ada.Streams.Stream_Element_Offset'Pred (Data'First);
+      Result := HTTP_Client.Source_Finished;
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Copy_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      pragma Unreferenced (Item, Required);
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source (Item : in out Copy_Operation) is
+   begin
+      pragma Unreferenced (Item);
+      null;
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Copy_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "CopyObject response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Copy_Child (Item : in out Copy_Operation) is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Scoped.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_Copy_Failure
+              (HTTP_Client.Response_Sink_Failed, Admission,
+               HTTP_Client.Receiving_Response_Body);
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Copy_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Copy_Response
+              (Low_Level.Decode_Copy_Object_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  Item.Prepared),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_Copy_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Copy_Child;
+
+   overriding procedure Drive
+     (Item : in out Copy_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low_Scoped.Start_Copy_Object
+           (Item.Child, Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item'Access, Item.Deadline, Item.Cancellation);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Copy_Child (Item);
+      else
+         raise Program_Error with "invalid CopyObject driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation (Item : in out Copy_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize (Item : in out Copy_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   function Prepare_Copy_From_Raw_Source
+     (Origin             : Flyology.HTTP.Origin;
+      Style              : Low_Level.Addressing_Style;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Region             : String) return Low_Level.Prepared_Request
+   is
+      --  Derived header capacity: the leading slash consumes one byte of the
+      --  maintained maximum request-target representation.
+      Maximum_Copy_Source_Length : constant :=
+        Requests.Maximum_Target_Length - 1;
+   begin
+      if Source_Bucket'Length = 0
+        or else Source_Key'Length = 0
+        or else Source_Bucket'Length >= Maximum_Copy_Source_Length
+        or else Source_Key'Length >
+          Maximum_Copy_Source_Length - Source_Bucket'Length - 1
+      then
+         raise Low_Level.Invalid_Request with "invalid CopyObject source";
+      end if;
+      declare
+         Raw_Source : constant String := Source_Bucket & "/" & Source_Key;
+         Encoded_Source : constant String :=
+           Encoding.URI_Encode (Raw_Source, Encode_Slash => False);
+      begin
+         if Encoded_Source'Length > Maximum_Copy_Source_Length then
+            raise Low_Level.Invalid_Request with
+              "encoded CopyObject source exceeds header limit";
+         end if;
+         declare
+            Source_Target : constant String := "/" & Encoded_Source;
+            Parsed_Source : constant Requests.Target_Result :=
+              Requests.Parse_Target (Source_Target);
+            Parameters : Low_Level.Copy_Object_Parameters := Options;
+         begin
+            if Parsed_Source.Status /= Requests.Target_Parsed
+              or else Parsed_Source.Kind /= Requests.Object_Target
+              or else Requests.Bucket_Name
+                (Source_Target, Parsed_Source) /= Source_Bucket
+              or else Requests.Object_Key
+                (Source_Target, Parsed_Source) /= Source_Key
+            then
+               raise Low_Level.Invalid_Request with
+                 "invalid CopyObject source bucket or key";
+            end if;
+            Parameters.Copy_Source :=
+              US.To_Unbounded_String (Encoded_Source);
+            return Low_Level.Prepare_Copy_Object
+              (Origin, Style, Destination_Bucket, Destination_Key,
+               Parameters, Identity, Region, Timestamp);
+         end;
+      end;
+   end Prepare_Copy_From_Raw_Source;
+
+   procedure Start_Copy_Object
+     (Operation          : in out Copy_Operation;
+      Client             : not null access HTTP_Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Deadline           : HTTP_Client.Monotonic_Deadline;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token              : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "CopyObject restart changed a retained owner";
+      end if;
+      Operation.Prepared := Prepare_Copy_From_Raw_Source
+        (Origin, Style, Source_Bucket, Source_Key, Destination_Bucket,
+         Destination_Key, Options, Identity, Region);
+      Operation.Deadline := Deadline;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived resource bound: retained CopyObject response bytes use the
+        --  maintained limit of the S3 XML decoder that consumes them.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Copy_Object;
+
+   function Copy_Object
+     (Set                : not null access Operations.Completion_Set'Class;
+      Client             : not null access HTTP_Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Deadline           : HTTP_Client.Monotonic_Deadline;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token              : access Flyology.Cancellation.Token := null)
+      return Copy_Operation is
+   begin
+      return Result : Copy_Operation (Set, Client, Token) do
+         Start_Copy_Object
+           (Result, Client, Origin, Source_Bucket, Source_Key,
+            Destination_Bucket, Destination_Key, Options, Identity, Deadline,
+            Region, Style, Token);
+      end return;
+   end Copy_Object;
+
+   procedure Finish
+     (Operation : in out Copy_Operation;
+      Result    : out Copy_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "CopyObject has no terminal result";
       end if;
       Result := Operation.Final_Result;
    end Finish;

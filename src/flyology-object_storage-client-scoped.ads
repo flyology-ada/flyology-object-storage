@@ -1530,6 +1530,128 @@ package Flyology.Object_Storage.Client.Scoped is
       Result    : out List_Multipart_Uploads_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  Shape of a terminal CopyObject mutation.
+   --  @enum Copy_Response_Available Complete modeled S3 response exists
+   --  @enum Copy_Exchange_Failed No complete modeled S3 response exists
+   type Copy_Result_Kind is
+     (Copy_Response_Available, Copy_Exchange_Failed);
+
+   --  Typed CopyObject publication certainty plus the modeled S3 response or
+   --  composable HTTP failure. Outcome_Unknown requires a generation-bound
+   --  destination read before any caller-selected retry.
+   --  @field Kind Result shape
+   --  @field Disposition Destination publication certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Copy_Result
+     (Kind : Copy_Result_Kind := Copy_Exchange_Failed) is record
+      Disposition : Publication_Disposition := Outcome_Unknown;
+      Failure     : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Copy_Response_Available =>
+            Response : Low_Level.Copy_Object_Outcome;
+         when Copy_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot CopyObject parent with one hidden HTTP child. Raw source and
+   --  destination strings are encoded and copied into the prepared request
+   --  before start returns; no borrowed request input is retained.
+   type Copy_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Compatibility contract: source encoding, complete Options projection,
+   --  region, addressing style, and cancellation defaults match the
+   --  established synchronous Client.Transfers.Copy_Object API.
+
+   --  Start or restart one bounded non-replaying CopyObject mutation.
+   --  @param Operation Fresh or consumed established copy operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Source_Bucket Raw source bucket before URI encoding
+   --  @param Source_Key Raw source key before URI encoding
+   --  @param Destination_Bucket Destination bucket
+   --  @param Destination_Key Destination key
+   --  @param Options Complete modeled CopyObject controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @exception Low_Level.Invalid_Request Source or options are invalid
+   procedure Start_Copy_Object
+     (Operation          : in out Copy_Operation;
+      Client             : not null access Flyology.HTTP.Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Deadline           : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token              : access Flyology.Cancellation.Token := null)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded non-replaying CopyObject mutation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Source_Bucket Raw source bucket before URI encoding
+   --  @param Source_Key Raw source key before URI encoding
+   --  @param Destination_Bucket Destination bucket
+   --  @param Destination_Key Destination key
+   --  @param Options Complete modeled CopyObject controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven CopyObject mutation
+   function Copy_Object
+     (Set                : not null access
+        Flyology.Operations.Completion_Set'Class;
+      Client             : not null access Flyology.HTTP.Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Deadline           : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token              : access Flyology.Cancellation.Token := null)
+      return Copy_Operation;
+
+   --  Consume one terminal CopyObject operation.
+   --  @param Operation Terminal CopyObject mutation
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Copy_Operation;
+      Result    : out Copy_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
 private
    --  @exclude
    type Conditional_Put_Operation
@@ -1606,6 +1728,26 @@ private
       Response_Data : Flyology.Bytes.Unbounded_Bytes;
       Response_Limit : Natural := 0;
       Final_Result : List_Multipart_Uploads_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Copy_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Copy_Result;
       Has_Final_Result : Boolean := False;
       Has_Saved_Error : Boolean := False;
       Saved_Error : Ada.Exceptions.Exception_Occurrence;
@@ -2139,6 +2281,38 @@ private
    overriding procedure Finalize
      (Item : in out List_Multipart_Uploads_Operation);
 
+   --  @exclude
+   --  @param Item Internal one-shot empty CopyObject request source
+   --  @return Exact zero request-body length
+   overriding function Declared_Length
+     (Item : Copy_Operation) return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Copy_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Copy_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source (Item : in out Copy_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Copy_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Copy_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation (Item : in out Copy_Operation);
+   --  @exclude
+   overriding procedure Finalize (Item : in out Copy_Operation);
+
    --  Private normalization boundary shared with the strict test child.
    --  @exclude
    --  @param Value Complete decoded S3 response
@@ -2316,5 +2490,19 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return List_Multipart_Uploads_Result;
+
+   --  Private normalization boundary shared with the strict test child.
+   --  @exclude
+   function Normalize_Copy_Response
+     (Value     : Low_Level.Copy_Object_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Copy_Result;
+
+   --  @exclude
+   function Normalize_Copy_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Copy_Result;
 
 end Flyology.Object_Storage.Client.Scoped;

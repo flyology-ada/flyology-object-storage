@@ -150,6 +150,23 @@ the off-by-one policy is tested without allocating a 5 GiB body.
 
 ## Publication certainty
 
+The composable `Client.Scoped.Copy_Object` boundary owns the encoded raw source,
+destination, complete options record, one non-rewindable empty request source,
+and one XML-limit-bounded response sink. It drives one hidden HTTP child on the
+owner's stack and never creates a helper task or retries the mutation. The
+typed synchronous `Client.Transfers.Copy_Object` result overload is a literal
+wait on this same state machine; the established raising convenience overload
+remains source compatible.
+
+Only a complete validated success response is `Published`. Exact
+`PreconditionFailed` is reported separately, and exact modeled authentication,
+authorization, missing-source, invalid-request, and unsupported-operation
+responses prove definite nonpublication. Every failure after possible
+admission, response-body overflow, malformed physical singleton, inconsistent
+Requester Pays response, and embedded HTTP-200 service error is
+`Outcome_Unknown`. The caller must reconcile the destination with a
+generation-bound whole Get before deciding whether to retry.
+
 `Success` confirms that the complete body, information, metadata, tags, and
 checksum tuple was published. A synchronous `Backend_Unavailable`, transport
 failure, timeout, or cancellation is not evidence of nonpublication once the
@@ -209,3 +226,13 @@ strict `Invalid_Response`, the corpus downloads and byte-compares both typed
 CopyObject destinations. DeleteObjects setup copies are independently checked
 before deletion, and both destinations must independently return `HEAD 404`
 afterward.
+
+The additive composable campaign on 2026-08-24 passed the root warning-strict
+suite with 41/41 AUnit cases, all 126 abrupt-crash cases, the checksum and
+native/lightweight socket corpora, and three socket repetitions. The full
+six-provider matrix passed all 18 lanes. The typed composable path returned the
+complete modeled success for every conforming provider; the SeaweedFS lane
+reported `Outcome_Unknown` for its malformed post-publication ETag and then
+proved the exact destination bytes through an independent whole-object read.
+The maintained warning-strict proof gate proved all 936 generated checks with
+zero unproved checks or warnings.

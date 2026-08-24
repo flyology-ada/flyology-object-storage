@@ -217,6 +217,17 @@ bucket, paired key/upload-ID cursor, prefix, delimiter, maximum, URL-encoding
 mode, and Requester Pays admission of the prepared request. Restart is allowed
 only after typed Finish, and no snapshot is promised across pages.
 
+CopyObject is a non-replaying mutation. Its operation owns the encoded raw
+source, destination, complete options record, and one XML-limit-bounded
+response sink before it starts one hidden HTTP child. The request body is an
+empty one-shot source rather than a rewindable adapter. Typed Finish reports
+`Published` only after a complete validated result, reports exact
+precondition and modeled pre-mutation rejections separately, and retains
+`Outcome_Unknown` after possible admission for transport loss, invalid or
+oversized responses, and embedded HTTP-200 service errors. Restart is allowed
+only after Finish consumes the previous terminal result; the operation never
+replays or retains borrowed request strings.
+
 The Flyology.DB recovery sequence enabled by these operations is:
 
 1. publish an immutable batch with `If-None-Match: *`;
@@ -235,7 +246,8 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Get_Range`, and `Head_Object` overloads and the typed-result `Delete` and
 `Create_Multipart_Upload`, `Upload_Part`, and
 `Complete_Multipart_Upload`, `Abort_Multipart_Upload`, `List_Parts_Page`, and
-`List_Multipart_Uploads_Page` overloads are literal waits on the same
+`List_Multipart_Uploads_Page` overloads, plus the typed-result `Copy_Object`,
+are literal waits on the same
 `Client.Scoped` state machines and retain their typed certainty, capacity,
 metadata, and ownership results. The established raising `Delete_Outcome` and
 `Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer
@@ -393,6 +405,15 @@ ListMultipartUploads has the same direct normalization cross-product and
 native/lightweight cancellation, restart, physical-singleton, Requester Pays,
 paired-cursor, and exact-scope socket checks. The implementation matrix drives
 its typed synchronous wait across every positive provider lane.
+
+CopyObject response normalization is exercised directly across exact modeled
+success and rejection pairs, embedded HTTP-200 errors, inconsistent admission
+certainty, and every composable HTTP terminal failure across all admission
+states. Native/lightweight sockets gate pre-admission cancellation, restart,
+physical singleton headers, Requester Pays binding, and full modeled success.
+The six-server matrix drives the typed synchronous wait over the same state
+machine and treats SeaweedFS's malformed post-publication ETag as unknown while
+an independent whole-object read proves which bytes were published.
 
 The sibling `range-get.tsv` and `head-object.tsv` corpora are normative for the
 read surface. They enumerate typed request forms, physical singleton handling,

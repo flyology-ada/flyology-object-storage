@@ -72,10 +72,10 @@ The core crate includes:
   one-shot UploadPart API whose bodies are borrowed from forward-only streaming
   sources and whose post-admission exceptions require ListParts reconciliation;
 - completion-set-aware conditional Put, bounded whole Get, generation-bound
-  single-range Get, bodyless Head, non-replaying Delete, multipart initiation,
-  one-shot UploadPart, and one-shot multipart completion operations, with typed
-  synchronous overloads that wait on the same owner-driven state machines and
-  never create a per-operation helper task;
+  single-range Get, bodyless Head, non-replaying Delete and CopyObject,
+  multipart initiation, one-shot UploadPart, and one-shot multipart completion
+  operations, with typed synchronous overloads that wait on the same
+  owner-driven state machines and never create a per-operation helper task;
 - a bounded ordered DeleteObjects backend batch, with process-atomic memory,
   transactional SQLite, and explicitly scoped per-file durability semantics
   (see [DeleteObjects qualification](docs/qualification/delete-objects.md));
@@ -281,8 +281,8 @@ per chunk or retain a massive object.
 The completion-set-aware `Client.Scoped` layer currently covers conditional
 Put, whole and exact-range Get, Head, Delete, CreateMultipartUpload,
 UploadPart, CompleteMultipartUpload, AbortMultipartUpload, and bounded
-ListParts and ListMultipartUploads. The typed synchronous overloads wait on
-those same owner-driven state machines.
+ListParts and ListMultipartUploads, plus CopyObject. The typed synchronous
+overloads wait on those same owner-driven state machines.
 Multipart initiation and abort use one-shot empty sources, UploadPart moves one
 owned bounded buffer, and completion owns the exact serialized XML behind a
 one-shot source. Each preserves HTTP
@@ -303,6 +303,12 @@ separate pages remain independent service snapshots.
 Composable ListMultipartUploads applies the same bounded owner-driven contract
 to bucket-level discovery, binding the paired cursor and every echoed scope
 field to one prepared request while leaving pages as independent snapshots.
+Composable CopyObject owns its encoded raw source and complete options record,
+uses one non-rewindable empty request source and one XML-limit-bounded response
+sink, and never replays the mutation. Only a complete validated success proves
+publication. An admitted transport failure, invalid response, or malformed
+embedded HTTP-200 error is `Outcome_Unknown`; callers reconcile the destination
+with a generation-bound whole Get before deciding whether to retry.
 The detailed policy is in
 [client transfers](docs/architecture/client-transfers.md).
 

@@ -1319,6 +1319,40 @@ package body Flyology.Object_Storage.Client.Transfers is
       Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout            : Duration := 30.0;
       Token              : access Flyology.Cancellation.Token := null)
+      return Scoped.Copy_Result
+   is
+      --  The copy parent, HTTP exchange, and HTTP's single active transport
+      --  child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Copy_Operation :=
+           Scoped.Copy_Object
+             (Set'Access, Client'Access, Origin, Source_Bucket, Source_Key,
+              Destination_Bucket, Destination_Key, Options, Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+              Token);
+         Result : Scoped.Copy_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Copy_Object;
+
+   function Copy_Object
+     (Client             : aliased in out Flyology.HTTP.Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout            : Duration := 30.0;
+      Token              : access Flyology.Cancellation.Token := null)
       return Copy_Outcome
    is
       Maximum_Copy_Source_Length : constant :=
