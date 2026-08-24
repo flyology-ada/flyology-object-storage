@@ -228,14 +228,17 @@ high-level child must not expose or duplicate signed request fields merely to
 cross the sibling-package privacy boundary.
 
 The consumer-approved PR #33 baseline is pinned at
-`98c0e26f7665df4fecc299abd96ca5827590f0f8`. Its qualification includes the
+`b7fb54748eb40a4816d6277decf752c37c90171b`. Its qualification includes the
 established-child lifecycle, typed buffer restoration, admission certainty,
 and owner-driven HTTP/1.1, HTTP/2, and HTTP/3 exchange behavior required by
 this design. The revision adds protected bounded round-robin HTTP/2 pump
-handoff, gated by a deterministic four-stream no-cut-in test and 60,000
-native/lightweight campaign requests. Object Storage still independently gates
-its semantic mappings and ownership restoration before claiming the
-higher-level surface.
+handoff and a bounded owner-driven settlement probe shared by synchronous and
+scoped adapters. Three complete sync/scoped by native/lightweight h2spec
+matrices pass 684/684 assertions, alongside the full HTTP test and
+documentation gates. Ordinary clients retain zero settlement grace, and the
+probe adds no helper task, completion slot, or second protocol engine. Object
+Storage still independently gates its semantic mappings and ownership
+restoration before claiming the higher-level surface.
 
 ### Publication mapping oracle
 

@@ -19,10 +19,10 @@ flyology_object_storage = { path='..' }
 
 #  Match the root crate's provisional immutable composable-HTTP baseline.
 [[pins]]
-flyology_http = { url = "https://github.com/flyology-ada/flyology-http.git", commit = "98c0e26f7665df4fecc299abd96ca5827590f0f8" }
+flyology_http = { url = "https://github.com/flyology-ada/flyology-http.git", commit = "b7fb54748eb40a4816d6277decf752c37c90171b" }
 
 [[pins]]
-flyology_quic = { url = "https://github.com/flyology-ada/flyology-http.git", subdir = "flyology_quic", commit = "98c0e26f7665df4fecc299abd96ca5827590f0f8" }
+flyology_quic = { url = "https://github.com/flyology-ada/flyology-http.git", subdir = "flyology_quic", commit = "b7fb54748eb40a4816d6277decf752c37c90171b" }
 
 [[depends-on]]
 aunit = "^26.0.0"

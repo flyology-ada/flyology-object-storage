@@ -153,15 +153,17 @@ alr build
 ```
 
 The composable client rollout temporarily uses Flyology HTTP PR #33 at exact
-commit `98c0e26f7665df4fecc299abd96ca5827590f0f8`. Because its
+commit `b7fb54748eb40a4816d6277decf752c37c90171b`. Because its
 `flyology_quic=0.1.2-dev` dependency is not yet indexed, every independently
 solved Alire root pins that subcrate from the same repository and commit. These
 immutable git pins are provisional until the reviewed HTTP merge and dev-index
 publication; committed machine-local path pins remain prohibited. This
-revision adds protected bounded round-robin HTTP/2 pump handoff. Its
-qualification includes a deterministic four-stream no-cut-in test and 60,000
-native/lightweight campaign requests, alongside the full HTTP test and
-documentation gates.
+revision adds protected bounded round-robin HTTP/2 pump handoff and keeps
+synchronous settlement on that same owner-driven composable pump. Its
+qualification includes three complete sync/scoped by native/lightweight
+h2spec matrices (684/684 assertions), the full HTTP test and documentation
+gates, and no helper task, extra completion slot, or second protocol engine.
+Ordinary clients retain zero settlement grace.
 
 The independent S3 interoperability matrix uses digest-pinned RustFS and
 SeaweedFS servers as its permissively licensed primary targets, MinIO as an
