@@ -2,10 +2,10 @@
 
 This slice qualifies the pinned S3 `DeleteObject` request and response model,
 atomic current-object deletion, signed low- and high-level clients, and the
-authenticated server route. The coverage ledger remains deliberately
-`partial` for the server: retained-generation deletion is qualified on memory
-and SQLite, while Requester Pays enforcement, governance retention, directory
-buckets, and durable files versions are not implemented.
+authenticated general-purpose server route. Retained-generation deletion is
+qualified on memory and SQLite. Requester Pays enforcement, governance
+retention, directory buckets, and durable files versions remain explicit typed
+capability exclusions rather than silently accepted behavior.
 
 The complete modeled request surface is represented: bucket, key, MFA,
 version ID, Requester Pays, governance-retention bypass, expected owner,
@@ -68,6 +68,9 @@ directory-only time/size predicates return `InvalidArgument`. MFA requires
 secure transport and a bounded non-retained verifier decision for the bucket
 root owner; missing, malformed, duplicate, overlong, insecure, non-root,
 unavailable, null, and raising verifier cases fail without mutation.
+The signed corpus also distinguishes absence from empty payer, governance,
+size, modification-time, MFA, and expected-owner fields. Its complete rejected
+control sequence is followed by an independent visibility check.
 
 ## Reproducible gates
 
@@ -79,7 +82,7 @@ unavailable, null, and raising verifier cases fail without mutation.
 ./tools/prove.sh
 ```
 
-The root gate includes 33/33 AUnit tests, 88 abrupt-crash cases, signed native
+The root gate includes 40/40 AUnit tests, 88 abrupt-crash cases, signed native
 and Flyology-lightweight application/socket corpora, exact body/header error
 oracles, condition races, durability faults, dormant-condition bounds, and the
 live/dangling namespace corpus. The SQLite gate repeats atomic conditions,
@@ -95,8 +98,9 @@ RustFS and SeaweedFS return 412 rather than AWS's documented 404 for
 `If-Match` and deletes the mismatched object. These observations do not weaken
 the Flyology server or client conformance gates.
 
-The final source base also passed one clean serialized FSF GNATprove 16.1.0
-forced-manifest run across eight units. With warnings as errors, all 625/625
-checks proved (157 flow and 468 prover), with zero warnings, justified or
-unproved checks, or `Assume` statements. Invocation-attributed output is
-retained under `obj/proof/`.
+The current no-pin dependency graph also passed one clean serialized FSF
+GNATprove 16.1.0 forced-manifest run. With warnings as errors, all 936/936
+checks proved, with zero warnings, justified or unproved checks, or `Assume`
+statements. Invocation-attributed output is retained under `obj/proof/`. The
+present-empty corpus and coverage promotion change no SPARK unit or proof
+boundary.

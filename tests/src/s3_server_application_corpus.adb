@@ -10052,6 +10052,15 @@ begin
               (Signed_Delete_Object_Request
                  ("/test-bucket/delete-policy",
                   Header_Name => "x-amz-request-payer",
+                  Header_Value => "")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted an empty request payer");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-request-payer",
                   Header_Value => "requester")),
             "501 Not Implemented"),
          "DeleteObject silently ignored Requester Pays");
@@ -10064,6 +10073,15 @@ begin
                   Header_Value => "yes")),
             "<Code>InvalidArgument</Code>"),
          "DeleteObject accepted an invalid governance bypass value");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-bypass-governance-retention",
+                  Header_Value => "")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted an empty governance bypass value");
       Require
         (Has
            (Run
@@ -10104,6 +10122,15 @@ begin
               (Signed_Delete_Object_Request
                  ("/test-bucket/delete-policy",
                   Header_Name => "x-amz-if-match-size",
+                  Header_Value => "")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted an empty conditional size");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-if-match-size",
                   Header_Value => "8")),
             "<Code>InvalidArgument</Code>"),
          "DeleteObject applied a directory-only size predicate");
@@ -10125,6 +10152,23 @@ begin
                   Header_Value => "not-a-date")),
             "<Code>InvalidArgument</Code>"),
          "DeleteObject accepted a malformed modification time");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-if-match-last-modified-time",
+                  Header_Value => "")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted an empty modification time");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy", Header_Name => "x-amz-mfa",
+                  Header_Value => "")),
+            "<Code>InvalidArgument</Code>"),
+         "DeleteObject accepted an empty MFA credential");
       Require
         (Has
            (Run
@@ -10263,6 +10307,15 @@ begin
                   Second_Value => "test-principal")),
             "<Code>InvalidRequest</Code>"),
          "DeleteObject accepted duplicate expected-owner fields");
+      Require
+        (Has
+           (Run
+              (Signed_Delete_Object_Request
+                 ("/test-bucket/delete-policy",
+                  Header_Name => "x-amz-expected-bucket-owner",
+                  Header_Value => "")),
+            "<Code>InvalidRequest</Code>"),
+         "DeleteObject accepted an empty expected-owner field");
       Require
         (Has
            (Run
