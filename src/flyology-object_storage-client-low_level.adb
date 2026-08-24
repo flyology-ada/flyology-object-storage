@@ -1989,6 +1989,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
             then Parameters.Max_Keys
             else S3.Core.Page_Size'Last);
          Result.Requested_URL_Encoding := Parameters.URL_Encoding;
+         Result.Requested_List_Request_Payer := Parameters.Request_Payer;
       end return;
    exception
       when Constraint_Error =>
@@ -2030,59 +2031,50 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "malformed ListObjectVersions response";
    end Decode_List_Object_Versions_Response;
 
-   function Execute_List_Object_Versions
-     (Client   : aliased in out Flyology.HTTP.Client.Client;
+   function Decode_List_Object_Versions_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
       Prepared : Prepared_Request;
-      Timeout  : Duration := 30.0;
-      Token    : access Flyology.Cancellation.Token := null;
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Object_Versions_Outcome
    is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "invalid ListObjectVersions response header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else not Valid_List_Response_Header_Text (Value)
+            then
+               raise Invalid_Response with
+                 "invalid ListObjectVersions response header value";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+
    begin
       if Prepared.Operation /= List_Object_Versions_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
-         Response : Flyology.HTTP.Client.Response :=
-           Flyology.HTTP.Client.Execute
-             (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-         function Singleton_Header (Name : String) return String is
-            Count : constant Natural :=
-              Flyology.HTTP.Client.Header_Count (Response, Name);
-         begin
-            if Count > 1 then
-               raise Invalid_Response with
-                 "invalid ListObjectVersions response header multiplicity";
-            elsif Count = 0 then
-               return "";
-            end if;
-            declare
-               Value : constant String :=
-                 Flyology.HTTP.Client.Header (Response, Name);
-            begin
-               if Value'Length = 0
-                 or else not Valid_List_Response_Header_Text (Value)
-               then
-                  raise Invalid_Response with
-                    "invalid ListObjectVersions response header value";
-               end if;
-               return Value;
-            end;
-         end Singleton_Header;
-         Request_Charged : constant String := Singleton_Header
-           ("x-amz-request-charged");
-         Request_ID : constant String := Singleton_Header
-           ("x-amz-request-id");
-         Host_ID : constant String := Singleton_Header ("x-amz-id-2");
-         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
-           Flyology.HTTP.Client.Read_All
-             (Response, Limits.Maximum_Document_Bytes, Token);
+         Request_Charged : constant String :=
+           Singleton_Header ("x-amz-request-charged");
          Outcome : constant List_Object_Versions_Outcome :=
            Decode_List_Object_Versions_Response
-             (Status, Flyology.Bytes.To_Byte_String (Payload),
-              Request_Charged, Request_ID, Host_ID, Limits);
+             (Flyology.HTTP.Client.Status (Response), Payload,
+              Request_Charged,
+              Singleton_Header ("x-amz-request-id"),
+              Singleton_Header ("x-amz-id-2"), Limits);
       begin
          if Outcome.Kind = Listed then
             declare
@@ -2109,51 +2101,63 @@ package body Flyology.Object_Storage.Client.Low_Level is
                        else US.To_String (Expected))
                   else not Present or else US.Length (Actual) = 0);
             begin
-               if Page.Name /= Prepared.Requested_Bucket then
-                  raise Invalid_Response with
-                    "ListObjectVersions bucket does not match request";
-               elsif Page.Max_Keys /= Prepared.Requested_Max_Keys then
-                  raise Invalid_Response with
-                    "ListObjectVersions MaxKeys does not match request";
-               elsif not Matches_Optional_Echo
-                 (Page.Has_Key_Marker, Page.Key_Marker,
-                  Prepared.Requested_Has_Key_Marker,
-                  Prepared.Requested_Key_Marker)
+               if (Request_Charged'Length > 0
+                   and then US.To_String
+                     (Prepared.Requested_List_Request_Payer) /= "requester")
+                 or else Page.Name /= Prepared.Requested_Bucket
+                 or else Page.Max_Keys /= Prepared.Requested_Max_Keys
+                 or else not Matches_Optional_Echo
+                   (Page.Has_Key_Marker, Page.Key_Marker,
+                    Prepared.Requested_Has_Key_Marker,
+                    Prepared.Requested_Key_Marker)
+                 or else not Matches_Optional_Echo
+                   (Page.Has_Version_ID_Marker, Page.Version_ID_Marker,
+                    Prepared.Requested_Has_Version_ID_Marker,
+                    Prepared.Requested_Version_ID_Marker,
+                    Encode => False)
+                 or else not Matches_Optional_Echo
+                   (Page.Has_Prefix, Page.Prefix,
+                    Prepared.Requested_Has_Prefix,
+                    Prepared.Requested_Prefix)
+                 or else not Matches_Optional_Echo
+                   (Page.Has_Delimiter, Page.Delimiter,
+                    Prepared.Requested_Has_Delimiter,
+                    Prepared.Requested_Delimiter)
+                 or else Page.Has_Encoding_Type /=
+                   Prepared.Requested_URL_Encoding
                then
                   raise Invalid_Response with
-                    "ListObjectVersions KeyMarker does not match request";
-               elsif not Matches_Optional_Echo
-                 (Page.Has_Version_ID_Marker, Page.Version_ID_Marker,
-                  Prepared.Requested_Has_Version_ID_Marker,
-                  Prepared.Requested_Version_ID_Marker,
-                  Encode => False)
-               then
-                  raise Invalid_Response with
-                    "ListObjectVersions VersionIdMarker does not match " &
-                    "request";
-               elsif not Matches_Optional_Echo
-                 (Page.Has_Prefix, Page.Prefix,
-                  Prepared.Requested_Has_Prefix,
-                  Prepared.Requested_Prefix)
-               then
-                  raise Invalid_Response with
-                    "ListObjectVersions Prefix does not match request";
-               elsif not Matches_Optional_Echo
-                 (Page.Has_Delimiter, Page.Delimiter,
-                  Prepared.Requested_Has_Delimiter,
-                  Prepared.Requested_Delimiter)
-               then
-                  raise Invalid_Response with
-                    "ListObjectVersions Delimiter does not match request";
-               elsif Page.Has_Encoding_Type /=
-                 Prepared.Requested_URL_Encoding
-               then
-                  raise Invalid_Response with
-                    "ListObjectVersions EncodingType does not match request";
+                    "ListObjectVersions response does not match request";
                end if;
             end;
          end if;
          return Outcome;
+      end;
+   end Decode_List_Object_Versions_Complete_Response;
+
+   function Execute_List_Object_Versions
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Object_Versions_Outcome
+   is
+   begin
+      if Prepared.Operation /= List_Object_Versions_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_List_Object_Versions_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

@@ -4,7 +4,8 @@ This note records the implemented contract for the completion-set-aware object
 client slice: conditional complete-object Put, generation-bound whole and
 single-range Get, bodyless Head, non-replaying Delete, non-replaying multipart
 initiation, one-shot UploadPart, one-shot multipart completion and abort,
-bounded multipart discovery, CopyObject, DeleteObjects, and ListObjectsV2. The
+bounded multipart discovery, CopyObject, DeleteObjects, ListObjectsV2, and
+ListObjectVersions. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -53,7 +54,8 @@ The implemented operation order is:
 10. `List_Parts` and `List_Multipart_Uploads`;
 11. `Copy_Object` and `Delete_Objects`;
 12. complete modeled `Put_Object` controls; and
-13. `List_Objects_V2`.
+13. `List_Objects_V2`; and
+14. `List_Object_Versions`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -91,6 +93,12 @@ start-after key, maximum, encoding mode, and requester-pays response to the
 exact prepared request. Each page is an independent read-only service
 snapshot. Its parameter-record synchronous overload waits on the same
 owner-driven operation and preserves typed HTTP failure and admission state.
+ListObjectVersions uses the same bounded ownership model and additionally binds
+the paired key/version cursor, including explicit-present empty values, the
+modeled omitted-MaxKeys default, and requester-pays admission. With URL
+encoding enabled, the modeled response retains the encoded key marker; callers
+decode that key through `S3.Listings.Decode_URL_Value` before a later Start,
+while the version identifier remains opaque and is passed through unchanged.
 
 An abandoned operation first requests cancellation and drains all HTTP,
 kernel, token, descriptor, source, and response leases. Only after no borrower

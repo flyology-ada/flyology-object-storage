@@ -201,6 +201,32 @@ package Flyology.Object_Storage.Client.Objects is
       Token    : access Flyology.Cancellation.Token := null)
       return List_Versions_Outcome;
 
+   --  List one bounded ListObjectVersions page by waiting on the composable
+   --  owner-driven operation. This parameter-record overload preserves typed
+   --  HTTP failure and admission information; paired cursors remain in the
+   --  modeled response for an explicit later Start.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose retained generations are listed
+   --  @param Parameters Complete modeled scope and paired cursor
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   function List_Versions_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Object_Versions_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.List_Object_Versions_Result;
+
    subtype Complete_Put_Outcome is Low_Level.Put_Object_Outcome;
    subtype Conditional_Put_Outcome is Complete_Put_Outcome;
 

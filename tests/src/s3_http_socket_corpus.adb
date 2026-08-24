@@ -28,6 +28,7 @@ with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Core;
+with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Object_Lock;
@@ -56,6 +57,7 @@ procedure S3_HTTP_Socket_Corpus is
    package Bucket_Controls renames
      Flyology.Object_Storage.S3.Bucket_Controls;
    package Checksum_Policy renames Checksums.Policy;
+   package Listings renames Flyology.Object_Storage.S3.Listings;
    package Model renames Flyology.Object_Storage.S3.Model;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
    package Object_Lock renames Flyology.Object_Storage.S3.Object_Lock;
@@ -100,6 +102,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Publication_Disposition;
    use type Scoped.Part_Upload_Disposition;
    use type Scoped.List_Objects_V2_Result_Kind;
+   use type Scoped.List_Object_Versions_Result_Kind;
    use type Scoped.List_Parts_Result_Kind;
    use type Scoped.List_Multipart_Uploads_Result_Kind;
    use type Scoped.Copy_Result_Kind;
@@ -3462,6 +3465,46 @@ procedure S3_HTTP_Socket_Corpus is
                  ("example-bucket", "oversized/" &
                     String'(1 .. 256 => 'x'))),
             "GET", "/example-bucket?max-keys=1&prefix=oversized%2F&versions");
+         Serve
+           (HTTP_Response
+              ("200 OK", Final_Versions_XML ("example-bucket", "scoped/"),
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?max-keys=1&prefix=scoped%2F&versions",
+            Expected_Request_Payer => "requester");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "GET", "/example-bucket?max-keys=1&" &
+              "prefix=scoped-error%2F&versions");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Final_Versions_XML ("wrong-bucket", "scoped-wrong/")),
+            "GET", "/example-bucket?max-keys=1&" &
+              "prefix=scoped-wrong%2F&versions");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Final_Versions_XML ("example-bucket", "scoped-duplicate/"),
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?max-keys=1&" &
+              "prefix=scoped-duplicate%2F&versions");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Final_Versions_XML ("example-bucket", "scoped-payer/"),
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?max-keys=1&" &
+              "prefix=scoped-payer%2F&versions");
+         Serve
+           (HTTP_Response ("200 OK", Versions_Paged_First_XML),
+            "GET", "/example-bucket?encoding-type=url&max-keys=1&" &
+              "prefix=paged%2F&versions", Fragmented => True);
+         Serve
+           (HTTP_Response ("200 OK", Versions_Paged_Second_XML),
+            "GET", "/example-bucket?encoding-type=url&" &
+              "key-marker=paged%2Fa%20%2F%25%C3%A9&max-keys=1&" &
+              "prefix=paged%2F&version-id-marker=v%2B1&versions");
          Serve
            (HTTP_Response ("204 No Content", ""),
             "DELETE", "/example-bucket?cors",
@@ -10072,6 +10115,173 @@ procedure S3_HTTP_Socket_Corpus is
             Must_Reject
               ("oversized/", "ListObjectVersions accepted oversized XML",
                Small_Limits => True);
+         end;
+         declare
+            Parameters : Low_Level.List_Object_Versions_Parameters;
+         begin
+            Parameters.Prefix := US.To_Unbounded_String ("scoped/");
+            Parameters.Has_Prefix := True;
+            Parameters.Max_Keys := 1;
+            Parameters.Has_Max_Keys := True;
+            Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+            declare
+               Result : constant Scoped.List_Object_Versions_Result :=
+                 Objects.List_Versions_Page
+                   (HTTP, Origin, "example-bucket", Parameters, Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                 Scoped.List_Object_Versions_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Listed
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /= "requester"
+               then
+                  raise Program_Error with
+                    "typed composable ListObjectVersions success mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.List_Object_Versions_Parameters;
+         begin
+            Parameters.Prefix := US.To_Unbounded_String ("scoped-error/");
+            Parameters.Has_Prefix := True;
+            Parameters.Max_Keys := 1;
+            Parameters.Has_Max_Keys := True;
+            declare
+               Result : constant Scoped.List_Object_Versions_Result :=
+                 Objects.List_Versions_Page
+                   (HTTP, Origin, "example-bucket", Parameters, Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                 Scoped.List_Object_Versions_Response_Available
+                 or else Result.Failure /= Scoped.Authorization_Failed
+                 or else Result.Response.Kind /= Low_Level.Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "composable ListObjectVersions rejection mismatch";
+               end if;
+            end;
+         end;
+         declare
+            procedure Require_Invalid_List_Object_Versions
+              (Prefix, Message : String) is
+               Parameters : Low_Level.List_Object_Versions_Parameters;
+               --  Listing parent, HTTP exchange, and one transport child.
+               Set : aliased Operations.Completion_Set (3);
+            begin
+               Parameters.Prefix := US.To_Unbounded_String (Prefix);
+               Parameters.Has_Prefix := True;
+               Parameters.Max_Keys := 1;
+               Parameters.Has_Max_Keys := True;
+               declare
+                  Operation : Scoped.List_Object_Versions_Operation :=
+                    Scoped.List_Object_Versions
+                      (Set'Access, HTTP'Access, Origin, "example-bucket",
+                       Parameters, Identity,
+                       HTTP_Client.Deadline_After (5.0));
+                  Result : Scoped.List_Object_Versions_Result;
+               begin
+                  Operations.Wait_All (Set);
+                  Scoped.Finish (Operation, Result);
+                  if Result.Kind /=
+                    Scoped.List_Object_Versions_Exchange_Failed
+                    or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                  then
+                     raise Program_Error with Message;
+                  end if;
+               end;
+            end Require_Invalid_List_Object_Versions;
+         begin
+            Require_Invalid_List_Object_Versions
+              ("scoped-wrong/",
+               "composable ListObjectVersions accepted a wrong bucket");
+            Require_Invalid_List_Object_Versions
+              ("scoped-duplicate/",
+               "composable ListObjectVersions accepted duplicate headers");
+            Require_Invalid_List_Object_Versions
+              ("scoped-payer/",
+               "composable ListObjectVersions accepted unrequested payer");
+         end;
+         declare
+            Stop : aliased Flyology.Cancellation.Token;
+            Parameters : Low_Level.List_Object_Versions_Parameters;
+         begin
+            Stop.Request;
+            Parameters.Max_Keys := 1;
+            Parameters.Has_Max_Keys := True;
+            declare
+               Result : constant Scoped.List_Object_Versions_Result :=
+                 Objects.List_Versions_Page
+                   (HTTP, Origin, "example-bucket", Parameters, Identity,
+                    Timeout => 5.0, Token => Stop'Access);
+            begin
+               if Result.Kind /=
+                 Scoped.List_Object_Versions_Exchange_Failed
+                 or else Result.Failure /= Scoped.Cancelled
+                 or else Result.Admission /= HTTP_Client.Not_Admitted
+               then
+                  raise Program_Error with
+                    "pre-admission ListObjectVersions cancellation mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.List_Object_Versions_Parameters;
+            --  Listing parent, HTTP exchange, and one transport child.
+            Set : aliased Operations.Completion_Set (3);
+         begin
+            Parameters.Prefix := US.To_Unbounded_String ("paged/");
+            Parameters.Has_Prefix := True;
+            Parameters.Max_Keys := 1;
+            Parameters.Has_Max_Keys := True;
+            Parameters.URL_Encoding := True;
+            declare
+               Operation : Scoped.List_Object_Versions_Operation :=
+                 Scoped.List_Object_Versions
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    Parameters, Identity, HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.List_Object_Versions_Result;
+            begin
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /=
+                 Scoped.List_Object_Versions_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Listed
+                 or else not Result.Response.Result.Listing.Is_Truncated
+               then
+                  raise Program_Error with
+                    "composed ListObjectVersions first page mismatch";
+               end if;
+               Parameters.Key_Marker := US.To_Unbounded_String
+                 (Listings.Decode_URL_Value
+                    (US.To_String
+                       (Result.Response.Result.Listing.Next_Key_Marker)));
+               Parameters.Has_Key_Marker := True;
+               Parameters.Version_ID_Marker :=
+                 Result.Response.Result.Listing.Next_Version_ID_Marker;
+               Parameters.Has_Version_ID_Marker := True;
+               Scoped.Start_List_Object_Versions
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  Parameters, Identity, HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /=
+                 Scoped.List_Object_Versions_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Listed
+                 or else Result.Response.Result.Listing.Is_Truncated
+               then
+                  raise Program_Error with
+                    "composed ListObjectVersions paired restart mismatch";
+               end if;
+            end;
          end;
          declare
             Result : constant Buckets.Delete_Outcome :=

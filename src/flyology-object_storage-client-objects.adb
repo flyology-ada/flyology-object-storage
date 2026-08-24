@@ -308,6 +308,36 @@ package body Flyology.Object_Storage.Client.Objects is
       end;
    end List_Versions_Page;
 
+   function List_Versions_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Object_Versions_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.List_Object_Versions_Result
+   is
+      --  The listing parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.List_Object_Versions_Operation :=
+           Scoped.List_Object_Versions
+             (Set'Access, Client'Access, Origin, Bucket, Parameters, Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+              Token);
+         Result : Scoped.List_Object_Versions_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end List_Versions_Page;
+
    procedure Apply_Complete_Put_Options
      (Options    : Complete_Put_Options;
       Parameters : in out Low_Level.Put_Object_Parameters)

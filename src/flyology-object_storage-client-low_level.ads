@@ -376,6 +376,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Object_Versions_Outcome;
 
+   --  Decode one complete ListObjectVersions HTTP response and bind every
+   --  successful echoed scope/cursor field plus requester-pays admission to
+   --  the exact prepared request.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared ListObjectVersions request
+   --  @param Limits Bounded XML parser limits
+   --  @return Typed version page or S3 rejection
+   --  @exception Invalid_Request Prepared is not ListObjectVersions
+   --  @exception Invalid_Response Complete response is inconsistent
+   function Decode_List_Object_Versions_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Object_Versions_Outcome;
+
    --  Execute one prepared synchronous request, bind the returned page to its
    --  bucket/filter/cursor context, and release the response before return.
    --  @param Client Configured caller-owned Flyology HTTP client

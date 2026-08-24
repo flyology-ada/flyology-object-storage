@@ -1616,6 +1616,111 @@ package Flyology.Object_Storage.Client.Scoped is
       Result    : out List_Objects_V2_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  Shape of a terminal ListObjectVersions read.
+   --  @enum List_Object_Versions_Response_Available Modeled response exists
+   --  @enum List_Object_Versions_Exchange_Failed No complete response exists
+   type List_Object_Versions_Result_Kind is
+     (List_Object_Versions_Response_Available,
+      List_Object_Versions_Exchange_Failed);
+
+   --  Typed bounded version-listing response or composable HTTP failure.
+   --  Each page is a read-only service snapshot. Version identifiers remain
+   --  opaque; URL-encoded key markers must be decoded before a later Start.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type List_Object_Versions_Result
+     (Kind : List_Object_Versions_Result_Kind :=
+        List_Object_Versions_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when List_Object_Versions_Response_Available =>
+            Response : Low_Level.List_Object_Versions_Outcome;
+         when List_Object_Versions_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded ListObjectVersions parent with one hidden HTTP child. It
+   --  owns the prepared request and response bytes through terminal Finish;
+   --  no caller request value is borrowed after Start returns.
+   type List_Object_Versions_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one bounded ListObjectVersions operation. Request
+   --  validation and signing finish before start.
+   --  @param Operation Fresh or consumed established listing operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose retained generations are listed
+   --  @param Parameters Complete modeled scope and paired cursor
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Start_List_Object_Versions
+     (Operation : in out List_Object_Versions_Operation;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Object_Versions_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded ListObjectVersions operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose retained generations are listed
+   --  @param Parameters Complete modeled scope and paired cursor
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven ListObjectVersions operation
+   function List_Object_Versions
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Object_Versions_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Object_Versions_Operation;
+
+   --  Consume one terminal ListObjectVersions operation.
+   --  @param Operation Terminal ListObjectVersions request
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out List_Object_Versions_Operation;
+      Result    : out List_Object_Versions_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
    --  Shape of a terminal ListParts read.
    --  @enum List_Parts_Response_Available Modeled S3 response exists
    --  @enum List_Parts_Exchange_Failed No complete response exists
@@ -2014,6 +2119,25 @@ private
       Response_Data : Flyology.Bytes.Unbounded_Bytes;
       Response_Limit : Natural := 0;
       Final_Result : List_Objects_V2_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type List_Object_Versions_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : List_Object_Versions_Result;
       Has_Final_Result : Boolean := False;
       Has_Saved_Error : Boolean := False;
       Saved_Error : Ada.Exceptions.Exception_Occurrence;
@@ -2640,6 +2764,27 @@ private
      (Item : in out List_Objects_V2_Operation);
 
    --  @exclude
+   --  @param Item Internal bounded ListObjectVersions response sink
+   --  @param Data Complete-response fragment
+   overriding procedure Write
+     (Item : in out List_Object_Versions_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal ListObjectVersions parent
+   --  @param Event Owner-driver event
+   overriding procedure Drive
+     (Item : in out List_Object_Versions_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal ListObjectVersions parent
+   overriding procedure Request_Cancellation
+     (Item : in out List_Object_Versions_Operation);
+   --  @exclude
+   --  @param Item Internal ListObjectVersions parent
+   overriding procedure Finalize
+     (Item : in out List_Object_Versions_Operation);
+
+   --  @exclude
    --  @param Item Internal bounded ListParts response sink
    --  @param Data Complete-response fragment
    overriding procedure Write
@@ -2882,6 +3027,28 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return List_Objects_V2_Result;
+
+   --  Private normalization boundary shared with the strict test child.
+   --  @exclude
+   --  @param Value Complete decoded S3 response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Normalized ListObjectVersions response
+   function Normalize_List_Object_Versions_Response
+     (Value     : Low_Level.List_Object_Versions_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return List_Object_Versions_Result;
+
+   --  @exclude
+   --  @param Kind Typed HTTP failure
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Causal HTTP phase
+   --  @param Detail Bounded sanitized HTTP diagnostic
+   --  @return Normalized ListObjectVersions exchange failure
+   function Normalize_List_Object_Versions_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return List_Object_Versions_Result;
 
    --  Private normalization boundary shared with the strict test child.
    --  @exclude
