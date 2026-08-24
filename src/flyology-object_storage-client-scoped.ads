@@ -63,7 +63,7 @@ package Flyology.Object_Storage.Client.Scoped is
       Unavailable_Or_Retryable,
       Corrupt_Or_Invalid_Response);
 
-   --  Shape of a terminal conditional-PUT result.
+   --  Shape of a terminal complete-object PUT result.
    --  @enum Put_Response_Available Complete modeled S3 response is available
    --  @enum Put_Exchange_Failed No complete modeled S3 response is available
    type Conditional_Put_Result_Kind is
@@ -100,8 +100,10 @@ package Flyology.Object_Storage.Client.Scoped is
       end case;
    end record;
 
-   --  Conditional complete-object PUT operation. The input buffer token moves
-   --  into this object until Finish; no borrowed request bytes are retained.
+   --  Complete-object PUT operation. The input buffer token moves into this
+   --  object until Finish; no borrowed request bytes are retained. The
+   --  conditional constructors are restricted projections of this same
+   --  operation and certainty model.
    type Conditional_Put_Operation
      (Set : not null access Flyology.Operations.Completion_Set'Class;
       HTTP : not null access Flyology.HTTP.Client.Client;
@@ -112,8 +114,76 @@ package Flyology.Object_Storage.Client.Scoped is
 
    --  Compatibility contract: Region, addressing style, empty optional
    --  fields, and cancellation defaults below mirror the established
-   --  Client.Objects conditional-PUT surface. Changing them would make the
+   --  Client.Objects PutObject surfaces. Changing them would make the
    --  synchronous and composable forms select different wire behavior.
+
+   --  Start or restart a complete modeled PutObject in an established
+   --  operation. Validation and signing complete before the payload token
+   --  moves. The exact prepared parameters bind any requested checksum and
+   --  requester-pays response. No request is retried.
+   --  @param Operation Fresh or consumed established operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination key
+   --  @param Parameters Complete modeled non-body PutObject inputs
+   --  @param Payload_Buffer Acquired complete-object bytes moved until Finish
+   --  @param Payload_SHA256 Exact lowercase digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Start_Put_Object
+     (Operation : in out Conditional_Put_Operation;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Put_Object_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer)
+       and then not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one complete modeled PutObject operation. Ownership,
+   --  certainty, request binding, and retry behavior match Start_Put_Object.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination key
+   --  @param Parameters Complete modeled non-body PutObject inputs
+   --  @param Payload_Buffer Acquired complete-object bytes moved until Finish
+   --  @param Payload_SHA256 Exact lowercase digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started complete-object publication operation
+   function Put_Object
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Put_Object_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Conditional_Put_Operation
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
 
    --  Start or restart immutable publication in an established operation.
    --  Parameters and ownership match the constructor overload.
@@ -260,10 +330,10 @@ package Flyology.Object_Storage.Client.Scoped is
       return Conditional_Put_Operation
      with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
 
-   --  Consume one terminal conditional PUT and restore its exact input token.
+   --  Consume one terminal complete-object PUT and restore its input token.
    --  Result is typed for every expected HTTP/S3 outcome. An unexpected local
    --  provider exception is re-raised only after Body ownership is restored.
-   --  @param Operation Terminal conditional publication
+   --  @param Operation Terminal complete-object publication
    --  @param Result Publication certainty and modeled terminal result
    --  @param Payload_Buffer Vacant original same-pool input handle
    procedure Finish
@@ -2072,17 +2142,17 @@ private
      (Item : in out Conditional_Put_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
-   --  @param Item Internal conditional-PUT parent
+   --  @param Item Internal complete-object PUT parent
    --  @param Event Owner-stack driver event
    overriding procedure Drive
      (Item : in out Conditional_Put_Operation;
       Event : Flyology.Operations.Driver_Event);
    --  @exclude
-   --  @param Item Internal conditional-PUT parent
+   --  @param Item Internal complete-object PUT parent
    overriding procedure Request_Cancellation
      (Item : in out Conditional_Put_Operation);
    --  @exclude
-   --  @param Item Internal conditional-PUT parent
+   --  @param Item Internal complete-object PUT parent
    overriding procedure Finalize (Item : in out Conditional_Put_Operation);
 
    --  @exclude
@@ -2498,7 +2568,7 @@ private
    --  @exclude
    --  @param Value Complete decoded S3 response
    --  @param Admission Terminal HTTP admission certainty
-   --  @return Normalized conditional-PUT result
+   --  @return Normalized complete-object PUT result
    function Normalize_Put_Response
      (Value     : Low_Level.Put_Object_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
@@ -2510,7 +2580,7 @@ private
    --  @param Phase Causal HTTP phase
    --  @param Required Exact known response capacity requirement
    --  @param Detail Bounded sanitized HTTP diagnostic
-   --  @return Normalized conditional-PUT failure
+   --  @return Normalized complete-object PUT failure
    function Normalize_Put_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
       Admission : Flyology.HTTP.Client.Admission_Certainty;

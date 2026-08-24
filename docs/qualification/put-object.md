@@ -142,6 +142,17 @@ gate observes exactly one PUT and then requires an exact generation-bound GET;
 there is no transparent replay. Expected S3 rejections remain structured and
 typed; programming errors are not accepted as a transport-loss oracle.
 
+The additive `Client.Scoped.Put_Object` constructor and reusable
+`Start_Put_Object` overload accept the complete modeled non-body parameter
+record and move an acquired bounded payload token only after validation and
+signing. Terminal `Finish` restores that exact token. The typed synchronous
+buffer overload in `Client.Objects` waits on the same owner-driven state
+machine; the established borrowed-source overload remains direct and
+non-rewindable. A successful response is bound to the requested full-object
+checksum and requester-pays admission retained in the prepared request. A
+missing or mismatched requested checksum is an invalid response with unknown
+publication certainty, not a partial success, and no form retries it.
+
 ## Server compatibility boundaries
 
 Every physical `x-amz-*` request header must occur in SigV4 `SignedHeaders`.

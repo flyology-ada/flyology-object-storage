@@ -6543,6 +6543,34 @@ package body Flyology.Object_Storage.Client.Low_Level is
         US.To_String (Parameters.Server_Side_Encryption);
       Request_Payer : constant String :=
         US.To_String (Parameters.Request_Payer);
+      --  Externally fixed wire spellings from the pinned PutObject checksum
+      --  enumeration. This mapping selects the response field whose exact
+      --  echo is required; changing it changes S3 compatibility.
+      Requested_Checksum_Algorithm : constant Checksum_Algorithm :=
+        (if Algorithm = "CRC32" then Checksum_CRC32
+         elsif Algorithm = "CRC32C" then Checksum_CRC32C
+         elsif Algorithm = "CRC64NVME" then Checksum_CRC64NVME
+         elsif Algorithm = "SHA1" then Checksum_SHA1
+         elsif Algorithm = "SHA256" then Checksum_SHA256
+         elsif Algorithm = "SHA512" then Checksum_SHA512
+         elsif Algorithm = "MD5" then Checksum_MD5
+         elsif Algorithm = "XXHASH64" then Checksum_XXHASH64
+         elsif Algorithm = "XXHASH3" then Checksum_XXHASH3
+         elsif Algorithm = "XXHASH128" then Checksum_XXHASH128
+         else No_Checksum);
+      Requested_Checksum_Value : constant US.Unbounded_String :=
+        (case Requested_Checksum_Algorithm is
+            when No_Checksum => US.Null_Unbounded_String,
+            when Checksum_CRC32 => Parameters.Checksum_CRC32,
+            when Checksum_CRC32C => Parameters.Checksum_CRC32C,
+            when Checksum_CRC64NVME => Parameters.Checksum_CRC64NVME,
+            when Checksum_SHA1 => Parameters.Checksum_SHA1,
+            when Checksum_SHA256 => Parameters.Checksum_SHA256,
+            when Checksum_SHA512 => Parameters.Checksum_SHA512,
+            when Checksum_MD5 => Parameters.Checksum_MD5,
+            when Checksum_XXHASH64 => Parameters.Checksum_XXHASH64,
+            when Checksum_XXHASH3 => Parameters.Checksum_XXHASH3,
+            when Checksum_XXHASH128 => Parameters.Checksum_XXHASH128);
       Grant_Count : constant Natural :=
         Boolean'Pos (US.Length (Parameters.Grant_Full_Control) > 0) +
         Boolean'Pos (US.Length (Parameters.Grant_Read) > 0) +
@@ -6763,6 +6791,10 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Identity, Region, Timestamp)
       do
          Result.Operation := Put_Object_Operation;
+         Result.Requested_Put_Checksum_Algorithm :=
+           Requested_Checksum_Algorithm;
+         Result.Requested_Put_Checksum_Value := Requested_Checksum_Value;
+         Result.Requested_Put_Request_Payer := Parameters.Request_Payer;
       end return;
    exception
       when Constraint_Error =>
@@ -7029,6 +7061,70 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Status, Payload, (others => <>), Request_ID, Host_ID, Limits);
    end Decode_Put_Object_Complete_Response;
 
+   function Decode_Put_Object_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Outcome
+   is
+   begin
+      if Prepared.Operation /= Put_Object_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Outcome : constant Put_Object_Outcome :=
+           Decode_Put_Object_Complete_Response (Response, Payload, Limits);
+      begin
+         if Outcome.Kind /= Object_Put then
+            return Outcome;
+         end if;
+         declare
+            Returned_Checksum : constant String :=
+              (case Prepared.Requested_Put_Checksum_Algorithm is
+                  when No_Checksum => "",
+                  when Checksum_CRC32 =>
+                    US.To_String (Outcome.Result.Checksum_CRC32),
+                  when Checksum_CRC32C =>
+                    US.To_String (Outcome.Result.Checksum_CRC32C),
+                  when Checksum_CRC64NVME =>
+                    US.To_String (Outcome.Result.Checksum_CRC64NVME),
+                  when Checksum_SHA1 =>
+                    US.To_String (Outcome.Result.Checksum_SHA1),
+                  when Checksum_SHA256 =>
+                    US.To_String (Outcome.Result.Checksum_SHA256),
+                  when Checksum_SHA512 =>
+                    US.To_String (Outcome.Result.Checksum_SHA512),
+                  when Checksum_MD5 =>
+                    US.To_String (Outcome.Result.Checksum_MD5),
+                  when Checksum_XXHASH64 =>
+                    US.To_String (Outcome.Result.Checksum_XXHASH64),
+                  when Checksum_XXHASH3 =>
+                    US.To_String (Outcome.Result.Checksum_XXHASH3),
+                  when Checksum_XXHASH128 =>
+                    US.To_String (Outcome.Result.Checksum_XXHASH128));
+         begin
+            if Prepared.Requested_Put_Checksum_Algorithm /= No_Checksum
+              and then
+                (Returned_Checksum /=
+                   US.To_String (Prepared.Requested_Put_Checksum_Value)
+                 or else US.To_String (Outcome.Result.Checksum_Type) /=
+                   "FULL_OBJECT")
+            then
+               raise Invalid_Response with
+                 "PutObject response checksum does not match request";
+            elsif US.Length (Outcome.Result.Request_Charged) > 0
+              and then US.To_String
+                (Prepared.Requested_Put_Request_Payer) /= "requester"
+            then
+               raise Invalid_Response with
+                 "PutObject charged response was not requested";
+            end if;
+            return Outcome;
+         end;
+      end;
+   end Decode_Put_Object_Complete_Response;
+
    function Execute_Put_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -7054,7 +7150,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Flyology.HTTP.Client.Read_All (Response, Maximum, Token);
       begin
          return Decode_Put_Object_Complete_Response
-           (Response, Flyology.Bytes.To_Byte_String (Payload), Limits);
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

@@ -12,8 +12,6 @@ package body Flyology.Object_Storage.Client.Objects is
    use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
-   use type Low_Level.Put_Object_Outcome_Kind;
-   use type US.Unbounded_String;
 
    function Timestamp return String is
       Image : constant String := Ada.Calendar.Formatting.Image
@@ -427,24 +425,6 @@ package body Flyology.Object_Storage.Client.Objects is
       return Complete_Put_Outcome
    is
       Parameters : Low_Level.Put_Object_Parameters;
-
-      function Result_Checksum
-        (Value : Low_Level.Put_Object_Result) return US.Unbounded_String is
-      begin
-         case Options.Checksum.Algorithm is
-            when No_Checksum => return US.Null_Unbounded_String;
-            when Checksum_CRC32 => return Value.Checksum_CRC32;
-            when Checksum_CRC32C => return Value.Checksum_CRC32C;
-            when Checksum_CRC64NVME => return Value.Checksum_CRC64NVME;
-            when Checksum_SHA1 => return Value.Checksum_SHA1;
-            when Checksum_SHA256 => return Value.Checksum_SHA256;
-            when Checksum_SHA512 => return Value.Checksum_SHA512;
-            when Checksum_MD5 => return Value.Checksum_MD5;
-            when Checksum_XXHASH64 => return Value.Checksum_XXHASH64;
-            when Checksum_XXHASH3 => return Value.Checksum_XXHASH3;
-            when Checksum_XXHASH128 => return Value.Checksum_XXHASH128;
-         end case;
-      end Result_Checksum;
    begin
       if Source in Flyology.HTTP.Client.Rewindable_Request_Body_Source'Class
       then
@@ -461,21 +441,42 @@ package body Flyology.Object_Storage.Client.Objects is
            Low_Level.Execute_Put_Object
              (Client, Prepared, Source, Timeout, Token);
       begin
-         if Outcome.Kind = Low_Level.Object_Put
-           and then
-             (not Valid_Exact_Entity_Tag
-                (US.To_String (Outcome.Result.Entity_Tag))
-              or else
-                (Options.Checksum.Algorithm /= No_Checksum
-                 and then
-                   (Result_Checksum (Outcome.Result) /= Options.Checksum.Value
-                    or else US.To_String (Outcome.Result.Checksum_Type) /=
-                      "FULL_OBJECT")))
-         then
-            raise Low_Level.Invalid_Response with
-              "PutObject success does not match requested publication";
-         end if;
          return Outcome;
+      end;
+   end Put_Object;
+
+   function Put_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Options  : Complete_Put_Options := Default_Complete_Put_Options;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Conditional_Put_Result
+   is
+      Parameters : Low_Level.Put_Object_Parameters;
+      --  The object operation, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      Apply_Complete_Put_Options (Options, Parameters);
+      declare
+         Operation : Scoped.Conditional_Put_Operation := Scoped.Put_Object
+           (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
+            Payload_Buffer, Payload_SHA256, Identity,
+            Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+            Token);
+         Result : Scoped.Conditional_Put_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result, Payload_Buffer);
+         return Result;
       end;
    end Put_Object;
 

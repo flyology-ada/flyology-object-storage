@@ -2477,6 +2477,74 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Website_Redirect => "/next");
          Serve
            (HTTP_Response
+              ("200 OK", "",
+               "ETag: ""composable-put-first""" & CRLF &
+               "x-amz-checksum-crc32: " & Convenience_Put_CRC32 & CRLF &
+               "x-amz-checksum-type: FULL_OBJECT" & CRLF),
+            "PUT", "/example-bucket/composable-put-first",
+            Convenience_Put_Payload,
+            Expected_Content_Type => "text/plain",
+            Expected_Content_MD5 => Convenience_Put_MD5,
+            Expected_If_None_Match => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => Convenience_Put_CRC32,
+            Expected_Cache_Control => "no-cache",
+            Expected_Content_Disposition => "inline",
+            Expected_Content_Encoding => "gzip",
+            Expected_Content_Language => "en-CA",
+            Expected_Expires => "Fri, 24 May 2013 00:00:00 GMT",
+            Expected_Tagging => "team%2Bname=storage%2Fada",
+            Expected_User_Metadata_Name => "project",
+            Expected_User_Metadata_Value => "flyology",
+            Expected_Website_Redirect => "/next");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "ETag: ""composable-put-second""" & CRLF &
+               "x-amz-checksum-crc32: " & Convenience_Put_CRC32 & CRLF),
+            "PUT", "/example-bucket/composable-put-second",
+            Convenience_Put_Payload,
+            Expected_Content_Type => "text/plain",
+            Expected_Content_MD5 => Convenience_Put_MD5,
+            Expected_If_None_Match => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => Convenience_Put_CRC32,
+            Expected_Cache_Control => "no-cache",
+            Expected_Content_Disposition => "inline",
+            Expected_Content_Encoding => "gzip",
+            Expected_Content_Language => "en-CA",
+            Expected_Expires => "Fri, 24 May 2013 00:00:00 GMT",
+            Expected_Tagging => "team%2Bname=storage%2Fada",
+            Expected_User_Metadata_Name => "project",
+            Expected_User_Metadata_Value => "flyology",
+            Expected_Website_Redirect => "/next");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "ETag: ""composable-put-mismatch""" & CRLF &
+               "x-amz-checksum-crc32: AAAAAA==" & CRLF &
+               "x-amz-checksum-type: FULL_OBJECT" & CRLF),
+            "PUT", "/example-bucket/composable-put-mismatch",
+            Convenience_Put_Payload,
+            Expected_Content_Type => "text/plain",
+            Expected_Content_MD5 => Convenience_Put_MD5,
+            Expected_If_None_Match => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => Convenience_Put_CRC32,
+            Expected_Cache_Control => "no-cache",
+            Expected_Content_Disposition => "inline",
+            Expected_Content_Encoding => "gzip",
+            Expected_Content_Language => "en-CA",
+            Expected_Expires => "Fri, 24 May 2013 00:00:00 GMT",
+            Expected_Tagging => "team%2Bname=storage%2Fada",
+            Expected_User_Metadata_Name => "project",
+            Expected_User_Metadata_Value => "flyology",
+            Expected_Website_Redirect => "/next");
+         Serve
+           (HTTP_Response
               ("200 OK", "", "ETag: ""conditional-first""" & CRLF),
             "PUT", "/example-bucket/conditional-put", "conditional-first",
             Expected_If_None_Match => "*");
@@ -4462,16 +4530,25 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Checksum_Type : String := "")
          is
             Parameters : Low_Level.Put_Object_Parameters;
-            Prepared : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_Put_Object
-                (Origin, Low_Level.Path_Style, "example-bucket", Key,
-                 Parameters, SigV4.SHA256_Hex (Put_Response_Vector_Payload),
-                 Identity, "us-east-1", "20130524T000000Z");
-            Source : Upload_Source (Put_Response_Vector_Payload'Access);
             Rejected : Boolean := False;
          begin
+            --  Pinned PutObject output position 22 is RequestCharged; its
+            --  positive projection must be bound to an admitted requester-
+            --  pays input or the response is intentionally invalid.
+            if Projection_Index = 22 then
+               Parameters.Request_Payer :=
+                 US.To_Unbounded_String ("requester");
+            end if;
             begin
                declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Put_Object
+                      (Origin, Low_Level.Path_Style, "example-bucket", Key,
+                       Parameters,
+                       SigV4.SHA256_Hex (Put_Response_Vector_Payload),
+                       Identity, "us-east-1", "20130524T000000Z");
+                  Source : Upload_Source
+                    (Put_Response_Vector_Payload'Access);
                   Result : constant Low_Level.Put_Object_Outcome :=
                     Low_Level.Execute_Put_Object
                       (HTTP, Prepared, Source, Timeout => 5.0);
@@ -6647,32 +6724,38 @@ procedure S3_HTTP_Socket_Corpus is
          end;
          declare
             Parameters : Low_Level.Put_Object_Parameters;
-            Prepared : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_Put_Object
-                (Origin, Low_Level.Path_Style, "example-bucket", "typed-put",
-                 Parameters, SigV4.SHA256_Hex (Upload_Payload), Identity,
-                 "us-east-1", "20130524T000000Z");
-            Source : Upload_Source (Upload_Payload'Access);
-            Result : constant Low_Level.Put_Object_Outcome :=
-              Low_Level.Execute_Put_Object
-                (HTTP, Prepared, Source, Timeout => 5.0);
          begin
-            if Result.Kind /= Low_Level.Object_Put
-              or else US.To_String (Result.Result.Entity_Tag) /=
-                """typed-put"""
-              or else US.To_String (Result.Result.Checksum_Type) /=
-                "FULL_OBJECT"
-              or else US.To_String
-                (Result.Result.Server_Side_Encryption) /= "aws:kms"
-              or else US.To_String (Result.Result.SSE_KMS_Key_ID) /=
-                "kms-key"
-              or else not Result.Result.Bucket_Key_Enabled.Is_Set
-              or else not Result.Result.Bucket_Key_Enabled.Value
-              or else not Result.Result.Size.Is_Set
-              or else Result.Result.Size.Value /= 1
-            then
-               raise Program_Error with "typed PutObject result mismatch";
-            end if;
+            Parameters.Request_Payer :=
+              US.To_Unbounded_String ("requester");
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Object
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "typed-put", Parameters,
+                    SigV4.SHA256_Hex (Upload_Payload), Identity,
+                    "us-east-1", "20130524T000000Z");
+               Source : Upload_Source (Upload_Payload'Access);
+               Result : constant Low_Level.Put_Object_Outcome :=
+                 Low_Level.Execute_Put_Object
+                   (HTTP, Prepared, Source, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Object_Put
+                 or else US.To_String (Result.Result.Entity_Tag) /=
+                   """typed-put"""
+                 or else US.To_String (Result.Result.Checksum_Type) /=
+                   "FULL_OBJECT"
+                 or else US.To_String
+                   (Result.Result.Server_Side_Encryption) /= "aws:kms"
+                 or else US.To_String (Result.Result.SSE_KMS_Key_ID) /=
+                   "kms-key"
+                 or else not Result.Result.Bucket_Key_Enabled.Is_Set
+                 or else not Result.Result.Bucket_Key_Enabled.Value
+                 or else not Result.Result.Size.Is_Set
+                 or else Result.Result.Size.Value /= 1
+               then
+                  raise Program_Error with "typed PutObject result mismatch";
+               end if;
+            end;
          end;
          Require_Put_Response ("put-response-minimal", True);
          Require_Put_Response ("put-response-body", False);
@@ -7105,6 +7188,117 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "convenience PutObject result mismatch";
                end if;
+            end;
+            declare
+               Parameters : Low_Level.Put_Object_Parameters;
+               --  Test-reference geometry: the sole token owns the exact
+               --  complete-object fixture throughout each serial operation.
+               Pool : aliased Buffers.Pool
+                 (Block_Size => Convenience_Put_Payload'Length,
+                  Capacity => 1);
+               Payload_Buffer : Buffers.Unique_Buffer (Pool'Access);
+            begin
+               Parameters.Content_MD5 := Options.Content_MD5;
+               Parameters.Content_Type := Options.Content_Type;
+               Parameters.Cache_Control :=
+                 Options.Metadata.Cache_Control.Value;
+               Parameters.Content_Disposition :=
+                 Options.Metadata.Content_Disposition.Value;
+               Parameters.Content_Encoding :=
+                 Options.Metadata.Content_Encoding.Value;
+               Parameters.Content_Language :=
+                 Options.Metadata.Content_Language.Value;
+               Parameters.Expires := US.To_Unbounded_String
+                 ("Fri, 24 May 2013 00:00:00 GMT");
+               Parameters.Website_Redirect_Location :=
+                 Options.Metadata.Website_Redirect_Location.Value;
+               Parameters.Metadata.Append
+                 (Low_Level.Metadata_Entry'
+                    (Name  => US.To_Unbounded_String ("project"),
+                     Value => US.To_Unbounded_String ("flyology")));
+               Parameters.Tagging := US.To_Unbounded_String
+                 ("team%2Bname=storage%2Fada");
+               Parameters.Checksum_Algorithm :=
+                 US.To_Unbounded_String ("CRC32");
+               Parameters.Checksum_CRC32 :=
+                 US.To_Unbounded_String (Convenience_Put_CRC32);
+               Parameters.If_None_Match := US.To_Unbounded_String ("*");
+               Parameters.Expected_Bucket_Owner :=
+                 US.To_Unbounded_String ("123456789012");
+               Buffers.Acquire (Payload_Buffer);
+               Buffers.Copy_From
+                 (Payload_Buffer, Bytes (Convenience_Put_Payload));
+               declare
+                  --  Object, HTTP exchange, and one transport child.
+                  Set : aliased Operations.Completion_Set (3);
+                  Operation : Scoped.Conditional_Put_Operation :=
+                    Scoped.Put_Object
+                      (Set'Access, HTTP'Access, Origin, "example-bucket",
+                       "composable-put-first", Parameters, Payload_Buffer,
+                       SigV4.SHA256_Hex (Convenience_Put_Payload), Identity,
+                       HTTP_Client.Deadline_After (5.0));
+                  Result : Scoped.Conditional_Put_Result;
+               begin
+                  if Buffers.Has_Buffer (Payload_Buffer) then
+                     raise Program_Error with
+                       "composable complete PutObject retained caller token";
+                  end if;
+                  Operations.Wait_All (Set);
+                  Scoped.Finish (Operation, Result, Payload_Buffer);
+                  if Result.Kind /= Scoped.Put_Response_Available
+                    or else Result.Disposition /= Scoped.Published
+                    or else Result.Response.Kind /= Low_Level.Object_Put
+                    or else US.To_String
+                      (Result.Response.Result.Entity_Tag) /=
+                        """composable-put-first"""
+                    or else not Buffers.Has_Buffer (Payload_Buffer)
+                  then
+                     raise Program_Error with
+                       "composable complete PutObject constructor mismatch";
+                  end if;
+
+                  Scoped.Start_Put_Object
+                    (Operation, HTTP'Access, Origin, "example-bucket",
+                     "composable-put-second", Parameters, Payload_Buffer,
+                     SigV4.SHA256_Hex (Convenience_Put_Payload), Identity,
+                     HTTP_Client.Deadline_After (5.0));
+                  Operations.Wait_All (Set);
+                  Scoped.Finish (Operation, Result, Payload_Buffer);
+                  if Result.Kind /= Scoped.Put_Response_Available
+                    or else Result.Disposition /= Scoped.Published
+                    or else US.To_String
+                      (Result.Response.Result.Entity_Tag) /=
+                        """composable-put-second"""
+                    or else US.To_String
+                      (Result.Response.Result.Checksum_Type) /= "FULL_OBJECT"
+                    or else not Buffers.Has_Buffer (Payload_Buffer)
+                    or else Buffer_String (Payload_Buffer) /=
+                      Convenience_Put_Payload
+                  then
+                     raise Program_Error with
+                       "composable complete PutObject restart mismatch";
+                  end if;
+               end;
+
+               declare
+                  Result : constant Scoped.Conditional_Put_Result :=
+                    Objects.Put_Object
+                      (HTTP, Origin, "example-bucket",
+                       "composable-put-mismatch", Payload_Buffer,
+                       SigV4.SHA256_Hex (Convenience_Put_Payload), Identity,
+                       Options => Options, Timeout => 5.0);
+               begin
+                  if Result.Kind /= Scoped.Put_Exchange_Failed
+                    or else Result.Disposition /= Scoped.Outcome_Unknown
+                    or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                    or else not Buffers.Has_Buffer (Payload_Buffer)
+                    or else Buffer_String (Payload_Buffer) /=
+                      Convenience_Put_Payload
+                  then
+                     raise Program_Error with
+                       "composable PutObject checksum binding mismatch";
+                  end if;
+               end;
             end;
          end;
          declare

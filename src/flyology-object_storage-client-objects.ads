@@ -239,6 +239,40 @@ package Flyology.Object_Storage.Client.Objects is
       Token    : access Flyology.Cancellation.Token := null)
       return Complete_Put_Outcome;
 
+   --  Publish one complete object by waiting on the composable PutObject
+   --  state machine. The payload token moves for the duration of the exchange
+   --  and is restored before return or propagation of an unexpected local
+   --  exception. Expected transport and service outcomes retain typed
+   --  publication certainty; this helper never retries.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination object key
+   --  @param Payload_Buffer Acquired complete-object bytes moved until return
+   --  @param Payload_SHA256 Exact lowercase body digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only while signing this request
+   --  @param Options Bounded metadata, tags, checksum, conditions, and owner
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Blocking wait budget projected to one absolute deadline
+   --  @param Token Optional cancellation source
+   --  @return Typed publication certainty and terminal PutObject result
+   function Put_Object
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Options  : Complete_Put_Options := Default_Complete_Put_Options;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Conditional_Put_Result
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
+
    --  Publish a complete object only when no current object exists. Source
    --  must be a one-shot Request_Body_Source, not a rewindable source; this
    --  prevents the blocking HTTP client from replaying an ambiguous

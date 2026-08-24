@@ -41,7 +41,7 @@ the object-storage API does not define a competing scheduler or gate type.
 
 The initial operation order is:
 
-1. conditional complete `Put_Object`;
+1. complete `Put_Object`, including its conditional projections;
 2. whole `Get_Object`;
 3. generation-bound exact-range `Get_Object`;
 4. `Head_Object`;
@@ -134,8 +134,10 @@ application code receives both semantic axes.
 
 The success result retains the complete validated `Put_Object_Result`,
 including opaque entity tag and version ID. Entity tags, checksums, and version
-IDs remain separate values. Malformed successful headers or bodies never
-manufacture a successful generation.
+IDs remain separate values. A requested full-object checksum must be echoed
+exactly, and a charged response is accepted only when requester-pays was
+present in the exact prepared request. Malformed, unbound, or incomplete
+successful headers or bodies never manufacture a successful generation.
 
 ## Get and Head results
 

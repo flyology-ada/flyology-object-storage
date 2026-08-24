@@ -346,7 +346,8 @@ package body Flyology.Object_Storage.Client.Scoped is
             Item.Final_Result := Normalize_Put_Response
               (Low_Level.Decode_Put_Object_Complete_Response
                  (Response,
-                  Flyology.Bytes.To_Byte_String (Item.Response_Data)),
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  Item.Prepared),
                HTTP_Client.Certainty (HTTP_Result));
          exception
             when Low_Level.Invalid_Response =>
@@ -375,7 +376,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       then
          Complete_Child (Item);
       else
-         raise Program_Error with "invalid conditional PUT driver event";
+         raise Program_Error with "invalid PutObject driver event";
       end if;
    exception
       when Error : others =>
@@ -417,29 +418,20 @@ package body Flyology.Object_Storage.Client.Scoped is
       Origin   : Flyology.HTTP.Origin;
       Bucket   : String;
       Key      : String;
-      If_Match : String;
-      If_None_Match : String;
+      Parameters : Low_Level.Put_Object_Parameters;
       Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
       Payload_SHA256 : String;
       Identity : Low_Level.Credentials;
       Deadline : HTTP_Client.Monotonic_Deadline;
       Region   : String;
       Style    : Low_Level.Addressing_Style;
-      Content_Type : String;
-      Expected_Bucket_Owner : String;
       Token    : access Flyology.Cancellation.Token)
    is
-      Parameters : Low_Level.Put_Object_Parameters;
    begin
       if Item.HTTP /= Client or else Item.Cancellation /= Token then
          raise Program_Error with
-           "conditional PUT restart changed a retained owner";
+           "PutObject restart changed a retained owner";
       end if;
-      Parameters.If_Match := US.To_Unbounded_String (If_Match);
-      Parameters.If_None_Match := US.To_Unbounded_String (If_None_Match);
-      Parameters.Content_Type := US.To_Unbounded_String (Content_Type);
-      Parameters.Expected_Bucket_Owner :=
-        US.To_Unbounded_String (Expected_Bucket_Owner);
       Item.Prepared := Low_Level.Prepare_Put_Object
         (Origin, Style, Bucket, Key, Parameters, Payload_SHA256, Identity,
          Region, Timestamp);
@@ -471,6 +463,49 @@ package body Flyology.Object_Storage.Client.Scoped is
       end;
    end Start_Put;
 
+   procedure Start_Put_Object
+     (Operation : in out Conditional_Put_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Put_Object_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      Start_Put
+        (Operation, Client, Origin, Bucket, Key, Parameters, Payload_Buffer,
+         Payload_SHA256, Identity, Deadline, Region, Style, Token);
+   end Start_Put_Object;
+
+   function Put_Object
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Put_Object_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Conditional_Put_Operation is
+   begin
+      return Result : Conditional_Put_Operation (Set, Client, Token) do
+         Start_Put_Object
+           (Result, Client, Origin, Bucket, Key, Parameters, Payload_Buffer,
+            Payload_SHA256, Identity, Deadline, Region, Style, Token);
+      end return;
+   end Put_Object;
+
    procedure Start_Put_If_Absent
      (Operation : in out Conditional_Put_Operation;
       Client   : not null access HTTP_Client.Client;
@@ -486,11 +521,15 @@ package body Flyology.Object_Storage.Client.Scoped is
       Content_Type : String := "";
       Expected_Bucket_Owner : String := "";
       Token    : access Flyology.Cancellation.Token := null) is
+      Parameters : Low_Level.Put_Object_Parameters;
    begin
+      Parameters.If_None_Match := US.To_Unbounded_String ("*");
+      Parameters.Content_Type := US.To_Unbounded_String (Content_Type);
+      Parameters.Expected_Bucket_Owner :=
+        US.To_Unbounded_String (Expected_Bucket_Owner);
       Start_Put
-        (Operation, Client, Origin, Bucket, Key, "", "*", Payload_Buffer,
-         Payload_SHA256, Identity, Deadline, Region, Style, Content_Type,
-         Expected_Bucket_Owner, Token);
+        (Operation, Client, Origin, Bucket, Key, Parameters, Payload_Buffer,
+         Payload_SHA256, Identity, Deadline, Region, Style, Token);
    end Start_Put_If_Absent;
 
    procedure Start_Put_If_Matches
@@ -509,15 +548,19 @@ package body Flyology.Object_Storage.Client.Scoped is
       Content_Type : String := "";
       Expected_Bucket_Owner : String := "";
       Token    : access Flyology.Cancellation.Token := null) is
+      Parameters : Low_Level.Put_Object_Parameters;
    begin
       if not Valid_Exact_Entity_Tag (Expected_Entity_Tag) then
          raise Low_Level.Invalid_Request with
            "Put_If_Matches requires one strong entity tag";
       end if;
+      Parameters.If_Match := US.To_Unbounded_String (Expected_Entity_Tag);
+      Parameters.Content_Type := US.To_Unbounded_String (Content_Type);
+      Parameters.Expected_Bucket_Owner :=
+        US.To_Unbounded_String (Expected_Bucket_Owner);
       Start_Put
-        (Operation, Client, Origin, Bucket, Key, Expected_Entity_Tag, "",
-         Payload_Buffer, Payload_SHA256, Identity, Deadline, Region, Style,
-         Content_Type, Expected_Bucket_Owner, Token);
+        (Operation, Client, Origin, Bucket, Key, Parameters, Payload_Buffer,
+         Payload_SHA256, Identity, Deadline, Region, Style, Token);
    end Start_Put_If_Matches;
 
    function Put_If_Absent
@@ -580,7 +623,7 @@ package body Flyology.Object_Storage.Client.Scoped is
         (Operation.Source, Payload_Buffer)
       then
          raise Program_Error with
-           "conditional PUT Finish requires the original buffer pool";
+           "PutObject Finish requires the original buffer pool";
       end if;
       Operations.Consume (Operation);
       Buffer_Drivers.Move_To (Operation.Source, Payload_Buffer);
@@ -590,7 +633,7 @@ package body Flyology.Object_Storage.Client.Scoped is
            (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
             Ada.Exceptions.Exception_Message (Operation.Saved_Error));
       elsif not Operation.Has_Final_Result then
-         raise Program_Error with "conditional PUT has no terminal result";
+         raise Program_Error with "PutObject has no terminal result";
       end if;
       Result := Operation.Final_Result;
    end Finish;

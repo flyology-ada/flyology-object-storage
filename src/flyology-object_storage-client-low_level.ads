@@ -2073,6 +2073,21 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Object_Outcome;
 
+   --  Decode a complete PutObject response and bind request-dependent output
+   --  fields to the exact prepared request. This additive overload preserves
+   --  the established transport-only decoder above for direct callers.
+   --  @param Response Complete lease-free HTTP response metadata
+   --  @param Payload Bounded complete response representation
+   --  @param Prepared Exact request used to bind checksum and payer outputs
+   --  @param Limits Structured S3 error parsing limits
+   --  @return Request-bound PutObject result or structured S3 rejection
+   function Decode_Put_Object_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Outcome;
+
    --  Execute a prepared PutObject request and enforce physical singleton and
    --  present-nonempty semantics for all 22 modeled response headers before
    --  decoding them. Object size remains optional and accepts canonical zero.
@@ -4455,6 +4470,16 @@ private
       Target_Value    : Ada.Strings.Unbounded.Unbounded_String;
       Authority_Value : Ada.Strings.Unbounded.Unbounded_String;
       Signing   : S3.SigV4.Signing_Result;
+      --  Derived request/response binding: a requested PutObject checksum
+      --  must be echoed exactly by a successful response. The retained value
+      --  is public checksum material, never a caller-owned body borrow.
+      Requested_Put_Checksum_Algorithm : Checksum_Algorithm := No_Checksum;
+      Requested_Put_Checksum_Value :
+        Ada.Strings.Unbounded.Unbounded_String;
+      --  Derived request/response binding: a charged PutObject response is
+      --  valid only when the exact prepared request admitted requester pays.
+      Requested_Put_Request_Payer :
+        Ada.Strings.Unbounded.Unbounded_String;
       Requested_Upload_Checksum_Algorithm : Checksum_Algorithm :=
         No_Checksum;
       Requested_Upload_Checksum_Value :
