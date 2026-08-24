@@ -28,6 +28,7 @@ project Flyology_Object_Storage_Tests is
       "s3_put_bucket_ownership_controls_corpus.adb",
       "s3_create_bucket_metadata_table_configuration_corpus.adb",
       "s3_delete_object_annotation_corpus.adb",
+      "s3_put_object_legal_hold_corpus.adb",
       "s3_get_object_torrent_corpus.adb",
       "s3_get_object_torrent_socket_corpus.adb",
       "s3_get_object_legal_hold_corpus.adb",

@@ -1352,6 +1352,113 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Legal_Hold_Outcome;
 
+   --  Every physical control in the pinned PutObjectLegalHold request.
+   --  @field Request_Payer Empty or the sole modeled value, requester
+   --  @field Version_ID Optional exact generation selector
+   --  @field Content_MD5 Optional exact caller-supplied 16-byte digest
+   --  @field Checksum_Algorithm Optional exact pinned SDK checksum algorithm
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Put_Object_Legal_Hold_Parameters is record
+      Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
+      Version_ID            : Ada.Strings.Unbounded.Unbounded_String;
+      Content_MD5           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare one exact signed PutObjectLegalHold request.  The payload is
+   --  copied into prepared owned storage and is never retained by reference.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Object key whose legal-hold state is updated
+   --  @param Value Presence-preserving legal-hold payload
+   --  @param Parameters Optional checksum, generation, payer, and owner
+   --  controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Immutable prepared request with owned serialized bytes
+   function Prepare_Put_Object_Legal_Hold
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Value      : S3.Object_Lock.Legal_Hold;
+      Parameters : Put_Object_Legal_Hold_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String;
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request;
+
+   --  Every modeled PutObjectLegalHold success member.
+   --  @field Request_Charged Optional exact requester-pays result
+   type Put_Object_Legal_Hold_Result is record
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Terminal PutObjectLegalHold response classification.
+   --  @enum Object_Legal_Hold_Updated Exact bodyless 200 response
+   --  @enum Put_Object_Legal_Hold_Rejected Bounded non-200 S3 rejection
+   type Put_Object_Legal_Hold_Outcome_Kind is
+     (Object_Legal_Hold_Updated, Put_Object_Legal_Hold_Rejected);
+
+   --  Exact legal-hold mutation success or structured rejection.
+   --  @field Kind Response classification
+   --  @field Status Exact HTTP status
+   --  @field Result Modeled success headers
+   --  @field Error Bounded structured provider rejection
+   type Put_Object_Legal_Hold_Outcome
+     (Kind : Put_Object_Legal_Hold_Outcome_Kind :=
+       Put_Object_Legal_Hold_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Legal_Hold_Updated =>
+            Result : Put_Object_Legal_Hold_Result;
+         when Put_Object_Legal_Hold_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode one complete bounded PutObjectLegalHold response.
+   --  @param Status Exact HTTP status
+   --  @param Payload Complete bounded response body
+   --  @param Headers Modeled singleton success headers
+   --  @param Request_ID Optional provider request diagnostic
+   --  @param Host_ID Optional provider host diagnostic
+   --  @param Limits Shared response and XML error limits
+   --  @return Typed exact success or structured rejection
+   function Decode_Put_Object_Legal_Hold_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Put_Object_Legal_Hold_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Legal_Hold_Outcome;
+
+   --  Execute exactly once with an owned non-replayable body source.  Any
+   --  exception after blocking call entry leaves publication unknown and
+   --  requires read-only reconciliation; callers must not automatically retry.
+   --  The 30-second default preserves the established low-level client timeout
+   --  policy and remains caller-overridable.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Request returned by Prepare_Put_Object_Legal_Hold
+   --  @param Timeout Whole-operation timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Shared response and XML error limits
+   --  @return Typed exact success or structured rejection
+   function Execute_Put_Object_Legal_Hold
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Legal_Hold_Outcome;
+
    --  Every non-resource member in the pinned GetObjectRetention request.
    --  @field Version_ID Optional exact generation selector
    --  @field Request_Payer Empty or the sole modeled value, requester
@@ -3958,6 +4065,7 @@ private
       Get_Object_ACL_Operation,
       Get_Object_Torrent_Operation,
       Get_Object_Legal_Hold_Operation,
+      Put_Object_Legal_Hold_Operation,
       Get_Object_Retention_Operation,
       Get_Object_Lock_Configuration_Operation,
       Delete_Object_Operation,
@@ -3993,6 +4101,9 @@ private
       Requested_Upload_ID_Marker : Ada.Strings.Unbounded.Unbounded_String;
       Requested_Prefix : Ada.Strings.Unbounded.Unbounded_String;
       Requested_Delimiter : Ada.Strings.Unbounded.Unbounded_String;
+      --  Owned immutable bytes for prepared one-shot mutation bodies; this
+      --  private storage prevents retaining caller-borrowed input.
+      Owned_Request_Payload : Ada.Strings.Unbounded.Unbounded_String;
       Requested_Max_Uploads : S3.Core.Page_Size := 0;
       Requested_URL_Encoding : Boolean := False;
       Requested_Has_Key_Marker : Boolean := False;

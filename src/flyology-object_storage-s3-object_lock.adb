@@ -323,6 +323,65 @@ package body Flyology.Object_Storage.S3.Object_Lock is
          raise Malformed_Object_Lock with "malformed LegalHold XML";
    end Parse_Legal_Hold;
 
+   function Serialize_Legal_Hold
+     (Value  : Legal_Hold;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String
+   is
+      Result : US.Unbounded_String;
+      Status : constant String :=
+        (case Value.Status is
+            when Legal_Hold_Status_Absent => "",
+            when Legal_Hold_On => "ON",
+            when Legal_Hold_Off => "OFF");
+      --  Pinned shape 476 has one optional Status member.  A present outer
+      --  value therefore has one element at depth one, or two elements at
+      --  depth two when Status is present.
+      Required_Depth : constant Positive :=
+        (if Status'Length = 0 then 1 else 2);
+      Required_Elements : constant Positive :=
+        (if Status'Length = 0 then 1 else 2);
+      --  Exact external REST/XML namespace, root, and member spellings from
+      --  the pinned PutObjectLegalHold model.
+      Prefix : constant String :=
+        "<LegalHold xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">";
+      Status_Open : constant String := "<Status>";
+      Status_Close : constant String := "</Status>";
+      Suffix : constant String := "</LegalHold>";
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Object_Lock with
+              "LegalHold document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+   begin
+      if not Value.Is_Set then
+         if Value.Status /= Legal_Hold_Status_Absent then
+            raise Malformed_Object_Lock with
+              "absent LegalHold contains a status";
+         end if;
+         return "";
+      elsif Limits.Maximum_Depth < Required_Depth
+        or else Limits.Maximum_Elements < Required_Elements
+        or else Status'Length > Limits.Maximum_Text_Bytes
+      then
+         raise Malformed_Object_Lock with
+           "LegalHold structure exceeds caller limit";
+      end if;
+
+      Append_Bounded (Prefix);
+      if Status'Length > 0 then
+         Append_Bounded (Status_Open);
+         Append_Bounded (Status);
+         Append_Bounded (Status_Close);
+      end if;
+      Append_Bounded (Suffix);
+      return US.To_String (Result);
+   end Serialize_Legal_Hold;
+
    overriding procedure Start_Element_Details
      (Item            : in out Retention_Handler;
       Namespace_URI   : String;

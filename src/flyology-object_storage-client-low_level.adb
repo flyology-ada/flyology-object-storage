@@ -35,6 +35,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    package Wire_Core renames Flyology.Object_Storage.S3.Wire_Core;
    use type Flyology.HTTP.Origin_Scheme;
    use type Flyology.HTTP.Port_Number;
+   use type Ada.Streams.Stream_Element_Offset;
    use type Model.Member_Location;
    use type Model.HTTP_Method;
    use type Model.Operation_Id;
@@ -71,6 +72,51 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Finished := True;
    end Read;
 
+   --  Conditional control mutations own their serialized bytes but expose a
+   --  one-shot source to Flyology.HTTP.  The non-rewindable base class is the
+   --  protocol-level authority that disables transparent replay.
+   type Non_Replayable_Buffer_Source is new
+     Flyology.HTTP.Client.Request_Body_Source with record
+      Data : US.Unbounded_String;
+      Next : Natural := 1;
+   end record;
+
+   overriding function Declared_Length
+     (Item : Non_Replayable_Buffer_Source)
+      return Flyology.HTTP.Client.Body_Length is
+     (Flyology.HTTP.Client.Known_Length
+        (Flyology.HTTP.Client.Body_Size (US.Length (Item.Data))));
+
+   overriding procedure Read
+     (Item     : in out Non_Replayable_Buffer_Source;
+      Data     : out Ada.Streams.Stream_Element_Array;
+      Last     : out Ada.Streams.Stream_Element_Offset;
+      Finished : out Boolean;
+      Timeout  : Duration;
+      Token    : access Flyology.Cancellation.Token)
+   is
+      pragma Unreferenced (Timeout, Token);
+      Length : constant Natural := US.Length (Item.Data);
+      Count : constant Natural :=
+        (if Item.Next > Length then 0
+         else Natural'Min (Natural (Data'Length), Length - Item.Next + 1));
+   begin
+      Data := (others => 0);
+      Last := Ada.Streams.Stream_Element_Offset'Pred (Data'First);
+      if Count > 0 then
+         for Offset in 0 .. Count - 1 loop
+            Data
+              (Data'First + Ada.Streams.Stream_Element_Offset (Offset)) :=
+                Ada.Streams.Stream_Element
+                  (Character'Pos
+                     (US.Element (Item.Data, Item.Next + Offset)));
+         end loop;
+         Item.Next := Item.Next + Count;
+         Last := Data'First + Ada.Streams.Stream_Element_Offset (Count - 1);
+      end if;
+      Finished := Item.Next > Length;
+   end Read;
+
    function Authority (Origin : Flyology.HTTP.Origin) return String;
    function Wire_Query (Canonical : String) return String;
    function Valid_Optional_Checksum
@@ -104,7 +150,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Identity  : Credentials;
       Region    : String;
       Timestamp : String;
-      Object_Resource : Boolean := True) return Prepared_Request;
+      Object_Resource : Boolean := True;
+      Store_Payload : Boolean := True) return Prepared_Request;
    function Prepare_Put_Bucket_Tagging
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
@@ -1312,7 +1359,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Identity  : Credentials;
       Region    : String;
       Timestamp : String;
-      Object_Resource : Boolean := True) return Prepared_Request
+      Object_Resource : Boolean := True;
+      Store_Payload : Boolean := True) return Prepared_Request
    is
       Host : constant String := Authority (Origin);
       Origin_Host : constant String := Flyology.HTTP.Host (Origin);
@@ -1384,7 +1432,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end loop;
       Flyology.HTTP.Client.Add_Header
         (Message, "authorization", US.To_String (Signing.Authorization));
-      if Payload'Length > 0 then
+      if Payload'Length > 0 and then Store_Payload then
          Flyology.HTTP.Client.Set_Body (Message, Payload);
       end if;
       return
@@ -8810,6 +8858,239 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end;
       return Result;
    end Content_MD5;
+
+   function Prepare_Put_Object_Legal_Hold
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Value      : Object_Lock.Legal_Hold;
+      Parameters : Put_Object_Legal_Hold_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String;
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request
+   is
+      Payload : constant String :=
+        Object_Lock.Serialize_Legal_Hold (Value, Limits);
+      Supplied_MD5 : constant String :=
+        US.To_String (Parameters.Content_MD5);
+      MD5 : constant String :=
+        (if Supplied_MD5'Length = 0
+         then Content_MD5 (Payload) else Supplied_MD5);
+      Algorithm_Text : constant String :=
+        US.To_String (Parameters.Checksum_Algorithm);
+      Algorithm : constant Checksum_Policy.Algorithm_Parse_Result :=
+        Checksum_Policy.Parse_Algorithm (Algorithm_Text);
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Owner : constant String :=
+        US.To_String (Parameters.Expected_Bucket_Owner);
+      --  MD5 is externally fixed at 128 bits; changing this byte count would
+      --  accept a different digest format and break S3 wire compatibility.
+      MD5_Digest_Bytes : constant Positive := 16;
+      --  Project physical-header policy matches the established 8 KiB client
+      --  ceiling.  Larger owner controls are rejected before HTTP admission.
+      Maximum_Header_Bytes : constant Positive := 8_192;
+      Query : SigV4.Name_Value_Array
+        (1 .. 1 + Boolean'Pos (US.Length (Parameters.Version_ID) > 0));
+      Header_Count : constant Positive :=
+        1 + Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (Owner'Length > 0) +
+        2 * Boolean'Pos (Algorithm_Text'Length > 0);
+      Headers : SigV4.Name_Value_Array (1 .. Header_Count);
+      Last : Natural := 0;
+
+      function Valid_Bounded_Header (Text : String) return Boolean is
+      begin
+         if Text'Length > Maximum_Header_Bytes then
+            return False;
+         end if;
+         for Item of Text loop
+            if Character'Pos (Item) < 32 or else Item = Character'Val (127)
+            then
+               return False;
+            end if;
+         end loop;
+         return True;
+      end Valid_Bounded_Header;
+
+      procedure Add_Header (Name, Header_Value : String) is
+      begin
+         if Header_Value'Length > 0 then
+            Last := Last + 1;
+            Headers (Last) := SigV4.Pair (Name, Header_Value);
+         end if;
+      end Add_Header;
+   begin
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not Valid_Optional_Checksum
+          (Parameters.Content_MD5, MD5_Digest_Bytes)
+        or else (Algorithm_Text'Length > 0 and then not Algorithm.Valid)
+        or else (Request_Payer'Length > 0
+                 and then Request_Payer /= "requester")
+        or else not Valid_Bounded_Header (Owner)
+      then
+         raise Invalid_Request with
+           "invalid PutObjectLegalHold parameters";
+      end if;
+      Query (1) := SigV4.Pair ("legal-hold", "");
+      if US.Length (Parameters.Version_ID) > 0 then
+         Query (2) :=
+           SigV4.Pair ("versionId", US.To_String (Parameters.Version_ID));
+      end if;
+      Add_Header ("content-md5", MD5);
+      Add_Header ("x-amz-request-payer", Request_Payer);
+      Add_Header ("x-amz-expected-bucket-owner", Owner);
+      if Algorithm_Text'Length > 0 then
+         declare
+            Digest : constant Checksums.Digest_Value :=
+              Checksums.Compute
+                (Algorithm.Value,
+                 Flyology.Bytes.To_Array
+                   (Flyology.Bytes.From_Byte_String (Payload)));
+            Header_Name : constant String :=
+              (case Algorithm.Value is
+                  when S3.Core.CRC32 => "x-amz-checksum-crc32",
+                  when S3.Core.CRC32C => "x-amz-checksum-crc32c",
+                  when S3.Core.CRC64NVME => "x-amz-checksum-crc64nvme",
+                  when S3.Core.SHA1 => "x-amz-checksum-sha1",
+                  when S3.Core.SHA256 => "x-amz-checksum-sha256",
+                  when S3.Core.SHA512 => "x-amz-checksum-sha512",
+                  when S3.Core.MD5 => "x-amz-checksum-md5",
+                  when S3.Core.XXHASH64 => "x-amz-checksum-xxhash64",
+                  when S3.Core.XXHASH3 => "x-amz-checksum-xxhash3",
+                  when S3.Core.XXHASH128 => "x-amz-checksum-xxhash128");
+         begin
+            Add_Header ("x-amz-sdk-checksum-algorithm", Algorithm_Text);
+            Add_Header (Header_Name, Checksums.Encode_Base64 (Digest));
+         end;
+      end if;
+      return Result : Prepared_Request := Prepare_Object_Request
+        (Put_Object_Legal_Hold_Operation, "PUT", Origin, Style, Bucket, Key,
+         Query, Headers, Payload, "", Identity, Region, Timestamp,
+         Store_Payload => False)
+      do
+         Result.Modeled_Operation := Model.Put_Object_Legal_Hold_Operation;
+         Result.Owned_Request_Payload :=
+           US.To_Unbounded_String (Payload);
+      end return;
+   exception
+      when Object_Lock.Malformed_Object_Lock =>
+         raise Invalid_Request with
+           "invalid PutObjectLegalHold payload";
+   end Prepare_Put_Object_Legal_Hold;
+
+   function Decode_Put_Object_Legal_Hold_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Put_Object_Legal_Hold_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Legal_Hold_Outcome
+   is
+      Request_Charged : constant String :=
+        US.To_String (Headers.Request_Charged);
+      --  Pinned botocore model authority: shape 598 is the exact
+      --  RequestCharged enum.  Changing the identifier changes wire
+      --  compatibility and requires a regenerated model review.
+      Request_Charged_Shape : constant Model.Shape_Index := 598;
+   begin
+      if not Valid_List_Response_Header_Text (Request_ID)
+        or else not Valid_List_Response_Header_Text (Host_ID)
+        or else not Valid_List_Response_Header_Text (Request_Charged)
+        or else
+          (Request_Charged'Length > 0
+           and then not Valid_Model_Scalar
+             (Request_Charged_Shape, Request_Charged))
+      then
+         raise Invalid_Response with
+           "invalid PutObjectLegalHold response header";
+      elsif Status = 200 then
+         if not Whitespace_Only (Payload) then
+            raise Invalid_Response with
+              "PutObjectLegalHold success contains a response body";
+         end if;
+         return
+           (Kind   => Object_Legal_Hold_Updated,
+            Status => Status,
+            Result => Headers);
+      end if;
+      return
+        (Kind   => Put_Object_Legal_Hold_Rejected,
+         Status => Status,
+         Error  => Error_Response
+           (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed PutObjectLegalHold response";
+   end Decode_Put_Object_Legal_Hold_Response;
+
+   function Execute_Put_Object_Legal_Hold
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Legal_Hold_Outcome
+   is
+   begin
+      if Prepared.Operation /= Put_Object_Legal_Hold_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Put_Object_Legal_Hold_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Source : Non_Replayable_Buffer_Source :=
+           (Data => Prepared.Owned_Request_Payload, Next => 1);
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Source, Timeout, Token);
+
+         function Singleton_Header (Name : String) return String is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count (Response, Name);
+         begin
+            if Count > 1 then
+               raise Invalid_Response with
+                 "invalid PutObjectLegalHold header multiplicity";
+            elsif Count = 0 then
+               return "";
+            end if;
+            declare
+               Value : constant String :=
+                 Flyology.HTTP.Client.Header (Response, Name);
+            begin
+               if Value'Length = 0 then
+                  raise Invalid_Response with
+                    "invalid PutObjectLegalHold response header";
+               end if;
+               return Value;
+            end;
+         end Singleton_Header;
+
+         Response_Body : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Put_Object_Legal_Hold_Response
+           (Flyology.HTTP.Client.Status (Response),
+            Flyology.Bytes.To_Byte_String (Response_Body),
+            (Request_Charged => US.To_Unbounded_String
+               (Singleton_Header ("x-amz-request-charged"))),
+            Singleton_Header ("x-amz-request-id"),
+            Singleton_Header ("x-amz-id-2"), Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "PutObjectLegalHold response exceeds configured limit";
+   end Execute_Put_Object_Legal_Hold;
 
    function Model_Value_Of (Name, Value : String) return Model_Value is
      (Member_Name => US.To_Unbounded_String (Name),

@@ -35,6 +35,17 @@ package Flyology.Object_Storage.S3.Object_Lock is
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Legal_Hold;
 
+   --  Serialize one exact PutObjectLegalHold body.  An absent outer member
+   --  produces the model-permitted empty payload; a present outer member
+   --  preserves optional Status presence.
+   --  @param Value Presence-preserving legal-hold request value
+   --  @param Limits Caller-selected document, depth, element, and text limits
+   --  @return Exact bounded S3 LegalHold XML or the absent empty payload
+   --  @exception Malformed_Object_Lock Value is inconsistent or exceeds limits
+   function Serialize_Legal_Hold
+     (Value  : Legal_Hold;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String;
+
    --  Pinned model contract for ObjectLockRetentionMode.  Absent preserves
    --  omission independently from the two external retention modes.
    --  @enum Retention_Mode_Absent Mode member was absent

@@ -80,6 +80,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Delete_Object_Outcome_Kind;
    use type Low_Level.Delete_Object_Annotation_Outcome_Kind;
+   use type Low_Level.Put_Object_Legal_Hold_Outcome_Kind;
    use type Objects.Delete_Outcome_Kind;
    use type Low_Level.Put_Bucket_Versioning_Outcome_Kind;
    use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
@@ -3855,6 +3856,74 @@ procedure S3_HTTP_Socket_Corpus is
             "DELETE",
             "/example-bucket/object%20key?annotation&" &
               "annotationName=socket-oversized");
+         --  Pinned PutObjectLegalHold fixtures cover the owned body, all
+         --  physical controls, the sole output, and one lost-response lane.
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT",
+            "/example-bucket/object%20key?legal-hold&" &
+              "versionId=version%20one",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket/object%20key?legal-hold&versionId=absent",
+            Expected_Content_MD5 => "1B2M2Y8AsgTpgAmY7PhCfg==",
+            Require_Zero_Content_Length => True);
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: put-legal-request" & CRLF &
+               "x-amz-id-2: put-legal-host" & CRLF),
+            "PUT",
+            "/example-bucket/object%20key?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", "x"), "PUT",
+            "/example-bucket/object%20key?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT", "/example-bucket/object%20key?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-request-charged:" & CRLF),
+            "PUT", "/example-bucket/object%20key?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-request-id: first" & CRLF &
+                 "x-amz-request-id: second" & CRLF),
+            "PUT", "/example-bucket/object%20key?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              --  Test-only whitespace body is semantically bodyless but one
+              --  byte above the paired caller-selected 64-byte ceiling.
+              ("200 OK", String'(1 .. 65 => ' ')),
+            "PUT", "/example-bucket/object%20key?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
+         Serve
+           ("", "PUT",
+            "/example-bucket/object%20key?legal-hold&versionId=lost",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*", Keep_Open => False);
          Serve
            (HTTP_Response
               ("200 OK", "<AccelerateConfiguration/>",
@@ -9960,6 +10029,152 @@ procedure S3_HTTP_Socket_Corpus is
               ("socket-oversized",
                "DeleteObjectAnnotation accepted oversized response",
                Small_Limits => True);
+         end;
+         declare
+            function Prepare
+              (Version : String := ""; Full_Controls : Boolean := False;
+               Present : Boolean := True)
+               return Low_Level.Prepared_Request is
+              (Low_Level.Prepare_Put_Object_Legal_Hold
+                 (Origin, Low_Level.Path_Style, "example-bucket",
+                  "object key",
+                  (Is_Set => Present,
+                   Status =>
+                     (if Present then Object_Lock.Legal_Hold_On
+                      else Object_Lock.Legal_Hold_Status_Absent)),
+                  (Request_Payer =>
+                     (if Full_Controls
+                      then US.To_Unbounded_String ("requester")
+                      else US.Null_Unbounded_String),
+                   Version_ID => US.To_Unbounded_String (Version),
+                   Content_MD5 => US.Null_Unbounded_String,
+                   Checksum_Algorithm =>
+                     (if Full_Controls
+                      then US.To_Unbounded_String ("CRC32")
+                      else US.Null_Unbounded_String),
+                   Expected_Bucket_Owner =>
+                     (if Full_Controls
+                      then US.To_Unbounded_String ("123456789012")
+                      else US.Null_Unbounded_String)),
+                  Identity, "us-east-1", "20130524T000000Z"));
+
+            procedure Must_Reject_Put_Legal_Hold
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant
+                       Low_Level.Put_Object_Legal_Hold_Outcome :=
+                         (if Small_Limits
+                          then Low_Level.Execute_Put_Object_Legal_Hold
+                            (HTTP, Prepare, Timeout => 5.0,
+                             Limits =>
+                               --  Test-only caller response ceiling paired
+                               --  with the 65-byte server fixture above.
+                               (Maximum_Document_Bytes => 64,
+                                Maximum_Depth          => 8,
+                                Maximum_Elements       => 32,
+                                Maximum_Text_Bytes     => 64))
+                          else Low_Level.Execute_Put_Object_Legal_Hold
+                            (HTTP, Prepare, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response |
+                       Flyology.HTTP.Protocol_Error =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_Put_Legal_Hold;
+         begin
+            declare
+               Result : constant Low_Level.Put_Object_Legal_Hold_Outcome :=
+                 Low_Level.Execute_Put_Object_Legal_Hold
+                   (HTTP, Prepare ("version one", True), Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Object_Legal_Hold_Updated
+                 or else Result.Status /= 200
+                 or else US.To_String (Result.Result.Request_Charged) /=
+                   "requester"
+               then
+                  raise Program_Error with
+                    "PutObjectLegalHold socket success mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Low_Level.Put_Object_Legal_Hold_Outcome :=
+                 Low_Level.Execute_Put_Object_Legal_Hold
+                   (HTTP, Prepare ("absent", Present => False),
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Object_Legal_Hold_Updated
+                 or else Result.Status /= 200
+               then
+                  raise Program_Error with
+                    "PutObjectLegalHold absent socket success mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Low_Level.Put_Object_Legal_Hold_Outcome :=
+                 Low_Level.Execute_Put_Object_Legal_Hold
+                   (HTTP, Prepare, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Put_Object_Legal_Hold_Rejected
+                 or else Result.Status /= 403
+                 or else US.To_String (Result.Error.Code) /= "AccessDenied"
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "put-legal-request"
+                 or else US.To_String (Result.Error.Host_ID) /=
+                   "put-legal-host"
+               then
+                  raise Program_Error with
+                    "PutObjectLegalHold socket rejection mismatch";
+               end if;
+            end;
+            Must_Reject_Put_Legal_Hold
+              ("PutObjectLegalHold accepted success body");
+            Must_Reject_Put_Legal_Hold
+              ("PutObjectLegalHold accepted duplicate charged");
+            Must_Reject_Put_Legal_Hold
+              ("PutObjectLegalHold accepted empty charged");
+            Must_Reject_Put_Legal_Hold
+              ("PutObjectLegalHold accepted duplicate request ID");
+            Must_Reject_Put_Legal_Hold
+              ("PutObjectLegalHold accepted oversized response",
+               Small_Limits => True);
+            declare
+               Ambiguous : Boolean := False;
+            begin
+               begin
+                  declare
+                     Unexpected : constant
+                       Low_Level.Put_Object_Legal_Hold_Outcome :=
+                         Low_Level.Execute_Put_Object_Legal_Hold
+                           (HTTP, Prepare ("lost"), Timeout => 5.0);
+                     pragma Unreferenced (Unexpected);
+                  begin
+                     raise Program_Error with
+                       "lost PutObjectLegalHold returned a definite outcome";
+                  end;
+               exception
+                  when Low_Level.Invalid_Request |
+                       Low_Level.Invalid_Response |
+                       Program_Error =>
+                     raise;
+                  when others =>
+                     Ambiguous := True;
+               end;
+               if not Ambiguous then
+                  raise Program_Error with
+                    "lost PutObjectLegalHold was not ambiguous";
+               end if;
+            end;
          end;
          declare
             Raised : Boolean := False;

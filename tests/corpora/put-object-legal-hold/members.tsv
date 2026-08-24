@@ -1,0 +1,11 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	550	1	Bucket	60	uri-label	true	projected	Require a valid bucket and project it into the exact signed resource target.	PLH-RQ-001,PLH-RQ-005
+request	550	2	Key	471	uri-label	true	projected	Require a nonempty key and preserve greedy path encoding in the signed target.	PLH-RQ-001,PLH-RQ-005
+request	550	3	LegalHold	476	body	false	encoded	Preserve outer absence versus a present bounded LegalHold XML document.	PLH-RQ-002,PLH-RQ-003,PLH-RQ-006
+request	550	4	RequestPayer	599	header	false	projected	Admit only the pinned requester token and sign its exact header.	PLH-RQ-004,PLH-RQ-005
+request	550	5	VersionId	492	query	false	projected	Project the optional opaque generation selector exactly once.	PLH-RQ-001,PLH-RQ-005
+request	550	6	ContentMD5	111	header	false	projected	Always sign exact MD5 over owned serialized bytes and validate any caller override.	PLH-RQ-006,PLH-RQ-007
+request	550	7	ChecksumAlgorithm	77	header	false	projected	Admit all ten exact algorithms and sign each matching digest header over identical bytes.	PLH-RQ-007
+request	550	8	ExpectedBucketOwner	15	header	false	projected	Project and sign the optional opaque owner precondition.	PLH-RQ-005
+nested	476	1	Status	477	body	false	encoded	Preserve absence or encode only exact ON and OFF values.	PLH-RQ-002,PLH-RQ-003
+response	549	1	RequestCharged	598	header	false	decoded	Decode at most one exact nonempty requester result header.	PLH-RS-003,PLH-TR-001
