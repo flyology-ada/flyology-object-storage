@@ -1,0 +1,18 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	271	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind its exact value into the signed object ACL target.	GOA-RQ-001,GOA-RQ-003,GOA-RQ-004
+request	271	2	Key	471	uri-label	true	projected	Require one valid object key and preserve its exact greedy-path encoding.	GOA-RQ-001,GOA-RQ-003,GOA-RQ-004
+request	271	3	VersionId	492	query	false	projected	Preserve omission or one exact bounded generation selector in the signed query.	GOA-RQ-002,GOA-RQ-003,GOA-RQ-004
+request	271	4	RequestPayer	599	header	false	projected	Preserve omission or the sole exact requester value as a signed header.	GOA-RQ-002,GOA-RQ-003,GOA-RQ-004
+request	271	5	ExpectedBucketOwner	15	header	false	projected	Preserve omission or one bounded control-free owner precondition exactly once.	GOA-RQ-002,GOA-RQ-003,GOA-RQ-004
+output	270	1	Owner	499	body	false	decoded	Preserve optional Owner structure presence and exact child strings.	GOA-RS-001,GOA-RS-002,GOA-RS-005,GOA-TR-001,GOA-TR-002
+output	270	2	Grants	300	body	false	decoded	Preserve optional AccessControlList presence and ordered nonflattened Grant values.	GOA-RS-001,GOA-RS-002,GOA-RS-005,GOA-TR-001,GOA-TR-002
+output	270	3	RequestCharged	598	header	false	decoded	Preserve omission or the sole exact requester response value.	GOA-RS-001,GOA-RS-006,GOA-TR-001,GOA-TR-002
+nested	499	1	DisplayName	182	body	false	decoded	Preserve omission or exact owner display name including empty text.	GOA-RS-001,GOA-RS-002,GOA-RS-005
+nested	499	2	ID	308	body	false	decoded	Preserve omission or exact owner canonical identifier including empty text.	GOA-RS-001,GOA-RS-002,GOA-RS-005
+nested	293	1	Grantee	299	body	false	decoded	Preserve optional grantee structure and require its exact xsi:type attribute when present.	GOA-RS-001,GOA-RS-002,GOA-RS-005,GOA-RS-007
+nested	293	2	Permission	514	body	false	decoded	Preserve optional exact permission without inventing an authorization default.	GOA-RS-001,GOA-RS-002,GOA-RS-005,GOA-RS-007
+nested	299	1	DisplayName	182	body	false	decoded	Preserve omission or exact grantee display name including empty text.	GOA-RS-001,GOA-RS-002,GOA-RS-005
+nested	299	2	EmailAddress	184	body	false	decoded	Preserve omission or exact grantee email address including empty text.	GOA-RS-001,GOA-RS-002,GOA-RS-005
+nested	299	3	ID	308	body	false	decoded	Preserve omission or exact grantee canonical identifier including empty text.	GOA-RS-001,GOA-RS-002,GOA-RS-005
+nested	299	4	Type	696	body	true	decoded	Require exactly one xsi:type attribute from the three-value pinned grantee domain.	GOA-RS-001,GOA-RS-002,GOA-RS-005,GOA-RS-007
+nested	299	5	URI	697	body	false	decoded	Preserve omission or exact grantee group URI including empty text.	GOA-RS-001,GOA-RS-002,GOA-RS-005

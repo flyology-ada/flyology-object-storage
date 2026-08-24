@@ -53,7 +53,7 @@ GetBucketTagging	core	covered	covered	covered	covered
 GetBucketVersioning	core	covered	covered	covered	covered
 GetBucketWebsite	extended	missing	partial	missing	missing
 GetObject	core	covered	covered	covered	covered
-GetObjectAcl	extended	missing	partial	missing	missing
+GetObjectAcl	extended	missing	covered	missing	covered
 GetObjectAnnotation	extended	missing	partial	missing	missing
 GetObjectAttributes	core	covered	covered	covered	covered
 GetObjectLegalHold	extended	missing	covered	missing	covered

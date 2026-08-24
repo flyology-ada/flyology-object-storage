@@ -98,6 +98,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Head_Result_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
+   use type Low_Level.Get_Object_ACL_Outcome_Kind;
    use type Low_Level.Get_Object_Legal_Hold_Outcome_Kind;
    use type Low_Level.Get_Object_Retention_Outcome_Kind;
    use type Low_Level.Get_Object_Lock_Configuration_Outcome_Kind;
@@ -3579,6 +3580,76 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "<AccessControlPolicy>" &
                  String'(1 .. 64 => ' ') & "</AccessControlPolicy>"),
             "GET", "/example-bucket?acl");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccessControlPolicy><Owner><ID>object-owner" &
+                 "</ID></Owner><AccessControlList><Grant><Grantee" &
+                 " xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance""" &
+                 " xsi:type=""CanonicalUser""><ID>principal</ID></Grantee>" &
+                 "<Permission>FULL_CONTROL</Permission></Grant>" &
+                 "</AccessControlList></AccessControlPolicy>",
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-id: object-acl-request" & CRLF &
+               "x-amz-id-2: object-acl-host" & CRLF),
+            "GET", "/example-bucket/a%20b?acl&versionId=v%2F1",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "GET",
+            "/example-bucket/a%20b?acl");
+         Serve
+           (HTTP_Response
+              ("404 Not Found", Error_XML,
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-id: object-acl-error-request" & CRLF &
+               "x-amz-id-2: object-acl-error-host" & CRLF),
+            "GET", "/example-bucket/a%20b?acl");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccessControlPolicy/>",
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket/a%20b?acl");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccessControlPolicy/>",
+               "x-amz-request-charged: charged" & CRLF),
+            "GET", "/example-bucket/a%20b?acl");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccessControlPolicy/>",
+               "x-amz-request-charged:" & CRLF),
+            "GET", "/example-bucket/a%20b?acl");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccessControlPolicy/>",
+               "x-amz-request-id: first" & CRLF &
+               "x-amz-request-id: second" & CRLF),
+            "GET", "/example-bucket/a%20b?acl");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccessControlPolicy/>",
+               "x-amz-id-2: first" & CRLF &
+               "x-amz-id-2: second" & CRLF),
+            "GET", "/example-bucket/a%20b?acl");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccessControlPolicy/>",
+               "x-amz-request-id:" & CRLF),
+            "GET", "/example-bucket/a%20b?acl");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccessControlPolicy><AccessControlList>" &
+                 "<Grant><Grantee/></Grant></AccessControlList>" &
+                 "</AccessControlPolicy>"),
+            "GET", "/example-bucket/a%20b?acl");
+         Serve
+           (HTTP_Response
+              --  Test-only oversized payload paired with the caller's
+              --  explicit 64-byte document ceiling below.
+              ("200 OK", "<AccessControlPolicy>" &
+                 String'(1 .. 64 => ' ') & "</AccessControlPolicy>"),
+            "GET", "/example-bucket/a%20b?acl");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT", "/example-bucket?abac",
             Expected_Body_Root => "<AbacStatus",
@@ -9222,6 +9293,133 @@ procedure S3_HTTP_Socket_Corpus is
             Must_Reject_ACL ("GetBucketAcl accepted malformed success XML");
             Must_Reject_ACL
               ("GetBucketAcl accepted oversized success XML",
+               Small_Limits => True);
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_ACL
+                (Origin, Low_Level.Path_Style, "example-bucket", "a b",
+                 (Version_ID => US.To_Unbounded_String ("v/1"),
+                  Request_Payer => US.To_Unbounded_String ("requester"),
+                  Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity, "us-east-1", "20130524T000000Z");
+            Result : constant Low_Level.Get_Object_ACL_Outcome :=
+              Low_Level.Execute_Get_Object_ACL
+                (HTTP, Prepared, Timeout => 5.0);
+            Grant : constant ACL.Grant :=
+              Result.Result.Policy.ACL.Grants.Element (1);
+         begin
+            if Result.Kind /= Low_Level.Object_ACL_Found
+              or else not Result.Result.Policy.Is_Set
+              or else not Result.Result.Policy.Policy_Owner.Is_Set
+              or else US.To_String
+                (Result.Result.Policy.Policy_Owner.ID.Value) /= "object-owner"
+              or else Result.Result.Policy.ACL.Grants.Length /= 1
+              or else not Grant.Principal.Is_Set
+              or else Grant.Principal.Kind /= ACL.Canonical_User
+              or else US.To_String (Grant.Principal.ID.Value) /= "principal"
+              or else not Grant.Allowed.Is_Set
+              or else Grant.Allowed.Value /= ACL.Full_Control
+              or else US.To_String (Result.Result.Request_Charged) /=
+                "requester"
+            then
+               raise Program_Error with "GetObjectAcl socket success mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_ACL
+                (Origin, Low_Level.Path_Style, "example-bucket", "a b",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant Low_Level.Get_Object_ACL_Outcome :=
+              Low_Level.Execute_Get_Object_ACL
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Object_ACL_Found
+              or else Result.Result.Policy.Is_Set
+              or else US.Length (Result.Result.Request_Charged) /= 0
+            then
+               raise Program_Error with "GetObjectAcl outer absence mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_ACL
+                (Origin, Low_Level.Path_Style, "example-bucket", "a b",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant Low_Level.Get_Object_ACL_Outcome :=
+              Low_Level.Execute_Get_Object_ACL
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Get_Object_ACL_Rejected
+              or else Result.Status /= 404
+              or else US.To_String (Result.Error.Code) /= "AccessDenied"
+              or else US.To_String (Result.Error.Request_ID) /=
+                "object-acl-error-request"
+              or else US.To_String (Result.Error.Host_ID) /=
+                "object-acl-error-host"
+            then
+               raise Program_Error with
+                 "GetObjectAcl socket rejection mismatch";
+            end if;
+         end;
+         declare
+            procedure Must_Reject_Object_ACL
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object_ACL
+                   (Origin, Low_Level.Path_Style, "example-bucket", "a b",
+                    (others => <>), Identity, "us-east-1",
+                    "20130524T000000Z");
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant Low_Level.Get_Object_ACL_Outcome :=
+                       (if Small_Limits
+                        then Low_Level.Execute_Get_Object_ACL
+                          (HTTP, Prepared, Timeout => 5.0,
+                           Limits =>
+                             --  Test-only caller policy paired with the
+                             --  oversized server fixture above.
+                             (Maximum_Document_Bytes => 64,
+                              Maximum_Depth          => 8,
+                              Maximum_Elements       => 32,
+                              Maximum_Text_Bytes     => 64))
+                        else Low_Level.Execute_Get_Object_ACL
+                          (HTTP, Prepared, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response => Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_Object_ACL;
+         begin
+            Must_Reject_Object_ACL
+              ("GetObjectAcl accepted duplicate request-charged header");
+            Must_Reject_Object_ACL
+              ("GetObjectAcl accepted altered request-charged header");
+            Must_Reject_Object_ACL
+              ("GetObjectAcl accepted empty request-charged header");
+            Must_Reject_Object_ACL
+              ("GetObjectAcl accepted duplicate request ID");
+            Must_Reject_Object_ACL
+              ("GetObjectAcl accepted duplicate host ID");
+            Must_Reject_Object_ACL
+              ("GetObjectAcl accepted empty request ID");
+            Must_Reject_Object_ACL
+              ("GetObjectAcl accepted malformed success XML");
+            Must_Reject_Object_ACL
+              ("GetObjectAcl accepted oversized success XML",
                Small_Limits => True);
          end;
          declare

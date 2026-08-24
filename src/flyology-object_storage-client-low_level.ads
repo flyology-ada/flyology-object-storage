@@ -1060,6 +1060,102 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null)
       return Flyology.HTTP.Client.Response;
 
+   --  Every non-resource member in the pinned GetObjectAcl request.
+   --  @field Version_ID Optional exact generation selector
+   --  @field Request_Payer Empty or the sole modeled requester value
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Get_Object_ACL_Parameters is record
+      Version_ID            : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare one exact signed GetObjectAcl request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Object key whose access-control policy is requested
+   --  @param Parameters Optional version, payer, and owner selectors
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared request bound to GetObjectAcl
+   function Prepare_Get_Object_ACL
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Get_Object_ACL_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   --  Complete modeled GetObjectAcl success output.
+   --  @field Policy Presence-preserving ACL response body
+   --  @field Request_Charged Empty or the sole modeled requester value
+   type Get_Object_ACL_Result is record
+      Policy          : S3.ACL.Access_Control_Policy;
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Terminal interpretation of one GetObjectAcl response.
+   --  @enum Object_ACL_Found Exact 200 response decoded successfully
+   --  @enum Get_Object_ACL_Rejected Bounded non-200 S3 rejection
+   type Get_Object_ACL_Outcome_Kind is
+     (Object_ACL_Found, Get_Object_ACL_Rejected);
+
+   --  Presence-preserving object ACL result or structured rejection.  The
+   --  500 default is the established deterministic aggregate sentinel only.
+   --  @field Kind Whether ACL state or an S3 error was returned
+   --  @field Status Exact physical HTTP status
+   --  @field Result Complete modeled success output
+   --  @field Error Structured bounded S3 rejection
+   type Get_Object_ACL_Outcome
+     (Kind : Get_Object_ACL_Outcome_Kind := Get_Object_ACL_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_ACL_Found =>
+            Result : Get_Object_ACL_Result;
+         when Get_Object_ACL_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode one complete bounded GetObjectAcl response.
+   --  @param Status Exact physical response status
+   --  @param Payload Complete same-response body
+   --  @param Request_Charged Optional modeled requester-charged header
+   --  @param Request_ID Optional bounded S3 request identifier
+   --  @param Host_ID Optional bounded S3 host identifier
+   --  @param Limits Caller-selected shared XML resource limits
+   --  @return Typed ACL state or strict S3 rejection
+   function Decode_Get_Object_ACL_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_ACL_Outcome;
+
+   --  Execute and fully decode one exact prepared GetObjectAcl request.  The
+   --  30-second default is the established low-level synchronous-client
+   --  compatibility budget; callers may select a different absolute budget.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Request returned by Prepare_Get_Object_ACL
+   --  @param Timeout Whole-operation timeout
+   --  @param Token Optional cooperative cancellation token
+   --  @param Limits Caller-selected shared XML resource limits
+   --  @return Typed ACL state or strict S3 rejection
+   function Execute_Get_Object_ACL
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_ACL_Outcome;
+
    --  Every non-resource member in the pinned GetObjectTorrent request.
    --  @field Request_Payer Empty or the sole modeled value, requester
    --  @field Expected_Bucket_Owner Optional exact owner precondition
@@ -3685,6 +3781,7 @@ private
       Delete_Bucket_Configuration_Operation,
       Get_Bucket_Control_Operation,
       Put_Bucket_Control_Operation,
+      Get_Object_ACL_Operation,
       Get_Object_Torrent_Operation,
       Get_Object_Legal_Hold_Operation,
       Get_Object_Retention_Operation,

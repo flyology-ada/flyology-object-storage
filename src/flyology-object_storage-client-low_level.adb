@@ -5156,6 +5156,165 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Client, Prepared.Message, Timeout, Token);
    end Execute_Get_Object;
 
+   function Prepare_Get_Object_ACL
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Get_Object_ACL_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Version_ID : constant String := US.To_String (Parameters.Version_ID);
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Owner : constant String :=
+        US.To_String (Parameters.Expected_Bucket_Owner);
+      Optional_Count : constant Natural :=
+        Boolean'Pos (Version_ID'Length > 0) +
+        Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (Owner'Length > 0);
+      Values : Model_Value_Array (1 .. 2 + Optional_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+   begin
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not S3.Deletions.Valid_Version_ID (Version_ID)
+        --  Pinned GetObjectAcl shape 599 has the sole requester wire value.
+        or else Request_Payer not in "" | "requester"
+        or else not Valid_List_Response_Header_Text (Owner)
+      then
+         raise Invalid_Request with "invalid GetObjectAcl parameters";
+      end if;
+      Add ("Bucket", Bucket);
+      Add ("Key", Key);
+      if Version_ID'Length > 0 then
+         Add ("VersionId", Version_ID);
+      end if;
+      if Request_Payer'Length > 0 then
+         Add ("RequestPayer", Request_Payer);
+      end if;
+      if Owner'Length > 0 then
+         Add ("ExpectedBucketOwner", Owner);
+      end if;
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Get_Object_Acl_Operation, Origin, Style, Values, "", False,
+         SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := Get_Object_ACL_Operation;
+      end return;
+   exception
+      when Constraint_Error =>
+         raise Invalid_Request with "invalid GetObjectAcl parameters";
+   end Prepare_Get_Object_ACL;
+
+   function Decode_Get_Object_ACL_Response
+     (Status          : Flyology.HTTP.Status_Code;
+      Payload         : String;
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_ACL_Outcome
+   is
+   begin
+      if not Valid_List_Response_Header_Text (Request_Charged)
+        or else not Valid_List_Response_Header_Text (Request_ID)
+        or else not Valid_List_Response_Header_Text (Host_ID)
+        --  Pinned GetObjectAcl shape 598 has the sole requester wire value.
+        or else Request_Charged not in "" | "requester"
+      then
+         raise Invalid_Response with "invalid GetObjectAcl response headers";
+      --  Pinned GetObjectAcl declares exact success status 200; other 2xx
+      --  values remain typed S3 rejections for compatibility with the model.
+      elsif Status = 200 then
+         return
+           (Kind   => Object_ACL_Found,
+            Status => Status,
+            Result =>
+              (Policy =>
+                 (if Payload'Length = 0 then (others => <>)
+                  else ACL.Parse (Payload, Limits)),
+               Request_Charged => US.To_Unbounded_String (Request_Charged)));
+      end if;
+      return
+        (Kind   => Get_Object_ACL_Rejected,
+         Status => Status,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when ACL.Malformed_ACL | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed GetObjectAcl response";
+   end Decode_Get_Object_ACL_Response;
+
+   function Execute_Get_Object_ACL
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_ACL_Outcome
+   is
+   begin
+      if Prepared.Operation /= Get_Object_ACL_Operation
+        or else Prepared.Modeled_Operation /= Model.Get_Object_Acl_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+
+         function Singleton_Header (Name : String) return String is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count (Response, Name);
+         begin
+            if Count > 1 then
+               raise Invalid_Response with
+                 "duplicate GetObjectAcl response header";
+            elsif Count = 0 then
+               return "";
+            end if;
+            declare
+               Value : constant String :=
+                 Flyology.HTTP.Client.Header (Response, Name);
+            begin
+               if Value'Length = 0
+                 or else not Valid_List_Response_Header_Text (Value)
+               then
+                  raise Invalid_Response with
+                    "invalid GetObjectAcl response header";
+               end if;
+               return Value;
+            end;
+         end Singleton_Header;
+
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Get_Object_ACL_Response
+           (Flyology.HTTP.Client.Status (Response),
+            Flyology.Bytes.To_Byte_String (Payload),
+            Singleton_Header ("x-amz-request-charged"),
+            Singleton_Header ("x-amz-request-id"),
+            Singleton_Header ("x-amz-id-2"), Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with "GetObjectAcl response exceeds XML limit";
+   end Execute_Get_Object_ACL;
+
    function Prepare_Get_Object_Torrent
      (Origin     : Flyology.HTTP.Origin;
       Style      : Addressing_Style;
