@@ -1,8 +1,10 @@
-# ListParts client qualification
+# ListParts qualification
 
-This record freezes the pinned model inventory and the qualified synchronous
-client boundary. Backend coverage is complete; the authenticated server route
-remains partial for owner, requester-pays, and SSE-C policy.
+This record freezes the pinned model inventory and qualifies the synchronous
+client plus the authenticated general-purpose path-style server. Backend,
+client, server, and corpus coverage are complete within that scope. Configured
+Requester Pays accounting, SSE-C multipart state, and directory buckets remain
+explicit capability exclusions.
 
 ## Pinned authority
 
@@ -55,13 +57,14 @@ All modeled response headers are physical singletons. Present-empty,
 duplicate, over-8-KiB, control-bearing, invalid requester-pays, malformed abort
 date, and unpaired abort date/rule responses are rejected. Each listed part
 has at most one canonical checksum and it must match the top-level checksum
-algorithm. The server route still does not deliberately enforce expected
-owner, requester-pays, or SSE-C controls, so server coverage remains partial.
-
-The future slice must authenticate before semantics; validate duplicate,
-empty, malformed, and overlong query/header values; bind SSE-C to the exact
-initiation state; and fail explicitly when billing or encryption policy is
-unsupported. It must not silently ignore modeled security controls.
+algorithm. The server authenticates before semantics, enforces the expected
+owner, validates the requester-pays token, and rejects duplicate, empty,
+malformed, and overlong controls before multipart state is observed. It
+validates a complete SSE-C triplet, HTTPS transport, and the key/digest
+relationship without retaining or logging the key. A valid `requester` token
+or valid HTTPS SSE-C group receives authenticated `NotImplemented` because the
+corresponding bucket and initiation policies are unavailable; unsupported
+security controls are never silently ignored.
 
 Successful response parsing must preserve absent optional members while
 rejecting present-empty or duplicate singleton headers and XML fields. It must
@@ -105,13 +108,16 @@ GNATprove.
 The ordinary gate checks direct decoder boundaries and checksum conflicts. The
 fragmented raw-loopback corpus runs through both native and Flyology
 lightweight clients, independently mutates every echoed request field, and
-tests duplicate and present-empty singleton headers. The implementation corpus
-uses the public page API and exercises real service-returned continuation
-markers. Ledger promotion records this qualified client boundary only.
+tests duplicate and present-empty singleton headers. The signed server corpus
+adds exact-limit/one-past owner controls, owner/payer duplicates, malformed and
+mismatched SSE-C material, plaintext rejection, valid unsupported HTTPS, and
+bad-signature precedence. The implementation corpus uses the public page API
+and exercises real service-returned continuation markers. Ledger promotion
+records the qualified client and general-purpose server boundaries.
 
 ## Frozen gate evidence
 
-The qualified source passed the root gate with 37/37 AUnit tests, the 88-case
+The qualified source passed the root gate with 40/40 AUnit tests, the 88-case
 files crash matrix, 320 checksum vectors, 210 chunk boundaries, the 64-GiB CRC
 linearization oracle, the server application corpus, and three repetitions of
 the native/lightweight socket corpus. The SQLite gate passed. The six-server

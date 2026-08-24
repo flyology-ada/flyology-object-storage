@@ -81,6 +81,10 @@ procedure S3_Server_Application_Corpus is
    Timestamp  : constant String := "20130524T000000Z";
    Region     : constant String := "us-east-1";
    Host       : constant String := "localhost:9000";
+   Maximum_Header_Text_Bytes : constant Positive := 8_192;
+   --  The pinned S3 corpus and production admission helper share this exact
+   --  header-text bound. Exact-limit and one-past vectors guard compatibility
+   --  if that project-policy limit is ever reviewed for change.
 
    function Content_MD5 (Value : String) return String is
       Digest : constant GNAT.MD5.Binary_Message_Digest :=
@@ -1914,7 +1918,8 @@ procedure S3_Server_Application_Corpus is
          Key_MD5 : constant String := Checksums.Encode_Base64
            (Checksums.Compute
               (Core.MD5, Checksums.Raw_Bytes (Decoded_Key.Value)));
-         Overlong : constant String (1 .. 8 * 1_024 + 1) := (others => 'x');
+         Overlong : constant String
+           (1 .. Maximum_Header_Text_Bytes + 1) := (others => 'x');
       begin
          declare
             Missing_Query : constant SigV4.Name_Value_Array :=
@@ -2465,6 +2470,35 @@ procedure S3_Server_Application_Corpus is
                  (Run
                     (Signed_Query_Request
                        ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-expected-bucket-owner", "")),
+                  "InvalidRequest"),
+               "ListMultipartUploads accepted empty expected owner");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-expected-bucket-owner",
+                        String'
+                          (1 .. Maximum_Header_Text_Bytes => 'o'))),
+                  "AccessDenied"),
+               "ListMultipartUploads rejected exact-limit expected owner " &
+               "as malformed");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-expected-bucket-owner",
+                        String'
+                          (1 .. Maximum_Header_Text_Bytes + 1 => 'o'))),
+                  "InvalidRequest"),
+               "ListMultipartUploads accepted overlong expected owner");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
                         "x-amz-expected-bucket-owner", "123456789012",
                         "x-amz-request-payer", "owner")),
                   "AccessDenied"),
@@ -2488,7 +2522,136 @@ procedure S3_Server_Application_Corpus is
          Invalid : constant SigV4.Name_Value_Array :=
            (SigV4.Pair ("max-parts", "1001"),
             SigV4.Pair ("uploadId", Upload_ID));
+         Valid : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("uploadId", Upload_ID),
+            SigV4.Pair ("x-id", "ListParts"));
+         Key : constant String :=
+           Checksum_Value (Core.SHA256, "list-parts-sse-key");
+         Decoded_Key : constant Checksums.Decode_Result :=
+           Checksums.Decode_Base64 (Key, Core.SHA256);
+         Key_MD5 : constant String := Checksums.Encode_Base64
+           (Checksums.Compute
+              (Core.MD5, Checksums.Raw_Bytes (Decoded_Key.Value)));
+
+         procedure Reject
+           (Headers : String;
+            Code    : String;
+            Label   : String;
+            Scheme  : Flyology.HTTP.Origin_Scheme :=
+              Flyology.HTTP.Plain_HTTP)
+         is
+            Response : constant String := Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/multipart-object", Valid, "",
+                  Headers),
+               Scheme => Scheme);
+         begin
+            Require
+              (not Has (Response, "200 OK")
+               and then Has (Response, "<Code>" & Code & "</Code>"),
+               "ListParts accepted " & Label & ": " & Response);
+         end Reject;
       begin
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/test-bucket/multipart-object", Valid,
+                     "x-amz-expected-bucket-owner", "test-principal")),
+               "200 OK"),
+            "ListParts rejected matching expected owner");
+         Reject
+           ("x-amz-expected-bucket-owner: different-owner" & CRLF,
+            "AccessDenied", "mismatched expected owner");
+         Reject
+           ("x-amz-expected-bucket-owner: " & CRLF,
+            "InvalidRequest", "empty expected owner");
+         Reject
+           ("x-amz-expected-bucket-owner: " &
+            String'(1 .. Maximum_Header_Text_Bytes => 'o') & CRLF,
+            "AccessDenied", "exact-limit mismatched expected owner");
+         Reject
+           ("x-amz-expected-bucket-owner: " &
+            String'(1 .. Maximum_Header_Text_Bytes + 1 => 'o') & CRLF,
+            "InvalidRequest", "overlong expected owner");
+         Reject
+           ("x-amz-expected-bucket-owner: test-principal" & CRLF &
+            "x-amz-expected-bucket-owner: test-principal" & CRLF,
+            "InvalidRequest", "duplicate expected owner");
+         Reject
+           ("x-amz-request-payer: requester" & CRLF,
+            "NotImplemented", "unsupported requester pays");
+         Reject
+           ("x-amz-request-payer: Requester" & CRLF,
+            "InvalidArgument", "wrong-case request payer");
+         Reject
+           ("x-amz-request-payer: " & CRLF,
+            "InvalidArgument", "empty request payer");
+         Reject
+           ("x-amz-request-payer: requester" & CRLF &
+            "x-amz-request-payer: requester" & CRLF,
+            "InvalidRequest", "duplicate request payer");
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF, "InvalidRequest", "incomplete SSE-C group");
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF &
+            "x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "InvalidRequest", "duplicate SSE-C algorithm",
+            Flyology.HTTP.Secure_HTTPS);
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES128" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "InvalidArgument", "invalid SSE-C algorithm",
+            Flyology.HTTP.Secure_HTTPS);
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: malformed" &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "InvalidDigest", "malformed SSE-C key",
+            Flyology.HTTP.Secure_HTTPS);
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Content_MD5 ("different") & CRLF, "InvalidDigest",
+            "mismatched SSE-C digest", Flyology.HTTP.Secure_HTTPS);
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "InvalidRequest", "SSE-C over plaintext");
+         Reject
+           ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+            CRLF & "x-amz-server-side-encryption-customer-key: " & Key &
+            CRLF & "x-amz-server-side-encryption-customer-key-md5: " &
+            Key_MD5 & CRLF, "NotImplemented", "unsupported valid SSE-C",
+            Flyology.HTTP.Secure_HTTPS);
+         Reject
+           ("x-amz-server-side-encryption: AES256" & CRLF,
+            "NotImplemented", "unmodeled encryption control");
+         declare
+            Response : constant String := Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/multipart-object", Missing, "",
+                  "x-amz-request-payer: owner" & CRLF &
+                  "x-amz-expected-bucket-owner: different-owner" & CRLF &
+                  "x-amz-server-side-encryption-customer-algorithm: " &
+                  "AES256" & CRLF,
+                  Corrupt_Signature => True));
+         begin
+            Require
+              (Has (Response, "<Code>SignatureDoesNotMatch</Code>")
+               and then not Has (Response, "NoSuchUpload")
+               and then not Has (Response, "InvalidArgument")
+               and then not Has (Response, "AccessDenied")
+               and then not Has (Response, "NotImplemented"),
+               "ListParts controls ran before authentication: " & Response);
+         end;
          Require
            (Has
               (Run

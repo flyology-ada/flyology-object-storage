@@ -4,11 +4,11 @@ request	401	2	Key	uri-label	projected	Preserve exact decoded key bytes and rejec
 request	401	3	MaxParts	query	projected	Require one canonical integer from 0 through 1000 and bind response count and truncation invariants to it.	LP-RQ-002,LP-RS-006,LP-RS-007,LP-RS-008
 request	401	4	PartNumberMarker	query	projected	Require one canonical integer from 0 through 10000 and return only strictly greater part numbers; feed NextPartNumberMarker to the next request.	LP-RQ-003,LP-RS-006,LP-RS-007,LP-LC-001,LP-LC-002
 request	401	5	UploadId	query	projected	Require one bounded nonempty identifier and bind every page to the exact bucket, key, upload state, and initiation policy.	LP-RQ-004,LP-LC-001,LP-LC-003
-request	401	6	RequestPayer	header	client_only	Accept only requester; apply configured requester-pays policy or return an authenticated explicit unsupported response.	LP-RQ-006,LP-RQ-008
-request	401	7	ExpectedBucketOwner	header	client_only	Reject duplicate or mismatched owner with the modeled authenticated response before multipart state is observed.	LP-RQ-005,LP-RQ-008
-request	401	8	SSECustomerAlgorithm	header	client_only	Treat the SSE-C triplet as one secure-transport-only group and compare it with initiation state or fail closed.	LP-RQ-007,LP-RQ-008
-request	401	9	SSECustomerKey	header	client_only	Borrow sensitive input without logging or retention; validate the group and upload-state match before listing.	LP-RQ-007,LP-RQ-008
-request	401	10	SSECustomerKeyMD5	header	client_only	Validate the Base64 MD5 of the supplied SSE-C key and its match to initiation state; never return key material.	LP-RQ-007,LP-RQ-008
+request	401	6	RequestPayer	header	projected	Accept only requester; apply configured requester-pays policy or return an authenticated explicit unsupported response.	LP-RQ-006,LP-RQ-008
+request	401	7	ExpectedBucketOwner	header	projected	Reject duplicate or mismatched owner with the modeled authenticated response before multipart state is observed.	LP-RQ-005,LP-RQ-008
+request	401	8	SSECustomerAlgorithm	header	projected	Treat the SSE-C triplet as one secure-transport-only group and compare it with initiation state or fail closed.	LP-RQ-007,LP-RQ-008
+request	401	9	SSECustomerKey	header	projected	Borrow sensitive input without logging or retention; validate the group and upload-state match before listing.	LP-RQ-007,LP-RQ-008
+request	401	10	SSECustomerKeyMD5	header	projected	Validate the Base64 MD5 of the supplied SSE-C key and its match to initiation state; never return key material.	LP-RQ-007,LP-RQ-008
 response	400	1	AbortDate	header	partial	Preserve omission separately; if present require one bounded valid HTTP date associated with lifecycle abort policy.	LP-RS-002,LP-RS-017
 response	400	2	AbortRuleId	header	partial	Preserve omission separately; if present require one bounded nonempty singleton and retain it opaquely.	LP-RS-002,LP-RS-017
 response	400	3	Bucket	body	partial	Require one bounded nonempty identity equal to the requested bucket after XML entity decoding.	LP-RS-004,LP-RS-005,LP-RS-017,LP-RS-018

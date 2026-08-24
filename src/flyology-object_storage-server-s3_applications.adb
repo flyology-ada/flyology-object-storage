@@ -720,6 +720,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             else No_Checksum_Method);
       end Parse_Checksum_Method;
 
+      Maximum_Expected_Owner_Bytes : constant Positive := 8_192;
+      --  Pinned S3 request-header bound shared with the low-level client. This
+      --  project-policy limit prevents unbounded owner controls; changing it
+      --  changes which signed requests are admitted and requires new corpus
+      --  and compatibility review.
+
       procedure Check_Expected_Bucket_Owner
         (Principal : String; Accepted : out Boolean)
       is
@@ -732,6 +738,14 @@ package body Flyology.Object_Storage.Server.S3_Applications is
               (X, 400, "InvalidRequest",
                "The expected bucket owner header is duplicated",
                Target_Text);
+         elsif Count = 1
+           and then Apps.Request_Header
+             (X, "x-amz-expected-bucket-owner")'Length
+               not in 1 .. Maximum_Expected_Owner_Bytes
+         then
+            Send_Error
+              (X, 400, "InvalidRequest",
+               "The expected bucket owner header is invalid", Target_Text);
          elsif Count = 1
            and then Apps.Request_Header
              (X, "x-amz-expected-bucket-owner") /= Principal
@@ -1674,7 +1688,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return;
       elsif Has_Encryption_Header
         and then Operation not in Copy_Object | Put_Object | Head_Object |
-          Get_Object | Get_Object_Attributes
+          Get_Object | Get_Object_Attributes | List_Multipart_Parts
       then
          Send_Error
            (X, 501, "NotImplemented",
@@ -3447,7 +3461,99 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                end;
 
             when List_Multipart_Parts =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  SSE_Algorithm_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X,
+                       "x-amz-server-side-encryption-customer-algorithm");
+                  SSE_Key_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-key");
+                  SSE_MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-server-side-encryption-customer-key-md5");
+                  Owner_OK : Boolean := False;
                begin
+                  if Apps.Request_Header_Count
+                       (X, "x-amz-expected-bucket-owner") > 1
+                    or else Payer_Count > 1
+                    or else SSE_Algorithm_Count > 1
+                    or else SSE_Key_Count > 1
+                    or else SSE_MD5_Count > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A ListParts header is duplicated", Target_Text);
+                     return;
+                  end if;
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer is invalid", Target_Text);
+                     return;
+                  elsif Payer_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Requester Pays is not implemented", Target_Text);
+                     return;
+                  elsif SSE_Algorithm_Count > 0
+                    or else SSE_Key_Count > 0
+                    or else SSE_MD5_Count > 0
+                  then
+                     if SSE_Algorithm_Count /= 1
+                       or else SSE_Key_Count /= 1
+                       or else SSE_MD5_Count /= 1
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The SSE-C header group is incomplete",
+                           Target_Text);
+                     elsif Apps.Request_Header
+                       (X, "x-amz-server-side-encryption-customer-" &
+                          "algorithm") /= "AES256"
+                     then
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The SSE-C algorithm is invalid", Target_Text);
+                     elsif Apps.Request_Scheme (X) /=
+                       Flyology.HTTP.Secure_HTTPS
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "SSE-C requests require HTTPS", Target_Text);
+                     elsif not Checksums.Valid_SSE_C_Key_MD5
+                       (Apps.Request_Header
+                          (X,
+                           "x-amz-server-side-encryption-customer-key"),
+                        Apps.Request_Header
+                          (X, "x-amz-server-side-encryption-customer-" &
+                           "key-md5"))
+                     then
+                        Send_Error
+                          (X, 400, "InvalidDigest",
+                           "The SSE-C key or digest is invalid", Target_Text);
+                     else
+                        Send_Error
+                          (X, 501, "NotImplemented",
+                           "SSE-C ListParts is not implemented", Target_Text);
+                     end if;
+                     return;
+                  elsif Has_Encryption_Header then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "The ListParts encryption header is not implemented",
+                        Target_Text);
+                     return;
+                  end if;
                   declare
                      Query : constant Multipart.Multipart_Query :=
                        Multipart.Parse_Query (Query_Text);
@@ -3555,12 +3661,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                           (X, 200, "application/xml",
                            Multipart.Serialize_List_Parts_Result (Response));
                      end;
+                  exception
+                     when Multipart.Malformed_Multipart =>
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The ListParts request is invalid", Target_Text);
                   end;
-               exception
-                  when Multipart.Malformed_Multipart =>
-                     Send_Error
-                       (X, 400, "InvalidArgument",
-                        "The ListParts request is invalid", Target_Text);
                end;
 
             when Put_Multipart_Part =>
@@ -3705,7 +3811,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   elsif Owner_Count = 1
                     and then Apps.Request_Header
                       (X, "x-amz-expected-bucket-owner")'Length
-                        not in 1 .. 8 * 1_024
+                        not in 1 .. Maximum_Expected_Owner_Bytes
                   then
                      Send_Error
                        (X, 400, "InvalidRequest",

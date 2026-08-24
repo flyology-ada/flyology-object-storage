@@ -75,7 +75,7 @@ ListObjectAnnotations	extended	missing	partial	missing	missing
 ListObjectVersions	core	partial	covered	partial	covered
 ListObjects	core	covered	covered	covered	covered
 ListObjectsV2	core	covered	covered	covered	covered
-ListParts	core	covered	covered	partial	covered
+ListParts	core	covered	covered	covered	covered
 PutBucketAbac	extended	missing	covered	missing	covered
 PutBucketAccelerateConfiguration	extended	missing	covered	missing	covered
 PutBucketAcl	extended	missing	partial	missing	missing
