@@ -43,32 +43,45 @@ case "$BACKEND" in
   *) echo "unknown Flyology backend: $BACKEND" >&2; exit 2 ;;
 esac
 
-AWS_ACCESS_KEY_ID=$ACCESS_KEY \
-AWS_SECRET_ACCESS_KEY=$SECRET_KEY \
-AWS_REGION=us-east-1 \
-FLYOLOGY_STORAGE_ROOT="$RUN_ROOT/store" \
-  "$SERVER" 0 16 >"$SERVER_LOG" 2>&1 &
-SERVER_PID=$!
+start_server() {
+  : >"$SERVER_LOG"
+  AWS_ACCESS_KEY_ID=$ACCESS_KEY \
+  AWS_SECRET_ACCESS_KEY=$SECRET_KEY \
+  AWS_REGION=us-east-1 \
+  FLYOLOGY_STORAGE_ROOT="$RUN_ROOT/store" \
+    "$SERVER" 0 16 >"$SERVER_LOG" 2>&1 &
+  SERVER_PID=$!
 
-PORT=""
-for attempt in $(seq 1 200)
-do
-  PORT=$(sed -n 's/^PORT //p' "$SERVER_LOG" | tail -1)
-  if [ -n "$PORT" ]; then
-    break
+  PORT=""
+  for attempt in $(seq 1 200)
+  do
+    PORT=$(sed -n 's/^PORT //p' "$SERVER_LOG" | tail -1)
+    if [ -n "$PORT" ]; then
+      return
+    fi
+    if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+      cat "$SERVER_LOG" >&2
+      echo "Flyology $BACKEND server exited before readiness" >&2
+      exit 1
+    fi
+    if [ "$attempt" -eq 200 ]; then
+      cat "$SERVER_LOG" >&2
+      echo "Flyology $BACKEND server did not become ready" >&2
+      exit 1
+    fi
+    sleep 0.05
+  done
+}
+
+stop_server() {
+  if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+    kill -TERM "$SERVER_PID" >/dev/null 2>&1 || true
+    wait "$SERVER_PID" >/dev/null 2>&1 || true
   fi
-  if ! kill -0 "$SERVER_PID" >/dev/null 2>&1; then
-    cat "$SERVER_LOG" >&2
-    echo "Flyology $BACKEND server exited before readiness" >&2
-    exit 1
-  fi
-  if [ "$attempt" -eq 200 ]; then
-    cat "$SERVER_LOG" >&2
-    echo "Flyology $BACKEND server did not become ready" >&2
-    exit 1
-  fi
-  sleep 0.05
-done
+  SERVER_PID=""
+}
+
+start_server
 
 RUNNER=${FLYOLOGY_S3_SERVER_RUNNER:-"$SCRIPT_DIR/run-s3-server-slice.sh"}
 SERVER_REVISION=$(git -C "$PROJECT_DIR" rev-parse --verify HEAD 2>/dev/null \
@@ -95,6 +108,22 @@ else
     "http://127.0.0.1:$PORT" \
     "http://host.docker.internal:$PORT" \
     "flyology-$BACKEND-corpus-$$" "$ACCESS_KEY" "$SECRET_KEY" yes
+  if [ "$BACKEND" = sqlite ]; then
+    RESTART_BUCKET="flyology-sqlite-restart-$$"
+    TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+    FLYOLOGY_S3_IMPLEMENTATION=flyology-sqlite \
+      "$PROJECT_DIR/tests/bin/s3_implementation_corpus" \
+      "http://127.0.0.1:$PORT" "$RESTART_BUCKET" "$TIMESTAMP" \
+      restart-prepare
+    stop_server
+    start_server
+    TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+    FLYOLOGY_S3_IMPLEMENTATION=flyology-sqlite \
+      "$PROJECT_DIR/tests/bin/s3_implementation_corpus" \
+      "http://127.0.0.1:$PORT" "$RESTART_BUCKET" "$TIMESTAMP" \
+      restart-verify
+    echo "Flyology sqlite authenticated restart routing: OK"
+  fi
   if [ -n "${FLYOLOGY_S3T_BIN:-}" ]; then
     FLYOLOGY_S3_IMPLEMENTATION="flyology-$BACKEND" \
       "$SCRIPT_DIR/run-s3t-corpus.sh" "http://127.0.0.1:$PORT" \

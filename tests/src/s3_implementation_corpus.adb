@@ -2998,8 +2998,15 @@ procedure S3_Implementation_Corpus is
          raise;
    end Require_Bucket_Versioning;
 
+   type Durable_Routing_Phase is
+     (Complete_Durable_Routing,
+      Prepare_Durable_Restart,
+      Verify_Durable_Restart);
+
    procedure Require_Durable_Version_Routing
-     (Origin : Flyology.HTTP.Origin; Bucket, Timestamp : String)
+     (Origin : Flyology.HTTP.Origin;
+      Bucket, Timestamp : String;
+      Phase : Durable_Routing_Phase)
    is
       --  Test-oracle identity: test-flyology-server.sh assigns this exact
       --  implementation name to the SQLite-backed authenticated endpoint.
@@ -3011,7 +3018,11 @@ procedure S3_Implementation_Corpus is
         or else Ada.Environment_Variables.Value (Implementation_Variable) /=
           SQLite_Implementation
       then
-         return;
+         if Phase = Complete_Durable_Routing then
+            return;
+         end if;
+         raise Program_Error with
+           "durable restart routing requires the SQLite implementation";
       end if;
 
       declare
@@ -3108,42 +3119,41 @@ procedure S3_Implementation_Corpus is
             end if;
          end Require_Attributes;
       begin
-         Create_Bucket (Origin, Probe, "");
          HTTP_Client.Configure (HTTP, Origin);
-         declare
-            Enabled : constant Client_Buckets.Set_Versioning_Outcome :=
-              Client_Buckets.Set_Versioning
-                (HTTP, Origin, Probe,
-                 Flyology.Object_Storage.Versioning_Enabled, Identity,
-                 Timeout => 30.0);
-         begin
-            if Enabled.Kind /= Client_Buckets.Versioning_Updated then
-               raise Program_Error with
-                 "durable version-routing bucket enablement failed";
-            end if;
-         end;
+         if Phase /= Verify_Durable_Restart then
+            Create_Bucket (Origin, Probe, "");
+            declare
+               Enabled : constant Client_Buckets.Set_Versioning_Outcome :=
+                 Client_Buckets.Set_Versioning
+                   (HTTP, Origin, Probe,
+                    Flyology.Object_Storage.Versioning_Enabled, Identity,
+                    Timeout => 30.0);
+            begin
+               if Enabled.Kind /= Client_Buckets.Versioning_Updated then
+                  raise Program_Error with
+                    "durable version-routing bucket enablement failed";
+               end if;
+            end;
 
-         declare
-            First  : constant Low_Level.Put_Object_Outcome :=
-              Put (First_Value'Access);
-            Second : constant Low_Level.Put_Object_Outcome :=
-              Put (Second_Value'Access);
-         begin
-            if First.Kind /= Low_Level.Object_Put
-              or else First.Status /= 200
-              or else US.Length (First.Result.Version_ID) = 0
-              or else Second.Kind /= Low_Level.Object_Put
-              or else Second.Status /= 200
-              or else US.Length (Second.Result.Version_ID) = 0
-              or else First.Result.Version_ID = Second.Result.Version_ID
-            then
-               raise Program_Error with
-                 "durable version-routing PutObject generations mismatch";
-            end if;
-            First_ID := First.Result.Version_ID;
-            Second_ID := Second.Result.Version_ID;
-            First_ETag := First.Result.Entity_Tag;
-         end;
+            declare
+               First  : constant Low_Level.Put_Object_Outcome :=
+                 Put (First_Value'Access);
+               Second : constant Low_Level.Put_Object_Outcome :=
+                 Put (Second_Value'Access);
+            begin
+               if First.Kind /= Low_Level.Object_Put
+                 or else First.Status /= 200
+                 or else US.Length (First.Result.Version_ID) = 0
+                 or else Second.Kind /= Low_Level.Object_Put
+                 or else Second.Status /= 200
+                 or else US.Length (Second.Result.Version_ID) = 0
+                 or else First.Result.Version_ID = Second.Result.Version_ID
+               then
+                  raise Program_Error with
+                    "durable version-routing PutObject generations mismatch";
+               end if;
+            end;
+         end if;
 
          declare
             Page : constant Client_Objects.List_Versions_Outcome :=
@@ -3157,14 +3167,23 @@ procedure S3_Implementation_Corpus is
               or else Page.Page.Versions.Length /= 2
               or else not Page.Page.Delete_Markers.Is_Empty
               or else US.To_String (Page.Page.Versions (1).Key) /= Object_Key
-              or else Page.Page.Versions (1).Version_ID /= Second_ID
+              or else not Page.Page.Versions (1).Has_Version_ID
+              or else US.Length (Page.Page.Versions (1).Version_ID) = 0
               or else not Page.Page.Versions (1).Is_Latest
-              or else Page.Page.Versions (2).Version_ID /= First_ID
+              or else not Page.Page.Versions (2).Has_Version_ID
+              or else US.Length (Page.Page.Versions (2).Version_ID) = 0
+              or else Page.Page.Versions (1).Version_ID =
+                Page.Page.Versions (2).Version_ID
               or else Page.Page.Versions (2).Is_Latest
+              or else not Page.Page.Versions (2).Has_Entity_Tag
+              or else US.Length (Page.Page.Versions (2).Entity_Tag) = 0
             then
                raise Program_Error with
                  "durable ListObjectVersions retained ordering mismatch";
             end if;
+            Second_ID := Page.Page.Versions (1).Version_ID;
+            First_ID := Page.Page.Versions (2).Version_ID;
+            First_ETag := Page.Page.Versions (2).Entity_Tag;
          end;
 
          Require_Whole (US.To_String (First_ID), First_Value);
@@ -3172,6 +3191,13 @@ procedure S3_Implementation_Corpus is
          Require_Attributes
            (US.To_String (First_ID), US.To_String (First_ETag),
             First_Value'Length);
+
+         if Phase = Prepare_Durable_Restart then
+            HTTP_Client.Shutdown (HTTP);
+            Ada.Text_IO.Put_Line
+              ("durable SQLite restart fixture prepared");
+            return;
+         end if;
 
          declare
             Parameters : Low_Level.Head_Object_Parameters;
@@ -3479,7 +3505,8 @@ begin
    if Ada.Command_Line.Argument_Count not in 3 .. 4 then
       raise Program_Error with
         "usage: s3_implementation_corpus ENDPOINT BUCKET " &
-        "YYYYMMDDTHHMMSSZ [setup|cleanup]";
+        "YYYYMMDDTHHMMSSZ " &
+        "[setup|cleanup|restart-prepare|restart-verify]";
    end if;
    declare
       Origin : constant Flyology.HTTP.Origin :=
@@ -3544,11 +3571,20 @@ begin
          Require_Bucket_Location (Origin, Bucket, Timestamp);
          Require_Listed_Bucket (Origin, Bucket, Timestamp);
          Require_Bucket_Versioning (Origin, Bucket);
-         Require_Durable_Version_Routing (Origin, Bucket, Timestamp);
+         Require_Durable_Version_Routing
+           (Origin, Bucket, Timestamp, Complete_Durable_Routing);
          Ada.Text_IO.Put_Line
            ("S3 implementation setup: bucket created, located, headed, " &
             "listed, and versioning-configured; durable SQLite routing " &
             "checked when selected");
+      elsif Ada.Command_Line.Argument (4) = "restart-prepare" then
+         Require_Durable_Version_Routing
+           (Origin, Bucket, Timestamp, Prepare_Durable_Restart);
+      elsif Ada.Command_Line.Argument (4) = "restart-verify" then
+         Require_Durable_Version_Routing
+           (Origin, Bucket, Timestamp, Verify_Durable_Restart);
+         Ada.Text_IO.Put_Line
+           ("durable SQLite restart fixture verified and removed");
       elsif Ada.Command_Line.Argument (4) = "cleanup" then
          Delete_One (Origin, Bucket, "native-object", Timestamp);
          Delete_One

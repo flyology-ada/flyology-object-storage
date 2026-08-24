@@ -9,12 +9,12 @@ with Ada.Streams;
 with Ada.Streams.Stream_IO;
 with Flyology.IO;
 with Flyology.Object_Storage.Checksum_Engine;
-with GNAT.Lock_Files;
 with GNAT.MD5;
 with GNAT.OS_Lib;
 with GNAT.SHA256;
 with Interfaces.C;
 with Interfaces.C.Strings;
+with System;
 
 package body Flyology.Object_Storage.Backends.SQLite is
 
@@ -29,6 +29,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
    use type GNAT.OS_Lib.File_Descriptor;
    use type Interfaces.C.int;
    use type Interfaces.C.Strings.chars_ptr;
+   use type System.Address;
 
    package Catalogs renames Flyology.Object_Storage.SQLite.Catalogs;
    package SIO renames Ada.Streams.Stream_IO;
@@ -49,6 +50,15 @@ package body Flyology.Object_Storage.Backends.SQLite is
      (Path : Interfaces.C.Strings.chars_ptr) return Interfaces.C.int
      with Import, Convention => C,
           External_Name => "flyology_object_storage_sync_directory";
+
+   function Acquire_Root_Lock_C
+     (Path : Interfaces.C.Strings.chars_ptr) return System.Address
+     with Import, Convention => C,
+          External_Name => "flyology_object_storage_acquire_root_lock";
+
+   procedure Release_Root_Lock_C (Handle : System.Address)
+     with Import, Convention => C,
+          External_Name => "flyology_object_storage_release_root_lock";
 
    procedure Sync_Path (Path : String; Directory : Boolean := False) is
       package CS renames Interfaces.C.Strings;
@@ -82,13 +92,35 @@ package body Flyology.Object_Storage.Backends.SQLite is
       end Next;
    end Sequence;
 
+   --  Project-private persistent lock inode. It is never unlinked, so every
+   --  process contends for the same crash-releasing operating-system lock.
    Lock_Name : constant String := ".flyology-object-storage.lock";
+
+   function Acquire_Root_Lock (Path : String) return System.Address is
+      package CS renames Interfaces.C.Strings;
+      Value  : CS.chars_ptr := CS.New_String (Path);
+      Handle : System.Address;
+   begin
+      Handle := Acquire_Root_Lock_C (Value);
+      CS.Free (Value);
+      if Handle = System.Null_Address then
+         raise Configuration_Error with
+           "could not acquire exclusive SQLite backend root lock";
+      end if;
+      return Handle;
+   exception
+      when others =>
+         if Value /= CS.Null_Ptr then
+            CS.Free (Value);
+         end if;
+         raise;
+   end Acquire_Root_Lock;
 
    overriding procedure Finalize (Item : in out Root_Lock) is
    begin
-      if Item.Locked then
-         GNAT.Lock_Files.Unlock_File (US.To_String (Item.Root), Lock_Name);
-         Item.Locked := False;
+      if Item.Handle /= System.Null_Address then
+         Release_Root_Lock_C (Item.Handle);
+         Item.Handle := System.Null_Address;
       end if;
    end Finalize;
 
@@ -246,10 +278,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result.Maximum_Object_Size := Maximum_Object_Size;
          Ada.Directories.Create_Path (Objects_Path (Result));
          Ada.Directories.Create_Path (Staging_Path (Result));
-         GNAT.Lock_Files.Lock_File
-           (US.To_String (Full), Lock_Name, Wait => 0.0, Retries => 0);
-         Result.Lock.Root := Full;
-         Result.Lock.Locked := True;
+         Result.Lock.Handle := Acquire_Root_Lock
+           (Join (US.To_String (Full), Lock_Name));
          Catalogs.Open (Result.Catalog, Catalog_Path (Result));
          Clean_Directory (Result, Staging_Path (Result), False);
          Clean_Directory (Result, Objects_Path (Result), True);
@@ -259,8 +289,6 @@ package body Flyology.Object_Storage.Backends.SQLite is
    exception
       when Configuration_Error =>
          raise;
-      when GNAT.Lock_Files.Lock_Error =>
-         raise Configuration_Error with "SQLite backend root is already open";
       when others =>
          raise Configuration_Error with "could not open SQLite backend";
    end Open;

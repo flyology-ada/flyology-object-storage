@@ -4,6 +4,7 @@ with Ada.Strings.Unbounded;
 with Flyology.Cancellation;
 with Flyology.Object_Storage.Tags;
 with Flyology.Object_Storage.SQLite.Catalogs;
+with System;
 
 --  SQLite catalog with immutable object bodies stored as external files.
 --  Namespace changes are transactional; startup removes incomplete and
@@ -335,8 +336,7 @@ package Flyology.Object_Storage.Backends.SQLite is
 private
    type Root_Lock is
      limited new Ada.Finalization.Limited_Controlled with record
-      Root   : Ada.Strings.Unbounded.Unbounded_String;
-      Locked : Boolean := False;
+      Handle : System.Address := System.Null_Address;
    end record;
 
    overriding procedure Finalize (Item : in out Root_Lock);

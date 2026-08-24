@@ -9,8 +9,8 @@ current/null/exact selection and tags, enabled and suspended delete-marker
 transitions, permanent selected-generation deletion, catalog ordering, paired
 cursors, delimiter projection, retained multipart publication and selected
 part attributes, reopen recovery, and one authenticated retained-generation
-lifecycle. It does not yet claim a server-restart lifecycle, files generations,
-or external-server interoperability.
+lifecycle across a real server process restart. It does not yet claim files
+generations or external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -158,8 +158,8 @@ suspended marker transitions, permanent exact data and marker deletion, MFA
 admission, prior-generation re-exposure, retained multipart completion,
 selected-generation part attributes, payload-reference recovery, and
 generation/file cardinality after startup collection. The backend and server
-cells remain partial until restart-spanning server selection, files
-generations, and black-box external S3 behavior are independently qualified.
+cells remain partial until files generations and black-box external S3
+behavior are independently qualified.
 
 ## Gate evidence
 
@@ -170,7 +170,12 @@ and three repetitions of the native/lightweight socket and TLS corpora. The
 SQLite wrapper, catalog, backend, reopen, and upgrade gate passed separately.
 The authenticated SQLite black-box server slice passed the signed retained
 generation and delete-marker lifecycle together with its independent s5cmd
-byte, multi-delete, and cleanup oracles.
+byte, multi-delete, and cleanup oracles. A second lane prepares two retained
+generations, terminates the server process, reopens the same exclusive root,
+and repeats exact listing, whole GET, GetObjectAttributes, HEAD, deletion,
+marker, and cleanup checks through the authenticated endpoint. The lock gate
+also rejects a concurrent same-process root owner while permitting recovery
+after process death.
 The inventory verifier reported 45 modeled members across seven shapes and 23
 reciprocal vectors; the 116-operation coverage verifier and its negative oracle
 also passed. The new backend-neutral memory corpus covers state transitions,

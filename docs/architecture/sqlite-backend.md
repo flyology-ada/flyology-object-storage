@@ -127,8 +127,14 @@ ordering, exclusive continuation, prefix filtering, and a SQL
 memory.
 
 Startup reconciliation is mutually exclusive with live access. A system-wide
-root lock rejects a second store or process for the same root. This is an
-explicit deployment constraint, not an advisory convention.
+root lock rejects a second store or process for the same root. Unix builds
+hold a nonblocking exclusive `flock` on one persistent project-private inode;
+Windows builds hold a non-shared file handle. The operating system releases
+either handle after normal exit or process death, and the lock file is not
+unlinked because replacing its inode could split contenders across two locks.
+This is an explicit deployment constraint, not an advisory convention. The
+same-process exclusion and authenticated process-restart paths are executable
+gates; Linux and macOS are the CI-qualified targets.
 
 Durability ultimately depends on the operating system and filesystem honoring
 the native file and directory flush operations. A flush failure fails the PUT;
