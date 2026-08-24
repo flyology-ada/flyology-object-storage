@@ -3774,11 +3774,70 @@ package body Object_Storage_Test_Cases is
               Optional_Metadata_Time'(Is_Set => False, Value => 0),
             "files metadata persists across reopen");
          declare
+            Null_Info : Object_Information;
+            Null_Sink : Buffer_Sink;
+            Null_Tags : Object_Tag_Set := Empty_Object_Tags;
+            Read_Tags : Object_Tag_Set;
+            --  Test-reference opaque ID: pure-files must distinguish an
+            --  unsupported retained identity from its supported null alias.
+            Opaque : constant Version_Selector :=
+              (Kind => Exact_Version,
+               ID   => US.To_Unbounded_String ("opaque-generation"));
+         begin
+            Store.Head_Object
+              ("file-bucket", Key, null, Ada.Real_Time.Time_Last,
+               Null_Info, Result, Selector => Null_Version_Selector);
+            Assert
+              (Result = Success and then Null_Info = Info,
+               "files null HeadObject did not select current FOSOBJ05");
+            Store.Get_Object
+              ("file-bucket", Key, Whole_Object, Null_Sink, null,
+               Ada.Real_Time.Time_Last, Null_Info, Result,
+               Selector => Null_Version_Selector);
+            Assert
+              (Result = Success
+               and then Flyology.Bytes.To_Byte_String (Null_Sink.Data) =
+                 "second body",
+               "files null GetObject did not select current FOSOBJ05");
+            Null_Tags.Length := 1;
+            Null_Tags.Items (1) :=
+              (Key   => US.To_Unbounded_String ("selector"),
+               Value => US.To_Unbounded_String ("null"));
+            Store.Put_Object_Tags
+              ("file-bucket", Key, Null_Tags, null,
+               Ada.Real_Time.Time_Last, Result,
+               Selector => Null_Version_Selector);
+            Assert (Result = Success, "files null PutObjectTagging");
+            Store.Get_Object_Tags
+              ("file-bucket", Key, null, Ada.Real_Time.Time_Last,
+               Read_Tags, Result, Selector => Null_Version_Selector);
+            Assert
+              (Result = Success and then Read_Tags = Null_Tags,
+               "files null GetObjectTagging");
+            Store.Delete_Object_Tags
+              ("file-bucket", Key, null, Ada.Real_Time.Time_Last, Result,
+               Selector => Null_Version_Selector);
+            Assert (Result = Success, "files null DeleteObjectTagging");
+            Store.Get_Object_Tags
+              ("file-bucket", Key, null, Ada.Real_Time.Time_Last,
+               Read_Tags, Result);
+            Assert
+              (Result = Success and then Read_Tags = Empty_Object_Tags,
+               "files null tag deletion did not update current alias");
+            Store.Head_Object
+              ("file-bucket", Key, null, Ada.Real_Time.Time_Last,
+               Null_Info, Result, Selector => Opaque);
+            Assert
+              (Result = Not_Implemented,
+               "files opaque retained HeadObject did not fail closed");
+         end;
+         declare
             Snapshot : Object_Attribute_Snapshot;
          begin
             Store.Get_Object_Attributes
               ("file-bucket", Key, (others => <>), null,
-               Ada.Real_Time.Time_Last, Snapshot, Result);
+               Ada.Real_Time.Time_Last, Snapshot, Result,
+               Selector => Null_Version_Selector);
             Assert
               (Result = Success and then not Snapshot.Is_Multipart
                and then Snapshot.Total_Parts = 0

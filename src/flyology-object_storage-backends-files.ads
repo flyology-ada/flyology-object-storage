@@ -122,8 +122,9 @@ package Flyology.Object_Storage.Backends.Files is
       Info               : out Object_Information;
       Result             : out Status);
 
-   --  Read one selected filesystem metadata generation.
-   --  @param Selector Current, null, or exact generation selection
+   --  Read the current/null filesystem metadata generation. Opaque exact
+   --  versions are not retained by FOSOBJ05 and return Not_Implemented.
+   --  @param Selector Current or null generation selection
    overriding procedure Head_Object
      (Item     : in out Store;
       Bucket   : String;
@@ -135,8 +136,9 @@ package Flyology.Object_Storage.Backends.Files is
       Conditions : Read_Conditions := Default_Read_Conditions;
       Selector : Version_Selector := Current_Version_Selector);
 
-   --  Stream one selected filesystem object generation.
-   --  @param Selector Current, null, or exact generation selection
+   --  Stream the current/null filesystem object generation. Opaque exact
+   --  versions are not retained by FOSOBJ05 and return Not_Implemented.
+   --  @param Selector Current or null generation selection
    overriding procedure Get_Object
      (Item      : in out Store;
       Bucket    : String;
@@ -150,8 +152,9 @@ package Flyology.Object_Storage.Backends.Files is
       Conditions : Read_Conditions := Default_Read_Conditions;
       Selector : Version_Selector := Current_Version_Selector);
 
-   --  Read attributes from one selected filesystem generation.
-   --  @param Selector Current, null, or exact generation selection
+   --  Read attributes from the current/null filesystem generation. Opaque
+   --  exact versions are not retained and return Not_Implemented.
+   --  @param Selector Current or null generation selection
    overriding procedure Get_Object_Attributes
      (Item     : in out Store;
       Bucket   : String;
@@ -208,8 +211,9 @@ package Flyology.Object_Storage.Backends.Files is
       Outcomes : out Delete_Object_Outcomes;
       Result   : out Status);
 
-   --  Replace tags on one selected filesystem generation.
-   --  @param Selector Current, null, or exact generation selection
+   --  Replace tags on the current/null filesystem generation. Opaque exact
+   --  versions are not retained and return Not_Implemented.
+   --  @param Selector Current or null generation selection
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
@@ -217,8 +221,9 @@ package Flyology.Object_Storage.Backends.Files is
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
-   --  Read tags from one selected filesystem generation.
-   --  @param Selector Current, null, or exact generation selection
+   --  Read tags from the current/null filesystem generation. Opaque exact
+   --  versions are not retained and return Not_Implemented.
+   --  @param Selector Current or null generation selection
    overriding procedure Get_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
@@ -226,8 +231,9 @@ package Flyology.Object_Storage.Backends.Files is
       Tags : out Object_Tag_Set; Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
-   --  Clear tags on one selected filesystem generation.
-   --  @param Selector Current, null, or exact generation selection
+   --  Clear tags on the current/null filesystem generation. Opaque exact
+   --  versions are not retained and return Not_Implemented.
+   --  @param Selector Current or null generation selection
    overriding procedure Delete_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;

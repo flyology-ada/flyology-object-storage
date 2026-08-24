@@ -79,6 +79,13 @@ package body Flyology.Object_Storage.Backends.Files is
    function Join (Left, Right : String) return String is
      (Ada.Directories.Compose (Left, Right));
 
+   --  FOSOBJ05 stores exactly one unversioned/null object generation. Current
+   --  and Null therefore select the same file; opaque IDs require a retained
+   --  generation layout and remain explicitly unsupported.
+   function Supported_Object_Selector
+     (Selector : Version_Selector) return Boolean is
+     (Selector.Kind in Current_Version | Null_Version);
+
    procedure Sync_Directory (Item : Store; Path : String) is
    begin
       if Item.Commit = Power_Loss_Durable then
@@ -2916,7 +2923,7 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          Result := Invalid_Request;
          return;
-      elsif Selector.Kind /= Current_Version then
+      elsif not Supported_Object_Selector (Selector) then
          Result := Not_Implemented;
          return;
       end if;
@@ -2983,7 +2990,7 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          Result := Invalid_Request;
          return;
-      elsif Selector.Kind /= Current_Version then
+      elsif not Supported_Object_Selector (Selector) then
          Result := Not_Implemented;
          return;
       end if;
@@ -3084,7 +3091,7 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          Result := Invalid_Request;
          return;
-      elsif Selector.Kind /= Current_Version then
+      elsif not Supported_Object_Selector (Selector) then
          Result := Not_Implemented;
          return;
       end if;
@@ -3461,7 +3468,7 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          Result := Invalid_Request;
          return;
-      elsif Selector.Kind /= Current_Version then
+      elsif not Supported_Object_Selector (Selector) then
          Result := Not_Implemented;
          return;
       end if;
@@ -3599,7 +3606,7 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          Result := Invalid_Request;
          return;
-      elsif Selector.Kind /= Current_Version then
+      elsif not Supported_Object_Selector (Selector) then
          Result := Not_Implemented;
          return;
       end if;

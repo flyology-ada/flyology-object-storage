@@ -103,6 +103,12 @@ attestation before creating the temporary record. Symlinked or malformed
 configuration records fail closed. Abrupt-crash tests accept only the complete
 old or complete new Status/MFADelete pair.
 
+FOSOBJ05 retains one object file rather than a generation history. That file is
+the S3 null generation, so current and explicit `null` selectors are aliases
+for HEAD, GET, attributes, and tag operations, including after reopen. Opaque
+exact selectors return `Not_Implemented`; the backend does not invent version
+IDs or imply that configuration storage supplies retained object versions.
+
 DeleteObjects holds the publication gate and performs a complete nonmutating
 preflight before the first removal. Conditions therefore observe one stable
 catalog view, duplicate entries use request order, and a structural or
