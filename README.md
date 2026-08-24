@@ -281,8 +281,8 @@ per chunk or retain a massive object.
 The completion-set-aware `Client.Scoped` layer currently covers conditional
 Put, whole and exact-range Get, Head, Delete, CreateMultipartUpload,
 UploadPart, CompleteMultipartUpload, AbortMultipartUpload, and bounded
-ListParts. The typed synchronous overloads wait on those same owner-driven
-state machines.
+ListParts and ListMultipartUploads. The typed synchronous overloads wait on
+those same owner-driven state machines.
 Multipart initiation and abort use one-shot empty sources, UploadPart moves one
 owned bounded buffer, and completion owns the exact serialized XML behind a
 one-shot source. Each preserves HTTP
@@ -300,6 +300,9 @@ and applications reconcile the exact upload read-only before any later action.
 Composable ListParts is that bounded read-only exact-upload primitive: its
 successful page must echo bucket, key, upload ID, marker, and maximum exactly;
 separate pages remain independent service snapshots.
+Composable ListMultipartUploads applies the same bounded owner-driven contract
+to bucket-level discovery, binding the paired cursor and every echoed scope
+field to one prepared request while leaving pages as independent snapshots.
 The detailed policy is in
 [client transfers](docs/architecture/client-transfers.md).
 

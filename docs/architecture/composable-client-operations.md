@@ -209,6 +209,14 @@ only when its bucket, key, upload ID, marker, and maximum echo the exact
 prepared request. Restart is permitted only after typed Finish consumes the
 prior terminal result, and every page remains an independent service snapshot.
 
+ListMultipartUploads is the bounded bucket-level discovery primitive. Its
+operation owns the prepared signed request and one XML-limit-bounded response
+buffer, drives one message-only HTTP exchange, and exposes the same typed
+terminal HTTP diagnostics as ListParts. A successful page must bind the exact
+bucket, paired key/upload-ID cursor, prefix, delimiter, maximum, URL-encoding
+mode, and Requester Pays admission of the prepared request. Restart is allowed
+only after typed Finish, and no snapshot is promised across pages.
+
 The Flyology.DB recovery sequence enabled by these operations is:
 
 1. publish an immutable batch with `If-None-Match: *`;
@@ -226,8 +234,8 @@ listing.
 The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Get_Range`, and `Head_Object` overloads and the typed-result `Delete` and
 `Create_Multipart_Upload`, `Upload_Part`, and
-`Complete_Multipart_Upload`, `Abort_Multipart_Upload`, and `List_Parts_Page`
-overloads are literal waits on the same
+`Complete_Multipart_Upload`, `Abort_Multipart_Upload`, `List_Parts_Page`, and
+`List_Multipart_Uploads_Page` overloads are literal waits on the same
 `Client.Scoped` state machines and retain their typed certainty, capacity,
 metadata, and ownership results. The established raising `Delete_Outcome` and
 `Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer
@@ -380,6 +388,11 @@ socket oracle adds pre-admission cancellation, operation restart across two
 continuation pages, strict physical singleton handling, and rejection of every
 wrong echoed request field. The six-server matrix uses the typed synchronous
 wait over the same state machine.
+
+ListMultipartUploads has the same direct normalization cross-product and
+native/lightweight cancellation, restart, physical-singleton, Requester Pays,
+paired-cursor, and exact-scope socket checks. The implementation matrix drives
+its typed synchronous wait across every positive provider lane.
 
 The sibling `range-get.tsv` and `head-object.tsv` corpora are normative for the
 read surface. They enumerate typed request forms, physical singleton handling,

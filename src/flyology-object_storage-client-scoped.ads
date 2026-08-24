@@ -1421,6 +1421,115 @@ package Flyology.Object_Storage.Client.Scoped is
       Result    : out List_Parts_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  Shape of a terminal ListMultipartUploads read.
+   --  @enum Multipart_Uploads_Response_Available Modeled S3 response exists
+   --  @enum List_Multipart_Uploads_Exchange_Failed No complete response exists
+   type List_Multipart_Uploads_Result_Kind is
+     (Multipart_Uploads_Response_Available,
+      List_Multipart_Uploads_Exchange_Failed);
+
+   --  Typed bounded ListMultipartUploads response or composable HTTP failure.
+   --  Admission is retained for diagnostics; this operation is read-only and
+   --  therefore has no publication disposition.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type List_Multipart_Uploads_Result
+     (Kind : List_Multipart_Uploads_Result_Kind :=
+        List_Multipart_Uploads_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Multipart_Uploads_Response_Available =>
+            Response : Low_Level.List_Multipart_Uploads_Outcome;
+         when List_Multipart_Uploads_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded ListMultipartUploads parent with one hidden HTTP child. The
+   --  operation owns its prepared request and retained response bytes through
+   --  terminal Finish; no borrowed request input is retained.
+   type List_Multipart_Uploads_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Compatibility contract: parameters, region, addressing style, and
+   --  cancellation defaults match the established synchronous
+   --  ListMultipartUploads API.
+
+   --  Start or restart one bounded ListMultipartUploads operation. Request
+   --  validation and signing finish before start.
+   --  @param Operation Fresh or consumed established listing operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Parameters Complete modeled listing scope and paired cursor
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Start_List_Multipart_Uploads
+     (Operation : in out List_Multipart_Uploads_Operation;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded ListMultipartUploads operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Parameters Complete modeled listing scope and paired cursor
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven ListMultipartUploads operation
+   function List_Multipart_Uploads
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Multipart_Uploads_Operation;
+
+   --  Consume one terminal ListMultipartUploads operation.
+   --  @param Operation Terminal ListMultipartUploads request
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out List_Multipart_Uploads_Operation;
+      Result    : out List_Multipart_Uploads_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
 private
    --  @exclude
    type Conditional_Put_Operation
@@ -1478,6 +1587,25 @@ private
       Response_Data : Flyology.Bytes.Unbounded_Bytes;
       Response_Limit : Natural := 0;
       Final_Result : List_Parts_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type List_Multipart_Uploads_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : List_Multipart_Uploads_Result;
       Has_Final_Result : Boolean := False;
       Has_Saved_Error : Boolean := False;
       Saved_Error : Ada.Exceptions.Exception_Occurrence;
@@ -1990,6 +2118,27 @@ private
    overriding procedure Finalize
      (Item : in out List_Parts_Operation);
 
+   --  @exclude
+   --  @param Item Internal bounded ListMultipartUploads response sink
+   --  @param Data Complete-response fragment
+   overriding procedure Write
+     (Item : in out List_Multipart_Uploads_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal ListMultipartUploads parent
+   --  @param Event Owner-driver event
+   overriding procedure Drive
+     (Item : in out List_Multipart_Uploads_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal ListMultipartUploads parent
+   overriding procedure Request_Cancellation
+     (Item : in out List_Multipart_Uploads_Operation);
+   --  @exclude
+   --  @param Item Internal ListMultipartUploads parent
+   overriding procedure Finalize
+     (Item : in out List_Multipart_Uploads_Operation);
+
    --  Private normalization boundary shared with the strict test child.
    --  @exclude
    --  @param Value Complete decoded S3 response
@@ -2145,5 +2294,27 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return List_Parts_Result;
+
+   --  Private normalization boundary shared with the strict test child.
+   --  @exclude
+   --  @param Value Complete decoded S3 response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Normalized ListMultipartUploads response
+   function Normalize_List_Multipart_Uploads_Response
+     (Value     : Low_Level.List_Multipart_Uploads_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return List_Multipart_Uploads_Result;
+
+   --  @exclude
+   --  @param Kind Typed HTTP failure
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Causal HTTP phase
+   --  @param Detail Bounded sanitized HTTP diagnostic
+   --  @return Normalized ListMultipartUploads exchange failure
+   function Normalize_List_Multipart_Uploads_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return List_Multipart_Uploads_Result;
 
 end Flyology.Object_Storage.Client.Scoped;

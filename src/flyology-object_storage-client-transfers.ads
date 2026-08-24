@@ -200,11 +200,35 @@ package Flyology.Object_Storage.Client.Transfers is
       Token        : access Flyology.Cancellation.Token := null)
       return Low_Level.List_Parts_Outcome;
 
-   --  Fetch one bounded ListMultipartUploads page. Key_Marker and
-   --  Upload_ID_Marker form one continuation cursor and must be advanced
-   --  together from the returned pair. Separate calls do not share a service
-   --  snapshot. The response is rejected unless every echoed scope and cursor
-   --  field matches this request exactly.
+   --  Fetch one bounded ListMultipartUploads page by waiting on the
+   --  composable owner-driven operation. Key_Marker and Upload_ID_Marker form
+   --  one cursor and separate calls do not share a service snapshot. This
+   --  result-type overload preserves typed HTTP failure and admission data.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Source S3 bucket
+   --  @param Parameters Exact listing scope and paired continuation cursor
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   function List_Multipart_Uploads_Page
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Parameters   : Low_Level.List_Multipart_Uploads_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Scoped.List_Multipart_Uploads_Result;
+
+   --  Fetch one bounded ListMultipartUploads page through the established
+   --  raising transport contract. The paired cursor must advance together,
+   --  and every echoed scope and cursor field must match the exact request.
    function List_Multipart_Uploads_Page
      (Client       : aliased in out Flyology.HTTP.Client.Client;
       Origin       : Flyology.HTTP.Origin;

@@ -99,6 +99,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Publication_Disposition;
    use type Scoped.Part_Upload_Disposition;
    use type Scoped.List_Parts_Result_Kind;
+   use type Scoped.List_Multipart_Uploads_Result_Kind;
    use type Scoped.Upload_Part_Result_Kind;
    use type Scoped.Multipart_Completion_Disposition;
    use type Scoped.Multipart_Completion_Result_Kind;
@@ -1944,6 +1945,11 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", List_Uploads_Empty_XML,
                "x-amz-request-charged:" & CRLF),
             "GET", "/example-bucket?max-uploads=1000&uploads");
+         Serve
+           (HTTP_Response
+              ("200 OK", List_Uploads_Empty_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?max-uploads=1000&uploads");
          declare
             Query : constant String :=
               "/example-bucket?delimiter=%2F&encoding-type=url&" &
@@ -2031,6 +2037,18 @@ procedure S3_HTTP_Socket_Corpus is
               "part-number-marker=0&uploadId=paged-upload");
          Serve
            (HTTP_Response
+              ("200 OK", List_Parts_Empty_XML,
+               "x-amz-request-charged:" & CRLF),
+            "GET", "/example-bucket/paged-parts?max-parts=1&" &
+              "part-number-marker=0&uploadId=paged-upload");
+         Serve
+           (HTTP_Response
+              ("200 OK", List_Parts_Empty_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket/paged-parts?max-parts=1&" &
+              "part-number-marker=0&uploadId=paged-upload");
+         Serve
+           (HTTP_Response
               ("200 OK", Empty_List_Parts_XML
                  ("wrong-bucket", "paged-parts", "paged-upload", 0, 1)),
             "GET", "/example-bucket/paged-parts?max-parts=1&" &
@@ -2051,12 +2069,6 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("200 OK", Empty_List_Parts_XML
                  ("example-bucket", "paged-parts", "paged-upload", 0, 2)),
-            "GET", "/example-bucket/paged-parts?max-parts=1&" &
-              "part-number-marker=0&uploadId=paged-upload");
-         Serve
-           (HTTP_Response
-              ("200 OK", List_Parts_Empty_XML,
-               "x-amz-request-charged:" & CRLF),
             "GET", "/example-bucket/paged-parts?max-parts=1&" &
               "part-number-marker=0&uploadId=paged-upload");
          Serve
@@ -6169,19 +6181,22 @@ procedure S3_HTTP_Socket_Corpus is
             List_Parameters.Expected_Bucket_Owner :=
               US.To_Unbounded_String ("123456789012");
             declare
-               Result : constant Low_Level.List_Multipart_Uploads_Outcome :=
+               Result : constant Scoped.List_Multipart_Uploads_Result :=
                  Transfers.List_Multipart_Uploads_Page
                    (HTTP, Origin, "example-bucket", List_Parameters,
                     Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Low_Level.Multipart_Uploads_Listed
+               if Result.Kind /= Scoped.Multipart_Uploads_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Multipart_Uploads_Listed
                  or else Natural
-                   (Result.Result.Listing.Uploads.Length) /= 1
+                   (Result.Response.Result.Listing.Uploads.Length) /= 1
                  or else US.To_String
-                   (Result.Result.Listing.Uploads.First_Element.Upload_ID) /=
-                     "socket-upload"
-                 or else US.To_String (Result.Result.Request_Charged) /=
-                   "requester"
+                   (Result.Response.Result.Listing.Uploads.First_Element.
+                      Upload_ID) /= "socket-upload"
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /= "requester"
                then
                   raise Program_Error with
                     "typed ListMultipartUploads socket success mismatch";
@@ -6213,24 +6228,21 @@ procedure S3_HTTP_Socket_Corpus is
             Uploads_Parameters : Low_Level.List_Multipart_Uploads_Parameters;
 
             procedure Require_Invalid_Uploads (Message : String) is
-               Raised : Boolean := False;
+               --  Listing parent, HTTP exchange, and one transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Scoped.List_Multipart_Uploads_Operation :=
+                 Scoped.List_Multipart_Uploads
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    Uploads_Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.List_Multipart_Uploads_Result;
             begin
-               begin
-                  declare
-                     Ignored : constant
-                       Low_Level.List_Multipart_Uploads_Outcome :=
-                         Transfers.List_Multipart_Uploads_Page
-                           (HTTP, Origin, "example-bucket",
-                            Uploads_Parameters, Identity, Timeout => 5.0);
-                     pragma Unreferenced (Ignored);
-                  begin
-                     null;
-                  end;
-               exception
-                  when Low_Level.Invalid_Response =>
-                     Raised := True;
-               end;
-               if not Raised then
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.List_Multipart_Uploads_Exchange_Failed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+               then
                   raise Program_Error with Message;
                end if;
             end Require_Invalid_Uploads;
@@ -6241,6 +6253,9 @@ procedure S3_HTTP_Socket_Corpus is
               ("ListMultipartUploads accepted duplicate singleton header");
             Require_Invalid_Uploads
               ("ListMultipartUploads accepted present-empty header");
+            Require_Invalid_Uploads
+              ("ListMultipartUploads accepted charged response without " &
+               "request payer");
 
             Uploads_Parameters.Delimiter := US.To_Unbounded_String ("/");
             Uploads_Parameters.URL_Encoding := True;
@@ -6271,50 +6286,82 @@ procedure S3_HTTP_Socket_Corpus is
             end loop;
          end;
          declare
-            Uploads_Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+            Uploads_Parameters : Low_Level.List_Multipart_Uploads_Parameters :=
+              (Max_Uploads => 1,
+               Prefix => US.To_Unbounded_String ("paged/"),
+               others => <>);
+            --  Listing parent, HTTP exchange, and one transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Operation : Scoped.List_Multipart_Uploads_Operation :=
+              Scoped.List_Multipart_Uploads
+                (Set'Access, HTTP'Access, Origin, "example-bucket",
+                 Uploads_Parameters, Identity,
+                 HTTP_Client.Deadline_After (5.0));
+            Result : Scoped.List_Multipart_Uploads_Result;
          begin
-            Uploads_Parameters.Max_Uploads := 1;
-            Uploads_Parameters.Prefix := US.To_Unbounded_String ("paged/");
             declare
-               First : constant Low_Level.List_Multipart_Uploads_Outcome :=
-                 Transfers.List_Multipart_Uploads_Page
-                   (HTTP, Origin, "example-bucket", Uploads_Parameters,
-                    Identity, Timeout => 5.0);
+               Stop : aliased Flyology.Cancellation.Token;
             begin
-               if First.Kind /= Low_Level.Multipart_Uploads_Listed
-                 or else not First.Result.Listing.Is_Truncated
-                 or else Natural (First.Result.Listing.Uploads.Length) /= 1
-                 or else US.Length
-                   (First.Result.Listing.Next_Key_Marker) = 0
-                 or else US.Length
-                   (First.Result.Listing.Next_Upload_ID_Marker) = 0
-               then
-                  raise Program_Error with
-                    "high-level ListMultipartUploads first page mismatch";
-               end if;
-               Uploads_Parameters.Key_Marker :=
-                 First.Result.Listing.Next_Key_Marker;
-               Uploads_Parameters.Upload_ID_Marker :=
-                 First.Result.Listing.Next_Upload_ID_Marker;
+               Stop.Request;
+               declare
+                  Cancelled : constant
+                    Scoped.List_Multipart_Uploads_Result :=
+                      Transfers.List_Multipart_Uploads_Page
+                        (HTTP, Origin, "example-bucket", Uploads_Parameters,
+                         Identity, Timeout => 5.0, Token => Stop'Access);
+               begin
+                  if Cancelled.Kind /=
+                    Scoped.List_Multipart_Uploads_Exchange_Failed
+                    or else Cancelled.Failure /= Scoped.Cancelled
+                    or else Cancelled.Admission /= HTTP_Client.Not_Admitted
+                  then
+                     raise Program_Error with
+                       "pre-admission ListMultipartUploads cancellation " &
+                       "mismatch";
+                  end if;
+               end;
             end;
-            declare
-               Second : constant Low_Level.List_Multipart_Uploads_Outcome :=
-                 Transfers.List_Multipart_Uploads_Page
-                   (HTTP, Origin, "example-bucket", Uploads_Parameters,
-                    Identity, Timeout => 5.0);
-            begin
-               if Second.Kind /= Low_Level.Multipart_Uploads_Listed
-                 or else Second.Result.Listing.Is_Truncated
-                 or else Natural
-                   (Second.Result.Listing.Uploads.Length) /= 1
-                 or else US.To_String
-                   (Second.Result.Listing.Uploads.First_Element.Upload_ID) /=
-                     "id-2"
-               then
-                  raise Program_Error with
-                    "high-level ListMultipartUploads continuation mismatch";
-               end if;
-            end;
+            Operations.Wait_All (Set);
+            Scoped.Finish (Operation, Result);
+            if Result.Kind /= Scoped.Multipart_Uploads_Response_Available
+              or else Result.Failure /= Scoped.No_Failure
+              or else Result.Response.Kind /=
+                Low_Level.Multipart_Uploads_Listed
+              or else not Result.Response.Result.Listing.Is_Truncated
+              or else Natural
+                (Result.Response.Result.Listing.Uploads.Length) /= 1
+              or else US.Length
+                (Result.Response.Result.Listing.Next_Key_Marker) = 0
+              or else US.Length
+                (Result.Response.Result.Listing.Next_Upload_ID_Marker) = 0
+            then
+               raise Program_Error with
+                 "composed ListMultipartUploads first page mismatch";
+            end if;
+            Uploads_Parameters.Key_Marker :=
+              Result.Response.Result.Listing.Next_Key_Marker;
+            Uploads_Parameters.Upload_ID_Marker :=
+              Result.Response.Result.Listing.Next_Upload_ID_Marker;
+            Scoped.Start_List_Multipart_Uploads
+              (Operation, HTTP'Access, Origin, "example-bucket",
+               Uploads_Parameters, Identity,
+               HTTP_Client.Deadline_After (5.0));
+            Operations.Wait_All (Set);
+            Scoped.Finish (Operation, Result);
+            if Result.Kind /= Scoped.Multipart_Uploads_Response_Available
+              or else Result.Failure /= Scoped.No_Failure
+              or else Result.Response.Kind /=
+                Low_Level.Multipart_Uploads_Listed
+              or else Result.Response.Result.Listing.Is_Truncated
+              or else Natural
+                (Result.Response.Result.Listing.Uploads.Length) /= 1
+              or else US.To_String
+                (Result.Response.Result.Listing.Uploads.First_Element.
+                   Upload_ID) /= "id-2"
+            then
+               raise Program_Error with
+                 "composed ListMultipartUploads continuation mismatch";
+            end if;
          end;
          declare
             Parts_Parameters : Low_Level.List_Parts_Parameters :=
@@ -6385,7 +6432,7 @@ procedure S3_HTTP_Socket_Corpus is
                  "composed ListParts continuation mismatch";
             end if;
             Parts_Parameters.Part_Number_Marker := 0;
-            for Case_Index in 1 .. 3 loop
+            for Case_Index in 1 .. 4 loop
                Scoped.Start_List_Parts
                  (Operation, HTTP'Access, Origin, "example-bucket",
                   "paged-parts", Parts_Parameters, Identity,
@@ -6401,8 +6448,11 @@ procedure S3_HTTP_Socket_Corpus is
                         when 1 => "ListParts accepted a wrong echoed key",
                         when 2 =>
                           "ListParts accepted duplicate singleton header",
+                        when 3 =>
+                          "ListParts accepted present-empty header",
                         when others =>
-                          "ListParts accepted present-empty header");
+                          "ListParts accepted charged response without " &
+                          "request payer");
                end if;
             end loop;
             for Echo_Index in 1 .. 4 loop
@@ -11716,6 +11766,8 @@ begin
      Check_Abort_Multipart_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_List_Parts_Result_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_List_Multipart_Uploads_Result_Corpus;
    Run_And_Report;
    declare
       task Lightweight_Client is

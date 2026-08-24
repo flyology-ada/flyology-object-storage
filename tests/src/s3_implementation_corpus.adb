@@ -93,6 +93,7 @@ procedure S3_Implementation_Corpus is
    use type Scoped.Multipart_Abort_Result_Kind;
    use type Scoped.Multipart_Abort_Disposition;
    use type Scoped.List_Parts_Result_Kind;
+   use type Scoped.List_Multipart_Uploads_Result_Kind;
    use type Scoped.Failure_Reason;
    use type Client_Objects.List_Outcome_Kind;
    use type Client_Objects.Whole_Get_Outcome_Kind;
@@ -1903,48 +1904,59 @@ procedure S3_Implementation_Corpus is
          Parameters.Prefix := US.To_Unbounded_String (Object_Key);
          Parameters.Max_Uploads := 1;
          declare
-            Outcome : constant Low_Level.List_Multipart_Uploads_Outcome :=
+            Result : constant Scoped.List_Multipart_Uploads_Result :=
               Transfers.List_Multipart_Uploads_Page
                 (HTTP, Origin, Bucket, Parameters, Identity,
                  Timeout => 30.0);
          begin
-            if Outcome.Kind /= Low_Level.Multipart_Uploads_Listed then
-               raise Program_Error with
-                 "S3 implementation rejected typed ListMultipartUploads: " &
-                 Outcome.Status'Image & " " &
-                 US.To_String (Outcome.Error.Code) & " " &
-                 US.To_String (Outcome.Error.Message);
-            elsif Present
-              and then
-                (Outcome.Result.Listing.Uploads.Length /= 1
-                 or else US.To_String
-                   (Outcome.Result.Listing.Uploads.First_Element.Key) /=
-                     Object_Key
-                 or else US.To_String
-                   (Outcome.Result.Listing.Uploads.First_Element.Upload_ID) /=
-                     Upload_ID
-                 or else Outcome.Result.Listing.Is_Truncated)
+            if Result.Kind /= Scoped.Multipart_Uploads_Response_Available
+              or else Result.Failure /= Scoped.No_Failure
             then
                raise Program_Error with
-                 "S3 implementation ListMultipartUploads active value " &
-                 "mismatch: count=" &
-                 Outcome.Result.Listing.Uploads.Length'Image &
-                 (if Outcome.Result.Listing.Uploads.Is_Empty then ""
-                  else " key=" & US.To_String
-                    (Outcome.Result.Listing.Uploads.First_Element.Key) &
-                    " id=" &
-                    US.To_String
-                      (Outcome.Result.Listing.Uploads.First_Element.Upload_ID))
-                 &
-                 " expected-key=" & Object_Key & " expected-id=" &
-                 Upload_ID & " truncated=" &
-                 Outcome.Result.Listing.Is_Truncated'Image;
-            elsif not Present
-              and then not Outcome.Result.Listing.Uploads.Is_Empty
-            then
-               raise Program_Error with
-                 "S3 implementation listed a retired multipart upload";
+                 "S3 implementation rejected composable " &
+                 "ListMultipartUploads";
             end if;
+            declare
+               Outcome : Low_Level.List_Multipart_Uploads_Outcome renames
+                 Result.Response;
+            begin
+               if Outcome.Kind /= Low_Level.Multipart_Uploads_Listed then
+                  raise Program_Error with
+                    "S3 implementation rejected typed " &
+                    "ListMultipartUploads: " & Outcome.Status'Image & " " &
+                    US.To_String (Outcome.Error.Code) & " " &
+                    US.To_String (Outcome.Error.Message);
+               elsif Present
+                 and then
+                   (Outcome.Result.Listing.Uploads.Length /= 1
+                    or else US.To_String
+                      (Outcome.Result.Listing.Uploads.First_Element.Key) /=
+                        Object_Key
+                    or else US.To_String
+                      (Outcome.Result.Listing.Uploads.First_Element.
+                         Upload_ID) /= Upload_ID
+                    or else Outcome.Result.Listing.Is_Truncated)
+               then
+                  raise Program_Error with
+                    "S3 implementation ListMultipartUploads active value " &
+                    "mismatch: count=" &
+                    Outcome.Result.Listing.Uploads.Length'Image &
+                    (if Outcome.Result.Listing.Uploads.Is_Empty then ""
+                     else " key=" & US.To_String
+                       (Outcome.Result.Listing.Uploads.First_Element.Key) &
+                       " id=" & US.To_String
+                         (Outcome.Result.Listing.Uploads.First_Element.
+                            Upload_ID)) &
+                    " expected-key=" & Object_Key & " expected-id=" &
+                    Upload_ID & " truncated=" &
+                    Outcome.Result.Listing.Is_Truncated'Image;
+               elsif not Present
+                 and then not Outcome.Result.Listing.Uploads.Is_Empty
+               then
+                  raise Program_Error with
+                    "S3 implementation listed a retired multipart upload";
+               end if;
+            end;
          end;
       end Require_Listed_Upload;
 
@@ -3307,25 +3319,31 @@ procedure S3_Implementation_Corpus is
                Parameters.Prefix := US.To_Unbounded_String (Multipart_Key);
                Parameters.Max_Uploads := 1;
                declare
-                  Listed : constant
-                    Low_Level.List_Multipart_Uploads_Outcome :=
+                  Result : constant Scoped.List_Multipart_Uploads_Result :=
                       Transfers.List_Multipart_Uploads_Page
                         (HTTP, Origin, Probe, Parameters, Identity,
                          Timeout => 30.0);
                begin
-                  if Listed.Kind /= Low_Level.Multipart_Uploads_Listed
-                    or else Listed.Status /= 200
-                    or else Listed.Result.Listing.Is_Truncated
-                    or else Listed.Result.Listing.Uploads.Length /= 1
+                  if Result.Kind /=
+                    Scoped.Multipart_Uploads_Response_Available
+                    or else Result.Failure /= Scoped.No_Failure
+                    or else Result.Response.Kind /=
+                      Low_Level.Multipart_Uploads_Listed
+                    or else Result.Response.Status /= 200
+                    or else Result.Response.Result.Listing.Is_Truncated
+                    or else Result.Response.Result.Listing.Uploads.Length /= 1
                     or else US.To_String
-                      (Listed.Result.Listing.Uploads (1).Key) /= Multipart_Key
+                      (Result.Response.Result.Listing.Uploads (1).Key) /=
+                        Multipart_Key
                     or else US.Length
-                      (Listed.Result.Listing.Uploads (1).Upload_ID) = 0
+                      (Result.Response.Result.Listing.Uploads (1).
+                         Upload_ID) = 0
                   then
                      raise Program_Error with
                        "durable multipart upload listing mismatch";
                   end if;
-                  Upload_ID := Listed.Result.Listing.Uploads (1).Upload_ID;
+                  Upload_ID :=
+                    Result.Response.Result.Listing.Uploads (1).Upload_ID;
                end;
             end;
 

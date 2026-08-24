@@ -4020,6 +4020,24 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Multipart_Uploads_Outcome;
 
+   --  Decode one complete ListMultipartUploads HTTP response. Physical
+   --  singleton headers, bounded values, Requester Pays consistency, and the
+   --  successful response's echoed request scope are validated before the
+   --  modeled response is exposed.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared ListMultipartUploads request
+   --  @param Limits Bounded XML parser limits
+   --  @return Typed page or S3 rejection
+   --  @exception Invalid_Request Prepared is not ListMultipartUploads
+   --  @exception Invalid_Response Complete response is inconsistent
+   function Decode_List_Multipart_Uploads_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Multipart_Uploads_Outcome;
+
    function Execute_List_Multipart_Uploads
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -4416,6 +4434,10 @@ private
       Requested_Upload_ID_Marker : Ada.Strings.Unbounded.Unbounded_String;
       Requested_Prefix : Ada.Strings.Unbounded.Unbounded_String;
       Requested_Delimiter : Ada.Strings.Unbounded.Unbounded_String;
+      --  Derived request/response binding: a charged listing response is
+      --  valid only when the exact prepared request admitted requester pays.
+      Requested_List_Request_Payer :
+        Ada.Strings.Unbounded.Unbounded_String;
       --  Owned immutable bytes for prepared one-shot mutation bodies; this
       --  private storage prevents retaining caller-borrowed input.
       Owned_Request_Payload : Ada.Strings.Unbounded.Unbounded_String;

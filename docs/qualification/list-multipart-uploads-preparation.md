@@ -1,10 +1,10 @@
 # ListMultipartUploads qualification
 
-This record freezes the pinned model inventory and qualifies the synchronous
-client plus the authenticated general-purpose path-style server. Backend,
-client, server, and corpus coverage are complete within that scope. Directory
-buckets and configured Requester Pays accounting remain explicit capability
-exclusions.
+This record freezes the pinned model inventory and qualifies the composable
+and synchronous clients plus the authenticated general-purpose path-style
+server. Backend, client, server, and corpus coverage are complete within that
+scope. Directory buckets and configured Requester Pays accounting remain
+explicit capability exclusions.
 
 ## Pinned authority
 
@@ -64,12 +64,22 @@ until their endpoint and session policy exists.
 ## Qualified client and oracle boundary
 
 The low-level client projects all nine modeled request positions and parses all
-13 top-level output positions. `Client.Transfers.List_Multipart_Uploads_Page`
-is the public bounded one-page API. Prepared requests retain bucket, both
-markers, prefix, delimiter, encoding mode, and maximum; execution binds every
-echoed field to that exact scope, including URL-encoded key fields while
-leaving upload-ID markers opaque. Callers advance the two returned markers as
-one cursor, and separate calls do not share a snapshot.
+13 top-level output positions. `Client.Scoped.List_Multipart_Uploads` is the
+caller-owned completion-set-aware operation; the typed
+`Client.Transfers.List_Multipart_Uploads_Page` overload is a literal wait on
+that same state machine. The established low-level-outcome overload remains
+source compatible. Prepared requests retain bucket, both markers, prefix,
+delimiter, encoding mode, maximum, and Requester Pays admission; complete
+response decoding binds every echoed field and any charged response to that
+exact scope, including URL-encoded key fields while leaving upload-ID markers
+opaque. Callers advance the two returned markers as one cursor, and separate
+calls do not share a snapshot.
+
+The operation retains response bytes only up to the existing S3 XML document
+limit, owns no borrowed request input, creates no helper task, and contains one
+HTTP child. Typed Finish distinguishes a modeled S3 response from a bounded
+exchange failure and preserves terminal admission certainty for diagnostics.
+As a read-only request, ListMultipartUploads has no publication disposition.
 
 The sole modeled response header is a physical singleton. Present-empty,
 duplicate, over-8-KiB, control-bearing, or invalid requester-pays values are
@@ -119,9 +129,13 @@ vector identifiers, and reciprocal member/vector references. It does not
 build Ada, invoke shared runners, edit a manifest or ledger, or run GNATprove.
 
 The fragmented raw-loopback corpus runs through both native and Flyology
-lightweight clients, independently mutates all seven echoed scope/cursor
-fields, exercises duplicate and present-empty headers, and follows a real
-two-page paired cursor. The signed server corpus additionally requires matching
+lightweight clients, covers pre-admission cancellation and direct operation
+restart, independently mutates all seven echoed scope/cursor fields, rejects a
+charged response without an admitted payer, exercises duplicate and
+present-empty headers, and follows a real two-page paired cursor. Direct
+normalization checks cover modeled service responses and every HTTP terminal
+failure across all admission states. The signed server corpus additionally
+requires matching
 owner success, mismatched-owner `AccessDenied`, duplicate-owner rejection, and
 valid, invalid, and duplicate requester-pays dispositions. The repeated
 implementation matrix calls the public page API against RustFS, supplemental
@@ -131,17 +145,18 @@ general-purpose server boundaries.
 
 ## Frozen gate evidence
 
-The qualified source passed the root gate with 40/40 AUnit tests, the 88-case
+The qualified source passed the root gate with 41/41 AUnit tests, the 126-case
 files crash matrix, 320 checksum vectors, 210 chunk boundaries, the 64-GiB CRC
 linearization oracle, the server application corpus, and three repetitions of
 the native/lightweight socket corpus. The SQLite gate passed. The six-server
 implementation matrix passed all 18 lanes and repetitions, with the exact
 SeaweedFS exclusions above reported rather than accepted.
 
-The serialized proof campaign started at 2026-08-23T14:39:58Z with FSF
-GNATprove 16.1.0. `./tools/prove.sh` used output headers and warnings as errors
-and proved 936/936 checks across all nine manifest units: 180 flow checks and
-756 prover checks, with a maximum of 663 steps. The report contains zero
-warnings, unproved or justified checks, and `pragma Assume` statements;
-the source contains no `pragma Assume`, `pragma Suppress`, `False_Positive`, or
-`SPARK_Mode => Off`. The post-run host process audit was clean.
+The serialized proof campaign on 2026-08-24 used FSF GNATprove 16.1.0.
+`./tools/prove.sh` used output headers and warnings as errors and proved
+936/936 checks across all nine manifest units: 180 flow checks and 756 prover
+checks, with a maximum of 663 steps. The report contains zero warnings,
+unproved or justified checks, and `pragma Assume` statements; the source
+contains no `pragma Assume`, `pragma Suppress`, `False_Positive`, or
+`SPARK_Mode => Off`. Exact pre/post-run host process audits were clean and the
+exclusive prover/model-checker lane was released after the campaign.
