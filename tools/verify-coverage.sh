@@ -76,6 +76,7 @@ do
       "$PROJECT_DIR/tests/src/s3_get_object_legal_hold_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_object_retention_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_object_lock_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_ownership_controls_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_object_torrent_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_object_torrent_socket_corpus.adb"
   fi
@@ -91,6 +92,7 @@ do
       "$PROJECT_DIR/tests/src/s3_get_bucket_controls_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_put_bucket_controls_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_object_lock_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_ownership_controls_corpus.adb" \
       "$PROJECT_DIR/tests/scripts"
   fi
 done

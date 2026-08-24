@@ -1,0 +1,6 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	255	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind its exact value into the signed ownershipControls target.	GBO-RQ-001,GBO-RQ-003,GBO-RQ-004
+request	255	2	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	GBO-RQ-002,GBO-RQ-003,GBO-RQ-004
+output	254	1	OwnershipControls	501	body	false	decoded	Preserve absence or decode one exact OwnershipControls payload without assigning an ownership policy.	GBO-RS-001,GBO-RS-002,GBO-RS-005,GBO-TR-001,GBO-TR-002
+nested	501	1	Rules	503	body	true	decoded	Require the flattened Rule list whenever the outer payload is present and bound its population by caller XML limits.	GBO-RS-001,GBO-RS-002,GBO-RS-005,GBO-TR-001,GBO-TR-002
+nested	502	1	ObjectOwnership	485	body	true	decoded	Require exactly one pinned ObjectOwnership enum value in every flattened Rule item.	GBO-RS-001,GBO-RS-002,GBO-RS-005,GBO-RS-007,GBO-TR-001,GBO-TR-002

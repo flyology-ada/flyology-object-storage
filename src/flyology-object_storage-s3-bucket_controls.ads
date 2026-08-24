@@ -1,3 +1,4 @@
+with Ada.Containers.Vectors;
 with Flyology.Object_Storage.S3.XML;
 
 --  Strict REST/XML codecs for small bucket-control configurations.
@@ -25,6 +26,35 @@ package Flyology.Object_Storage.S3.Bucket_Controls is
    --  @enum Requester Exact external Requester value
    --  @enum Bucket_Owner Exact external BucketOwner value
    type Payer is (Payer_Absent, Requester, Bucket_Owner);
+
+   --  Pinned ObjectOwnership enumeration.  Every decoded Rule requires one
+   --  exact external value, so this type intentionally has no absent member.
+   --  @enum Bucket_Owner_Preferred Exact BucketOwnerPreferred wire value
+   --  @enum Object_Writer Exact ObjectWriter wire value
+   --  @enum Bucket_Owner_Enforced Exact BucketOwnerEnforced wire value
+   type Object_Ownership is
+     (Bucket_Owner_Preferred, Object_Writer, Bucket_Owner_Enforced);
+
+   --  One required member of the flattened OwnershipControls Rules list.
+   --  @field Ownership Required exact object-ownership mode
+   type Ownership_Control_Rule is record
+      Ownership : Object_Ownership;
+   end record;
+
+   --  Dynamically sized rule storage bounded during decoding by the caller's
+   --  shared XML element limit rather than by an invented list ceiling.
+   package Ownership_Control_Rule_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Ownership_Control_Rule);
+
+   --  Presence-preserving GetBucketOwnershipControls payload.  The vector is
+   --  dynamically sized because the pinned list has no independent maximum;
+   --  the caller-selected XML element limit bounds decoded population.
+   --  @field Is_Set Whether the outer OwnershipControls payload was present
+   --  @field Rules Required nonempty flattened Rule list when present
+   type Ownership_Controls_Configuration is record
+      Is_Set : Boolean := False;
+      Rules  : Ownership_Control_Rule_Vectors.Vector;
+   end record;
 
    --  Representation classification: presence is authoritative. Value is
    --  initialized only to keep default aggregates deterministic and has no
@@ -102,6 +132,16 @@ package Flyology.Object_Storage.S3.Bucket_Controls is
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Public_Access_Block_Configuration;
+
+   --  Parse one exact GetBucketOwnershipControls response document.
+   --  @param Document Complete nonempty same-response XML payload
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Present configuration with every required Rule decoded
+   --  @exception Malformed_Configuration Document violates the pinned model
+   function Parse_Ownership_Controls
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Ownership_Controls_Configuration;
 
    --  Serialize one exact PutBucketAbac request document.
    function Serialize_Abac (Value : Abac_Status) return String;

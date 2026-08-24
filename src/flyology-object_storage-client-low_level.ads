@@ -2036,6 +2036,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
+   --  Prepare one exactly bound GetBucketOwnershipControls request.
+   function Prepare_Get_Bucket_Ownership_Controls
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
 
    --  Shared terminal classification for the five bucket-control reads.
    --  @enum Bucket_Control_Found Exact 200 response decoded successfully
@@ -2150,6 +2156,26 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Presence-preserving GetBucketOwnershipControls outcome.  The shared
+   --  500 default is only the established deterministic aggregate sentinel.
+   --  @field Kind Whether configuration or a strict S3 error was returned
+   --  @field Status Exact physical HTTP status
+   --  @field Configuration Optional outer payload and required decoded rules
+   --  @field Error Structured bounded S3 rejection
+   type Get_Bucket_Ownership_Controls_Outcome
+     (Kind : Get_Bucket_Control_Outcome_Kind :=
+        Get_Bucket_Control_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Control_Found =>
+            Configuration :
+              S3.Bucket_Controls.Ownership_Controls_Configuration;
+         when Get_Bucket_Control_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
    --  Decode one complete bounded GetBucketAccelerateConfiguration response.
    function Decode_Get_Bucket_Accelerate_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
@@ -2187,6 +2213,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String := ""; Host_ID : String := "";
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Public_Access_Block_Outcome;
+   --  Decode one complete bounded GetBucketOwnershipControls response.
+   function Decode_Get_Bucket_Ownership_Controls_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Ownership_Controls_Outcome;
 
    --  Execute one exact prepared GetBucketAccelerateConfiguration request.
    function Execute_Get_Bucket_Accelerate_Configuration
@@ -2230,6 +2262,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Public_Access_Block_Outcome;
+   --  Execute one exact prepared GetBucketOwnershipControls request.
+   function Execute_Get_Bucket_Ownership_Controls
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Ownership_Controls_Outcome;
 
    --  Shared physical controls for small bucket-configuration PUTs.
    --  Empty Content_MD5 requests automatic generation where the model admits

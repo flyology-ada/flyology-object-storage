@@ -7200,6 +7200,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Parameters.Expected_Bucket_Owner, US.Null_Unbounded_String, False,
          Identity, Region, Timestamp));
 
+   function Prepare_Get_Bucket_Ownership_Controls
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Bucket_Ownership_Controls_Operation,
+         Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
+         US.Null_Unbounded_String, False, Identity, Region, Timestamp));
+
    procedure Validate_Bucket_Control_Response_Headers
      (Request_ID, Host_ID : String) is
    begin
@@ -7385,6 +7395,34 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "malformed GetPublicAccessBlock response";
    end Decode_Get_Public_Access_Block_Response;
 
+   function Decode_Get_Bucket_Ownership_Controls_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Ownership_Controls_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      if Status = 200 then
+         return
+           (Kind          => Bucket_Control_Found,
+            Status        => Status,
+            Configuration =>
+              (if Payload'Length = 0 then (others => <>)
+               else Bucket_Controls.Parse_Ownership_Controls
+                 (Payload, Limits)));
+      end if;
+      return
+        (Kind   => Get_Bucket_Control_Rejected,
+         Status => Status,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Bucket_Controls.Malformed_Configuration |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetBucketOwnershipControls response";
+   end Decode_Get_Bucket_Ownership_Controls_Response;
+
    type Bucket_Control_Raw_Response is record
       Status          : Flyology.HTTP.Status_Code;
       Payload         : US.Unbounded_String;
@@ -7562,6 +7600,24 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Raw.Status, US.To_String (Raw.Payload),
          US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
    end Execute_Get_Public_Access_Block;
+
+   function Execute_Get_Bucket_Ownership_Controls
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Ownership_Controls_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared,
+           Model.Get_Bucket_Ownership_Controls_Operation, False,
+           Timeout, Token, Limits);
+   begin
+      return Decode_Get_Bucket_Ownership_Controls_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_Get_Bucket_Ownership_Controls;
 
    function Prepare_Bucket_Control_Put
      (Operation       : Model.Operation_Id;

@@ -1,4 +1,5 @@
 with Ada.Characters.Handling;
+with Ada.Containers;
 with Ada.Directories;
 with Ada.Exceptions;
 with Ada.Streams;
@@ -58,6 +59,7 @@ procedure S3_HTTP_Socket_Corpus is
    package US renames Ada.Strings.Unbounded;
 
    use Ada.Streams;
+   use type Ada.Containers.Count_Type;
    use type Low_Level.List_Buckets_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Objects.List_Outcome_Kind;
@@ -105,6 +107,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Bucket_Controls.Abac_Status;
    use type Bucket_Controls.Accelerate_Status;
    use type Bucket_Controls.Payer;
+   use type Bucket_Controls.Object_Ownership;
    use type Tags.Tag_Vectors.Vector;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
@@ -3271,6 +3274,57 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "<AbacStatus><Status>Enabled</Status></AbacStatus>"),
             "GET", "/example-bucket?abac",
             Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<OwnershipControls><Rule><ObjectOwnership>" &
+                 "BucketOwnerPreferred</ObjectOwnership></Rule><Rule>" &
+                 "<ObjectOwnership>BucketOwnerEnforced</ObjectOwnership>" &
+                 "</Rule></OwnershipControls>",
+               "x-amz-request-id: ownership-request" & CRLF &
+               "x-amz-id-2: ownership-host" & CRLF),
+            "GET", "/example-bucket?ownershipControls",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", ""),
+            "GET", "/example-bucket?ownershipControls");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: ownership-error-request" & CRLF &
+               "x-amz-id-2: ownership-error-host" & CRLF),
+            "GET", "/example-bucket?ownershipControls");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<OwnershipControls><Rule><ObjectOwnership>" &
+                 "ObjectWriter</ObjectOwnership></Rule></OwnershipControls>",
+               "x-amz-request-id: first" & CRLF &
+               "x-amz-request-id: second" & CRLF),
+            "GET", "/example-bucket?ownershipControls");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<OwnershipControls><Rule><ObjectOwnership>" &
+                 "ObjectWriter</ObjectOwnership></Rule></OwnershipControls>",
+               "x-amz-id-2: first" & CRLF &
+               "x-amz-id-2: second" & CRLF),
+            "GET", "/example-bucket?ownershipControls");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<OwnershipControls><Rule><ObjectOwnership>" &
+                 "ObjectWriter</ObjectOwnership></Rule></OwnershipControls>",
+               "x-amz-request-id:" & CRLF),
+            "GET", "/example-bucket?ownershipControls");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<OwnershipControls/>"),
+            "GET", "/example-bucket?ownershipControls");
+         Serve
+           (HTTP_Response
+              --  26 text bytes plus 39 markup bytes are exactly one past
+              --  the paired caller-selected 64-byte document limit.
+              ("200 OK", "<OwnershipControls>" &
+                 String'(1 .. 26 => ' ') & "</OwnershipControls>"),
+            "GET", "/example-bucket?ownershipControls");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT", "/example-bucket?abac",
             Expected_Body_Root => "<AbacStatus",
@@ -8299,6 +8353,121 @@ procedure S3_HTTP_Socket_Corpus is
             then
                raise Program_Error with "GetBucketAbac socket mismatch";
             end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Ownership_Controls
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity, "us-east-1", "20130524T000000Z");
+            Result : constant
+              Low_Level.Get_Bucket_Ownership_Controls_Outcome :=
+                Low_Level.Execute_Get_Bucket_Ownership_Controls
+                  (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else not Result.Configuration.Is_Set
+              or else Result.Configuration.Rules.Length /= 2
+              or else Result.Configuration.Rules.Element (1).Ownership /=
+                Bucket_Controls.Bucket_Owner_Preferred
+              or else Result.Configuration.Rules.Element (2).Ownership /=
+                Bucket_Controls.Bucket_Owner_Enforced
+            then
+               raise Program_Error with
+                 "GetBucketOwnershipControls socket success mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Ownership_Controls
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant
+              Low_Level.Get_Bucket_Ownership_Controls_Outcome :=
+                Low_Level.Execute_Get_Bucket_Ownership_Controls
+                  (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Configuration.Is_Set
+              or else not Result.Configuration.Rules.Is_Empty
+            then
+               raise Program_Error with
+                 "GetBucketOwnershipControls outer absence mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Ownership_Controls
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant
+              Low_Level.Get_Bucket_Ownership_Controls_Outcome :=
+                Low_Level.Execute_Get_Bucket_Ownership_Controls
+                  (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Get_Bucket_Control_Rejected
+              or else Result.Status /= 403
+              or else US.To_String (Result.Error.Code) /= "AccessDenied"
+              or else US.To_String (Result.Error.Request_ID) /=
+                "ownership-error-request"
+              or else US.To_String (Result.Error.Host_ID) /=
+                "ownership-error-host"
+            then
+               raise Program_Error with
+                 "GetBucketOwnershipControls socket rejection mismatch";
+            end if;
+         end;
+         declare
+            procedure Must_Reject_Ownership
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Bucket_Ownership_Controls
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    (others => <>), Identity, "us-east-1",
+                    "20130524T000000Z");
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant
+                       Low_Level.Get_Bucket_Ownership_Controls_Outcome :=
+                         (if Small_Limits
+                          then Low_Level.Execute_Get_Bucket_Ownership_Controls
+                            (HTTP, Prepared, Timeout => 5.0,
+                             Limits =>
+                               (Maximum_Document_Bytes => 64,
+                                Maximum_Depth          => 8,
+                                Maximum_Elements       => 32,
+                                Maximum_Text_Bytes     => 64))
+                          else Low_Level.Execute_Get_Bucket_Ownership_Controls
+                            (HTTP, Prepared, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response => Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_Ownership;
+         begin
+            Must_Reject_Ownership
+              ("GetBucketOwnershipControls accepted duplicate request ID");
+            Must_Reject_Ownership
+              ("GetBucketOwnershipControls accepted duplicate host ID");
+            Must_Reject_Ownership
+              ("GetBucketOwnershipControls accepted empty request ID");
+            Must_Reject_Ownership
+              ("GetBucketOwnershipControls accepted malformed success XML");
+            Must_Reject_Ownership
+              ("GetBucketOwnershipControls accepted oversized success XML",
+               Small_Limits => True);
          end;
          declare
             Abac : constant Low_Level.Put_Bucket_Control_Outcome :=

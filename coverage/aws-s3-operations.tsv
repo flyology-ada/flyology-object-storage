@@ -44,7 +44,7 @@ GetBucketMetadataTableConfiguration	extended	missing	partial	missing	missing
 GetBucketMetricsConfiguration	extended	missing	partial	missing	missing
 GetBucketNotification	extended	missing	partial	missing	missing
 GetBucketNotificationConfiguration	extended	missing	partial	missing	missing
-GetBucketOwnershipControls	extended	missing	partial	missing	missing
+GetBucketOwnershipControls	extended	missing	covered	missing	covered
 GetBucketPolicy	extended	missing	covered	missing	covered
 GetBucketPolicyStatus	extended	missing	covered	missing	covered
 GetBucketReplication	extended	missing	partial	missing	missing
