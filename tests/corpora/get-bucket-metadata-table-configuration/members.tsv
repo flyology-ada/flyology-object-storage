@@ -1,0 +1,14 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	249	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind its exact value into the signed metadataTable target.	GMT-RQ-001,GMT-RQ-003,GMT-RQ-004
+request	249	2	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	GMT-RQ-002,GMT-RQ-003,GMT-RQ-004
+output	248	1	GetBucketMetadataTableConfigurationResult	250	body	false	decoded	Preserve absent body versus a present strict metadata-table result.	GMT-RS-001,GMT-RS-002,GMT-RS-005,GMT-TR-001,GMT-TR-002
+nested	250	1	MetadataTableConfigurationResult	427	body	true	decoded	Require the configuration result whenever the outer result is present.	GMT-RS-001,GMT-RS-002,GMT-RS-005
+nested	250	2	Status	429	body	true	decoded	Preserve the required provider status as exact opaque text without inventing a lifecycle enum.	GMT-RS-001,GMT-RS-002,GMT-RS-003,GMT-RS-005
+nested	250	3	Error	196	body	false	decoded	Preserve optional nested provider error structure presence.	GMT-RS-001,GMT-RS-002,GMT-RS-005
+nested	427	1	S3TablesDestinationResult	630	body	true	decoded	Require the complete S3 Tables destination result.	GMT-RS-001,GMT-RS-002,GMT-RS-005
+nested	630	1	TableBucketArn	627	body	true	decoded	Preserve the required exact table-bucket ARN string.	GMT-RS-001,GMT-RS-002,GMT-RS-005
+nested	630	2	TableName	631	body	true	decoded	Preserve the required exact table-name string.	GMT-RS-001,GMT-RS-002,GMT-RS-005
+nested	630	3	TableArn	626	body	true	decoded	Preserve the required exact table ARN string.	GMT-RS-001,GMT-RS-002,GMT-RS-005
+nested	630	4	TableNamespace	632	body	true	decoded	Preserve the required exact table namespace string.	GMT-RS-001,GMT-RS-002,GMT-RS-005
+nested	196	1	ErrorCode	195	body	false	decoded	Preserve omission or exact provider error code including empty text.	GMT-RS-001,GMT-RS-002,GMT-RS-005
+nested	196	2	ErrorMessage	198	body	false	decoded	Preserve omission or exact provider error message including empty text.	GMT-RS-001,GMT-RS-002,GMT-RS-005

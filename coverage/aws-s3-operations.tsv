@@ -40,7 +40,7 @@ GetBucketLifecycleConfiguration	extended	missing	partial	missing	missing
 GetBucketLocation	core	covered	covered	covered	covered
 GetBucketLogging	extended	missing	partial	missing	missing
 GetBucketMetadataConfiguration	extended	missing	partial	missing	missing
-GetBucketMetadataTableConfiguration	extended	missing	partial	missing	missing
+GetBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 GetBucketMetricsConfiguration	extended	missing	partial	missing	missing
 GetBucketNotification	extended	missing	partial	missing	missing
 GetBucketNotificationConfiguration	extended	missing	partial	missing	missing

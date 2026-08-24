@@ -23,6 +23,7 @@ with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Encryption;
+with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Core;
@@ -47,6 +48,8 @@ procedure S3_HTTP_Socket_Corpus is
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
+   package Metadata_Tables renames
+     Flyology.Object_Storage.S3.Metadata_Tables;
    package Checksums renames Flyology.Object_Storage.S3.Checksums;
    package Bucket_Controls renames
      Flyology.Object_Storage.S3.Bucket_Controls;
@@ -3438,6 +3441,89 @@ procedure S3_HTTP_Socket_Corpus is
                  String'(1 .. 64 => ' ') &
                  "</ServerSideEncryptionConfiguration>"),
             "GET", "/example-bucket?encryption");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<GetBucketMetadataTableConfigurationResult>" &
+                 "<MetadataTableConfigurationResult>" &
+                 "<S3TablesDestinationResult>" &
+                 "<TableBucketArn>socket-bucket-arn</TableBucketArn>" &
+                 "<TableName>socket-table</TableName>" &
+                 "<TableArn>socket-table-arn</TableArn>" &
+                 "<TableNamespace>socket-namespace</TableNamespace>" &
+                 "</S3TablesDestinationResult>" &
+                 "</MetadataTableConfigurationResult>" &
+                 "<Status>future:READY/v2</Status>" &
+                 "<Error><ErrorCode></ErrorCode>" &
+                 "<ErrorMessage>socket detail</ErrorMessage></Error>" &
+                 "</GetBucketMetadataTableConfigurationResult>",
+               "x-amz-request-id: metadata-table-request" & CRLF &
+               "x-amz-id-2: metadata-table-host" & CRLF),
+            "GET", "/example-bucket?metadataTable",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "GET", "/example-bucket?metadataTable");
+         Serve
+           (HTTP_Response
+              ("404 Not Found", Error_XML,
+               "x-amz-request-id: metadata-table-error-request" & CRLF &
+               "x-amz-id-2: metadata-table-error-host" & CRLF),
+            "GET", "/example-bucket?metadataTable");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<GetBucketMetadataTableConfigurationResult>" &
+                 "<MetadataTableConfigurationResult>" &
+                 "<S3TablesDestinationResult><TableBucketArn/>" &
+                 "<TableName/><TableArn/><TableNamespace/>" &
+                 "</S3TablesDestinationResult>" &
+                 "</MetadataTableConfigurationResult><Status/>" &
+                 "</GetBucketMetadataTableConfigurationResult>",
+               "x-amz-request-id: first" & CRLF &
+               "x-amz-request-id: second" & CRLF),
+            "GET", "/example-bucket?metadataTable");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<GetBucketMetadataTableConfigurationResult>" &
+                 "<MetadataTableConfigurationResult>" &
+                 "<S3TablesDestinationResult><TableBucketArn/>" &
+                 "<TableName/><TableArn/><TableNamespace/>" &
+                 "</S3TablesDestinationResult>" &
+                 "</MetadataTableConfigurationResult><Status/>" &
+                 "</GetBucketMetadataTableConfigurationResult>",
+               "x-amz-id-2: first" & CRLF &
+               "x-amz-id-2: second" & CRLF),
+            "GET", "/example-bucket?metadataTable");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<GetBucketMetadataTableConfigurationResult>" &
+                 "<MetadataTableConfigurationResult>" &
+                 "<S3TablesDestinationResult><TableBucketArn/>" &
+                 "<TableName/><TableArn/><TableNamespace/>" &
+                 "</S3TablesDestinationResult>" &
+                 "</MetadataTableConfigurationResult><Status/>" &
+                 "</GetBucketMetadataTableConfigurationResult>",
+               "x-amz-request-id:" & CRLF),
+            "GET", "/example-bucket?metadataTable");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<GetBucketMetadataTableConfigurationResult>" &
+                 "<MetadataTableConfigurationResult/>" &
+                 "<Status>ACTIVE</Status>" &
+                 "</GetBucketMetadataTableConfigurationResult>"),
+            "GET", "/example-bucket?metadataTable");
+         Serve
+           (HTTP_Response
+              --  Test-only oversized payload paired with the caller's
+              --  explicit 64-byte document ceiling below.
+              ("200 OK", "<GetBucketMetadataTableConfigurationResult>" &
+                 String'(1 .. 64 => ' ') &
+                 "</GetBucketMetadataTableConfigurationResult>"),
+            "GET", "/example-bucket?metadataTable");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT", "/example-bucket?abac",
             Expected_Body_Root => "<AbacStatus",
@@ -8829,6 +8915,143 @@ procedure S3_HTTP_Socket_Corpus is
               ("GetBucketEncryption accepted malformed success XML");
             Must_Reject_Encryption
               ("GetBucketEncryption accepted oversized success XML",
+               Small_Limits => True);
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Metadata_Table_Configuration
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity, "us-east-1", "20130524T000000Z");
+            Result : constant
+              Low_Level.Get_Bucket_Metadata_Table_Configuration_Outcome :=
+                Low_Level.Execute_Get_Bucket_Metadata_Table_Configuration
+                  (HTTP, Prepared, Timeout => 5.0);
+            Configuration : constant
+              Metadata_Tables.Metadata_Table_Configuration_Result :=
+                Result.Configuration;
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else not Configuration.Is_Set
+              or else US.To_String
+                (Configuration.Destination.Table_Bucket_ARN) /=
+                  "socket-bucket-arn"
+              or else US.To_String
+                (Configuration.Destination.Table_Name) /= "socket-table"
+              or else US.To_String
+                (Configuration.Destination.Table_ARN) /= "socket-table-arn"
+              or else US.To_String
+                (Configuration.Destination.Table_Namespace) /=
+                  "socket-namespace"
+              or else US.To_String (Configuration.Status) /=
+                "future:READY/v2"
+              or else not Configuration.Error.Is_Set
+              or else not Configuration.Error.Code.Is_Set
+              or else US.To_String (Configuration.Error.Code.Value) /= ""
+              or else not Configuration.Error.Message.Is_Set
+              or else US.To_String (Configuration.Error.Message.Value) /=
+                "socket detail"
+            then
+               raise Program_Error with
+                 "metadata-table socket success mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Metadata_Table_Configuration
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant
+              Low_Level.Get_Bucket_Metadata_Table_Configuration_Outcome :=
+                Low_Level.Execute_Get_Bucket_Metadata_Table_Configuration
+                  (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Configuration.Is_Set
+            then
+               raise Program_Error with
+                 "metadata-table socket outer absence mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Metadata_Table_Configuration
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant
+              Low_Level.Get_Bucket_Metadata_Table_Configuration_Outcome :=
+                Low_Level.Execute_Get_Bucket_Metadata_Table_Configuration
+                  (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Get_Bucket_Control_Rejected
+              or else Result.Status /= 404
+              or else US.To_String (Result.Error.Code) /= "AccessDenied"
+              or else US.To_String (Result.Error.Request_ID) /=
+                "metadata-table-error-request"
+              or else US.To_String (Result.Error.Host_ID) /=
+                "metadata-table-error-host"
+            then
+               raise Program_Error with
+                 "metadata-table socket rejection mismatch";
+            end if;
+         end;
+         declare
+            procedure Must_Reject_Metadata_Table
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Bucket_Metadata_Table_Configuration
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    (others => <>), Identity, "us-east-1",
+                    "20130524T000000Z");
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant
+                       Low_Level.
+                         Get_Bucket_Metadata_Table_Configuration_Outcome :=
+                           (if Small_Limits
+                            then
+                              Low_Level.
+                                Execute_Get_Bucket_Metadata_Table_Configuration
+                                  (HTTP, Prepared, Timeout => 5.0,
+                                   Limits =>
+                                     --  Test-only caller policy paired with
+                                     --  the oversized server fixture above.
+                                     (Maximum_Document_Bytes => 64,
+                                      Maximum_Depth          => 8,
+                                      Maximum_Elements       => 32,
+                                      Maximum_Text_Bytes     => 64))
+                            else
+                              Low_Level.
+                                Execute_Get_Bucket_Metadata_Table_Configuration
+                                  (HTTP, Prepared, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response => Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_Metadata_Table;
+         begin
+            Must_Reject_Metadata_Table
+              ("metadata-table read accepted duplicate request ID");
+            Must_Reject_Metadata_Table
+              ("metadata-table read accepted duplicate host ID");
+            Must_Reject_Metadata_Table
+              ("metadata-table read accepted empty request ID");
+            Must_Reject_Metadata_Table
+              ("metadata-table read accepted malformed success XML");
+            Must_Reject_Metadata_Table
+              ("metadata-table read accepted oversized success XML",
                Small_Limits => True);
          end;
          declare

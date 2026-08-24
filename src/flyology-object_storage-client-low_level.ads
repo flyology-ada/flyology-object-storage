@@ -13,6 +13,7 @@ with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Listings;
+with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Model;
@@ -2071,6 +2072,20 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
+   --  Prepare one exactly bound GetBucketMetadataTableConfiguration request.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Parameters Optional modeled owner precondition
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @return Fully signed request bound to the metadataTable operation
+   function Prepare_Get_Bucket_Metadata_Table_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
 
    --  Shared terminal classification for strict bucket-control reads.
    --  @enum Bucket_Control_Found Exact 200 response decoded successfully
@@ -2243,6 +2258,26 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Presence-preserving metadata-table configuration outcome.  The 500
+   --  default is the established deterministic aggregate sentinel only.
+   --  @field Kind Whether a result or a strict S3 error was returned
+   --  @field Status Exact physical HTTP status
+   --  @field Configuration Optional typed metadata-table result
+   --  @field Error Structured bounded S3 rejection
+   type Get_Bucket_Metadata_Table_Configuration_Outcome
+     (Kind : Get_Bucket_Control_Outcome_Kind :=
+        Get_Bucket_Control_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Control_Found =>
+            Configuration :
+              S3.Metadata_Tables.Metadata_Table_Configuration_Result;
+         when Get_Bucket_Control_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
    --  Decode one complete bounded GetBucketAccelerateConfiguration response.
    function Decode_Get_Bucket_Accelerate_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
@@ -2310,6 +2345,18 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String := ""; Host_ID : String := "";
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Encryption_Outcome;
+   --  Decode one complete bounded metadata-table configuration response.
+   --  @param Status Exact physical response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Optional bounded S3 request identifier
+   --  @param Host_ID Optional bounded S3 host identifier
+   --  @param Limits Caller-selected shared XML resource limits
+   --  @return Typed metadata-table result or strict S3 rejection
+   function Decode_Get_Bucket_Metadata_Table_Configuration_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Metadata_Table_Configuration_Outcome;
 
    --  Execute one exact prepared GetBucketAccelerateConfiguration request.
    function Execute_Get_Bucket_Accelerate_Configuration
@@ -2386,6 +2433,19 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Encryption_Outcome;
+   --  Execute one exact prepared metadata-table configuration request.
+   --  @param Client Caller-owned synchronous HTTP client
+   --  @param Prepared Request from the matching prepare operation
+   --  @param Timeout Caller-selected absolute operation budget
+   --  @param Token Optional cooperative cancellation token
+   --  @param Limits Caller-selected shared XML resource limits
+   --  @return Typed metadata-table result or strict S3 rejection
+   function Execute_Get_Bucket_Metadata_Table_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Metadata_Table_Configuration_Outcome;
 
    --  Shared physical controls for small bucket-configuration PUTs.
    --  Empty Content_MD5 requests automatic generation where the model admits
