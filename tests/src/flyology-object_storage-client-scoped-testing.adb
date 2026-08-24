@@ -13,6 +13,7 @@ package body Flyology.Object_Storage.Client.Scoped.Testing is
    use type HTTP_Client.Exchange_Result_Kind;
    use type Low_Level.Abort_Multipart_Outcome_Kind;
    use type Low_Level.Complete_Multipart_Outcome_Kind;
+   use type Low_Level.List_Parts_Outcome_Kind;
 
    procedure Check_Response
      (Status      : Flyology.HTTP.Status_Code;
@@ -878,5 +879,135 @@ package body Flyology.Object_Storage.Client.Scoped.Testing is
          end loop;
       end loop;
    end Check_Abort_Multipart_Certainty_Corpus;
+
+   procedure Check_List_Parts_Response
+     (Status  : Flyology.HTTP.Status_Code;
+      Code    : String;
+      Failure : Failure_Reason)
+   is
+      Value : constant Low_Level.List_Parts_Outcome :=
+        (if Status = 200 and then Code'Length = 0
+         then (Kind => Low_Level.Parts_Listed,
+               Status => Status,
+               Result => (others => <>))
+         else (Kind => Low_Level.List_Parts_Rejected,
+               Status => Status,
+               Error =>
+                 (Code       => US.To_Unbounded_String (Code),
+                  Message    => US.Null_Unbounded_String,
+                  Resource   => US.Null_Unbounded_String,
+                  Request_ID => US.Null_Unbounded_String,
+                  Host_ID    => US.Null_Unbounded_String)));
+      Result : constant List_Parts_Result := Normalize_List_Parts_Response
+        (Value, HTTP_Client.Response_Observed);
+   begin
+      if Result.Kind /= List_Parts_Response_Available
+        or else Result.Failure /= Failure
+        or else Result.Admission /= HTTP_Client.Response_Observed
+      then
+         raise Program_Error with
+           "ListParts response normalization mismatch: status=" &
+           Status'Image & " code=" & Code & " expected=" &
+           Failure'Image & " actual=" & Result.Failure'Image;
+      end if;
+   end Check_List_Parts_Response;
+
+   procedure Check_List_Parts_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty)
+   is
+      Expected_Failure : constant Failure_Reason :=
+        (case Kind is
+            when HTTP_Client.Pre_Admission_Rejected => Invalid_Request,
+            when HTTP_Client.Cancelled => Cancelled,
+            when HTTP_Client.Timed_Out => Timed_Out,
+            when HTTP_Client.Client_Unavailable => Client_Unavailable,
+            when HTTP_Client.Connection_Failed => Connection_Failed,
+            when HTTP_Client.Transport_Failed => Transport_Failed,
+            when HTTP_Client.Request_Source_Failed => Request_Source_Failed,
+            when HTTP_Client.Response_Body_Too_Large => Response_Too_Large,
+            when HTTP_Client.Response_Invalid |
+                 HTTP_Client.Response_Sink_Failed =>
+              Corrupt_Or_Invalid_Response,
+            when HTTP_Client.Response_Complete =>
+              raise Program_Error with "complete response is not a failure");
+      Result : constant List_Parts_Result := Normalize_List_Parts_Failure
+        (Kind, Admission, HTTP_Client.Receiving_Response_Body);
+   begin
+      if Result.Kind /= List_Parts_Exchange_Failed
+        or else Result.Failure /= Expected_Failure
+        or else Result.Admission /= Admission
+        or else Result.HTTP_Result /= Kind
+      then
+         raise Program_Error with
+           "ListParts exchange normalization mismatch";
+      end if;
+   end Check_List_Parts_Failure;
+
+   procedure Check_List_Parts_Result_Corpus is
+      type Failure_Kind_Array is array (Positive range <>) of
+        HTTP_Client.Exchange_Result_Kind;
+      Failure_Kinds : constant Failure_Kind_Array :=
+        (HTTP_Client.Pre_Admission_Rejected,
+         HTTP_Client.Cancelled,
+         HTTP_Client.Timed_Out,
+         HTTP_Client.Client_Unavailable,
+         HTTP_Client.Connection_Failed,
+         HTTP_Client.Transport_Failed,
+         HTTP_Client.Request_Source_Failed,
+         HTTP_Client.Response_Invalid,
+         HTTP_Client.Response_Body_Too_Large,
+         HTTP_Client.Response_Sink_Failed);
+   begin
+      Check_List_Parts_Response (200, "", No_Failure);
+      Check_List_Parts_Response (400, "InvalidArgument", Invalid_Request);
+      Check_List_Parts_Response (400, "InvalidRequest", Invalid_Request);
+      Check_List_Parts_Response
+        (401, "InvalidAccessKeyId", Authentication_Failed);
+      Check_List_Parts_Response
+        (403, "AccessDenied", Authorization_Failed);
+      Check_List_Parts_Response (404, "NoSuchBucket", Not_Found);
+      Check_List_Parts_Response (404, "NoSuchKey", Not_Found);
+      Check_List_Parts_Response (404, "NoSuchUpload", Not_Found);
+      Check_List_Parts_Response
+        (409, "OperationAborted", Unavailable_Or_Retryable);
+      Check_List_Parts_Response
+        (429, "SlowDown", Unavailable_Or_Retryable);
+      Check_List_Parts_Response
+        (500, "InternalError", Unavailable_Or_Retryable);
+      Check_List_Parts_Response
+        (502, "BadGateway", Unavailable_Or_Retryable);
+      Check_List_Parts_Response
+        (503, "SlowDown", Unavailable_Or_Retryable);
+      Check_List_Parts_Response
+        (504, "RequestTimeout", Unavailable_Or_Retryable);
+      Check_List_Parts_Response (501, "NotImplemented", Invalid_Request);
+      Check_List_Parts_Response
+        (400, "", Corrupt_Or_Invalid_Response);
+
+      for Admission in
+        HTTP_Client.Not_Admitted .. HTTP_Client.Possibly_Admitted
+      loop
+         declare
+            Value : constant Low_Level.List_Parts_Outcome :=
+              (Kind => Low_Level.Parts_Listed,
+               Status => 200,
+               Result => (others => <>));
+            Result : constant List_Parts_Result :=
+              Normalize_List_Parts_Response (Value, Admission);
+         begin
+            if Result.Failure /= Corrupt_Or_Invalid_Response then
+               raise Program_Error with
+                 "inconsistent ListParts response certainty was accepted";
+            end if;
+         end;
+      end loop;
+
+      for Kind of Failure_Kinds loop
+         for Admission in HTTP_Client.Admission_Certainty loop
+            Check_List_Parts_Failure (Kind, Admission);
+         end loop;
+      end loop;
+   end Check_List_Parts_Result_Corpus;
 
 end Flyology.Object_Storage.Client.Scoped.Testing;

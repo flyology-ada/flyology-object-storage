@@ -98,6 +98,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Failure_Reason;
    use type Scoped.Publication_Disposition;
    use type Scoped.Part_Upload_Disposition;
+   use type Scoped.List_Parts_Result_Kind;
    use type Scoped.Upload_Part_Result_Kind;
    use type Scoped.Multipart_Completion_Disposition;
    use type Scoped.Multipart_Completion_Result_Kind;
@@ -6316,101 +6317,112 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
-            Parts_Parameters : Low_Level.List_Parts_Parameters;
+            Parts_Parameters : Low_Level.List_Parts_Parameters :=
+              (Max_Parts => 1,
+               Upload_ID => US.To_Unbounded_String ("paged-upload"),
+               others => <>);
+            --  ListParts parent, HTTP exchange, and one transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Operation : Scoped.List_Parts_Operation :=
+              Scoped.List_Parts
+                (Set'Access, HTTP'Access, Origin, "example-bucket",
+                 "paged-parts", Parts_Parameters, Identity,
+                 HTTP_Client.Deadline_After (5.0));
+            Result : Scoped.List_Parts_Result;
          begin
-            Parts_Parameters.Max_Parts := 1;
-            Parts_Parameters.Upload_ID :=
-              US.To_Unbounded_String ("paged-upload");
             declare
-               First : constant Low_Level.List_Parts_Outcome :=
-                 Transfers.List_Parts_Page
-                   (HTTP, Origin, "example-bucket", "paged-parts",
-                    Parts_Parameters, Identity, Timeout => 5.0);
+               Stop : aliased Flyology.Cancellation.Token;
             begin
-               if First.Kind /= Low_Level.Parts_Listed
-                 or else not First.Result.Listing.Is_Truncated
-                 or else Natural (First.Result.Listing.Parts.Length) /= 1
-                 or else First.Result.Listing.Next_Part_Number_Marker /= 1
-               then
-                  raise Program_Error with
-                    "high-level ListParts first page mismatch";
-               end if;
-               Parts_Parameters.Part_Number_Marker :=
-                 First.Result.Listing.Next_Part_Number_Marker;
+               Stop.Request;
+               declare
+                  Cancelled : constant Scoped.List_Parts_Result :=
+                    Transfers.List_Parts_Page
+                      (HTTP, Origin, "example-bucket", "paged-parts",
+                       Parts_Parameters, Identity, Timeout => 5.0,
+                       Token => Stop'Access);
+               begin
+                  if Cancelled.Kind /= Scoped.List_Parts_Exchange_Failed
+                    or else Cancelled.Failure /= Scoped.Cancelled
+                    or else Cancelled.Admission /= HTTP_Client.Not_Admitted
+                  then
+                     raise Program_Error with
+                       "pre-admission ListParts cancellation mismatch";
+                  end if;
+               end;
             end;
-            declare
-               Second : constant Low_Level.List_Parts_Outcome :=
-                 Transfers.List_Parts_Page
-                   (HTTP, Origin, "example-bucket", "paged-parts",
-                    Parts_Parameters, Identity, Timeout => 5.0);
-            begin
-               if Second.Kind /= Low_Level.Parts_Listed
-                 or else Second.Result.Listing.Is_Truncated
-                 or else Natural (Second.Result.Listing.Parts.Length) /= 1
-                 or else Second.Result.Listing.Parts.First_Element.Number /= 2
-               then
-                  raise Program_Error with
-                    "high-level ListParts continuation mismatch";
-               end if;
-            end;
+            Operations.Wait_All (Set);
+            Scoped.Finish (Operation, Result);
+            if Result.Kind /= Scoped.List_Parts_Response_Available
+              or else Result.Failure /= Scoped.No_Failure
+              or else Result.Response.Kind /= Low_Level.Parts_Listed
+              or else not Result.Response.Result.Listing.Is_Truncated
+              or else Natural
+                (Result.Response.Result.Listing.Parts.Length) /= 1
+              or else
+                Result.Response.Result.Listing.Next_Part_Number_Marker /= 1
+            then
+               raise Program_Error with
+                 "composed ListParts first page mismatch";
+            end if;
+            Parts_Parameters.Part_Number_Marker :=
+              Result.Response.Result.Listing.Next_Part_Number_Marker;
+            Scoped.Start_List_Parts
+              (Operation, HTTP'Access, Origin, "example-bucket",
+               "paged-parts", Parts_Parameters, Identity,
+               HTTP_Client.Deadline_After (5.0));
+            Operations.Wait_All (Set);
+            Scoped.Finish (Operation, Result);
+            if Result.Kind /= Scoped.List_Parts_Response_Available
+              or else Result.Failure /= Scoped.No_Failure
+              or else Result.Response.Kind /= Low_Level.Parts_Listed
+              or else Result.Response.Result.Listing.Is_Truncated
+              or else Natural
+                (Result.Response.Result.Listing.Parts.Length) /= 1
+              or else
+                Result.Response.Result.Listing.Parts.First_Element.Number /= 2
+            then
+               raise Program_Error with
+                 "composed ListParts continuation mismatch";
+            end if;
             Parts_Parameters.Part_Number_Marker := 0;
             for Case_Index in 1 .. 3 loop
-               declare
-                  Raised : Boolean := False;
-               begin
-                  begin
-                     declare
-                        Ignored : constant Low_Level.List_Parts_Outcome :=
-                          Transfers.List_Parts_Page
-                            (HTTP, Origin, "example-bucket", "paged-parts",
-                             Parts_Parameters, Identity, Timeout => 5.0);
-                        pragma Unreferenced (Ignored);
-                     begin
-                        null;
-                     end;
-                  exception
-                     when Low_Level.Invalid_Response =>
-                        Raised := True;
-                  end;
-                  if not Raised then
-                     raise Program_Error with
-                       (case Case_Index is
-                           when 1 =>
-                             "ListParts accepted a wrong echoed key",
-                           when 2 =>
-                             "ListParts accepted duplicate singleton header",
-                           when others =>
-                             "ListParts accepted present-empty header");
-                  end if;
-               end;
+               Scoped.Start_List_Parts
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  "paged-parts", Parts_Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.List_Parts_Exchange_Failed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+               then
+                  raise Program_Error with
+                    (case Case_Index is
+                        when 1 => "ListParts accepted a wrong echoed key",
+                        when 2 =>
+                          "ListParts accepted duplicate singleton header",
+                        when others =>
+                          "ListParts accepted present-empty header");
+               end if;
             end loop;
             for Echo_Index in 1 .. 4 loop
-               declare
-                  Raised : Boolean := False;
-               begin
-                  begin
-                     declare
-                        Ignored : constant Low_Level.List_Parts_Outcome :=
-                          Transfers.List_Parts_Page
-                            (HTTP, Origin, "example-bucket", "paged-parts",
-                             Parts_Parameters, Identity, Timeout => 5.0);
-                        pragma Unreferenced (Ignored);
-                     begin
-                        null;
-                     end;
-                  exception
-                     when Low_Level.Invalid_Response =>
-                        Raised := True;
-                  end;
-                  if not Raised then
-                     raise Program_Error with
-                       (case Echo_Index is
-                           when 1 => "wrong ListParts bucket accepted",
-                           when 2 => "wrong ListParts upload ID accepted",
-                           when 3 => "wrong ListParts marker accepted",
-                           when others => "wrong ListParts maximum accepted");
-                  end if;
-               end;
+               Scoped.Start_List_Parts
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  "paged-parts", Parts_Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.List_Parts_Exchange_Failed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+               then
+                  raise Program_Error with
+                    (case Echo_Index is
+                        when 1 => "wrong ListParts bucket accepted",
+                        when 2 => "wrong ListParts upload ID accepted",
+                        when 3 => "wrong ListParts marker accepted",
+                        when others => "wrong ListParts maximum accepted");
+               end if;
             end loop;
          end;
          declare
@@ -6917,14 +6929,17 @@ procedure S3_HTTP_Socket_Corpus is
                List_Parameters.Upload_ID :=
                  US.To_Unbounded_String ("lost-abort-id");
                declare
-                  Listed : constant Low_Level.List_Parts_Outcome :=
+                  Listed : constant Scoped.List_Parts_Result :=
                     Transfers.List_Parts_Page
                       (HTTP, Origin, "example-bucket", "lost-abort",
                        List_Parameters, Identity, Timeout => 5.0);
                begin
-                  if Listed.Kind /= Low_Level.List_Parts_Rejected
-                    or else Listed.Status /= 404
-                    or else US.To_String (Listed.Error.Code) /=
+                  if Listed.Kind /= Scoped.List_Parts_Response_Available
+                    or else Listed.Failure /= Scoped.Not_Found
+                    or else Listed.Response.Kind /=
+                      Low_Level.List_Parts_Rejected
+                    or else Listed.Response.Status /= 404
+                    or else US.To_String (Listed.Response.Error.Code) /=
                       "NoSuchUpload"
                   then
                      raise Program_Error with
@@ -11699,6 +11714,8 @@ begin
      Check_Complete_Multipart_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_Abort_Multipart_Certainty_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_List_Parts_Result_Corpus;
    Run_And_Report;
    declare
       task Lightweight_Client is

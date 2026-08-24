@@ -198,6 +198,17 @@ The caller reconciles the exact upload read-only before choosing any later
 retry or completion action. `NoSuchUpload` is deliberately not conclusive: it
 can follow this abort, a concurrent abort, or successful completion.
 
+ListParts is the read-only multipart reconciliation primitive. Its operation
+owns the prepared signed request and a response buffer bounded by the existing
+S3 XML document limit, and drives one message-only HTTP exchange on the
+caller's stack. Typed Finish returns either a complete modeled page or the
+HTTP terminal kind, phase, admission certainty, and bounded failure detail.
+Because the operation does not mutate state, it has no publication
+disposition and does not authorize retries. A successful page is accepted
+only when its bucket, key, upload ID, marker, and maximum echo the exact
+prepared request. Restart is permitted only after typed Finish consumes the
+prior terminal result, and every page remains an independent service snapshot.
+
 The Flyology.DB recovery sequence enabled by these operations is:
 
 1. publish an immutable batch with `If-None-Match: *`;
@@ -215,8 +226,8 @@ listing.
 The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Get_Range`, and `Head_Object` overloads and the typed-result `Delete` and
 `Create_Multipart_Upload`, `Upload_Part`, and
-`Complete_Multipart_Upload`, and `Abort_Multipart_Upload` overloads are literal
-waits on the same
+`Complete_Multipart_Upload`, `Abort_Multipart_Upload`, and `List_Parts_Page`
+overloads are literal waits on the same
 `Client.Scoped` state machines and retain their typed certainty, capacity,
 metadata, and ownership results. The established raising `Delete_Outcome` and
 `Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer
@@ -361,6 +372,14 @@ composable HTTP terminal failure across all admission-certainty states.
 Unknown abort state always requires exact-upload reconciliation; the verifier
 rejects any fixture that treats a modeled rejection as proof that this abort
 was not accepted.
+
+ListParts response normalization is exercised directly in the Ada testing
+child across modeled success and service failures, every composable HTTP
+terminal failure, and all admission-certainty states. The native/lightweight
+socket oracle adds pre-admission cancellation, operation restart across two
+continuation pages, strict physical singleton handling, and rejection of every
+wrong echoed request field. The six-server matrix uses the typed synchronous
+wait over the same state machine.
 
 The sibling `range-get.tsv` and `head-object.tsv` corpora are normative for the
 read surface. They enumerate typed request forms, physical singleton handling,

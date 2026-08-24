@@ -153,6 +153,34 @@ package Flyology.Object_Storage.Client.Transfers is
       Token        : access Flyology.Cancellation.Token := null)
       return Low_Level.Abort_Multipart_Outcome;
 
+   --  Fetch one bounded ListParts page by waiting on the composable
+   --  owner-driven operation. This result-type overload preserves typed HTTP
+   --  failure and admission information; selecting the established low-level
+   --  outcome overload retains its raising transport contract.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Source S3 bucket
+   --  @param Key Source S3 object key
+   --  @param Parameters Exact upload, cursor, page bound, and access controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   function List_Parts_Page
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.List_Parts_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Scoped.List_Parts_Result;
+
    --  Fetch one bounded ListParts page. Parameters carries the exact upload
    --  ID, marker, maximum, payer, owner and SSE-C scope. A truncated result's
    --  Next_Part_Number_Marker may be supplied as the next call's marker, but

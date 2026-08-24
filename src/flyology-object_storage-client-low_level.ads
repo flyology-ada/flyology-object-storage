@@ -3940,6 +3940,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Parts_Outcome;
 
+   --  Decode one complete ListParts HTTP response. Physical singleton
+   --  headers, bounded values, and the successful response's echoed request
+   --  identity are validated before the modeled response is exposed.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared ListParts request
+   --  @param Limits Bounded XML parser limits
+   --  @return Typed page or S3 rejection
+   --  @exception Invalid_Request Prepared is not ListParts
+   --  @exception Invalid_Response Complete response is inconsistent
+   function Decode_List_Parts_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Parts_Outcome;
+
    function Execute_List_Parts
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;

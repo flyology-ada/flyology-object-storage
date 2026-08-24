@@ -92,6 +92,8 @@ procedure S3_Implementation_Corpus is
    use type Scoped.Multipart_Completion_Disposition;
    use type Scoped.Multipart_Abort_Result_Kind;
    use type Scoped.Multipart_Abort_Disposition;
+   use type Scoped.List_Parts_Result_Kind;
+   use type Scoped.Failure_Reason;
    use type Client_Objects.List_Outcome_Kind;
    use type Client_Objects.Whole_Get_Outcome_Kind;
    use type Client_Objects.Tagging_Outcome_Kind;
@@ -1744,71 +1746,83 @@ procedure S3_Implementation_Corpus is
          Parameters.Max_Parts := 1;
          Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
          declare
-            Outcome : constant Low_Level.List_Parts_Outcome :=
+            Result : constant Scoped.List_Parts_Result :=
               Transfers.List_Parts_Page
                 (HTTP, Origin, Bucket, Object_Key, Parameters, Identity,
                  Timeout => 30.0);
          begin
-            if Outcome.Kind /= Low_Level.Parts_Listed then
-               raise Program_Error with
-                 "S3 implementation rejected typed ListParts: " &
-                 Outcome.Status'Image & " " &
-                 US.To_String (Outcome.Error.Code) & " " &
-                 US.To_String (Outcome.Error.Message);
-            elsif Outcome.Result.Listing.Parts.Length /= 1 then
-               raise Program_Error with
-                 "S3 implementation ListParts count mismatch:" &
-                 Outcome.Result.Listing.Parts.Length'Image;
-            elsif Outcome.Result.Listing.Parts.First_Element.Number /= 1
-              or else Outcome.Result.Listing.Parts.First_Element.Size /= Size
-              or else Bare_ETag
-                (US.To_String
-                   (Outcome.Result.Listing.Parts.First_Element.Entity_Tag)) /=
-                  Bare_ETag (Entity_Tag)
-              or else Outcome.Result.Listing.Is_Truncated
+            if Result.Kind /= Scoped.List_Parts_Response_Available
+              or else Result.Failure /= Scoped.No_Failure
             then
                raise Program_Error with
-                 "S3 implementation ListParts value mismatch: number=" &
-                 Outcome.Result.Listing.Parts.First_Element.Number'Image &
-                 " size=" &
-                 Outcome.Result.Listing.Parts.First_Element.Size'Image &
-                 " etag=" & US.To_String
-                   (Outcome.Result.Listing.Parts.First_Element.Entity_Tag) &
-                 " expected_etag=" & Entity_Tag & " truncated=" &
-                 Outcome.Result.Listing.Is_Truncated'Image;
-            elsif Expected_SHA256'Length > 0
-              and then
-                (case Multipart_Checksum_Oracle_Mode is
-                   when Complete_Multipart_Checksums =>
-                     US.To_String
-                       (Outcome.Result.Listing.Checksum_Algorithm) /=
-                         "SHA256"
-                     or else US.To_String
-                       (Outcome.Result.Listing.Checksum_Type) /= "COMPOSITE"
-                     or else Checksum_Count
-                       (Outcome.Result.Listing.Parts.First_Element) /= 1
-                     or else US.To_String
-                       (Outcome.Result.Listing.Parts.First_Element.
-                          Checksum_SHA256) /= Expected_SHA256,
-                   when RustFS_RC3_Multipart_Checksum_Divergence |
-                        SeaweedFS_443_Multipart_Checksum_Divergence =>
-                     US.Length
-                       (Outcome.Result.Listing.Checksum_Algorithm) /= 0
-                     or else US.Length
-                       (Outcome.Result.Listing.Checksum_Type) /= 0
-                     or else Checksum_Count
-                       (Outcome.Result.Listing.Parts.First_Element) /= 0)
-            then
-               raise Program_Error with
-                 "S3 implementation ListParts checksum mismatch: algorithm=" &
-                 US.To_String
-                   (Outcome.Result.Listing.Checksum_Algorithm) &
-                 " type=" &
-                 US.To_String (Outcome.Result.Listing.Checksum_Type) &
-                 " checksum=" & US.To_String
-                   (Outcome.Result.Listing.Parts.First_Element.
-                      Checksum_SHA256);
+                 "S3 implementation rejected composable ListParts";
             end if;
+            declare
+               Outcome : Low_Level.List_Parts_Outcome renames Result.Response;
+            begin
+               if Outcome.Kind /= Low_Level.Parts_Listed then
+                  raise Program_Error with
+                    "S3 implementation rejected typed ListParts: " &
+                    Outcome.Status'Image & " " &
+                    US.To_String (Outcome.Error.Code) & " " &
+                    US.To_String (Outcome.Error.Message);
+               elsif Outcome.Result.Listing.Parts.Length /= 1 then
+                  raise Program_Error with
+                    "S3 implementation ListParts count mismatch:" &
+                    Outcome.Result.Listing.Parts.Length'Image;
+               elsif Outcome.Result.Listing.Parts.First_Element.Number /= 1
+                 or else Outcome.Result.Listing.Parts.First_Element.Size /=
+                   Size
+                 or else Bare_ETag
+                   (US.To_String
+                      (Outcome.Result.Listing.Parts.First_Element.
+                         Entity_Tag)) /= Bare_ETag (Entity_Tag)
+                 or else Outcome.Result.Listing.Is_Truncated
+               then
+                  raise Program_Error with
+                    "S3 implementation ListParts value mismatch: number=" &
+                    Outcome.Result.Listing.Parts.First_Element.Number'Image &
+                    " size=" &
+                    Outcome.Result.Listing.Parts.First_Element.Size'Image &
+                    " etag=" & US.To_String
+                      (Outcome.Result.Listing.Parts.First_Element.Entity_Tag) &
+                    " expected_etag=" & Entity_Tag & " truncated=" &
+                    Outcome.Result.Listing.Is_Truncated'Image;
+               elsif Expected_SHA256'Length > 0
+                 and then
+                   (case Multipart_Checksum_Oracle_Mode is
+                      when Complete_Multipart_Checksums =>
+                        US.To_String
+                          (Outcome.Result.Listing.Checksum_Algorithm) /=
+                            "SHA256"
+                        or else US.To_String
+                          (Outcome.Result.Listing.Checksum_Type) /=
+                            "COMPOSITE"
+                        or else Checksum_Count
+                          (Outcome.Result.Listing.Parts.First_Element) /= 1
+                        or else US.To_String
+                          (Outcome.Result.Listing.Parts.First_Element.
+                             Checksum_SHA256) /= Expected_SHA256,
+                      when RustFS_RC3_Multipart_Checksum_Divergence |
+                           SeaweedFS_443_Multipart_Checksum_Divergence =>
+                        US.Length
+                          (Outcome.Result.Listing.Checksum_Algorithm) /= 0
+                        or else US.Length
+                          (Outcome.Result.Listing.Checksum_Type) /= 0
+                        or else Checksum_Count
+                          (Outcome.Result.Listing.Parts.First_Element) /= 0)
+               then
+                  raise Program_Error with
+                    "S3 implementation ListParts checksum mismatch: " &
+                    "algorithm=" & US.To_String
+                      (Outcome.Result.Listing.Checksum_Algorithm) &
+                    " type=" &
+                    US.To_String (Outcome.Result.Listing.Checksum_Type) &
+                    " checksum=" & US.To_String
+                      (Outcome.Result.Listing.Parts.First_Element.
+                         Checksum_SHA256);
+               end if;
+            end;
          end;
       end Require_Listed_Part;
 
@@ -1820,39 +1834,64 @@ procedure S3_Implementation_Corpus is
          Parameters.Max_Parts := 1;
          Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
          declare
-            First : constant Low_Level.List_Parts_Outcome :=
+            First_Result : constant Scoped.List_Parts_Result :=
               Transfers.List_Parts_Page
                 (HTTP, Origin, Bucket, Object_Key, Parameters, Identity,
                  Timeout => 30.0);
          begin
-            if First.Kind /= Low_Level.Parts_Listed
-              or else Natural (First.Result.Listing.Parts.Length) /= 1
-              or else not First.Result.Listing.Is_Truncated
-              or else First.Result.Listing.Next_Part_Number_Marker /=
-                First.Result.Listing.Parts.First_Element.Number
+            if First_Result.Kind /= Scoped.List_Parts_Response_Available
+              or else First_Result.Failure /= Scoped.No_Failure
             then
                raise Program_Error with
-                 "S3 implementation ListParts first continuation mismatch";
+                 "S3 implementation composable ListParts first failed";
             end if;
-            First_Number := First.Result.Listing.Parts.First_Element.Number;
-            Parameters.Part_Number_Marker :=
-              First.Result.Listing.Next_Part_Number_Marker;
+            declare
+               First : Low_Level.List_Parts_Outcome renames
+                 First_Result.Response;
+            begin
+               if First.Kind /= Low_Level.Parts_Listed
+                 or else Natural (First.Result.Listing.Parts.Length) /= 1
+                 or else not First.Result.Listing.Is_Truncated
+                 or else First.Result.Listing.Next_Part_Number_Marker /=
+                   First.Result.Listing.Parts.First_Element.Number
+               then
+                  raise Program_Error with
+                    "S3 implementation ListParts first continuation " &
+                    "mismatch";
+               end if;
+               First_Number :=
+                 First.Result.Listing.Parts.First_Element.Number;
+               Parameters.Part_Number_Marker :=
+                 First.Result.Listing.Next_Part_Number_Marker;
+            end;
          end;
          declare
-            Second : constant Low_Level.List_Parts_Outcome :=
+            Second_Result : constant Scoped.List_Parts_Result :=
               Transfers.List_Parts_Page
                 (HTTP, Origin, Bucket, Object_Key, Parameters, Identity,
                  Timeout => 30.0);
          begin
-            if Second.Kind /= Low_Level.Parts_Listed
-              or else Natural (Second.Result.Listing.Parts.Length) /= 1
-              or else Second.Result.Listing.Is_Truncated
-              or else Second.Result.Listing.Parts.First_Element.Number <=
-                First_Number
+            if Second_Result.Kind /= Scoped.List_Parts_Response_Available
+              or else Second_Result.Failure /= Scoped.No_Failure
             then
                raise Program_Error with
-                 "S3 implementation ListParts second continuation mismatch";
+                 "S3 implementation composable ListParts second failed";
             end if;
+            declare
+               Second : Low_Level.List_Parts_Outcome renames
+                 Second_Result.Response;
+            begin
+               if Second.Kind /= Low_Level.Parts_Listed
+                 or else Natural (Second.Result.Listing.Parts.Length) /= 1
+                 or else Second.Result.Listing.Is_Truncated
+                 or else Second.Result.Listing.Parts.First_Element.Number <=
+                   First_Number
+               then
+                  raise Program_Error with
+                    "S3 implementation ListParts second continuation " &
+                    "mismatch";
+               end if;
+            end;
          end;
       end Require_Two_Listed_Parts;
 

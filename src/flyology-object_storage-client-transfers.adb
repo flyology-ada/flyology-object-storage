@@ -268,6 +268,37 @@ package body Flyology.Object_Storage.Client.Transfers is
       Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout      : Duration := 30.0;
       Token        : access Flyology.Cancellation.Token := null)
+      return Scoped.List_Parts_Result
+   is
+      --  The ListParts parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.List_Parts_Operation :=
+           Scoped.List_Parts
+             (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
+              Identity, Flyology.HTTP.Client.Deadline_After (Timeout),
+              Region, Style, Token);
+         Result : Scoped.List_Parts_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end List_Parts_Page;
+
+   function List_Parts_Page
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.List_Parts_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
       return Low_Level.List_Parts_Outcome
    is
       Prepared : constant Low_Level.Prepared_Request :=

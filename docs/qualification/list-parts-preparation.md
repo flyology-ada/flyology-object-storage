@@ -1,10 +1,10 @@
 # ListParts qualification
 
-This record freezes the pinned model inventory and qualifies the synchronous
-client plus the authenticated general-purpose path-style server. Backend,
-client, server, and corpus coverage are complete within that scope. Configured
-Requester Pays accounting, SSE-C multipart state, and directory buckets remain
-explicit capability exclusions.
+This record freezes the pinned model inventory and qualifies the composable
+and synchronous clients plus the authenticated general-purpose path-style
+server. Backend, client, server, and corpus coverage are complete within that
+scope. Configured Requester Pays accounting, SSE-C multipart state, and
+directory buckets remain explicit capability exclusions.
 
 ## Pinned authority
 
@@ -47,11 +47,23 @@ repeat a part at or below the supplied marker, or loop on a stale next marker.
 ## Qualified client boundary
 
 The low-level client projects all modeled request positions and parses all
-top-level output positions. `Client.Transfers.List_Parts_Page` is the public
-bounded one-page API. The prepared request retains bucket, key, upload ID,
-marker, and maximum, and execution rejects any response whose echoed values do
-not match exactly. SSE-C key MD5 is recomputed before admission. The client
-does not promise a snapshot across separate calls.
+top-level output positions. `Client.Scoped.List_Parts` is the caller-owned,
+completion-set-aware operation; the typed `Client.Transfers.List_Parts_Page`
+overload is a literal wait on that same state machine. The established
+low-level-outcome overload remains source compatible. The prepared request
+retains bucket, key, upload ID, marker, and maximum, and complete-response
+decoding rejects any response whose echoed values do not match exactly. SSE-C
+key MD5 is recomputed before admission. The client does not promise a snapshot
+across separate calls.
+
+The operation retains response bytes only up to the existing S3 XML document
+limit, owns no borrowed request input, creates no helper task, and contains one
+HTTP child. Typed Finish distinguishes a modeled S3 response from a bounded
+exchange failure and preserves terminal admission certainty for diagnostics.
+As a read-only request, ListParts has no publication disposition. A complete
+service rejection remains a modeled response; incomplete, malformed,
+oversized, cancelled, timed-out, connection, or transport outcomes remain
+typed exchange failures.
 
 All modeled response headers are physical singletons. Present-empty,
 duplicate, over-8-KiB, control-bearing, invalid requester-pays, malformed abort
@@ -105,29 +117,33 @@ canonical vector identifiers, and reciprocal member/vector references. It
 does not build Ada, invoke shared runners, update a manifest or ledger, or run
 GNATprove.
 
-The ordinary gate checks direct decoder boundaries and checksum conflicts. The
-fragmented raw-loopback corpus runs through both native and Flyology
-lightweight clients, independently mutates every echoed request field, and
-tests duplicate and present-empty singleton headers. The signed server corpus
+The ordinary gate checks direct decoder boundaries, response/failure
+normalization, and checksum conflicts. The fragmented raw-loopback corpus runs
+through both native and Flyology lightweight clients, covers pre-admission
+cancellation and direct operation restart over two continuation pages,
+independently mutates every echoed request field, and tests duplicate and
+present-empty singleton headers. The signed server corpus
 adds exact-limit/one-past owner controls, owner/payer duplicates, malformed and
 mismatched SSE-C material, plaintext rejection, valid unsupported HTTPS, and
-bad-signature precedence. The implementation corpus uses the public page API
-and exercises real service-returned continuation markers. Ledger promotion
+bad-signature precedence. The implementation corpus uses the typed
+composable-backed page API and exercises real service-returned continuation
+markers. Ledger promotion
 records the qualified client and general-purpose server boundaries.
 
 ## Frozen gate evidence
 
-The qualified source passed the root gate with 40/40 AUnit tests, the 88-case
+The qualified source passed the root gate with 41/41 AUnit tests, the 126-case
 files crash matrix, 320 checksum vectors, 210 chunk boundaries, the 64-GiB CRC
 linearization oracle, the server application corpus, and three repetitions of
 the native/lightweight socket corpus. The SQLite gate passed. The six-server
 implementation matrix passed all 18 lanes and repetitions, with the exact
 SeaweedFS pagination exclusion above reported rather than accepted.
 
-The serialized proof campaign started at 2026-08-23T14:39:58Z with FSF
-GNATprove 16.1.0. `./tools/prove.sh` used output headers and warnings as errors
-and proved 936/936 checks across all nine manifest units: 180 flow checks and
-756 prover checks, with a maximum of 663 steps. The report contains zero
-warnings, unproved or justified checks, and `pragma Assume` statements;
-the source contains no `pragma Assume`, `pragma Suppress`, `False_Positive`, or
-`SPARK_Mode => Off`. The post-run host process audit was clean.
+The serialized proof campaign on 2026-08-24 used FSF GNATprove 16.1.0.
+`./tools/prove.sh` used output headers and warnings as errors and proved
+936/936 checks across all nine manifest units: 180 flow checks and 756 prover
+checks, with a maximum of 663 steps. The report contains zero warnings,
+unproved or justified checks, and `pragma Assume` statements; the source
+contains no `pragma Assume`, `pragma Suppress`, `False_Positive`, or
+`SPARK_Mode => Off`. Exact pre/post-run host process audits were clean and the
+exclusive prover/model-checker lane was released after the campaign.

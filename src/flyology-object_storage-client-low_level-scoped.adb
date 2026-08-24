@@ -145,6 +145,22 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
          Token);
    end Start_Abort_Multipart_Upload;
 
+   procedure Start_List_Parts
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null) is
+   begin
+      if Prepared.Operation /= List_Parts_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Flyology.HTTP.Client.Scoped.Start
+        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+   end Start_List_Parts;
+
    procedure Start_Upload_Part
      (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
       Client    : not null access Flyology.HTTP.Client.Client;
