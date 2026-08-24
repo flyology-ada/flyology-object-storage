@@ -2880,6 +2880,99 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  cancellation exception may therefore mean that deletion was published;
    --  callers must reconcile the exact key/generation before retrying.
 
+   --  Every non-resource member in the pinned DeleteObjectAnnotation input.
+   --  @field Version_ID Optional exact generation selector
+   --  @field Request_Payer Optional exact requester-pays admission value
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   --  @field Object_If_Match Optional exact object-generation precondition
+   type Delete_Object_Annotation_Parameters is record
+      Version_ID            : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+      Object_If_Match       : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare one exact conditional DeleteObjectAnnotation request.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Key Required object key
+   --  @param Annotation_Name Required opaque annotation query value
+   --  @param Parameters Optional generation, payer, owner, and CAS controls
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @return Fully signed request bound to DeleteObjectAnnotation
+   function Prepare_Delete_Object_Annotation
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket, Key, Annotation_Name : String;
+      Parameters : Delete_Object_Annotation_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+
+   --  Every output member in the pinned DeleteObjectAnnotation response.
+   --  @field Object_Version_ID Optional exact affected object generation
+   --  @field Request_Charged Optional exact requester-pays result
+   type Delete_Object_Annotation_Result is record
+      Object_Version_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Charged   : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Terminal DeleteObjectAnnotation response classification.
+   --  @enum Object_Annotation_Deleted Exact empty 204 response
+   --  @enum Delete_Object_Annotation_Rejected Bounded non-204 S3 rejection
+   type Delete_Object_Annotation_Outcome_Kind is
+     (Object_Annotation_Deleted, Delete_Object_Annotation_Rejected);
+
+   --  Terminal exact deletion success or bounded S3 rejection.
+   --  @field Kind Response classification
+   --  @field Status Exact HTTP status
+   --  @field Result Modeled success headers
+   --  @field Error Bounded structured provider rejection
+   type Delete_Object_Annotation_Outcome
+     (Kind : Delete_Object_Annotation_Outcome_Kind :=
+       Delete_Object_Annotation_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Annotation_Deleted =>
+            Result : Delete_Object_Annotation_Result;
+         when Delete_Object_Annotation_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode one exact bounded DeleteObjectAnnotation response.
+   --  @param Status Exact HTTP status
+   --  @param Payload Complete bounded response body
+   --  @param Headers Modeled singleton response headers
+   --  @param Request_ID Optional provider request diagnostic
+   --  @param Host_ID Optional provider host diagnostic
+   --  @param Limits Shared XML error-response limits
+   --  @return Typed exact success or structured rejection
+   function Decode_Delete_Object_Annotation_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Headers : Delete_Object_Annotation_Result;
+      Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Object_Annotation_Outcome;
+
+   --  Execute without transparent replay.  Any exception after entering the
+   --  blocking provider call leaves deletion unknown and requires read-only
+   --  reconciliation; callers must not automatically retry.
+   --  @param Client Caller-owned synchronous HTTP client
+   --  @param Prepared Request bound to DeleteObjectAnnotation
+   --  @param Timeout Established blocking call deadline
+   --  @param Token Optional cooperative cancellation token
+   --  @param Limits Shared response and XML error limits
+   --  @return Typed exact success or structured rejection
+   function Execute_Delete_Object_Annotation
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Object_Annotation_Outcome;
+
    --  Complete modeled inputs for the three object-tagging operations.
    type Put_Object_Tagging_Parameters is record
       Version_ID            : Ada.Strings.Unbounded.Unbounded_String;

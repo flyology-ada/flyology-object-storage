@@ -79,6 +79,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Put_Object_Outcome_Kind;
    use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Delete_Object_Outcome_Kind;
+   use type Low_Level.Delete_Object_Annotation_Outcome_Kind;
    use type Objects.Delete_Outcome_Kind;
    use type Low_Level.Put_Bucket_Versioning_Outcome_Kind;
    use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
@@ -689,6 +690,7 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_If_Match : String := "";
          Expected_If_Match_Last_Modified_Time : String := "";
          Expected_If_Match_Size : String := "";
+         Expected_Object_If_Match : String := "";
          Expected_If_Modified_Since : String := "";
          Expected_If_None_Match : String := "";
          Expected_If_Unmodified_Since : String := "";
@@ -1009,6 +1011,7 @@ procedure S3_HTTP_Socket_Corpus is
                      (Expected_If_Match'Length > 0
                       or else Expected_If_Match_Last_Modified_Time'Length > 0
                       or else Expected_If_Match_Size'Length > 0
+                      or else Expected_Object_If_Match'Length > 0
                       or else Expected_Request_Payer'Length > 0
                       or else Expected_Bucket_Owner'Length > 0
                       or else Expected_MFA'Length > 0
@@ -1023,6 +1026,10 @@ procedure S3_HTTP_Socket_Corpus is
                     or else Header_Value
                       (Lower, "x-amz-if-match-size") /=
                         Expected_If_Match_Size
+                    or else Header_Value
+                      (Lower, "x-amz-object-if-match") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Object_If_Match)
                     or else Header_Value
                       (Lower, "x-amz-request-payer") /=
                         Ada.Characters.Handling.To_Lower
@@ -1049,6 +1056,10 @@ procedure S3_HTTP_Socket_Corpus is
                       (Expected_If_Match_Size'Length > 0
                        and then Ada.Strings.Fixed.Index
                          (Lower, ";x-amz-if-match-size;") = 0)
+                    or else
+                      (Expected_Object_If_Match'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-object-if-match;") = 0)
                     or else
                       (Expected_Request_Payer'Length > 0
                        and then Ada.Strings.Fixed.Index
@@ -3745,6 +3756,9 @@ procedure S3_HTTP_Socket_Corpus is
             "POST", "/example-bucket?metadataTable",
             Expected_Body_Root => "<MetadataTableConfiguration",
             Expected_Content_MD5 => "*");
+         --  Pinned DeleteObjectAnnotation model fixtures cover every request
+         --  and response member.  Opaque values are deliberately distinct so
+         --  projection or response-field swaps fail the shared wire oracle.
          Serve
            (HTTP_Response ("200 OK", "x"), "POST",
             "/example-bucket?metadataTable",
@@ -3778,6 +3792,69 @@ procedure S3_HTTP_Socket_Corpus is
             "POST", "/example-bucket?metadataTable",
             Expected_Body_Root => "<MetadataTableConfiguration",
             Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-object-version-id: socket-generation" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "DELETE",
+            "/example-bucket/object%20key?annotation&" &
+              "annotationName=socket%20success&versionId=version%20one",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_If_Match => "socket-etag");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: annotation-request" & CRLF &
+               "x-amz-id-2: annotation-host" & CRLF),
+            "DELETE",
+            "/example-bucket/object%20key?annotation&" &
+              "annotationName=socket-rejection");
+         Serve
+           (HTTP_Response ("204 No Content", "x"),
+            "DELETE",
+            "/example-bucket/object%20key?annotation&" &
+              "annotationName=socket-body");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-object-version-id: first" & CRLF &
+               "x-amz-object-version-id: second" & CRLF),
+            "DELETE",
+            "/example-bucket/object%20key?annotation&" &
+              "annotationName=socket-duplicate-version");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "DELETE",
+            "/example-bucket/object%20key?annotation&" &
+              "annotationName=socket-duplicate-charged");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-object-version-id:" & CRLF),
+            "DELETE",
+            "/example-bucket/object%20key?annotation&" &
+              "annotationName=socket-empty-version");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-request-id: first" & CRLF &
+               "x-amz-request-id: second" & CRLF),
+            "DELETE",
+            "/example-bucket/object%20key?annotation&" &
+              "annotationName=socket-duplicate-request");
+         Serve
+           (HTTP_Response
+              --  Test-only body is one byte above the paired caller-selected
+              --  64-byte response ceiling.
+              ("204 No Content", String'(1 .. 65 => 'x')),
+            "DELETE",
+            "/example-bucket/object%20key?annotation&" &
+              "annotationName=socket-oversized");
          Serve
            (HTTP_Response
               ("200 OK", "<AccelerateConfiguration/>",
@@ -9763,6 +9840,125 @@ procedure S3_HTTP_Socket_Corpus is
               ("metadata-table create accepted empty request ID");
             Must_Reject_Create_Metadata_Table
               ("metadata-table create accepted oversized response",
+               Small_Limits => True);
+         end;
+         declare
+            function Prepare
+              (Annotation : String;
+               Full_Conditions : Boolean := False)
+               return Low_Level.Prepared_Request is
+              (Low_Level.Prepare_Delete_Object_Annotation
+                 (Origin, Low_Level.Path_Style, "example-bucket",
+                  "object key", Annotation,
+                  (Version_ID =>
+                     (if Full_Conditions
+                      then US.To_Unbounded_String ("version one")
+                      else US.Null_Unbounded_String),
+                   Request_Payer =>
+                     (if Full_Conditions
+                      then US.To_Unbounded_String ("requester")
+                      else US.Null_Unbounded_String),
+                   Expected_Bucket_Owner =>
+                     (if Full_Conditions
+                      then US.To_Unbounded_String ("123456789012")
+                      else US.Null_Unbounded_String),
+                   Object_If_Match =>
+                     (if Full_Conditions
+                      then US.To_Unbounded_String ("socket-etag")
+                      else US.Null_Unbounded_String)),
+                  Identity, "us-east-1", "20130524T000000Z"));
+
+            procedure Must_Reject_Delete_Annotation
+              (Annotation, Message : String;
+               Small_Limits : Boolean := False)
+            is
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant
+                       Low_Level.Delete_Object_Annotation_Outcome :=
+                         (if Small_Limits
+                          then Low_Level.Execute_Delete_Object_Annotation
+                            (HTTP, Prepare (Annotation), Timeout => 5.0,
+                             Limits =>
+                               --  Test-only caller response ceiling paired
+                               --  with the 65-byte server fixture above.
+                               (Maximum_Document_Bytes => 64,
+                                Maximum_Depth          => 8,
+                                Maximum_Elements       => 32,
+                                Maximum_Text_Bytes     => 64))
+                          else Low_Level.Execute_Delete_Object_Annotation
+                            (HTTP, Prepare (Annotation), Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response |
+                       Flyology.HTTP.Protocol_Error =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_Delete_Annotation;
+         begin
+            declare
+               Result : constant
+                 Low_Level.Delete_Object_Annotation_Outcome :=
+                   Low_Level.Execute_Delete_Object_Annotation
+                     (HTTP, Prepare ("socket success", True),
+                      Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Object_Annotation_Deleted
+                 or else Result.Status /= 204
+                 or else US.To_String
+                   (Result.Result.Object_Version_ID) /= "socket-generation"
+                 or else US.To_String
+                   (Result.Result.Request_Charged) /= "requester"
+               then
+                  raise Program_Error with
+                    "DeleteObjectAnnotation socket success mismatch";
+               end if;
+            end;
+            declare
+               Result : constant
+                 Low_Level.Delete_Object_Annotation_Outcome :=
+                   Low_Level.Execute_Delete_Object_Annotation
+                     (HTTP, Prepare ("socket-rejection"), Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                   Low_Level.Delete_Object_Annotation_Rejected
+                 or else Result.Status /= 403
+                 or else US.To_String (Result.Error.Code) /= "AccessDenied"
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "annotation-request"
+                 or else US.To_String (Result.Error.Host_ID) /=
+                   "annotation-host"
+               then
+                  raise Program_Error with
+                    "DeleteObjectAnnotation socket rejection mismatch";
+               end if;
+            end;
+            Must_Reject_Delete_Annotation
+              ("socket-body",
+               "DeleteObjectAnnotation accepted success body");
+            Must_Reject_Delete_Annotation
+              ("socket-duplicate-version",
+               "DeleteObjectAnnotation accepted duplicate version");
+            Must_Reject_Delete_Annotation
+              ("socket-duplicate-charged",
+               "DeleteObjectAnnotation accepted duplicate charged");
+            Must_Reject_Delete_Annotation
+              ("socket-empty-version",
+               "DeleteObjectAnnotation accepted empty version");
+            Must_Reject_Delete_Annotation
+              ("socket-duplicate-request",
+               "DeleteObjectAnnotation accepted duplicate request ID");
+            Must_Reject_Delete_Annotation
+              ("socket-oversized",
+               "DeleteObjectAnnotation accepted oversized response",
                Small_Limits => True);
          end;
          declare

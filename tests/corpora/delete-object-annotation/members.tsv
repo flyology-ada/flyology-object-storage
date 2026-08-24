@@ -1,0 +1,10 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	167	1	Bucket	60	uri-label	true	projected	Require a valid bucket and project it into the exact signed resource target.	DOA-RQ-001,DOA-RQ-003
+request	167	2	Key	471	uri-label	true	projected	Require a nonempty key and preserve greedy path encoding in the signed target.	DOA-RQ-001,DOA-RQ-003,DOA-RQ-005
+request	167	3	AnnotationName	37	query	true	projected	Project the required opaque annotation name exactly once under annotationName.	DOA-RQ-001,DOA-RQ-002,DOA-RQ-005
+request	167	4	VersionId	492	query	false	projected	Project the optional opaque generation selector exactly once.	DOA-RQ-002,DOA-RQ-005
+request	167	5	RequestPayer	599	header	false	projected	Admit only the pinned requester token and sign its exact header.	DOA-RQ-002,DOA-RQ-004
+request	167	6	ExpectedBucketOwner	15	header	false	projected	Project and sign the optional opaque owner precondition.	DOA-RQ-002,DOA-RQ-005
+request	167	7	ObjectIfMatch	470	header	false	projected	Project and sign the optional opaque annotation CAS precondition.	DOA-RQ-002,DOA-RQ-005,DOA-TR-001
+response	166	1	ObjectVersionId	492	header	false	decoded	Decode at most one nonempty opaque affected-generation header.	DOA-RS-003,DOA-TR-001
+response	166	2	RequestCharged	598	header	false	decoded	Decode at most one exact requester result header.	DOA-RS-003,DOA-TR-001
