@@ -6675,8 +6675,33 @@ begin
         "</Tag></TagSet></Tagging>";
       Malformed : constant String :=
         "<Tagging><TagSet><Tag><Key>broken</Key></Tag></TagSet></Tagging>";
-      Valid_MD5 : constant String := "SLw5gP7IN3lXnRzCSb/wzw==";
-      Malformed_MD5 : constant String := "f++GbNyGMfP1p6OC2Va1xA==";
+      Valid_MD5 : constant String := Content_MD5 (Document);
+      Malformed_MD5 : constant String := Content_MD5 (Malformed);
+      Exact_Limit_Document : constant String :=
+        Document & String'
+          (1 .. Tagging.Maximum_Document_Bytes - Document'Length => ' ');
+      Exact_Limit_MD5 : constant String := Content_MD5 (Exact_Limit_Document);
+      One_Past_Document : constant String := Exact_Limit_Document & ' ';
+      --  These test/reference bodies derive directly from the public tagging
+      --  document bound and S3 Content-MD5 rule. They guard inclusive-boundary
+      --  compatibility without duplicating the selected 16 KiB policy value.
+
+      procedure Reject_Tagging_Control
+        (Method            : String;
+         Headers           : String;
+         Code              : String;
+         Label             : String;
+         Corrupt_Signature : Boolean := False)
+      is
+         Value : constant String := Run
+           (Signed_Query_Body_Request
+              (Method, "/test-bucket/object", Query, "", Headers,
+               Corrupt_Signature => Corrupt_Signature));
+      begin
+         Require
+           (Has (Value, "<Code>" & Code & "</Code>"),
+            Method & " object tagging accepted " & Label & ": " & Value);
+      end Reject_Tagging_Control;
    begin
       Require
         (Has
@@ -6687,6 +6712,24 @@ begin
                   "Content-Type: application/xml; charset=utf-8" & CRLF)),
             "200 OK"),
          "PutObjectTagging rejected a valid tagging document");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/object", Query, Exact_Limit_Document,
+                  "Content-MD5: " & Exact_Limit_MD5 & CRLF &
+                  "Content-Type: application/xml" & CRLF)),
+            "200 OK"),
+         "PutObjectTagging rejected the exact document-size limit");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/object", Query, One_Past_Document,
+                  "Content-MD5: " & Content_MD5 (One_Past_Document) & CRLF &
+                  "Content-Type: application/xml" & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutObjectTagging accepted one byte beyond the document limit");
       declare
          Response : constant String :=
            Run (Signed_Query_Request ("GET", "/test-bucket/object", Query));
@@ -6706,6 +6749,25 @@ begin
                   "Content-MD5: AAAAAAAAAAAAAAAAAAAAAA==" & CRLF)),
             "<Code>BadDigest</Code>"),
          "PutObjectTagging accepted a mismatched Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/object", Query, Document,
+                  "Content-MD5: " & Valid_MD5 & CRLF &
+                  "Content-MD5: " & Valid_MD5 & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutObjectTagging accepted duplicate Content-MD5 headers");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket/object", Query, Document,
+                  "Content-MD5: " & Valid_MD5 & CRLF &
+                  "Content-Type: application/xml" & CRLF &
+                  "Content-Type: application/xml" & CRLF)),
+            "<Code>InvalidRequest</Code>"),
+         "PutObjectTagging accepted duplicate content-type headers");
       Require
         (Has
            (Run (Signed_Query_Request
@@ -6767,6 +6829,67 @@ begin
                   "x-amz-request-payer", "requester")),
             "501 Not Implemented"),
          "GetObjectTagging silently accepted Requester Pays");
+      declare
+         Methods : constant Key_Array :=
+           (US.To_Unbounded_String ("PUT"),
+            US.To_Unbounded_String ("GET"),
+            US.To_Unbounded_String ("DELETE"));
+      begin
+         for Method of Methods loop
+            declare
+               Name : constant String := US.To_String (Method);
+            begin
+               Reject_Tagging_Control
+                 (Name, "x-amz-request-payer: owner" & CRLF,
+                  "InvalidArgument", "an invalid request payer");
+               Reject_Tagging_Control
+                 (Name, "x-amz-request-payer: " & CRLF,
+                  "InvalidArgument", "an empty request payer");
+               Reject_Tagging_Control
+                 (Name,
+                  "x-amz-request-payer: requester" & CRLF &
+                  "x-amz-request-payer: requester" & CRLF,
+                  "InvalidRequest", "duplicate request-payer headers");
+               Reject_Tagging_Control
+                 (Name, "x-amz-request-payer: requester" & CRLF,
+                  "NotImplemented", "the Requester Pays exclusion");
+               Reject_Tagging_Control
+                 (Name,
+                  "x-amz-sdk-checksum-algorithm: UNKNOWN" & CRLF,
+                  "InvalidArgument", "an invalid SDK checksum algorithm");
+               Reject_Tagging_Control
+                 (Name,
+                  "x-amz-sdk-checksum-algorithm: CRC32" & CRLF &
+                  "x-amz-sdk-checksum-algorithm: CRC32" & CRLF,
+                  "InvalidRequest", "duplicate SDK checksum algorithms");
+               Reject_Tagging_Control
+                 (Name,
+                  "x-amz-sdk-checksum-algorithm: CRC32" & CRLF,
+                  "NotImplemented", "the SDK checksum exclusion");
+               Reject_Tagging_Control
+                 (Name, "x-amz-expected-bucket-owner: " & CRLF,
+                  "InvalidRequest", "an empty expected owner");
+               Reject_Tagging_Control
+                 (Name,
+                  "x-amz-expected-bucket-owner: test-principal" & CRLF &
+                  "x-amz-expected-bucket-owner: test-principal" & CRLF,
+                  "InvalidRequest", "duplicate expected-owner headers");
+               Reject_Tagging_Control
+                 (Name,
+                  "x-amz-request-payer: owner" & CRLF &
+                  "x-amz-sdk-checksum-algorithm: UNKNOWN" & CRLF,
+                  "SignatureDoesNotMatch",
+                  "controls before authentication",
+                  Corrupt_Signature => True);
+            end;
+         end loop;
+      end;
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("GET", "/test-bucket/object", Query)),
+            "<Key>team</Key>"),
+         "rejected object-tagging controls changed the committed tag set");
       Require
         (Has
            (Run

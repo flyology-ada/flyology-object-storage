@@ -5903,6 +5903,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                   Algorithm_Count : constant Natural :=
                     Apps.Request_Header_Count
                       (X, "x-amz-sdk-checksum-algorithm");
+                  SDK_Algorithm : constant
+                    Checksum_Policy.Algorithm_Parse_Result :=
+                      (if Algorithm_Count = 1
+                       then Checksum_Policy.Parse_Algorithm
+                         (Apps.Request_Header
+                            (X, "x-amz-sdk-checksum-algorithm"))
+                       else (Valid => False));
                   Identity : Backends.Version_Identity;
 
                   procedure Set_Version_Header is
@@ -5941,6 +5948,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Send_Error
                        (X, 501, "NotImplemented",
                         "Requester Pays is not implemented", Target_Text);
+                     return;
+                  elsif Algorithm_Count = 1 and then not SDK_Algorithm.Valid
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The SDK checksum algorithm is invalid", Target_Text);
                      return;
                   elsif Algorithm_Count = 1 or else Has_Checksum_Header then
                      Send_Error
