@@ -54,11 +54,14 @@ catalogs migrate each current object as the S3 `null` generation and copy its
 tags, metadata, and parts under one exclusive transaction. Until the
 version-enabled append/delete-marker operations are qualified, current
 unversioned PUT, multipart completion, tag replacement, and deletion maintain
-that null-generation mirror transactionally; this schema foundation alone does
-not claim durable version-selection support.
+that null-generation mirror transactionally. Generation listing reads the
+normalized rows in bytewise key and newest-publication order, applies prefix
+and delimiter projection, and resumes only from an exact paired key/version
+cursor. It exposes the durable null mirror through the backend and fails closed
+on noncanonical delete-marker metadata. This slice does not yet claim
+version-enabled publication or durable version selection.
 
-Opening a
-nonempty unrecognized database, an unsupported schema, corrupt metadata, a
+Opening a nonempty unrecognized database, an unsupported schema, corrupt metadata, a
 missing payload, or a payload with the wrong size fails closed. Foreign keys,
 opaque BLOB keys/metadata, bounded metadata, strict statement state, and exact
 64-bit size conversions are enforced at the adapter boundary.

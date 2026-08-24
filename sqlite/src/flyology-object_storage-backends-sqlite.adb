@@ -1374,15 +1374,27 @@ package body Flyology.Object_Storage.Backends.SQLite is
       Page     : out List_Versions_Page;
       Result   : out Status)
    is
-      pragma Unreferenced (Item, Options);
+      procedure Check is
+      begin
+         Check_Context (Token, Deadline);
+      end Check;
    begin
       Page := (others => <>);
       Check_Context (Token, Deadline);
       if not Valid_Bucket_Name (Bucket) then
          Result := Invalid_Request;
       else
-         Result := Not_Implemented;
+         Catalogs.List_Object_Versions
+           (Item.Catalog, Bucket, Options, Check'Access, Page, Result);
+         Check_Context (Token, Deadline);
       end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Page := (others => <>);
+         Result := Backend_Unavailable;
    end List_Object_Versions;
 
    overriding procedure Create_Multipart_Upload

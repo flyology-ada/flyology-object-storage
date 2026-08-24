@@ -1,4 +1,6 @@
 with Ada.Containers;
+with Ada.Containers.Vectors;
+with Ada.Strings.Fixed;
 with Flyology.Object_Storage.Backends.Listing;
 with Flyology.Object_Storage.Backends.Multipart_Listing;
 with Flyology.Object_Storage.Checksum_Engine;
@@ -2848,6 +2850,341 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end List_Objects;
+
+   procedure List_Object_Versions
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Versions_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.List_Versions_Page;
+      Result  : out Status)
+   is
+      type Page_Candidate is record
+         Is_Prefix      : Boolean := False;
+         Value          : Backends.Listed_Version;
+         Common_Prefix  : US.Unbounded_String;
+         Cursor_Key     : US.Unbounded_String;
+         Cursor_Version : US.Unbounded_String;
+      end record;
+
+      package Page_Candidate_Vectors is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Page_Candidate);
+
+      Candidates   : Backends.Listed_Version_Vectors.Vector;
+      Projected    : Page_Candidate_Vectors.Vector;
+      Bucket_Query : DB.Statement;
+      Query        : DB.Statement;
+      Start_At     : Natural := 1;
+      Marker_At    : Natural := 0;
+      Returned     : Natural := 0;
+      Locked       : Boolean := False;
+
+      function Matches_Prefix (Key : String) return Boolean is
+         Prefix : constant String := US.To_String (Options.Prefix);
+      begin
+         return Key'Length >= Prefix'Length
+           and then
+             (Prefix'Length = 0
+              or else Key (Key'First .. Key'First + Prefix'Length - 1) =
+                Prefix);
+      end Matches_Prefix;
+
+      procedure Read_Version_User_Metadata
+        (Key, Version : String; Metadata : in out Object_Metadata)
+      is
+         Metadata_Query : DB.Statement;
+      begin
+         Metadata.User := Empty_User_Metadata;
+         DB.Prepare
+           (Metadata_Query, Item.Database,
+            "SELECT ordinal,metadata_key,metadata_value FROM " &
+            "object_version_metadata WHERE bucket_name=?1 AND " &
+            "object_key=?2 AND version_id=?3 ORDER BY ordinal");
+         DB.Bind (Metadata_Query, 1, Bucket);
+         DB.Bind_Bytes (Metadata_Query, 2, Key);
+         DB.Bind_Bytes (Metadata_Query, 3, Version);
+         while DB.Step (Metadata_Query) = DB.Row loop
+            if Metadata.User.Length = Maximum_User_Metadata_Entries
+              or else DB.Column (Metadata_Query, 0) /=
+                Long_Long_Integer (Metadata.User.Length) + 1
+            then
+               raise Catalog_Error with
+                 "invalid generation user metadata ordinal";
+            end if;
+            Metadata.User.Length := Metadata.User.Length + 1;
+            Metadata.User.Items (Metadata.User.Length) :=
+              (Key => US.To_Unbounded_String
+                 (DB.Column_Bytes (Metadata_Query, 1)),
+               Value => US.To_Unbounded_String
+                 (DB.Column_Bytes (Metadata_Query, 2)));
+         end loop;
+      end Read_Version_User_Metadata;
+   begin
+      Page := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      Check.all;
+      DB.Prepare
+        (Bucket_Query, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Bucket_Query, 1, Bucket);
+      if DB.Step (Bucket_Query) /= DB.Row then
+         raise Catalog_Error with "bucket existence query returned no row";
+      elsif DB.Column (Bucket_Query, 0) = 0 then
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      elsif Options.Has_Version_ID_Marker
+        and then not Options.Has_Key_Marker
+      then
+         Result := Invalid_Request;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      elsif Options.Has_Version_ID_Marker
+        and then
+          (US.Length (Options.Version_ID_Marker) = 0
+           or else US.Length (Options.Version_ID_Marker) >
+             Backends.Maximum_Version_ID_Length)
+      then
+         Result := Invalid_Request;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT v.object_key,v.version_id,v.is_delete_marker,v.size," &
+         "v.modified,v.entity_tag,v.content_type,v.checksum_algorithm," &
+         "v.checksum_method,v.checksum_value," &
+         "(SELECT count(*) FROM object_version_parts p WHERE " &
+         "p.bucket_name=v.bucket_name AND p.object_key=v.object_key AND " &
+         "p.version_id=v.version_id),v.cache_control_present," &
+         "v.cache_control,v.content_disposition_present," &
+         "v.content_disposition,v.content_encoding_present," &
+         "v.content_encoding,v.content_language_present," &
+         "v.content_language,v.expires_present,v.expires," &
+         "v.redirect_present,v.redirect," &
+         "EXISTS(SELECT 1 FROM current_object_versions c WHERE " &
+         "c.bucket_name=v.bucket_name AND c.object_key=v.object_key AND " &
+         "c.version_id=v.version_id)," &
+         "NOT EXISTS(SELECT 1 FROM object_versions newer WHERE " &
+         "newer.bucket_name=v.bucket_name AND " &
+         "newer.object_key=v.object_key AND " &
+         "newer.publication_order>v.publication_order) " &
+         "FROM object_versions v " &
+         "WHERE v.bucket_name=?1 ORDER BY v.object_key," &
+         "v.publication_order DESC");
+      DB.Bind (Query, 1, Bucket);
+      loop
+         Check.all;
+         exit when DB.Step (Query) = DB.Done;
+         declare
+            Key          : constant String := DB.Column_Bytes (Query, 0);
+            Version      : constant String := DB.Column_Bytes (Query, 1);
+            Marker_Value : constant Long_Long_Integer := DB.Column (Query, 2);
+            Latest_Value : constant Long_Long_Integer := DB.Column (Query, 23);
+            Newest_Value : constant Long_Long_Integer := DB.Column (Query, 24);
+            Is_Null      : constant Boolean := Version = "null";
+            Info         : Object_Information :=
+              (Size         => Byte_Count'(DB.Column (Query, 3)),
+               Modified     => Unix_Time'(DB.Column (Query, 4)),
+               Entity_Tag   =>
+                 US.To_Unbounded_String (DB.Column_Bytes (Query, 5)),
+               Content_Type =>
+                 US.To_Unbounded_String (DB.Column_Bytes (Query, 6)),
+               Version      =>
+                 (if Is_Null then US.Null_Unbounded_String
+                  else US.To_Unbounded_String (Version)),
+               Checksum     => Checksum_From_Columns
+                 (Query, 7, Is_Object => True,
+                  Part_Count =>
+                    Natural (Long_Long_Integer'(DB.Column (Query, 10)))),
+               Metadata     =>
+                 (Cache_Control => Optional_From_Columns (Query, 11),
+                  Content_Disposition => Optional_From_Columns (Query, 13),
+                  Content_Encoding => Optional_From_Columns (Query, 15),
+                  Content_Language => Optional_From_Columns (Query, 17),
+                  Expires => Optional_Time_From_Columns (Query, 19),
+                  Website_Redirect_Location =>
+                    Optional_From_Columns (Query, 21),
+                  User => Empty_User_Metadata));
+         begin
+            if Version'Length not in 1 .. Backends.Maximum_Version_ID_Length
+              or else Marker_Value not in 0 | 1
+              or else Latest_Value not in 0 | 1
+              or else Newest_Value not in 0 | 1
+              or else Latest_Value /= Newest_Value
+            then
+               raise Catalog_Error with "invalid retained generation row";
+            end if;
+            if Matches_Prefix (Key) then
+               Read_Version_User_Metadata (Key, Version, Info.Metadata);
+               if not Valid_Object_Metadata
+                 (Info.Metadata, US.To_String (Info.Content_Type))
+               then
+                  raise Catalog_Error with
+                    "invalid generation object metadata";
+               elsif Marker_Value = 1
+                 and then
+                   (Info.Size /= 0
+                    or else US.Length (Info.Entity_Tag) /= 0
+                    or else US.Length (Info.Content_Type) /= 0
+                    or else Info.Checksum /= No_Checksum_Information
+                    or else Info.Metadata /= Empty_Object_Metadata
+                    or else DB.Column (Query, 10) /= 0)
+               then
+                  raise Catalog_Error with
+                    "delete marker contains object metadata";
+               end if;
+               Candidates.Append
+                 (Backends.Listed_Version'
+                    (Key              => US.To_Unbounded_String (Key),
+                     Version_ID       =>
+                       (if Is_Null then US.To_Unbounded_String ("null")
+                        else US.To_Unbounded_String (Version)),
+                     Info             => Info,
+                     Is_Latest        => Newest_Value = 1,
+                     Is_Delete_Marker => Marker_Value = 1));
+            end if;
+         end;
+      end loop;
+
+      if Options.Has_Key_Marker then
+         if Options.Has_Version_ID_Marker then
+            for Index in 1 .. Natural (Candidates.Length) loop
+               if US.To_String (Candidates (Index).Key) =
+                    US.To_String (Options.Key_Marker)
+                 and then US.To_String (Candidates (Index).Version_ID) =
+                   US.To_String (Options.Version_ID_Marker)
+               then
+                  Marker_At := Index;
+                  exit;
+               end if;
+            end loop;
+            if Marker_At = 0 then
+               Result := Invalid_Request;
+               Item.Gate.Release;
+               Locked := False;
+               return;
+            end if;
+            Start_At := Marker_At + 1;
+         else
+            Start_At := Natural (Candidates.Length) + 1;
+            for Index in 1 .. Natural (Candidates.Length) loop
+               if US.To_String (Candidates (Index).Key) >
+                 US.To_String (Options.Key_Marker)
+               then
+                  Start_At := Index;
+                  exit;
+               end if;
+            end loop;
+         end if;
+      end if;
+
+      if Start_At <= Natural (Candidates.Length) then
+         declare
+            Prefix : constant String := US.To_String (Options.Prefix);
+            Delimiter : constant String := US.To_String (Options.Delimiter);
+         begin
+            for Index in Start_At .. Natural (Candidates.Length) loop
+               declare
+                  Key : constant String := US.To_String (Candidates (Index).Key);
+                  Matches : constant Boolean :=
+                    Key'Length >= Prefix'Length
+                    and then
+                      (Prefix'Length = 0
+                       or else Key
+                         (Key'First .. Key'First + Prefix'Length - 1) = Prefix);
+                  Delimiter_At : constant Natural :=
+                    (if not Matches
+                       or else Delimiter'Length = 0
+                       or else Prefix'Length >= Key'Length
+                     then 0
+                     else Ada.Strings.Fixed.Index
+                       (Key, Delimiter, From => Key'First + Prefix'Length));
+               begin
+                  if Matches then
+                     if Delimiter_At = 0 then
+                        Projected.Append
+                          (Page_Candidate'
+                             (Is_Prefix      => False,
+                              Value          => Candidates (Index),
+                              Common_Prefix  => US.Null_Unbounded_String,
+                              Cursor_Key     => Candidates (Index).Key,
+                              Cursor_Version =>
+                                Candidates (Index).Version_ID));
+                     else
+                        declare
+                           Common : constant String :=
+                             Key
+                               (Key'First .. Delimiter_At +
+                                  Delimiter'Length - 1);
+                        begin
+                           if Options.Has_Key_Marker
+                             and then Common <= US.To_String
+                               (Options.Key_Marker)
+                           then
+                              null;
+                           elsif not Projected.Is_Empty
+                             and then Projected.Last_Element.Is_Prefix
+                             and then US.To_String
+                               (Projected.Last_Element.Common_Prefix) = Common
+                           then
+                              Projected.Reference (Projected.Last_Index).
+                                Cursor_Key := Candidates (Index).Key;
+                              Projected.Reference (Projected.Last_Index).
+                                Cursor_Version :=
+                                  Candidates (Index).Version_ID;
+                           else
+                              Projected.Append
+                                (Page_Candidate'
+                                   (Is_Prefix      => True,
+                                    Value          => (others => <>),
+                                    Common_Prefix  =>
+                                      US.To_Unbounded_String (Common),
+                                    Cursor_Key     => Candidates (Index).Key,
+                                    Cursor_Version =>
+                                      Candidates (Index).Version_ID));
+                           end if;
+                        end;
+                     end if;
+                  end if;
+               end;
+            end loop;
+         end;
+      end if;
+
+      if Options.Maximum > 0 and then not Projected.Is_Empty then
+         Returned := Natural'Min
+           (Natural (Options.Maximum), Natural (Projected.Length));
+         for Index in 1 .. Returned loop
+            if Projected (Index).Is_Prefix then
+               Page.Common_Prefixes.Append (Projected (Index).Common_Prefix);
+            else
+               Page.Entries.Append (Projected (Index).Value);
+            end if;
+         end loop;
+         Page.Is_Truncated := Returned < Natural (Projected.Length);
+         if Page.Is_Truncated then
+            Page.Next_Key_Marker := Projected (Returned).Cursor_Key;
+            Page.Next_Version_ID_Marker :=
+              Projected (Returned).Cursor_Version;
+         end if;
+      end if;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Page := (others => <>);
+         raise;
+   end List_Object_Versions;
 
    procedure Find_Multipart_Upload_Internal
      (Item         : in out Catalog;

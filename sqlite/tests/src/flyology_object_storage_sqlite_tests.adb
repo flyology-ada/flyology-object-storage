@@ -1981,6 +1981,79 @@ begin
          "catalog versioning configuration did not survive reopen");
       declare
          use Flyology.Object_Storage.Backends;
+         procedure Check is null;
+         Options : List_Versions_Options := (others => <>);
+         Page    : List_Versions_Page;
+      begin
+         Options.Maximum := 1;
+         Catalogs.List_Object_Versions
+           (Catalog, "catalog-bucket", Options, Check'Access, Page, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success
+            and then Page.Entries.Length = 1
+            and then Page.Common_Prefixes.Is_Empty
+            and then Page.Is_Truncated
+            and then US.To_String (Page.Entries.First_Element.Key) =
+              "multipart-key"
+            and then US.To_String (Page.Entries.First_Element.Version_ID) =
+              "null"
+            and then Page.Entries.First_Element.Is_Latest
+            and then not Page.Entries.First_Element.Is_Delete_Marker
+            and then US.To_String (Page.Next_Key_Marker) = "multipart-key"
+            and then US.To_String (Page.Next_Version_ID_Marker) = "null",
+            "catalog generation listing first page/cursor mismatch");
+         Options.Has_Key_Marker := True;
+         Options.Key_Marker := Page.Next_Key_Marker;
+         Options.Has_Version_ID_Marker := True;
+         Options.Version_ID_Marker := Page.Next_Version_ID_Marker;
+         Catalogs.List_Object_Versions
+           (Catalog, "catalog-bucket", Options, Check'Access, Page, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success
+            and then Page.Entries.Length = 1
+            and then not Page.Is_Truncated
+            and then US.To_String (Page.Entries.First_Element.Key) = Key
+            and then US.To_String (Page.Entries.First_Element.Version_ID) =
+              "null",
+            "catalog generation listing paired resume mismatch");
+
+         Options.Prefix :=
+           US.To_Unbounded_String (String'(1 => Character'Val (255)));
+         Options.Key_Marker := US.To_Unbounded_String ("multipart-key");
+         Options.Version_ID_Marker := US.To_Unbounded_String ("null");
+         Catalogs.List_Object_Versions
+           (Catalog, "catalog-bucket", Options, Check'Access, Page, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Invalid_Request
+            and then Page.Entries.Is_Empty,
+            "catalog generation listing accepted a cursor outside prefix");
+
+         Options := (Delimiter => US.To_Unbounded_String ("/"), others => <>);
+         Catalogs.List_Object_Versions
+           (Catalog, "catalog-bucket", Options, Check'Access, Page, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Success
+            and then Page.Entries.Length = 1
+            and then Page.Common_Prefixes.Length = 1
+            and then US.To_String (Page.Entries.First_Element.Key) =
+              "multipart-key"
+            and then US.To_String (Page.Common_Prefixes.First_Element) =
+              Character'Val (255) & "/",
+            "catalog generation delimiter projection mismatch");
+
+         Options := (Has_Version_ID_Marker => True,
+                     Version_ID_Marker => US.To_Unbounded_String ("null"),
+                     others => <>);
+         Catalogs.List_Object_Versions
+           (Catalog, "catalog-bucket", Options, Check'Access, Page, Result);
+         Assert
+           (Result = Flyology.Object_Storage.Invalid_Request
+            and then Page.Entries.Is_Empty
+            and then Page.Common_Prefixes.Is_Empty,
+            "catalog generation listing accepted an unpaired marker");
+      end;
+      declare
+         use Flyology.Object_Storage.Backends;
          Entries  : Delete_Object_Entries;
          Outcomes : Delete_Object_Outcomes;
          Retired  : Catalogs.Payloads;
@@ -2049,6 +2122,187 @@ begin
               "missing catalog bucket did not report not-found");
    end;
    Catalogs.Close (Catalog);
+   Delete_Database;
+
+   --  Generation-listing fixture: direct retained rows isolate the schema-10
+   --  ordering/cursor contract before version-aware publication is enabled.
+   declare
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      Info     : constant Object_Information :=
+        (Size         => 1,
+         Modified     => 1,
+         Entity_Tag   => US.To_Unbounded_String ("null-etag"),
+         Content_Type => US.To_Unbounded_String ("application/octet-stream"),
+         Version      => US.Null_Unbounded_String,
+         Checksum     => No_Checksum_Information,
+         Metadata     => Empty_Object_Metadata);
+      Previous : US.Unbounded_String;
+      Result   : Status;
+      Tags     : constant Object_Tag_Set := Empty_Object_Tags;
+      procedure Check is null;
+   begin
+      Catalogs.Open (Catalog, Database_Path);
+      Catalogs.Create_Bucket (Catalog, "version-list", 1, Result);
+      Catalogs.Put_Object
+        (Catalog, "version-list", "dir/key", "null-payload", Info, Tags,
+         Previous, Result);
+      Assert (Result = Success, "generation listing null fixture failed");
+      Catalogs.Close (Catalog);
+
+      Databases.Open (Database, Database_Path);
+      Databases.Execute (Database, "PRAGMA foreign_keys=ON;");
+      Databases.Execute
+        (Database,
+         "DELETE FROM current_object_versions WHERE " &
+         "bucket_name='version-list' AND object_key=CAST('dir/key' AS BLOB);" &
+         "INSERT INTO object_versions(" &
+         "bucket_name,object_key,version_id,is_delete_marker,payload,size," &
+         "modified,entity_tag,content_type) VALUES(" &
+         "'version-list',CAST('dir/key' AS BLOB),CAST('v1' AS BLOB),0," &
+         "'v1-payload',1,2,CAST('v1-etag' AS BLOB)," &
+         "CAST('application/octet-stream' AS BLOB));" &
+         "INSERT INTO object_versions(" &
+         "bucket_name,object_key,version_id,is_delete_marker,payload,size," &
+         "modified,entity_tag,content_type) VALUES(" &
+         "'version-list',CAST('dir/key' AS BLOB),CAST('v2' AS BLOB),1," &
+         "NULL,0,3,X'',X'');" &
+         "INSERT INTO current_object_versions(bucket_name,object_key," &
+         "version_id) VALUES('version-list',CAST('dir/key' AS BLOB)," &
+         "CAST('v2' AS BLOB));");
+      Databases.Close (Database);
+
+      Catalogs.Open (Catalog, Database_Path);
+      declare
+         Options : List_Versions_Options :=
+           (Prefix => US.To_Unbounded_String ("dir/"), Maximum => 2,
+            others => <>);
+         Page : List_Versions_Page;
+      begin
+         Catalogs.List_Object_Versions
+           (Catalog, "version-list", Options, Check'Access, Page, Result);
+         Assert
+           (Result = Success and then Page.Entries.Length = 2
+            and then Page.Is_Truncated
+            and then US.To_String (Page.Entries (1).Version_ID) = "v2"
+            and then Page.Entries (1).Is_Latest
+            and then Page.Entries (1).Is_Delete_Marker
+            and then US.To_String (Page.Entries (1).Info.Version) = "v2"
+            and then US.To_String (Page.Entries (2).Version_ID) = "v1"
+            and then not Page.Entries (2).Is_Latest
+            and then not Page.Entries (2).Is_Delete_Marker
+            and then US.To_String (Page.Entries (2).Info.Version) = "v1"
+            and then US.To_String (Page.Next_Key_Marker) = "dir/key"
+            and then US.To_String (Page.Next_Version_ID_Marker) = "v1",
+            "generation listing exact ordering/latest page mismatch");
+
+         Options.Has_Key_Marker := True;
+         Options.Key_Marker := Page.Next_Key_Marker;
+         Options.Has_Version_ID_Marker := True;
+         Options.Version_ID_Marker := Page.Next_Version_ID_Marker;
+         Catalogs.List_Object_Versions
+           (Catalog, "version-list", Options, Check'Access, Page, Result);
+         Assert
+           (Result = Success and then Page.Entries.Length = 1
+            and then not Page.Is_Truncated
+            and then US.To_String (Page.Entries.First_Element.Version_ID) =
+              "null"
+            and then US.Length (Page.Entries.First_Element.Info.Version) = 0,
+            "generation listing exact-to-null resume mismatch");
+
+         Options :=
+           (Prefix => US.To_Unbounded_String ("dir/"),
+            Delimiter => US.To_Unbounded_String ("/"), others => <>);
+         Catalogs.List_Object_Versions
+           (Catalog, "version-list", Options, Check'Access, Page, Result);
+         Assert
+           (Result = Success and then Page.Entries.Length = 3
+            and then Page.Common_Prefixes.Is_Empty,
+            "generation listing delimiter matched inside the fixed prefix");
+
+         Options :=
+           (Delimiter => US.To_Unbounded_String ("/"), Maximum => 1,
+            others => <>);
+         Catalogs.List_Object_Versions
+           (Catalog, "version-list", Options, Check'Access, Page, Result);
+         Assert
+           (Result = Success and then Page.Entries.Is_Empty
+            and then Page.Common_Prefixes.Length = 1
+            and then US.To_String (Page.Common_Prefixes.First_Element) =
+              "dir/"
+            and then not Page.Is_Truncated,
+            "generation listing did not collapse all versions into prefix");
+
+         Options :=
+           (Has_Key_Marker => True,
+            Key_Marker => US.To_Unbounded_String ("dir/key"),
+            Has_Version_ID_Marker => True,
+            Version_ID_Marker => US.To_Unbounded_String ("missing"),
+            others => <>);
+         Catalogs.List_Object_Versions
+           (Catalog, "version-list", Options, Check'Access, Page, Result);
+         Assert
+           (Result = Invalid_Request and then Page.Entries.Is_Empty,
+            "generation listing accepted an absent paired cursor");
+      end;
+      Catalogs.Close (Catalog);
+
+      Databases.Open (Database, Database_Path);
+      Databases.Execute
+        (Database,
+         "DELETE FROM current_object_versions WHERE " &
+         "bucket_name='version-list' AND object_key=CAST('dir/key' AS BLOB);" &
+         "INSERT INTO current_object_versions(bucket_name,object_key," &
+         "version_id) VALUES('version-list',CAST('dir/key' AS BLOB)," &
+         "CAST('v1' AS BLOB));");
+      Databases.Close (Database);
+      Catalogs.Open (Catalog, Database_Path);
+      declare
+         Page   : List_Versions_Page;
+         Raised : Boolean := False;
+      begin
+         begin
+            Catalogs.List_Object_Versions
+              (Catalog, "version-list", (others => <>), Check'Access,
+               Page, Result);
+         exception
+            when Catalogs.Catalog_Error => Raised := True;
+         end;
+         Assert
+           (Raised and then Page.Entries.Is_Empty,
+            "generation listing accepted a stale current pointer");
+      end;
+      Catalogs.Close (Catalog);
+
+      Databases.Open (Database, Database_Path);
+      Databases.Execute
+        (Database,
+         "DELETE FROM current_object_versions WHERE " &
+         "bucket_name='version-list' AND object_key=CAST('dir/key' AS BLOB);" &
+         "INSERT INTO current_object_versions(bucket_name,object_key," &
+         "version_id) VALUES('version-list',CAST('dir/key' AS BLOB)," &
+         "CAST('v2' AS BLOB));" &
+         "UPDATE object_versions SET size=1 WHERE " &
+         "bucket_name='version-list' AND version_id=CAST('v2' AS BLOB);");
+      Databases.Close (Database);
+      Catalogs.Open (Catalog, Database_Path);
+      declare
+         Page   : List_Versions_Page;
+         Raised : Boolean := False;
+      begin
+         begin
+            Catalogs.List_Object_Versions
+              (Catalog, "version-list", (others => <>), Check'Access,
+               Page, Result);
+         exception
+            when Catalogs.Catalog_Error => Raised := True;
+         end;
+         Assert
+           (Raised and then Page.Entries.Is_Empty,
+            "generation listing did not reject marker object metadata");
+      end;
+      Catalogs.Close (Catalog);
+   end;
    Delete_Database;
 
    Create_V1_Database;
@@ -4072,6 +4326,27 @@ begin
                Propagated := True;
          end;
          Assert (Propagated, "SQLite backend swallowed a sink exception");
+      end;
+      declare
+         Page : List_Versions_Page;
+         Options : constant List_Versions_Options :=
+           (Prefix => US.To_Unbounded_String ("multipart-target"),
+            others => <>);
+      begin
+         Store.List_Object_Versions
+           ("sqlite-bucket", Options, null, Ada.Real_Time.Time_Last,
+            Page, Result);
+         Assert
+           (Result = Success and then Page.Entries.Length = 1
+            and then Page.Common_Prefixes.Is_Empty
+            and then not Page.Is_Truncated
+            and then US.To_String (Page.Entries.First_Element.Key) =
+              "multipart-target"
+            and then US.To_String (Page.Entries.First_Element.Version_ID) =
+              "null"
+            and then Page.Entries.First_Element.Is_Latest
+            and then not Page.Entries.First_Element.Is_Delete_Marker,
+            "SQLite backend did not expose the durable null generation");
       end;
       declare
          Entries  : Delete_Object_Entries;

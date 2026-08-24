@@ -150,6 +150,21 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Page    : out Backends.List_Page;
       Result  : out Status);
 
+   --  Return one bounded retained-generation page from the catalog snapshot.
+   --  @param Item Open catalog
+   --  @param Bucket Bucket whose generations are listed
+   --  @param Options Prefix, delimiter, paired cursor, and page bound
+   --  @param Check Cancellation/deadline check run while the gate is held
+   --  @param Page Ordered versions, delete markers, and common prefixes
+   --  @param Result Operation status
+   procedure List_Object_Versions
+     (Item    : in out Catalog;
+      Bucket  : String;
+      Options : Backends.List_Versions_Options;
+      Check   : not null access procedure;
+      Page    : out Backends.List_Versions_Page;
+      Result  : out Status);
+
    function Payload_Referenced
      (Item : in out Catalog; Payload : String) return Boolean;
 
