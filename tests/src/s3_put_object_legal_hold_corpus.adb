@@ -4,12 +4,14 @@ with Ada.Text_IO;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Object_Lock;
 with Flyology.Object_Storage.S3.XML;
 
 procedure S3_Put_Object_Legal_Hold_Corpus is
    package HTTP_Client renames Flyology.HTTP.Client;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
+   package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Object_Lock renames Flyology.Object_Storage.S3.Object_Lock;
    package XML renames Flyology.Object_Storage.S3.XML;
    package US renames Ada.Strings.Unbounded;
@@ -28,6 +30,9 @@ procedure S3_Put_Object_Legal_Hold_Corpus is
    --  Project-policy compatibility value from the shared low-level response
    --  header validator; changing it alters public response admission.
    Header_Boundary : constant Positive := 8_192;
+   --  Project object-generation policy shared with all version-bound calls.
+   Version_Boundary : constant Positive :=
+     Deletions.Maximum_Version_ID_Length;
    type Status_Array is array (Positive range <>) of
      Flyology.HTTP.Status_Code;
    --  Exact 200 is contrasted with alternate successes and representative
@@ -265,17 +270,27 @@ begin
    Expect_Invalid_Request (Params => Parameters (MD5 => "invalid"));
    Expect_Invalid_Request
      (Params => Parameters
+        (Version => String'(1 .. Version_Boundary + 1 => 'v')));
+   Expect_Invalid_Request
+     (Params => Parameters (Version => "bad" & Character'Val (0)));
+   Expect_Invalid_Request
+     (Params => Parameters
         (Owner => String'(1 .. Header_Boundary + 1 => 'o')));
    Expect_Invalid_Request
      (Params => Parameters (Owner => "owner" & Character'Val (10)));
    declare
       --  Exact base64 representation of a 16-byte caller-provided MD5.
       Valid_MD5 : constant String := "AAAAAAAAAAAAAAAAAAAAAA==";
+      Exact_Version : constant String :=
+        String'(1 .. Version_Boundary => 'v');
       Exact_Owner : constant String := String'(1 .. Header_Boundary => 'o');
       Ignored : constant Low_Level.Prepared_Request :=
         Low_Level.Prepare_Put_Object_Legal_Hold
           (Origin, Low_Level.Path_Style, "example-bucket", "key", Hold,
-           Parameters (MD5 => Valid_MD5, Owner => Exact_Owner), Identity,
+           Parameters
+             (Version => Exact_Version, MD5 => Valid_MD5,
+              Owner => Exact_Owner),
+           Identity,
            "us-east-1", "20130524T000000Z");
       pragma Unreferenced (Ignored);
    begin

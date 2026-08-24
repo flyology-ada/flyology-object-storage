@@ -81,9 +81,9 @@ The deterministic corpus covers absent outer payload, present empty root, ON
 and OFF, inconsistent presence, exact XML, exact and one-past codec limits,
 both addressing styles, greedy key and version encoding, every physical
 control, automatic and caller MD5, all ten SDK checksums, invalid buckets,
-keys, owner controls, enums, digests and algorithms, exact success semantics,
-alternate status and error matrices, response headers, diagnostics, error
-limits, and cross-operation rejection before admission.
+keys, version and owner controls, enums, digests and algorithms, exact success
+semantics, alternate status and error matrices, response headers, diagnostics,
+error limits, and cross-operation rejection before admission.
 
 The shared raw loopback corpus adds exact signed PUT method, target, body hash,
 MD5, CRC32, version, payer, and owner projection; the absent zero-length source

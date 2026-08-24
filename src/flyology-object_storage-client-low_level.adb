@@ -8885,6 +8885,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
         Checksum_Policy.Parse_Algorithm (Algorithm_Text);
       Request_Payer : constant String :=
         US.To_String (Parameters.Request_Payer);
+      Version_ID : constant String := US.To_String (Parameters.Version_ID);
       Owner : constant String :=
         US.To_String (Parameters.Expected_Bucket_Owner);
       --  MD5 is externally fixed at 128 bits; changing this byte count would
@@ -8894,7 +8895,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       --  ceiling.  Larger owner controls are rejected before HTTP admission.
       Maximum_Header_Bytes : constant Positive := 8_192;
       Query : SigV4.Name_Value_Array
-        (1 .. 1 + Boolean'Pos (US.Length (Parameters.Version_ID) > 0));
+        (1 .. 1 + Boolean'Pos (Version_ID'Length > 0));
       Header_Count : constant Positive :=
         1 + Boolean'Pos (Request_Payer'Length > 0) +
         Boolean'Pos (Owner'Length > 0) +
@@ -8926,6 +8927,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    begin
       if not Valid_Bucket_Name (Bucket)
         or else not Valid_Object_Key (Key)
+        or else not S3.Deletions.Valid_Version_ID (Version_ID)
         or else not Valid_Optional_Checksum
           (Parameters.Content_MD5, MD5_Digest_Bytes)
         or else (Algorithm_Text'Length > 0 and then not Algorithm.Valid)
@@ -8937,9 +8939,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "invalid PutObjectLegalHold parameters";
       end if;
       Query (1) := SigV4.Pair ("legal-hold", "");
-      if US.Length (Parameters.Version_ID) > 0 then
-         Query (2) :=
-           SigV4.Pair ("versionId", US.To_String (Parameters.Version_ID));
+      if Version_ID'Length > 0 then
+         Query (2) := SigV4.Pair ("versionId", Version_ID);
       end if;
       Add_Header ("content-md5", MD5);
       Add_Header ("x-amz-request-payer", Request_Payer);
