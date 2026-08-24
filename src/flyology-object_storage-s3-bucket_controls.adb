@@ -1,5 +1,3 @@
-with Ada.Strings.Unbounded;
-
 package body Flyology.Object_Storage.S3.Bucket_Controls is
 
    package US renames Ada.Strings.Unbounded;
@@ -82,6 +80,42 @@ package body Flyology.Object_Storage.S3.Bucket_Controls is
      (Item : in out Ownership_Handler; Value : String);
    overriding procedure End_Element
      (Item : in out Ownership_Handler; Local_Name : String);
+
+   type CORS_Namespace_Style is
+     (CORS_Namespace_Not_Selected, CORS_Unqualified, CORS_S3_Qualified);
+
+   type CORS_Field is
+     (No_CORS_Field, CORS_ID_Field, Allowed_Header_Field,
+      Allowed_Method_Field, Allowed_Origin_Field, Expose_Header_Field,
+      Max_Age_Seconds_Field);
+
+   type CORS_Handler is new XML.Event_Handler with record
+      Depth               : Natural := 0;
+      Root_Seen           : Boolean := False;
+      Rule_Open           : Boolean := False;
+      ID_Seen             : Boolean := False;
+      Allowed_Method_Seen : Boolean := False;
+      Allowed_Origin_Seen : Boolean := False;
+      Max_Age_Seen        : Boolean := False;
+      Namespace           : CORS_Namespace_Style :=
+        CORS_Namespace_Not_Selected;
+      Field               : CORS_Field := No_CORS_Field;
+      Text_Value          : US.Unbounded_String;
+      Current             : CORS_Rule := (others => <>);
+      Value               : CORS_Configuration :=
+        (Is_Set => True, others => <>);
+   end record;
+
+   overriding procedure Start_Element
+     (Item : in out CORS_Handler; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out CORS_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
+   overriding procedure Text
+     (Item : in out CORS_Handler; Value : String);
+   overriding procedure End_Element
+     (Item : in out CORS_Handler; Local_Name : String);
 
    --  External REST/XML contract from the pinned generated S3 model: these
    --  root, member, enumeration, boolean, and namespace spellings are exact;
@@ -476,6 +510,210 @@ package body Flyology.Object_Storage.S3.Bucket_Controls is
          raise Malformed_Configuration with
            "malformed OwnershipControls XML";
    end Parse_Ownership_Controls;
+
+   function Valid_Integer_Text (Value : String) return Boolean is
+      Index : Integer := Value'First;
+   begin
+      if Value'Length = 0 then
+         return False;
+      end if;
+      if Value (Index) in '+' | '-' then
+         Index := Index + 1;
+      end if;
+      if Index > Value'Last then
+         return False;
+      end if;
+      while Index <= Value'Last loop
+         if Value (Index) not in '0' .. '9' then
+            return False;
+         end if;
+         Index := Index + 1;
+      end loop;
+      return True;
+   end Valid_Integer_Text;
+
+   overriding procedure Start_Element_Details
+     (Item            : in out CORS_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural)
+   is
+      Style : constant CORS_Namespace_Style :=
+        (if Namespace_URI'Length = 0 then CORS_Unqualified
+         --  Pinned S3 REST/XML namespace; changing this exact external value
+         --  changes provider wire compatibility for every CORS member.
+         elsif Namespace_URI = "http://s3.amazonaws.com/doc/2006-03-01/"
+         then CORS_S3_Qualified
+         else CORS_Namespace_Not_Selected);
+   begin
+      if Attribute_Count /= 0
+        or else Style = CORS_Namespace_Not_Selected
+        or else (Item.Namespace /= CORS_Namespace_Not_Selected
+                 and then Item.Namespace /= Style)
+      then
+         raise Malformed_Configuration with
+           "CORS namespace or attributes are invalid";
+      end if;
+      Item.Namespace := Style;
+   end Start_Element_Details;
+
+   function CORS_Field_For (Local_Name : String) return CORS_Field is
+   begin
+      if Local_Name = "ID" then
+         return CORS_ID_Field;
+      elsif Local_Name = "AllowedHeader" then
+         return Allowed_Header_Field;
+      elsif Local_Name = "AllowedMethod" then
+         return Allowed_Method_Field;
+      elsif Local_Name = "AllowedOrigin" then
+         return Allowed_Origin_Field;
+      elsif Local_Name = "ExposeHeader" then
+         return Expose_Header_Field;
+      elsif Local_Name = "MaxAgeSeconds" then
+         return Max_Age_Seconds_Field;
+      end if;
+      return No_CORS_Field;
+   end CORS_Field_For;
+
+   overriding procedure Start_Element
+     (Item : in out CORS_Handler; Local_Name : String)
+   is
+      Field : CORS_Field;
+   begin
+      if Item.Depth = Natural'Last then
+         raise Malformed_Configuration with "CORS depth overflow";
+      end if;
+      Item.Depth := Item.Depth + 1;
+      case Item.Depth is
+         when 1 =>
+            if Item.Root_Seen or else Local_Name /= "CORSConfiguration" then
+               raise Malformed_Configuration with
+                 "invalid CORSConfiguration root";
+            end if;
+            Item.Root_Seen := True;
+         when 2 =>
+            if Local_Name /= "CORSRule" then
+               raise Malformed_Configuration with "unknown CORS member";
+            end if;
+            Item.Rule_Open := True;
+            Item.ID_Seen := False;
+            Item.Allowed_Method_Seen := False;
+            Item.Allowed_Origin_Seen := False;
+            Item.Max_Age_Seen := False;
+            Item.Current := (others => <>);
+         when 3 =>
+            Field := CORS_Field_For (Local_Name);
+            if Field = No_CORS_Field
+              or else (Field = CORS_ID_Field and then Item.ID_Seen)
+              or else (Field = Max_Age_Seconds_Field
+                       and then Item.Max_Age_Seen)
+            then
+               raise Malformed_Configuration with
+                 "unknown or duplicate CORS rule member";
+            end if;
+            Item.Field := Field;
+            Item.Text_Value := US.Null_Unbounded_String;
+            case Field is
+               when CORS_ID_Field => Item.ID_Seen := True;
+               when Allowed_Method_Field => Item.Allowed_Method_Seen := True;
+               when Allowed_Origin_Field => Item.Allowed_Origin_Seen := True;
+               when Max_Age_Seconds_Field => Item.Max_Age_Seen := True;
+               when others => null;
+            end case;
+         when others =>
+            raise Malformed_Configuration with "nested CORS rule member";
+      end case;
+   end Start_Element;
+
+   overriding procedure Text
+     (Item : in out CORS_Handler; Value : String) is
+   begin
+      if Item.Depth = 3 and then Item.Field /= No_CORS_Field then
+         US.Append (Item.Text_Value, Value);
+      elsif Item.Depth in 1 .. 2 then
+         Require_Whitespace (Value);
+      else
+         raise Malformed_Configuration with
+           "CORS text outside a modeled member";
+      end if;
+   end Text;
+
+   overriding procedure End_Element
+     (Item : in out CORS_Handler; Local_Name : String)
+   is
+      Value : constant String := US.To_String (Item.Text_Value);
+   begin
+      case Item.Depth is
+         when 3 =>
+            if CORS_Field_For (Local_Name) /= Item.Field then
+               raise Malformed_Configuration with
+                 "mismatched CORS rule member close";
+            end if;
+            case Item.Field is
+               when CORS_ID_Field =>
+                  Item.Current.ID :=
+                    (Is_Set => True, Value => Item.Text_Value);
+               when Allowed_Header_Field =>
+                  Item.Current.Allowed_Headers.Append (Value);
+               when Allowed_Method_Field =>
+                  Item.Current.Allowed_Methods.Append (Value);
+               when Allowed_Origin_Field =>
+                  Item.Current.Allowed_Origins.Append (Value);
+               when Expose_Header_Field =>
+                  Item.Current.Expose_Headers.Append (Value);
+               when Max_Age_Seconds_Field =>
+                  if not Valid_Integer_Text (Value) then
+                     raise Malformed_Configuration with
+                       "invalid CORS MaxAgeSeconds";
+                  end if;
+                  Item.Current.Max_Age_Seconds :=
+                    (Is_Set => True, Text => Item.Text_Value);
+               when No_CORS_Field =>
+                  raise Malformed_Configuration with
+                    "CORS member close without an open member";
+            end case;
+            Item.Field := No_CORS_Field;
+            Item.Text_Value := US.Null_Unbounded_String;
+            Item.Depth := 2;
+         when 2 =>
+            if Local_Name /= "CORSRule"
+              or else not Item.Rule_Open
+              or else not Item.Allowed_Method_Seen
+              or else not Item.Allowed_Origin_Seen
+            then
+               raise Malformed_Configuration with "incomplete CORS rule";
+            end if;
+            Item.Value.Rules.Append (Item.Current);
+            Item.Rule_Open := False;
+            Item.Depth := 1;
+         when 1 =>
+            if Local_Name /= "CORSConfiguration" then
+               raise Malformed_Configuration with
+                 "mismatched CORSConfiguration close";
+            end if;
+            Item.Depth := 0;
+         when others =>
+            raise Malformed_Configuration with
+              "invalid CORS closing element";
+      end case;
+   end End_Element;
+
+   function Parse_CORS
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return CORS_Configuration
+   is
+      Handler : aliased CORS_Handler;
+   begin
+      XML.Parse (Document, Handler, Limits);
+      if Handler.Depth /= 0 or else not Handler.Root_Seen then
+         raise Malformed_Configuration with
+           "incomplete CORSConfiguration document";
+      end if;
+      return Handler.Value;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Configuration with "malformed CORS XML";
+   end Parse_CORS;
 
    function Serialize_Abac (Value : Abac_Status) return String is
       Status : constant String :=

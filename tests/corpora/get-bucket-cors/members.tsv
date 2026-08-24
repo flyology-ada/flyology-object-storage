@@ -1,0 +1,10 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	230	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind its exact value into the signed cors target.	GBC-RQ-001,GBC-RQ-003,GBC-RQ-004
+request	230	2	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	GBC-RQ-002,GBC-RQ-003,GBC-RQ-004
+output	229	1	CORSRules	72	body	false	decoded	Preserve absent body versus a present CORSConfiguration and decode flattened CORSRule values in wire order.	GBC-RS-001,GBC-RS-002,GBC-RS-005,GBC-TR-001,GBC-TR-002
+nested	71	1	ID	308	body	false	decoded	Preserve ID absence independently from a present empty string.	GBC-RS-001,GBC-RS-002,GBC-RS-005
+nested	71	2	AllowedHeaders	18	body	false	decoded	Preserve every flattened AllowedHeader in wire order within shared XML limits.	GBC-RS-001,GBC-RS-002,GBC-RS-005
+nested	71	3	AllowedMethods	20	body	true	decoded	Require at least one flattened AllowedMethod while preserving exact string values.	GBC-RS-001,GBC-RS-002,GBC-RS-005,GBC-RS-007
+nested	71	4	AllowedOrigins	22	body	true	decoded	Require at least one flattened AllowedOrigin while preserving exact string values.	GBC-RS-001,GBC-RS-002,GBC-RS-005,GBC-RS-007
+nested	71	5	ExposeHeaders	211	body	false	decoded	Preserve every flattened ExposeHeader in wire order within shared XML limits.	GBC-RS-001,GBC-RS-002,GBC-RS-005
+nested	71	6	MaxAgeSeconds	412	body	false	decoded	Preserve optional validated signed-decimal text without imposing a machine-integer ceiling.	GBC-RS-001,GBC-RS-002,GBC-RS-005,GBC-RS-007

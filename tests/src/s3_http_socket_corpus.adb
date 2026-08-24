@@ -3326,6 +3326,58 @@ procedure S3_HTTP_Socket_Corpus is
                  String'(1 .. 26 => ' ') & "</OwnershipControls>"),
             "GET", "/example-bucket?ownershipControls");
          Serve
+           (HTTP_Response
+              ("200 OK", "<CORSConfiguration><CORSRule><ID>socket-rule" &
+                 "</ID><AllowedHeader>*</AllowedHeader><AllowedMethod>GET" &
+                 "</AllowedMethod><AllowedMethod>PUT</AllowedMethod>" &
+                 "<AllowedOrigin>https://example.test</AllowedOrigin>" &
+                 "<ExposeHeader>etag</ExposeHeader><MaxAgeSeconds>" &
+                 "999999999999999999999999</MaxAgeSeconds></CORSRule>" &
+                 "</CORSConfiguration>",
+               "x-amz-request-id: cors-request" & CRLF &
+               "x-amz-id-2: cors-host" & CRLF),
+            "GET", "/example-bucket?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "GET", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("404 Not Found", Error_XML,
+               "x-amz-request-id: cors-error-request" & CRLF &
+               "x-amz-id-2: cors-error-host" & CRLF),
+            "GET", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<CORSConfiguration/>",
+               "x-amz-request-id: first" & CRLF &
+               "x-amz-request-id: second" & CRLF),
+            "GET", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<CORSConfiguration/>",
+               "x-amz-id-2: first" & CRLF &
+               "x-amz-id-2: second" & CRLF),
+            "GET", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<CORSConfiguration/>",
+               "x-amz-request-id:" & CRLF),
+            "GET", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<CORSConfiguration><CORSRule>" &
+                 "<AllowedMethod>GET</AllowedMethod></CORSRule>" &
+                 "</CORSConfiguration>"),
+            "GET", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              --  This test payload deliberately exceeds the paired 64-byte
+              --  caller-selected document ceiling; 64 is test policy only.
+              ("200 OK", "<CORSConfiguration>" &
+                 String'(1 .. 64 => ' ') & "</CORSConfiguration>"),
+            "GET", "/example-bucket?cors");
+         Serve
            (HTTP_Response ("200 OK", ""), "PUT", "/example-bucket?abac",
             Expected_Body_Root => "<AbacStatus",
             Expected_Content_MD5 => "*",
@@ -8467,6 +8519,129 @@ procedure S3_HTTP_Socket_Corpus is
               ("GetBucketOwnershipControls accepted malformed success XML");
             Must_Reject_Ownership
               ("GetBucketOwnershipControls accepted oversized success XML",
+               Small_Limits => True);
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_CORS
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity, "us-east-1", "20130524T000000Z");
+            Result : constant Low_Level.Get_Bucket_CORS_Outcome :=
+              Low_Level.Execute_Get_Bucket_CORS
+                (HTTP, Prepared, Timeout => 5.0);
+            Rule : constant Bucket_Controls.CORS_Rule :=
+              Result.Configuration.Rules.Element (1);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else not Result.Configuration.Is_Set
+              or else Result.Configuration.Rules.Length /= 1
+              or else not Rule.ID.Is_Set
+              or else US.To_String (Rule.ID.Value) /= "socket-rule"
+              or else Rule.Allowed_Headers.Length /= 1
+              or else Rule.Allowed_Headers.Element (1) /= "*"
+              or else Rule.Allowed_Methods.Length /= 2
+              or else Rule.Allowed_Methods.Element (2) /= "PUT"
+              or else Rule.Allowed_Origins.Element (1) /=
+                "https://example.test"
+              or else Rule.Expose_Headers.Element (1) /= "etag"
+              or else not Rule.Max_Age_Seconds.Is_Set
+              or else US.To_String (Rule.Max_Age_Seconds.Text) /=
+                "999999999999999999999999"
+            then
+               raise Program_Error with
+                 "GetBucketCors socket success mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_CORS
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant Low_Level.Get_Bucket_CORS_Outcome :=
+              Low_Level.Execute_Get_Bucket_CORS
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Configuration.Is_Set
+              or else not Result.Configuration.Rules.Is_Empty
+            then
+               raise Program_Error with
+                 "GetBucketCors outer absence mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_CORS
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant Low_Level.Get_Bucket_CORS_Outcome :=
+              Low_Level.Execute_Get_Bucket_CORS
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Get_Bucket_Control_Rejected
+              or else Result.Status /= 404
+              or else US.To_String (Result.Error.Code) /= "AccessDenied"
+              or else US.To_String (Result.Error.Request_ID) /=
+                "cors-error-request"
+              or else US.To_String (Result.Error.Host_ID) /=
+                "cors-error-host"
+            then
+               raise Program_Error with
+                 "GetBucketCors socket rejection mismatch";
+            end if;
+         end;
+         declare
+            procedure Must_Reject_CORS
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Bucket_CORS
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    (others => <>), Identity, "us-east-1",
+                    "20130524T000000Z");
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant Low_Level.Get_Bucket_CORS_Outcome :=
+                       (if Small_Limits
+                        then Low_Level.Execute_Get_Bucket_CORS
+                          (HTTP, Prepared, Timeout => 5.0,
+                           Limits =>
+                             --  Test-only caller policy paired with the
+                             --  oversized server fixture above.
+                             (Maximum_Document_Bytes => 64,
+                              Maximum_Depth          => 8,
+                              Maximum_Elements       => 32,
+                              Maximum_Text_Bytes     => 64))
+                        else Low_Level.Execute_Get_Bucket_CORS
+                          (HTTP, Prepared, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response => Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_CORS;
+         begin
+            Must_Reject_CORS
+              ("GetBucketCors accepted duplicate request ID");
+            Must_Reject_CORS
+              ("GetBucketCors accepted duplicate host ID");
+            Must_Reject_CORS
+              ("GetBucketCors accepted empty request ID");
+            Must_Reject_CORS
+              ("GetBucketCors accepted malformed success XML");
+            Must_Reject_CORS
+              ("GetBucketCors accepted oversized success XML",
                Small_Limits => True);
          end;
          declare

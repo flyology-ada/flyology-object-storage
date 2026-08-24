@@ -31,7 +31,7 @@ GetBucketAbac	extended	missing	covered	missing	covered
 GetBucketAccelerateConfiguration	extended	missing	covered	missing	covered
 GetBucketAcl	extended	missing	partial	missing	missing
 GetBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
-GetBucketCors	extended	missing	partial	missing	missing
+GetBucketCors	extended	missing	covered	missing	covered
 GetBucketEncryption	extended	missing	partial	missing	missing
 GetBucketIntelligentTieringConfiguration	extended	missing	partial	missing	missing
 GetBucketInventoryConfiguration	extended	missing	partial	missing	missing
