@@ -1,0 +1,15 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	552	1	Bucket	60	uri-label	true	projected	Require a valid bucket and project it into the exact signed bucket resource target.	POLC-RQ-001,POLC-RQ-005
+request	552	2	ObjectLockConfiguration	473	body	false	encoded	Preserve outer absence versus every nested presence combination in bounded exact XML.	POLC-RQ-002,POLC-RQ-003,POLC-RQ-007
+request	552	3	RequestPayer	599	header	false	projected	Admit only the pinned requester token and sign its exact header.	POLC-RQ-004,POLC-RQ-005
+request	552	4	Token	483	header	false	projected	Project the optional bounded Object Lock mutation token exactly once.	POLC-RQ-005
+request	552	5	ContentMD5	111	header	false	projected	Always sign exact MD5 over owned serialized bytes and validate any caller override.	POLC-RQ-007,POLC-RQ-008
+request	552	6	ChecksumAlgorithm	77	header	false	projected	Admit all ten exact algorithms and sign each matching digest over identical bytes.	POLC-RQ-008
+request	552	7	ExpectedBucketOwner	15	header	false	projected	Project and sign the optional bounded owner precondition.	POLC-RQ-005
+nested	473	1	ObjectLockEnabled	474	body	false	encoded	Preserve absence or encode only the exact Enabled value.	POLC-RQ-002,POLC-RQ-003
+nested	473	2	Rule	482	body	false	encoded	Preserve absence versus a present empty or populated Rule structure.	POLC-RQ-002,POLC-RQ-003
+nested	482	1	DefaultRetention	143	body	false	encoded	Preserve absence versus a present empty or populated DefaultRetention structure.	POLC-RQ-002,POLC-RQ-003
+nested	143	1	Mode	481	body	false	encoded	Preserve absence or encode only exact GOVERNANCE and COMPLIANCE values.	POLC-RQ-002,POLC-RQ-003
+nested	143	2	Days	141	body	false	encoded	Preserve exact arbitrary-precision signed decimal text without an invented numeric bound.	POLC-RQ-002,POLC-RQ-003
+nested	143	3	Years	718	body	false	encoded	Preserve exact arbitrary-precision signed decimal text without an invented numeric bound.	POLC-RQ-002,POLC-RQ-003
+response	551	1	RequestCharged	598	header	false	decoded	Decode at most one exact nonempty requester result header.	POLC-RS-003,POLC-TR-001

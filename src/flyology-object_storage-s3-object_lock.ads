@@ -150,4 +150,15 @@ package Flyology.Object_Storage.S3.Object_Lock is
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Object_Lock_Configuration;
 
+   --  Serialize one exact PutObjectLockConfiguration body.  Absence is
+   --  preserved independently at every nested structure and scalar member.
+   --  Days and Years remain arbitrary-precision signed decimal text.
+   --  @param Value Presence-preserving Object Lock configuration
+   --  @param Limits Caller-selected document, depth, element, and text limits
+   --  @return Exact bounded S3 ObjectLockConfiguration XML or empty payload
+   --  @exception Malformed_Object_Lock Value is inconsistent or exceeds limits
+   function Serialize_Configuration
+     (Value  : Object_Lock_Configuration;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String;
+
 end Flyology.Object_Storage.S3.Object_Lock;

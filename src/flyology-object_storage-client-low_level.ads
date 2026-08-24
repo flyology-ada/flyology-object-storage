@@ -1738,6 +1738,113 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Lock_Configuration_Outcome;
 
+   --  Every physical control in the pinned PutObjectLockConfiguration
+   --  request.  Token is the modeled Object Lock mutation token header.
+   --  @field Request_Payer Empty or the sole modeled value, requester
+   --  @field Token Optional exact Object Lock mutation token
+   --  @field Content_MD5 Optional exact caller-supplied 16-byte digest
+   --  @field Checksum_Algorithm Optional exact pinned SDK checksum algorithm
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Put_Object_Lock_Configuration_Parameters is record
+      Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
+      Token                 : Ada.Strings.Unbounded.Unbounded_String;
+      Content_MD5           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare one exact signed PutObjectLockConfiguration request.  The
+   --  serialized payload is copied into prepared owned storage and is never
+   --  retained by reference.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose Object Lock configuration is replaced
+   --  @param Value Presence-preserving Object Lock configuration payload
+   --  @param Parameters Optional checksum, token, payer, and owner controls
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Immutable prepared request with owned serialized bytes
+   function Prepare_Put_Object_Lock_Configuration
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Value      : S3.Object_Lock.Object_Lock_Configuration;
+      Parameters : Put_Object_Lock_Configuration_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String;
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request;
+
+   --  Every modeled PutObjectLockConfiguration success member.
+   --  @field Request_Charged Optional exact requester-pays result
+   type Put_Object_Lock_Configuration_Result is record
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Terminal PutObjectLockConfiguration response classification.
+   --  @enum Object_Lock_Configuration_Updated Exact bodyless 200 response
+   --  @enum Put_Object_Lock_Configuration_Rejected Bounded non-200 rejection
+   type Put_Object_Lock_Configuration_Outcome_Kind is
+     (Object_Lock_Configuration_Updated,
+      Put_Object_Lock_Configuration_Rejected);
+
+   --  Exact configuration mutation success or structured rejection.
+   --  @field Kind Response classification
+   --  @field Status Exact HTTP status
+   --  @field Result Modeled success headers
+   --  @field Error Bounded structured provider rejection
+   type Put_Object_Lock_Configuration_Outcome
+     (Kind : Put_Object_Lock_Configuration_Outcome_Kind :=
+       Put_Object_Lock_Configuration_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Lock_Configuration_Updated =>
+            Result : Put_Object_Lock_Configuration_Result;
+         when Put_Object_Lock_Configuration_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode one complete bounded PutObjectLockConfiguration response.
+   --  @param Status Exact HTTP status
+   --  @param Payload Complete bounded response body
+   --  @param Headers Modeled singleton success headers
+   --  @param Request_ID Optional provider request diagnostic
+   --  @param Host_ID Optional provider host diagnostic
+   --  @param Limits Shared response and XML error limits
+   --  @return Typed exact success or structured rejection
+   function Decode_Put_Object_Lock_Configuration_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Headers    : Put_Object_Lock_Configuration_Result;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Lock_Configuration_Outcome;
+
+   --  Execute exactly once with an owned non-replayable body source.  Any
+   --  exception after blocking call entry leaves publication unknown and
+   --  requires read-only reconciliation; callers must not automatically retry.
+   --  The 30-second default preserves the established low-level client timeout
+   --  policy and remains caller-overridable.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Matching prepared request
+   --  @param Timeout Whole-operation timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Shared response and XML error limits
+   --  @return Typed exact success or structured rejection
+   function Execute_Put_Object_Lock_Configuration
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Object_Lock_Configuration_Outcome;
+
    --  Every non-resource member in the pinned GetObjectAttributes request.
    --  Presence flags preserve omission for optional numeric headers.
    type Get_Object_Attributes_Parameters is record
@@ -4178,6 +4285,7 @@ private
       Get_Object_Retention_Operation,
       Put_Object_Retention_Operation,
       Get_Object_Lock_Configuration_Operation,
+      Put_Object_Lock_Configuration_Operation,
       Delete_Object_Operation,
       Delete_Objects_Operation,
       Create_Multipart_Operation,

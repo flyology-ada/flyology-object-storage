@@ -756,4 +756,108 @@ package body Flyology.Object_Storage.S3.Object_Lock is
            "malformed ObjectLockConfiguration XML";
    end Parse_Configuration;
 
+   function Serialize_Configuration
+     (Value  : Object_Lock_Configuration;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String
+   is
+      Result : US.Unbounded_String;
+      Enabled : constant String :=
+        (case Value.Enabled is
+            when Object_Lock_Enabled_Absent => "",
+            when Object_Lock_Enabled => "Enabled");
+      Mode : constant String :=
+        (case Value.Rule.Default_Value.Mode is
+            when Retention_Mode_Absent => "",
+            when Governance_Retention => "GOVERNANCE",
+            when Compliance_Retention => "COMPLIANCE");
+      Days : constant String :=
+        US.To_String (Value.Rule.Default_Value.Days.Text);
+      Years : constant String :=
+        US.To_String (Value.Rule.Default_Value.Years.Text);
+      Has_Enabled : constant Boolean := Enabled'Length > 0;
+      Has_Rule : constant Boolean := Value.Rule.Is_Set;
+      Has_Default : constant Boolean := Value.Rule.Default_Value.Is_Set;
+      Has_Mode : constant Boolean := Mode'Length > 0;
+      Has_Days : constant Boolean := Value.Rule.Default_Value.Days.Is_Set;
+      Has_Years : constant Boolean := Value.Rule.Default_Value.Years.Is_Set;
+      Required_Depth : constant Positive :=
+        (if Has_Mode or else Has_Days or else Has_Years then 4
+         elsif Has_Default then 3 elsif Has_Rule then 2 else 1);
+      Required_Elements : constant Positive :=
+        1 + Boolean'Pos (Has_Enabled) + Boolean'Pos (Has_Rule) +
+        Boolean'Pos (Has_Default) + Boolean'Pos (Has_Mode) +
+        Boolean'Pos (Has_Days) + Boolean'Pos (Has_Years);
+      Required_Text : constant Natural :=
+        Enabled'Length + Mode'Length + Days'Length + Years'Length;
+      --  Exact external REST/XML spellings and member order from pinned
+      --  shapes 473, 482, and 143; changing them changes compatibility.
+      Prefix : constant String :=
+        "<ObjectLockConfiguration xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/"">";
+      Suffix : constant String := "</ObjectLockConfiguration>";
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Object_Lock with
+              "ObjectLockConfiguration document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+
+      procedure Append_Field (Name, Text : String) is
+      begin
+         Append_Bounded ("<" & Name & ">");
+         Append_Bounded (Text);
+         Append_Bounded ("</" & Name & ">");
+      end Append_Field;
+   begin
+      if (not Has_Days and then Days'Length > 0)
+        or else (not Has_Years and then Years'Length > 0)
+        or else (Has_Days and then not Valid_Integer_Text (Days))
+        or else (Has_Years and then not Valid_Integer_Text (Years))
+        or else (not Has_Default
+                 and then (Has_Mode or else Has_Days or else Has_Years))
+        or else (not Has_Rule and then Has_Default)
+        or else (not Value.Is_Set and then
+                   (Has_Enabled or else Has_Rule))
+      then
+         raise Malformed_Object_Lock with
+           "inconsistent ObjectLockConfiguration value";
+      elsif not Value.Is_Set then
+         return "";
+      elsif Limits.Maximum_Depth < Required_Depth
+        or else Limits.Maximum_Elements < Required_Elements
+        or else Limits.Maximum_Text_Bytes < Required_Text
+      then
+         raise Malformed_Object_Lock with
+           "ObjectLockConfiguration structure exceeds caller limit";
+      end if;
+
+      Append_Bounded (Prefix);
+      if Has_Enabled then
+         Append_Field ("ObjectLockEnabled", Enabled);
+      end if;
+      if Has_Rule then
+         Append_Bounded ("<Rule>");
+         if Has_Default then
+            Append_Bounded ("<DefaultRetention>");
+            if Has_Mode then
+               Append_Field ("Mode", Mode);
+            end if;
+            if Has_Days then
+               Append_Field ("Days", Days);
+            end if;
+            if Has_Years then
+               Append_Field ("Years", Years);
+            end if;
+            Append_Bounded ("</DefaultRetention>");
+         end if;
+         Append_Bounded ("</Rule>");
+      end if;
+      Append_Bounded (Suffix);
+      return US.To_String (Result);
+   end Serialize_Configuration;
+
 end Flyology.Object_Storage.S3.Object_Lock;

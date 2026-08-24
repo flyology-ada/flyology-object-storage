@@ -82,6 +82,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Delete_Object_Annotation_Outcome_Kind;
    use type Low_Level.Put_Object_Legal_Hold_Outcome_Kind;
    use type Low_Level.Put_Object_Retention_Outcome_Kind;
+   use type Low_Level.Put_Object_Lock_Configuration_Outcome_Kind;
    use type Objects.Delete_Outcome_Kind;
    use type Low_Level.Put_Bucket_Versioning_Outcome_Kind;
    use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
@@ -724,6 +725,8 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Checksum : String := "";
          Expected_Checksum_Type : String := "";
          Expected_Mpu_Object_Size : String := "";
+         Expected_Body_Exact : String := "";
+         Expected_Object_Lock_Token : String := "";
          Require_Zero_Content_Length : Boolean := False;
          Fragmented         : Boolean := False;
          Reuse_Peer         : Boolean := False;
@@ -942,6 +945,11 @@ procedure S3_HTTP_Socket_Corpus is
                            Ada.Characters.Handling.To_Lower
                              (Expected_Request_Payer))
                     or else
+                      (Expected_Object_Lock_Token'Length > 0
+                       and then Exact_Header_Value
+                         (Header, "x-amz-bucket-object-lock-token") /=
+                           Expected_Object_Lock_Token)
+                    or else
                       (Expected_MFA'Length > 0
                        and then Header_Value (Lower, "x-amz-mfa") /=
                          Ada.Characters.Handling.To_Lower (Expected_MFA))
@@ -987,6 +995,10 @@ procedure S3_HTTP_Socket_Corpus is
                       (Expected_Request_Payer'Length > 0
                        and then Ada.Strings.Fixed.Index
                          (Lower, ";x-amz-request-payer") = 0)
+                    or else
+                      (Expected_Object_Lock_Token'Length > 0
+                       and then Ada.Strings.Fixed.Index
+                         (Lower, ";x-amz-bucket-object-lock-token") = 0)
                     or else
                       (Expected_MFA'Length > 0
                        and then Ada.Strings.Fixed.Index
@@ -1217,14 +1229,19 @@ procedure S3_HTTP_Socket_Corpus is
             end loop;
             if US.Length (Request_Body) /= Expected_Length then
                raise Program_Error with "request body length mismatch";
-            elsif Expected_Body_Root'Length > 0 then
+            elsif Expected_Body_Root'Length > 0
+              or else Expected_Body_Exact'Length > 0
+            then
                declare
                   Body_Text : constant String := US.To_String (Request_Body);
                   Expected_Hash : constant String :=
                     SigV4.SHA256_Hex (Body_Text);
                begin
-                  if Ada.Strings.Fixed.Index
-                    (Body_Text, Expected_Body_Root) = 0
+                  if (Expected_Body_Root'Length > 0
+                      and then Ada.Strings.Fixed.Index
+                        (Body_Text, Expected_Body_Root) = 0)
+                    or else (Expected_Body_Exact'Length > 0
+                             and then Body_Text /= Expected_Body_Exact)
                     or else Header_Value
                       (Lower, "x-amz-content-sha256") /= Expected_Hash
                   then
@@ -3993,6 +4010,75 @@ procedure S3_HTTP_Socket_Corpus is
            ("", "PUT",
             "/example-bucket/object%20key?retention&versionId=lost",
             Expected_Body_Root => "<Retention",
+            Expected_Content_MD5 => "*", Keep_Open => False);
+         --  Pinned PutObjectLockConfiguration fixtures cover exact owned XML,
+         --  token and checksum projection, strict singleton output handling,
+         --  and the post-admission lost-response ambiguity boundary.
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT", "/example-bucket?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Body_Exact =>
+              "<ObjectLockConfiguration xmlns=""http://s3.amazonaws.com/" &
+              "doc/2006-03-01/""><ObjectLockEnabled>Enabled" &
+              "</ObjectLockEnabled><Rule><DefaultRetention><Mode>" &
+              "GOVERNANCE</Mode><Days>30</Days></DefaultRetention>" &
+              "</Rule></ObjectLockConfiguration>",
+            Expected_Content_MD5 => "Kr478VnRcOkuIl6e8I6oQQ==",
+            Expected_Object_Lock_Token => "socket-lock-token",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "+/bKJQ==");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket?object-lock",
+            Expected_Content_MD5 => "1B2M2Y8AsgTpgAmY7PhCfg==",
+            Require_Zero_Content_Length => True);
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: put-lock-config-request" & CRLF &
+               "x-amz-id-2: put-lock-config-host" & CRLF),
+            "PUT", "/example-bucket?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", "x"), "PUT",
+            "/example-bucket?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT", "/example-bucket?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-request-charged:" & CRLF),
+            "PUT", "/example-bucket?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-request-id: first" & CRLF &
+                 "x-amz-request-id: second" & CRLF),
+            "PUT", "/example-bucket?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", String'(1 .. 65 => ' ')),
+            "PUT", "/example-bucket?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           ("", "PUT", "/example-bucket?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
             Expected_Content_MD5 => "*", Keep_Open => False);
          Serve
            (HTTP_Response
@@ -10402,6 +10488,176 @@ procedure S3_HTTP_Socket_Corpus is
                if not Ambiguous then
                   raise Program_Error with
                     "lost PutObjectRetention was not ambiguous";
+               end if;
+            end;
+         end;
+         declare
+            function Prepare
+              (Full_Controls : Boolean := False;
+               Present : Boolean := True)
+               return Low_Level.Prepared_Request is
+              (Low_Level.Prepare_Put_Object_Lock_Configuration
+                 (Origin, Low_Level.Path_Style, "example-bucket",
+                  (Is_Set => Present,
+                   Enabled =>
+                     (if Present then Object_Lock.Object_Lock_Enabled
+                      else Object_Lock.Object_Lock_Enabled_Absent),
+                   Rule =>
+                     (Is_Set => Present,
+                      Default_Value =>
+                        (Is_Set => Present,
+                         Mode =>
+                           (if Present
+                            then Object_Lock.Governance_Retention
+                            else Object_Lock.Retention_Mode_Absent),
+                         Days =>
+                           (Is_Set => Present,
+                            Text =>
+                              (if Present
+                               then US.To_Unbounded_String ("30")
+                               else US.Null_Unbounded_String)),
+                         Years => (others => <>)))),
+                  (Request_Payer =>
+                     (if Full_Controls
+                      then US.To_Unbounded_String ("requester")
+                      else US.Null_Unbounded_String),
+                   Token =>
+                     (if Full_Controls
+                      then US.To_Unbounded_String ("socket-lock-token")
+                      else US.Null_Unbounded_String),
+                   Content_MD5 => US.Null_Unbounded_String,
+                   Checksum_Algorithm =>
+                     (if Full_Controls
+                      then US.To_Unbounded_String ("CRC32")
+                      else US.Null_Unbounded_String),
+                   Expected_Bucket_Owner =>
+                     (if Full_Controls
+                      then US.To_Unbounded_String ("123456789012")
+                      else US.Null_Unbounded_String)),
+                  Identity, "us-east-1", "20130524T000000Z"));
+
+            procedure Must_Reject_Put_Lock_Configuration
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant
+                       Low_Level.Put_Object_Lock_Configuration_Outcome :=
+                         (if Small_Limits
+                          then
+                            Low_Level.Execute_Put_Object_Lock_Configuration
+                              (HTTP, Prepare, Timeout => 5.0,
+                               Limits =>
+                                 --  Test-only caller response ceiling paired
+                                 --  with the 65-byte server fixture above.
+                                 (Maximum_Document_Bytes => 64,
+                                  Maximum_Depth          => 8,
+                                  Maximum_Elements       => 32,
+                                  Maximum_Text_Bytes     => 64))
+                          else
+                            Low_Level.Execute_Put_Object_Lock_Configuration
+                              (HTTP, Prepare, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response |
+                       Flyology.HTTP.Protocol_Error =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_Put_Lock_Configuration;
+         begin
+            declare
+               Result : constant
+                 Low_Level.Put_Object_Lock_Configuration_Outcome :=
+                   Low_Level.Execute_Put_Object_Lock_Configuration
+                     (HTTP, Prepare (Full_Controls => True), Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                   Low_Level.Object_Lock_Configuration_Updated
+                 or else Result.Status /= 200
+                 or else US.To_String (Result.Result.Request_Charged) /=
+                   "requester"
+               then
+                  raise Program_Error with
+                    "PutObjectLockConfiguration socket success mismatch";
+               end if;
+            end;
+            declare
+               Result : constant
+                 Low_Level.Put_Object_Lock_Configuration_Outcome :=
+                   Low_Level.Execute_Put_Object_Lock_Configuration
+                     (HTTP, Prepare (Present => False), Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                   Low_Level.Object_Lock_Configuration_Updated
+                 or else Result.Status /= 200
+               then
+                  raise Program_Error with
+                    "PutObjectLockConfiguration absent success mismatch";
+               end if;
+            end;
+            declare
+               Result : constant
+                 Low_Level.Put_Object_Lock_Configuration_Outcome :=
+                   Low_Level.Execute_Put_Object_Lock_Configuration
+                     (HTTP, Prepare, Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                   Low_Level.Put_Object_Lock_Configuration_Rejected
+                 or else Result.Status /= 403
+                 or else US.To_String (Result.Error.Code) /= "AccessDenied"
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "put-lock-config-request"
+                 or else US.To_String (Result.Error.Host_ID) /=
+                   "put-lock-config-host"
+               then
+                  raise Program_Error with
+                    "PutObjectLockConfiguration rejection mismatch";
+               end if;
+            end;
+            Must_Reject_Put_Lock_Configuration
+              ("PutObjectLockConfiguration accepted success body");
+            Must_Reject_Put_Lock_Configuration
+              ("PutObjectLockConfiguration accepted duplicate charged");
+            Must_Reject_Put_Lock_Configuration
+              ("PutObjectLockConfiguration accepted empty charged");
+            Must_Reject_Put_Lock_Configuration
+              ("PutObjectLockConfiguration accepted duplicate request ID");
+            Must_Reject_Put_Lock_Configuration
+              ("PutObjectLockConfiguration accepted oversized response",
+               Small_Limits => True);
+            declare
+               Ambiguous : Boolean := False;
+            begin
+               begin
+                  declare
+                     Unexpected : constant
+                       Low_Level.Put_Object_Lock_Configuration_Outcome :=
+                         Low_Level.Execute_Put_Object_Lock_Configuration
+                           (HTTP, Prepare, Timeout => 5.0);
+                     pragma Unreferenced (Unexpected);
+                  begin
+                     raise Program_Error with
+                       "lost PutObjectLockConfiguration returned outcome";
+                  end;
+               exception
+                  when Low_Level.Invalid_Request |
+                       Low_Level.Invalid_Response |
+                       Program_Error =>
+                     raise;
+                  when others =>
+                     Ambiguous := True;
+               end;
+               if not Ambiguous then
+                  raise Program_Error with
+                    "lost PutObjectLockConfiguration was not ambiguous";
                end if;
             end;
          end;

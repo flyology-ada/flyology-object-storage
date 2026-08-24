@@ -101,7 +101,7 @@ PutObject	core	covered	covered	partial	covered
 PutObjectAcl	extended	missing	partial	missing	missing
 PutObjectAnnotation	extended	missing	partial	missing	missing
 PutObjectLegalHold	extended	missing	covered	missing	covered
-PutObjectLockConfiguration	extended	missing	partial	missing	missing
+PutObjectLockConfiguration	extended	missing	covered	missing	covered
 PutObjectRetention	extended	missing	covered	missing	covered
 PutObjectTagging	core	covered	covered	covered	covered
 PutPublicAccessBlock	extended	missing	covered	missing	covered
