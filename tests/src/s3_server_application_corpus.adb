@@ -2700,6 +2700,39 @@ procedure S3_Server_Application_Corpus is
          declare
             Document : constant String :=
               Multipart.Serialize_Complete_Request (Completion);
+            Missing_Query : constant SigV4.Name_Value_Array :=
+              (1 => SigV4.Pair ("uploadId", "missing-completion"));
+            Complete_Body_Limit : constant Positive := 2 * 1_024 * 1_024;
+            --  Mirrors the server's existing project-policy admission ceiling
+            --  so this corpus gates both accepted wire compatibility at the
+            --  boundary and rejection at one byte beyond it.
+
+            procedure Reject_Control
+              (Headers         : String;
+               Code            : String;
+               Label           : String;
+               Against_Missing : Boolean := False;
+               Corrupt         : Boolean := False;
+               Payload         : String := Document)
+            is
+               Selected_Query : constant SigV4.Name_Value_Array :=
+                 (if Against_Missing then Missing_Query else Query);
+               Value : constant String := Run
+                 (Signed_Query_Body_Request
+                    ("POST", "/test-bucket/multipart-object",
+                     Selected_Query, Payload, Headers,
+                     Corrupt_Signature => Corrupt));
+            begin
+               Require
+                 (not Has (Value, "200 OK")
+                  and then Has (Value, "<Code>" & Code & "</Code>")
+                  and then
+                    (not Against_Missing
+                     or else not Has (Value, "<Code>NoSuchUpload</Code>")),
+                  "CompleteMultipartUpload accepted " & Label & ": " &
+                  Value);
+            end Reject_Control;
+
             Wrong_Size : constant String := Run
               (Signed_Query_Body_Header_Request
                  ("POST", "/test-bucket/multipart-object", Query, Document,
@@ -2716,31 +2749,166 @@ procedure S3_Server_Application_Corpus is
               (Signed_Query_Body_Header_Request
                  ("POST", "/test-bucket/multipart-object", Query, Document,
                   "x-amz-checksum-algorithm", "CRC32"));
-            Response : constant String := Run
-              (Signed_Query_Body_Request
-                 ("POST", "/test-bucket/multipart-object", Query, Document,
-                  "x-amz-checksum-algorithm: CRC64NVME" & CRLF &
-                  "x-amz-checksum-type: FULL_OBJECT" & CRLF &
-                  "x-amz-mp-object-size: 14" & CRLF),
-               Receive_Max => 2);
-            Parsed : constant Multipart.Complete_Multipart_Upload_Result :=
-              Multipart.Parse_Complete_Result (Response_Body (Response));
          begin
-            Require
-              (Has (Wrong_Size, "InvalidRequest")
-               and then Has (Failed_Match, "PreconditionFailed")
-               and then Has (Wrong_Type, "<Code>BadDigest</Code>")
-               and then Has
-                 (Wrong_Algorithm, "<Code>InvalidRequest</Code>")
-               and then Has (Response, "200 OK")
-               and then Has (Response, "<ETag>""")
-               and then Has (Response, "-1""</ETag>")
-               and then US.To_String (Parsed.Checksum_CRC64NVME) =
-                 Expected_Checksum
-               and then US.To_String (Parsed.Checksum_Type) =
-                 "FULL_OBJECT",
-               "CompleteMultipartUpload server response mismatch: " &
-               Response);
+            Reject_Control
+              ("x-amz-request-payer: owner" & CRLF,
+               "InvalidArgument", "invalid request payer");
+            Reject_Control
+              ("x-amz-request-payer: " & CRLF,
+               "InvalidArgument", "empty request payer");
+            Reject_Control
+              ("x-amz-request-payer: requester" & CRLF &
+               "x-amz-request-payer: requester" & CRLF,
+               "InvalidRequest", "duplicate request payer");
+            Reject_Control
+              ("x-amz-request-payer: requester" & CRLF,
+               "NotImplemented", "unsupported requester pays");
+            Reject_Control
+              ("x-amz-expected-bucket-owner: different-owner" & CRLF,
+               "AccessDenied", "mismatched expected owner");
+            Reject_Control
+              ("x-amz-expected-bucket-owner: " & CRLF,
+               "InvalidRequest", "empty expected owner");
+            Reject_Control
+              ("x-amz-expected-bucket-owner: test-principal" & CRLF &
+               "x-amz-expected-bucket-owner: test-principal" & CRLF,
+               "InvalidRequest", "duplicate expected owner");
+            Reject_Control
+              ("x-amz-expected-bucket-owner: test-principal" & CRLF &
+               "x-amz-mp-object-size: invalid" & CRLF,
+               "InvalidArgument", "matching owner with malformed size");
+            Reject_Control
+              ("if-match: bad,etag" & CRLF,
+               "InvalidArgument", "malformed destination If-Match");
+            Reject_Control
+              ("if-match: *, ""other""" & CRLF,
+               "InvalidArgument", "mixed wildcard destination If-Match");
+            Reject_Control
+              ("if-none-match: " & CRLF,
+               "InvalidArgument", "empty destination If-None-Match");
+            Reject_Control
+              ("x-amz-mp-object-size: " & CRLF,
+               "InvalidArgument", "empty expected object size");
+            Reject_Control
+              ("x-amz-checksum-algorithm: UNKNOWN" & CRLF,
+               "InvalidRequest", "unknown checksum algorithm");
+            Reject_Control
+              ("x-amz-checksum-type: UNKNOWN" & CRLF,
+               "InvalidRequest", "unknown checksum type");
+            Reject_Control
+              ("x-amz-checksum-unknown: value" & CRLF,
+               "InvalidRequest", "unknown checksum value header");
+            Reject_Control
+              ("x-amz-checksum-crc64nvme: malformed" & CRLF,
+               "InvalidRequest", "malformed checksum digest");
+            Reject_Control
+              ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+               CRLF, "InvalidRequest", "incomplete SSE-C group");
+            Reject_Control
+              ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+               CRLF &
+               "x-amz-server-side-encryption-customer-key: " &
+               SSE_Test_Key & CRLF &
+               "x-amz-server-side-encryption-customer-key-md5: " &
+               SSE_Test_Key_MD5 & CRLF,
+               "InvalidRequest", "SSE-C on an unencrypted upload");
+            Reject_Control
+              ("x-amz-server-side-encryption: AES256" & CRLF,
+               "NotImplemented", "unsupported server-side encryption");
+            Reject_Control
+              ("if-match: bad,etag" & CRLF,
+               "InvalidArgument", "missing-upload malformed condition",
+               Against_Missing => True);
+            Reject_Control
+              ("x-amz-mp-object-size: invalid" & CRLF,
+               "InvalidArgument", "missing-upload malformed size",
+               Against_Missing => True);
+            Reject_Control
+              ("x-amz-checksum-algorithm: UNKNOWN" & CRLF,
+               "InvalidRequest", "missing-upload unknown algorithm",
+               Against_Missing => True);
+            Reject_Control
+              ("x-amz-checksum-type: UNKNOWN" & CRLF,
+               "InvalidRequest", "missing-upload unknown checksum type",
+               Against_Missing => True);
+            Reject_Control
+              ("x-amz-checksum-crc64nvme: malformed" & CRLF,
+               "InvalidRequest", "missing-upload malformed checksum",
+               Against_Missing => True);
+            declare
+               Auth_Response : constant String := Run
+                 (Signed_Query_Body_Request
+                    ("POST", "/test-bucket/multipart-object", Missing_Query,
+                     Document,
+                     "x-amz-request-payer: owner" & CRLF &
+                     "x-amz-expected-bucket-owner: different-owner" & CRLF &
+                     "x-amz-mp-object-size: invalid" & CRLF,
+                     Corrupt_Signature => True));
+            begin
+               Require
+                 (Has (Auth_Response, "<Code>SignatureDoesNotMatch</Code>")
+                  and then not Has (Auth_Response, "NoSuchUpload")
+                  and then not Has (Auth_Response, "InvalidArgument")
+                  and then not Has (Auth_Response, "AccessDenied"),
+                  "CompleteMultipartUpload controls ran before " &
+                  "authentication: " & Auth_Response);
+            end;
+            declare
+               Exact_Document : constant String :=
+                 Document &
+                 String'
+                   (1 .. Complete_Body_Limit - Document'Length => ' ');
+               One_Past_Document : constant String := Exact_Document & ' ';
+               Exact_Response : constant String := Run
+                 (Signed_Query_Body_Request
+                    ("POST", "/test-bucket/multipart-object", Missing_Query,
+                     Exact_Document));
+               One_Past_Response : constant String := Run
+                 (Signed_Query_Body_Request
+                    ("POST", "/test-bucket/multipart-object", Missing_Query,
+                     One_Past_Document));
+            begin
+               Require
+                 (Has (Exact_Response, "<Code>NoSuchUpload</Code>")
+                  and then not Has
+                    (Exact_Response, "<Code>EntityTooLarge</Code>"),
+                  "CompleteMultipartUpload rejected its exact body limit: " &
+                  Exact_Response);
+               Require
+                 (Has (One_Past_Response, "<Code>EntityTooLarge</Code>"),
+                  "CompleteMultipartUpload accepted its body limit plus " &
+                  "one: " & One_Past_Response);
+            end;
+            declare
+               Response : constant String := Run
+                 (Signed_Query_Body_Request
+                    ("POST", "/test-bucket/multipart-object", Query,
+                     Document,
+                     "x-amz-checksum-algorithm: CRC64NVME" & CRLF &
+                     "x-amz-checksum-type: FULL_OBJECT" & CRLF &
+                     "x-amz-mp-object-size: 14" & CRLF),
+                  Receive_Max => 2);
+               Parsed : constant
+                 Multipart.Complete_Multipart_Upload_Result :=
+                   Multipart.Parse_Complete_Result
+                     (Response_Body (Response));
+            begin
+               Require
+                 (Has (Wrong_Size, "InvalidRequest")
+                  and then Has (Failed_Match, "PreconditionFailed")
+                  and then Has (Wrong_Type, "<Code>BadDigest</Code>")
+                  and then Has
+                    (Wrong_Algorithm, "<Code>InvalidRequest</Code>")
+                  and then Has (Response, "200 OK")
+                  and then Has (Response, "<ETag>""")
+                  and then Has (Response, "-1""</ETag>")
+                  and then US.To_String (Parsed.Checksum_CRC64NVME) =
+                    Expected_Checksum
+                  and then US.To_String (Parsed.Checksum_Type) =
+                    "FULL_OBJECT",
+                  "CompleteMultipartUpload server response mismatch: " &
+                  Response);
+            end;
          end;
       end;
       declare

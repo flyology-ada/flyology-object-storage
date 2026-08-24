@@ -1701,7 +1701,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          return;
       elsif Has_Encryption_Header
         and then Operation not in Copy_Object | Put_Object | Head_Object |
-          Get_Object | Get_Object_Attributes | List_Multipart_Parts
+          Get_Object | Get_Object_Attributes | List_Multipart_Parts |
+          Complete_Multipart
       then
          Send_Error
            (X, 501, "NotImplemented",
@@ -4285,6 +4286,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     (X, "x-amz-checksum-type");
                   Value_Algorithm : constant Checksum_Algorithm :=
                     Checksum_Value_Algorithm;
+                  Requested_Algorithm : Checksum_Algorithm := No_Checksum;
+                  Requested_Method : Checksum_Method := No_Checksum_Method;
                   Page : Backends.Multipart_Part_Page;
 
                   function Bare_ETag (Value : String) return String is
@@ -4336,6 +4339,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     or else Algorithm_Count > 1
                     or else Apps.Request_Header_Count
                       (X, "x-amz-sdk-checksum-algorithm") > 0
+                    or else Checksum_Header_Count /=
+                      Value_Count + Algorithm_Count + Type_Count
                   then
                      Send_Error
                        (X, 400, "InvalidRequest",
@@ -4367,6 +4372,98 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         "The multipart upload does not use SSE-C",
                         Target_Text);
                      return;
+                  elsif Has_Encryption_Header then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Server-side encryption is not implemented",
+                        Target_Text);
+                     return;
+                  end if;
+                  if Match_Count = 1 then
+                     Options.Conditions.If_Match := US.To_Unbounded_String
+                       (Apps.Request_Header (X, "if-match"));
+                  end if;
+                  if None_Count = 1 then
+                     Options.Conditions.If_None_Match :=
+                       US.To_Unbounded_String
+                         (Apps.Request_Header (X, "if-none-match"));
+                  end if;
+                  if (Match_Count = 1
+                      and then US.Length (Options.Conditions.If_Match) = 0)
+                    or else
+                      (None_Count = 1
+                       and then
+                         US.Length (Options.Conditions.If_None_Match) = 0)
+                    or else not Backends.Valid_Write_Conditions
+                      (Options.Conditions)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "A multipart destination condition is invalid",
+                        Target_Text);
+                     return;
+                  end if;
+                  if Size_Count = 1 then
+                     declare
+                        Parsed : constant S3.Wire_Core.Byte_Count_Result :=
+                          S3.Wire_Core.Parse_Byte_Count
+                            (Apps.Request_Header
+                               (X, "x-amz-mp-object-size"));
+                     begin
+                        if not Parsed.Valid then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The multipart object size is invalid",
+                              Target_Text);
+                           return;
+                        end if;
+                        Options.Expected_Size :=
+                          (Kind => Backends.Known, Bytes => Parsed.Value);
+                     end;
+                  end if;
+                  if Algorithm_Count = 1 then
+                     declare
+                        Valid : Boolean := False;
+                     begin
+                        Requested_Algorithm := Parse_Checksum_Algorithm
+                          (Apps.Request_Header
+                             (X, "x-amz-checksum-algorithm"), Valid);
+                        if not Valid then
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "The multipart checksum algorithm is invalid",
+                              Target_Text);
+                           return;
+                        end if;
+                     end;
+                  end if;
+                  if Type_Count = 1 then
+                     declare
+                        Valid : Boolean := False;
+                     begin
+                        Requested_Method := Parse_Checksum_Method
+                          (Apps.Request_Header (X, "x-amz-checksum-type"),
+                           Valid);
+                        if not Valid then
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "The multipart checksum type is invalid",
+                              Target_Text);
+                           return;
+                        end if;
+                     end;
+                  end if;
+                  if Value_Count = 1
+                    and then not Checksum_Engine.Valid_Digest
+                      (Apps.Request_Header
+                         (X, Checksum_Header_Name (Value_Algorithm)),
+                       Value_Algorithm)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The multipart completion checksum is malformed",
+                        Target_Text);
+                     return;
                   end if;
                   Store.List_Multipart_Parts
                     (Bucket, Key,
@@ -4394,43 +4491,22 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      return;
                   end if;
                   if Algorithm_Count = 1 then
-                     declare
-                        Algorithm_Valid : Boolean := False;
-                        Algorithm : constant Checksum_Algorithm :=
-                          Parse_Checksum_Algorithm
-                            (Apps.Request_Header
-                               (X, "x-amz-checksum-algorithm"),
-                             Algorithm_Valid);
-                     begin
-                        if not Algorithm_Valid
-                          or else Algorithm /= Page.Checksum.Algorithm
-                        then
-                           Send_Error
-                             (X, 400, "InvalidRequest",
-                              "The multipart checksum algorithm is invalid",
-                              Target_Text);
-                           return;
-                        end if;
-                     end;
+                     if Requested_Algorithm /= Page.Checksum.Algorithm then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The multipart checksum algorithm is invalid",
+                           Target_Text);
+                        return;
+                     end if;
                   end if;
                   if Type_Count = 1 then
-                     declare
-                        Method_Valid : Boolean := False;
-                        Method : constant Checksum_Method :=
-                          Parse_Checksum_Method
-                            (Apps.Request_Header (X, "x-amz-checksum-type"),
-                             Method_Valid);
-                     begin
-                        if not Method_Valid
-                          or else Method /= Page.Checksum.Method
-                        then
-                           Send_Error
-                             (X, 400, "BadDigest",
-                              "The multipart checksum type did not match",
-                              Target_Text);
-                           return;
-                        end if;
-                     end;
+                     if Requested_Method /= Page.Checksum.Method then
+                        Send_Error
+                          (X, 400, "BadDigest",
+                           "The multipart checksum type did not match",
+                           Target_Text);
+                        return;
+                     end if;
                   end if;
                   if Value_Count = 1 then
                      Options.Expected_Checksum :=
@@ -4439,33 +4515,6 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Value     => US.To_Unbounded_String
                           (Apps.Request_Header
                              (X, Checksum_Header_Name (Value_Algorithm))));
-                  end if;
-                  if Size_Count = 1 then
-                     declare
-                        Parsed : constant S3.Wire_Core.Byte_Count_Result :=
-                          S3.Wire_Core.Parse_Byte_Count
-                            (Apps.Request_Header
-                               (X, "x-amz-mp-object-size"));
-                     begin
-                        if not Parsed.Valid then
-                           Send_Error
-                             (X, 400, "InvalidArgument",
-                              "The multipart object size is invalid",
-                              Target_Text);
-                           return;
-                        end if;
-                        Options.Expected_Size :=
-                          (Kind => Backends.Known, Bytes => Parsed.Value);
-                     end;
-                  end if;
-                  if Match_Count = 1 then
-                     Options.Conditions.If_Match := US.To_Unbounded_String
-                       (Apps.Request_Header (X, "if-match"));
-                  end if;
-                  if None_Count = 1 then
-                     Options.Conditions.If_None_Match :=
-                       US.To_Unbounded_String
-                         (Apps.Request_Header (X, "if-none-match"));
                   end if;
                   for Part of Request.Parts loop
                      declare
