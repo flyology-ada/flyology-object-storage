@@ -91,7 +91,9 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Low_Level.Get_Object_Legal_Hold_Outcome_Kind;
    use type Low_Level.Get_Object_Retention_Outcome_Kind;
+   use type Low_Level.Get_Object_Lock_Configuration_Outcome_Kind;
    use type Object_Lock.Legal_Hold_Status;
+   use type Object_Lock.Object_Lock_Enabled_Status;
    use type Object_Lock.Retention_Mode;
    use type Buckets.Put_Tags_Outcome_Kind;
    use type Buckets.Get_Tags_Outcome_Kind;
@@ -3395,6 +3397,58 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "<Retention>" & String'(1 .. 42 => ' ') &
                "</Retention>"),
             "GET", "/example-bucket/object?retention");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ObjectLockConfiguration>" &
+                 "<ObjectLockEnabled>Enabled</ObjectLockEnabled><Rule>" &
+                 "<DefaultRetention><Years>-0002</Years><Days>" &
+                 "+123456789012345678901234567890</Days>" &
+                 "<Mode>COMPLIANCE</Mode></DefaultRetention></Rule>" &
+                 "</ObjectLockConfiguration>",
+               "x-amz-request-id: lock-configuration-request" & CRLF &
+               "x-amz-id-2: lock-configuration-host" & CRLF),
+            "GET", "/example-bucket?object-lock",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", "<ObjectLockConfiguration/>"),
+            "GET", "/example-bucket?object-lock");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: lock-configuration-error-request" &
+                 CRLF &
+               "x-amz-id-2: lock-configuration-error-host" & CRLF),
+            "GET", "/example-bucket?object-lock");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ObjectLockConfiguration/>",
+               "x-amz-request-id: first" & CRLF &
+               "x-amz-request-id: second" & CRLF),
+            "GET", "/example-bucket?object-lock");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ObjectLockConfiguration/>",
+               "x-amz-id-2: first" & CRLF &
+               "x-amz-id-2: second" & CRLF),
+            "GET", "/example-bucket?object-lock");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ObjectLockConfiguration/>",
+               "x-amz-request-id:" & CRLF),
+            "GET", "/example-bucket?object-lock");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ObjectLockConfiguration><Unknown/>" &
+                 "</ObjectLockConfiguration>"),
+            "GET", "/example-bucket?object-lock");
+         Serve
+           (HTTP_Response
+              --  14 text bytes plus 51 markup bytes are exactly one past
+              --  the paired caller-selected 64-byte document limit.
+              ("200 OK", "<ObjectLockConfiguration>" &
+                 String'(1 .. 14 => ' ') &
+                 "</ObjectLockConfiguration>"),
+            "GET", "/example-bucket?object-lock");
          Serve
            (HTTP_Response
               ("403 Forbidden", Error_XML,
@@ -8537,6 +8591,137 @@ procedure S3_HTTP_Socket_Corpus is
               ("GetObjectRetention accepted malformed success XML");
             Must_Reject_Retention
               ("GetObjectRetention accepted oversized success XML",
+               Small_Limits => True);
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Lock_Configuration
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity, "us-east-1", "20130524T000000Z");
+            Result : constant
+              Low_Level.Get_Object_Lock_Configuration_Outcome :=
+                Low_Level.Execute_Get_Object_Lock_Configuration
+                  (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Object_Lock_Configuration_Found
+              or else not Result.Configuration.Is_Set
+              or else Result.Configuration.Enabled /=
+                Object_Lock.Object_Lock_Enabled
+              or else not Result.Configuration.Rule.Is_Set
+              or else not Result.Configuration.Rule.Default_Value.Is_Set
+              or else Result.Configuration.Rule.Default_Value.Mode /=
+                Object_Lock.Compliance_Retention
+              or else not Result.Configuration.Rule.Default_Value.Days.Is_Set
+              or else US.To_String
+                (Result.Configuration.Rule.Default_Value.Days.Text) /=
+                "+123456789012345678901234567890"
+              or else not Result.Configuration.Rule.Default_Value.Years.Is_Set
+              or else US.To_String
+                (Result.Configuration.Rule.Default_Value.Years.Text) /=
+                "-0002"
+            then
+               raise Program_Error with
+                 "GetObjectLockConfiguration socket success mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Lock_Configuration
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant
+              Low_Level.Get_Object_Lock_Configuration_Outcome :=
+                Low_Level.Execute_Get_Object_Lock_Configuration
+                  (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Object_Lock_Configuration_Found
+              or else not Result.Configuration.Is_Set
+              or else Result.Configuration.Enabled /=
+                Object_Lock.Object_Lock_Enabled_Absent
+              or else Result.Configuration.Rule.Is_Set
+            then
+               raise Program_Error with
+                 "GetObjectLockConfiguration nested absence mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Lock_Configuration
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant
+              Low_Level.Get_Object_Lock_Configuration_Outcome :=
+                Low_Level.Execute_Get_Object_Lock_Configuration
+                  (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /=
+                Low_Level.Get_Object_Lock_Configuration_Rejected
+              or else Result.Status /= 403
+              or else US.To_String (Result.Error.Code) /= "AccessDenied"
+              or else US.To_String (Result.Error.Request_ID) /=
+                "lock-configuration-error-request"
+              or else US.To_String (Result.Error.Host_ID) /=
+                "lock-configuration-error-host"
+            then
+               raise Program_Error with
+                 "GetObjectLockConfiguration socket rejection mismatch";
+            end if;
+         end;
+         declare
+            procedure Must_Reject_Lock_Configuration
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object_Lock_Configuration
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    (others => <>), Identity, "us-east-1",
+                    "20130524T000000Z");
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant
+                       Low_Level.Get_Object_Lock_Configuration_Outcome :=
+                         (if Small_Limits
+                          then Low_Level.Execute_Get_Object_Lock_Configuration
+                            (HTTP, Prepared, Timeout => 5.0,
+                             Limits =>
+                               (Maximum_Document_Bytes => 64,
+                                Maximum_Depth          => 8,
+                                Maximum_Elements       => 32,
+                                Maximum_Text_Bytes     => 64))
+                          else Low_Level.Execute_Get_Object_Lock_Configuration
+                            (HTTP, Prepared, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_Lock_Configuration;
+         begin
+            Must_Reject_Lock_Configuration
+              ("GetObjectLockConfiguration accepted duplicate request " &
+               "identifier");
+            Must_Reject_Lock_Configuration
+              ("GetObjectLockConfiguration accepted duplicate host " &
+               "identifier");
+            Must_Reject_Lock_Configuration
+              ("GetObjectLockConfiguration accepted empty request " &
+               "identifier");
+            Must_Reject_Lock_Configuration
+              ("GetObjectLockConfiguration accepted malformed success XML");
+            Must_Reject_Lock_Configuration
+              ("GetObjectLockConfiguration accepted oversized success XML",
                Small_Limits => True);
          end;
          declare

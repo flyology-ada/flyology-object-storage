@@ -5636,6 +5636,143 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "GetObjectRetention response exceeds XML limit";
    end Execute_Get_Object_Retention;
 
+   function Prepare_Get_Object_Lock_Configuration
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Get_Object_Lock_Configuration_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Owner : constant String :=
+        US.To_String (Parameters.Expected_Bucket_Owner);
+      Values : Model_Value_Array
+        (1 .. 1 + Boolean'Pos (Owner'Length > 0));
+   begin
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_List_Response_Header_Text (Owner)
+      then
+         raise Invalid_Request with
+           "invalid GetObjectLockConfiguration parameters";
+      end if;
+      Values (1) :=
+        (Member_Name => US.To_Unbounded_String ("Bucket"),
+         Map_Key     => US.Null_Unbounded_String,
+         Value       => US.To_Unbounded_String (Bucket));
+      if Owner'Length > 0 then
+         Values (2) :=
+           (Member_Name =>
+              US.To_Unbounded_String ("ExpectedBucketOwner"),
+            Map_Key => US.Null_Unbounded_String,
+            Value   => US.To_Unbounded_String (Owner));
+      end if;
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Get_Object_Lock_Configuration_Operation, Origin, Style, Values,
+         "", False, SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := Get_Object_Lock_Configuration_Operation;
+      end return;
+   exception
+      when Constraint_Error =>
+         raise Invalid_Request with
+           "invalid GetObjectLockConfiguration parameters";
+   end Prepare_Get_Object_Lock_Configuration;
+
+   function Decode_Get_Object_Lock_Configuration_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Lock_Configuration_Outcome
+   is
+   begin
+      if not Valid_List_Response_Header_Text (Request_ID)
+        or else not Valid_List_Response_Header_Text (Host_ID)
+      then
+         raise Invalid_Response with
+           "invalid GetObjectLockConfiguration response identifiers";
+      elsif Status = 200 then
+         return
+           (Kind          => Object_Lock_Configuration_Found,
+            Status        => Status,
+            Configuration =>
+              (if Payload'Length = 0
+               then (others => <>)
+               else Object_Lock.Parse_Configuration (Payload, Limits)));
+      end if;
+      return
+        (Kind   => Get_Object_Lock_Configuration_Rejected,
+         Status => Status,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Object_Lock.Malformed_Object_Lock |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetObjectLockConfiguration response";
+   end Decode_Get_Object_Lock_Configuration_Response;
+
+   function Execute_Get_Object_Lock_Configuration
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Lock_Configuration_Outcome
+   is
+   begin
+      if Prepared.Operation /= Get_Object_Lock_Configuration_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Get_Object_Lock_Configuration_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+
+         function Singleton_Header (Name : String) return String is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count (Response, Name);
+         begin
+            if Count > 1 then
+               raise Invalid_Response with
+                 "duplicate GetObjectLockConfiguration response identifier";
+            elsif Count = 0 then
+               return "";
+            end if;
+            declare
+               Value : constant String :=
+                 Flyology.HTTP.Client.Header (Response, Name);
+            begin
+               if Value'Length = 0
+                 or else not Valid_List_Response_Header_Text (Value)
+               then
+                  raise Invalid_Response with
+                    "invalid GetObjectLockConfiguration response identifier";
+               end if;
+               return Value;
+            end;
+         end Singleton_Header;
+
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Get_Object_Lock_Configuration_Response
+           (Flyology.HTTP.Client.Status (Response),
+            Flyology.Bytes.To_Byte_String (Payload),
+            Singleton_Header ("x-amz-request-id"),
+            Singleton_Header ("x-amz-id-2"), Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "GetObjectLockConfiguration response exceeds XML limit";
+   end Execute_Get_Object_Lock_Configuration;
+
    function Decode_Get_Object_Complete_Response
      (Response      : Flyology.HTTP.Client.Response;
       Error_Payload : String;

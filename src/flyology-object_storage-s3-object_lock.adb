@@ -49,6 +49,37 @@ package body Flyology.Object_Storage.S3.Object_Lock is
    overriding procedure End_Element
      (Item : in out Retention_Handler; Local_Name : String);
 
+   type Configuration_Field is
+     (No_Configuration_Field, Enabled_Field, Default_Mode_Field,
+      Default_Days_Field, Default_Years_Field);
+
+   type Configuration_Handler is new XML.Event_Handler with record
+      Depth        : Natural := 0;
+      Root_Seen    : Boolean := False;
+      Enabled_Seen : Boolean := False;
+      Rule_Seen    : Boolean := False;
+      Default_Seen : Boolean := False;
+      Mode_Seen    : Boolean := False;
+      Days_Seen    : Boolean := False;
+      Years_Seen   : Boolean := False;
+      Field        : Configuration_Field := No_Configuration_Field;
+      Namespace    : Namespace_Style := Namespace_Not_Selected;
+      Text_Value   : US.Unbounded_String;
+      Value        : Object_Lock_Configuration :=
+        (Is_Set => True, others => <>);
+   end record;
+
+   overriding procedure Start_Element
+     (Item : in out Configuration_Handler; Local_Name : String);
+   overriding procedure Start_Element_Details
+     (Item            : in out Configuration_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural);
+   overriding procedure Text
+     (Item : in out Configuration_Handler; Value : String);
+   overriding procedure End_Element
+     (Item : in out Configuration_Handler; Local_Name : String);
+
    --  External REST/XML authority from the pinned generated model and S3
    --  protocol namespace; changing these spellings changes compatibility.
    S3_Namespace : constant String :=
@@ -168,6 +199,27 @@ package body Flyology.Object_Storage.S3.Object_Lock is
       end if;
       return False;
    end Valid_ISO_8601_Timestamp;
+
+   function Valid_Integer_Text (Value : String) return Boolean is
+      Index : Integer := Value'First;
+   begin
+      if Value'Length = 0 then
+         return False;
+      end if;
+      if Value (Index) in '+' | '-' then
+         Index := Index + 1;
+      end if;
+      if Index > Value'Last then
+         return False;
+      end if;
+      while Index <= Value'Last loop
+         if Value (Index) not in '0' .. '9' then
+            return False;
+         end if;
+         Index := Index + 1;
+      end loop;
+      return True;
+   end Valid_Integer_Text;
 
    procedure Require_Whitespace (Value : String) is
    begin
@@ -382,5 +434,196 @@ package body Flyology.Object_Storage.S3.Object_Lock is
       when XML.XML_Error =>
          raise Malformed_Object_Lock with "malformed Retention XML";
    end Parse_Retention;
+
+   overriding procedure Start_Element_Details
+     (Item            : in out Configuration_Handler;
+      Namespace_URI   : String;
+      Attribute_Count : Natural)
+   is
+   begin
+      Validate_Element_Details
+        (Item.Namespace, Namespace_URI, Attribute_Count);
+   end Start_Element_Details;
+
+   overriding procedure Start_Element
+     (Item : in out Configuration_Handler; Local_Name : String) is
+   begin
+      if Item.Depth = Natural'Last then
+         raise Malformed_Object_Lock with "Object Lock depth overflow";
+      end if;
+      Item.Depth := Item.Depth + 1;
+      case Item.Depth is
+         when 1 =>
+            if Item.Root_Seen
+              or else Local_Name /= "ObjectLockConfiguration"
+            then
+               raise Malformed_Object_Lock with
+                 "invalid ObjectLockConfiguration root";
+            end if;
+            Item.Root_Seen := True;
+         when 2 =>
+            if Local_Name = "ObjectLockEnabled"
+              and then not Item.Enabled_Seen
+            then
+               Item.Enabled_Seen := True;
+               Item.Field := Enabled_Field;
+               Item.Text_Value := US.Null_Unbounded_String;
+            elsif Local_Name = "Rule" and then not Item.Rule_Seen then
+               Item.Rule_Seen := True;
+               Item.Value.Rule.Is_Set := True;
+            else
+               raise Malformed_Object_Lock with
+                 "unknown or duplicate Object Lock configuration field";
+            end if;
+         when 3 =>
+            if Local_Name /= "DefaultRetention"
+              or else not Item.Rule_Seen
+              or else Item.Default_Seen
+              or else Item.Field /= No_Configuration_Field
+            then
+               raise Malformed_Object_Lock with
+                 "invalid Object Lock rule field";
+            end if;
+            Item.Default_Seen := True;
+            Item.Value.Rule.Default_Value.Is_Set := True;
+         when 4 =>
+            if not Item.Default_Seen
+              or else Item.Field /= No_Configuration_Field
+            then
+               raise Malformed_Object_Lock with
+                 "invalid default retention field nesting";
+            elsif Local_Name = "Mode" and then not Item.Mode_Seen then
+               Item.Mode_Seen := True;
+               Item.Field := Default_Mode_Field;
+            elsif Local_Name = "Days" and then not Item.Days_Seen then
+               Item.Days_Seen := True;
+               Item.Field := Default_Days_Field;
+            elsif Local_Name = "Years" and then not Item.Years_Seen then
+               Item.Years_Seen := True;
+               Item.Field := Default_Years_Field;
+            else
+               raise Malformed_Object_Lock with
+                 "unknown or duplicate default retention field";
+            end if;
+            Item.Text_Value := US.Null_Unbounded_String;
+         when others =>
+            raise Malformed_Object_Lock with
+              "nested Object Lock configuration field";
+      end case;
+   end Start_Element;
+
+   overriding procedure Text
+     (Item : in out Configuration_Handler; Value : String) is
+   begin
+      if (Item.Depth = 2 and then Item.Field = Enabled_Field)
+        or else (Item.Depth = 4
+                 and then Item.Field /= No_Configuration_Field)
+      then
+         US.Append (Item.Text_Value, Value);
+      elsif Item.Depth in 1 .. 3 then
+         Require_Whitespace (Value);
+      else
+         raise Malformed_Object_Lock with
+           "configuration text outside a modeled field";
+      end if;
+   end Text;
+
+   overriding procedure End_Element
+     (Item : in out Configuration_Handler; Local_Name : String)
+   is
+      Value : constant String := US.To_String (Item.Text_Value);
+   begin
+      case Item.Depth is
+         when 4 =>
+            case Item.Field is
+               when Default_Mode_Field =>
+                  if Local_Name /= "Mode" then
+                     raise Malformed_Object_Lock with
+                       "mismatched default retention mode close";
+                  elsif Value = "GOVERNANCE" then
+                     Item.Value.Rule.Default_Value.Mode :=
+                       Governance_Retention;
+                  elsif Value = "COMPLIANCE" then
+                     Item.Value.Rule.Default_Value.Mode :=
+                       Compliance_Retention;
+                  else
+                     raise Malformed_Object_Lock with
+                       "invalid default retention mode";
+                  end if;
+               when Default_Days_Field | Default_Years_Field =>
+                  if (Item.Field = Default_Days_Field
+                      and then Local_Name /= "Days")
+                    or else (Item.Field = Default_Years_Field
+                             and then Local_Name /= "Years")
+                    or else not Valid_Integer_Text (Value)
+                  then
+                     raise Malformed_Object_Lock with
+                       "invalid default retention integer";
+                  end if;
+                  if Item.Field = Default_Days_Field then
+                     Item.Value.Rule.Default_Value.Days :=
+                       (Is_Set => True, Text => Item.Text_Value);
+                  else
+                     Item.Value.Rule.Default_Value.Years :=
+                       (Is_Set => True, Text => Item.Text_Value);
+                  end if;
+               when others =>
+                  raise Malformed_Object_Lock with
+                    "configuration leaf close without an open field";
+            end case;
+            Item.Field := No_Configuration_Field;
+            Item.Text_Value := US.Null_Unbounded_String;
+            Item.Depth := 3;
+         when 3 =>
+            if Local_Name /= "DefaultRetention" then
+               raise Malformed_Object_Lock with
+                 "mismatched DefaultRetention close";
+            end if;
+            Item.Depth := 2;
+         when 2 =>
+            if Item.Field = Enabled_Field then
+               if Local_Name /= "ObjectLockEnabled" or else Value /= "Enabled"
+               then
+                  raise Malformed_Object_Lock with
+                    "invalid ObjectLockEnabled value";
+               end if;
+               Item.Value.Enabled := Object_Lock_Enabled;
+               Item.Field := No_Configuration_Field;
+               Item.Text_Value := US.Null_Unbounded_String;
+            elsif Local_Name /= "Rule" then
+               raise Malformed_Object_Lock with
+                 "mismatched Object Lock rule close";
+            end if;
+            Item.Depth := 1;
+         when 1 =>
+            if Local_Name /= "ObjectLockConfiguration" then
+               raise Malformed_Object_Lock with
+                 "mismatched ObjectLockConfiguration close";
+            end if;
+            Item.Depth := 0;
+         when others =>
+            raise Malformed_Object_Lock with
+              "invalid Object Lock configuration closing element";
+      end case;
+   end End_Element;
+
+   function Parse_Configuration
+     (Document : String;
+      Limits   : XML.Parse_Limits := XML.Default_Limits)
+      return Object_Lock_Configuration
+   is
+      Handler : aliased Configuration_Handler;
+   begin
+      XML.Parse (Document, Handler, Limits);
+      if Handler.Depth /= 0 or else not Handler.Root_Seen then
+         raise Malformed_Object_Lock with
+           "incomplete ObjectLockConfiguration document";
+      end if;
+      return Handler.Value;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Object_Lock with
+           "malformed ObjectLockConfiguration XML";
+   end Parse_Configuration;
 
 end Flyology.Object_Storage.S3.Object_Lock;

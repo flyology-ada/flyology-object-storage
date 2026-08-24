@@ -1340,6 +1340,89 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Retention_Outcome;
 
+   --  Every non-resource member in the pinned
+   --  GetObjectLockConfiguration request.
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Get_Object_Lock_Configuration_Parameters is record
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare one exact signed GetObjectLockConfiguration request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket whose Object Lock configuration is requested
+   --  @param Parameters Optional owner selector
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared request
+   function Prepare_Get_Object_Lock_Configuration
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Parameters : Get_Object_Lock_Configuration_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   --  Terminal interpretation of a GetObjectLockConfiguration response.
+   --  @enum Object_Lock_Configuration_Found Exact 200 response decoded
+   --  @enum Get_Object_Lock_Configuration_Rejected Bounded non-200 rejection
+   type Get_Object_Lock_Configuration_Outcome_Kind is
+     (Object_Lock_Configuration_Found,
+      Get_Object_Lock_Configuration_Rejected);
+
+   --  Presence-preserving configuration result or structured rejection.
+   --  Status uses the established low-level local rejection initializer and
+   --  is never transmitted as an HTTP value.
+   --  @field Kind Whether configuration or an S3 error was returned
+   --  @field Status Exact HTTP response status
+   --  @field Configuration Optional outer and nested configuration members
+   --  @field Error Structured rejected-response diagnostics
+   type Get_Object_Lock_Configuration_Outcome
+     (Kind : Get_Object_Lock_Configuration_Outcome_Kind :=
+        Get_Object_Lock_Configuration_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Lock_Configuration_Found =>
+            Configuration : S3.Object_Lock.Object_Lock_Configuration;
+         when Get_Object_Lock_Configuration_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode a complete bounded configuration or structured S3 error body.
+   --  @param Status Exact HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Optional physical request identifier
+   --  @param Host_ID Optional physical host identifier
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Presence-preserving configuration or structured S3 rejection
+   function Decode_Get_Object_Lock_Configuration_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Lock_Configuration_Outcome;
+
+   --  Execute and fully decode one matching request within caller-selected
+   --  XML limits.  The timeout is the established synchronous client default.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Matching prepared request
+   --  @param Timeout Whole-operation timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Presence-preserving configuration or structured S3 rejection
+   function Execute_Get_Object_Lock_Configuration
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Lock_Configuration_Outcome;
+
    --  Every non-resource member in the pinned GetObjectAttributes request.
    --  Presence flags preserve omission for optional numeric headers.
    type Get_Object_Attributes_Parameters is record
@@ -3328,6 +3411,7 @@ private
       Get_Object_Torrent_Operation,
       Get_Object_Legal_Hold_Operation,
       Get_Object_Retention_Operation,
+      Get_Object_Lock_Configuration_Operation,
       Delete_Object_Operation,
       Delete_Objects_Operation,
       Create_Multipart_Operation,

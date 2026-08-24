@@ -1,0 +1,10 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	280	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind its exact value into the signed object-lock target.	GOL-RQ-001,GOL-RQ-003,GOL-RQ-004
+request	280	2	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	GOL-RQ-002,GOL-RQ-003,GOL-RQ-004
+output	279	1	ObjectLockConfiguration	473	body	false	decoded	Preserve absence or decode one exact ObjectLockConfiguration payload without assigning a default policy.	GOL-RS-001,GOL-RS-002,GOL-RS-005,GOL-TR-001,GOL-TR-002
+nested	473	1	ObjectLockEnabled	474	body	false	decoded	Preserve absence or decode the exact Enabled wire value without inferring enablement.	GOL-RS-001,GOL-RS-002,GOL-RS-005,GOL-TR-001,GOL-TR-002
+nested	473	2	Rule	482	body	false	decoded	Preserve absence or one exact Rule container independently from enablement.	GOL-RS-001,GOL-RS-002,GOL-RS-005,GOL-TR-001,GOL-TR-002
+nested	482	1	DefaultRetention	143	body	false	decoded	Preserve absence or one exact DefaultRetention container without synthesizing a retention policy.	GOL-RS-001,GOL-RS-002,GOL-RS-005,GOL-TR-001,GOL-TR-002
+nested	143	1	Mode	481	body	false	decoded	Preserve absence or decode exactly GOVERNANCE or COMPLIANCE with case-sensitive wire semantics.	GOL-RS-001,GOL-RS-002,GOL-RS-005,GOL-TR-001,GOL-TR-002
+nested	143	2	Days	141	body	false	decoded	Preserve absence or exact validated signed decimal text because the pinned integer shape has no minimum or maximum.	GOL-RS-001,GOL-RS-002,GOL-RS-005,GOL-RS-007,GOL-TR-001,GOL-TR-002
+nested	143	3	Years	718	body	false	decoded	Preserve absence or exact validated signed decimal text because the pinned integer shape has no minimum or maximum.	GOL-RS-001,GOL-RS-002,GOL-RS-005,GOL-RS-007,GOL-TR-001,GOL-TR-002

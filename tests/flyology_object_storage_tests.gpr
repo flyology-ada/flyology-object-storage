@@ -29,6 +29,7 @@ project Flyology_Object_Storage_Tests is
       "s3_get_object_torrent_socket_corpus.adb",
       "s3_get_object_legal_hold_corpus.adb",
       "s3_get_object_retention_corpus.adb",
+      "s3_get_object_lock_configuration_corpus.adb",
       "s3_create_session_tls_corpus.adb",
       "s3_transfer_many_corpus.adb",
       "s3_implementation_corpus.adb",
