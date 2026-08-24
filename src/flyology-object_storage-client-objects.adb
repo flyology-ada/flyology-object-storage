@@ -824,6 +824,57 @@ package body Flyology.Object_Storage.Client.Objects is
       If_Match_Last_Modified_Time : String := "";
       If_Match_Size : Low_Level.Optional_Byte_Count :=
         (Is_Set => False, Value => 0))
+      return Scoped.Delete_Result
+   is
+      Parameters : Low_Level.Delete_Object_Parameters;
+      --  The object operation, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      Parameters.Version_ID := US.To_Unbounded_String (Version_ID);
+      Parameters.If_Match := US.To_Unbounded_String (If_Match);
+      Parameters.Expected_Bucket_Owner :=
+        US.To_Unbounded_String (Expected_Bucket_Owner);
+      Parameters.Request_Payer := US.To_Unbounded_String (Request_Payer);
+      Parameters.MFA := US.To_Unbounded_String (MFA);
+      Parameters.Bypass_Governance_Retention :=
+        Bypass_Governance_Retention;
+      Parameters.If_Match_Last_Modified_Time :=
+        US.To_Unbounded_String (If_Match_Last_Modified_Time);
+      Parameters.If_Match_Size := If_Match_Size;
+      declare
+         Operation : Scoped.Delete_Operation := Scoped.Delete_Object
+           (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
+            Identity, Flyology.HTTP.Client.Deadline_After (Timeout), Region,
+            Style, Token);
+         Result : Scoped.Delete_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Delete;
+
+   function Delete
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Version_ID : String := "";
+      If_Match : String := "";
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      MFA      : String := "";
+      Bypass_Governance_Retention : Low_Level.Optional_Boolean :=
+        (Is_Set => False, Value => False);
+      If_Match_Last_Modified_Time : String := "";
+      If_Match_Size : Low_Level.Optional_Byte_Count :=
+        (Is_Set => False, Value => 0))
       return Delete_Outcome
    is
       Parameters : Low_Level.Delete_Object_Parameters;

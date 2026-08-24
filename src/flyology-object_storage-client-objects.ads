@@ -534,6 +534,51 @@ package Flyology.Object_Storage.Client.Objects is
       end case;
    end record;
 
+   --  Execute one DeleteObject by waiting on the composable operation. This
+   --  result-type overload preserves HTTP admission and deletion certainty;
+   --  selecting the established Delete_Outcome overload preserves its
+   --  existing raising transport contract. All parameters and defaults are
+   --  identical so composition does not select different S3 wire policy.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket containing the object
+   --  @param Key Exact object key
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Version_ID Optional exact version to delete permanently
+   --  @param If_Match Optional entity-tag precondition
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester for Requester Pays buckets
+   --  @param Timeout Whole-operation budget
+   --  @param Token Optional cancellation source
+   --  @param MFA Optional root-owner MFA device and credential value
+   --  @param Bypass_Governance_Retention Optional governance bypass request
+   --  @param If_Match_Last_Modified_Time Optional directory-bucket predicate
+   --  @param If_Match_Size Optional directory-bucket size predicate
+   --  @return Typed deletion certainty and terminal response or failure
+   function Delete
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Version_ID : String := "";
+      If_Match : String := "";
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      MFA      : String := "";
+      Bypass_Governance_Retention : Low_Level.Optional_Boolean :=
+        (Is_Set => False, Value => False);
+      If_Match_Last_Modified_Time : String := "";
+      If_Match_Size : Low_Level.Optional_Byte_Count :=
+        (Is_Set => False, Value => 0))
+      return Scoped.Delete_Result;
+
    --  Delete one object or a specific object version. S3 treats a missing
    --  unversioned key as a successful idempotent deletion. Every modeled
    --  DeleteObject control is available here; optional boolean/count values

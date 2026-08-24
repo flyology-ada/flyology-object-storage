@@ -25,6 +25,7 @@ package body Flyology.Object_Storage.Client.Scoped is
    use type HTTP_Client.Admission_Certainty;
    use type HTTP_Client.Exchange_Result_Kind;
    use type Low_Level.Get_Object_Head_Outcome_Kind;
+   use type Low_Level.Delete_Object_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
    use type Core.Range_Parse_Status;
    use type Operations.Driver_Event;
@@ -1399,6 +1400,328 @@ package body Flyology.Object_Storage.Client.Scoped is
             Ada.Exceptions.Exception_Message (Operation.Saved_Error));
       elsif not Operation.Has_Final_Result then
          raise Program_Error with "HeadObject has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   function Normalize_Delete_Response
+     (Value     : Low_Level.Delete_Object_Outcome;
+      Admission : HTTP_Client.Admission_Certainty) return Delete_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Delete_Object_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Conclusive_Rejection : constant Boolean :=
+        (Value.Status = 400 and then Code = "InvalidRequest")
+        or else (Value.Status = 401 and then Code = "InvalidAccessKeyId")
+        or else (Value.Status = 403 and then Code = "AccessDenied")
+        or else
+          (Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchKey" | "NoSuchVersion")
+        or else (Value.Status = 412 and then Code = "PreconditionFailed");
+      Retryable_Response : constant Boolean :=
+        (Value.Status = 409 and then Code = "OperationAborted")
+        or else (Value.Status = 429 and then Code = "SlowDown")
+        or else (Value.Status = 500 and then Code = "InternalError")
+        or else (Value.Status = 502 and then Code = "BadGateway")
+        or else (Value.Status = 503 and then Code = "SlowDown")
+        or else (Value.Status = 504 and then Code = "RequestTimeout");
+      Failure : constant Failure_Reason :=
+        (if Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchKey" | "NoSuchVersion"
+         then Not_Found
+         elsif Value.Status = 400 and then Code = "InvalidRequest"
+         then Invalid_Request
+         elsif Conclusive_Rejection
+         then No_Failure
+         elsif Retryable_Response
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => Delete_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Deletion_Outcome_Unknown
+            elsif Value.Kind = Low_Level.Object_Deleted
+            then Deletion_Completed
+            elsif Conclusive_Rejection
+            then Definitely_Not_Deleted
+            else Deletion_Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Object_Deleted
+            then No_Failure
+            else Failure),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Delete_Response;
+
+   function Normalize_Delete_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Delete_Result is
+   begin
+      return
+        (Kind        => Delete_Exchange_Failed,
+         Disposition =>
+           (if Kind = HTTP_Client.Cancelled
+              and then Admission = HTTP_Client.Not_Admitted
+            then Deletion_Cancelled_Before_Admission
+            elsif Admission = HTTP_Client.Not_Admitted
+            then Definitely_Not_Deleted
+            else Deletion_Outcome_Unknown),
+         Failure     =>
+           (if Kind = HTTP_Client.Response_Body_Too_Large
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Delete_Failure;
+
+   overriding function Declared_Length
+     (Item : Delete_Operation) return HTTP_Client.Body_Length is
+   begin
+      pragma Unreferenced (Item);
+      return HTTP_Client.Known_Length (0);
+   end Declared_Length;
+
+   overriding procedure Read_Now
+     (Item   : in out Delete_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      pragma Unreferenced (Item);
+      Data := (others => 0);
+      Last := Ada.Streams.Stream_Element_Offset'Pred (Data'First);
+      Result := HTTP_Client.Source_Finished;
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Delete_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      pragma Unreferenced (Item, Required);
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source (Item : in out Delete_Operation) is
+   begin
+      pragma Unreferenced (Item);
+      null;
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Delete_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "DeleteObject response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Delete_Child (Item : in out Delete_Operation) is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Scoped.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Scoped.Finish
+           (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result :=
+              (Kind        => Delete_Exchange_Failed,
+               Disposition =>
+                 (if Admission = HTTP_Client.Not_Admitted
+                  then Definitely_Not_Deleted
+                  else Deletion_Outcome_Unknown),
+               Failure     => Corrupt_Or_Invalid_Response,
+               Admission   => Admission,
+               HTTP_Result => HTTP_Client.Response_Sink_Failed,
+               HTTP_Phase  => HTTP_Client.Receiving_Response_Body,
+               Detail      => US.Null_Unbounded_String);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Delete_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Delete_Response
+              (Low_Level.Decode_Delete_Object_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data)),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result :=
+                 (Kind        => Delete_Exchange_Failed,
+                  Disposition => Deletion_Outcome_Unknown,
+                  Failure     => Corrupt_Or_Invalid_Response,
+                  Admission   => HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Result => HTTP_Client.Response_Invalid,
+                  HTTP_Phase  => HTTP_Client.Phase (HTTP_Result),
+                  Detail      => US.Null_Unbounded_String);
+         end;
+      end if;
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Delete_Child;
+
+   overriding procedure Drive
+     (Item : in out Delete_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low_Scoped.Start_Delete_Object
+           (Item.Child, Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item'Access, Item.Deadline, Item.Cancellation);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Delete_Child (Item);
+      else
+         raise Program_Error with "invalid DeleteObject driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Delete_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize (Item : in out Delete_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Delete_Object
+     (Operation : in out Delete_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Delete_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "DeleteObject restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Delete_Object
+        (Origin, Style, Bucket, Key, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived resource bound: retained DeleteObject error bytes use the
+        --  maintained limit of the S3 XML decoder that consumes them.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            raise;
+      end;
+   end Start_Delete_Object;
+
+   function Delete_Object
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Delete_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Delete_Operation is
+   begin
+      return Result : Delete_Operation (Set, Client, Token) do
+         Start_Delete_Object
+           (Result, Client, Origin, Bucket, Key, Parameters, Identity,
+            Deadline, Region, Style, Token);
+      end return;
+   end Delete_Object;
+
+   procedure Finish
+     (Operation : in out Delete_Operation;
+      Result    : out Delete_Result) is
+   begin
+      Operations.Consume (Operation);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "DeleteObject has no terminal result";
       end if;
       Result := Operation.Final_Result;
    end Finish;

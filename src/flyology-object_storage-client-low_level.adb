@@ -8795,6 +8795,44 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end;
    end Optional_Boolean_Header;
 
+   function Decode_Delete_Object_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Object_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1
+           or else
+             (Count = 1
+              and then Flyology.HTTP.Client.Header
+                (Response, Name)'Length = 0)
+         then
+            raise Invalid_Response with
+              "DeleteObject response has an invalid singleton header";
+         elsif Count = 0 then
+            return "";
+         end if;
+         return Flyology.HTTP.Client.Header (Response, Name);
+      end Singleton_Header;
+
+      Headers : constant Delete_Object_Result :=
+        (Delete_Marker => Optional_Boolean_Header
+           (Singleton_Header ("x-amz-delete-marker")),
+         Version_ID => US.To_Unbounded_String
+           (Singleton_Header ("x-amz-version-id")),
+         Request_Charged => US.To_Unbounded_String
+           (Singleton_Header ("x-amz-request-charged")));
+   begin
+      return Decode_Delete_Object_Response
+        (Flyology.HTTP.Client.Status (Response), Payload, Headers,
+         Singleton_Header ("x-amz-request-id"),
+         Singleton_Header ("x-amz-id-2"), Limits);
+   end Decode_Delete_Object_Complete_Response;
+
    function Execute_Delete_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -8812,45 +8850,12 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
              (Client, Prepared.Message, Source, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         procedure Reject_Invalid_Singleton (Name : String) is
-            Count : constant Natural :=
-              Flyology.HTTP.Client.Header_Count (Response, Name);
-         begin
-            if Count > 1
-              or else
-                (Count = 1
-                 and then Flyology.HTTP.Client.Header
-                   (Response, Name)'Length = 0)
-            then
-               raise Invalid_Response with
-                 "DeleteObject response has an invalid singleton header";
-            end if;
-         end Reject_Invalid_Singleton;
-         Headers : constant Delete_Object_Result :=
-           (Delete_Marker => Optional_Boolean_Header
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-delete-marker")),
-            Version_ID => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header (Response, "x-amz-version-id")),
-            Request_Charged => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-request-charged")));
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         Reject_Invalid_Singleton ("x-amz-delete-marker");
-         Reject_Invalid_Singleton ("x-amz-version-id");
-         Reject_Invalid_Singleton ("x-amz-request-charged");
-         return Decode_Delete_Object_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-            Request_ID, Host_ID, Limits);
+         return Decode_Delete_Object_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

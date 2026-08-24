@@ -7,6 +7,7 @@ PUT_FIXTURE=${1:-"$PROJECT_DIR/tests/corpora/composable-client/put-certainty.tsv
 PARENT_FIXTURE=${2:-"$PROJECT_DIR/tests/corpora/composable-client/parent-faults.tsv"}
 RANGE_FIXTURE=${3:-"$PROJECT_DIR/tests/corpora/composable-client/range-get.tsv"}
 HEAD_FIXTURE=${4:-"$PROJECT_DIR/tests/corpora/composable-client/head-object.tsv"}
+DELETE_FIXTURE=${5:-"$PROJECT_DIR/tests/corpora/composable-client/delete-certainty.tsv"}
 
 if [ ! -f "$PUT_FIXTURE" ]; then
   printf '%s\n' "missing Put fixture: $PUT_FIXTURE" >&2
@@ -22,6 +23,10 @@ if [ ! -f "$RANGE_FIXTURE" ]; then
 fi
 if [ ! -f "$HEAD_FIXTURE" ]; then
   printf '%s\n' "missing HeadObject fixture: $HEAD_FIXTURE" >&2
+  exit 1
+fi
+if [ ! -f "$DELETE_FIXTURE" ]; then
+  printf '%s\n' "missing DeleteObject fixture: $DELETE_FIXTURE" >&2
   exit 1
 fi
 
@@ -165,6 +170,129 @@ END {
   exit failed
 }
 ' "$PUT_FIXTURE"
+
+awk -F '\t' '
+function fail(message) {
+  print FILENAME ":" NR ": " message > "/dev/stderr"
+  failed = 1
+}
+
+function exact_complete(status, code, deletion, reason) {
+  return $1 == "Response_Complete" && $2 == "Response_Observed" &&
+    $3 == status && $4 == code && $5 == deletion && $6 == reason
+}
+
+BEGIN {
+  split("Response_Complete Pre_Admission_Rejected Cancelled Timed_Out Client_Unavailable Connection_Failed Transport_Failed Request_Source_Failed Response_Invalid Response_Body_Too_Large Response_Sink_Failed", values, " ")
+  for (i in values) allowed_http[values[i]] = 1
+  split("Not_Admitted Possibly_Admitted Response_Observed", values, " ")
+  for (i in values) allowed_admission[values[i]] = 1
+  split("204 400 401 403 404 409 412 429 500 502 503 504 none incomplete invalid oversized overflow-or-fault", values, " ")
+  for (i in values) allowed_status[values[i]] = 1
+  split("none InvalidRequest InvalidAccessKeyId AccessDenied NoSuchBucket NoSuchKey NoSuchVersion OperationAborted PreconditionFailed SlowDown InternalError BadGateway RequestTimeout missing malformed not-applicable", values, " ")
+  for (i in values) allowed_code[values[i]] = 1
+  split("Deletion_Completed Definitely_Not_Deleted Deletion_Outcome_Unknown Deletion_Cancelled_Before_Admission", values, " ")
+  for (i in values) allowed_deletion[values[i]] = 1
+  split("No_Failure Authentication_Failed Authorization_Failed Invalid_Request Not_Found Unavailable_Or_Retryable Cancelled Timed_Out Client_Unavailable Connection_Failed Transport_Failed Request_Source_Failed Corrupt_Or_Invalid_Response", values, " ")
+  for (i in values) allowed_reason[values[i]] = 1
+  expected_reason["Pre_Admission_Rejected"] = "Invalid_Request"
+  expected_reason["Cancelled"] = "Cancelled"
+  expected_reason["Timed_Out"] = "Timed_Out"
+  expected_reason["Client_Unavailable"] = "Client_Unavailable"
+  expected_reason["Connection_Failed"] = "Connection_Failed"
+  expected_reason["Transport_Failed"] = "Transport_Failed"
+  expected_reason["Request_Source_Failed"] = "Request_Source_Failed"
+  expected_reason["Response_Invalid"] = "Corrupt_Or_Invalid_Response"
+  expected_reason["Response_Body_Too_Large"] = "Corrupt_Or_Invalid_Response"
+  expected_reason["Response_Sink_Failed"] = "Corrupt_Or_Invalid_Response"
+}
+
+NR == 1 {
+  if (NF != 8 || $1 != "http_result" || $2 != "admission" ||
+      $3 != "status" || $4 != "s3_code" || $5 != "deletion" ||
+      $6 != "failure_reason" || $7 != "reconcile" || $8 != "note")
+    fail("unexpected DeleteObject fixture header")
+  next
+}
+
+{
+  if (NF != 8) fail("expected 8 tab-separated fields, got " NF)
+  if (!($1 in allowed_http)) fail("unknown HTTP result " $1)
+  if (!($2 in allowed_admission)) fail("unknown admission certainty " $2)
+  if (!($3 in allowed_status)) fail("unknown response status " $3)
+  if (!($4 in allowed_code)) fail("unknown S3 error code " $4)
+  if (!($5 in allowed_deletion)) fail("unknown deletion disposition " $5)
+  if (!($6 in allowed_reason)) fail("unknown bounded failure reason " $6)
+  if ($7 != "yes" && $7 != "no") fail("reconcile must be yes or no")
+  if ($8 == "") fail("qualification note must not be empty")
+
+  key = $1 SUBSEP $2 SUBSEP $3 SUBSEP $4
+  if (key in seen) fail("duplicate DeleteObject input tuple")
+  seen[key] = 1
+  result_seen[$1] = 1
+  semantic_seen[$3 SUBSEP $4] = 1
+
+  if ($2 == "Not_Admitted" && $5 == "Deletion_Outcome_Unknown")
+    fail("Not_Admitted cannot map to unknown deletion")
+  if ($5 == "Deletion_Outcome_Unknown" && $7 != "yes")
+    fail("unknown deletion requires reconciliation")
+  if ($5 != "Deletion_Outcome_Unknown" && $7 != "no")
+    fail("conclusive deletion disposition must not require reconciliation")
+  if ($6 == "No_Failure" &&
+      $5 != "Deletion_Completed" &&
+      !exact_complete("412", "PreconditionFailed",
+                      "Definitely_Not_Deleted", "No_Failure"))
+    fail("No_Failure is only valid for success or exact precondition failure")
+
+  if ($5 == "Deletion_Completed" &&
+      !exact_complete("204", "none", "Deletion_Completed", "No_Failure"))
+    fail("Deletion_Completed requires a complete valid 204 response")
+  if ($5 == "Deletion_Cancelled_Before_Admission" &&
+      !($1 == "Cancelled" && $2 == "Not_Admitted" && $6 == "Cancelled"))
+    fail("cancelled-before-admission requires pre-admission cancellation")
+  if ($5 == "Definitely_Not_Deleted" && $2 != "Not_Admitted" &&
+      !(exact_complete("400", "InvalidRequest", $5, "Invalid_Request") ||
+        exact_complete("401", "InvalidAccessKeyId", $5,
+                       "Authentication_Failed") ||
+        exact_complete("403", "AccessDenied", $5,
+                       "Authorization_Failed") ||
+        exact_complete("404", "NoSuchBucket", $5, "Not_Found") ||
+        exact_complete("404", "NoSuchKey", $5, "Not_Found") ||
+        exact_complete("404", "NoSuchVersion", $5, "Not_Found") ||
+        exact_complete("412", "PreconditionFailed", $5, "No_Failure")))
+    fail("definite rejection lacks exact modeled semantics")
+
+  if ($6 == "Unavailable_Or_Retryable" &&
+      !($1 == "Response_Complete" && $2 == "Response_Observed" &&
+        $5 == "Deletion_Outcome_Unknown" && $7 == "yes" &&
+        (($3 == "409" && $4 == "OperationAborted") ||
+         ($3 == "429" && $4 == "SlowDown") ||
+         ($3 == "500" && $4 == "InternalError") ||
+         ($3 == "502" && $4 == "BadGateway") ||
+         ($3 == "503" && $4 == "SlowDown") ||
+         ($3 == "504" && $4 == "RequestTimeout"))))
+    fail("retryable reason must preserve unknown deletion disposition")
+  if ($1 in expected_reason && $6 != expected_reason[$1])
+    fail("HTTP result does not retain its bounded failure reason")
+  if ($1 == "Response_Complete" && $2 != "Response_Observed")
+    fail("Response_Complete requires Response_Observed certainty")
+}
+
+END {
+  split("Response_Complete Pre_Admission_Rejected Cancelled Timed_Out Client_Unavailable Connection_Failed Transport_Failed Request_Source_Failed Response_Invalid Response_Body_Too_Large Response_Sink_Failed", required, " ")
+  for (i in required)
+    if (!(required[i] in result_seen))
+      fail("missing HTTP result coverage for " required[i])
+  split("204:none 400:InvalidRequest 401:InvalidAccessKeyId 403:AccessDenied 404:NoSuchBucket 404:NoSuchKey 404:NoSuchVersion 409:OperationAborted 412:PreconditionFailed 429:SlowDown 500:InternalError 502:BadGateway 503:SlowDown 504:RequestTimeout 400:missing 403:missing 404:missing 412:missing 500:malformed", required, " ")
+  for (i in required) {
+    split(required[i], pair, ":")
+    if (!(pair[1] SUBSEP pair[2] in semantic_seen))
+      fail("missing exact status/code coverage for " required[i])
+  }
+  if (NR - 1 < 42) fail("DeleteObject fixture is unexpectedly small")
+  exit failed
+}
+' "$DELETE_FIXTURE"
 
 awk -F '\t' '
 function fail(message) {

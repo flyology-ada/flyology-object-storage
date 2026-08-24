@@ -100,6 +100,10 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Whole_Get_Result_Kind;
    use type Scoped.Range_Get_Result_Kind;
    use type Scoped.Head_Result_Kind;
+   use type Scoped.Delete_Result_Kind;
+   use type Scoped.Deletion_Disposition;
+   use type HTTP_Client.Admission_Certainty;
+   use type HTTP_Client.Exchange_Result_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Low_Level.Get_Object_ACL_Outcome_Kind;
@@ -1780,6 +1784,33 @@ procedure S3_HTTP_Socket_Corpus is
                  "last-modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF,
                Omit_Content_Length => True),
             "HEAD", "/example-bucket/scoped-head-duplicate");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-delete-marker: true" & CRLF &
+                 "x-amz-version-id: scoped-deleted-version" & CRLF &
+                 "x-amz-request-charged: requester" & CRLF),
+            "DELETE",
+            "/example-bucket/scoped-delete?" &
+              "versionId=scoped-delete-version",
+            Expected_If_Match => """scoped-delete-generation""",
+            Expected_Request_Payer => "requester");
+         Serve
+           (HTTP_Response ("412 Precondition Failed", Precondition_XML),
+            "DELETE", "/example-bucket/scoped-delete-stale",
+            Expected_If_Match => """stale-delete-generation""");
+         Serve
+           (HTTP_Response
+              ("409 Conflict",
+               "<Error><Code>OperationAborted</Code>" &
+                 "<Message>conflict</Message></Error>"),
+            "DELETE", "/example-bucket/scoped-delete-conflict");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-version-id: duplicate-a" & CRLF &
+                 "x-amz-version-id: duplicate-b" & CRLF),
+            "DELETE", "/example-bucket/scoped-delete-duplicate");
          Serve
            (HTTP_Response ("200 OK", List_Buckets_XML),
             "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
@@ -5343,6 +5374,136 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "HeadObject accepted duplicate singleton metadata";
+               end if;
+            end;
+
+            declare
+               Parameters : Low_Level.Delete_Object_Parameters :=
+                 (others => <>);
+            begin
+               Parameters.Version_ID :=
+                 US.To_Unbounded_String ("scoped-delete-version");
+               Parameters.If_Match := US.To_Unbounded_String
+                 ("""scoped-delete-generation""");
+               Parameters.Request_Payer :=
+                 US.To_Unbounded_String ("requester");
+               declare
+                  --  Object, HTTP exchange, and its single transport child.
+                  Set : aliased Operations.Completion_Set (3);
+                  Operation : Scoped.Delete_Operation := Scoped.Delete_Object
+                    (Set'Access, HTTP'Access, Origin, "example-bucket",
+                     "scoped-delete", Parameters, Identity,
+                     HTTP_Client.Deadline_After (5.0));
+                  Result : Scoped.Delete_Result;
+               begin
+                  Operations.Wait_All (Set);
+                  Scoped.Finish (Operation, Result);
+                  if Result.Kind /= Scoped.Delete_Response_Available
+                    or else Result.Disposition /= Scoped.Deletion_Completed
+                    or else Result.Failure /= Scoped.No_Failure
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                    or else Result.Response.Kind /= Low_Level.Object_Deleted
+                    or else not Result.Response.Result.Delete_Marker.Is_Set
+                    or else not Result.Response.Result.Delete_Marker.Value
+                    or else US.To_String
+                      (Result.Response.Result.Version_ID) /=
+                        "scoped-deleted-version"
+                    or else US.To_String
+                      (Result.Response.Result.Request_Charged) /= "requester"
+                  then
+                     raise Program_Error with
+                       "scoped DeleteObject success/certainty mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
+               Result : constant Scoped.Delete_Result := Objects.Delete
+                 (HTTP, Origin, "example-bucket", "scoped-delete-stale",
+                  Identity, If_Match => """stale-delete-generation""",
+                  Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Delete_Response_Available
+                 or else Result.Disposition /= Scoped.Definitely_Not_Deleted
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Delete_Object_Rejected
+                 or else Result.Response.Status /= 412
+               then
+                  raise Program_Error with
+                    "synchronous scoped DeleteObject precondition mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Scoped.Delete_Result := Objects.Delete
+                 (HTTP, Origin, "example-bucket", "scoped-delete-conflict",
+                  Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Delete_Response_Available
+                 or else Result.Disposition /=
+                   Scoped.Deletion_Outcome_Unknown
+                 or else Result.Failure /= Scoped.Unavailable_Or_Retryable
+                 or else Result.Response.Kind /=
+                   Low_Level.Delete_Object_Rejected
+                 or else Result.Response.Status /= 409
+               then
+                  raise Program_Error with
+                    "scoped DeleteObject conflict certainty mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Scoped.Delete_Result := Objects.Delete
+                 (HTTP, Origin, "example-bucket", "scoped-delete-duplicate",
+                  Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Delete_Exchange_Failed
+                 or else Result.Disposition /=
+                   Scoped.Deletion_Outcome_Unknown
+                 or else Result.Failure /=
+                   Scoped.Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+               then
+                  raise Program_Error with
+                    "scoped DeleteObject accepted duplicate output metadata";
+               end if;
+            end;
+
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+            begin
+               Stop.Request;
+               declare
+                  Result : constant Scoped.Delete_Result := Objects.Delete
+                    (HTTP, Origin, "example-bucket",
+                     "scoped-delete-cancelled", Identity, Timeout => 5.0,
+                     Token => Stop'Access);
+               begin
+                  if Result.Kind /= Scoped.Delete_Exchange_Failed
+                    or else Result.Disposition /=
+                      Scoped.Deletion_Cancelled_Before_Admission
+                    or else Result.Failure /= Scoped.Cancelled
+                    or else Result.Admission /= HTTP_Client.Not_Admitted
+                  then
+                     raise Program_Error with
+                       "pre-admission DeleteObject cancellation mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
+               Result : constant Scoped.Delete_Result := Objects.Delete
+                 (HTTP, Origin, "example-bucket", "scoped-delete-timeout",
+                  Identity, Timeout => 0.0);
+            begin
+               if Result.Kind /= Scoped.Delete_Exchange_Failed
+                 or else Result.Disposition /= Scoped.Definitely_Not_Deleted
+                 or else Result.Failure /= Scoped.Timed_Out
+                 or else Result.Admission /= HTTP_Client.Not_Admitted
+               then
+                  raise Program_Error with
+                    "pre-admission DeleteObject deadline mismatch";
                end if;
             end;
 
@@ -11135,6 +11296,7 @@ procedure S3_HTTP_Socket_Corpus is
    Client_Detail : US.Unbounded_String;
 begin
    Flyology.Object_Storage.Client.Scoped.Testing.Check_Put_Certainty_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.Check_Delete_Certainty_Corpus;
    Run_And_Report;
    declare
       task Lightweight_Client is

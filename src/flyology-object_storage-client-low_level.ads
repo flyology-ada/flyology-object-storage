@@ -3191,6 +3191,18 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Delete_Object_Outcome;
 
+   --  Decode one body-complete DeleteObject response, including strict
+   --  singleton validation for every modeled response header.
+   --  @param Response Complete HTTP response metadata
+   --  @param Payload Complete bounded response body
+   --  @param Limits Shared bounded XML parse policy
+   --  @return Typed deletion result or structured S3 rejection
+   function Decode_Delete_Object_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Delete_Object_Outcome;
+
    function Execute_Delete_Object
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;

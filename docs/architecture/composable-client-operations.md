@@ -2,8 +2,9 @@
 
 This note records the implemented contract for the completion-set-aware object
 client slice: conditional complete-object Put, generation-bound whole and
-single-range Get, and bodyless Head. The prerequisite is published through the
-Flyology Alire index as lockstep HTTP and QUIC 0.1.3 development crates.
+single-range Get, bodyless Head, and non-replaying Delete. The prerequisite is
+published through the Flyology Alire index as lockstep HTTP and QUIC 0.1.3
+development crates.
 
 ## Upstream basis
 
@@ -40,8 +41,9 @@ The initial operation order is:
 
 1. conditional complete `Put_Object`;
 2. whole `Get_Object`;
-3. generation-bound exact-range `Get_Object`; and
-4. `Head_Object`.
+3. generation-bound exact-range `Get_Object`;
+4. `Head_Object`; and
+5. `Delete_Object`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -129,6 +131,15 @@ ambiguous transport outcome is not treated as proof of absence. All ordinary
 service rejections are typed, and bounded diagnostic text preserves request
 identifiers without retaining arbitrary response data.
 
+DeleteObject uses a deliberately non-replayable known-empty operation source.
+A complete validated 204 reports `Deletion_Completed`. Exact modeled request,
+authentication, authorization, missing-resource, and precondition rejections
+report `Definitely_Not_Deleted`. Conflicts, throttling, service failures,
+malformed responses, and every failure after possible admission report
+`Deletion_Outcome_Unknown`. Pre-admission cancellation has its own spelling.
+The result retains HTTP admission certainty independently of its bounded
+failure reason, and the operation never retries automatically.
+
 The Flyology.DB recovery sequence enabled by these operations is:
 
 1. publish an immutable batch with `If-None-Match: *`;
@@ -144,10 +155,11 @@ listing.
 ## Synchronous convergence
 
 The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
-`Get_Range`, and `Head_Object` overloads are literal waits on the same
-`Client.Scoped` state machines and retain their typed certainty, capacity,
-metadata, and ownership results. The older one-shot source, owned-bytes, and
-transfer overloads remain source compatible.
+`Get_Range`, and `Head_Object` overloads and the typed-result `Delete` overload
+are literal waits on the same `Client.Scoped` state machines and retain their
+typed certainty, capacity, metadata, and ownership results. The established
+raising `Delete_Outcome`, older one-shot source, owned-bytes, and transfer
+overloads remain source compatible.
 Because they do not expose transport admission certainty, a caller treats
 every mutation exception after call entry as an unknown publication outcome
 and reconciles before choosing any later retry.
@@ -296,6 +308,7 @@ available. A narrow green smoke test does not promote the feature.
 | Whole Get | empty, one byte, block limit, missing object, exact version, matching and stale entity tag, malformed/multiple length and checksum fields | bytes and metadata share one response; exact ETag/version/checksum separation; no partial success |
 | Range Get | first, middle, final, one-byte, full-span, suffix/open-ended request as applicable, unsatisfied, unsolicited 206, malformed and multipart ranges | exact resolved interval and total length; body length equals interval; generation-bound validator retained |
 | Head | found, absent, exact version, matching/stale condition, malformed success metadata, bodyful HEAD error | same typed metadata vocabulary; no body lease; ambiguity never implies absence |
+| Delete | versioned success, exact precondition rejection, conflict, malformed singleton headers, cancellation, deadline, and every HTTP admission class | non-replayable empty source; exact typed deletion certainty; ambiguous outcomes require reconciliation |
 | Protocol/lane | HTTP/1.1, HTTP/2, HTTP/3; native and lightweight owner tasks; pooled and fresh connections | identical semantic outcomes and deadlines; bounded protocol storage; no retained stream/transport lease |
 | Multi-object DB flow | concurrent immutable batch puts; one CAS winner for `meta/HEAD`; one unrelated wait wins first; ambiguous batch and HEAD recovery | ordinary Flyology gate composition; exact input order where promised; reconciliation by exact whole Get, never listing |
 | Cleanup stress | cancel or finalize at every deterministic driver phase; client shutdown race; completion-set capacity reuse; repeated 10,000-operation campaign | zero live operation, buffer, token, response, stream, descriptor, admission waiter, and pool-accounting drift |

@@ -3,9 +3,9 @@
 This slice qualifies the pinned S3 `DeleteObject` request and response model,
 atomic current-object deletion, signed low- and high-level clients, and the
 authenticated general-purpose server route. Retained-generation deletion is
-qualified on memory and SQLite. Requester Pays enforcement, governance
-retention, directory buckets, and durable files versions remain explicit typed
-capability exclusions rather than silently accepted behavior.
+qualified on memory, files, and SQLite. Requester Pays enforcement, governance
+retention, and directory buckets remain explicit typed capability exclusions
+rather than silently accepted behavior.
 
 The complete modeled request surface is represented: bucket, key, MFA,
 version ID, Requester Pays, governance-retention bypass, expected owner,
@@ -24,13 +24,12 @@ deletion under the same protected, publication-gate, or transactional
 boundary. An ordinary missing unversioned key succeeds idempotently. A missing
 key with `If-Match` is `Not_Found`; a mismatched existing object is
 `Precondition_Failed`. Race lanes admit one atomic outcome and preserve exact
-body/metadata on rejection. The memory and SQLite servers map absent, `null`,
+body/metadata on rejection. The memory, files, and SQLite servers map absent, `null`,
 and opaque version selectors onto their protected or transactional state
 machines. Enabled and suspended simple deletes publish typed markers; exact
 data or marker removal returns the selected version and delete-marker headers;
 missing exact identities remain idempotent; and MFA Delete admission is checked
-within the mutation. Pure-files continues to fail closed for configured
-versioning.
+within the mutation.
 
 The files backend treats every required store, bucket, configuration, object,
 and multipart namespace component as an exact nonsymlink kind before using it.
@@ -58,6 +57,16 @@ accepts one conditional DELETE, drops its response, and requires the next
 request to be reconciliation HEAD. The call raises an outcome-unknown transport
 exception; it never converts a replayed 404 into a definite predicate result.
 
+The composable `Client.Scoped.Delete_Object` constructor and reusable
+`Start_Delete_Object` form drive that same one-shot policy through one hidden
+HTTP child on the caller's completion-set owner stack. Its typed result keeps
+admission certainty separate from deletion disposition. Valid 204 is
+`Deletion_Completed`; exact modeled rejections are
+`Definitely_Not_Deleted`; every nonconclusive or post-admission failure is
+`Deletion_Outcome_Unknown` and requires exact reconciliation before any later
+retry. The `Client.Objects.Delete` result-type overload is a literal wait on
+this state machine, while the established raising overload remains compatible.
+
 The supported server semantics are ordinary unversioned deletion, memory and
 SQLite version selection and marker publication, atomic `If-Match`,
 expected-owner policy, and pluggable fail-closed MFA authorization. A present
@@ -82,7 +91,7 @@ control sequence is followed by an independent visibility check.
 ./tools/prove.sh
 ```
 
-The root gate includes 40/40 AUnit tests, 88 abrupt-crash cases, signed native
+The root gate includes 41/41 AUnit tests, 126 abrupt-crash cases, signed native
 and Flyology-lightweight application/socket corpora, exact body/header error
 oracles, condition races, durability faults, dormant-condition bounds, and the
 live/dangling namespace corpus. The SQLite gate repeats atomic conditions,
