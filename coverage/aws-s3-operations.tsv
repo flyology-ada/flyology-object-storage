@@ -2,7 +2,7 @@ operation	tier	backend	client	server	corpus
 AbortMultipartUpload	core	covered	covered	covered	covered
 CompleteMultipartUpload	core	covered	covered	partial	covered
 CopyObject	core	covered	covered	partial	covered
-CreateBucket	core	covered	covered	partial	covered
+CreateBucket	core	covered	covered	covered	covered
 CreateBucketMetadataConfiguration	extended	missing	partial	missing	missing
 CreateBucketMetadataTableConfiguration	extended	missing	partial	missing	missing
 CreateMultipartUpload	core	covered	covered	partial	covered

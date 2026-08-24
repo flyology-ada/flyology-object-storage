@@ -78,16 +78,29 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    Body_Entity_Too_Large : exception;
 
    Maximum_Create_Bucket_Body : constant Byte_Count := 64 * 1_024;
+   --  Existing project-policy admission ceiling for the buffered
+   --  CreateBucket configuration. It keeps request memory bounded; changing
+   --  it changes accepted wire inputs and requires compatibility review.
    Maximum_Versioning_Body : constant Byte_Count :=
      Versioning.Maximum_Document_Bytes;
+   --  Derived from the versioning codec's public document ceiling so the
+   --  server and parser cannot drift; changing that source changes admission.
    Maximum_Delete_Objects_Body : constant Byte_Count :=
      Deletions.Maximum_Document_Bytes;
+   --  Derived from the multi-delete codec's public document ceiling so the
+   --  server and parser cannot drift; changing that source changes admission.
    Maximum_Complete_Multipart_Body : constant Byte_Count :=
      2 * 1_024 * 1_024;
+   --  Existing project-policy ceiling for the buffered completion manifest.
+   --  It bounds request memory; changing it changes accepted wire inputs.
    Maximum_Object_Tagging_Body : constant Byte_Count :=
      Tagging.Maximum_Document_Bytes;
+   --  Derived from the object-tagging codec's public document ceiling so the
+   --  server and parser cannot drift; changing that source changes admission.
    Maximum_Bucket_Tagging_Body : constant Byte_Count :=
      Tagging.Maximum_Bucket_Document_Bytes;
+   --  Derived from the bucket-tagging codec's public document ceiling so the
+   --  server and parser cannot drift; changing that source changes admission.
 
    function Decimal (Value : Byte_Count) return String is
      (Ada.Strings.Fixed.Trim
@@ -1973,6 +1986,29 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                       (X, "x-amz-grant-write") > 0
                     or else Apps.Request_Header_Count
                       (X, "x-amz-grant-write-acp") > 0;
+                  Empty_Grant : constant Boolean :=
+                    (Apps.Request_Header_Count
+                       (X, "x-amz-grant-full-control") = 1
+                     and then Apps.Request_Header
+                       (X, "x-amz-grant-full-control")'Length = 0)
+                    or else
+                      (Apps.Request_Header_Count (X, "x-amz-grant-read") = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-grant-read")'Length = 0)
+                    or else
+                      (Apps.Request_Header_Count
+                         (X, "x-amz-grant-read-acp") = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-grant-read-acp")'Length = 0)
+                    or else
+                      (Apps.Request_Header_Count (X, "x-amz-grant-write") = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-grant-write")'Length = 0)
+                    or else
+                      (Apps.Request_Header_Count
+                         (X, "x-amz-grant-write-acp") = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-grant-write-acp")'Length = 0);
                   Directory_Configuration : constant Boolean :=
                     US.Length (Configuration.Location_Type) > 0
                     or else US.Length (Configuration.Location_Name) > 0
@@ -1986,6 +2022,19 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Send_Error
                        (X, 400, "InvalidRequest",
                         "A CreateBucket header is duplicated", Target_Text);
+                     return;
+                  elsif (ACL_Count = 1 and then ACL'Length = 0)
+                    or else
+                      (Ownership_Count = 1 and then Ownership'Length = 0)
+                    or else
+                      (Object_Lock_Count = 1 and then Object_Lock'Length = 0)
+                    or else
+                      (Namespace_Count = 1 and then Namespace'Length = 0)
+                    or else Empty_Grant
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "A CreateBucket control is empty", Target_Text);
                      return;
                   elsif ACL'Length > 0
                     and then ACL /= "private"

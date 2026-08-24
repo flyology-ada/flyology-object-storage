@@ -678,7 +678,8 @@ procedure S3_Server_Application_Corpus is
       Payload      : String;
       Header_Name  : String := "";
       Header_Value : String := "";
-      Second_Value : String := "") return String
+      Second_Value : String := "";
+      Corrupt_Signature : Boolean := False) return String
    is
       Payload_Hash : constant String := SigV4.SHA256_Hex (Payload);
       Headers : constant SigV4.Name_Value_Array :=
@@ -700,7 +701,12 @@ procedure S3_Server_Application_Corpus is
       Signing : constant SigV4.Signing_Result := SigV4.Sign
         ("PUT", Target, No_Query, Headers, Payload_Hash, Access_Key,
          Secret_Key, Region, Timestamp);
+      Authorization : String := US.To_String (Signing.Authorization);
    begin
+      if Corrupt_Signature then
+         Authorization (Authorization'Last) :=
+           (if Authorization (Authorization'Last) = '0' then '1' else '0');
+      end if;
       return "PUT " & Target & " HTTP/1.1" & CRLF &
         "Host: " & Host & CRLF &
         "x-amz-date: " & Timestamp & CRLF &
@@ -709,7 +715,7 @@ procedure S3_Server_Application_Corpus is
          else Header_Name & ": " & Header_Value & CRLF) &
         (if Second_Value'Length = 0 then ""
          else Header_Name & ": " & Second_Value & CRLF) &
-        "Authorization: " & US.To_String (Signing.Authorization) & CRLF &
+        "Authorization: " & Authorization & CRLF &
         "Content-Length: " &
           Ada.Strings.Fixed.Trim
             (Natural'Image (Payload'Length), Ada.Strings.Both) & CRLF &
@@ -3404,6 +3410,16 @@ begin
         "<CreateBucketConfiguration><Tags><Tag><Key>team</Key>" &
         "<Value>storage</Value></Tag></Tags>" &
         "</CreateBucketConfiguration>";
+      Empty_Configuration : constant String :=
+        "<CreateBucketConfiguration/>";
+      Create_Bucket_Body_Limit : constant Positive := 64 * 1_024;
+      Exact_Limit_Document : constant String :=
+        Empty_Configuration & String'
+          (1 .. Create_Bucket_Body_Limit - Empty_Configuration'Length => ' ');
+      One_Past_Document : constant String := Exact_Limit_Document & ' ';
+      --  This test/reference limit mirrors the server's established
+      --  project-policy ceiling. Exact and one-past oracles intentionally fail
+      --  together if that wire-compatibility choice is reviewed for change.
    begin
       declare
          Response : constant String :=
@@ -3470,10 +3486,25 @@ begin
         (Has
            (Run
               (Signed_Create_Bucket_Request
+                 ("/empty-acl-create", "", "x-amz-acl", "")),
+            "<Code>InvalidArgument</Code>"),
+         "CreateBucket treated an empty ACL as absent");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
                  ("/invalid-ownership-create", "",
                   "x-amz-object-ownership", "bogus")),
             "<Code>InvalidArgument</Code>"),
          "CreateBucket accepted invalid object ownership");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/empty-ownership-create", "",
+                  "x-amz-object-ownership", "")),
+            "<Code>InvalidArgument</Code>"),
+         "CreateBucket treated empty object ownership as absent");
       Require
         (Has
            (Run
@@ -3494,6 +3525,14 @@ begin
         (Has
            (Run
               (Signed_Create_Bucket_Request
+                 ("/empty-lock-create", "",
+                  "x-amz-bucket-object-lock-enabled", "")),
+            "<Code>InvalidArgument</Code>"),
+         "CreateBucket misclassified empty Object Lock");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
                  ("/namespace-create", "", "x-amz-bucket-namespace",
                   "global")),
             "501 Not Implemented"),
@@ -3506,6 +3545,14 @@ begin
                   "x-amz-bucket-namespace", "bogus")),
             "<Code>InvalidArgument</Code>"),
          "CreateBucket accepted an invalid bucket namespace");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/empty-namespace-create", "",
+                  "x-amz-bucket-namespace", "")),
+            "<Code>InvalidArgument</Code>"),
+         "CreateBucket misclassified an empty bucket namespace");
       Require
         (Has
            (Run
@@ -3525,9 +3572,40 @@ begin
         (Has
            (Run
               (Signed_Create_Bucket_Request
-                 ("/oversized-create", String'(1 .. 65 * 1_024 => 'x'))),
+                 ("/empty-grant-create", "", "x-amz-grant-read", "")),
+            "<Code>InvalidArgument</Code>"),
+         "CreateBucket misclassified an empty ACL grant");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/exact-limit-create", Exact_Limit_Document)),
+            "200 OK"),
+         "CreateBucket rejected the exact body-size limit");
+      Require
+        (Has
+           (Run
+              (Signed_Create_Bucket_Request
+                 ("/one-past-create", One_Past_Document)),
             "<Code>EntityTooLarge</Code>"),
-         "CreateBucket body size limit was not enforced");
+         "CreateBucket accepted one byte beyond the body-size limit");
+      declare
+         Value : constant String := Run
+           (Signed_Create_Bucket_Request
+              ("/auth-precedence-create", "", "x-amz-acl", "",
+               Corrupt_Signature => True));
+      begin
+         Require
+           (Has (Value, "<Code>SignatureDoesNotMatch</Code>"),
+            "CreateBucket controls ran before authentication: " & Value);
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Bucket_Request
+                 ("DELETE", "/exact-limit-create")),
+            "204 No Content"),
+         "exact-limit CreateBucket cleanup failed");
       Require
         (Has
            (Run (Signed_Bucket_Request ("HEAD", "/wrong-region-create")),
@@ -3542,6 +3620,29 @@ begin
             "404 Not Found")
          and then Has
            (Run (Signed_Bucket_Request ("HEAD", "/public-create")),
+            "404 Not Found")
+         and then Has
+           (Run (Signed_Bucket_Request ("HEAD", "/empty-acl-create")),
+            "404 Not Found")
+         and then Has
+           (Run (Signed_Bucket_Request ("HEAD", "/empty-ownership-create")),
+            "404 Not Found")
+         and then Has
+           (Run (Signed_Bucket_Request ("HEAD", "/empty-lock-create")),
+            "404 Not Found")
+         and then Has
+           (Run (Signed_Bucket_Request ("HEAD", "/empty-namespace-create")),
+            "404 Not Found")
+         and then Has
+           (Run (Signed_Bucket_Request ("HEAD", "/empty-grant-create")),
+            "404 Not Found")
+         and then Has
+           (Run (Signed_Bucket_Request ("HEAD", "/one-past-create")),
+            "404 Not Found")
+         and then Has
+           (Run
+              (Signed_Bucket_Request
+                 ("HEAD", "/auth-precedence-create")),
             "404 Not Found"),
          "rejected CreateBucket controls mutated backend state");
    end;
