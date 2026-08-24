@@ -129,6 +129,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
      (Item     : in out Catalog;
       Bucket   : String;
       Key      : String;
+      Selector : Backends.Version_Selector;
       Options  : Backends.Object_Attribute_Options;
       Conditions : Backends.Read_Conditions;
       Check    : not null access procedure;
@@ -290,7 +291,7 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Upload_ID        : String;
       Selected         : Multipart_Part_Records;
       Payload          : String;
-      Info             : Object_Information;
+      Info             : in out Object_Information;
       Conditions       : Write_Conditions;
       Previous_Payload : out Ada.Strings.Unbounded.Unbounded_String;
       Retired_Payloads : out Payloads;

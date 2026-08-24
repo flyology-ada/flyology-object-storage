@@ -2302,6 +2302,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      (Item     : in out Catalog;
       Bucket   : String;
       Key      : String;
+      Selector : Backends.Version_Selector;
       Options  : Backends.Object_Attribute_Options;
       Conditions : Backends.Read_Conditions;
       Check    : not null access procedure;
@@ -2311,14 +2312,15 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Payload : US.Unbounded_String;
       Count_Query : DB.Statement;
       Parts_Query : DB.Statement;
+      Version_ID : US.Unbounded_String;
       Locked : Boolean := False;
    begin
       Snapshot := (others => <>);
       Item.Gate.Acquire;
       Locked := True;
       Check.all;
-      Find_Object_Internal
-        (Item, Bucket, Key, Payload, Snapshot.Info, Result);
+      Find_Selected_Object_Internal
+        (Item, Bucket, Key, Selector, Payload, Snapshot.Info, Result);
       if Result /= Success then
          Item.Gate.Release;
          Locked := False;
@@ -2332,12 +2334,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Locked := False;
          return;
       end if;
+      Version_ID :=
+        (if US.Length (Snapshot.Info.Version) = 0
+         then US.To_Unbounded_String ("null") else Snapshot.Info.Version);
       DB.Prepare
         (Count_Query, Item.Database,
-         "SELECT count(*) FROM object_parts " &
-         "WHERE bucket_name=?1 AND object_key=?2");
+         "SELECT count(*) FROM object_version_parts " &
+         "WHERE bucket_name=?1 AND object_key=?2 AND version_id=?3");
       DB.Bind (Count_Query, 1, Bucket);
       DB.Bind_Bytes (Count_Query, 2, Key);
+      DB.Bind_Bytes (Count_Query, 3, US.To_String (Version_ID));
       if DB.Step (Count_Query) /= DB.Row
         or else Long_Long_Integer'(DB.Column (Count_Query, 0))
           not in 0 .. 10_000
@@ -2351,15 +2357,17 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          DB.Prepare
            (Parts_Query, Item.Database,
             "SELECT part_number,size,checksum_algorithm,checksum_method," &
-            "checksum_value FROM object_parts " &
+            "checksum_value FROM object_version_parts " &
             "WHERE bucket_name=?1 AND object_key=?2 " &
-            "AND part_number>?3 ORDER BY part_number LIMIT ?4");
+            "AND version_id=?3 AND part_number>?4 " &
+            "ORDER BY part_number LIMIT ?5");
          DB.Bind (Parts_Query, 1, Bucket);
          DB.Bind_Bytes (Parts_Query, 2, Key);
+         DB.Bind_Bytes (Parts_Query, 3, US.To_String (Version_ID));
          DB.Bind
-           (Parts_Query, 3, Long_Long_Integer (Options.After));
+           (Parts_Query, 4, Long_Long_Integer (Options.After));
          DB.Bind
-           (Parts_Query, 4,
+           (Parts_Query, 5,
             Long_Long_Integer (Options.Maximum) + 1);
          while DB.Step (Parts_Query) = DB.Row loop
             Check.all;
@@ -2421,93 +2429,6 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise Catalog_Error with "generation delete returned a row";
       end if;
    end Delete_Generation_Mirror_Internal;
-
-   procedure Replace_Null_Generation_Internal
-     (Item : in out Catalog; Bucket, Key : String)
-   is
-      Insert_Version  : DB.Statement;
-      Insert_Current  : DB.Statement;
-      Insert_Tags     : DB.Statement;
-      Insert_Metadata : DB.Statement;
-      Insert_Parts    : DB.Statement;
-   begin
-      Delete_Generation_Mirror_Internal (Item, Bucket, Key);
-      DB.Prepare
-        (Insert_Version, Item.Database,
-         "INSERT INTO object_versions(" &
-         "bucket_name,object_key,version_id,is_delete_marker,payload,size," &
-         "modified,entity_tag,content_type,checksum_algorithm," &
-         "checksum_method,checksum_value,cache_control_present," &
-         "cache_control,content_disposition_present,content_disposition," &
-         "content_encoding_present,content_encoding," &
-         "content_language_present,content_language,expires_present," &
-         "expires,redirect_present,redirect) SELECT bucket_name,object_key," &
-         Null_Version_SQL &
-         ",0,payload,size,modified,entity_tag,content_type," &
-         "checksum_algorithm,checksum_method,checksum_value," &
-         "cache_control_present,cache_control," &
-         "content_disposition_present,content_disposition," &
-         "content_encoding_present,content_encoding," &
-         "content_language_present,content_language,expires_present," &
-         "expires,redirect_present,redirect FROM objects " &
-         "WHERE bucket_name=?1 AND object_key=?2");
-      DB.Bind (Insert_Version, 1, Bucket);
-      DB.Bind_Bytes (Insert_Version, 2, Key);
-      if DB.Step (Insert_Version) /= DB.Done
-        or else DB.Changes (Item.Database) /= 1
-      then
-         raise Catalog_Error with "null generation insert changed no row";
-      end if;
-      DB.Prepare
-        (Insert_Current, Item.Database,
-         "INSERT INTO current_object_versions(" &
-         "bucket_name,object_key,version_id) VALUES(?1,?2," &
-         Null_Version_SQL & ")");
-      DB.Bind (Insert_Current, 1, Bucket);
-      DB.Bind_Bytes (Insert_Current, 2, Key);
-      if DB.Step (Insert_Current) /= DB.Done then
-         raise Catalog_Error with "current generation insert returned a row";
-      end if;
-      DB.Prepare
-        (Insert_Tags, Item.Database,
-         "INSERT INTO object_version_tags(bucket_name,object_key," &
-         "version_id,tag_index,tag_key,tag_value) SELECT bucket_name," &
-         "object_key," & Null_Version_SQL &
-         ",tag_index,tag_key,tag_value " &
-         "FROM object_tags WHERE bucket_name=?1 AND object_key=?2");
-      DB.Bind (Insert_Tags, 1, Bucket);
-      DB.Bind_Bytes (Insert_Tags, 2, Key);
-      if DB.Step (Insert_Tags) /= DB.Done then
-         raise Catalog_Error with "generation tag copy returned a row";
-      end if;
-      DB.Prepare
-        (Insert_Metadata, Item.Database,
-         "INSERT INTO object_version_metadata(bucket_name,object_key," &
-         "version_id,ordinal,metadata_key,metadata_value) SELECT " &
-         "bucket_name,object_key," & Null_Version_SQL &
-         ",ordinal,metadata_key," &
-         "metadata_value FROM object_metadata " &
-         "WHERE bucket_name=?1 AND object_key=?2");
-      DB.Bind (Insert_Metadata, 1, Bucket);
-      DB.Bind_Bytes (Insert_Metadata, 2, Key);
-      if DB.Step (Insert_Metadata) /= DB.Done then
-         raise Catalog_Error with "generation metadata copy returned a row";
-      end if;
-      DB.Prepare
-        (Insert_Parts, Item.Database,
-         "INSERT INTO object_version_parts(bucket_name,object_key," &
-         "version_id,part_number,size,checksum_algorithm,checksum_method," &
-         "checksum_value) SELECT bucket_name,object_key," &
-         Null_Version_SQL & "," &
-         "part_number,size,checksum_algorithm,checksum_method," &
-         "checksum_value FROM object_parts " &
-         "WHERE bucket_name=?1 AND object_key=?2");
-      DB.Bind (Insert_Parts, 1, Bucket);
-      DB.Bind_Bytes (Insert_Parts, 2, Key);
-      if DB.Step (Insert_Parts) /= DB.Done then
-         raise Catalog_Error with "generation part copy returned a row";
-      end if;
-   end Replace_Null_Generation_Internal;
 
    procedure Publish_Data_Generation_Internal
      (Item              : in out Catalog;
@@ -4411,18 +4332,21 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Upload_ID        : String;
       Selected         : Multipart_Part_Records;
       Payload          : String;
-      Info             : Object_Information;
+      Info             : in out Object_Information;
       Conditions       : Write_Conditions;
       Previous_Payload : out US.Unbounded_String;
       Retired_Payloads : out Payloads;
       Result           : out Status)
    is
       Upload_Options : Backends.Multipart_Options;
+      Bucket_Query   : DB.Statement;
       Upsert         : DB.Statement;
       Clear_Tags     : DB.Statement;
       Delete         : DB.Statement;
       Existing       : Object_Information;
+      Current_Payload : US.Unbounded_String;
       Existing_Found : Boolean;
+      Versioning     : Bucket_Versioning_Status := Versioning_Unconfigured;
       Locked         : Boolean := False;
       In_Transaction : Boolean := False;
    begin
@@ -4444,6 +4368,17 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Locked := False;
          return;
       end if;
+      DB.Prepare
+        (Bucket_Query, Item.Database,
+         "SELECT versioning_status FROM buckets WHERE name=?1");
+      DB.Bind (Bucket_Query, 1, Bucket);
+      if DB.Step (Bucket_Query) /= DB.Row
+        or else Long_Long_Integer'(DB.Column (Bucket_Query, 0)) not in 0 .. 2
+      then
+         raise Catalog_Error with "invalid multipart bucket versioning state";
+      end if;
+      Versioning := Bucket_Versioning_Status'Val
+        (Natural (Long_Long_Integer'(DB.Column (Bucket_Query, 0))));
       for Record_Value of Selected loop
          declare
             Query : DB.Statement;
@@ -4479,7 +4414,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       end loop;
       Collect_Multipart_Payloads (Item, Upload_ID, Retired_Payloads);
       Find_Object_Internal
-        (Item, Bucket, Key, Previous_Payload, Existing, Result);
+        (Item, Bucket, Key, Current_Payload, Existing, Result);
       Existing_Found := Result = Success;
       if Result not in Success | Not_Found then
          DB.Rollback (Item.Database);
@@ -4498,6 +4433,28 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Locked := False;
          return;
       end if;
+      case Versioning is
+         when Versioning_Unconfigured =>
+            Previous_Payload := Current_Payload;
+         when Versioning_Enabled =>
+            Previous_Payload := US.Null_Unbounded_String;
+         when Versioning_Suspended =>
+            declare
+               Null_Query : DB.Statement;
+            begin
+               DB.Prepare
+                 (Null_Query, Item.Database,
+                  "SELECT payload FROM object_versions WHERE " &
+                  "bucket_name=?1 AND object_key=?2 AND version_id=" &
+                  Null_Version_SQL & " AND is_delete_marker=0");
+               DB.Bind (Null_Query, 1, Bucket);
+               DB.Bind_Bytes (Null_Query, 2, Key);
+               if DB.Step (Null_Query) = DB.Row then
+                  Previous_Payload :=
+                    US.To_Unbounded_String (DB.Column (Null_Query, 0));
+               end if;
+            end;
+      end case;
       DB.Prepare
         (Upsert, Item.Database,
          "INSERT INTO objects(" &
@@ -4576,7 +4533,30 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       if DB.Step (Clear_Tags) /= DB.Done then
          raise Catalog_Error with "multipart object tag reset returned a row";
       end if;
-      Replace_Null_Generation_Internal (Item, Bucket, Key);
+      case Versioning is
+         when Versioning_Unconfigured =>
+            Info.Version := US.Null_Unbounded_String;
+            Publish_Data_Generation_Internal
+              (Item, Bucket, Key, "null", Replace_All => True,
+               Replace_Null => False);
+         when Versioning_Enabled =>
+            declare
+               Publication : constant Long_Long_Integer :=
+                 Next_Generation_Order (Item);
+               Version_ID : constant String :=
+                 Generated_Version_ID (Bucket, Key, Publication);
+            begin
+               Info.Version := US.To_Unbounded_String (Version_ID);
+               Publish_Data_Generation_Internal
+                 (Item, Bucket, Key, Version_ID, Replace_All => False,
+                  Replace_Null => False, Expected_Order => Publication);
+            end;
+         when Versioning_Suspended =>
+            Info.Version := US.Null_Unbounded_String;
+            Publish_Data_Generation_Internal
+              (Item, Bucket, Key, "null", Replace_All => False,
+               Replace_Null => True);
+      end case;
       DB.Prepare
         (Delete, Item.Database,
          "DELETE FROM multipart_uploads WHERE upload_id=?1");

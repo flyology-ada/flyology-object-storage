@@ -3,8 +3,9 @@
 This slice qualifies configuration semantics for `PutBucketVersioning` and
 `GetBucketVersioning`. Retained memory generations and SQLite ordinary PUT,
 delete-marker, version-addressed read/tag/delete, and ListObjectVersions
-behavior are qualified separately. Retained-generation multipart completion
-and durable files generations remain absent.
+behavior are qualified separately. SQLite retained-generation multipart
+completion and selected part attributes are also qualified; durable files
+generations remain absent.
 
 The machine ledger records both configuration operations as `covered` for the
 backend, client, server, and corpus columns. The separately qualified

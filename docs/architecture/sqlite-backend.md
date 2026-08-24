@@ -55,21 +55,22 @@ tags, metadata, and parts under one exclusive transaction. Ordinary PUT reads
 the bucket versioning state and publishes its current mirror and retained
 generation in the same transaction: unconfigured buckets replace all history
 with `null`, enabled buckets append a unique opaque generation, and suspended
-buckets replace only the `null` generation. Current, null, and exact GET/HEAD
-and tag operations select that same durable snapshot. Enabled current deletion
+buckets replace only the `null` generation. Multipart completion follows the
+same three publication modes and snapshots its completed-part metadata with
+the generation. Current, null, and exact GET/HEAD, object-attribute, and tag
+operations select that same durable snapshot. Enabled current deletion
 appends a unique delete marker, suspended deletion replaces only the null
 marker, and exact deletion permanently removes the selected data or marker;
-removing the latest generation re-exposes the preceding snapshot. Multipart
-completion remains on the null-generation replacement path and is not yet
-qualified for retained enabled/suspended publication.
+removing the latest generation re-exposes the preceding snapshot.
 
 Generation listing reads the normalized rows in bytewise key and
 newest-publication order, applies prefix and delimiter projection, and resumes
 only from an exact paired key/version cursor. It fails closed on noncanonical
 delete-marker metadata. The shared generation state-machine corpus and a
-separate reopen oracle gate ordinary publication, selection, per-generation
-tags, marker transitions, exact deletion, MFA admission, ordering, pagination,
-payload reference recovery, and re-exposure of prior generations. Durable
+separate reopen oracle gate ordinary and multipart publication, selected
+object attributes, per-generation tags, marker transitions, exact deletion,
+MFA admission, ordering, pagination, payload reference recovery, and
+re-exposure of prior generations. Durable
 server routing and black-box S3 interoperability remain separate qualification
 boundaries.
 

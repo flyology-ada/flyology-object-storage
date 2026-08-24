@@ -63,6 +63,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
    SQLite_Checksum  : Flyology.Object_Storage.Checksum_Information;
    SQLite_Part_Checksum : Flyology.Object_Storage.Checksum_Information;
    SQLite_Full_Checksum : Flyology.Object_Storage.Checksum_Information;
+   SQLite_Multipart_Version : US.Unbounded_String;
    SQLite_Bucket_Created : Flyology.Object_Storage.Unix_Time := 0;
 
    procedure Assert (Condition : Boolean; Message : String) is
@@ -2784,8 +2785,9 @@ begin
          and then Configuration.MFA_Delete = MFA_Delete_Disabled,
          "schema-v7 migration did not preserve versioning");
       Catalogs.Get_Object_Attributes
-        (Catalog, "legacy-bucket", "k", (After => 0, Maximum => 1),
-         (others => <>), Check'Access, Snapshot, Result);
+        (Catalog, "legacy-bucket", "k", Current_Version_Selector,
+         (After => 0, Maximum => 1), (others => <>), Check'Access, Snapshot,
+         Result);
       Assert
         (Result = Success and then Snapshot.Parts.Length = 1
          and then Snapshot.Parts.First_Element.Number = 1
@@ -3031,10 +3033,105 @@ begin
    end if;
    declare
       package Backend renames Flyology.Object_Storage.Backends.SQLite;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
       Store : Backend.Store := Backend.Open (Versioned_Root);
+      Result : Status;
+
+      procedure Complete_One_Part
+        (Value : String; Info : out Object_Information)
+      is
+         Upload_ID : US.Unbounded_String;
+         Part_Info : Object_Information;
+         Parts     : Multipart_Part_References;
+         Source    : Buffer_Source :=
+           (Data     => Flyology.Bytes.From_Byte_String (Value),
+            Position => 0,
+            Length   => (Kind => Known, Bytes => Byte_Count (Value'Length)));
+      begin
+         Store.Create_Multipart_Upload
+           ("sqlite-versioned-multipart", "item", Default_Multipart_Options,
+            null, Ada.Real_Time.Time_Last, Upload_ID, Result);
+         Assert (Result = Success, "versioned SQLite multipart create failed");
+         Store.Put_Multipart_Part
+           ("sqlite-versioned-multipart", "item", US.To_String (Upload_ID),
+            1, Source, null, Ada.Real_Time.Time_Last, Part_Info, Result);
+         Assert (Result = Success, "versioned SQLite multipart part failed");
+         Parts.Append
+           (Multipart_Part_Reference'
+              (Number     => 1,
+               Entity_Tag => Part_Info.Entity_Tag,
+               Checksum   => Part_Info.Checksum));
+         Store.Complete_Multipart_Upload
+           ("sqlite-versioned-multipart", "item", US.To_String (Upload_ID),
+            Parts, null, Ada.Real_Time.Time_Last, Info, Result);
+         Assert
+           (Result = Success
+            and then Info.Size = Byte_Count (Value'Length),
+            "versioned SQLite multipart completion failed");
+      end Complete_One_Part;
    begin
       Versioned_Object_Conformance.Exercise
         (Store, "sqlite-versioned-conformance");
+      Store.Create_Bucket
+        ("sqlite-versioned-multipart", null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "versioned SQLite multipart bucket failed");
+      Store.Put_Bucket_Versioning
+        ("sqlite-versioned-multipart",
+         (Status => Versioning_Enabled,
+          MFA_Delete => MFA_Delete_Unconfigured),
+         null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "versioned SQLite multipart enable failed");
+      declare
+         First  : Object_Information;
+         Second : Object_Information;
+         Null_A : Object_Information;
+         Null_B : Object_Information;
+         Exact  : Version_Selector;
+         Snapshot : Object_Attribute_Snapshot;
+         Sink   : Buffer_Sink;
+      begin
+         Complete_One_Part ("first multipart", First);
+         Complete_One_Part ("second multipart", Second);
+         Assert
+           (US.Length (First.Version) > 0
+            and then US.Length (Second.Version) > 0
+            and then First.Version /= Second.Version,
+            "enabled SQLite multipart identities were not unique");
+         SQLite_Multipart_Version := First.Version;
+         Exact := (Kind => Exact_Version, ID => First.Version);
+         Store.Get_Object_Attributes
+           ("sqlite-versioned-multipart", "item", (others => <>), null,
+            Ada.Real_Time.Time_Last, Snapshot, Result, Selector => Exact);
+         Assert
+           (Result = Success and then Snapshot.Info.Version = First.Version
+            and then Snapshot.Is_Multipart and then Snapshot.Total_Parts = 1
+            and then Snapshot.Parts.Length = 1
+            and then Snapshot.Parts.First_Element.Size = First.Size,
+            "SQLite exact multipart attributes lost their generation");
+         Store.Get_Object
+           ("sqlite-versioned-multipart", "item", Whole_Object, Sink, null,
+            Ada.Real_Time.Time_Last, First, Result, Selector => Exact);
+         Assert
+           (Result = Success
+            and then Flyology.Bytes.To_Byte_String (Sink.Data) =
+              "first multipart",
+            "SQLite exact multipart body was not retained");
+         Store.Put_Bucket_Versioning
+           ("sqlite-versioned-multipart",
+            (Status => Versioning_Suspended,
+             MFA_Delete => MFA_Delete_Unconfigured),
+            null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "versioned SQLite multipart suspend failed");
+         Complete_One_Part ("null multipart a", Null_A);
+         Complete_One_Part ("null multipart b", Null_B);
+         Assert
+           (US.Length (Null_A.Version) = 0
+            and then US.Length (Null_B.Version) = 0,
+            "suspended SQLite multipart did not replace the null generation");
+      end;
    end;
    declare
       package Backend renames Flyology.Object_Storage.Backends.SQLite;
@@ -3046,6 +3143,9 @@ begin
       Info    : Object_Information;
       Outcome : Version_Delete_Outcome;
       Sink    : Buffer_Sink;
+      --  The fixture retains two enabled exact multipart generations and the
+      --  final suspended null generation; this is a derived recovery oracle.
+      Retained_Multipart_Generations : constant Natural := 3;
    begin
       Store.List_Object_Versions
         ("sqlite-versioned-conformance", (others => <>), null,
@@ -3092,8 +3192,33 @@ begin
          Ada.Real_Time.Time_Last, Page, Result);
       Assert
         (Result = Success and then Page.Entries.Length = 7
-         and then Regular_File_Count (Versioned_Root & "/objects") = 7,
+         and then Regular_File_Count (Versioned_Root & "/objects") =
+           Natural (Page.Entries.Length) + Retained_Multipart_Generations,
          "SQLite startup recovery lost or retained generation payloads");
+      declare
+         Exact : constant Version_Selector :=
+           (Kind => Exact_Version, ID => SQLite_Multipart_Version);
+         Snapshot : Object_Attribute_Snapshot;
+         Multipart_Sink : Buffer_Sink;
+      begin
+         Store.Get_Object_Attributes
+           ("sqlite-versioned-multipart", "item", (others => <>), null,
+            Ada.Real_Time.Time_Last, Snapshot, Result, Selector => Exact);
+         Assert
+           (Result = Success
+            and then Snapshot.Info.Version = SQLite_Multipart_Version
+            and then Snapshot.Is_Multipart and then Snapshot.Total_Parts = 1
+            and then Snapshot.Parts.Length = 1,
+            "SQLite exact multipart attributes did not survive reopen");
+         Store.Get_Object
+           ("sqlite-versioned-multipart", "item", Whole_Object,
+            Multipart_Sink, null, Ada.Real_Time.Time_Last, Info, Result);
+         Assert
+           (Result = Success and then US.Length (Info.Version) = 0
+            and then Flyology.Bytes.To_Byte_String (Multipart_Sink.Data) =
+              "null multipart b",
+            "SQLite suspended multipart null generation did not reopen");
+      end;
    end;
    Ada.Directories.Delete_Tree (Versioned_Root);
 
@@ -3366,7 +3491,7 @@ begin
             "SQLite denied MFA update changed stored configuration");
          Store.Put_Bucket_Versioning
            ("sqlite-bucket",
-            (Status => Versioning_Enabled,
+            (Status => Versioning_Suspended,
              MFA_Delete => MFA_Delete_Enabled),
             null, Ada.Real_Time.Time_Last, Result,
             MFA_Validated => True);
@@ -4006,7 +4131,7 @@ begin
             Configuration, Result);
          Assert
            (Result = Success
-            and then Configuration.Status = Versioning_Enabled
+            and then Configuration.Status = Versioning_Suspended
             and then Configuration.MFA_Delete = MFA_Delete_Enabled,
             "SQLite backend versioning configuration did not survive reopen");
       end;

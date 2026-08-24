@@ -995,12 +995,10 @@ package body Flyology.Object_Storage.Backends.SQLite is
       then
          Result := Invalid_Request;
          return;
-      elsif Selector.Kind /= Current_Version then
-         Result := Not_Implemented;
-         return;
       end if;
       Catalogs.Get_Object_Attributes
-        (Item.Catalog, Bucket, Key, Options, Conditions, Check'Access,
+        (Item.Catalog, Bucket, Key, Selector, Options, Conditions,
+         Check'Access,
          Snapshot, Result);
    exception
       when Flyology.Cancellation.Operation_Cancelled

@@ -7,9 +7,9 @@ markers, permanent selected-generation removal, and delimiter/common-prefix
 pagination. The SQLite slice additionally qualifies durable ordinary PUT,
 current/null/exact selection and tags, enabled and suspended delete-marker
 transitions, permanent selected-generation deletion, catalog ordering, paired
-cursors, delimiter projection, and reopen recovery. It does not yet claim
-retained-generation multipart completion, durable server behavior, files
-generations, or external-server interoperability.
+cursors, delimiter projection, retained multipart publication and selected
+part attributes, and reopen recovery. It does not yet claim durable server
+behavior, files generations, or external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -142,11 +142,11 @@ marker metadata. The backend then runs the complete shared generation-state
 corpus and a second reopen oracle. Those gates cover unique ordinary
 publication, current/null/exact reads, per-generation tags, enabled and
 suspended marker transitions, permanent exact data and marker deletion, MFA
-admission, prior-generation re-exposure, payload-reference recovery, and
+admission, prior-generation re-exposure, retained multipart completion,
+selected-generation part attributes, payload-reference recovery, and
 generation/file cardinality after startup collection. The backend and server
-cells remain partial until retained-generation multipart completion, durable
-server selection, files generations, and black-box external S3 behavior are
-independently qualified.
+cells remain partial until durable server selection, files generations, and
+black-box external S3 behavior are independently qualified.
 
 ## Gate evidence
 
