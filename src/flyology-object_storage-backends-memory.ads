@@ -515,6 +515,7 @@ private
         (Bucket   : String;
          Entries  : Delete_Object_Entries;
          Requirements : Delete_Objects_Requirements;
+         Modified : Unix_Time;
          Outcomes : in out Delete_Object_Outcomes;
          Result   : out Status);
       procedure Delete_Selected

@@ -3265,7 +3265,9 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Entries.Append
         (Delete_Object_Entry'
-           (Key => US.To_Unbounded_String (Key), Conditions => Conditions));
+           (Key => US.To_Unbounded_String (Key),
+            Selector => Current_Version_Selector,
+            Conditions => Conditions));
       Item.Delete_Objects
         (Bucket, Entries, Requirements, Token, Deadline, Outcomes, Result);
       if Result = Success then
@@ -3289,7 +3291,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Outcome       : out Version_Delete_Outcome;
       Result        : out Status)
    is
-      pragma Unreferenced (Item, MFA_Validated);
+      Entries  : Delete_Object_Entries;
+      Outcomes : Delete_Object_Outcomes;
    begin
       Outcome := (others => <>);
       Check_Context (Token, Deadline);
@@ -3305,8 +3308,24 @@ package body Flyology.Object_Storage.Backends.Files is
                 (Ada.Strings.Unbounded.To_String (Conditions.ETag))))
       then
          Result := Invalid_Request;
-      else
-         Result := Not_Implemented;
+         return;
+      end if;
+      Entries.Append
+        (Delete_Object_Entry'
+           (Key => US.To_Unbounded_String (Key),
+            Selector => Selector,
+            Conditions => Conditions));
+      Item.Delete_Objects
+        (Bucket, Entries,
+         (Require_Unversioned => False, MFA_Validated => MFA_Validated),
+         Token, Deadline, Outcomes, Result);
+      if Result = Success then
+         if Outcomes.Length /= 1 then
+            raise Program_Error with
+              "selected delete returned an invalid outcome count";
+         end if;
+         Result := Outcomes.First_Element.Result;
+         Outcome := Outcomes.First_Element.Publication;
       end if;
    end Delete_Selected_Object;
 
@@ -3322,6 +3341,7 @@ package body Flyology.Object_Storage.Backends.Files is
    is
       Locked   : Boolean := False;
       Removals : Delete_Object_Entries;
+      Configuration : Bucket_Versioning_Configuration := (others => <>);
    begin
       Outcomes.Clear;
       Check_Context (Token, Deadline);
@@ -3334,6 +3354,7 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       for Request_Entry of Entries loop
          if not Valid_Object_Key (US.To_String (Request_Entry.Key))
+           or else not Valid_Version_Selector (Request_Entry.Selector)
            or else
              ((not Request_Entry.Conditions.Has_ETag
                and then US.Length (Request_Entry.Conditions.ETag) > 0)
@@ -3364,21 +3385,29 @@ package body Flyology.Object_Storage.Backends.Files is
          raise Ada.IO_Exceptions.Data_Error;
       end if;
 
+      Validate_Configuration_Path (Item, Bucket);
+      Configuration := Read_Versioning (Item, Bucket);
       if Requirements.Require_Unversioned then
-         Validate_Configuration_Path (Item, Bucket);
-         declare
-            Configuration : constant Bucket_Versioning_Configuration :=
-              Read_Versioning (Item, Bucket);
-         begin
-            if Configuration.Status /= Versioning_Unconfigured
-              or else Configuration.MFA_Delete = MFA_Delete_Enabled
-            then
-               Result := Not_Implemented;
+         if Configuration.Status /= Versioning_Unconfigured
+           or else Configuration.MFA_Delete = MFA_Delete_Enabled
+         then
+            Result := Not_Implemented;
+            Item.Publication.Release;
+            Locked := False;
+            return;
+         end if;
+      end if;
+      if Configuration.MFA_Delete = MFA_Delete_Enabled
+        and then not Requirements.MFA_Validated
+      then
+         for Request_Entry of Entries loop
+            if Request_Entry.Selector.Kind /= Current_Version then
+               Result := Access_Denied;
                Item.Publication.Release;
                Locked := False;
                return;
             end if;
-         end;
+         end loop;
       end if;
 
       for Request_Entry of Entries loop
@@ -3394,6 +3423,11 @@ package body Flyology.Object_Storage.Backends.Files is
             Physical_Exists : constant Boolean :=
               Ancestors_Exist and then Ada.Directories.Exists (Path);
             Info : Object_Information := Empty_Info;
+            Supported : constant Boolean :=
+              Request_Entry.Selector.Kind = Null_Version
+              or else
+                (Request_Entry.Selector.Kind = Current_Version
+                 and then Configuration.Status = Versioning_Unconfigured);
          begin
             for Removal of Removals loop
                if US.To_String (Removal.Key) = Key then
@@ -3430,11 +3464,24 @@ package body Flyology.Object_Storage.Backends.Files is
                end if;
                declare
                   Entry_Result : constant Status :=
-                    Evaluate_Delete_Object_Conditions
-                      (Request_Entry.Conditions, Exists, Info);
+                    (if not Supported then Not_Implemented
+                     else Evaluate_Delete_Object_Conditions
+                       (Request_Entry.Conditions, Exists, Info));
+                  Publication : Version_Delete_Outcome;
                begin
+                  if Entry_Result = Success then
+                     Publication.Kind :=
+                       (if Exists then Object_Version_Removed
+                        else No_Version_Removed);
+                     Publication.Has_Version_ID :=
+                       Request_Entry.Selector.Kind = Null_Version;
+                     Publication.Is_Null_Version :=
+                       Request_Entry.Selector.Kind = Null_Version;
+                  end if;
                   Outcomes.Append
-                    (Delete_Object_Outcome'(Result => Entry_Result));
+                    (Delete_Object_Outcome'
+                       (Result => Entry_Result,
+                        Publication => Publication));
                   if Entry_Result = Success and then Exists then
                      Removals.Append (Request_Entry);
                   end if;

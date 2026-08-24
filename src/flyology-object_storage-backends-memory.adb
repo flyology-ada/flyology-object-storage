@@ -806,6 +806,7 @@ package body Flyology.Object_Storage.Backends.Memory is
         (Bucket   : String;
          Entries  : Delete_Object_Entries;
          Requirements : Delete_Objects_Requirements;
+         Modified : Unix_Time;
          Outcomes : in out Delete_Object_Outcomes;
          Result   : out Status)
       is
@@ -825,32 +826,31 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Not_Implemented;
             return;
          end if;
+         if Buckets (Bucket_Position).Versioning.MFA_Delete =
+              MFA_Delete_Enabled
+           and then not Requirements.MFA_Validated
+         then
+            for Request_Entry of Entries loop
+               if Request_Entry.Selector.Kind /= Current_Version then
+                  Result := Access_Denied;
+                  return;
+               end if;
+            end loop;
+         end if;
          for Request_Entry of Entries loop
             declare
-               Key : constant String :=
-                 Ada.Strings.Unbounded.To_String (Request_Entry.Key);
-               Index : constant Natural := Object_Index (Bucket, Key);
-               Entry_Result : constant Status :=
-                 Evaluate_Delete_Object_Conditions
-                    (Request_Entry.Conditions,
-                     Exists => Index /= 0,
-                     Info =>
-                       (if Index = 0
-                        then Empty_Info
-                        else Objects (Index).Info));
+               Entry_Result : Status;
+               Publication  : Version_Delete_Outcome;
             begin
+               Delete_Selected
+                 (Bucket, Ada.Strings.Unbounded.To_String (Request_Entry.Key),
+                  Request_Entry.Selector, Request_Entry.Conditions,
+                  Requirements.MFA_Validated, Modified, Publication,
+                  Entry_Result);
                Outcomes.Append
-                 (Delete_Object_Outcome'(Result => Entry_Result));
-               if Entry_Result = Success and then Index /= 0 then
-                  Bytes := Bytes - Byte_Count (Objects (Index).Data.Capacity);
-                  Objects (Index) := (others => <>);
-               end if;
+                 (Delete_Object_Outcome'
+                    (Result => Entry_Result, Publication => Publication));
             end;
-         end loop;
-         while Highest_Object > 0
-           and then not Objects (Highest_Object).Used
-         loop
-            Highest_Object := Highest_Object - 1;
          end loop;
          Result := Success;
       end Delete_Many;
@@ -2671,6 +2671,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       Entries.Append
         (Delete_Object_Entry'
            (Key => Ada.Strings.Unbounded.To_Unbounded_String (Key),
+            Selector => Current_Version_Selector,
             Conditions => Conditions));
       Item.Delete_Objects
         (Bucket, Entries, Requirements, Token, Deadline, Outcomes, Result);
@@ -2740,6 +2741,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       for Request_Entry of Entries loop
          if not Valid_Object_Key
            (Ada.Strings.Unbounded.To_String (Request_Entry.Key))
+           or else not Valid_Version_Selector (Request_Entry.Selector)
            or else
              ((not Request_Entry.Conditions.Has_ETag
                and then Ada.Strings.Unbounded.Length
@@ -2756,7 +2758,7 @@ package body Flyology.Object_Storage.Backends.Memory is
       end loop;
       Outcomes.Reserve_Capacity (Entries.Length);
       Item.State.Delete_Many
-        (Bucket, Entries, Requirements, Outcomes, Result);
+        (Bucket, Entries, Requirements, Current_Unix_Time, Outcomes, Result);
    end Delete_Objects;
 
    overriding procedure Put_Object_Tags

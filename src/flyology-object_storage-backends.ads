@@ -265,26 +265,30 @@ package Flyology.Object_Storage.Backends is
    --  Catalog predicates that must remain true through batch publication.
    --  Require_Unversioned rejects a bucket whose versioning status is no
    --  longer Unconfigured, or whose MFA Delete status is Enabled.
+   --  MFA_Validated carries the same caller authorization attestation as the
+   --  single generation-aware delete primitive.
    type Delete_Objects_Requirements is record
       Require_Unversioned : Boolean := False;
+      MFA_Validated       : Boolean := False;
    end record;
 
+   --  One ordered generation-aware batch deletion request.
+   --  @field Key Exact object key
+   --  @field Selector Current, null, or exact generation target
+   --  @field Conditions Predicates evaluated against the selected generation
    type Delete_Object_Entry is record
       Key        : Ada.Strings.Unbounded.Unbounded_String;
+      --  Preserve the established VersionId-absent batch behavior: callers
+      --  that do not select a generation continue to target Current.
+      Selector   : Version_Selector :=
+        (Kind => Current_Version,
+         ID   => Ada.Strings.Unbounded.Null_Unbounded_String);
       Conditions : Delete_Object_Conditions;
    end record;
 
    package Delete_Object_Entry_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => Delete_Object_Entry);
    subtype Delete_Object_Entries is Delete_Object_Entry_Vectors.Vector;
-
-   type Delete_Object_Outcome is record
-      Result : Status := Backend_Unavailable;
-   end record;
-
-   package Delete_Object_Outcome_Vectors is new Ada.Containers.Vectors
-     (Index_Type => Positive, Element_Type => Delete_Object_Outcome);
-   subtype Delete_Object_Outcomes is Delete_Object_Outcome_Vectors.Vector;
 
    --  Publication effect of one generation-aware deletion.
    --  @enum No_Version_Removed The selected generation did not exist
@@ -309,6 +313,19 @@ package Flyology.Object_Storage.Backends is
       Is_Null_Version : Boolean := False;
       Version_ID      : Ada.Strings.Unbounded.Unbounded_String;
    end record;
+
+   --  Ordered result of one generation-aware batch entry.
+   --  Publication is populated only when Result is Success.
+   --  @field Result Storage-domain outcome for this entry
+   --  @field Publication Exact generation or marker effect on success
+   type Delete_Object_Outcome is record
+      Result      : Status := Backend_Unavailable;
+      Publication : Version_Delete_Outcome;
+   end record;
+
+   package Delete_Object_Outcome_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Delete_Object_Outcome);
+   subtype Delete_Object_Outcomes is Delete_Object_Outcome_Vectors.Vector;
 
    --  Conditional-read timestamps are signed so valid HTTP dates before the
    --  Unix epoch can be compared without lossy clamping.
@@ -897,11 +914,15 @@ package Flyology.Object_Storage.Backends is
 
    --  Evaluate and publish a bounded ordered batch under one backend batch
    --  boundary. Outcomes align one-for-one with Entries when Result is
-   --  Success. Missing unconditioned keys are reported as Success; conditioned
-   --  missing keys remain Not_Found. Backends must validate the complete
-   --  request before mutating catalog state. Requirements are evaluated under
+   --  Success. Each entry selects Current, Null, or Exact generation semantics
+   --  and returns its exact publication effect on success. Missing
+   --  unconditioned selections are reported as Success; conditioned missing
+   --  selections remain Not_Found. Backends must validate the complete request
+   --  before mutating catalog state. Requirements are evaluated under
    --  the same protected, locked, or transactional boundary as deletion, so a
-   --  concurrent versioning change cannot race current-object semantics. This
+   --  concurrent versioning change cannot race current-object semantics. If
+   --  MFA Delete is enabled, any Null or Exact entry without MFA_Validated
+   --  rejects the complete batch before publication. This
    --  contract does not promise cross-file power-loss atomicity for a pure
    --  filesystem implementation. A pure-files failure, cancellation, or
    --  exception can expose a deleted prefix of the ordered batch, including

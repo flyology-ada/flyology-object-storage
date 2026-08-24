@@ -7029,7 +7029,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                        Apps.Deadline (X), Result,
                                        Conditions => Conditions,
                                        Requirements =>
-                                         (Require_Unversioned => True));
+                                         (Require_Unversioned => True,
+                                          others => <>));
                                  end if;
                               end;
                               if Result = Success then
@@ -7109,7 +7110,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                     (if Payer_Count = 1
                      then Apps.Request_Header (X, "x-amz-request-payer")
                      else "");
-                  MFA : constant String :=
+                  MFA_Header : constant String :=
                     (if MFA_Count = 1
                      then Apps.Request_Header (X, "x-amz-mfa") else "");
                   Bypass : constant S3.Wire_Core.Boolean_Result :=
@@ -7273,7 +7274,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                      Send_Error
                        (X, 400, "InvalidArgument",
                         "The request payer value is invalid", Target_Text);
-                  elsif MFA_Count = 1 and then MFA'Length = 0 then
+                  elsif MFA_Count = 1 and then MFA_Header'Length = 0 then
                      Send_Error
                        (X, 400, "InvalidArgument",
                         "The MFA value is empty", Target_Text);
@@ -7315,6 +7316,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Response : Deletions.Delete_Objects_Result;
                         Entries  : Backends.Delete_Object_Entries;
                         Outcomes : Backends.Delete_Object_Outcomes;
+                        Has_Versioned_Entry : Boolean := False;
+                        MFA_Result : MFA.Authorization_Status :=
+                          MFA.Authorized;
                      begin
                         for Object_Request of Request.Objects loop
                            declare
@@ -7323,15 +7327,24 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                 or else Valid_Object_Delete_ETag_Condition
                                   (US.To_String (Object_Request.ETag));
                            begin
-                              if US.Length (Object_Request.Version_ID) = 0
-                                and then ETag_Valid
+                              if ETag_Valid
                                 and then
                                   not Object_Request.Has_Last_Modified_Time
                                 and then not Object_Request.Has_Size
                               then
+                                 Has_Versioned_Entry :=
+                                   Has_Versioned_Entry
+                                   or else
+                                     US.Length
+                                       (Object_Request.Version_ID) > 0;
                                  Entries.Append
                                    (Backends.Delete_Object_Entry'
                                       (Key => Object_Request.Key,
+                                       Selector =>
+                                         To_Version_Selector
+                                           (US.Length
+                                              (Object_Request.Version_ID) > 0,
+                                            Object_Request.Version_ID),
                                        Conditions =>
                                          (Has_ETag =>
                                             Object_Request.Has_ETag,
@@ -7340,6 +7353,14 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                               end if;
                            end;
                         end loop;
+                        if Has_Versioned_Entry and then MFA_Count = 1 then
+                           MFA_Result := Verify_MFA_Credential
+                             (US.To_String (Auth.Principal), MFA_Header);
+                           if MFA_Result /= MFA.Authorized then
+                              Send_MFA_Error (MFA_Result);
+                              return;
+                           end if;
+                        end if;
                         if Entries.Is_Empty then
                            --  No storage mutation can follow, so a separate
                            --  existence lookup preserves S3's NoSuchBucket
@@ -7356,17 +7377,14 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         else
                            Store.Delete_Objects
                              (Bucket, Entries,
-                              (Require_Unversioned => True),
+                              (Require_Unversioned => False,
+                               MFA_Validated =>
+                                 Has_Versioned_Entry
+                                 and then MFA_Count = 1
+                                 and then MFA_Result = MFA.Authorized),
                               Apps.Cancellation (X), Apps.Deadline (X),
                               Outcomes, Result);
-                           if Result = Not_Implemented then
-                              Send_Error
-                                (X, 501, "NotImplemented",
-                                 "Object versions, delete markers, and MFA " &
-                                 "Delete enforcement are not implemented",
-                                 Target_Text);
-                              return;
-                           elsif Result /= Success then
+                           if Result /= Success then
                               Send_Backend_Error
                                 (X, Result, True, Target_Text);
                               return;
@@ -7393,17 +7411,14 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                    or else Valid_Object_Delete_ETag_Condition
                                      (US.To_String (Object_Request.ETag));
                                  Entry_Result : Status := Invalid_Request;
+                                 Publication :
+                                   Backends.Version_Delete_Outcome;
+                                 Marker_Result : Boolean := False;
+                                 Marker_Version_ID : US.Unbounded_String;
                                  Error_Code : US.Unbounded_String;
                                  Error_Message : US.Unbounded_String;
                               begin
-                                 if US.Length (Object_Request.Version_ID) > 0
-                                 then
-                                    Error_Code := US.To_Unbounded_String
-                                      ("NotImplemented");
-                                    Error_Message := US.To_Unbounded_String
-                                      ("Object version deletion is not " &
-                                       "supported");
-                                 elsif not ETag_Valid then
+                                 if not ETag_Valid then
                                     Error_Code := US.To_Unbounded_String
                                       ("InvalidArgument");
                                     Error_Message := US.To_Unbounded_String
@@ -7427,6 +7442,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                  else
                                     Entry_Result :=
                                       Outcomes (Outcome_Index).Result;
+                                    Publication :=
+                                      Outcomes (Outcome_Index).Publication;
+                                    Marker_Result := Publication.Kind in
+                                      Backends.Delete_Marker_Created |
+                                        Backends.Delete_Marker_Removed;
+                                    Marker_Version_ID :=
+                                      (if not Marker_Result
+                                         or else not Publication.Has_Version_ID
+                                       then US.Null_Unbounded_String
+                                       elsif Publication.Is_Null_Version
+                                       then US.To_Unbounded_String ("null")
+                                       else Publication.Version_ID);
                                     Outcome_Index := Outcome_Index + 1;
                                     if Entry_Result = Success then
                                        if not Request.Quiet then
@@ -7435,7 +7462,12 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                                (Key => Object_Request.Key,
                                                 Version_ID =>
                                                   Object_Request.Version_ID,
-                                                others => <>));
+                                                Delete_Marker =>
+                                                  (Is_Set =>
+                                                     Marker_Result,
+                                                   Value => Marker_Result),
+                                                Delete_Marker_Version_ID =>
+                                                  Marker_Version_ID));
                                        end if;
                                     elsif Entry_Result = Not_Found then
                                        Error_Code := US.To_Unbounded_String
@@ -7461,6 +7493,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                                          ("OperationAborted");
                                        Error_Message := US.To_Unbounded_String
                                          ("The object could not be deleted");
+                                    elsif Entry_Result = Access_Denied then
+                                       Error_Code := US.To_Unbounded_String
+                                         ("AccessDenied");
+                                       Error_Message := US.To_Unbounded_String
+                                         ("MFA Delete authorization is " &
+                                          "required");
+                                    elsif Entry_Result = Not_Implemented then
+                                       Error_Code := US.To_Unbounded_String
+                                         ("NotImplemented");
+                                       Error_Message := US.To_Unbounded_String
+                                         ("The selected object generation " &
+                                          "is not supported");
                                     else
                                        Error_Code := US.To_Unbounded_String
                                          ("InvalidRequest");

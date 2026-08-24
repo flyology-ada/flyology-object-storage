@@ -870,8 +870,12 @@ package body Object_Storage_Test_Cases is
       function Item
         (Key        : String;
          Conditions : Delete_Object_Conditions :=
-           No_Delete_Object_Conditions) return Delete_Object_Entry is
-        ((Key => US.To_Unbounded_String (Key), Conditions => Conditions));
+           No_Delete_Object_Conditions;
+         Selector   : Version_Selector := Current_Version_Selector)
+         return Delete_Object_Entry is
+        ((Key => US.To_Unbounded_String (Key),
+          Selector => Selector,
+          Conditions => Conditions));
    begin
       Entries.Append (Item ("probe"));
       Store.Delete_Objects
@@ -1144,7 +1148,8 @@ package body Object_Storage_Test_Cases is
                           (Has_ETag => True,
                            ETag => Original.Entity_Tag,
                            others => <>),
-                        Requirements => (Require_Unversioned => True));
+                        Requirements =>
+                          (Require_Unversioned => True, others => <>));
                   else
                      Store.Put_Bucket_Versioning
                        (Race_Bucket,
@@ -1183,9 +1188,14 @@ package body Object_Storage_Test_Cases is
                      and then US.To_String (Size_Info.Entity_Tag) =
                        US.To_String (Original.Entity_Tag),
                      "refused raced DeleteObject changed current data");
-                  Store.Delete_Object
-                    (Race_Bucket, "current", null,
-                     Ada.Real_Time.Time_Last, Result);
+                  declare
+                     Cleanup : Version_Delete_Outcome;
+                  begin
+                     Store.Delete_Selected_Object
+                       (Race_Bucket, "current", Null_Version_Selector,
+                        No_Delete_Object_Conditions, False, null,
+                        Ada.Real_Time.Time_Last, Cleanup, Result);
+                  end;
                end if;
             end;
             Store.Delete_Bucket
@@ -1222,14 +1232,16 @@ package body Object_Storage_Test_Cases is
          Entries.Clear;
          Entries.Append (Item ("race-object"));
          Store.Delete_Objects
-           (Race_Bucket, Entries, (Require_Unversioned => True), null,
+           (Race_Bucket, Entries,
+            (Require_Unversioned => True, others => <>), null,
             Ada.Real_Time.Time_Last, Outcomes, Result);
          Assert
            (Result = Not_Implemented and then Outcomes.Is_Empty,
             "DeleteObjects raced past an atomic versioning precondition");
          Store.Delete_Object
            (Race_Bucket, "race-object", null, Ada.Real_Time.Time_Last,
-            Result, Requirements => (Require_Unversioned => True));
+            Result, Requirements =>
+              (Require_Unversioned => True, others => <>));
          Assert
            (Result = Not_Implemented,
             "DeleteObject raced past an atomic versioning precondition");
@@ -1239,9 +1251,14 @@ package body Object_Storage_Test_Cases is
          Assert
            (Result = Success,
             "DeleteObjects versioning race removed current data");
-         Store.Delete_Object
-           (Race_Bucket, "race-object", null, Ada.Real_Time.Time_Last,
-            Result);
+         declare
+            Cleanup : Version_Delete_Outcome;
+         begin
+            Store.Delete_Selected_Object
+              (Race_Bucket, "race-object", Null_Version_Selector,
+               No_Delete_Object_Conditions, False, null,
+               Ada.Real_Time.Time_Last, Cleanup, Result);
+         end;
          Store.Delete_Bucket
            (Race_Bucket, null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "DeleteObjects race bucket cleanup");
@@ -5198,6 +5215,63 @@ package body Object_Storage_Test_Cases is
             use AUnit.Assertions;
             use Flyology.Object_Storage;
             use Flyology.Object_Storage.Backends;
+            Bucket   : constant String := "files-delete-generation-batch";
+            Source   : Buffer_Source :=
+              (Data => Flyology.Bytes.From_Byte_String ("retained"),
+               Position => 0,
+               Length => (Kind => Known, Bytes => 8),
+               Bad_Last => False);
+            Info     : Object_Information;
+            Entries  : Delete_Object_Entries;
+            Outcomes : Delete_Object_Outcomes;
+            Result   : Status;
+         begin
+            Store.Create_Bucket
+              (Bucket, null, Ada.Real_Time.Time_Last, Result);
+            Store.Put_Object
+              (Bucket, "item", Source, Default_Put_Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Success,
+               "files generation-aware DeleteObjects setup failed");
+            Entries.Append
+              (Delete_Object_Entry'
+                 (Key => US.To_Unbounded_String ("item"),
+                  Selector =>
+                    (Kind => Exact_Version,
+                     ID   => US.To_Unbounded_String ("unsupported")),
+                  Conditions => No_Delete_Object_Conditions));
+            Entries.Append
+              (Delete_Object_Entry'
+                 (Key => US.To_Unbounded_String ("item"),
+                  Selector => Null_Version_Selector,
+                  Conditions => No_Delete_Object_Conditions));
+            Store.Delete_Objects
+              (Bucket, Entries, (others => <>), null,
+               Ada.Real_Time.Time_Last, Outcomes, Result);
+            Assert
+              (Result = Success and then Outcomes.Length = 2
+               and then Outcomes (1).Result = Not_Implemented
+               and then Outcomes (2).Result = Success
+               and then Outcomes (2).Publication.Kind =
+                 Object_Version_Removed
+               and then Outcomes (2).Publication.Is_Null_Version,
+               "files generation-aware DeleteObjects capability mapping");
+            Store.Head_Object
+              (Bucket, "item", null, Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Not_Found,
+               "files exact-version exclusion blocked null deletion");
+            Store.Delete_Bucket
+              (Bucket, null, Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "files generation-aware DeleteObjects cleanup failed");
+         end;
+         declare
+            use AUnit.Assertions;
+            use Flyology.Object_Storage;
+            use Flyology.Object_Storage.Backends;
             Bucket : constant String := "files-delete-cancel-prefix";
             First_Path : constant String :=
               Ada.Directories.Compose
@@ -5226,7 +5300,8 @@ package body Object_Storage_Test_Cases is
                Entries.Append
                  (Delete_Object_Entry'
                     (Key => US.To_Unbounded_String (Key),
-                     Conditions => No_Delete_Object_Conditions));
+                     Conditions => No_Delete_Object_Conditions,
+                     others => <>));
             end Put;
          begin
             Store.Create_Bucket
@@ -17285,13 +17360,23 @@ package body Object_Storage_Test_Cases is
                and then not Destination_Identity.Has_Version_ID,
                "files exact CopyObject did not fail closed");
          end;
-         Store.Delete_Object
-           ("versioning-bucket", "suspended", null,
-            Ada.Real_Time.Time_Last, Result);
+         declare
+            Cleanup : Version_Delete_Outcome;
+         begin
+            Store.Delete_Selected_Object
+              ("versioning-bucket", "suspended", Null_Version_Selector,
+               No_Delete_Object_Conditions, True, null,
+               Ada.Real_Time.Time_Last, Cleanup, Result);
+         end;
          Assert (Result = Success, "files null identity cleanup failed");
-         Store.Delete_Object
-           ("versioning-bucket", "suspended-copy", null,
-            Ada.Real_Time.Time_Last, Result);
+         declare
+            Cleanup : Version_Delete_Outcome;
+         begin
+            Store.Delete_Selected_Object
+              ("versioning-bucket", "suspended-copy",
+               Null_Version_Selector, No_Delete_Object_Conditions, True,
+               null, Ada.Real_Time.Time_Last, Cleanup, Result);
+         end;
          Assert (Result = Success, "files null copy cleanup failed");
          Store.Delete_Bucket
            ("versioning-bucket", null, Ada.Real_Time.Time_Last, Result);

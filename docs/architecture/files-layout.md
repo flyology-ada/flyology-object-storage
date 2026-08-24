@@ -122,7 +122,10 @@ preflight before the first removal. Conditions therefore observe one stable
 catalog view, duplicate entries use request order, and a structural or
 conditional failure cannot begin an unrelated removal. A required unversioned
 state is read under that same publication gate, which also serializes
-PutBucketVersioning. Each successful file
+PutBucketVersioning. Current selectors are supported only while unconfigured;
+explicit null selectors address the one representable file generation, while
+opaque exact selectors return per-entry `Not_Implemented` without blocking
+independent entries. Each successful file
 unlink is individually durable before the next entry. A pure filesystem has no
 portable transaction spanning those independent directory entries, so an I/O
 failure, cancellation, deadline, or process/power loss during the removal loop

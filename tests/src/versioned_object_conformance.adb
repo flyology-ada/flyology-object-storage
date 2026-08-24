@@ -143,6 +143,18 @@ package body Versioned_Object_Conformance is
          Put_With_Identity (Key, Payload, Stored, Identity, Conditions);
       end Put;
 
+      procedure Put_Copy_Bucket
+        (Key, Payload : String; Stored : out Object_Information)
+      is
+         Source : Buffer_Source :=
+           (Data     => Flyology.Bytes.From_Byte_String (Payload),
+            Position => 0);
+      begin
+         Store.Put_Object
+           (Copy_Bucket, Key, Source, Default_Put_Options, null,
+            Ada.Real_Time.Time_Last, Stored, Result);
+      end Put_Copy_Bucket;
+
       procedure Require_Body
         (Key, Payload : String; Selector : Version_Selector)
       is
@@ -316,6 +328,165 @@ package body Versioned_Object_Conformance is
          Require
            (Result = Success and then Copied.Version = Existing.Version,
             "failed exact CopyObject replaced its destination");
+      end;
+
+      declare
+         Batch_V1 : Object_Information;
+         Batch_V2 : Object_Information;
+         Batch_Current : Object_Information;
+         Entries : Delete_Object_Entries;
+         Outcomes : Delete_Object_Outcomes;
+         Missing_ID : constant US.Unbounded_String :=
+           US.To_Unbounded_String ("missing-batch-generation");
+      begin
+         Put_Copy_Bucket ("batch-exact", "one", Batch_V1);
+         Require (Result = Success, "versioned batch first setup");
+         Put_Copy_Bucket ("batch-exact", "two", Batch_V2);
+         Require (Result = Success, "versioned batch second setup");
+         Put_Copy_Bucket ("batch-current", "current", Batch_Current);
+         Require (Result = Success, "versioned batch current setup");
+         Entries.Append
+           (Delete_Object_Entry'
+              (Key => US.To_Unbounded_String ("batch-exact"),
+             Selector => Exact (Batch_V1),
+             Conditions => No_Delete_Object_Conditions));
+         Entries.Append
+           (Delete_Object_Entry'
+              (Key => US.To_Unbounded_String ("batch-current"),
+             Selector => Current_Version_Selector,
+             Conditions => No_Delete_Object_Conditions));
+         Entries.Append
+           (Delete_Object_Entry'
+              (Key => US.To_Unbounded_String ("batch-missing"),
+             Selector => (Kind => Exact_Version, ID => Missing_ID),
+             Conditions => No_Delete_Object_Conditions));
+         Entries.Append
+           (Delete_Object_Entry'
+              (Key => US.To_Unbounded_String ("batch-exact"),
+             Selector => Exact (Batch_V2),
+             Conditions =>
+               (Has_ETag => True,
+                ETag => US.To_Unbounded_String ("""mismatch"""),
+                others => <>)));
+         Store.Delete_Objects
+           (Copy_Bucket, Entries, (others => <>), null,
+            Ada.Real_Time.Time_Last, Outcomes, Result);
+         Require
+           (Result = Success and then Outcomes.Length = 4
+            and then Outcomes (1).Result = Success
+            and then Outcomes (1).Publication.Kind = Object_Version_Removed
+            and then Outcomes (1).Publication.Version_ID = Batch_V1.Version
+            and then Outcomes (2).Result = Success
+            and then Outcomes (2).Publication.Kind = Delete_Marker_Created
+            and then Outcomes (2).Publication.Has_Version_ID
+            and then Outcomes (3).Result = Success
+            and then Outcomes (3).Publication.Kind = No_Version_Removed
+            and then Outcomes (3).Publication.Version_ID = Missing_ID
+            and then Outcomes (4).Result = Precondition_Failed,
+            "generation-aware DeleteObjects ordered outcomes");
+         Store.Head_Object
+           (Copy_Bucket, "batch-exact", null, Ada.Real_Time.Time_Last, Info,
+            Result, Selector => Exact (Batch_V1));
+         Require (Result = Not_Found, "batch exact generation remained");
+         Store.Head_Object
+           (Copy_Bucket, "batch-exact", null, Ada.Real_Time.Time_Last, Info,
+            Result, Selector => Exact (Batch_V2));
+         Require (Result = Success, "batch condition failure mutated source");
+         Store.Head_Object
+           (Copy_Bucket, "batch-current", null, Ada.Real_Time.Time_Last,
+            Info, Result);
+         Require (Result = Not_Found, "batch current delete made no marker");
+
+         Store.Delete_Selected_Object
+           (Copy_Bucket, "batch-exact", Exact (Batch_V2),
+            No_Delete_Object_Conditions, False, null,
+            Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+         Require (Result = Success, "batch exact cleanup");
+         Store.Delete_Selected_Object
+           (Copy_Bucket, "batch-current",
+            (Kind => Exact_Version,
+             ID => Outcomes (2).Publication.Version_ID),
+            No_Delete_Object_Conditions, False, null,
+            Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+         Require (Result = Success, "batch marker cleanup");
+         Store.Delete_Selected_Object
+           (Copy_Bucket, "batch-current", Exact (Batch_Current),
+            No_Delete_Object_Conditions, False, null,
+            Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+         Require (Result = Success, "batch current payload cleanup");
+      end;
+
+      declare
+         MFA_Current : Object_Information;
+         MFA_Exact   : Object_Information;
+         Entries     : Delete_Object_Entries;
+         Outcomes    : Delete_Object_Outcomes;
+      begin
+         Put_Copy_Bucket ("batch-mfa-current", "current", MFA_Current);
+         Require (Result = Success, "MFA batch current setup");
+         Put_Copy_Bucket ("batch-mfa-exact", "exact", MFA_Exact);
+         Require (Result = Success, "MFA batch exact setup");
+         Store.Put_Bucket_Versioning
+           (Copy_Bucket,
+            (MFA_Delete => MFA_Delete_Enabled, others => <>), null,
+            Ada.Real_Time.Time_Last, Result, MFA_Validated => True);
+         Require (Result = Success, "MFA batch policy setup");
+         Entries.Append
+           (Delete_Object_Entry'
+              (Key => US.To_Unbounded_String ("batch-mfa-current"),
+               Selector => Current_Version_Selector,
+               Conditions => No_Delete_Object_Conditions));
+         Entries.Append
+           (Delete_Object_Entry'
+              (Key => US.To_Unbounded_String ("batch-mfa-exact"),
+               Selector => Exact (MFA_Exact),
+               Conditions => No_Delete_Object_Conditions));
+         Store.Delete_Objects
+           (Copy_Bucket, Entries, (others => <>), null,
+            Ada.Real_Time.Time_Last, Outcomes, Result);
+         Require
+           (Result = Access_Denied and then Outcomes.Is_Empty,
+            "MFA Delete did not reject the complete mixed batch");
+         Store.Head_Object
+           (Copy_Bucket, "batch-mfa-current", null,
+            Ada.Real_Time.Time_Last, Info, Result);
+         Require
+           (Result = Success and then Info.Version = MFA_Current.Version,
+            "rejected MFA batch changed its current sibling");
+         Store.Head_Object
+           (Copy_Bucket, "batch-mfa-exact", null,
+            Ada.Real_Time.Time_Last, Info, Result,
+            Selector => Exact (MFA_Exact));
+         Require
+           (Result = Success,
+            "rejected MFA batch changed its exact target");
+
+         Store.Delete_Objects
+           (Copy_Bucket, Entries,
+            (MFA_Validated => True, others => <>), null,
+            Ada.Real_Time.Time_Last, Outcomes, Result);
+         Require
+           (Result = Success and then Outcomes.Length = 2
+            and then Outcomes (1).Publication.Kind = Delete_Marker_Created
+            and then Outcomes (2).Publication.Kind = Object_Version_Removed,
+            "authorized MFA mixed batch did not publish exact outcomes");
+         Store.Delete_Selected_Object
+           (Copy_Bucket, "batch-mfa-current",
+            (Kind => Exact_Version,
+             ID => Outcomes (1).Publication.Version_ID),
+            No_Delete_Object_Conditions, True, null,
+            Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+         Require (Result = Success, "MFA batch marker cleanup");
+         Store.Delete_Selected_Object
+           (Copy_Bucket, "batch-mfa-current", Exact (MFA_Current),
+            No_Delete_Object_Conditions, True, null,
+            Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+         Require (Result = Success, "MFA batch payload cleanup");
+         Store.Put_Bucket_Versioning
+           (Copy_Bucket,
+            (MFA_Delete => MFA_Delete_Disabled, others => <>), null,
+            Ada.Real_Time.Time_Last, Result, MFA_Validated => True);
+         Require (Result = Success, "MFA batch policy cleanup");
       end;
       Require
         (US.Length (V1.Version) > 0

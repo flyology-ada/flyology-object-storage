@@ -2437,33 +2437,6 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Get_Object_Attributes;
 
-   procedure Delete_Generation_Mirror_Internal
-     (Item : in out Catalog; Bucket, Key : String)
-   is
-      Delete_Current : DB.Statement;
-      Delete_Versions : DB.Statement;
-   begin
-      DB.Prepare
-        (Delete_Current, Item.Database,
-         "DELETE FROM current_object_versions " &
-         "WHERE bucket_name=?1 AND object_key=?2");
-      DB.Bind (Delete_Current, 1, Bucket);
-      DB.Bind_Bytes (Delete_Current, 2, Key);
-      if DB.Step (Delete_Current) /= DB.Done then
-         raise Catalog_Error with
-           "current generation pointer delete returned a row";
-      end if;
-      DB.Prepare
-        (Delete_Versions, Item.Database,
-         "DELETE FROM object_versions " &
-         "WHERE bucket_name=?1 AND object_key=?2");
-      DB.Bind (Delete_Versions, 1, Bucket);
-      DB.Bind_Bytes (Delete_Versions, 2, Key);
-      if DB.Step (Delete_Versions) /= DB.Done then
-         raise Catalog_Error with "generation delete returned a row";
-      end if;
-   end Delete_Generation_Mirror_Internal;
-
    procedure Publish_Data_Generation_Internal
      (Item              : in out Catalog;
       Bucket            : String;
@@ -3005,7 +2978,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       end if;
    end Refresh_Current_Mirror_Internal;
 
-   procedure Delete_Selected_Object
+   procedure Delete_Selected_Object_Internal
      (Item            : in out Catalog;
       Bucket          : String;
       Key             : String;
@@ -3013,19 +2986,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Conditions      : Backends.Delete_Object_Conditions;
       MFA_Validated   : Boolean;
       Modified        : Unix_Time;
+      Versioning      : Bucket_Versioning_Status;
+      MFA_Delete      : MFA_Delete_Status;
       Retired_Payload : out US.Unbounded_String;
       Outcome         : out Backends.Version_Delete_Outcome;
       Result          : out Status)
    is
-      Bucket_Query   : DB.Statement;
       Selected       : DB.Statement;
       Delete_Current : DB.Statement;
       Delete_Version : DB.Statement;
       Insert_Marker  : DB.Statement;
-      Locked         : Boolean := False;
-      In_Transaction : Boolean := False;
-      Versioning     : Bucket_Versioning_Status := Versioning_Unconfigured;
-      MFA_Delete     : MFA_Delete_Status := MFA_Delete_Unconfigured;
       Found          : Boolean := False;
       Is_Marker      : Boolean := False;
       Selected_ID    : US.Unbounded_String;
@@ -3166,45 +3136,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    begin
       Retired_Payload := US.Null_Unbounded_String;
       Outcome := (others => <>);
-      Item.Gate.Acquire;
-      Locked := True;
-      DB.Begin_Transaction (Item.Database);
-      In_Transaction := True;
-      DB.Prepare
-        (Bucket_Query, Item.Database,
-         "SELECT versioning_status,mfa_delete_status FROM buckets " &
-         "WHERE name=?1");
-      DB.Bind (Bucket_Query, 1, Bucket);
-      if DB.Step (Bucket_Query) = DB.Done then
-         DB.Rollback (Item.Database);
-         In_Transaction := False;
-         Result := Bucket_Not_Found;
-         Item.Gate.Release;
-         Locked := False;
-         return;
-      end if;
-      declare
-         Versioning_Value : constant Long_Long_Integer :=
-           DB.Column (Bucket_Query, 0);
-         MFA_Value : constant Long_Long_Integer := DB.Column (Bucket_Query, 1);
-      begin
-         if Versioning_Value not in 0 .. 2 or else MFA_Value not in 0 .. 2
-         then
-            raise Catalog_Error with "invalid bucket versioning policy";
-         end if;
-         Versioning := Bucket_Versioning_Status'Val
-           (Natural (Versioning_Value));
-         MFA_Delete := MFA_Delete_Status'Val (Natural (MFA_Value));
-      end;
       if Selector.Kind /= Backends.Current_Version
         and then MFA_Delete = MFA_Delete_Enabled
         and then not MFA_Validated
       then
-         DB.Rollback (Item.Database);
-         In_Transaction := False;
          Result := Access_Denied;
-         Item.Gate.Release;
-         Locked := False;
          return;
       end if;
 
@@ -3212,11 +3148,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Result := Backends.Evaluate_Delete_Object_Conditions
         (Conditions, Found, Selected_Info);
       if Result /= Success then
-         DB.Rollback (Item.Database);
-         In_Transaction := False;
          Retired_Payload := US.Null_Unbounded_String;
-         Item.Gate.Release;
-         Locked := False;
          return;
       end if;
 
@@ -3258,7 +3190,83 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
                Publish_Marker (True);
          end case;
       end if;
-      DB.Commit (Item.Database);
+   end Delete_Selected_Object_Internal;
+
+   procedure Delete_Selected_Object
+     (Item            : in out Catalog;
+      Bucket          : String;
+      Key             : String;
+      Selector        : Backends.Version_Selector;
+      Conditions      : Backends.Delete_Object_Conditions;
+      MFA_Validated   : Boolean;
+      Modified        : Unix_Time;
+      Retired_Payload : out US.Unbounded_String;
+      Outcome         : out Backends.Version_Delete_Outcome;
+      Result          : out Status)
+   is
+      Bucket_Query   : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+      Versioning     : Bucket_Versioning_Status := Versioning_Unconfigured;
+      MFA_Delete     : MFA_Delete_Status := MFA_Delete_Unconfigured;
+   begin
+      Retired_Payload := US.Null_Unbounded_String;
+      Outcome := (others => <>);
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Bucket_Query, Item.Database,
+         "SELECT versioning_status,mfa_delete_status FROM buckets " &
+         "WHERE name=?1");
+      DB.Bind (Bucket_Query, 1, Bucket);
+      if DB.Step (Bucket_Query) = DB.Done then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Bucket_Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      declare
+         Versioning_Value : constant Long_Long_Integer :=
+           DB.Column (Bucket_Query, 0);
+         MFA_Value : constant Long_Long_Integer := DB.Column (Bucket_Query, 1);
+      begin
+         --  These catalog columns persist the Ada enum positions. Derive
+         --  admissible positions from the declarations so schema validation
+         --  cannot drift from the public status types.
+         if Versioning_Value <
+             Long_Long_Integer
+               (Bucket_Versioning_Status'Pos
+                  (Bucket_Versioning_Status'First))
+           or else Versioning_Value >
+             Long_Long_Integer
+               (Bucket_Versioning_Status'Pos
+                  (Bucket_Versioning_Status'Last))
+           or else MFA_Value <
+             Long_Long_Integer
+               (MFA_Delete_Status'Pos (MFA_Delete_Status'First))
+           or else MFA_Value >
+             Long_Long_Integer
+               (MFA_Delete_Status'Pos (MFA_Delete_Status'Last))
+         then
+            raise Catalog_Error with "invalid bucket versioning policy";
+         end if;
+         Versioning := Bucket_Versioning_Status'Val
+           (Natural (Versioning_Value));
+         MFA_Delete := MFA_Delete_Status'Val (Natural (MFA_Value));
+      end;
+      Delete_Selected_Object_Internal
+        (Item, Bucket, Key, Selector, Conditions, MFA_Validated, Modified,
+         Versioning, MFA_Delete, Retired_Payload, Outcome, Result);
+      if Result = Success then
+         DB.Commit (Item.Database);
+      else
+         DB.Rollback (Item.Database);
+         Retired_Payload := US.Null_Unbounded_String;
+      end if;
       In_Transaction := False;
       Item.Gate.Release;
       Locked := False;
@@ -3280,14 +3288,17 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Bucket   : String;
       Entries  : Backends.Delete_Object_Entries;
       Requirements : Backends.Delete_Objects_Requirements;
+      Modified : Unix_Time;
       Retired  : out Payloads;
       Outcomes : out Backends.Delete_Object_Outcomes;
       Result   : out Status)
    is
       Bucket_Query   : DB.Statement;
-      Delete         : DB.Statement;
       Locked         : Boolean := False;
       In_Transaction : Boolean := False;
+      Versioning     : Bucket_Versioning_Status := Versioning_Unconfigured;
+      MFA_Delete     : MFA_Delete_Status := MFA_Delete_Unconfigured;
+      Needs_MFA      : Boolean := False;
    begin
       Retired.Clear;
       Outcomes.Clear;
@@ -3299,6 +3310,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       end if;
       for Request_Entry of Entries loop
          if not Valid_Object_Key (US.To_String (Request_Entry.Key))
+           or else not Backends.Valid_Version_Selector
+             (Request_Entry.Selector)
            or else
              (Request_Entry.Conditions.Has_ETag
               and then not Valid_Object_Delete_ETag_Condition
@@ -3307,6 +3320,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Result := Invalid_Request;
             return;
          end if;
+         Needs_MFA := Needs_MFA
+           or else Request_Entry.Selector.Kind /= Backends.Current_Version;
       end loop;
       Retired.Reserve_Capacity (Entries.Length);
       Outcomes.Reserve_Capacity (Entries.Length);
@@ -3330,10 +3345,41 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Item.Gate.Release;
             Locked := False;
             return;
-         elsif Requirements.Require_Unversioned
+         end if;
+         declare
+            Versioning_Value : constant Long_Long_Integer :=
+              DB.Column (Bucket_Query, 0);
+            MFA_Value : constant Long_Long_Integer :=
+              DB.Column (Bucket_Query, 1);
+         begin
+            --  These catalog columns persist the Ada enum positions. Derive
+            --  admissible positions from the declarations rather than
+            --  introducing a second schema-policy range.
+            if Versioning_Value <
+                Long_Long_Integer
+                  (Bucket_Versioning_Status'Pos
+                     (Bucket_Versioning_Status'First))
+              or else Versioning_Value >
+                Long_Long_Integer
+                  (Bucket_Versioning_Status'Pos
+                     (Bucket_Versioning_Status'Last))
+              or else MFA_Value <
+                Long_Long_Integer
+                  (MFA_Delete_Status'Pos (MFA_Delete_Status'First))
+              or else MFA_Value >
+                Long_Long_Integer
+                  (MFA_Delete_Status'Pos (MFA_Delete_Status'Last))
+            then
+               raise Catalog_Error with "invalid bucket versioning policy";
+            end if;
+            Versioning := Bucket_Versioning_Status'Val
+              (Natural (Versioning_Value));
+            MFA_Delete := MFA_Delete_Status'Val (Natural (MFA_Value));
+         end;
+         if Requirements.Require_Unversioned
            and then
-             (DB.Column (Bucket_Query, 0) /= 0
-              or else DB.Column (Bucket_Query, 1) = 1)
+             (Versioning /= Versioning_Unconfigured
+              or else MFA_Delete = MFA_Delete_Enabled)
          then
             DB.Rollback (Item.Database);
             In_Transaction := False;
@@ -3341,40 +3387,38 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Item.Gate.Release;
             Locked := False;
             return;
+         elsif MFA_Delete = MFA_Delete_Enabled
+           and then Needs_MFA
+           and then not Requirements.MFA_Validated
+         then
+            DB.Rollback (Item.Database);
+            In_Transaction := False;
+            Result := Access_Denied;
+            Item.Gate.Release;
+            Locked := False;
+            return;
          end if;
       end;
 
-      DB.Prepare
-        (Delete, Item.Database,
-         "DELETE FROM objects WHERE bucket_name=?1 AND object_key=?2");
       for Request_Entry of Entries loop
          declare
-            Payload      : US.Unbounded_String;
-            Existing     : Object_Information := (others => <>);
-            Lookup       : Status;
             Entry_Result : Status;
+            Publication  : Backends.Version_Delete_Outcome;
+            Retired_Payload : US.Unbounded_String;
             Key          : constant String := US.To_String (Request_Entry.Key);
          begin
-            Find_Object_Internal
-              (Item, Bucket, Key, Payload, Existing, Lookup);
-            Entry_Result :=
-              Backends.Evaluate_Delete_Object_Conditions
-                (Request_Entry.Conditions, Lookup = Success, Existing);
+            Delete_Selected_Object_Internal
+              (Item, Bucket, Key, Request_Entry.Selector,
+               Request_Entry.Conditions, Requirements.MFA_Validated,
+               Modified, Versioning, MFA_Delete, Retired_Payload,
+               Publication, Entry_Result);
             Outcomes.Append
-              (Backends.Delete_Object_Outcome'(Result => Entry_Result));
-            if Entry_Result = Success and then Lookup = Success then
-               Retired.Append (Payload);
-               Delete_Generation_Mirror_Internal (Item, Bucket, Key);
-               DB.Bind (Delete, 1, Bucket);
-               DB.Bind_Bytes (Delete, 2, Key);
-               if DB.Step (Delete) /= DB.Done then
-                  raise Catalog_Error with
-                    "object batch delete returned a row";
-               elsif DB.Changes (Item.Database) /= 1 then
-                  raise Catalog_Error with
-                    "object batch delete changed an unexpected row count";
-               end if;
-               DB.Reset (Delete);
+              (Backends.Delete_Object_Outcome'
+                 (Result => Entry_Result, Publication => Publication));
+            if Entry_Result = Success
+              and then US.Length (Retired_Payload) > 0
+            then
+               Retired.Append (Retired_Payload);
             end if;
          end;
       end loop;

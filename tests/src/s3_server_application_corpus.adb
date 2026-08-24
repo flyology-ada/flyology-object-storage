@@ -7292,48 +7292,252 @@ begin
 
    declare
       Request : Deletions.Delete_Objects_Request;
+      Bucket  : constant String := "batch-versioned-bucket";
+      Exact_Info    : Flyology.Object_Storage.Object_Information;
+      Current_Info  : Flyology.Object_Storage.Object_Information;
+      Mismatch_Info : Flyology.Object_Storage.Object_Information;
+      Storage_Result : Flyology.Object_Storage.Status;
    begin
       Require
-        (Has (Run (Signed_Request
-          ("PUT", "/delete-bucket/version-preserved", "v")), "200 OK"),
-         "versioned DeleteObjects setup failed");
+        (Has
+           (Run (Signed_Create_Bucket_Request ("/" & Bucket, "")),
+            "200 OK"),
+         "generation-aware DeleteObjects bucket setup failed");
+      Store.Put_Bucket_Versioning
+        (Bucket,
+         (Status => Flyology.Object_Storage.Versioning_Enabled,
+          others => <>),
+         null, Ada.Real_Time.Time_Last, Storage_Result);
       Require
-        (Has (Run (Signed_Request
-          ("PUT", "/delete-bucket/version-peer", "p")), "200 OK"),
-         "mixed versioned DeleteObjects setup failed");
+        (Storage_Result = Flyology.Object_Storage.Success,
+         "generation-aware DeleteObjects versioning setup failed");
+      Require
+        (Has
+           (Run (Signed_Request
+              ("PUT", "/" & Bucket & "/exact", "exact-body")),
+            "200 OK"),
+         "generation-aware DeleteObjects exact setup failed");
+      Require
+        (Has
+           (Run (Signed_Request
+              ("PUT", "/" & Bucket & "/current", "current-body")),
+            "200 OK"),
+         "generation-aware DeleteObjects current setup failed");
+      Require
+        (Has
+           (Run (Signed_Request
+              ("PUT", "/" & Bucket & "/mismatch", "preserve")),
+            "200 OK"),
+         "generation-aware DeleteObjects mismatch setup failed");
+      Store.Head_Object
+        (Bucket, "exact", null, Ada.Real_Time.Time_Last,
+         Exact_Info, Storage_Result);
+      Store.Head_Object
+        (Bucket, "current", null, Ada.Real_Time.Time_Last,
+         Current_Info, Storage_Result);
+      Store.Head_Object
+        (Bucket, "mismatch", null, Ada.Real_Time.Time_Last,
+         Mismatch_Info, Storage_Result);
+      Require
+        (Storage_Result = Flyology.Object_Storage.Success
+         and then US.Length (Exact_Info.Version) > 0
+         and then US.Length (Current_Info.Version) > 0
+         and then US.Length (Mismatch_Info.Version) > 0,
+         "generation-aware DeleteObjects identities were not retained");
       Request.Objects.Append
         (Deletions.Object_Identifier'
-         (Key        => US.To_Unbounded_String ("version-preserved"),
-          Version_ID => US.To_Unbounded_String ("unsupported-version"),
+         (Key        => US.To_Unbounded_String ("exact"),
+          Version_ID => Exact_Info.Version,
           others     => <>));
       Request.Objects.Append
         (Deletions.Object_Identifier'
-         (Key        => US.To_Unbounded_String ("version-peer"),
+         (Key        => US.To_Unbounded_String ("current"),
           Version_ID => US.Null_Unbounded_String,
           others     => <>));
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+         (Key        => US.To_Unbounded_String ("missing"),
+          Version_ID => US.To_Unbounded_String ("missing-generation"),
+          others     => <>));
+      Request.Objects.Append
+        (Deletions.Object_Identifier'
+         (Key        => US.To_Unbounded_String ("mismatch"),
+          Version_ID => Mismatch_Info.Version,
+          Has_ETag   => True,
+          ETag       => US.To_Unbounded_String ("not-the-etag"),
+          others     => <>));
       declare
-         Response : constant String := Run
-           (Signed_Request
-              ("POST", "/delete-bucket",
-               Deletions.Serialize_Request (Request),
-               Extra_Headers =>
-                 "Content-MD5: " &
-                 Content_MD5 (Deletions.Serialize_Request (Request)) & CRLF,
-               Query_Name => "delete"));
+         Payload  : constant String := Deletions.Serialize_Request (Request);
+         Response : constant String :=
+           Run
+             (Signed_Delete_Objects_Request
+                (Payload, Bucket => "/" & Bucket));
+         Parsed : constant Deletions.Delete_Objects_Result :=
+           Deletions.Parse_Result (Response_Body (Response));
       begin
          Require
-           (Has (Response, "NotImplemented")
-            and then Has (Response, "<Key>version-peer</Key>"),
-            "mixed versioned DeleteObjects result mismatch");
+           (Has (Response, "200 OK")
+            and then Parsed.Deleted.Length = 3
+            and then Parsed.Errors.Length = 1,
+            "generation-aware DeleteObjects result cardinality mismatch: " &
+              Response);
+         Require
+           (US.To_String (Parsed.Deleted (1).Key) = "exact"
+            and then US."="
+              (Parsed.Deleted (1).Version_ID, Exact_Info.Version)
+            and then not Parsed.Deleted (1).Delete_Marker.Is_Set
+            and then
+              US.To_String (Parsed.Deleted (2).Key) = "current"
+            and then US.Length (Parsed.Deleted (2).Version_ID) = 0
+            and then Parsed.Deleted (2).Delete_Marker.Is_Set
+            and then Parsed.Deleted (2).Delete_Marker.Value
+            and then
+              US.Length
+                (Parsed.Deleted (2).Delete_Marker_Version_ID) > 0
+            and then US.To_String (Parsed.Deleted (3).Key) = "missing"
+            and then US.To_String (Parsed.Deleted (3).Version_ID) =
+              "missing-generation"
+            and then not Parsed.Deleted (3).Delete_Marker.Is_Set,
+            "generation-aware DeleteObjects success identities mismatch");
+         Require
+           (US.To_String (Parsed.Errors (1).Key) = "mismatch"
+            and then US."="
+              (Parsed.Errors (1).Version_ID, Mismatch_Info.Version)
+            and then US.To_String (Parsed.Errors (1).Code) =
+              "PreconditionFailed",
+            "generation-aware DeleteObjects conditional error mismatch");
       end;
       Require
-        (Has (Run (Signed_Request
-          ("GET", "/delete-bucket/version-preserved", "")), "v"),
-         "versioned DeleteObjects removed the current object");
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/" & Bucket & "/exact",
+                  (1 => SigV4.Pair
+                     ("versionId", US.To_String (Exact_Info.Version))))),
+            "404 Not Found"),
+         "generation-aware DeleteObjects retained its exact target");
       Require
-        (Has (Run (Signed_Request
-          ("HEAD", "/delete-bucket/version-peer", "")), "404 Not Found"),
-         "versioned DeleteObjects blocked an independent current delete");
+        (Has
+           (Run (Signed_Request
+              ("HEAD", "/" & Bucket & "/current", "")),
+            "404 Not Found"),
+         "generation-aware DeleteObjects did not publish a current marker");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/" & Bucket & "/mismatch",
+                  (1 => SigV4.Pair
+                     ("versionId", US.To_String (Mismatch_Info.Version))))),
+            "preserve"),
+         "generation-aware DeleteObjects changed a rejected exact target");
+      declare
+         MFA_Exact : Flyology.Object_Storage.Object_Information;
+         MFA_Request : Deletions.Delete_Objects_Request;
+      begin
+         Require
+           (Has
+              (Run (Signed_Request
+                 ("PUT", "/" & Bucket & "/mfa-current", "current")),
+               "200 OK"),
+            "MFA DeleteObjects current setup failed");
+         Require
+           (Has
+              (Run (Signed_Request
+                 ("PUT", "/" & Bucket & "/mfa-exact", "exact")),
+               "200 OK"),
+            "MFA DeleteObjects exact setup failed");
+         Store.Head_Object
+           (Bucket, "mfa-exact", null, Ada.Real_Time.Time_Last,
+            MFA_Exact, Storage_Result);
+         Store.Put_Bucket_Versioning
+           (Bucket,
+            (MFA_Delete => Flyology.Object_Storage.MFA_Delete_Enabled,
+             others => <>), null, Ada.Real_Time.Time_Last, Storage_Result,
+            MFA_Validated => True);
+         Require
+           (Storage_Result = Flyology.Object_Storage.Success,
+            "MFA DeleteObjects policy setup failed");
+         MFA_Request.Objects.Append
+           (Deletions.Object_Identifier'
+              (Key => US.To_Unbounded_String ("mfa-current"),
+               Version_ID => US.Null_Unbounded_String,
+               others => <>));
+         MFA_Request.Objects.Append
+           (Deletions.Object_Identifier'
+              (Key => US.To_Unbounded_String ("mfa-exact"),
+               Version_ID => MFA_Exact.Version,
+               others => <>));
+         declare
+            Response : constant String :=
+              Run
+                (Signed_Delete_Objects_Request
+                   (Deletions.Serialize_Request (MFA_Request),
+                    Bucket => "/" & Bucket));
+         begin
+            Require
+              (Has (Response, "403 Forbidden")
+               and then Has (Response, "<Code>AccessDenied</Code>"),
+               "MFA DeleteObjects did not reject the complete request");
+         end;
+         Require
+           (Has
+              (Run (Signed_Request
+                 ("GET", "/" & Bucket & "/mfa-current", "")),
+               "current"),
+            "rejected MFA DeleteObjects changed its current sibling");
+         Require
+           (Has
+              (Run
+                 (Signed_Query_Request
+                    ("GET", "/" & Bucket & "/mfa-exact",
+                     (1 => SigV4.Pair
+                        ("versionId", US.To_String (MFA_Exact.Version))))),
+               "exact"),
+            "rejected MFA DeleteObjects changed its exact target");
+         Store.Put_Bucket_Versioning
+           (Bucket,
+            (MFA_Delete => Flyology.Object_Storage.MFA_Delete_Disabled,
+             others => <>), null, Ada.Real_Time.Time_Last, Storage_Result,
+            MFA_Validated => True);
+         Require
+           (Storage_Result = Flyology.Object_Storage.Success,
+            "MFA DeleteObjects policy cleanup failed");
+      end;
+      declare
+         Page     : Backends.List_Versions_Page;
+         Entries  : Backends.Delete_Object_Entries;
+         Outcomes : Backends.Delete_Object_Outcomes;
+      begin
+         Store.List_Object_Versions
+           (Bucket, (others => <>), null, Ada.Real_Time.Time_Last,
+            Page, Storage_Result);
+         Require
+           (Storage_Result = Flyology.Object_Storage.Success
+            and then not Page.Is_Truncated,
+            "generation-aware DeleteObjects cleanup listing failed");
+         for Version of Page.Entries loop
+            Entries.Append
+              (Backends.Delete_Object_Entry'
+                 (Key => Version.Key,
+                  Selector =>
+                    (Kind => Backends.Exact_Version,
+                     ID   => Version.Version_ID),
+                  Conditions => Backends.No_Delete_Object_Conditions));
+         end loop;
+         Store.Delete_Objects
+           (Bucket, Entries, (others => <>), null,
+            Ada.Real_Time.Time_Last, Outcomes, Storage_Result);
+         Require
+           (Storage_Result = Flyology.Object_Storage.Success
+            and then Outcomes.Length = Entries.Length,
+            "generation-aware DeleteObjects cleanup batch failed");
+      end;
+      Store.Delete_Bucket
+        (Bucket, null, Ada.Real_Time.Time_Last, Storage_Result);
+      Require
+        (Storage_Result = Flyology.Object_Storage.Success,
+         "generation-aware DeleteObjects bucket cleanup failed");
    end;
 
    declare
@@ -7778,24 +7982,62 @@ begin
            (Key        => US.To_Unbounded_String ("object"),
             Version_ID => US.Null_Unbounded_String,
             others     => <>));
-      Require
-        (Has
-           (Run
-              (Signed_Delete_Objects_Request
-                 (Deletions.Serialize_Request (Request),
-                  Bucket => "/delete-race-bucket")),
-            "501 Not Implemented"),
-         "DeleteObjects server raced past versioning publication");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Delete_Objects_Request
+                (Deletions.Serialize_Request (Request),
+                 Bucket => "/delete-race-bucket"));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "<DeleteMarker>true</DeleteMarker>")
+            and then Has (Response, "<DeleteMarkerVersionId>"),
+            "DeleteObjects did not observe published versioning: " &
+              Response);
+      end;
       Require
         (Has
            (Run
               (Signed_Request
                  ("GET", "/delete-race-bucket/object", "")),
+            "404 Not Found"),
+         "DeleteObjects server versioning race did not publish a marker");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/delete-race-bucket/object",
+                  (1 => SigV4.Pair ("versionId", "null")))),
             "race-body"),
-         "DeleteObjects server versioning race mutated backend state");
-      Flyology.Object_Storage.Backends.Memory.Delete_Object
-        (Store, "delete-race-bucket", "object", null,
-         Ada.Real_Time.Time_Last, Backend_Result);
+         "DeleteObjects server marker lost the retained null generation");
+      declare
+         Page     : Backends.List_Versions_Page;
+         Entries  : Backends.Delete_Object_Entries;
+         Outcomes : Backends.Delete_Object_Outcomes;
+      begin
+         Store.List_Object_Versions
+           ("delete-race-bucket", (others => <>), null,
+            Ada.Real_Time.Time_Last, Page, Backend_Result);
+         for Version of Page.Entries loop
+            Entries.Append
+              (Backends.Delete_Object_Entry'
+                 (Key => Version.Key,
+                  Selector =>
+                    (if US.To_String (Version.Version_ID) = "null"
+                     then Backends.Null_Version_Selector
+                     else (Kind => Backends.Exact_Version,
+                           ID   => Version.Version_ID)),
+                  Conditions => Backends.No_Delete_Object_Conditions));
+         end loop;
+         Store.Delete_Objects
+           ("delete-race-bucket", Entries, (others => <>), null,
+            Ada.Real_Time.Time_Last, Outcomes, Backend_Result);
+         Require
+           (Backend_Result = Flyology.Object_Storage.Success
+            and then Outcomes.Length = Entries.Length,
+            "DeleteObjects server versioning race cleanup batch failed");
+      end;
       Flyology.Object_Storage.Backends.Memory.Delete_Bucket
         (Store, "delete-race-bucket", null, Ada.Real_Time.Time_Last,
          Backend_Result);

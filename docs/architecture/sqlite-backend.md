@@ -24,10 +24,12 @@ never invalidated by replacement.
 
 DeleteObjects preflights every bounded entry under the catalog gate, evaluates
 conditions and duplicate keys in request order, and performs all successful
-catalog removals in one SQL transaction. A required unversioned state is read
-from the bucket row in that transaction before any removal, so a concurrent
-versioning commit cannot pass between policy and mutation. Any statement or
-commit failure rolls
+current, null, and exact-generation publications in one SQL transaction.
+Current deletion creates the versioning-mode marker; selected deletion removes
+only the named data generation or marker and refreshes the current mirror in
+the same transaction. MFA authorization and any required unversioned state are
+read from the bucket row before the first entry, so a concurrent versioning
+commit cannot pass between policy and mutation. Any statement or commit failure rolls
 back the complete catalog batch. Payload names retired by the commit are
 collected before publication and reclaimed only after the commit; a cleanup
 failure therefore cannot roll back or invalidate the committed result. Startup

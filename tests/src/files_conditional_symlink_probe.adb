@@ -473,7 +473,7 @@ begin
       (Has_ETag => True,
        ETag => US.To_Unbounded_String ("*"),
        others => <>),
-      (Require_Unversioned => True));
+      (Require_Unversioned => True, others => <>));
    Require
      (Result = Storage.Backend_Unavailable,
       "conditional Delete_Object followed an object-path symlink: " &
@@ -510,7 +510,7 @@ begin
         (Has_ETag => True,
          ETag => US.To_Unbounded_String ("*"),
          others => <>),
-      Requirements => (Require_Unversioned => True));
+      Requirements => (Require_Unversioned => True, others => <>));
    Require
      (Result = Storage.Backend_Unavailable,
       "Delete_Object accepted a configuration-directory symlink");
@@ -580,7 +580,7 @@ begin
         (Has_ETag => True,
          ETag => US.To_Unbounded_String ("*"),
          others => <>),
-      Requirements => (Require_Unversioned => True));
+      Requirements => (Require_Unversioned => True, others => <>));
    Require
      (Result = Storage.Backend_Unavailable,
       "Delete_Object accepted a versioning-file symlink");
@@ -1060,7 +1060,7 @@ begin
       Store.Delete_Object
         (Configuration_Bucket, "preserved", null,
          Ada.Real_Time.Time_Last, Result,
-         Requirements => (Require_Unversioned => True));
+         Requirements => (Require_Unversioned => True, others => <>));
       Require
         (Result = Storage.Backend_Unavailable,
          "Delete_Object accepted an absent configuration root");
@@ -1100,7 +1100,7 @@ begin
         (Has_ETag => True,
          ETag => US.To_Unbounded_String ("*"),
          others => <>),
-      Requirements => (Require_Unversioned => True));
+      Requirements => (Require_Unversioned => True, others => <>));
    Require
      (Result = Storage.Backend_Unavailable,
       "Delete_Object accepted a bucket-root symlink");

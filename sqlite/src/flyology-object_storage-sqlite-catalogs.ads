@@ -205,11 +205,13 @@ package Flyology.Object_Storage.SQLite.Catalogs is
 
    --  Delete one ordered batch in a single SQLite transaction. Retired
    --  payload names become unreferenced only after the transaction commits.
+   --  @param Modified Shared commit timestamp for newly published markers
    procedure Delete_Objects
      (Item     : in out Catalog;
       Bucket   : String;
       Entries  : Backends.Delete_Object_Entries;
       Requirements : Backends.Delete_Objects_Requirements;
+      Modified : Unix_Time;
       Retired  : out Payloads;
       Outcomes : out Backends.Delete_Object_Outcomes;
       Result   : out Status);

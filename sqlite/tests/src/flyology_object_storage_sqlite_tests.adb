@@ -845,14 +845,16 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
             Entries.Append
               (Delete_Object_Entry'
                  (Key => US.To_Unbounded_String ("batch-dormant-first"),
-                  Conditions => No_Delete_Object_Conditions));
+                  Conditions => No_Delete_Object_Conditions,
+                  others => <>));
             Entries.Append
               (Delete_Object_Entry'
                  (Key => US.To_Unbounded_String ("invalid"),
-                  Conditions =>
+                 Conditions =>
                     (Has_ETag => False,
                      ETag => US.To_Unbounded_String (Dormant_ETag),
-                     others => <>)));
+                     others => <>),
+                  others => <>));
             Store.Delete_Objects
               (Bucket, Entries, (others => <>), null,
                Ada.Real_Time.Time_Last, Outcomes, Result);
@@ -983,7 +985,8 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
                           (Has_ETag => True,
                            ETag => Original.Entity_Tag,
                            others => <>),
-                        Requirements => (Require_Unversioned => True));
+                        Requirements =>
+                          (Require_Unversioned => True, others => <>));
                   else
                      Store.Put_Bucket_Versioning
                        (Race_Bucket,
@@ -1020,9 +1023,19 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
                     (Result = Success
                      and then Check.Entity_Tag = Original.Entity_Tag,
                      "SQLite refused raced DeleteObject changed data");
-                  Store.Delete_Object
-                    (Race_Bucket, "current", null,
-                     Ada.Real_Time.Time_Last, Result);
+                  declare
+                     Publication : Version_Delete_Outcome;
+                  begin
+                     Store.Delete_Selected_Object
+                       (Race_Bucket, "current", Null_Version_Selector,
+                        No_Delete_Object_Conditions, False, null,
+                        Ada.Real_Time.Time_Last, Publication, Result);
+                     Assert
+                       (Result = Success
+                        and then Publication.Kind = Object_Version_Removed,
+                        "SQLite version/DeleteObject race retained cleanup " &
+                        "failed");
+                  end;
                end if;
             end;
             Store.Delete_Bucket
@@ -2080,26 +2093,60 @@ begin
          Injector : Databases.Database;
          Raised   : Boolean := False;
          Found    : Flyology.Object_Storage.Object_Information;
+         First_ID : US.Unbounded_String;
+         Second_ID : US.Unbounded_String;
       begin
+         Databases.Open (Injector, Database_Path);
+         declare
+            Current : Databases.Statement;
+         begin
+            Databases.Prepare
+              (Current, Injector,
+               "SELECT version_id FROM current_object_versions WHERE " &
+               "bucket_name='catalog-bucket' AND object_key=?1");
+            Databases.Bind_Bytes (Current, 1, Key);
+            Assert
+              (Databases.Step (Current) = Databases.Row,
+               "DeleteObjects first generation lookup failed");
+            First_ID :=
+              US.To_Unbounded_String (Databases.Column_Bytes (Current, 0));
+            Databases.Reset (Current);
+            Databases.Bind_Bytes (Current, 1, "multipart-key");
+            Assert
+              (Databases.Step (Current) = Databases.Row,
+               "DeleteObjects second generation lookup failed");
+            Second_ID :=
+              US.To_Unbounded_String (Databases.Column_Bytes (Current, 0));
+         end;
+         Databases.Execute
+           (Injector,
+            "CREATE TRIGGER fail_delete_objects BEFORE DELETE ON " &
+            "object_versions " &
+            "WHEN OLD.object_key=CAST('multipart-key' AS BLOB) BEGIN " &
+            "SELECT RAISE(ABORT,'delete-objects failpoint'); END;");
+         Databases.Close (Injector);
          Entries.Append
            (Delete_Object_Entry'
               (Key        => US.To_Unbounded_String (Key),
+               Selector   =>
+                 (if US.To_String (First_ID) = "null"
+                  then Null_Version_Selector
+                  else (Kind => Exact_Version, ID => First_ID)),
                Conditions => No_Delete_Object_Conditions));
          Entries.Append
            (Delete_Object_Entry'
               (Key        => US.To_Unbounded_String ("multipart-key"),
+               Selector   =>
+                 (if US.To_String (Second_ID) = "null"
+                  then Null_Version_Selector
+                  else (Kind => Exact_Version, ID => Second_ID)),
                Conditions => No_Delete_Object_Conditions));
-         Databases.Open (Injector, Database_Path);
-         Databases.Execute
-           (Injector,
-            "CREATE TRIGGER fail_delete_objects BEFORE DELETE ON objects " &
-            "WHEN OLD.object_key=CAST('multipart-key' AS BLOB) BEGIN " &
-            "SELECT RAISE(ABORT,'delete-objects failpoint'); END;");
-         Databases.Close (Injector);
          begin
             Catalogs.Delete_Objects
-              (Catalog, "catalog-bucket", Entries, (others => <>),
-               Retired, Outcomes, Result);
+              (Catalog, "catalog-bucket", Entries,
+               (MFA_Validated => True, others => <>),
+               Flyology.Object_Storage.Unix_Time'First, Retired, Outcomes,
+               Result);
          exception
             when others => Raised := True;
          end;
@@ -2121,8 +2168,10 @@ begin
          Databases.Execute (Injector, "DROP TRIGGER fail_delete_objects;");
          Databases.Close (Injector);
          Catalogs.Delete_Objects
-           (Catalog, "catalog-bucket", Entries, (others => <>), Retired,
-            Outcomes, Result);
+           (Catalog, "catalog-bucket", Entries,
+            (MFA_Validated => True, others => <>),
+            Flyology.Object_Storage.Unix_Time'First, Retired, Outcomes,
+            Result);
          Assert
            (Result = Flyology.Object_Storage.Success
             and then Outcomes.Length = 2
@@ -2344,10 +2393,11 @@ begin
       Entries.Append
         (Delete_Object_Entry'
            (Key        => US.To_Unbounded_String ("migration-missing"),
-            Conditions => No_Delete_Object_Conditions));
+            Conditions => No_Delete_Object_Conditions,
+            others     => <>));
       Catalogs.Delete_Objects
-        (Catalog, "legacy-bucket", Entries, (others => <>), Retired,
-         Outcomes, Result);
+        (Catalog, "legacy-bucket", Entries, (others => <>),
+         Flyology.Object_Storage.Unix_Time'First, Retired, Outcomes, Result);
       Assert
         (Result = Flyology.Object_Storage.Success
          and then Outcomes.Length = 1
@@ -4593,10 +4643,12 @@ begin
             Entries.Append
               (Delete_Object_Entry'
                  (Key        => Object_Key,
-                  Conditions => No_Delete_Object_Conditions));
+                  Conditions => No_Delete_Object_Conditions,
+                  others     => <>));
          end loop;
          Store.Delete_Objects
-           ("sqlite-bucket", Entries, (Require_Unversioned => True), null,
+           ("sqlite-bucket", Entries,
+            (Require_Unversioned => True, others => <>), null,
             Ada.Real_Time.Time_Last, Outcomes, Result);
          Assert
            (Result = Not_Implemented and then Outcomes.Is_Empty,
@@ -4607,15 +4659,24 @@ begin
          Assert
            (Result = Success,
             "SQLite versioning race removed current object data");
+         for Index in Entries.First_Index .. Entries.Last_Index loop
+            declare
+               Requested : Delete_Object_Entry := Entries (Index);
+            begin
+               Requested.Selector := Null_Version_Selector;
+               Entries.Replace_Element (Index, Requested);
+            end;
+         end loop;
          Store.Delete_Objects
-           ("sqlite-bucket", Entries, (others => <>), null,
+           ("sqlite-bucket", Entries,
+            (MFA_Validated => True, others => <>), null,
             Ada.Real_Time.Time_Last,
             Outcomes, Result);
          Assert
            (Result = Success and then Outcomes.Length = Entries.Length
             and then (for all Outcome of Outcomes =>
               Outcome.Result = Success),
-            "SQLite backend DeleteObjects ordered batch failed");
+            "SQLite backend generation-aware DeleteObjects batch failed");
       end;
    end;
    declare
@@ -4651,6 +4712,42 @@ begin
       Assert
         (Result = Success,
          "SQLite DeleteObject evidence bucket cleanup failed");
+      declare
+         use Flyology.Object_Storage.Backends;
+         Page     : List_Versions_Page;
+         Entries  : Delete_Object_Entries;
+         Outcomes : Delete_Object_Outcomes;
+      begin
+         Store.List_Object_Versions
+           ("sqlite-bucket", (others => <>), null,
+            Ada.Real_Time.Time_Last, Page, Result);
+         Assert
+           (Result = Success and then not Page.Is_Truncated,
+            "SQLite cleanup could not snapshot all retained generations");
+         for Version of Page.Entries loop
+            Entries.Append
+              (Delete_Object_Entry'
+                 (Key => Version.Key,
+                  Selector =>
+                    (if US.To_String (Version.Version_ID) = "null"
+                     then Null_Version_Selector
+                     else (Kind => Exact_Version,
+                           ID   => Version.Version_ID)),
+                  Conditions => No_Delete_Object_Conditions));
+         end loop;
+         if not Entries.Is_Empty then
+            Store.Delete_Objects
+              ("sqlite-bucket", Entries,
+               (MFA_Validated => True, others => <>), null,
+               Ada.Real_Time.Time_Last, Outcomes, Result);
+            Assert
+              (Result = Success
+               and then Outcomes.Length = Entries.Length
+               and then (for all Outcome of Outcomes =>
+                 Outcome.Result = Success),
+               "SQLite retained-generation cleanup batch failed");
+         end if;
+      end;
       Store.Delete_Bucket
         ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "SQLite backend bucket delete failed");

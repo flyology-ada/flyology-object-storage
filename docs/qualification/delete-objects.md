@@ -1,9 +1,12 @@
 # DeleteObjects qualification and boundaries
 
-This slice qualifies the independent current-object semantics of
-`DeleteObjects`. It does not qualify object versions, delete-marker creation,
-MFA Delete enforcement, directory buckets, Requester Pays accounting, or
-Object Lock governance enforcement.
+This slice qualifies current, null, and exact-generation `DeleteObjects` for
+the memory and SQLite backends, including delete-marker publication/removal
+and MFA Delete enforcement. The files backend qualifies current deletion while
+unconfigured and explicit null deletion; opaque exact generations and enabled
+version retention remain an explicit capability exclusion. Directory buckets,
+Requester Pays accounting, and Object Lock governance enforcement are not
+qualified.
 
 The request boundary accepts at most 1,000 entries and a bounded XML body. It
 requires one canonical Content-MD5 computed over the exact body bytes and can
@@ -14,42 +17,59 @@ validated before the relevant entry can reach storage. A malformed checksum
 group is `InvalidRequest`; a validly encoded digest that does not match is
 `BadDigest`.
 
-For unversioned general-purpose buckets, valid `requester`, governance-bypass,
-and nonempty MFA headers are accepted as no-ops because no corresponding
-bucket policy is active. Expected owner is enforced. LastModifiedTime and Size
-are rejected per entry with the explicit directory-bucket boundary. VersionId
-is rejected per entry as `NotImplemented`, while independent current-object
-entries in the same request still run. If bucket versioning or MFA Delete is
-configured, the whole request is rejected before mutation: silently deleting
-the current object would incorrectly emulate S3 delete-marker behavior. That
-precondition is part of the backend batch boundary, not a preceding server
-lookup: memory checks it in the protected operation, files under the
-publication gate, and SQLite inside the deletion transaction. Deterministic
-regressions publish versioning after an earlier unconfigured observation and
-require all three backends, plus the server path, to preserve the object.
+For policy-inactive general-purpose buckets, valid `requester` and
+governance-bypass headers remain accepted no-ops. Expected owner is enforced.
+LastModifiedTime and Size are rejected per entry with the explicit
+directory-bucket boundary. An omitted VersionId selects the current
+generation; `null` selects the distinguished null generation; any other
+canonical value selects that exact opaque generation. Enabled current deletion
+publishes a marker, suspended current deletion replaces the null generation
+with a null marker, and selected null/exact deletion permanently removes only
+that generation. Successful responses preserve the requested VersionId and
+report marker identity when a marker is created or removed. A missing
+unconditioned selected generation is idempotent success.
+
+When MFA Delete is enabled, any actionable null/exact entry requires one
+verified `x-amz-mfa` credential. A missing or invalid credential rejects the
+request before backend mutation; the verified authorization is carried into
+the same batch boundary that reads bucket policy and publishes deletions.
+Memory performs that boundary in its protected state and SQLite in one catalog
+transaction. Files reads policy under its publication gate but returns
+per-entry `NotImplemented` for exact generations it cannot represent. The
+legacy `Require_Unversioned` backend requirement remains available for callers
+that specifically require pre-versioning semantics and is still checked under
+the same publication boundary.
 
 All backends implement the same ordered batch contract. The complete request
-is structurally validated before mutation, unconditioned missing keys are
-idempotent successes, conditioned missing keys are `NoSuchKey`, and ETag
-mismatches are `PreconditionFailed`. Quiet mode suppresses only success
-entries. Memory uses one protected publication; SQLite uses one catalog
-transaction and reclaims retired payload files after commit. Files uses a
-whole-request preflight and one publication gate, but each file removal is a
-separate durable namespace mutation. An I/O failure, cancellation, deadline,
-process crash, or power loss during that loop may leave an idempotently
-retryable prefix applied. No whole-batch cross-file atomicity is claimed.
+is structurally validated before mutation, unconditioned missing selections
+are idempotent successes, conditioned missing selections are `NoSuchKey`, and
+ETag mismatches are `PreconditionFailed`. Each outcome retains its exact
+publication kind and typed generation identity. Quiet mode suppresses only
+success entries. Memory uses one protected publication; SQLite uses one
+catalog transaction and reclaims retired payload files after commit. The
+SQLite rollback oracle injects failure on the authoritative `object_versions`
+table after an earlier selected removal and requires zero committed catalog or
+payload-retirement outputs. Files uses a whole-request preflight and one
+publication gate, but each file removal is a separate durable namespace
+mutation. An I/O failure, cancellation, deadline, process crash, or power loss
+during that loop may leave a prefix applied. No whole-batch cross-file
+atomicity is claimed, and callers must reconcile before retrying an
+indeterminate conditional batch.
 
 Executable evidence is provided by:
 
 - `backends.delete-objects-conformance` for memory and files, including
-  duplicate entries, condition results, whole-request validation, and
-  failpoints;
-- the SQLite conformance, rollback-trigger, migration, reopen, and orphan
-  payload recovery cases;
+  duplicate entries, condition results, whole-request validation, files
+  null/exact capability mapping, and failpoints;
+- the shared memory/SQLite retained-generation conformance for mixed exact,
+  current-marker, missing-exact, and conditional entries in one batch;
+- the SQLite conformance, authoritative-generation rollback trigger,
+  migration, reopen, MFA, and orphan-payload recovery cases;
 - `s3.delete-objects-result-codec` and `s3.low-level-delete-requests` for every
   modeled request/result member and all ten checksum algorithms;
 - `s3_server_application_corpus` for authenticated Content-MD5/checksum/control
-  admission, conditions, ordering, quiet results, and explicit boundaries;
+  admission, conditions, ordering, quiet results, exact VersionId echo,
+  marker identity, selected-generation nonmutation, and explicit boundaries;
 - `s3_http_socket_corpus` for a signed, checksummed typed request and complete
   Deleted/Error response over fragmented real sockets from both Flyology task
   models; and
@@ -67,5 +87,5 @@ Reproduce the deterministic local qualification with:
 
 The coverage ledger marks the client covered because it projects every pinned
 request member and decodes every result member. Backend and server remain
-partial solely for the explicit version/directory/policy boundaries above;
-corpus coverage remains covered.
+partial solely for the files exact-generation and directory/policy boundaries
+above; corpus coverage remains covered.

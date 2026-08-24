@@ -267,7 +267,7 @@ procedure Files_Crash_Probe is
          Store.Delete_Object
            (Bucket, Key, null, Ada.Real_Time.Time_Last, Result,
             (Has_ETag => True, ETag => Info.Entity_Tag, others => <>),
-            (Require_Unversioned => True));
+            (Require_Unversioned => True, others => <>));
       elsif Scenario = "delete-objects" then
          declare
             Entries  : Backends.Delete_Object_Entries;
@@ -276,11 +276,13 @@ procedure Files_Crash_Probe is
             Entries.Append
               (Backends.Delete_Object_Entry'
                  (Key        => US.To_Unbounded_String (Key),
-                  Conditions => Backends.No_Delete_Object_Conditions));
+                  Conditions => Backends.No_Delete_Object_Conditions,
+                  others     => <>));
             Entries.Append
               (Backends.Delete_Object_Entry'
                  (Key        => US.To_Unbounded_String ("second-object"),
-                  Conditions => Backends.No_Delete_Object_Conditions));
+                  Conditions => Backends.No_Delete_Object_Conditions,
+                  others     => <>));
             Store.Delete_Objects
               (Bucket, Entries, (others => <>), null,
                Ada.Real_Time.Time_Last,

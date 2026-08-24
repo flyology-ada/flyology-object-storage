@@ -1198,7 +1198,9 @@ package body Flyology.Object_Storage.Backends.SQLite is
       end if;
       Entries.Append
         (Delete_Object_Entry'
-           (Key => US.To_Unbounded_String (Key), Conditions => Conditions));
+           (Key => US.To_Unbounded_String (Key),
+            Selector => Current_Version_Selector,
+            Conditions => Conditions));
       Item.Delete_Objects
         (Bucket, Entries, Requirements, Token, Deadline, Outcomes, Result);
       if Result = Success then
@@ -1286,6 +1288,7 @@ package body Flyology.Object_Storage.Backends.SQLite is
       end if;
       for Request_Entry of Entries loop
          if not Valid_Object_Key (US.To_String (Request_Entry.Key))
+           or else not Valid_Version_Selector (Request_Entry.Selector)
            or else
              ((not Request_Entry.Conditions.Has_ETag
                and then US.Length (Request_Entry.Conditions.ETag) > 0)
@@ -1299,8 +1302,8 @@ package body Flyology.Object_Storage.Backends.SQLite is
          end if;
       end loop;
       Catalogs.Delete_Objects
-        (Item.Catalog, Bucket, Entries, Requirements, Retired, Outcomes,
-         Result);
+        (Item.Catalog, Bucket, Entries, Requirements,
+         Unix_Seconds (Ada.Calendar.Clock), Retired, Outcomes, Result);
       if Result = Success then
          for Payload of Retired loop
             Delete_Payload_If_Present (Item, US.To_String (Payload));

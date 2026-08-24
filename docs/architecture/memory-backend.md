@@ -49,12 +49,14 @@ SQLite backend for restart persistence.
 DeleteObjects validates its complete bounded request before entering the
 protected state. The protected operation evaluates all ETag, modification-time,
 and size conditions against one catalog snapshot, records one outcome per
-request entry, and removes every successful object before releasing the state.
-Duplicate keys retain request order: a later entry observes the deletion made
-by an earlier successful entry. The batch is process-atomic with respect to
-all other memory-backend operations. When the caller requires unversioned
-semantics, the bucket versioning and MFA Delete fields are checked inside that
-same protected operation before the first entry is evaluated.
+request entry, and publishes every successful selected-generation result before
+releasing the state. Current selectors create enabled/suspended delete markers;
+null and exact selectors permanently remove only their target and preserve
+typed publication identity. Duplicate keys retain request order: a later entry
+observes the deletion or marker made by an earlier successful entry. The batch
+is process-atomic with respect to all other memory-backend operations. MFA
+Delete authorization and any caller-required unversioned state are checked
+inside that same protected operation before the first entry is evaluated.
 
 Each object slot also contains one fixed-capacity complete tag set. The
 protected state replaces, reads, and clears that set atomically with respect to
