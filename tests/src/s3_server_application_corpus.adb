@@ -1665,6 +1665,265 @@ procedure S3_Server_Application_Corpus is
          "request timeout was mislabeled as an internal error");
    end Check_Deadline_Propagation;
 
+   procedure Check_Create_Multipart_Admission is
+      Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("uploads", ""));
+      Target : constant String := "/test-bucket/create-policy-reject";
+      Content_Type_Wire_Name : constant String := "Content-Type";
+      Create_Content_Type_Limit : constant Positive :=
+        Flyology.Object_Storage.Maximum_System_Metadata_Bytes -
+        Content_Type_Wire_Name'Length;
+      --  The value limit is derived from the public aggregate metadata budget
+      --  after charging the fixed S3 wire-name bytes.  Changing either source
+      --  changes CreateMultipartUpload admission compatibility.
+      Create_Policy_Header_Limit : constant Positive := 8_192;
+      --  Mirrors the pinned S3 singleton-header limit shared by the server and
+      --  low-level client.  It bounds signed policy retention and changing it
+      --  requires corpus and compatibility review in both layers.
+      Grant_Envelope_Bytes : constant Positive := 5;
+      --  Derived fixed bytes in the shortest quoted grant envelope, id="".
+
+      procedure Reject
+        (Headers : String;
+         Code    : String;
+         Label   : String;
+         Scheme  : Flyology.HTTP.Origin_Scheme := Flyology.HTTP.Plain_HTTP;
+         Payload : String := "";
+         Corrupt : Boolean := False)
+      is
+         Response : constant String := Run
+           (Signed_Query_Body_Request
+              ("POST", Target, Query, Payload, Headers,
+               Corrupt_Signature => Corrupt),
+            Scheme => Scheme);
+      begin
+         Require
+           (not Has (Response, "200 OK")
+            and then Has (Response, "<Code>" & Code & "</Code>"),
+            "CreateMultipartUpload accepted " & Label & ": " & Response);
+      end Reject;
+
+      procedure Require_No_Upload is
+         List_Query : constant SigV4.Name_Value_Array :=
+           (SigV4.Pair ("prefix", "create-policy-reject"),
+            SigV4.Pair ("uploads", ""));
+         Response : constant String := Run
+           (Signed_Query_Request ("GET", "/test-bucket", List_Query));
+         Page : constant Multipart_Uploads.List_Multipart_Uploads_Result :=
+           Multipart_Uploads.Parse_List_Multipart_Uploads
+             (Response_Body (Response));
+      begin
+         Require
+           (Has (Response, "200 OK") and then Page.Uploads.Is_Empty,
+            "rejected CreateMultipartUpload published an upload: " &
+            Response);
+      end Require_No_Upload;
+   begin
+      Reject ("content-type: " & CRLF, "InvalidArgument",
+              "empty content type");
+      Reject
+         ("content-type: " &
+         String'
+           (1 .. Create_Content_Type_Limit + 1 => 't') &
+         CRLF, "InvalidArgument", "content type limit plus one");
+      Reject ("x-amz-acl: " & CRLF, "InvalidArgument", "empty ACL");
+      Reject ("x-amz-acl: unknown" & CRLF, "InvalidArgument",
+              "unknown ACL");
+      Reject
+        ("x-amz-acl: private" & CRLF & "x-amz-acl: private" & CRLF,
+         "InvalidRequest", "duplicate ACL");
+      Reject ("x-amz-acl: private" & CRLF, "NotImplemented",
+              "unsupported valid ACL");
+      Reject
+        ("x-amz-grant-read: id=""reader"", " &
+         "uri=""http://acs.amazonaws.com/groups/global/AllUsers"", " &
+         "emailAddress=""reader@example.test""" & CRLF,
+         "NotImplemented", "unsupported valid multi-grantee ACL");
+      Reject
+        ("x-amz-grant-read: id=reader" & CRLF,
+         "InvalidArgument", "unquoted ACL grantee");
+      Reject
+        ("x-amz-grant-read: account=""reader""" & CRLF,
+         "InvalidArgument", "unknown ACL grantee kind");
+      Reject
+        ("x-amz-grant-read: id=""reader"", id=""reader""" & CRLF,
+         "InvalidArgument", "duplicate ACL grantee");
+      Reject
+        ("x-amz-grant-read: id=""" &
+         String'
+           (1 .. Create_Policy_Header_Limit - Grant_Envelope_Bytes => 'g') &
+         """" & CRLF,
+         "NotImplemented", "unsupported exact-bound ACL grant");
+      Reject
+        ("x-amz-grant-read: id=""" &
+         String'
+           (1 .. Create_Policy_Header_Limit - Grant_Envelope_Bytes + 1 =>
+              'g') &
+         """" & CRLF,
+         "InvalidArgument", "ACL grant limit plus one");
+      Reject
+        ("x-amz-acl: private" & CRLF &
+         "x-amz-grant-read: id=""reader""" & CRLF,
+         "InvalidRequest", "mixed ACL and grant policy");
+      Reject ("cache-control: " & CRLF, "InvalidArgument",
+              "empty cache policy");
+      Reject ("cache-control: no-cache" & CRLF, "NotImplemented",
+              "unsupported cache policy");
+      Reject ("expires: invalid" & CRLF, "InvalidArgument",
+              "malformed expiry");
+      Reject
+        ("expires: Sun, 06 Nov 1994 08:49:37 GMT" & CRLF,
+         "NotImplemented", "unsupported valid expiry");
+      Reject ("x-amz-meta-: value" & CRLF, "InvalidArgument",
+              "empty metadata key");
+      Reject
+        ("x-amz-meta-Team: one" & CRLF &
+         "x-amz-meta-team: two" & CRLF,
+         "InvalidRequest", "case-colliding metadata");
+      Reject ("x-amz-meta-team: storage" & CRLF, "NotImplemented",
+              "unsupported valid metadata");
+      Reject ("x-amz-request-payer: " & CRLF, "InvalidArgument",
+              "empty request payer");
+      Reject ("x-amz-request-payer: owner" & CRLF, "InvalidArgument",
+              "invalid request payer");
+      Reject
+        ("x-amz-request-payer: requester" & CRLF,
+         "NotImplemented", "unsupported requester pays");
+      Reject
+        ("x-amz-expected-bucket-owner: different-owner" & CRLF,
+         "AccessDenied", "mismatched expected owner");
+      Reject
+        ("x-amz-expected-bucket-owner: " & CRLF,
+         "InvalidRequest", "empty expected owner");
+      Reject
+        ("x-amz-expected-bucket-owner: test-principal" & CRLF &
+         "x-amz-acl: private" & CRLF,
+         "NotImplemented", "matching owner with unsupported ACL");
+      Reject
+        ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+         CRLF, "InvalidRequest", "incomplete SSE-C group");
+      Reject
+        ("x-amz-server-side-encryption-customer-algorithm: AES128" &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Test_Key &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " &
+         SSE_Test_Key_MD5 & CRLF,
+         "InvalidArgument", "invalid SSE-C algorithm",
+         Flyology.HTTP.Secure_HTTPS);
+      Reject
+        ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Test_Key &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " &
+         Content_MD5 ("different") & CRLF,
+         "InvalidDigest", "mismatched SSE-C key digest",
+         Flyology.HTTP.Secure_HTTPS);
+      Reject
+        ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Test_Key &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " &
+         SSE_Test_Key_MD5 & CRLF,
+         "InvalidRequest", "SSE-C over plaintext");
+      Reject
+        ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Test_Key &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " &
+         SSE_Test_Key_MD5 & CRLF,
+         "NotImplemented", "unsupported valid SSE-C",
+         Flyology.HTTP.Secure_HTTPS);
+      Reject
+        ("x-amz-server-side-encryption-aws-kms-key-id: key" & CRLF,
+         "InvalidRequest", "KMS companion without mode");
+      Reject
+        ("x-amz-server-side-encryption: aws:kms" & CRLF &
+         "x-amz-server-side-encryption-aws-kms-key-id: key" & CRLF,
+         "NotImplemented", "unsupported valid KMS policy");
+      Reject
+        ("x-amz-server-side-encryption: aws:kms" & CRLF &
+         "x-amz-server-side-encryption-context: malformed" & CRLF,
+         "InvalidArgument", "malformed KMS context");
+      Reject
+        ("x-amz-server-side-encryption: aws:kms" & CRLF &
+         "x-amz-server-side-encryption-bucket-key-enabled: TRUE" & CRLF,
+         "InvalidArgument", "noncanonical bucket-key boolean");
+      Reject ("x-amz-storage-class: unknown" & CRLF, "InvalidArgument",
+              "unknown storage class");
+      Reject ("x-amz-storage-class: STANDARD" & CRLF, "NotImplemented",
+              "unsupported explicit storage class");
+      Reject ("x-amz-tagging: " & CRLF, "InvalidTag", "empty tag set");
+      Reject ("x-amz-tagging: =value" & CRLF, "InvalidTag",
+              "invalid tag set");
+      Reject ("x-amz-tagging: team=storage" & CRLF, "NotImplemented",
+              "unsupported valid tag set");
+      Reject ("x-amz-object-lock-mode: invalid" & CRLF,
+              "InvalidArgument", "invalid object lock mode");
+      Reject ("x-amz-object-lock-mode: GOVERNANCE" & CRLF,
+              "InvalidRequest", "incomplete retention group");
+      Reject
+        ("x-amz-object-lock-mode: GOVERNANCE" & CRLF &
+         "x-amz-object-lock-retain-until-date: invalid" & CRLF,
+         "InvalidArgument", "malformed retention timestamp");
+      Reject
+        ("x-amz-object-lock-mode: GOVERNANCE" & CRLF &
+         "x-amz-object-lock-retain-until-date: " &
+         "2026-09-01T00:00:00Z" & CRLF,
+         "NotImplemented", "unsupported valid retention policy");
+      Reject ("x-amz-checksum-type: FULL_OBJECT" & CRLF,
+              "InvalidRequest", "checksum type without algorithm");
+      Reject ("x-amz-checksum-algorithm: UNKNOWN" & CRLF,
+              "InvalidRequest", "unknown checksum algorithm");
+      Reject
+        ("x-amz-checksum-unknown: value" & CRLF,
+         "InvalidRequest", "unknown checksum header");
+      Reject
+        ("x-amz-request-payer: owner" & CRLF &
+         "x-amz-expected-bucket-owner: different-owner" & CRLF &
+         "x-amz-acl: unknown" & CRLF,
+         "SignatureDoesNotMatch", "controls before authentication",
+         Corrupt => True);
+      Reject ("", "InvalidRequest", "nonempty request body", Payload => " ");
+      Require_No_Upload;
+
+      declare
+         Boundary_Target : constant String :=
+           "/test-bucket/create-content-boundary";
+         Exact_Content_Type : constant String :=
+           String'(1 .. Create_Content_Type_Limit => 't');
+         Response : constant String := Run
+           (Signed_Query_Body_Request
+              ("POST", Boundary_Target, Query, "",
+               "content-type: " & Exact_Content_Type & CRLF));
+         function Created_ID return String is
+         begin
+            Require
+              (Has (Response, "200 OK"),
+               "CreateMultipartUpload rejected the exact content-type " &
+               "bound: " & Response);
+            return US.To_String
+              (Multipart.Parse_Create_Result
+                 (Response_Body (Response)).Upload_ID);
+         end Created_ID;
+         ID : constant String := Created_ID;
+         Abort_Query : constant SigV4.Name_Value_Array :=
+           (1 => SigV4.Pair ("uploadId", ID));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has
+              (Run
+                 (Signed_Query_Body_Request
+                    ("DELETE", Boundary_Target, Abort_Query, "")),
+               "204 No Content"),
+            "CreateMultipartUpload rejected the exact content-type bound");
+      end;
+   end Check_Create_Multipart_Admission;
+
    procedure Check_Multipart_Server is
       Payload : constant String := "multipart body";
       Expected_Checksum : constant String := CRC64NVME (Payload);
@@ -5951,6 +6210,7 @@ begin
 
    Check_Cancellation_Propagation;
    Check_Deadline_Propagation;
+   Check_Create_Multipart_Admission;
    Check_Multipart_Server;
 
    declare

@@ -1,8 +1,11 @@
-# CreateMultipartUpload client qualification
+# CreateMultipartUpload qualification
 
-This record freezes the pinned model inventory and the qualified synchronous
-client boundary. Backend initiation and the authenticated server route retain
-their narrower policy support; server coverage therefore remains partial.
+This record freezes the pinned model inventory, qualified synchronous client,
+and strict authenticated server-admission boundary. Backend initiation
+deliberately retains its narrower policy support; the server admits that
+supported subset and explicitly rejects every validated unsupported policy
+before creating an upload. The server ledger cell remains partial until those
+modeled advanced policies are positively supported.
 
 ## Pinned authority
 
@@ -92,9 +95,10 @@ and clean up through ListMultipartUploads; the wrapper never auto-retries.
 
 ## Isolated artifacts
 
-`tests/corpora/create-multipart-upload/members.tsv` maps every request and
-output member to its generated wire location, current boundary, required
-closure, and strict vectors.
+`tests/corpora/create-multipart-upload/members.tsv` preserves the
+prequalification boundary for every request and output member together with
+its generated wire location, required closure, and strict vectors. The
+coverage ledger and this qualification record carry the promoted state.
 `tests/corpora/create-multipart-upload/vectors.tsv` defines target, header-map,
 ACL, metadata, tagging, checksum, encryption, Object Lock, owner/payer,
 response, durability, inheritance, ambiguity, and external-server designs.
@@ -119,8 +123,37 @@ lightweight clients, use the public wrapper, bind bucket/key and explicit
 policy, and reject duplicate and present-empty physical headers. A dropped
 successful initiation is followed by one read-only ListMultipartUploads
 reconciliation request; the scripted server rejects any automatic POST replay.
-This evidence promotes only the client cell; advanced backend and server policy
-enforcement remains separately gated and partial.
+The original evidence promoted only the client cell. The server-admission
+closure below separately gates every modeled request field without claiming
+advanced backend policy persistence.
+
+## Qualified server admission boundary
+
+The authenticated general-purpose path-style route handles every one of the
+31 modeled request members. Content type and the checksum algorithm/type pair
+are the supported durable initiation subset on memory, files, and SQLite. The
+server applies the documented checksum default, enforces supported
+algorithm/type combinations, and passes only that validated snapshot to the
+backend.
+
+Every other modeled policy is authenticated and classified before backend
+entry. Physical singleton duplication, case-colliding metadata, unknown
+checksum headers, empty or over-budget metadata, malformed HTTP dates, ACL
+enums and ACL/grant conflicts, bounded quoted grant lists and duplicate
+grantees, payer and storage enums, SSE-C key/digest/HTTPS relations, mutually
+exclusive SSE/KMS groups, canonical KMS context, bucket-key relations, tag
+syntax, Object Lock enums/group/timestamp syntax, and expected-owner mismatch
+all fail with a typed request error. A syntactically valid but unsupported ACL,
+metadata, encryption, storage, payer, tagging, redirect, or Object Lock policy
+returns authenticated `NotImplemented` before upload creation. The route never
+silently drops such a field.
+
+The strict signed corpus exercises malformed and valid-but-unsupported values,
+authentication precedence, a nonempty request body, absence of any upload
+after the rejection matrix, the exact derived Content-Type aggregate boundary,
+and successful creation/abort at that boundary. This qualifies the admission
+behavior but does not promote the partial server cell or claim persistence and
+final application of the explicitly excluded advanced policies.
 
 ## Frozen gate evidence
 
@@ -139,3 +172,24 @@ and proved 936/936 checks across all nine manifest units: 180 flow checks and
 warnings, unproved or justified checks, and `pragma Assume` statements;
 the source contains no `pragma Assume`, `pragma Suppress`, `False_Positive`, or
 `SPARK_Mode => Off`. The post-run host process audit was clean.
+
+## Server-admission gate evidence
+
+The authenticated server admission closure passed the root gate with 40/40
+AUnit tests, the 88-case files crash matrix, 320 checksum vectors, 210 chunk
+boundaries, the 64-GiB CRC linearization oracle, the expanded signed server
+application corpus, and three repetitions of the native/lightweight socket
+corpus. The SQLite wrapper, catalog, and backend gate passed. The coverage and
+31-request/14-response preparation verifiers passed, including their negative
+oracles.
+
+GNATdoc 26 produced a 12,440-line log and a nonempty API index containing
+`Flyology.Object_Storage`, with no error, internal-error,
+`LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or
+`flyology-channels-bounded` diagnostic. The serialized warning-strict proof
+campaign started at 2026-08-24T08:18:24Z with FSF GNATprove 16.1.0 and proved
+936/936 checks across all nine manifest units: 180 flow checks and 756 prover
+checks, with a maximum of 663 steps. The report contains zero warnings,
+unproved or justified checks, and `pragma Assume` statements; the selected
+source contains no proof suppression. The post-run host process audit was
+clean, and the exclusive prover lane was explicitly released.

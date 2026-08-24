@@ -1702,7 +1702,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       elsif Has_Encryption_Header
         and then Operation not in Copy_Object | Put_Object | Head_Object |
           Get_Object | Get_Object_Attributes | List_Multipart_Parts |
-          Complete_Multipart
+          Create_Multipart | Complete_Multipart
       then
          Send_Error
            (X, 501, "NotImplemented",
@@ -3412,36 +3412,768 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                end;
 
             when Create_Multipart =>
-               if Apps.Request_Header_Count (X, "content-type") > 1
-                 or else Apps.Request_Header_Count
-                   (X, "x-amz-checksum-algorithm") > 1
-                 or else Apps.Request_Header_Count
-                   (X, "x-amz-checksum-type") > 1
-                 or else Apps.Request_Header_Count
-                   (X, "x-amz-sdk-checksum-algorithm") > 0
-                 or else Checksum_Value_Header_Count > 0
-               then
-                  Send_Error
-                    (X, 400, "InvalidRequest",
-                     "A multipart checksum header is invalid or duplicated",
-                     Target_Text);
-                  return;
-               end if;
                declare
+                  function Count (Name : String) return Natural is
+                    (Apps.Request_Header_Count (X, Name));
+
+                  function Duplicate_User_Metadata return Boolean is
+                  begin
+                     for Index in 1 .. Apps.Request_Header_Count (X) loop
+                        declare
+                           Name : constant String :=
+                             Ada.Characters.Handling.To_Lower
+                               (Apps.Request_Header_Name (X, Index));
+                        begin
+                           if Name'Length >= 11
+                             and then Name (Name'First .. Name'First + 10) =
+                               "x-amz-meta-"
+                             and then Count (Name) > 1
+                           then
+                              return True;
+                           end if;
+                        end;
+                     end loop;
+                     return False;
+                  end Duplicate_User_Metadata;
+
+                  function Any_Duplicate return Boolean is
+                    (Count ("x-amz-acl") > 1
+                     or else Count ("cache-control") > 1
+                     or else Count ("content-disposition") > 1
+                     or else Count ("content-encoding") > 1
+                     or else Count ("content-language") > 1
+                     or else Count ("content-type") > 1
+                     or else Count ("expires") > 1
+                     or else Count ("x-amz-grant-full-control") > 1
+                     or else Count ("x-amz-grant-read") > 1
+                     or else Count ("x-amz-grant-read-acp") > 1
+                     or else Count ("x-amz-grant-write-acp") > 1
+                     or else Count ("x-amz-server-side-encryption") > 1
+                     or else Count ("x-amz-storage-class") > 1
+                     or else Count
+                       ("x-amz-website-redirect-location") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-customer-algorithm") >
+                         1
+                     or else Count
+                       ("x-amz-server-side-encryption-customer-key") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-customer-key-md5") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-aws-kms-key-id") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-context") > 1
+                     or else Count
+                       ("x-amz-server-side-encryption-bucket-key-enabled") >
+                         1
+                     or else Count ("x-amz-request-payer") > 1
+                     or else Count ("x-amz-tagging") > 1
+                     or else Count ("x-amz-object-lock-mode") > 1
+                     or else Count
+                       ("x-amz-object-lock-retain-until-date") > 1
+                     or else Count
+                       ("x-amz-object-lock-legal-hold") > 1
+                     or else Count ("x-amz-expected-bucket-owner") > 1
+                     or else Count ("x-amz-checksum-algorithm") > 1
+                     or else Count ("x-amz-checksum-type") > 1
+                     or else Duplicate_User_Metadata);
+
+                  function Valid_Enumeration
+                    (Member : Positive; Value : String) return Boolean
+                  is
+                     Input : constant Model.Shape_Index := Model.Shape_Index
+                       (Model.Input_Shape
+                          (Model.Create_Multipart_Upload_Operation));
+                     Shape : constant Model.Shape_Index :=
+                       Model.Member_Shape (Input, Member);
+                  begin
+                     for Index in 1 .. Model.Enumeration_Count (Shape) loop
+                        if Value = Model.Enumeration_Value (Shape, Index) then
+                           return True;
+                        end if;
+                     end loop;
+                     return False;
+                  end Valid_Enumeration;
+
+                  function Present (Name : String) return Boolean is
+                    (Count (Name) = 1);
+
+                  function Valid_Text (Name : String) return Boolean is
+                     Value : constant String := Apps.Request_Header (X, Name);
+                  begin
+                     if Value'Length not in 1 ..
+                       Maximum_Expected_Owner_Bytes
+                     then
+                        return False;
+                     end if;
+                     for Item of Value loop
+                        if Character'Pos (Item) not in 16#20# .. 16#7E# then
+                           return False;
+                        end if;
+                     end loop;
+                     return True;
+                  end Valid_Text;
+
+                  function Valid_Grant_List (Name : String) return Boolean is
+                     Value : constant String := Apps.Request_Header (X, Name);
+                     type Grant_Kind is (Canonical_ID, Group_URI, Email);
+                     type Grant_Entry is record
+                        Kind        : Grant_Kind;
+                        Value_First : Positive;
+                        Value_Last  : Positive;
+                     end record;
+                     --  Six bytes is the shortest AWS grant representation,
+                     --  id="x".  This capacity is derived from the public
+                     --  header bound and cannot truncate an admitted list.
+                     Maximum_Grant_Entries : constant Positive :=
+                       Maximum_Expected_Owner_Bytes / 6 + 1;
+                     type Grant_Entry_Array is
+                       array (Positive range 1 .. Maximum_Grant_Entries) of
+                         Grant_Entry;
+                     Entries : Grant_Entry_Array :=
+                       (others =>
+                          (Kind        => Canonical_ID,
+                           Value_First => 1,
+                           Value_Last  => 1));
+                     Length : Natural := 0;
+                     Position : Natural := Value'First;
+
+                     procedure Skip_Spaces is
+                     begin
+                        while Position <= Value'Last
+                          and then Value (Position) = ' '
+                        loop
+                           Position := Position + 1;
+                        end loop;
+                     end Skip_Spaces;
+
+                     function Starts_With (Text : String) return Boolean is
+                       (Position + Text'Length - 1 <= Value'Last
+                        and then Value
+                          (Position .. Position + Text'Length - 1) = Text);
+                  begin
+                     if not Valid_Text (Name) then
+                        return False;
+                     end if;
+                     loop
+                        Skip_Spaces;
+                        if Position > Value'Last then
+                           return False;
+                        end if;
+                        declare
+                           Kind : Grant_Kind;
+                        begin
+                           if Starts_With ("id") then
+                              Kind := Canonical_ID;
+                              Position := Position + 2;
+                           elsif Starts_With ("uri") then
+                              Kind := Group_URI;
+                              Position := Position + 3;
+                           elsif Starts_With ("emailAddress") then
+                              Kind := Email;
+                              Position := Position + 12;
+                           else
+                              return False;
+                           end if;
+                           if Position + 1 > Value'Last
+                             or else Value (Position) /= '='
+                             or else Value (Position + 1) /= '"'
+                           then
+                              return False;
+                           end if;
+                           Position := Position + 2;
+                           declare
+                              First : constant Natural := Position;
+                           begin
+                              while Position <= Value'Last
+                                and then Value (Position) /= '"'
+                              loop
+                                 Position := Position + 1;
+                              end loop;
+                              if Position > Value'Last or else Position = First
+                              then
+                                 return False;
+                              end if;
+                              for Prior in 1 .. Length loop
+                                 if Entries (Prior).Kind = Kind
+                                   and then Value
+                                     (Entries (Prior).Value_First ..
+                                        Entries (Prior).Value_Last) =
+                                     Value (First .. Position - 1)
+                                 then
+                                    return False;
+                                 end if;
+                              end loop;
+                              Length := Length + 1;
+                              Entries (Length) :=
+                                (Kind        => Kind,
+                                 Value_First => First,
+                                 Value_Last  => Position - 1);
+                           end;
+                           Position := Position + 1;
+                        end;
+                        Skip_Spaces;
+                        if Position > Value'Last then
+                           return True;
+                        elsif Value (Position) /= ',' then
+                           return False;
+                        end if;
+                        Position := Position + 1;
+                     end loop;
+                  end Valid_Grant_List;
+
+                  function Valid_Canonical_Base64
+                    (Value : String) return Boolean
+                  is
+                     Padding : Natural := 0;
+                  begin
+                     if Value'Length = 0 or else Value'Length mod 4 /= 0 then
+                        return False;
+                     end if;
+                     if Value (Value'Last) = '=' then
+                        Padding := 1;
+                        if Value'Length >= 2
+                          and then Value (Value'Last - 1) = '='
+                        then
+                           Padding := 2;
+                        end if;
+                     end if;
+                     return S3.Wire_Core.Valid_Base64
+                       (Value, Value'Length / 4 * 3 - Padding);
+                  end Valid_Canonical_Base64;
+
+                  --  The accepted retention timestamp grammar is the pinned
+                  --  AWS ISO-8601 wire contract. Calendar ranges, fractional
+                  --  precision, and zone bounds are externally fixed; a
+                  --  change alters signed request compatibility.
+                  function Valid_ISO_8601_Timestamp
+                    (Value : String) return Boolean
+                  is
+                     Text : constant String (1 .. Value'Length) := Value;
+
+                     function Decimal
+                       (First, Last : Positive) return Natural
+                     is
+                        Result : Natural := 0;
+                     begin
+                        for Index in First .. Last loop
+                           if Text (Index) not in '0' .. '9' then
+                              return Natural'Last;
+                           end if;
+                           Result := Result * 10 +
+                             Character'Pos (Text (Index)) -
+                             Character'Pos ('0');
+                        end loop;
+                        return Result;
+                     end Decimal;
+
+                     Year        : Natural;
+                     Month       : Natural;
+                     Day         : Natural;
+                     Hour        : Natural;
+                     Minute      : Natural;
+                     Second      : Natural;
+                     Zone        : Positive := 20;
+                     Maximum_Day : Natural;
+                  begin
+                     if Text'Length not in 20 .. 35
+                       or else Text (5) /= '-'
+                       or else Text (8) /= '-'
+                       or else Text (11) /= 'T'
+                       or else Text (14) /= ':'
+                       or else Text (17) /= ':'
+                     then
+                        return False;
+                     end if;
+                     Year := Decimal (1, 4);
+                     Month := Decimal (6, 7);
+                     Day := Decimal (9, 10);
+                     Hour := Decimal (12, 13);
+                     Minute := Decimal (15, 16);
+                     Second := Decimal (18, 19);
+                     if Year not in 1 .. 9_999
+                       or else Month not in 1 .. 12
+                       or else Hour > 23
+                       or else Minute > 59
+                       or else Second > 59
+                     then
+                        return False;
+                     end if;
+                     Maximum_Day :=
+                       (case Month is
+                           when 2 =>
+                             (if Year mod 400 = 0
+                                or else
+                                  (Year mod 4 = 0 and then Year mod 100 /= 0)
+                              then 29 else 28),
+                           when 4 | 6 | 9 | 11 => 30,
+                           when others => 31);
+                     if Day not in 1 .. Maximum_Day then
+                        return False;
+                     end if;
+                     if Text (Zone) = '.' then
+                        Zone := Zone + 1;
+                        declare
+                           First_Fraction : constant Positive := Zone;
+                        begin
+                           while Zone <= Text'Last
+                             and then Text (Zone) in '0' .. '9'
+                           loop
+                              Zone := Zone + 1;
+                           end loop;
+                           if Zone = First_Fraction
+                             or else Zone - First_Fraction > 9
+                           then
+                              return False;
+                           end if;
+                        end;
+                     end if;
+                     if Zone = Text'Last and then Text (Zone) = 'Z' then
+                        return True;
+                     elsif Zone + 5 = Text'Last
+                       and then Text (Zone) in '+' | '-'
+                       and then Text (Zone + 3) = ':'
+                     then
+                        declare
+                           Offset_Hour : constant Natural :=
+                             Decimal (Zone + 1, Zone + 2);
+                           Offset_Minute : constant Natural :=
+                             Decimal (Zone + 4, Zone + 5);
+                        begin
+                           return Offset_Hour <= 23
+                             and then Offset_Minute <= 59;
+                        end;
+                     end if;
+                     return False;
+                  end Valid_ISO_8601_Timestamp;
+
+                  function Has_User_Metadata return Boolean is
+                  begin
+                     for Index in 1 .. Apps.Request_Header_Count (X) loop
+                        declare
+                           Name : constant String :=
+                             Ada.Characters.Handling.To_Lower
+                               (Apps.Request_Header_Name (X, Index));
+                        begin
+                           if Name'Length >= 11
+                             and then Name (Name'First .. Name'First + 10) =
+                               "x-amz-meta-"
+                           then
+                              return True;
+                           end if;
+                        end;
+                     end loop;
+                     return False;
+                  end Has_User_Metadata;
+
+                  type Header_Name_Array is
+                    array (Positive range <>) of US.Unbounded_String;
+                  Unsupported_Text_Headers : constant Header_Name_Array :=
+                    [US.To_Unbounded_String ("cache-control"),
+                     US.To_Unbounded_String ("content-disposition"),
+                     US.To_Unbounded_String ("content-encoding"),
+                     US.To_Unbounded_String ("content-language"),
+                     US.To_Unbounded_String ("expires"),
+                     US.To_Unbounded_String ("x-amz-grant-full-control"),
+                     US.To_Unbounded_String ("x-amz-grant-read"),
+                     US.To_Unbounded_String ("x-amz-grant-read-acp"),
+                     US.To_Unbounded_String ("x-amz-grant-write-acp"),
+                     US.To_Unbounded_String
+                       ("x-amz-website-redirect-location")];
+
                   Options : Backends.Multipart_Options :=
                     Backends.Default_Multipart_Options;
                   Upload_ID : US.Unbounded_String;
+                  Owner_OK : Boolean := False;
+                  Metadata : Object_Metadata := Empty_Object_Metadata;
+                  Metadata_OK : Boolean := True;
+                  Customer_Algorithm_Count : constant Natural := Count
+                    ("x-amz-server-side-encryption-customer-algorithm");
+                  Customer_Key_Count : constant Natural := Count
+                    ("x-amz-server-side-encryption-customer-key");
+                  Customer_MD5_Count : constant Natural := Count
+                    ("x-amz-server-side-encryption-customer-key-md5");
+                  Has_Customer : constant Boolean :=
+                    Customer_Algorithm_Count + Customer_Key_Count +
+                      Customer_MD5_Count > 0;
+                  Has_KMS : constant Boolean :=
+                    Present ("x-amz-server-side-encryption-aws-kms-key-id")
+                    or else Present
+                      ("x-amz-server-side-encryption-context")
+                    or else Present
+                      ("x-amz-server-side-encryption-bucket-key-enabled");
+
+                  function Unsupported_Text_Present return Boolean is
+                    (Present ("cache-control")
+                     or else Present ("content-disposition")
+                     or else Present ("content-encoding")
+                     or else Present ("content-language")
+                     or else Present ("expires")
+                     or else Present ("x-amz-grant-full-control")
+                     or else Present ("x-amz-grant-read")
+                     or else Present ("x-amz-grant-read-acp")
+                     or else Present ("x-amz-grant-write-acp")
+                     or else Present
+                       ("x-amz-website-redirect-location")
+                     or else Has_User_Metadata);
                begin
-                  if Apps.Request_Header_Count (X, "content-type") = 1 then
+                  if Any_Duplicate
+                    or else Count ("x-amz-sdk-checksum-algorithm") > 0
+                    or else Checksum_Value_Header_Count > 0
+                    or else Checksum_Header_Count /=
+                      Count ("x-amz-checksum-algorithm") +
+                      Count ("x-amz-checksum-type")
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A CreateMultipartUpload header is duplicated or " &
+                        "unknown", Target_Text);
+                     return;
+                  end if;
+
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  end if;
+
+                  if Present ("content-type") then
+                     if Apps.Request_Header (X, "content-type")'Length = 0
+                       or else not Valid_Object_Metadata
+                         (Empty_Object_Metadata,
+                          Apps.Request_Header (X, "content-type"))
+                     then
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The multipart content type is invalid",
+                           Target_Text);
+                        return;
+                     end if;
                      Options.Content_Type := US.To_Unbounded_String
                        (Apps.Request_Header (X, "content-type"));
                   end if;
+
+                  for Index in 1 .. Apps.Request_Header_Count (X) loop
+                     declare
+                        Header_Name : constant String :=
+                          Apps.Request_Header_Name (X, Index);
+                        Name : constant String :=
+                          Ada.Characters.Handling.To_Lower (Header_Name);
+                     begin
+                        if Name'Length >= 11
+                          and then Name (Name'First .. Name'First + 10) =
+                            "x-amz-meta-"
+                        then
+                           if Metadata.User.Length =
+                             Maximum_User_Metadata_Entries
+                           then
+                              Metadata_OK := False;
+                           else
+                              Metadata.User.Length :=
+                                Metadata.User.Length + 1;
+                              Metadata.User.Items (Metadata.User.Length) :=
+                                (Key => US.To_Unbounded_String
+                                   (Name (Name'First + 11 .. Name'Last)),
+                                 Value => US.To_Unbounded_String
+                                   (Apps.Request_Header (X, Header_Name)));
+                           end if;
+                        end if;
+                     end;
+                  end loop;
+                  Metadata_OK := Metadata_OK and then Valid_Object_Metadata
+                    (Metadata, "");
+                  if not Metadata_OK then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The multipart user metadata is invalid",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  for Header of Unsupported_Text_Headers loop
+                     declare
+                        Name : constant String := US.To_String (Header);
+                     begin
+                        if Present (Name)
+                          and then not Valid_Text (Name)
+                        then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "A multipart policy header is invalid",
+                              Target_Text);
+                           return;
+                        end if;
+                     end;
+                  end loop;
+                  if (Present ("x-amz-grant-full-control")
+                      and then not Valid_Grant_List
+                        ("x-amz-grant-full-control"))
+                    or else (Present ("x-amz-grant-read")
+                      and then not Valid_Grant_List ("x-amz-grant-read"))
+                    or else (Present ("x-amz-grant-read-acp")
+                      and then not Valid_Grant_List ("x-amz-grant-read-acp"))
+                    or else (Present ("x-amz-grant-write-acp")
+                      and then not Valid_Grant_List ("x-amz-grant-write-acp"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "A multipart ACL grant list is invalid", Target_Text);
+                     return;
+                  end if;
+                  if Present ("expires")
+                    and then not IMF_Dates.Parse
+                      (Apps.Request_Header (X, "expires")).Valid
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The multipart expiry is invalid", Target_Text);
+                     return;
+                  end if;
+
+                  if Present ("x-amz-acl")
+                    and then not Valid_Enumeration
+                      (1, Apps.Request_Header (X, "x-amz-acl"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The multipart canned ACL is invalid", Target_Text);
+                     return;
+                  elsif Present ("x-amz-acl")
+                    and then
+                      (Present ("x-amz-grant-full-control")
+                       or else Present ("x-amz-grant-read")
+                       or else Present ("x-amz-grant-read-acp")
+                       or else Present ("x-amz-grant-write-acp"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A canned ACL and explicit grants cannot be combined",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  if Present ("x-amz-request-payer")
+                    and then not Valid_Enumeration
+                      (24, Apps.Request_Header (X, "x-amz-request-payer"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The multipart request payer is invalid",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  if Present ("x-amz-server-side-encryption")
+                    and then not Valid_Enumeration
+                      (15, Apps.Request_Header
+                         (X, "x-amz-server-side-encryption"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The multipart encryption value is invalid",
+                        Target_Text);
+                     return;
+                  elsif Has_Customer then
+                     if Customer_Algorithm_Count /= 1
+                       or else Customer_Key_Count /= 1
+                       or else Customer_MD5_Count /= 1
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "The multipart SSE-C group is incomplete",
+                           Target_Text);
+                        return;
+                     elsif Apps.Request_Header
+                       (X, "x-amz-server-side-encryption-customer-" &
+                          "algorithm") /= "AES256"
+                     then
+                        Send_Error
+                          (X, 400, "InvalidArgument",
+                           "The multipart SSE-C algorithm is invalid",
+                           Target_Text);
+                        return;
+                     elsif Apps.Request_Scheme (X) /=
+                       Flyology.HTTP.Secure_HTTPS
+                     then
+                        Send_Error
+                          (X, 400, "InvalidRequest",
+                           "SSE-C requests require HTTPS", Target_Text);
+                        return;
+                     elsif not Checksums.Valid_SSE_C_Key_MD5
+                       (Apps.Request_Header
+                          (X, "x-amz-server-side-encryption-customer-key"),
+                        Apps.Request_Header
+                          (X, "x-amz-server-side-encryption-customer-" &
+                           "key-md5"))
+                     then
+                        Send_Error
+                          (X, 400, "InvalidDigest",
+                           "The multipart SSE-C key or digest is invalid",
+                           Target_Text);
+                        return;
+                     end if;
+                  end if;
+                  if Present
+                    ("x-amz-server-side-encryption-aws-kms-key-id")
+                    and then not Valid_Text
+                      ("x-amz-server-side-encryption-aws-kms-key-id")
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The multipart KMS key identifier is invalid",
+                        Target_Text);
+                     return;
+                  elsif Present
+                    ("x-amz-server-side-encryption-context")
+                    and then
+                      (not Valid_Text
+                         ("x-amz-server-side-encryption-context")
+                       or else not Valid_Canonical_Base64
+                         (Apps.Request_Header
+                            (X, "x-amz-server-side-encryption-context")))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The multipart KMS context is invalid", Target_Text);
+                     return;
+                  end if;
+                  if Has_Customer
+                    and then
+                      (Present ("x-amz-server-side-encryption") or else
+                       Has_KMS)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "Multipart encryption groups cannot be combined",
+                        Target_Text);
+                     return;
+                  elsif Has_KMS
+                    and then
+                      (not Present ("x-amz-server-side-encryption")
+                       or else Apps.Request_Header
+                         (X, "x-amz-server-side-encryption") not in
+                           "aws:kms" | "aws:kms:dsse")
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The multipart KMS group is invalid", Target_Text);
+                     return;
+                  end if;
+                  if Present
+                    ("x-amz-server-side-encryption-bucket-key-enabled")
+                  then
+                     declare
+                        Parsed : constant S3.Wire_Core.Boolean_Result :=
+                          S3.Wire_Core.Parse_Boolean
+                            (Apps.Request_Header
+                               (X, "x-amz-server-side-encryption-" &
+                                "bucket-key-enabled"));
+                     begin
+                        if not Parsed.Valid then
+                           Send_Error
+                             (X, 400, "InvalidArgument",
+                              "The multipart bucket-key value is invalid",
+                              Target_Text);
+                           return;
+                        elsif Apps.Request_Header
+                          (X, "x-amz-server-side-encryption") /= "aws:kms"
+                        then
+                           Send_Error
+                             (X, 400, "InvalidRequest",
+                              "A multipart bucket key requires aws:kms",
+                              Target_Text);
+                           return;
+                        end if;
+                     end;
+                  end if;
+
+                  if Present ("x-amz-storage-class")
+                    and then not Valid_Enumeration
+                      (16, Apps.Request_Header (X, "x-amz-storage-class"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The multipart storage class is invalid",
+                        Target_Text);
+                     return;
+                  end if;
+
+                  if Present ("x-amz-tagging") then
+                     if Apps.Request_Header (X, "x-amz-tagging")'Length = 0
+                     then
+                        Send_Error
+                          (X, 400, "InvalidTag",
+                           "The multipart tag set is invalid", Target_Text);
+                        return;
+                     end if;
+                     begin
+                        declare
+                           Ignored : constant Object_Tag_Set :=
+                             Tagging.Parse_Header
+                               (Apps.Request_Header (X, "x-amz-tagging"));
+                           pragma Unreferenced (Ignored);
+                        begin
+                           null;
+                        end;
+                     exception
+                        when Tagging.Malformed_Tagging_Query |
+                          Tagging.Invalid_Tag =>
+                           Send_Error
+                             (X, 400, "InvalidTag",
+                              "The multipart tag set is invalid",
+                              Target_Text);
+                           return;
+                     end;
+                  end if;
+
+                  if Present ("x-amz-object-lock-mode")
+                    and then not Valid_Enumeration
+                      (26, Apps.Request_Header
+                         (X, "x-amz-object-lock-mode"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The multipart object lock mode is invalid",
+                        Target_Text);
+                     return;
+                  elsif Present ("x-amz-object-lock-legal-hold")
+                    and then not Valid_Enumeration
+                      (28, Apps.Request_Header
+                         (X, "x-amz-object-lock-legal-hold"))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The multipart legal hold is invalid", Target_Text);
+                     return;
+                  elsif Present ("x-amz-object-lock-mode") /=
+                    Present ("x-amz-object-lock-retain-until-date")
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The multipart retention group is incomplete",
+                        Target_Text);
+                     return;
+                  elsif Present
+                    ("x-amz-object-lock-retain-until-date")
+                    and then
+                      (not Valid_Text
+                         ("x-amz-object-lock-retain-until-date")
+                       or else not Valid_ISO_8601_Timestamp
+                         (Apps.Request_Header
+                            (X, "x-amz-object-lock-retain-until-date")))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The multipart retention date is invalid",
+                        Target_Text);
+                     return;
+                  end if;
+
                   declare
                      Algorithm_Count : constant Natural :=
-                       Apps.Request_Header_Count
-                         (X, "x-amz-checksum-algorithm");
+                       Count ("x-amz-checksum-algorithm");
                      Type_Count : constant Natural :=
-                       Apps.Request_Header_Count (X, "x-amz-checksum-type");
+                       Count ("x-amz-checksum-type");
                      Algorithm_Valid : Boolean := False;
                      Method_Valid : Boolean := False;
                      Algorithm : Checksum_Algorithm := No_Checksum;
@@ -3494,6 +4226,23 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            Value => US.Null_Unbounded_String);
                      end if;
                   end;
+                  if Present ("x-amz-acl")
+                    or else Unsupported_Text_Present
+                    or else Has_Encryption_Header
+                    or else Present ("x-amz-storage-class")
+                    or else Present ("x-amz-request-payer")
+                    or else Present ("x-amz-tagging")
+                    or else Present ("x-amz-object-lock-mode")
+                    or else Present
+                      ("x-amz-object-lock-retain-until-date")
+                    or else Present ("x-amz-object-lock-legal-hold")
+                  then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "This modeled CreateMultipartUpload policy is not " &
+                        "implemented", Target_Text);
+                     return;
+                  end if;
                   Store.Create_Multipart_Upload
                     (Bucket, Key, Options, Apps.Cancellation (X),
                      Apps.Deadline (X), Upload_ID, Result);
