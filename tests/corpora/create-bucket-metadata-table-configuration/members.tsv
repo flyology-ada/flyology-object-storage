@@ -1,0 +1,9 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	131	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind it into the exact signed metadataTable target.	CMT-RQ-001,CMT-RQ-005,CMT-RQ-006
+request	131	2	ContentMD5	111	header	false	projected	Generate the exact payload MD5 when omitted or validate and sign one exact 16-byte base64 override.	CMT-RQ-003,CMT-RQ-004,CMT-RQ-005,CMT-RQ-006
+request	131	3	ChecksumAlgorithm	77	header	false	projected	Preserve omission or sign one exact modeled algorithm and matching payload digest header.	CMT-RQ-003,CMT-RQ-004,CMT-RQ-005,CMT-RQ-006
+request	131	4	MetadataTableConfiguration	426	body	true	encoded	Require and encode one bounded exact MetadataTableConfiguration document.	CMT-RQ-002,CMT-RQ-004,CMT-RQ-005,CMT-RQ-006,CMT-TR-001,CMT-TR-002
+request	131	5	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	CMT-RQ-003,CMT-RQ-005,CMT-RQ-006
+nested	426	1	S3TablesDestination	629	body	true	encoded	Encode the one required S3TablesDestination structure under the exact root.	CMT-RQ-002,CMT-RQ-004,CMT-RQ-005,CMT-TR-001,CMT-TR-002
+nested	629	1	TableBucketArn	627	body	true	encoded	Preserve the required opaque table-bucket ARN including an explicitly valid empty string.	CMT-RQ-002,CMT-RQ-004,CMT-RQ-005,CMT-TR-001,CMT-TR-002
+nested	629	2	TableName	631	body	true	encoded	Preserve the required opaque table name including an explicitly valid empty string.	CMT-RQ-002,CMT-RQ-004,CMT-RQ-005,CMT-TR-001,CMT-TR-002

@@ -17,6 +17,16 @@ package Flyology.Object_Storage.S3.Metadata_Tables is
         Ada.Strings.Unbounded.Null_Unbounded_String;
    end record;
 
+   --  Required destination for CreateBucketMetadataTableConfiguration.
+   --  Both strings are opaque and may be empty because the pinned request
+   --  shapes specify no minimum.
+   --  @field Table_Bucket_ARN Exact required destination table-bucket ARN
+   --  @field Table_Name Exact required destination table name
+   type S3_Tables_Destination is record
+      Table_Bucket_ARN : Ada.Strings.Unbounded.Unbounded_String;
+      Table_Name       : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  Required S3 Tables destination returned by the provider.  Every string
    --  is opaque and may be empty because the pinned shapes specify no minimum.
    --  @field Table_Bucket_ARN Exact required table-bucket ARN
@@ -63,5 +73,14 @@ package Flyology.Object_Storage.S3.Metadata_Tables is
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Metadata_Table_Configuration_Result;
+
+   --  Serialize one exact CreateBucketMetadataTableConfiguration payload.
+   --  @param Value Required destination strings
+   --  @param Limits Caller-selected document, depth, element, and text limits
+   --  @return Exact bounded S3 metadata-table configuration XML
+   --  @exception Malformed_Metadata_Table Encoded document exceeds limits
+   function Serialize_Create
+     (Value  : S3_Tables_Destination;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String;
 
 end Flyology.Object_Storage.S3.Metadata_Tables;

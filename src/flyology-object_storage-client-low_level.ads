@@ -2604,17 +2604,43 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Metadata_Table_Configuration_Outcome;
 
-   --  Shared physical controls for small bucket-configuration PUTs.
+   --  Shared physical controls for small bucket-configuration mutations.
    --  Empty Content_MD5 requests automatic generation where the model admits
    --  that member; accelerate rejects a supplied value because it has none.
    --  @field Content_MD5 Optional exact base64 MD5 override
    --  @field Checksum_Algorithm Optional one of the ten modeled algorithms
    --  @field Expected_Bucket_Owner Optional exact owner precondition
-   type Put_Bucket_Control_Parameters is record
+   type Bucket_Control_Mutation_Parameters is record
       Content_MD5           : Ada.Strings.Unbounded.Unbounded_String;
       Checksum_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
+
+   --  Compatibility name retained for the established PUT APIs.
+   subtype Put_Bucket_Control_Parameters is
+     Bucket_Control_Mutation_Parameters;
+
+   --  Prepare one exact CreateBucketMetadataTableConfiguration request.
+   --  The request is a signed POST with the required Content-MD5, optional
+   --  modeled SDK checksum, and one bounded REST/XML destination payload.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Value Required S3 Tables destination strings
+   --  @param Parameters Optional MD5 override, SDK checksum, and owner control
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Fully signed request bound to the modeled create operation
+   function Prepare_Create_Bucket_Metadata_Table_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Metadata_Tables.S3_Tables_Destination;
+      Parameters : Bucket_Control_Mutation_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request;
 
    --  Prepare one exact PutBucketAbac request.
    function Prepare_Put_Bucket_Abac
@@ -2690,10 +2716,29 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
-   --  Decode one bounded bodyless bucket-control PUT response.
+   --  Decode one bounded bodyless bucket-control mutation response.
    function Decode_Put_Bucket_Control_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome;
+
+   --  Execute one exact prepared CreateBucketMetadataTableConfiguration
+   --  request.  The 30-second default is the established low-level
+   --  synchronous-client compatibility budget; callers may select another
+   --  absolute budget.  Exceptions after entering the blocking HTTP call do
+   --  not establish whether the provider published the mutation; callers
+   --  requiring certainty must reconcile with a read and must not auto-retry.
+   --  @param Client Caller-owned synchronous HTTP client
+   --  @param Prepared Request from the matching prepare operation
+   --  @param Timeout Caller-selected absolute operation budget
+   --  @param Token Optional cooperative cancellation token
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Typed update success or strict S3 rejection
+   function Execute_Create_Bucket_Metadata_Table_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome;
 
@@ -3816,7 +3861,7 @@ private
       Delete_Bucket_Operation,
       Delete_Bucket_Configuration_Operation,
       Get_Bucket_Control_Operation,
-      Put_Bucket_Control_Operation,
+      Bucket_Control_Mutation_Operation,
       Get_Object_ACL_Operation,
       Get_Object_Torrent_Operation,
       Get_Object_Legal_Hold_Operation,

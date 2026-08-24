@@ -7995,8 +7995,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
          US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
    end Execute_Get_Bucket_Metadata_Table_Configuration;
 
-   function Prepare_Bucket_Control_Put
+   function Prepare_Bucket_Control_Mutation
      (Operation       : Model.Operation_Id;
+      Method          : String;
       Subresource     : String;
       Origin          : Flyology.HTTP.Origin;
       Style           : Addressing_Style;
@@ -8005,7 +8006,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Has_Content_MD5 : Boolean;
       Confirm_Remove_Self_Access : Optional_Boolean;
       Has_Confirm_Remove : Boolean;
-      Parameters      : Put_Bucket_Control_Parameters;
+      Parameters      : Bucket_Control_Mutation_Parameters;
       Identity        : Credentials;
       Region          : String;
       Timestamp       : String) return Prepared_Request
@@ -8030,7 +8031,11 @@ package body Flyology.Object_Storage.Client.Low_Level is
            2 * Boolean'Pos (Checksum'Length > 0));
       Last : Natural := 0;
    begin
-      if Model.Method (Operation) /= Model.Put_Method
+      if Method not in "PUT" | "POST"
+        or else (Method = "PUT"
+                 and then Model.Method (Operation) /= Model.Put_Method)
+        or else (Method = "POST"
+                 and then Model.Method (Operation) /= Model.Post_Method)
         or else Model.Response_Code (Operation) /= 200
         or else Model.Request_URI (Operation) /=
           "/{Bucket}?" & Subresource
@@ -8041,7 +8046,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else not Valid_List_Response_Header_Text (Owner)
         or else (Checksum'Length > 0 and then not Algorithm.Valid)
       then
-         raise Invalid_Request with "invalid bucket-control PUT parameters";
+         raise Invalid_Request with
+           "invalid bucket-control mutation parameters";
       end if;
       if Has_Content_MD5 then
          Last := Last + 1;
@@ -8088,13 +8094,34 @@ package body Flyology.Object_Storage.Client.Low_Level is
          end;
       end if;
       return Result : Prepared_Request := Prepare_Object_Request
-        (Put_Bucket_Control_Operation, "PUT", Origin, Style, Bucket, "",
+        (Bucket_Control_Mutation_Operation, Method, Origin, Style, Bucket, "",
          Query, Headers, Payload, "", Identity, Region, Timestamp,
          Object_Resource => False)
       do
          Result.Modeled_Operation := Operation;
       end return;
-   end Prepare_Bucket_Control_Put;
+   end Prepare_Bucket_Control_Mutation;
+
+   function Prepare_Create_Bucket_Metadata_Table_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Metadata_Tables.S3_Tables_Destination;
+      Parameters : Bucket_Control_Mutation_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request
+   is
+   begin
+      return Prepare_Bucket_Control_Mutation
+        (Model.Create_Bucket_Metadata_Table_Configuration_Operation,
+         "POST", "metadataTable", Origin, Style, Bucket,
+         Metadata_Tables.Serialize_Create (Value, Limits), True,
+         (others => <>), False, Parameters, Identity, Region, Timestamp);
+   exception
+      when Metadata_Tables.Malformed_Metadata_Table =>
+         raise Invalid_Request with
+           "invalid CreateBucketMetadataTableConfiguration payload";
+   end Prepare_Create_Bucket_Metadata_Table_Configuration;
 
    function Prepare_Put_Bucket_Abac
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -8102,8 +8129,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Parameters : Put_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request is
-     (Prepare_Bucket_Control_Put
-        (Model.Put_Bucket_Abac_Operation, "abac", Origin, Style, Bucket,
+     (Prepare_Bucket_Control_Mutation
+        (Model.Put_Bucket_Abac_Operation, "PUT", "abac", Origin, Style, Bucket,
          Bucket_Controls.Serialize_Abac (Value), True, (others => <>), False,
          Parameters, Identity, Region, Timestamp));
 
@@ -8113,8 +8140,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Parameters : Put_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request is
-     (Prepare_Bucket_Control_Put
-        (Model.Put_Bucket_Accelerate_Configuration_Operation, "accelerate",
+     (Prepare_Bucket_Control_Mutation
+        (Model.Put_Bucket_Accelerate_Configuration_Operation, "PUT",
+         "accelerate",
          Origin, Style, Bucket, Bucket_Controls.Serialize_Accelerate (Value),
          False, (others => <>), False, Parameters, Identity, Region,
          Timestamp));
@@ -8127,8 +8155,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Prepared_Request
    is
    begin
-      return Prepare_Bucket_Control_Put
-        (Model.Put_Bucket_Request_Payment_Operation, "requestPayment",
+      return Prepare_Bucket_Control_Mutation
+        (Model.Put_Bucket_Request_Payment_Operation, "PUT", "requestPayment",
          Origin, Style, Bucket,
          Bucket_Controls.Serialize_Request_Payment (Value), True,
          (others => <>), False, Parameters, Identity, Region, Timestamp);
@@ -8144,8 +8172,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Parameters : Put_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request is
-     (Prepare_Bucket_Control_Put
-        (Model.Put_Public_Access_Block_Operation, "publicAccessBlock", Origin,
+     (Prepare_Bucket_Control_Mutation
+        (Model.Put_Public_Access_Block_Operation, "PUT", "publicAccessBlock",
+         Origin,
          Style, Bucket, Bucket_Controls.Serialize_Public_Access_Block (Value),
          True, (others => <>), False, Parameters, Identity, Region,
          Timestamp));
@@ -8160,8 +8189,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Prepared_Request
    is
    begin
-      return Prepare_Bucket_Control_Put
-        (Model.Put_Bucket_Ownership_Controls_Operation,
+      return Prepare_Bucket_Control_Mutation
+        (Model.Put_Bucket_Ownership_Controls_Operation, "PUT",
          "ownershipControls", Origin, Style, Bucket,
          Bucket_Controls.Serialize_Ownership_Controls (Value, Limits),
          True, (others => <>), False, Parameters, Identity, Region,
@@ -8188,8 +8217,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
       if Policy'Length > Limits.Maximum_Document_Bytes then
          raise Invalid_Request with "bucket policy exceeds configured limit";
       end if;
-      return Prepare_Bucket_Control_Put
-        (Model.Put_Bucket_Policy_Operation, "policy", Origin, Style, Bucket,
+      return Prepare_Bucket_Control_Mutation
+        (Model.Put_Bucket_Policy_Operation, "PUT", "policy", Origin, Style,
+         Bucket,
          Policy, True, Parameters.Confirm_Remove_Self_Access, True, Common,
          Identity, Region, Timestamp);
    end Prepare_Put_Bucket_Policy;
@@ -8205,7 +8235,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       if Status = 200 then
          if not Whitespace_Only (Payload) then
             raise Invalid_Response with
-              "bucket-control PUT success contains a response body";
+              "bucket-control mutation success contains a response body";
          end if;
          return (Kind => Bucket_Control_Updated, Status => Status);
       end if;
@@ -8215,17 +8245,18 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
    exception
       when S3.Errors.Malformed_Error =>
-         raise Invalid_Response with "malformed bucket-control PUT response";
+         raise Invalid_Response with
+           "malformed bucket-control mutation response";
    end Decode_Put_Bucket_Control_Response;
 
-   function Execute_Bucket_Control_Put
+   function Execute_Bucket_Control_Mutation
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Operation : Model.Operation_Id;
       Timeout : Duration; Token : access Flyology.Cancellation.Token;
       Limits : S3.XML.Parse_Limits) return Put_Bucket_Control_Outcome
    is
    begin
-      if Prepared.Operation /= Put_Bucket_Control_Operation
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
         or else Prepared.Modeled_Operation /= Operation
       then
          raise Invalid_Request with "prepared request operation mismatch";
@@ -8241,7 +8272,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          begin
             if Count > 1 then
                raise Invalid_Response with
-                 "invalid bucket-control PUT header multiplicity";
+                 "invalid bucket-control mutation header multiplicity";
             elsif Count = 0 then
                return "";
             end if;
@@ -8253,7 +8284,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
                  or else not Valid_List_Response_Header_Text (Value)
                then
                   raise Invalid_Response with
-                    "invalid bucket-control PUT response header";
+                    "invalid bucket-control mutation response header";
                end if;
                return Value;
             end;
@@ -8272,8 +8303,19 @@ package body Flyology.Object_Storage.Client.Low_Level is
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
          raise Invalid_Response with
-           "bucket-control PUT response exceeds configured limit";
-   end Execute_Bucket_Control_Put;
+           "bucket-control mutation response exceeds configured limit";
+   end Execute_Bucket_Control_Mutation;
+
+   function Execute_Create_Bucket_Metadata_Table_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome is
+     (Execute_Bucket_Control_Mutation
+        (Client, Prepared,
+         Model.Create_Bucket_Metadata_Table_Configuration_Operation,
+         Timeout, Token, Limits));
 
    function Execute_Put_Bucket_Abac
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -8281,7 +8323,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome is
-     (Execute_Bucket_Control_Put
+     (Execute_Bucket_Control_Mutation
         (Client, Prepared, Model.Put_Bucket_Abac_Operation, Timeout, Token,
          Limits));
 
@@ -8291,7 +8333,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome is
-     (Execute_Bucket_Control_Put
+     (Execute_Bucket_Control_Mutation
         (Client, Prepared, Model.Put_Bucket_Accelerate_Configuration_Operation,
          Timeout, Token, Limits));
 
@@ -8301,7 +8343,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome is
-     (Execute_Bucket_Control_Put
+     (Execute_Bucket_Control_Mutation
         (Client, Prepared, Model.Put_Bucket_Request_Payment_Operation,
          Timeout, Token, Limits));
 
@@ -8311,7 +8353,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome is
-     (Execute_Bucket_Control_Put
+     (Execute_Bucket_Control_Mutation
         (Client, Prepared, Model.Put_Public_Access_Block_Operation,
          Timeout, Token, Limits));
 
@@ -8321,7 +8363,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome is
-     (Execute_Bucket_Control_Put
+     (Execute_Bucket_Control_Mutation
         (Client, Prepared, Model.Put_Bucket_Ownership_Controls_Operation,
          Timeout, Token, Limits));
 
@@ -8331,7 +8373,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome is
-     (Execute_Bucket_Control_Put
+     (Execute_Bucket_Control_Mutation
         (Client, Prepared, Model.Put_Bucket_Policy_Operation,
          Timeout, Token, Limits));
 

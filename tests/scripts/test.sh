@@ -14,6 +14,7 @@ python3 "$PROJECT_DIR/tools/verify-delete-bucket-configurations-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-bucket-controls-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-put-bucket-controls-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-put-bucket-ownership-controls-preparation.py"
+python3 "$PROJECT_DIR/tools/verify-create-bucket-metadata-table-configuration-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-object-torrent-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-object-legal-hold-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-object-retention-preparation.py"
@@ -163,6 +164,7 @@ do
   ./bin/s3_get_bucket_controls_corpus
   ./bin/s3_put_bucket_controls_corpus
   ./bin/s3_put_bucket_ownership_controls_corpus
+  ./bin/s3_create_bucket_metadata_table_configuration_corpus
   ./bin/s3_get_object_torrent_corpus
   ./bin/s3_get_object_torrent_socket_corpus
   ./bin/s3_get_object_legal_hold_corpus

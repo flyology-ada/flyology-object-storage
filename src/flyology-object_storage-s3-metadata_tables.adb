@@ -322,4 +322,82 @@ package body Flyology.Object_Storage.S3.Metadata_Tables is
          raise Malformed_Metadata_Table with "malformed metadata-table XML";
    end Parse;
 
+   function Serialize_Create
+     (Value  : S3_Tables_Destination;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String
+   is
+      Result : US.Unbounded_String;
+      Table_Bucket_ARN : constant String :=
+        US.To_String (Value.Table_Bucket_ARN);
+      Table_Name : constant String := US.To_String (Value.Table_Name);
+      --  Pinned shape graph: MetadataTableConfiguration contains one
+      --  S3TablesDestination, which contains the two required scalar members.
+      --  This externally established structure is four elements and three
+      --  levels deep; changing either value changes accepted caller budgets.
+      Required_Depth    : constant Positive := 3;
+      Required_Elements : constant Positive := 4;
+      --  Exact REST/XML namespace, root, and member spellings from the pinned
+      --  CreateBucketMetadataTableConfiguration model.  These strings are a
+      --  provider-compatibility contract rather than locally selected policy.
+      Prefix : constant String :=
+        "<MetadataTableConfiguration xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><S3TablesDestination><TableBucketArn>";
+      Between : constant String :=
+        "</TableBucketArn><TableName>";
+      Suffix : constant String :=
+        "</TableName></S3TablesDestination></MetadataTableConfiguration>";
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Metadata_Table with
+              "metadata-table document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+
+      procedure Append_Escaped_Bounded (Text : String) is
+      begin
+         for Item of Text loop
+            if Character'Pos (Item) < 32
+              and then Item /= Character'Val (9)
+              and then Item /= Character'Val (10)
+              and then Item /= Character'Val (13)
+            then
+               raise Malformed_Metadata_Table with
+                 "metadata-table text contains an invalid XML character";
+            elsif Item = '&' then
+               Append_Bounded ("&amp;");
+            elsif Item = '<' then
+               Append_Bounded ("&lt;");
+            elsif Item = '>' then
+               Append_Bounded ("&gt;");
+            else
+               Append_Bounded (String'(1 => Item));
+            end if;
+         end loop;
+      end Append_Escaped_Bounded;
+   begin
+      if Limits.Maximum_Depth < Required_Depth
+        or else Limits.Maximum_Elements < Required_Elements
+      then
+         raise Malformed_Metadata_Table with
+           "metadata-table structure exceeds caller limit";
+      elsif Table_Bucket_ARN'Length > Limits.Maximum_Text_Bytes
+        or else Table_Name'Length >
+          Limits.Maximum_Text_Bytes - Table_Bucket_ARN'Length
+      then
+         raise Malformed_Metadata_Table with
+           "metadata-table text exceeds caller limit";
+      end if;
+
+      Append_Bounded (Prefix);
+      Append_Escaped_Bounded (Table_Bucket_ARN);
+      Append_Bounded (Between);
+      Append_Escaped_Bounded (Table_Name);
+      Append_Bounded (Suffix);
+      return US.To_String (Result);
+   end Serialize_Create;
+
 end Flyology.Object_Storage.S3.Metadata_Tables;

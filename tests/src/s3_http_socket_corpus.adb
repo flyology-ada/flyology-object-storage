@@ -3730,6 +3730,55 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Body_Root => "<OwnershipControls",
             Expected_Content_MD5 => "*");
          Serve
+           (HTTP_Response ("200 OK", ""), "POST",
+            "/example-bucket?metadataTable",
+            Expected_Body_Root => "<MetadataTableConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: create-metadata-table-request" & CRLF &
+               "x-amz-id-2: create-metadata-table-host" & CRLF),
+            "POST", "/example-bucket?metadataTable",
+            Expected_Body_Root => "<MetadataTableConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", "x"), "POST",
+            "/example-bucket?metadataTable",
+            Expected_Body_Root => "<MetadataTableConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-request-id: first" & CRLF &
+                 "x-amz-request-id: second" & CRLF),
+            "POST", "/example-bucket?metadataTable",
+            Expected_Body_Root => "<MetadataTableConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-id-2: first" & CRLF &
+                 "x-amz-id-2: second" & CRLF),
+            "POST", "/example-bucket?metadataTable",
+            Expected_Body_Root => "<MetadataTableConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-request-id:" & CRLF),
+            "POST", "/example-bucket?metadataTable",
+            Expected_Body_Root => "<MetadataTableConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              --  Test-only whitespace body is semantically bodyless but one
+              --  byte above the paired caller-selected 64-byte ceiling.
+              ("200 OK", String'(1 .. 65 => ' ')),
+            "POST", "/example-bucket?metadataTable",
+            Expected_Body_Root => "<MetadataTableConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
            (HTTP_Response
               ("200 OK", "<AccelerateConfiguration/>",
                "x-amz-request-charged: requester" & CRLF &
@@ -9616,6 +9665,104 @@ procedure S3_HTTP_Socket_Corpus is
               ("PutBucketOwnershipControls accepted empty request ID");
             Must_Reject_Put_Ownership
               ("PutBucketOwnershipControls accepted oversized response",
+               Small_Limits => True);
+         end;
+         declare
+            function Prepare
+              (Checksum : String := ""; Owner : String := "")
+               return Low_Level.Prepared_Request is
+              (Low_Level.
+                 Prepare_Create_Bucket_Metadata_Table_Configuration
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    (Table_Bucket_ARN =>
+                       US.To_Unbounded_String ("socket-table-bucket"),
+                     Table_Name => US.To_Unbounded_String ("socket-table")),
+                    (Content_MD5 => US.Null_Unbounded_String,
+                     Checksum_Algorithm =>
+                       US.To_Unbounded_String (Checksum),
+                     Expected_Bucket_Owner =>
+                       US.To_Unbounded_String (Owner)),
+                    Identity, "us-east-1", "20130524T000000Z"));
+
+            procedure Must_Reject_Create_Metadata_Table
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Prepared : constant Low_Level.Prepared_Request := Prepare;
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant Low_Level.Put_Bucket_Control_Outcome :=
+                       (if Small_Limits
+                        then Low_Level.
+                          Execute_Create_Bucket_Metadata_Table_Configuration
+                            (HTTP, Prepared, Timeout => 5.0,
+                             Limits =>
+                               --  Test-only caller response ceiling paired
+                               --  with the 65-byte server fixture above.
+                               (Maximum_Document_Bytes => 64,
+                                Maximum_Depth          => 8,
+                                Maximum_Elements       => 32,
+                                Maximum_Text_Bytes     => 64))
+                        else Low_Level.
+                          Execute_Create_Bucket_Metadata_Table_Configuration
+                            (HTTP, Prepared, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response => Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_Create_Metadata_Table;
+         begin
+            declare
+               Result : constant Low_Level.Put_Bucket_Control_Outcome :=
+                 Low_Level.
+                   Execute_Create_Bucket_Metadata_Table_Configuration
+                     (HTTP, Prepare ("CRC32", "123456789012"),
+                      Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Bucket_Control_Updated
+                 or else Result.Status /= 200
+               then
+                  raise Program_Error with
+                    "CreateBucketMetadataTableConfiguration socket success " &
+                    "mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Low_Level.Put_Bucket_Control_Outcome :=
+                 Low_Level.
+                   Execute_Create_Bucket_Metadata_Table_Configuration
+                     (HTTP, Prepare, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Put_Bucket_Control_Rejected
+                 or else Result.Status /= 403
+                 or else US.To_String (Result.Error.Code) /= "AccessDenied"
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "create-metadata-table-request"
+                 or else US.To_String (Result.Error.Host_ID) /=
+                   "create-metadata-table-host"
+               then
+                  raise Program_Error with
+                    "CreateBucketMetadataTableConfiguration socket " &
+                    "rejection mismatch";
+               end if;
+            end;
+            Must_Reject_Create_Metadata_Table
+              ("metadata-table create accepted success body");
+            Must_Reject_Create_Metadata_Table
+              ("metadata-table create accepted duplicate request ID");
+            Must_Reject_Create_Metadata_Table
+              ("metadata-table create accepted duplicate host ID");
+            Must_Reject_Create_Metadata_Table
+              ("metadata-table create accepted empty request ID");
+            Must_Reject_Create_Metadata_Table
+              ("metadata-table create accepted oversized response",
                Small_Limits => True);
          end;
          declare
