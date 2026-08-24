@@ -52,7 +52,7 @@ GetBucketRequestPayment	extended	missing	covered	missing	covered
 GetBucketTagging	core	covered	covered	covered	covered
 GetBucketVersioning	core	covered	covered	covered	covered
 GetBucketWebsite	extended	missing	partial	missing	missing
-GetObject	core	covered	covered	partial	covered
+GetObject	core	covered	covered	covered	covered
 GetObjectAcl	extended	missing	partial	missing	missing
 GetObjectAnnotation	extended	missing	partial	missing	missing
 GetObjectAttributes	core	covered	covered	covered	covered
@@ -63,7 +63,7 @@ GetObjectTagging	core	covered	covered	partial	covered
 GetObjectTorrent	extended	missing	partial	missing	missing
 GetPublicAccessBlock	extended	missing	covered	missing	covered
 HeadBucket	core	covered	covered	covered	covered
-HeadObject	core	covered	covered	partial	covered
+HeadObject	core	covered	covered	covered	covered
 ListBucketAnalyticsConfigurations	extended	missing	partial	missing	missing
 ListBucketIntelligentTieringConfigurations	extended	missing	partial	missing	missing
 ListBucketInventoryConfigurations	extended	missing	partial	missing	missing

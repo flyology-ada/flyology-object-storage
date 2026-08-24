@@ -152,6 +152,19 @@ procedure S3_Server_Application_Corpus is
             Flyology.Bytes.To_Array
               (Flyology.Bytes.From_Byte_String (Value)))));
 
+   SSE_Test_Key : constant String :=
+     Checksum_Value (Core.SHA256, "object-read-sse-c-key");
+   SSE_Test_Key_Bytes : constant Checksums.Decode_Result :=
+     Checksums.Decode_Base64 (SSE_Test_Key, Core.SHA256);
+   SSE_Test_Key_MD5 : constant String := Checksums.Encode_Base64
+     (Checksums.Compute
+        (Core.MD5, Checksums.Raw_Bytes (SSE_Test_Key_Bytes.Value)));
+   --  This deterministic test/reference vector is derived from the S3 SSE-C
+   --  wire contract: the 32-byte key is Base64 encoded and the MD5 is computed
+   --  over those decoded bytes. Changing it affects only corpus
+   --  reproducibility, while keeping key/digest coupling independently
+   --  computed.
+
    function Storage_Algorithm
      (Algorithm : Checksum_Policy.Algorithm)
       return Flyology.Object_Storage.Checksum_Algorithm is
@@ -5697,14 +5710,6 @@ begin
       Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("attributes", ""),
          SigV4.Pair ("x-id", "GetObjectAttributes"));
-      SSE_Key : constant String :=
-        Checksum_Value (Core.SHA256, "attributes-sse-key");
-      Decoded_SSE_Key : constant Checksums.Decode_Result :=
-        Checksums.Decode_Base64 (SSE_Key, Core.SHA256);
-      SSE_Key_MD5 : constant String := Checksums.Encode_Base64
-        (Checksums.Compute
-           (Core.MD5, Checksums.Raw_Bytes (Decoded_SSE_Key.Value)));
-
       procedure Reject_Control
         (Headers : String;
          Code    : String;
@@ -5896,37 +5901,47 @@ begin
       Reject_Control
         ("x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
          "x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
-         "x-amz-server-side-encryption-customer-key: " & SSE_Key & CRLF &
-         "x-amz-server-side-encryption-customer-key-md5: " & SSE_Key_MD5 &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Test_Key &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " &
+         SSE_Test_Key_MD5 &
          CRLF, "InvalidRequest", "duplicate SSE-C algorithm",
          Flyology.HTTP.Secure_HTTPS);
       Reject_Control
         ("x-amz-server-side-encryption-customer-algorithm: AES128" & CRLF &
-         "x-amz-server-side-encryption-customer-key: " & SSE_Key & CRLF &
-         "x-amz-server-side-encryption-customer-key-md5: " & SSE_Key_MD5 &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Test_Key &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " &
+         SSE_Test_Key_MD5 &
          CRLF, "InvalidArgument", "invalid SSE-C algorithm",
          Flyology.HTTP.Secure_HTTPS);
       Reject_Control
         ("x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
          "x-amz-server-side-encryption-customer-key: malformed" & CRLF &
-         "x-amz-server-side-encryption-customer-key-md5: " & SSE_Key_MD5 &
+         "x-amz-server-side-encryption-customer-key-md5: " &
+         SSE_Test_Key_MD5 &
          CRLF, "InvalidDigest", "malformed SSE-C key",
          Flyology.HTTP.Secure_HTTPS);
       Reject_Control
         ("x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
-         "x-amz-server-side-encryption-customer-key: " & SSE_Key & CRLF &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Test_Key &
+         CRLF &
          "x-amz-server-side-encryption-customer-key-md5: " &
          Content_MD5 ("different") & CRLF, "InvalidDigest",
          "mismatched SSE-C digest", Flyology.HTTP.Secure_HTTPS);
       Reject_Control
         ("x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
-         "x-amz-server-side-encryption-customer-key: " & SSE_Key & CRLF &
-         "x-amz-server-side-encryption-customer-key-md5: " & SSE_Key_MD5 &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Test_Key &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " &
+         SSE_Test_Key_MD5 &
          CRLF, "InvalidRequest", "SSE-C over plaintext");
       Reject_Control
         ("x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
-         "x-amz-server-side-encryption-customer-key: " & SSE_Key & CRLF &
-         "x-amz-server-side-encryption-customer-key-md5: " & SSE_Key_MD5 &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Test_Key &
+         CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " &
+         SSE_Test_Key_MD5 &
          CRLF, "NotImplemented", "unsupported valid SSE-C",
          Flyology.HTTP.Secure_HTTPS);
       Reject_Control
@@ -7025,6 +7040,17 @@ begin
    declare
       X_ID : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("x-id", "HeadObject"));
+
+      function Head_Control
+        (Headers           : String;
+         Scheme            : Flyology.HTTP.Origin_Scheme :=
+           Flyology.HTTP.Plain_HTTP;
+         Corrupt_Signature : Boolean := False) return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("HEAD", "/test-bucket/object", X_ID, "", Headers,
+               Corrupt_Signature => Corrupt_Signature),
+            Scheme => Scheme));
    begin
       Require
         (Has
@@ -7082,6 +7108,28 @@ begin
          "HeadObject accepted invalid request-payer policy");
       Require
         (Has
+           (Head_Control ("x-amz-request-payer: " & CRLF),
+            "400 Bad Request"),
+         "HeadObject accepted an empty request payer");
+      Require
+        (Has
+           (Head_Control
+              ("x-amz-request-payer: requester" & CRLF &
+               "x-amz-request-payer: requester" & CRLF),
+            "400 Bad Request"),
+         "HeadObject accepted duplicate request-payer headers");
+      Require
+        (Has
+           (Head_Control ("x-amz-checksum-mode: " & CRLF),
+            "400 Bad Request"),
+         "HeadObject accepted an empty checksum mode");
+      Require
+        (Has
+           (Head_Control ("x-amz-expected-bucket-owner: " & CRLF),
+            "400 Bad Request"),
+         "HeadObject accepted an empty expected owner");
+      Require
+        (Has
            (Run
               (Signed_Query_Request
                  ("HEAD", "/test-bucket/object", X_ID,
@@ -7099,13 +7147,51 @@ begin
          "HeadObject accepted an incomplete SSE-C group");
       Require
         (Has
+           (Head_Control
+              ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+               CRLF &
+               "x-amz-server-side-encryption-customer-algorithm: AES256" &
+               CRLF & "x-amz-server-side-encryption-customer-key: " &
+               SSE_Test_Key & CRLF &
+               "x-amz-server-side-encryption-customer-key-md5: " &
+               SSE_Test_Key_MD5 & CRLF,
+               Scheme => Flyology.HTTP.Secure_HTTPS),
+            "400 Bad Request"),
+         "HeadObject accepted duplicate SSE-C headers");
+      Require
+        (Has
            (Run
               (Signed_Head_SSE_C_Request
                  ("AES256",
                   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-                  "AAAAAAAAAAAAAAAAAAAAAA==")),
+                  "AAAAAAAAAAAAAAAAAAAAAA=="),
+               Scheme => Flyology.HTTP.Secure_HTTPS),
             "400 Bad Request"),
-         "HeadObject accepted SSE-C headers for an unencrypted object");
+         "HeadObject accepted an SSE-C key/digest mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Head_SSE_C_Request
+                 ("AES256", SSE_Test_Key, SSE_Test_Key_MD5)),
+            "400 Bad Request"),
+         "HeadObject accepted SSE-C over plaintext");
+      Require
+        (Has
+           (Run
+              (Signed_Head_SSE_C_Request
+                 ("AES256", SSE_Test_Key, SSE_Test_Key_MD5),
+               Scheme => Flyology.HTTP.Secure_HTTPS),
+            "400 Bad Request"),
+         "HeadObject accepted SSE-C for an unencrypted object");
+      Require
+        (Has
+           (Head_Control
+              ("x-amz-request-payer: invalid" & CRLF &
+               "x-amz-server-side-encryption-customer-algorithm: AES256" &
+               CRLF,
+               Corrupt_Signature => True),
+            "403 Forbidden"),
+         "HeadObject controls ran before authentication");
       Require
         (Has
            (Run
@@ -7383,6 +7469,17 @@ begin
       Response : constant String := Run
         (Signed_Query_Request
            ("GET", "/test-bucket/object", Overrides));
+
+      function Get_Control
+        (Headers           : String;
+         Scheme            : Flyology.HTTP.Origin_Scheme :=
+           Flyology.HTTP.Plain_HTTP;
+         Corrupt_Signature : Boolean := False) return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("GET", "/test-bucket/object", X_ID, "", Headers,
+               Corrupt_Signature => Corrupt_Signature),
+            Scheme => Scheme));
    begin
       Require
         (Has (Response, "200 OK")
@@ -7437,6 +7534,28 @@ begin
          "GetObject accepted an invalid request payer");
       Require
         (Has
+           (Get_Control ("x-amz-request-payer: " & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "GetObject accepted an empty request payer");
+      Require
+        (Has
+           (Get_Control
+              ("x-amz-request-payer: requester" & CRLF &
+               "x-amz-request-payer: requester" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "GetObject accepted duplicate request-payer headers");
+      Require
+        (Has
+           (Get_Control ("x-amz-checksum-mode: " & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "GetObject accepted an empty checksum mode");
+      Require
+        (Has
+           (Get_Control ("x-amz-expected-bucket-owner: " & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "GetObject accepted an empty expected owner");
+      Require
+        (Has
            (Run
               (Signed_Query_Request
                  ("GET", "/test-bucket/object", X_ID,
@@ -7470,13 +7589,71 @@ begin
          "GetObject accepted an incomplete SSE-C header group");
       Require
         (Has
+           (Get_Control
+              ("x-amz-server-side-encryption-customer-algorithm: AES256" &
+               CRLF &
+               "x-amz-server-side-encryption-customer-algorithm: AES256" &
+               CRLF & "x-amz-server-side-encryption-customer-key: " &
+               SSE_Test_Key & CRLF &
+               "x-amz-server-side-encryption-customer-key-md5: " &
+               SSE_Test_Key_MD5 & CRLF,
+               Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>InvalidRequest</Code>"),
+         "GetObject accepted duplicate SSE-C headers");
+      Require
+        (Has
            (Run
               (Signed_Head_SSE_C_Request
                  ("AES256",
                   "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-                  "AAAAAAAAAAAAAAAAAAAAAA==", Method => "GET")),
+                  "AAAAAAAAAAAAAAAAAAAAAA==", Method => "GET"),
+               Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>InvalidDigest</Code>"),
+         "GetObject accepted an SSE-C key/digest mismatch");
+      Require
+        (Has
+           (Run
+              (Signed_Head_SSE_C_Request
+                 ("AES128", SSE_Test_Key, SSE_Test_Key_MD5,
+                  Method => "GET"),
+               Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>InvalidArgument</Code>"),
+         "GetObject accepted an invalid SSE-C algorithm");
+      Require
+        (Has
+           (Run
+              (Signed_Head_SSE_C_Request
+                 ("AES256", "malformed", SSE_Test_Key_MD5,
+                  Method => "GET"),
+               Scheme => Flyology.HTTP.Secure_HTTPS),
+            "<Code>InvalidDigest</Code>"),
+         "GetObject accepted a malformed SSE-C key");
+      Require
+        (Has
+           (Run
+              (Signed_Head_SSE_C_Request
+                 ("AES256", SSE_Test_Key, SSE_Test_Key_MD5,
+                  Method => "GET")),
+            "<Code>InvalidRequest</Code>"),
+         "GetObject accepted SSE-C over plaintext");
+      Require
+        (Has
+           (Run
+              (Signed_Head_SSE_C_Request
+                 ("AES256", SSE_Test_Key, SSE_Test_Key_MD5,
+                  Method => "GET"),
+               Scheme => Flyology.HTTP.Secure_HTTPS),
             "501 Not Implemented"),
-         "GetObject silently ignored a valid SSE-C header group");
+         "GetObject did not classify valid secure SSE-C explicitly");
+      Require
+        (Has
+           (Get_Control
+              ("x-amz-request-payer: invalid" & CRLF &
+               "x-amz-server-side-encryption-customer-algorithm: AES256" &
+               CRLF,
+               Corrupt_Signature => True),
+            "<Code>SignatureDoesNotMatch</Code>"),
+         "GetObject controls ran before authentication");
    end;
 
    declare
