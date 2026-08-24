@@ -1,0 +1,13 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	556	1	Bucket	60	uri-label	true	projected	Require a valid bucket and project it into the exact signed resource target.	PRT-RQ-001,PRT-RQ-005
+request	556	2	Key	471	uri-label	true	projected	Require a nonempty key and preserve greedy path encoding in the signed target.	PRT-RQ-001,PRT-RQ-005
+request	556	3	Retention	480	body	false	encoded	Preserve outer absence versus a present bounded Retention XML document.	PRT-RQ-002,PRT-RQ-003,PRT-RQ-007
+request	556	4	RequestPayer	599	header	false	projected	Admit only the pinned requester token and sign its exact header.	PRT-RQ-004,PRT-RQ-005
+request	556	5	VersionId	492	query	false	projected	Project the optional bounded generation selector exactly once.	PRT-RQ-001,PRT-RQ-005
+request	556	6	BypassGovernanceRetention	66	header	false	projected	Preserve absence versus explicit true and false governance bypass.	PRT-RQ-006
+request	556	7	ContentMD5	111	header	false	projected	Always sign exact MD5 over owned serialized bytes and validate any caller override.	PRT-RQ-007,PRT-RQ-008
+request	556	8	ChecksumAlgorithm	77	header	false	projected	Admit all ten exact algorithms and sign each matching digest header over identical bytes.	PRT-RQ-008
+request	556	9	ExpectedBucketOwner	15	header	false	projected	Project and sign the optional bounded owner precondition.	PRT-RQ-005
+nested	480	1	Mode	481	body	false	encoded	Preserve absence or encode only exact GOVERNANCE and COMPLIANCE values.	PRT-RQ-002,PRT-RQ-003
+nested	480	2	RetainUntilDate	140	body	false	encoded	Preserve absence or encode only exact pinned ISO-8601 timestamp text.	PRT-RQ-002,PRT-RQ-003
+response	555	1	RequestCharged	598	header	false	decoded	Decode at most one exact nonempty requester result header.	PRT-RS-003,PRT-TR-001

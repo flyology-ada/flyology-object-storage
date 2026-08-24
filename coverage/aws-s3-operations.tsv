@@ -102,7 +102,7 @@ PutObjectAcl	extended	missing	partial	missing	missing
 PutObjectAnnotation	extended	missing	partial	missing	missing
 PutObjectLegalHold	extended	missing	covered	missing	covered
 PutObjectLockConfiguration	extended	missing	partial	missing	missing
-PutObjectRetention	extended	missing	partial	missing	missing
+PutObjectRetention	extended	missing	covered	missing	covered
 PutObjectTagging	core	covered	covered	covered	covered
 PutPublicAccessBlock	extended	missing	covered	missing	covered
 RenameObject	extended	missing	partial	missing	missing

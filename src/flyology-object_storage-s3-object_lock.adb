@@ -494,6 +494,77 @@ package body Flyology.Object_Storage.S3.Object_Lock is
          raise Malformed_Object_Lock with "malformed Retention XML";
    end Parse_Retention;
 
+   function Serialize_Retention
+     (Value  : Retention;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String
+   is
+      Result : US.Unbounded_String;
+      Mode : constant String :=
+        (case Value.Mode is
+            when Retention_Mode_Absent => "",
+            when Governance_Retention => "GOVERNANCE",
+            when Compliance_Retention => "COMPLIANCE");
+      Date : constant String := US.To_String (Value.Retain_Until_Date);
+      Has_Mode : constant Boolean := Mode'Length > 0;
+      Has_Date : constant Boolean := Date'Length > 0;
+      --  Pinned shape 480 has two optional scalar children.  A present outer
+      --  value therefore has one root and zero, one, or two depth-two fields.
+      Required_Depth : constant Positive :=
+        (if Has_Mode or else Has_Date then 2 else 1);
+      Required_Elements : constant Positive :=
+        1 + Boolean'Pos (Has_Mode) + Boolean'Pos (Has_Date);
+      Required_Text : constant Natural := Mode'Length + Date'Length;
+      --  Exact external REST/XML spellings from pinned shapes 480, 481, and
+      --  140.  Changing their order or text changes S3 wire compatibility.
+      Prefix : constant String :=
+        "<Retention xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">";
+      Mode_Open : constant String := "<Mode>";
+      Mode_Close : constant String := "</Mode>";
+      Date_Open : constant String := "<RetainUntilDate>";
+      Date_Close : constant String := "</RetainUntilDate>";
+      Suffix : constant String := "</Retention>";
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Object_Lock with
+              "Retention document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+   begin
+      if not Value.Is_Set then
+         if Has_Mode or else Has_Date then
+            raise Malformed_Object_Lock with
+              "absent Retention contains nested members";
+         end if;
+         return "";
+      elsif Has_Date and then not Valid_ISO_8601_Timestamp (Date) then
+         raise Malformed_Object_Lock with "invalid Retention date";
+      elsif Limits.Maximum_Depth < Required_Depth
+        or else Limits.Maximum_Elements < Required_Elements
+        or else Limits.Maximum_Text_Bytes < Required_Text
+      then
+         raise Malformed_Object_Lock with
+           "Retention structure exceeds caller limit";
+      end if;
+
+      Append_Bounded (Prefix);
+      if Has_Mode then
+         Append_Bounded (Mode_Open);
+         Append_Bounded (Mode);
+         Append_Bounded (Mode_Close);
+      end if;
+      if Has_Date then
+         Append_Bounded (Date_Open);
+         Append_Bounded (Date);
+         Append_Bounded (Date_Close);
+      end if;
+      Append_Bounded (Suffix);
+      return US.To_String (Result);
+   end Serialize_Retention;
+
    overriding procedure Start_Element_Details
      (Item            : in out Configuration_Handler;
       Namespace_URI   : String;
