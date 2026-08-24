@@ -3,8 +3,8 @@
 This note records the implemented contract for the completion-set-aware object
 client slice: conditional complete-object Put, generation-bound whole and
 single-range Get, bodyless Head, non-replaying Delete, non-replaying multipart
-initiation, one-shot UploadPart, one-shot multipart completion, and one-shot
-multipart abort. The
+initiation, one-shot UploadPart, one-shot multipart completion and abort,
+bounded multipart discovery, CopyObject, DeleteObjects, and ListObjectsV2. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -39,17 +39,21 @@ object, and transfer calls remain source compatible. Ordinary
 `Flyology.Operations.Reference` values and gates compose these operations;
 the object-storage API does not define a competing scheduler or gate type.
 
-The initial operation order is:
+The implemented operation order is:
 
-1. complete `Put_Object`, including its conditional projections;
+1. conditional complete-object `Put_Object` projections;
 2. whole `Get_Object`;
 3. generation-bound exact-range `Get_Object`;
 4. `Head_Object`;
 5. `Delete_Object`;
 6. `Create_Multipart_Upload`;
-7. `Upload_Part`; and
-8. `Complete_Multipart_Upload`; and
-9. `Abort_Multipart_Upload`.
+7. `Upload_Part`;
+8. `Complete_Multipart_Upload`;
+9. `Abort_Multipart_Upload`;
+10. `List_Parts` and `List_Multipart_Uploads`;
+11. `Copy_Object` and `Delete_Objects`;
+12. complete modeled `Put_Object` controls; and
+13. `List_Objects_V2`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -81,6 +85,12 @@ AbortMultipartUpload supplies a non-rewindable known-empty source. The
 operation can be restarted only after typed Finish consumes its prior result;
 neither the composable operation nor its typed synchronous wait retries an
 admitted abort.
+ListObjectsV2 retains a bounded response no larger than the shared XML parser
+limit and binds the bucket, prefix, delimiter, opaque continuation token,
+start-after key, maximum, encoding mode, and requester-pays response to the
+exact prepared request. Each page is an independent read-only service
+snapshot. Its parameter-record synchronous overload waits on the same
+owner-driven operation and preserves typed HTTP failure and admission state.
 
 An abandoned operation first requests cancellation and drains all HTTP,
 kernel, token, descriptor, source, and response leases. Only after no borrower

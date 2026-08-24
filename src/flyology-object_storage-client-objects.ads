@@ -115,6 +115,32 @@ package Flyology.Object_Storage.Client.Objects is
       Token    : access Flyology.Cancellation.Token := null)
       return List_Outcome;
 
+   --  List one bounded ListObjectsV2 page by waiting on the composable
+   --  owner-driven operation. This parameter-record overload preserves typed
+   --  HTTP failure and admission information; the convenience overload above
+   --  retains its established raising transport contract.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose current objects are listed
+   --  @param Parameters Complete modeled listing scope and cursor
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   function List_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Objects_V2_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.List_Objects_V2_Result;
+
    --  One complete typed version-listing page or structured S3 rejection.
    type List_Versions_Outcome
      (Kind : List_Outcome_Kind := List_Rejected) is record

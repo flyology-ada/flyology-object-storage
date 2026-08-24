@@ -1702,6 +1702,18 @@ package body Flyology.Object_Storage.Client.Low_Level is
          SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
       do
          Result.Operation := List_Objects_V2_Operation;
+         Result.Requested_Bucket := US.To_Unbounded_String (Bucket);
+         Result.Requested_Prefix := Parameters.Prefix;
+         Result.Requested_Delimiter := Parameters.Delimiter;
+         Result.Requested_Continuation_Token :=
+           Parameters.Continuation_Token;
+         Result.Requested_Start_After := Parameters.Start_After;
+         Result.Requested_Has_Continuation_Token := Has_Continuation;
+         Result.Requested_Has_Start_After :=
+           US.Length (Parameters.Start_After) > 0;
+         Result.Requested_List_Request_Payer := Parameters.Request_Payer;
+         Result.Requested_Max_Keys := Parameters.Max_Keys;
+         Result.Requested_URL_Encoding := Parameters.URL_Encoding;
       end return;
    exception
       when Constraint_Error =>
@@ -1749,6 +1761,92 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "malformed ListObjectsV2 response";
    end Decode_List_Objects_V2_Response;
 
+   function Decode_List_Objects_V2_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Objects_V2_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "invalid ListObjectsV2 response header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else not Valid_List_Response_Header_Text (Value)
+            then
+               raise Invalid_Response with
+                 "invalid ListObjectsV2 response header value";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+
+   begin
+      if Prepared.Operation /= List_Objects_V2_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Request_Charged : constant String :=
+           Singleton_Header ("x-amz-request-charged");
+         Outcome : constant List_Objects_V2_Outcome :=
+           Decode_List_Objects_V2_Response
+             (Flyology.HTTP.Client.Status (Response), Payload,
+              Singleton_Header ("x-amz-request-id"),
+              Singleton_Header ("x-amz-id-2"), Request_Charged, Limits);
+         Expected_Encoding : constant String :=
+           (if Prepared.Requested_URL_Encoding then "url" else "");
+         function Expected_Echo
+           (Value : US.Unbounded_String) return String is
+           (if Prepared.Requested_URL_Encoding
+            then Encoding.URI_Encode
+              (US.To_String (Value), Encode_Slash => False)
+            else US.To_String (Value));
+      begin
+         if Outcome.Kind = Listed
+           and then
+             ((Request_Charged'Length > 0
+               and then US.To_String
+                 (Prepared.Requested_List_Request_Payer) /= "requester")
+              or else Outcome.Listing.Name /= Prepared.Requested_Bucket
+              or else US.To_String (Outcome.Listing.Prefix) /=
+                Expected_Echo (Prepared.Requested_Prefix)
+              or else Outcome.Listing.Has_Delimiter /=
+                (US.Length (Prepared.Requested_Delimiter) > 0)
+              or else US.To_String (Outcome.Listing.Delimiter) /=
+                Expected_Echo (Prepared.Requested_Delimiter)
+              or else Outcome.Listing.Has_Continuation_Token /=
+                Prepared.Requested_Has_Continuation_Token
+              or else Outcome.Listing.Continuation_Token /=
+                Prepared.Requested_Continuation_Token
+              or else Outcome.Listing.Has_Start_After /=
+                Prepared.Requested_Has_Start_After
+              or else US.To_String (Outcome.Listing.Start_After) /=
+                Expected_Echo (Prepared.Requested_Start_After)
+              or else Outcome.Listing.Max_Keys /=
+                Natural (Prepared.Requested_Max_Keys)
+              or else Outcome.Listing.Has_Encoding_Type /=
+                Prepared.Requested_URL_Encoding
+              or else US.To_String (Outcome.Listing.Encoding_Type) /=
+                Expected_Encoding)
+         then
+            raise Invalid_Response with
+              "ListObjectsV2 response does not match prepared request";
+         end if;
+         return Outcome;
+      end;
+   end Decode_List_Objects_V2_Complete_Response;
+
    function Execute_List_Objects_V2
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -1765,23 +1863,15 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
              (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         Request_Charged : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-charged");
       begin
          declare
             Payload : constant Flyology.Bytes.Unbounded_Bytes :=
               Flyology.HTTP.Client.Read_All
                 (Response, Limits.Maximum_Document_Bytes, Token);
          begin
-            return Decode_List_Objects_V2_Response
-              (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
-               Host_ID, Request_Charged, Limits);
+            return Decode_List_Objects_V2_Complete_Response
+              (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+               Limits);
          end;
       end;
    exception

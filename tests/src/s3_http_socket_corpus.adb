@@ -99,6 +99,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Failure_Reason;
    use type Scoped.Publication_Disposition;
    use type Scoped.Part_Upload_Disposition;
+   use type Scoped.List_Objects_V2_Result_Kind;
    use type Scoped.List_Parts_Result_Kind;
    use type Scoped.List_Multipart_Uploads_Result_Kind;
    use type Scoped.Copy_Result_Kind;
@@ -1377,6 +1378,12 @@ procedure S3_HTTP_Socket_Corpus is
         "<Name>example-bucket</Name><KeyCount>0</KeyCount>" &
         "<MaxKeys>2</MaxKeys><IsTruncated>false</IsTruncated>" &
         "</ListBucketResult>";
+      Wrong_List_V2_Bucket_XML : constant String :=
+        "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/"">" &
+        "<Name>wrong-bucket</Name><KeyCount>0</KeyCount>" &
+        "<MaxKeys>2</MaxKeys><IsTruncated>false</IsTruncated>" &
+        "</ListBucketResult>";
       First_Page_XML : constant String :=
         "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
         "2006-03-01/""><Name>example-bucket</Name>" &
@@ -1894,6 +1901,29 @@ procedure S3_HTTP_Socket_Corpus is
             Fragmented => True);
          Serve
            (HTTP_Response
+              ("200 OK", Success_XML,
+               "x-amz-request-charged: requester" & CRLF), "GET",
+            "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response ("200 OK", Wrong_List_V2_Bucket_XML), "GET",
+            "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("200 OK", Success_XML,
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF), "GET",
+            "/example-bucket?list-type=2&max-keys=2",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
               ("403 Forbidden", Error_XML,
                "x-amz-request-id: socket-request" & CRLF &
                "x-amz-id-2: socket-host" & CRLF),
@@ -1907,6 +1937,14 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Request_Payer => "requester",
             Expected_Bucket_Owner => "123456789012",
             Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response ("200 OK", First_Page_XML), "GET",
+            "/example-bucket?list-type=2&max-keys=1&" &
+              "prefix=socket-page%2F");
+         Serve
+           (HTTP_Response ("200 OK", Second_Page_XML), "GET",
+            "/example-bucket?continuation-token=opaque-next&" &
+              "list-type=2&max-keys=1&prefix=socket-page%2F");
          Serve
            (HTTP_Response ("200 OK", First_Page_XML), "GET",
             "/example-bucket?list-type=2&max-keys=1&" &
@@ -6175,6 +6213,68 @@ procedure S3_HTTP_Socket_Corpus is
             end if;
          end;
          declare
+            Result : constant Scoped.List_Objects_V2_Result :=
+              Objects.List_Page
+                (HTTP, Origin, "example-bucket", Parameters, Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Scoped.List_Objects_V2_Response_Available
+              or else Result.Failure /= Scoped.No_Failure
+              or else Result.Response.Kind /= Low_Level.Listed
+              or else Result.Response.Listing.Key_Count /= 0
+              or else US.To_String (Result.Response.Request_Charged) /=
+                "requester"
+            then
+               raise Program_Error with
+                 "typed ListObjectsV2 socket success mismatch";
+            end if;
+         end;
+         declare
+            procedure Require_Invalid_List_Objects_V2
+              (Message : String) is
+               --  Listing parent, HTTP exchange, and one transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Scoped.List_Objects_V2_Operation :=
+                 Scoped.List_Objects_V2
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    Parameters, Identity, HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.List_Objects_V2_Result;
+            begin
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.List_Objects_V2_Exchange_Failed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+               then
+                  raise Program_Error with Message;
+               end if;
+            end Require_Invalid_List_Objects_V2;
+         begin
+            Require_Invalid_List_Objects_V2
+              ("ListObjectsV2 accepted a wrong echoed bucket");
+            Require_Invalid_List_Objects_V2
+              ("ListObjectsV2 accepted a duplicate singleton header");
+         end;
+         declare
+            Stop : aliased Flyology.Cancellation.Token;
+         begin
+            Stop.Request;
+            declare
+               Result : constant Scoped.List_Objects_V2_Result :=
+                 Objects.List_Page
+                   (HTTP, Origin, "example-bucket", Parameters, Identity,
+                    Timeout => 5.0, Token => Stop'Access);
+            begin
+               if Result.Kind /= Scoped.List_Objects_V2_Exchange_Failed
+                 or else Result.Failure /= Scoped.Cancelled
+                 or else Result.Admission /= HTTP_Client.Not_Admitted
+               then
+                  raise Program_Error with
+                    "pre-admission ListObjectsV2 cancellation mismatch";
+               end if;
+            end;
+         end;
+         declare
             Result : constant Low_Level.List_Objects_V2_Outcome :=
               Low_Level.Execute_List_Objects_V2
                 (HTTP, Prepared, Timeout => 5.0);
@@ -6289,6 +6389,57 @@ procedure S3_HTTP_Socket_Corpus is
                     "high-level ListObjectsV2 continuation mismatch";
                end if;
             end;
+         end;
+         declare
+            Page_Parameters : Low_Level.List_Objects_V2_Parameters :=
+              (Prefix => US.To_Unbounded_String ("socket-page/"),
+               Max_Keys => 1,
+               others => <>);
+            --  Listing parent, HTTP exchange, and one transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Operation : Scoped.List_Objects_V2_Operation :=
+              Scoped.List_Objects_V2
+                (Set'Access, HTTP'Access, Origin, "example-bucket",
+                 Page_Parameters, Identity,
+                 HTTP_Client.Deadline_After (5.0));
+            Result : Scoped.List_Objects_V2_Result;
+         begin
+            Operations.Wait_All (Set);
+            Scoped.Finish (Operation, Result);
+            if Result.Kind /= Scoped.List_Objects_V2_Response_Available
+              or else Result.Failure /= Scoped.No_Failure
+              or else Result.Response.Kind /= Low_Level.Listed
+              or else not Result.Response.Listing.Is_Truncated
+              or else Natural
+                (Result.Response.Listing.Contents.Length) /= 1
+              or else not
+                Result.Response.Listing.Has_Next_Continuation_Token
+            then
+               raise Program_Error with
+                 "composed ListObjectsV2 first page mismatch";
+            end if;
+            Page_Parameters.Continuation_Token :=
+              Result.Response.Listing.Next_Continuation_Token;
+            Page_Parameters.Has_Continuation_Token := True;
+            Scoped.Start_List_Objects_V2
+              (Operation, HTTP'Access, Origin, "example-bucket",
+               Page_Parameters, Identity,
+               HTTP_Client.Deadline_After (5.0));
+            Operations.Wait_All (Set);
+            Scoped.Finish (Operation, Result);
+            if Result.Kind /= Scoped.List_Objects_V2_Response_Available
+              or else Result.Failure /= Scoped.No_Failure
+              or else Result.Response.Kind /= Low_Level.Listed
+              or else Result.Response.Listing.Is_Truncated
+              or else Natural
+                (Result.Response.Listing.Contents.Length) /= 1
+              or else US.To_String
+                (Result.Response.Listing.Contents.First_Element.Key) /=
+                  "socket-page/b"
+            then
+               raise Program_Error with
+                 "composed ListObjectsV2 continuation mismatch";
+            end if;
          end;
          declare
             List_Parameters : Low_Level.List_Multipart_Uploads_Parameters;

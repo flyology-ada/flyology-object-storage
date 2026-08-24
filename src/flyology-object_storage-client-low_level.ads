@@ -271,6 +271,24 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Objects_V2_Outcome;
 
+   --  Decode one complete ListObjectsV2 HTTP response. Physical singleton
+   --  headers, Requester Pays consistency, and the successful response's
+   --  echoed bucket, scope, cursor, maximum, and encoding are bound to the
+   --  exact prepared request before the page is exposed.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared ListObjectsV2 request
+   --  @param Limits Bounded XML parser limits
+   --  @return Typed page or S3 rejection
+   --  @exception Invalid_Request Prepared is not ListObjectsV2
+   --  @exception Invalid_Response Complete response is inconsistent
+   function Decode_List_Objects_V2_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Objects_V2_Outcome;
+
    function Execute_List_Objects_V2
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -4493,6 +4511,11 @@ private
       Requested_Upload_ID_Marker : Ada.Strings.Unbounded.Unbounded_String;
       Requested_Prefix : Ada.Strings.Unbounded.Unbounded_String;
       Requested_Delimiter : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Continuation_Token :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Start_After : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Has_Continuation_Token : Boolean := False;
+      Requested_Has_Start_After : Boolean := False;
       --  Derived request/response binding: a charged listing response is
       --  valid only when the exact prepared request admitted requester pays.
       Requested_List_Request_Payer :
