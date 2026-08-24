@@ -3762,6 +3762,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Complete_Multipart_Outcome;
 
+   --  Decode one complete CompleteMultipartUpload HTTP response. Header
+   --  multiplicity, bounded values, embedded 200 error XML, and the complete
+   --  success representation are validated as one response snapshot.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared CompleteMultipartUpload request
+   --  @param Limits Bounded XML parser limits
+   --  @return Typed completion success or S3 rejection
+   --  @exception Invalid_Request Prepared is not CompleteMultipartUpload
+   --  @exception Invalid_Response if the complete response is inconsistent
+   function Decode_Complete_Multipart_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Complete_Multipart_Outcome;
+
    function Decode_Complete_Multipart_Response
      (Status     : Flyology.HTTP.Status_Code;
       Payload    : String;

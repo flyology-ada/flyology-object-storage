@@ -73,9 +73,9 @@ The core crate includes:
   sources and whose post-admission exceptions require ListParts reconciliation;
 - completion-set-aware conditional Put, bounded whole Get, generation-bound
   single-range Get, bodyless Head, non-replaying Delete, multipart initiation,
-  and one-shot UploadPart operations, with typed synchronous overloads that
-  wait on the same owner-driven state machines and never create a per-operation
-  helper task;
+  one-shot UploadPart, and one-shot multipart completion operations, with typed
+  synchronous overloads that wait on the same owner-driven state machines and
+  never create a per-operation helper task;
 - a bounded ordered DeleteObjects backend batch, with process-atomic memory,
   transactional SQLite, and explicitly scoped per-file durability semantics
   (see [DeleteObjects qualification](docs/qualification/delete-objects.md));
@@ -279,16 +279,20 @@ backpressure and waiting, so the convenience layer does not create one task
 per chunk or retain a massive object.
 
 The completion-set-aware `Client.Scoped` layer currently covers conditional
-Put, whole and exact-range Get, Head, Delete, and CreateMultipartUpload. The
-typed synchronous overloads wait on those same owner-driven state machines.
-Multipart initiation uses a one-shot empty source and preserves HTTP admission
-and creation certainty: after possible admission, a lost or invalid response
-is unknown and must be reconciled before any retry.
+Put, whole and exact-range Get, Head, Delete, CreateMultipartUpload,
+UploadPart, and CompleteMultipartUpload. The typed synchronous overloads wait
+on those same owner-driven state machines. Multipart initiation uses a one-shot
+empty source, UploadPart moves one owned bounded buffer, and completion owns
+the exact serialized XML behind a one-shot source. Each preserves HTTP
+admission and mutation certainty: after possible admission, a lost or invalid
+response is unknown and must be reconciled before any retry.
 
 A lost response to CompleteMultipartUpload is inherently ambiguous: the
 server may have committed the object. Best-effort abort is cleanup, not
-rollback; applications that require certainty should reconcile with
-HeadObject or an application-level manifest. The detailed policy is in
+rollback. The typed result therefore reports unknown completion after possible
+admission, including an error embedded in HTTP 200, and applications reconcile
+the destination object plus the exact upload before choosing retry or abort.
+The detailed policy is in
 [client transfers](docs/architecture/client-transfers.md).
 
 ## Secret erasure boundary

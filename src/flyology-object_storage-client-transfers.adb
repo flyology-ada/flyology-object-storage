@@ -9,7 +9,6 @@ with Ada.Strings.Fixed;
 with Flyology.IO;
 with Flyology.IO.Files;
 with Flyology.HTTP.Client.Request_Bodies.Files;
-with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
@@ -323,6 +322,39 @@ package body Flyology.Object_Storage.Client.Transfers is
          return Result;
       end;
    end Upload_Part;
+
+   function Complete_Multipart_Upload
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Upload_ID    : String;
+      Completion   : Multipart.Complete_Multipart_Upload_Request;
+      Parameters   : Low_Level.Complete_Multipart_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Scoped.Multipart_Completion_Result
+   is
+      --  The completion parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Complete_Multipart_Operation :=
+           Scoped.Complete_Multipart_Upload
+             (Set'Access, Client'Access, Origin, Bucket, Key, Upload_ID,
+              Completion, Parameters, Identity,
+              HTTP_Client.Deadline_After (Timeout), Region, Style, Token);
+         Result : Scoped.Multipart_Completion_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Complete_Multipart_Upload;
 
    function Deadline_For (Timeout : Duration) return Ada.Real_Time.Time is
    begin

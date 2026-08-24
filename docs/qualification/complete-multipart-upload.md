@@ -1,9 +1,38 @@
-# CompleteMultipartUpload server qualification
+# CompleteMultipartUpload qualification
 
-This record qualifies the authenticated general-purpose, path-style
-CompleteMultipartUpload server route. It does not extend the directory-bucket,
-access-point, Outposts, Requester Pays, or server-side-encryption capability
-set.
+This record qualifies both the authenticated general-purpose, path-style
+CompleteMultipartUpload server route and the typed composable client. It does
+not extend the directory-bucket, access-point, Outposts, Requester Pays, or
+server-side-encryption capability set.
+
+## Composable client boundary
+
+`Flyology.Object_Storage.Client.Scoped.Complete_Multipart_Upload` serializes
+the part manifest exactly once during bounded initiation. Its limited operation
+owns the XML and exposes it as a non-rewindable request-body source while one
+hidden HTTP child is driven on the caller's completion-set owner stack. It has
+no helper task, retained borrowed input, automatic retry, or second protocol
+engine. The typed synchronous transfer overload is a literal wait on the same
+operation.
+
+Only a complete validated successful response reports
+`Multipart_Completed`. Definite pre-admission failure reports
+`Definitely_Not_Completed`, with a separate cancellation spelling. Every
+complete S3 rejection and every failure after possible admission reports
+`Completion_Outcome_Unknown`; this deliberately includes error XML embedded
+in HTTP 200. The caller reconciles the destination object and exact upload
+read-only before choosing retry or abort. A later abort cannot roll back an
+already published object.
+
+The 46-row compile-independent certainty corpus covers the complete modeled
+success and rejection set plus every HTTP terminal failure under each admission
+state. The Ada normalization corpus applies the same mapping. Native and
+lightweight socket tests cover success, restart of the same operation,
+pre-admission cancellation, and a server that accepts completion but loses the
+response; a subsequent whole Get must prove the exact bytes, checksum, and
+entity tag without replaying completion. The six-server implementation matrix
+drives this typed synchronous path for Flyology memory, files, and SQLite,
+RustFS, SeaweedFS, and supplemental MinIO.
 
 ## Admission and state boundary
 
@@ -75,14 +104,16 @@ project exclusion, and a clean diff check. The change is confined to the
 authenticated server adapter and its corpus; no SPARK-enabled backend or wire
 codec unit changes, so it does not expand the proof boundary.
 
-On the final reviewed tree, the root gate passed 40/40 AUnit tests, the 88-case
+On the final reviewed tree, the root gate passed 41/41 AUnit tests, the 126-case
 files crash matrix, 320 checksum vectors, 210 chunk boundaries, the 64 GiB CRC
-linearization oracle, the signed application corpus, and three native/lightweight
-socket repetitions. The SQLite gate, coverage verifier, and diff check passed.
-GNATdoc produced a nonempty API index containing `Flyology.Object_Storage`; its
-12,451-line captured log contained no internal error,
-`LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or
-`flyology-channels-bounded` diagnostic.
+linearization oracle, the signed application corpus, and three
+native/lightweight socket repetitions. The fixture verifier and its mutation
+self-tests passed. The full implementation matrix passed three repetitions
+against RustFS, SeaweedFS, supplemental MinIO, and Flyology memory, files, and
+SQLite; durable files/SQLite restart lanes also passed. GNATdoc produced a
+nonempty API index containing the new composable operation. Its warnings are
+confined to upstream and pre-existing undocumented entities; the maintained
+fail-closed build reported no internal error.
 
 The serialized warning-strict GNATprove gate proved 936/936 checks. Its report
 contained zero warnings, unproved or justified checks, and `pragma Assume`

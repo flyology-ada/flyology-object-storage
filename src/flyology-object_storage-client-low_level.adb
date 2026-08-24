@@ -3229,6 +3229,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Region     : String;
       Timestamp  : String) return Prepared_Request
    is
+      Payload : constant String :=
+        S3.Multipart.Serialize_Complete_Request (Completion);
       Request_Payer : constant String :=
         US.To_String (Parameters.Request_Payer);
       SSE_Algorithm : constant String :=
@@ -3335,10 +3337,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Add_Optional ("SSECustomerKeyMD5", Parameters.SSE_Customer_Key_MD5);
       return Result : Prepared_Request := Prepare_Model_Request
         (Model.Complete_Multipart_Upload_Operation, Origin, Style, Values,
-         S3.Multipart.Serialize_Complete_Request (Completion), True, "",
-         Identity, Region, Timestamp)
+         Payload, True, "", Identity, Region, Timestamp)
       do
          Result.Operation := Complete_Multipart_Operation;
+         Result.Requested_Bucket := US.To_Unbounded_String (Bucket);
+         Result.Requested_Key := US.To_Unbounded_String (Key);
+         Result.Requested_Upload_ID := US.To_Unbounded_String (Upload_ID);
+         Result.Owned_Request_Payload := US.To_Unbounded_String (Payload);
+         --  The one-shot source below owns transmission. Keeping the body in
+         --  Request would select HTTP's retained/replayable request form.
+         Flyology.HTTP.Client.Set_Body (Result.Message, "");
       end return;
    exception
       when S3.Multipart.Malformed_Multipart =>
@@ -3399,6 +3407,93 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Decode_Complete_Multipart_Response
         (Status, Payload, Headers, Request_ID, Host_ID, Limits);
    end Decode_Complete_Multipart_Response;
+
+   --  Derived compatibility bound: completion response fields follow the
+   --  same HTTP/S3 header policy as multipart initiation fields.
+   Maximum_Complete_Multipart_Response_Header_Bytes : constant Positive :=
+     Maximum_Create_Multipart_Response_Header_Bytes;
+
+   function Decode_Complete_Multipart_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Complete_Multipart_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "invalid CompleteMultipartUpload header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else Value'Length >
+                Maximum_Complete_Multipart_Response_Header_Bytes
+            then
+               raise Invalid_Response with
+                 "invalid CompleteMultipartUpload response header";
+            end if;
+            for Character_Value of Value loop
+               if Character'Pos (Character_Value) < 32
+                 or else Character'Pos (Character_Value) = 127
+               then
+                  raise Invalid_Response with
+                    "invalid CompleteMultipartUpload response header";
+               end if;
+            end loop;
+            return Value;
+         end;
+      end Singleton_Header;
+
+      Request_ID : constant String := Singleton_Header ("x-amz-request-id");
+      Host_ID : constant String := Singleton_Header ("x-amz-id-2");
+      Bucket_Key : constant String := Singleton_Header
+        ("x-amz-server-side-encryption-bucket-key-enabled");
+      Headers : constant Complete_Multipart_Response_Headers :=
+        (Expiration => US.To_Unbounded_String
+           (Singleton_Header ("x-amz-expiration")),
+         Server_Side_Encryption => US.To_Unbounded_String
+           (Singleton_Header ("x-amz-server-side-encryption")),
+         Version_ID => US.To_Unbounded_String
+           (Singleton_Header ("x-amz-version-id")),
+         SSE_KMS_Key_ID => US.To_Unbounded_String
+           (Singleton_Header
+              ("x-amz-server-side-encryption-aws-kms-key-id")),
+         Bucket_Key_Enabled => Optional_Boolean_Header (Bucket_Key),
+         Request_Charged => US.To_Unbounded_String
+           (Singleton_Header ("x-amz-request-charged")));
+   begin
+      if Prepared.Operation /= Complete_Multipart_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Outcome : constant Complete_Multipart_Outcome :=
+           Decode_Complete_Multipart_Response
+             (Flyology.HTTP.Client.Status (Response), Payload, Headers,
+              Request_ID, Host_ID, Limits);
+      begin
+         if Outcome.Kind = Completed
+           and then
+             ((US.Length (Outcome.Result.Bucket) > 0
+                and then Outcome.Result.Bucket /= Prepared.Requested_Bucket)
+              or else
+                (US.Length (Outcome.Result.Key) > 0
+                 and then Outcome.Result.Key /= Prepared.Requested_Key))
+         then
+            raise Invalid_Response with
+              "CompleteMultipartUpload response identity mismatch";
+         end if;
+         return Outcome;
+      end;
+   end Decode_Complete_Multipart_Complete_Response;
 
    function Decode_Complete_Multipart_Response
      (Status     : Flyology.HTTP.Status_Code;
@@ -3478,40 +3573,18 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
+         Source : Non_Replayable_Buffer_Source :=
+           (Data => Prepared.Owned_Request_Payload, Next => 1);
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
-             (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         Headers : constant Complete_Multipart_Response_Headers :=
-           (Expiration => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header (Response, "x-amz-expiration")),
-            Server_Side_Encryption => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-server-side-encryption")),
-            Version_ID => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header (Response, "x-amz-version-id")),
-            SSE_KMS_Key_ID => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-server-side-encryption-aws-kms-key-id")),
-            Bucket_Key_Enabled => Optional_Boolean_Header
-              (Flyology.HTTP.Client.Header
-                 (Response,
-                  "x-amz-server-side-encryption-bucket-key-enabled")),
-            Request_Charged => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-request-charged")));
+             (Client, Prepared.Message, Source, Timeout, Token);
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_Complete_Multipart_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-            Request_ID, Host_ID, Limits);
+         return Decode_Complete_Multipart_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

@@ -3,8 +3,9 @@
 This note records the implemented contract for the completion-set-aware object
 client slice: conditional complete-object Put, generation-bound whole and
 single-range Get, bodyless Head, non-replaying Delete, non-replaying multipart
-initiation, and one-shot UploadPart. The prerequisite is published through the
-Flyology Alire index as lockstep HTTP and QUIC 0.1.3 development crates.
+initiation, one-shot UploadPart, and one-shot multipart completion. The
+prerequisite is published through the Flyology Alire index as lockstep HTTP and
+QUIC 0.1.3 development crates.
 
 ## Upstream basis
 
@@ -44,8 +45,9 @@ The initial operation order is:
 3. generation-bound exact-range `Get_Object`;
 4. `Head_Object`; and
 5. `Delete_Object`;
-6. `Create_Multipart_Upload`; and
-7. `Upload_Part`.
+6. `Create_Multipart_Upload`;
+7. `Upload_Part`; and
+8. `Complete_Multipart_Upload`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -69,6 +71,10 @@ identity and part number remain available to the caller for ListParts
 reconciliation. The compatibility overload that accepts an arbitrary borrowed
 forward-only stream remains synchronous; only the bounded owned-buffer form
 can safely outlive initiation as a composable operation.
+CompleteMultipartUpload serializes the caller's part manifest exactly once
+during bounded initiation. The operation owns that XML and exposes it through
+a non-rewindable source, so neither the composable operation nor its typed
+synchronous wait can replay a possibly admitted completion.
 
 An abandoned operation first requests cancellation and drains all HTTP,
 kernel, token, descriptor, source, and response leases. Only after no borrower
@@ -168,6 +174,16 @@ identifier. The caller must therefore reconcile before retry, and must not
 assume that an ordinary upload listing uniquely identifies the lost request
 when concurrent indistinguishable initiations are possible.
 
+CompleteMultipartUpload reports `Multipart_Completed` only for a complete,
+validated success response. Definite non-admission reports
+`Definitely_Not_Completed`, with a separate pre-admission cancellation
+spelling. Every complete service rejection and every failure after possible
+admission reports `Completion_Outcome_Unknown`; this includes S3 error XML
+embedded in HTTP 200, because the provider can report an error after beginning
+or committing completion work. The operation never retries automatically.
+The caller reconciles the destination object and exact upload read-only before
+choosing a later completion retry or abort; abort is cleanup, not rollback.
+
 The Flyology.DB recovery sequence enabled by these operations is:
 
 1. publish an immutable batch with `If-None-Match: *`;
@@ -184,7 +200,8 @@ listing.
 
 The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Get_Range`, and `Head_Object` overloads and the typed-result `Delete` and
-`Create_Multipart_Upload` overloads are literal waits on the same
+`Create_Multipart_Upload`, `Upload_Part`, and
+`Complete_Multipart_Upload` overloads are literal waits on the same
 `Client.Scoped` state machines and retain their typed certainty, capacity,
 metadata, and ownership results. The established raising `Delete_Outcome` and
 `Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer
@@ -313,6 +330,14 @@ complete success identity, exact conclusive S3 rejection pairs, every HTTP
 terminal failure across all admission-certainty states, and the rule that an
 unknown creation disposition always requires caller-selected reconciliation.
 The executable normalization corpus applies the same mapping in Ada.
+
+The completion oracle is
+`tests/corpora/composable-client/complete-multipart-certainty.tsv`. Its 46
+tuples gate successful completion, modeled service errors including an error
+embedded in HTTP 200, and every composable HTTP terminal failure across all
+admission-certainty states. Unknown completion always requires read-only
+reconciliation; the verifier rejects any fixture that treats a modeled
+completion rejection as proof of non-publication.
 
 The sibling `range-get.tsv` and `head-object.tsv` corpora are normative for the
 read surface. They enumerate typed request forms, physical singleton handling,

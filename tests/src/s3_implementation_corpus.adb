@@ -88,6 +88,8 @@ procedure S3_Implementation_Corpus is
    use type Scoped.Multipart_Creation_Disposition;
    use type Scoped.Upload_Part_Result_Kind;
    use type Scoped.Part_Upload_Disposition;
+   use type Scoped.Multipart_Completion_Result_Kind;
+   use type Scoped.Multipart_Completion_Disposition;
    use type Client_Objects.List_Outcome_Kind;
    use type Client_Objects.Whole_Get_Outcome_Kind;
    use type Client_Objects.Tagging_Outcome_Kind;
@@ -2696,52 +2698,58 @@ procedure S3_Implementation_Corpus is
                           US.To_Unbounded_String (Second_SHA256),
                         others     => <>));
                   declare
-                     Prepared_Complete : constant Low_Level.Prepared_Request :=
-                       Low_Level.Prepare_Complete_Multipart_Upload
-                         (Origin, Low_Level.Path_Style, Bucket, Key,
-                          Upload_ID, Completion,
+                     Completed : constant Scoped.Multipart_Completion_Result :=
+                       Transfers.Complete_Multipart_Upload
+                         (HTTP, Origin, Bucket, Key, Upload_ID, Completion,
                           Composite_Complete_Parameters, Identity,
-                          "us-east-1", Timestamp);
-                     Completed : constant
-                       Low_Level.Complete_Multipart_Outcome :=
-                         Low_Level.Execute_Complete_Multipart_Upload
-                           (HTTP, Prepared_Complete, Timeout => 30.0);
+                          Timeout => 30.0);
                   begin
-                     if Completed.Kind /= Low_Level.Completed
-                       or else US.To_String (Completed.Result.Key) /= Key
+                     if Completed.Kind /=
+                       Scoped.Complete_Multipart_Response_Available
+                       or else Completed.Disposition /=
+                         Scoped.Multipart_Completed
+                       or else Completed.Response.Kind /= Low_Level.Completed
+                       or else
+                         US.To_String (Completed.Response.Result.Key) /= Key
                        or else
                          (case Multipart_Checksum_Oracle_Mode is
                             when Complete_Multipart_Checksums |
                                  RustFS_RC3_Multipart_Checksum_Divergence =>
                               US.To_String
-                                (Completed.Result.Checksum_SHA256) /=
+                                (Completed.Response.Result.Checksum_SHA256) /=
                                   Composite_SHA256_Object
                               or else
                                 (US.Length
-                                   (Completed.Result.Checksum_Type) > 0
+                                   (Completed.Response.Result.
+                                      Checksum_Type) > 0
                                  and then US.To_String
-                                   (Completed.Result.Checksum_Type) /=
+                                   (Completed.Response.Result.Checksum_Type) /=
                                      "COMPOSITE"),
                             when
                               SeaweedFS_443_Multipart_Checksum_Divergence =>
                                 US.Length
-                                  (Completed.Result.Checksum_SHA256) /= 0
+                                  (Completed.Response.Result.
+                                     Checksum_SHA256) /= 0
                                 or else US.Length
-                                  (Completed.Result.Checksum_Type) /= 0)
+                                  (Completed.Response.Result.
+                                     Checksum_Type) /= 0)
                      then
                         raise Program_Error with
                           "S3 implementation CompleteMultipartUpload " &
-                          "checksum mismatch: kind=" & Completed.Kind'Image &
-                          " status=" & Completed.Status'Image &
-                          (if Completed.Kind = Low_Level.Completed
-                           then " key=" & US.To_String (Completed.Result.Key) &
+                          "checksum mismatch: result=" & Completed.Kind'Image &
+                          " disposition=" & Completed.Disposition'Image &
+                          (if Completed.Kind =
+                            Scoped.Complete_Multipart_Response_Available
+                           then " kind=" & Completed.Response.Kind'Image &
+                             " status=" & Completed.Response.Status'Image &
+                             " key=" & US.To_String
+                               (Completed.Response.Result.Key) &
                              " checksum=" & US.To_String
-                               (Completed.Result.Checksum_SHA256) &
+                               (Completed.Response.Result.Checksum_SHA256) &
                              " type=" & US.To_String
-                               (Completed.Result.Checksum_Type)
-                           else " code=" & US.To_String
-                             (Completed.Error.Code) & " message=" &
-                             US.To_String (Completed.Error.Message));
+                               (Completed.Response.Result.Checksum_Type)
+                           else " failure=" & Completed.Failure'Image &
+                             " detail=" & US.To_String (Completed.Detail));
                      end if;
                      if Check_List_Multipart_Uploads then
                         Require_Listed_Upload (Key, Upload_ID, False);

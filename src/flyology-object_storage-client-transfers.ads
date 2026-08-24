@@ -8,6 +8,7 @@ with Flyology.Object_Storage.Client.Scoped;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Checksum_Policy;
+with Flyology.Object_Storage.S3.Multipart;
 
 --  Defines bounded multi-subject transfer policy shared by convenience client
 --  operations. The execution implementation uses structured Flyology tasks.
@@ -214,6 +215,42 @@ package Flyology.Object_Storage.Client.Transfers is
       Token        : access Flyology.Cancellation.Token := null)
       return Scoped.Upload_Part_Result
      with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
+
+   --  Complete one multipart upload by waiting on the composable owner-driven
+   --  one-shot operation. The exact serialized XML is never replayed. The
+   --  typed result preserves admission and publication certainty; unknown
+   --  outcomes require read-only destination/upload reconciliation.
+   --  Region, Style, Timeout, and Token retain the established transfer API
+   --  defaults so synchronous and directly composed requests are identical.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign the request
+   --  @param Bucket Destination S3 bucket
+   --  @param Key Destination S3 object key
+   --  @param Upload_ID Exact multipart upload identifier
+   --  @param Completion Ordered completed-part request
+   --  @param Parameters Complete modeled completion controls
+   --  @param Identity Credentials borrowed only while signing this request
+   --  @param Region SigV4 region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed completion-publication certainty and terminal response
+   function Complete_Multipart_Upload
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Upload_ID    : String;
+      Completion   :
+        Flyology.Object_Storage.S3.Multipart.
+          Complete_Multipart_Upload_Request;
+      Parameters   : Low_Level.Complete_Multipart_Parameters;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Scoped.Multipart_Completion_Result;
 
    type Upload_Outcome_Kind is (File_Uploaded, Upload_Rejected);
 

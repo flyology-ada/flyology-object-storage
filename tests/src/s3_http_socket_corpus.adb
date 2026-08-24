@@ -99,6 +99,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Publication_Disposition;
    use type Scoped.Part_Upload_Disposition;
    use type Scoped.Upload_Part_Result_Kind;
+   use type Scoped.Multipart_Completion_Disposition;
+   use type Scoped.Multipart_Completion_Result_Kind;
    use type Scoped.Whole_Get_Result_Kind;
    use type Scoped.Range_Get_Result_Kind;
    use type Scoped.Head_Result_Kind;
@@ -2369,14 +2371,12 @@ procedure S3_HTTP_Socket_Corpus is
                "</ListPartsResult>"),
             "GET", "/example-bucket/lost-upload?max-parts=1000&" &
               "part-number-marker=0&uploadId=lost-upload-id");
+         --  Accept the exact one-shot completion body, publish the object,
+         --  and lose the response. The client must reconcile with GET next;
+         --  a transparent completion replay desynchronizes this oracle.
          Serve
-           (HTTP_Response
-              ("200 OK",
-               "<CompleteMultipartUploadResult>" &
-               "<Bucket>example-bucket</Bucket><Key>lost-upload</Key>" &
-               "<ETag>&quot;lost-whole&quot;</ETag>" &
-               "</CompleteMultipartUploadResult>"),
-            "POST", "/example-bucket/lost-upload?uploadId=lost-upload-id",
+           ("", "POST",
+            "/example-bucket/lost-upload?uploadId=lost-upload-id",
             "<CompleteMultipartUpload");
          Serve
            (HTTP_Response
@@ -6755,25 +6755,53 @@ procedure S3_HTTP_Socket_Corpus is
                            Checksum_SHA256 => Part.Checksum_SHA256,
                            others => <>));
                      declare
-                        Prepared_Complete : constant
-                          Low_Level.Prepared_Request :=
-                            Low_Level.Prepare_Complete_Multipart_Upload
-                              (Origin, Low_Level.Path_Style,
-                               "example-bucket", "lost-upload",
-                               "lost-upload-id", Completion, Identity,
-                               "us-east-1", "20130524T000000Z");
-                        Completed : constant
-                          Low_Level.Complete_Multipart_Outcome :=
-                            Low_Level.Execute_Complete_Multipart_Upload
-                              (HTTP, Prepared_Complete, Timeout => 5.0);
+                        Parameters : Low_Level.Complete_Multipart_Parameters;
+                        Stop : aliased Flyology.Cancellation.Token;
                      begin
-                        if Completed.Kind /= Low_Level.Completed
-                          or else US.To_String
-                            (Completed.Result.Entity_Tag) /= """lost-whole"""
-                        then
-                           raise Program_Error with
-                             "reconciled UploadPart did not complete";
-                        end if;
+                        Stop.Request;
+                        declare
+                           Cancelled : constant
+                             Scoped.Multipart_Completion_Result :=
+                               Transfers.Complete_Multipart_Upload
+                                 (HTTP, Origin, "example-bucket",
+                                  "lost-upload", "lost-upload-id",
+                                  Completion, Parameters, Identity,
+                                  Timeout => 5.0, Token => Stop'Access);
+                        begin
+                           if Cancelled.Kind /=
+                             Scoped.Complete_Multipart_Exchange_Failed
+                             or else Cancelled.Disposition /=
+                               Scoped.
+                                 Completion_Cancelled_Before_Admission
+                             or else Cancelled.Admission /=
+                               HTTP_Client.Not_Admitted
+                           then
+                              raise Program_Error with
+                                "pre-admission multipart completion " &
+                                "cancellation mismatch";
+                           end if;
+                        end;
+                        declare
+                           Completed : constant
+                             Scoped.Multipart_Completion_Result :=
+                               Transfers.Complete_Multipart_Upload
+                                 (HTTP, Origin, "example-bucket",
+                                  "lost-upload", "lost-upload-id",
+                                  Completion, Parameters, Identity,
+                                  Timeout => 5.0);
+                        begin
+                           if Completed.Kind /=
+                             Scoped.Complete_Multipart_Exchange_Failed
+                             or else Completed.Disposition /=
+                               Scoped.Completion_Outcome_Unknown
+                             or else Completed.Admission /=
+                               HTTP_Client.Possibly_Admitted
+                           then
+                              raise Program_Error with
+                                "lost multipart completion certainty " &
+                                "mismatch";
+                           end if;
+                        end;
                      end;
                      declare
                         Whole : constant Objects.Whole_Get_Outcome :=
@@ -8954,35 +8982,45 @@ procedure S3_HTTP_Socket_Corpus is
                   Entity_Tag => US.To_Unbounded_String ("""part"""),
                   others => <>));
             declare
-               Prepared_Complete : constant Low_Level.Prepared_Request :=
-                 Low_Level.Prepare_Complete_Multipart_Upload
-                   (Origin, Low_Level.Path_Style, "example-bucket",
-                    "object key", "socket-upload", Completion, Identity,
-                    "us-east-1", "20130524T000000Z");
-               Result : constant Low_Level.Complete_Multipart_Outcome :=
-                 Low_Level.Execute_Complete_Multipart_Upload
-                   (HTTP, Prepared_Complete, Timeout => 5.0);
+               Parameters : Low_Level.Complete_Multipart_Parameters;
+               --  Completion parent, HTTP exchange, and one transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Scoped.Complete_Multipart_Operation :=
+                 Scoped.Complete_Multipart_Upload
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "object key", "socket-upload", Completion, Parameters,
+                    Identity, HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.Multipart_Completion_Result;
             begin
-               if Result.Kind /= Low_Level.Completed
-                 or else US.To_String (Result.Result.Entity_Tag) /=
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /=
+                 Scoped.Complete_Multipart_Response_Available
+                 or else Result.Disposition /= Scoped.Multipart_Completed
+                 or else Result.Response.Kind /= Low_Level.Completed
+                 or else US.To_String (Result.Response.Result.Entity_Tag) /=
                    """whole"""
                then
                   raise Program_Error with
-                    "socket CompleteMultipartUpload result mismatch";
+                    "composed CompleteMultipartUpload result mismatch";
                end if;
-               declare
-                  Embedded : constant Low_Level.Complete_Multipart_Outcome :=
-                    Low_Level.Execute_Complete_Multipart_Upload
-                      (HTTP, Prepared_Complete, Timeout => 5.0);
-               begin
-                  if Embedded.Kind /= Low_Level.Complete_Rejected
-                    or else US.To_String (Embedded.Error.Code) /=
-                      "InternalError"
-                  then
-                     raise Program_Error with
-                       "socket embedded multipart error mismatch";
-                  end if;
-               end;
+               Scoped.Start_Complete_Multipart_Upload
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  "object key", "socket-upload", Completion, Parameters,
+                  Identity, HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /=
+                 Scoped.Complete_Multipart_Response_Available
+                 or else Result.Disposition /=
+                   Scoped.Completion_Outcome_Unknown
+                 or else Result.Response.Kind /= Low_Level.Complete_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "InternalError"
+               then
+                  raise Program_Error with
+                    "composed embedded multipart error mismatch";
+               end if;
                declare
                   Prepared_Abort : constant Low_Level.Prepared_Request :=
                     Low_Level.Prepare_Abort_Multipart_Upload
@@ -11482,6 +11520,8 @@ begin
      Check_Create_Multipart_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_Upload_Part_Certainty_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_Complete_Multipart_Certainty_Corpus;
    Run_And_Report;
    declare
       task Lightweight_Client is

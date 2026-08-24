@@ -23,6 +23,7 @@ reset_fixtures() {
   cp "$SOURCE_DIR/delete-certainty.tsv" "$WORK_DIR/delete.tsv"
   cp "$SOURCE_DIR/create-multipart-certainty.tsv" "$WORK_DIR/create.tsv"
   cp "$SOURCE_DIR/upload-part-certainty.tsv" "$WORK_DIR/upload.tsv"
+  cp "$SOURCE_DIR/complete-multipart-certainty.tsv" "$WORK_DIR/complete.tsv"
 }
 
 expect_rejection() {
@@ -30,6 +31,7 @@ expect_rejection() {
   if "$VERIFIER" "$WORK_DIR/put.tsv" "$WORK_DIR/parent.tsv" \
       "$WORK_DIR/range.tsv" "$WORK_DIR/head.tsv" "$WORK_DIR/delete.tsv" \
       "$WORK_DIR/create.tsv" "$WORK_DIR/upload.tsv" \
+      "$WORK_DIR/complete.tsv" \
       >"$WORK_DIR/stdout" 2>"$WORK_DIR/stderr"; then
     printf '%s\n' "verifier accepted invalid fixture: $label" >&2
     exit 1
@@ -44,7 +46,7 @@ reset_fixtures
 "$VERIFIER" "$WORK_DIR/put.tsv" "$WORK_DIR/parent.tsv" \
   "$WORK_DIR/range.tsv" "$WORK_DIR/head.tsv" \
   "$WORK_DIR/delete.tsv" "$WORK_DIR/create.tsv" \
-  "$WORK_DIR/upload.tsv" >/dev/null
+  "$WORK_DIR/upload.tsv" "$WORK_DIR/complete.tsv" >/dev/null
 
 reset_fixtures
 awk 'NR == 2 { duplicate = $0 } { print } END { print duplicate }' \
@@ -165,5 +167,23 @@ awk -F '\t' 'BEGIN { OFS = "\t" } $4 == "BadDigest" { $5 = "Definitely_Not_Stage
   "$WORK_DIR/upload.tsv" >"$WORK_DIR/mutated.tsv"
 mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/upload.tsv"
 expect_rejection "modeled UploadPart rejection treated as conclusive"
+
+reset_fixtures
+awk 'NR == 2 { duplicate = $0 } { print } END { print duplicate }' \
+  "$WORK_DIR/complete.tsv" >"$WORK_DIR/mutated.tsv"
+mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/complete.tsv"
+expect_rejection "duplicate CompleteMultipartUpload input tuple"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" } $5 == "Completion_Outcome_Unknown" && !done { $7 = "no"; done = 1 } { print }' \
+  "$WORK_DIR/complete.tsv" >"$WORK_DIR/mutated.tsv"
+mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/complete.tsv"
+expect_rejection "unknown completion publication without reconciliation"
+
+reset_fixtures
+awk -F '\t' 'BEGIN { OFS = "\t" } $4 == "InternalError" { $5 = "Definitely_Not_Completed" } { print }' \
+  "$WORK_DIR/complete.tsv" >"$WORK_DIR/mutated.tsv"
+mv "$WORK_DIR/mutated.tsv" "$WORK_DIR/complete.tsv"
+expect_rejection "embedded completion error treated as conclusive"
 
 printf '%s\n' "composable client fixture verifier self-tests: OK"

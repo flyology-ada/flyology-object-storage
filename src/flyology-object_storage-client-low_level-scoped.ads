@@ -12,6 +12,23 @@ package Flyology.Object_Storage.Client.Low_Level.Scoped is
    --  @param Prepared Drained request whose retained storage is released
    procedure Clear_Prepared_Request (Prepared : in out Prepared_Request);
 
+   --  @exclude
+   --  Return the owned one-shot mutation body retained by Prepared. These
+   --  accessors exist only for a parent operation that owns Prepared through
+   --  terminal drain.
+   --  @param Prepared Prepared request whose payload remains owned
+   --  @return Number of retained request-body bytes
+   function Owned_Payload_Length
+     (Prepared : Prepared_Request) return Natural;
+
+   --  @exclude
+   --  @param Prepared Prepared request whose payload remains owned
+   --  @param Index One-based byte index
+   --  @return Exact retained request-body byte
+   function Owned_Payload_Element
+     (Prepared : Prepared_Request;
+      Index    : Positive) return Character;
+
    --  Start a prepared PutObject exchange with a nonblocking source and a
    --  bounded immediate response sink. Prepared, Source, Sink, Client, Token,
    --  and their owners must outlive terminal typed Finish of Operation.
@@ -105,6 +122,28 @@ package Flyology.Object_Storage.Client.Low_Level.Scoped is
    --  @param Token Optional cancellation source
    --  @exception Invalid_Request Prepared is not CreateMultipartUpload
    procedure Start_Create_Multipart_Upload
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null);
+
+   --  Start a prepared CompleteMultipartUpload exchange with a nonblocking
+   --  one-shot source and bounded response sink. Prepared, Source, Sink,
+   --  Client, Token, and their owners must outlive terminal typed Finish.
+   --  @param Operation Established HTTP child operation
+   --  @param Client Configured origin client
+   --  @param Prepared Prepared CompleteMultipartUpload request
+   --  @param Source Nonblocking one-shot completion XML source
+   --  @param Sink Bounded complete-response sink
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source
+   --  @exception Invalid_Request Prepared is not CompleteMultipartUpload
+   procedure Start_Complete_Multipart_Upload
      (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
       Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
