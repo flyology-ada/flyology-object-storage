@@ -29,7 +29,7 @@ DeleteObjects	core	partial	covered	partial	covered
 DeletePublicAccessBlock	extended	missing	covered	missing	covered
 GetBucketAbac	extended	missing	covered	missing	covered
 GetBucketAccelerateConfiguration	extended	missing	covered	missing	covered
-GetBucketAcl	extended	missing	partial	missing	missing
+GetBucketAcl	extended	missing	covered	missing	covered
 GetBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
 GetBucketCors	extended	missing	covered	missing	covered
 GetBucketEncryption	extended	missing	covered	missing	covered

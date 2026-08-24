@@ -8,6 +8,7 @@ with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Core;
+with Flyology.Object_Storage.S3.ACL;
 with Flyology.Object_Storage.S3.Copies;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
@@ -2072,6 +2073,20 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
+   --  Prepare one exactly bound GetBucketAcl request.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Parameters Optional modeled owner precondition
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @return Fully signed request bound to GetBucketAcl
+   function Prepare_Get_Bucket_ACL
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
    --  Prepare one exactly bound GetBucketMetadataTableConfiguration request.
    --  @param Origin Parsed HTTP origin
    --  @param Style Path or virtual-hosted bucket addressing
@@ -2258,6 +2273,25 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Presence-preserving GetBucketAcl outcome.  The 500 default is the
+   --  established deterministic aggregate sentinel only.
+   --  @field Kind Whether policy or a strict S3 error was returned
+   --  @field Status Exact physical HTTP status
+   --  @field Policy Optional typed access-control policy
+   --  @field Error Structured bounded S3 rejection
+   type Get_Bucket_ACL_Outcome
+     (Kind : Get_Bucket_Control_Outcome_Kind :=
+        Get_Bucket_Control_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Control_Found =>
+            Policy : S3.ACL.Access_Control_Policy;
+         when Get_Bucket_Control_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
    --  Presence-preserving metadata-table configuration outcome.  The 500
    --  default is the established deterministic aggregate sentinel only.
    --  @field Kind Whether a result or a strict S3 error was returned
@@ -2345,6 +2379,18 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String := ""; Host_ID : String := "";
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Encryption_Outcome;
+   --  Decode one complete bounded GetBucketAcl response.
+   --  @param Status Exact physical response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Optional bounded S3 request identifier
+   --  @param Host_ID Optional bounded S3 host identifier
+   --  @param Limits Caller-selected shared XML resource limits
+   --  @return Typed access-control policy or strict S3 rejection
+   function Decode_Get_Bucket_ACL_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_ACL_Outcome;
    --  Decode one complete bounded metadata-table configuration response.
    --  @param Status Exact physical response status
    --  @param Payload Complete same-response body
@@ -2433,6 +2479,21 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Encryption_Outcome;
+   --  Execute one exact prepared GetBucketAcl request.
+   --  The 30-second default is the established low-level synchronous-client
+   --  compatibility budget; callers may select a different absolute budget.
+   --  @param Client Caller-owned synchronous HTTP client
+   --  @param Prepared Request returned by Prepare_Get_Bucket_ACL
+   --  @param Timeout Caller-selected absolute operation budget
+   --  @param Token Optional cooperative cancellation token
+   --  @param Limits Caller-selected shared XML resource limits
+   --  @return Typed access-control policy or strict S3 rejection
+   function Execute_Get_Bucket_ACL
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_ACL_Outcome;
    --  Execute one exact prepared metadata-table configuration request.
    --  @param Client Caller-owned synchronous HTTP client
    --  @param Prepared Request from the matching prepare operation

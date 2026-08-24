@@ -1,0 +1,14 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	226	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind its exact value into the signed acl target.	GBA-RQ-001,GBA-RQ-003,GBA-RQ-004
+request	226	2	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	GBA-RQ-002,GBA-RQ-003,GBA-RQ-004
+output	225	1	Owner	499	body	false	decoded	Preserve optional Owner structure presence and exact child strings.	GBA-RS-001,GBA-RS-002,GBA-RS-005,GBA-TR-001,GBA-TR-002
+output	225	2	Grants	300	body	false	decoded	Preserve optional AccessControlList presence and ordered nonflattened Grant values.	GBA-RS-001,GBA-RS-002,GBA-RS-005,GBA-TR-001,GBA-TR-002
+nested	499	1	DisplayName	182	body	false	decoded	Preserve omission or exact owner display name including empty text.	GBA-RS-001,GBA-RS-002,GBA-RS-005
+nested	499	2	ID	308	body	false	decoded	Preserve omission or exact owner canonical identifier including empty text.	GBA-RS-001,GBA-RS-002,GBA-RS-005
+nested	293	1	Grantee	299	body	false	decoded	Preserve optional grantee structure and require its exact xsi:type attribute when present.	GBA-RS-001,GBA-RS-002,GBA-RS-005,GBA-RS-007
+nested	293	2	Permission	514	body	false	decoded	Preserve optional exact permission without inventing an authorization default.	GBA-RS-001,GBA-RS-002,GBA-RS-005,GBA-RS-007
+nested	299	1	DisplayName	182	body	false	decoded	Preserve omission or exact grantee display name including empty text.	GBA-RS-001,GBA-RS-002,GBA-RS-005
+nested	299	2	EmailAddress	184	body	false	decoded	Preserve omission or exact grantee email address including empty text.	GBA-RS-001,GBA-RS-002,GBA-RS-005
+nested	299	3	ID	308	body	false	decoded	Preserve omission or exact grantee canonical identifier including empty text.	GBA-RS-001,GBA-RS-002,GBA-RS-005
+nested	299	4	Type	696	body	true	decoded	Require exactly one xsi:type attribute from the three-value pinned grantee domain.	GBA-RS-001,GBA-RS-002,GBA-RS-005,GBA-RS-007
+nested	299	5	URI	697	body	false	decoded	Preserve omission or exact grantee group URI including empty text.	GBA-RS-001,GBA-RS-002,GBA-RS-005

@@ -1729,6 +1729,12 @@ package body Object_Storage_Test_Cases is
 
    overriding procedure Start_Element
      (Item : in out XML_Recorder; Local_Name : String);
+   overriding procedure Element_Attribute
+     (Item               : in out XML_Recorder;
+      Element_Local_Name : String;
+      Namespace_URI      : String;
+      Local_Name         : String;
+      Value              : String);
    overriding procedure Text
      (Item : in out XML_Recorder; Value : String);
    overriding procedure End_Element
@@ -1739,6 +1745,19 @@ package body Object_Storage_Test_Cases is
    begin
       Ada.Strings.Unbounded.Append (Item.Trace, "<" & Local_Name & ">");
    end Start_Element;
+
+   overriding procedure Element_Attribute
+     (Item               : in out XML_Recorder;
+      Element_Local_Name : String;
+      Namespace_URI      : String;
+      Local_Name         : String;
+      Value              : String) is
+   begin
+      Ada.Strings.Unbounded.Append
+        (Item.Trace,
+         "[" & Element_Local_Name & "|" & Namespace_URI & "|" &
+           Local_Name & "=" & Value & "]");
+   end Element_Attribute;
 
    overriding procedure Text
      (Item : in out XML_Recorder; Value : String) is
@@ -6331,6 +6350,20 @@ package body Object_Storage_Test_Cases is
            (US.To_String (Recorder.Trace) =
               "<ListBucketResult><Key>a&<</Key></ListBucketResult>",
             "bounded SAX events or namespace handling");
+      end;
+      declare
+         Recorder : aliased XML_Recorder;
+      begin
+         XML.Parse
+           ("<Grantee xmlns:xsi=""http://www.w3.org/2001/" &
+            "XMLSchema-instance""" &
+            " xsi:type=""CanonicalUser"" marker=""a&amp;b""/>",
+            Recorder);
+         Assert
+           (US.To_String (Recorder.Trace) =
+              "[Grantee|http://www.w3.org/2001/XMLSchema-instance|type=" &
+              "CanonicalUser][Grantee||marker=a&b]<Grantee></Grantee>",
+            "bounded SAX attribute names, namespaces, values, or ordering");
       end;
 
       Assert

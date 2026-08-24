@@ -63,6 +63,7 @@ package body Flyology.Object_Storage.S3.XML is
       Local_Name : Sax.Symbols.Symbol;
       Atts       : Sax.Readers.Sax_Attribute_List)
    is
+      Name : Sax.Readers.Qualified_Name;
    begin
       if Handler.Depth = Handler.Limits.Maximum_Depth
         or else Handler.Elements = Handler.Limits.Maximum_Elements
@@ -75,6 +76,15 @@ package body Flyology.Object_Storage.S3.XML is
         (Handler.Receiver.all,
          Symbol_Text (Sax.Utils.Get_URI (NS)),
          Sax.Readers.Get_Length (Atts));
+      for Index in 1 .. Sax.Readers.Get_Length (Atts) loop
+         Name := Sax.Readers.Get_Name (Atts, Index);
+         Element_Attribute
+           (Handler.Receiver.all,
+            Symbol_Text (Local_Name),
+            Symbol_Text (Name.NS),
+            Symbol_Text (Name.Local),
+            Symbol_Text (Sax.Readers.Get_Value (Atts, Index)));
+      end loop;
       Start_Element (Handler.Receiver.all, Symbol_Text (Local_Name));
    end Start_Element;
 

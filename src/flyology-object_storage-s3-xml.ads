@@ -23,6 +23,20 @@ package Flyology.Object_Storage.S3.XML is
      (Item            : in out Event_Handler;
       Namespace_URI   : String;
       Attribute_Count : Natural) is null;
+   --  Optional exact physical-attribute hook.  Values are copied from the
+   --  XMLAda callback before it returns; handlers must not retain borrowed
+   --  parser symbols.
+   --  @param Item Caller-owned event receiver
+   --  @param Element_Local_Name Local name of the owning element
+   --  @param Namespace_URI Exact resolved attribute namespace, or empty
+   --  @param Local_Name Exact local attribute name
+   --  @param Value Exact normalized attribute value
+   procedure Element_Attribute
+     (Item               : in out Event_Handler;
+      Element_Local_Name : String;
+      Namespace_URI      : String;
+      Local_Name         : String;
+      Value              : String) is null;
    procedure Text
      (Item : in out Event_Handler; Value : String) is abstract;
    procedure End_Element
