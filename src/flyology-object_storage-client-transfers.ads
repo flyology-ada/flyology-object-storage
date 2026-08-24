@@ -1,4 +1,5 @@
 with Ada.Strings.Unbounded;
+with Flyology.Buffers;
 with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
@@ -178,6 +179,41 @@ package Flyology.Object_Storage.Client.Transfers is
       Timeout      : Duration := 30.0;
       Token        : access Flyology.Cancellation.Token := null)
       return Low_Level.Upload_Part_Outcome;
+
+   --  Upload one bounded multipart part by waiting on the composable
+   --  owner-driven operation. Payload_Buffer ownership moves during the call
+   --  and the exact token is restored before return or re-raising an
+   --  unexpected provider exception. The result preserves admission and
+   --  publication certainty; no request is replayed.
+   --  Region, Style, Timeout, and Token defaults are deliberately identical
+   --  to the established borrowed-source overload above; changing either
+   --  overload independently would be a compatibility break.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign the request
+   --  @param Bucket Destination S3 bucket
+   --  @param Key Destination S3 object key
+   --  @param Parameters Complete typed UploadPart controls
+   --  @param Payload_Buffer Acquired complete part bytes restored on return
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed part-publication certainty and terminal response
+   function Upload_Part
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.Upload_Part_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Scoped.Upload_Part_Result
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
 
    type Upload_Outcome_Kind is (File_Uploaded, Upload_Rejected);
 

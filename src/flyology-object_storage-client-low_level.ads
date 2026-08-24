@@ -4052,6 +4052,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Upload_Part_Outcome;
 
+   --  Decode one complete UploadPart HTTP response. Header multiplicity,
+   --  success-body emptiness, modeled output values, requested-checksum
+   --  binding, and bounded S3 error XML are validated as one snapshot.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact UploadPart request whose checksum is bound
+   --  @param Limits Bounded XML parser limits for modeled error responses
+   --  @return Typed UploadPart success or S3 rejection
+   --  @exception Invalid_Request if Prepared is not UploadPart
+   --  @exception Invalid_Response if the complete response is inconsistent
+   function Decode_Upload_Part_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Upload_Part_Outcome;
+
    --  Execute one prepared UploadPart request without replay. Source must be
    --  forward-only and is borrowed only until this call returns.
    --  Invalid_Request is raised before HTTP admission; every other exception

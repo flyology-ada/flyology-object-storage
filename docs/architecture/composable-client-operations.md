@@ -2,9 +2,9 @@
 
 This note records the implemented contract for the completion-set-aware object
 client slice: conditional complete-object Put, generation-bound whole and
-single-range Get, bodyless Head, non-replaying Delete, and non-replaying
-multipart initiation. The prerequisite is published through the Flyology
-Alire index as lockstep HTTP and QUIC 0.1.3 development crates.
+single-range Get, bodyless Head, non-replaying Delete, non-replaying multipart
+initiation, and one-shot UploadPart. The prerequisite is published through the
+Flyology Alire index as lockstep HTTP and QUIC 0.1.3 development crates.
 
 ## Upstream basis
 
@@ -43,8 +43,9 @@ The initial operation order is:
 2. whole `Get_Object`;
 3. generation-bound exact-range `Get_Object`;
 4. `Head_Object`; and
-5. `Delete_Object`; and
-6. `Create_Multipart_Upload`.
+5. `Delete_Object`;
+6. `Create_Multipart_Upload`; and
+7. `Upload_Part`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -63,16 +64,23 @@ length. A response larger than the block produces a typed capacity outcome that
 includes the required content length. Head has no body buffer. Its defensive
 sink rejects any response-body octet exposed by the HTTP framing layer; bytes
 after a complete HEAD response remain owned and policed by HTTP.
+UploadPart uses the same token-move contract as Put, but its prepared multipart
+identity and part number remain available to the caller for ListParts
+reconciliation. The compatibility overload that accepts an arbitrary borrowed
+forward-only stream remains synchronous; only the bounded owned-buffer form
+can safely outlive initiation as a composable operation.
 
 An abandoned operation first requests cancellation and drains all HTTP,
 kernel, token, descriptor, source, and response leases. Only after no borrower
 can reference the payload may finalization release the internally owned buffer
-to its pool. No operation retains credentials or secret keys. A signed HTTP
-request necessarily remains an in-flight borrow while a protocol may still
-send or drain it; signed headers are not copied into results or diagnostics and
-are released at terminal completion. Required request strings are copied into
-explicit bounds or are documented borrows that remain live through typed
-Finish and finalization drain.
+to its pool. No operation deliberately retains credentials or secret keys
+after its terminal drain. A signed HTTP request necessarily remains an
+in-flight borrow while a protocol may still send or drain it; signed headers
+are not copied into results or diagnostics, and the prepared request storage
+is released only after the child becomes inactive. This lifecycle release is
+not a promise to zero allocator memory or transient stack copies. Required
+request strings are copied into explicit bounds or are documented borrows that
+remain live through typed Finish and finalization drain.
 
 One absolute monotonic deadline begins at initiation and covers admission,
 name resolution, connection establishment, TLS or QUIC, request transmission,
@@ -138,6 +146,13 @@ authentication, authorization, missing-resource, and precondition rejections
 report `Definitely_Not_Deleted`. Conflicts, throttling, service failures,
 malformed responses, and every failure after possible admission report
 `Deletion_Outcome_Unknown`. Pre-admission cancellation has its own spelling.
+
+CreateMultipartUpload and UploadPart likewise use deliberately non-replayable
+sources. UploadPart reports `Part_Published` only for a complete validated 200.
+Definite non-admission reports `Definitely_Not_Staged`, with a separate
+pre-admission cancellation spelling. Every complete rejection or failure after
+possible admission reports `Part_Outcome_Unknown`; callers reconcile the exact
+upload ID and part number with ListParts before any retry or completion choice.
 The result retains HTTP admission certainty independently of its bounded
 failure reason, and the operation never retries automatically.
 

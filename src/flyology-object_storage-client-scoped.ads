@@ -908,6 +908,142 @@ package Flyology.Object_Storage.Client.Scoped is
       Result    : out Create_Multipart_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  What is known about one UploadPart publication. Unknown results require
+   --  ListParts reconciliation for the exact upload ID and part number before
+   --  any caller-selected retry or completion decision.
+   --  @enum Part_Published Complete validated success proves staging
+   --  @enum Definitely_Not_Staged Admission proves no request was sent
+   --  @enum Part_Outcome_Unknown Staging must be reconciled read-only
+   --  @enum Part_Cancelled_Before_Admission Cancellation preceded admission
+   type Part_Upload_Disposition is
+     (Part_Published,
+      Definitely_Not_Staged,
+      Part_Outcome_Unknown,
+      Part_Cancelled_Before_Admission);
+
+   --  Shape of a terminal UploadPart result.
+   --  @enum Upload_Part_Response_Available Complete modeled S3 response exists
+   --  @enum Upload_Part_Exchange_Failed No complete modeled S3 response exists
+   type Upload_Part_Result_Kind is
+     (Upload_Part_Response_Available, Upload_Part_Exchange_Failed);
+
+   --  Typed part-publication certainty plus the exact modeled response or
+   --  composable HTTP failure. A complete rejection is conservatively
+   --  ambiguous unless request admission was definitively absent.
+   --  @field Kind Result shape
+   --  @field Disposition Part-publication certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Upload_Part_Result
+     (Kind : Upload_Part_Result_Kind := Upload_Part_Exchange_Failed)
+   is record
+      Disposition : Part_Upload_Disposition := Part_Outcome_Unknown;
+      Failure     : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Upload_Part_Response_Available =>
+            Response : Low_Level.Upload_Part_Outcome;
+         when Upload_Part_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot UploadPart parent with one hidden HTTP child. The acquired
+   --  input token moves into the operation until Finish, so no borrowed body
+   --  outlives initiation and the forward-only source cannot be replayed.
+   type Upload_Part_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Compatibility contract: Region, addressing style, and cancellation
+   --  defaults below are the established Transfers.Upload_Part values. Their
+   --  reuse keeps synchronous and directly composed requests wire-identical.
+
+   --  Start or restart one UploadPart operation. Request validation and
+   --  signing finish before Payload_Buffer ownership moves.
+   --  @param Operation Fresh or consumed established UploadPart operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Destination object key
+   --  @param Parameters Complete modeled UploadPart controls
+   --  @param Payload_Buffer Acquired part bytes moved until Finish
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Start_Upload_Part
+     (Operation : in out Upload_Part_Operation;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Upload_Part_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer)
+       and then not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one non-replaying UploadPart operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Destination object key
+   --  @param Parameters Complete modeled UploadPart controls
+   --  @param Payload_Buffer Acquired part bytes moved until Finish
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven UploadPart operation
+   function Upload_Part
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Upload_Part_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Upload_Part_Operation
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
+
+   --  Consume one terminal UploadPart and restore the exact input token.
+   --  @param Operation Terminal part upload
+   --  @param Result Typed modeled response or bounded ambiguous failure
+   --  @param Payload_Buffer Vacant original same-pool input handle
+   procedure Finish
+     (Operation : in out Upload_Part_Operation;
+      Result    : out Upload_Part_Result;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer)
+     with Pre => Flyology.Operations.Is_Terminal (Operation)
+       and then not Flyology.Buffers.Has_Buffer (Payload_Buffer);
+
 private
    --  @exclude
    type Conditional_Put_Operation
@@ -946,6 +1082,28 @@ private
       Response_Data : Flyology.Bytes.Unbounded_Bytes;
       Response_Limit : Natural := 0;
       Final_Result : Create_Multipart_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Upload_Part_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Source     : Flyology.Buffers.Drivers.Detached_Buffer;
+      Source_Position : Natural := 0;
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Upload_Part_Result;
       Has_Final_Result : Boolean := False;
       Has_Saved_Error : Boolean := False;
       Saved_Error : Ada.Exceptions.Exception_Occurrence;
@@ -1221,6 +1379,57 @@ private
    overriding procedure Finalize
      (Item : in out Create_Multipart_Operation);
 
+   --  @exclude
+   --  @param Item Internal one-shot UploadPart source
+   --  @return Stable acquired part length
+   overriding function Declared_Length
+     (Item : Upload_Part_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   --  @param Item Internal one-shot UploadPart source
+   --  @param Data Caller-provided output slice
+   --  @param Last Last produced byte
+   --  @param Result Progress or completion
+   overriding procedure Read_Now
+     (Item   : in out Upload_Part_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   --  @param Item Internal immediate UploadPart source
+   --  @param Required Requested readiness direction
+   --  @param Descriptor Ignored immediate-source descriptor
+   --  @param Ready_Now Always true for the acquired buffer
+   overriding procedure Source_Wait_Source
+     (Item       : in out Upload_Part_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   --  @param Item Internal one-shot UploadPart source
+   overriding procedure Release_Source
+     (Item : in out Upload_Part_Operation);
+   --  @exclude
+   --  @param Item Internal bounded UploadPart response sink
+   --  @param Data Complete-response fragment
+   overriding procedure Write
+     (Item : in out Upload_Part_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal UploadPart parent
+   --  @param Event Owner-driver event
+   overriding procedure Drive
+     (Item : in out Upload_Part_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal UploadPart parent
+   overriding procedure Request_Cancellation
+     (Item : in out Upload_Part_Operation);
+   --  @exclude
+   --  @param Item Internal UploadPart parent
+   overriding procedure Finalize
+     (Item : in out Upload_Part_Operation);
+
    --  Private normalization boundary shared with the strict test child.
    --  @exclude
    --  @param Value Complete decoded S3 response
@@ -1288,5 +1497,27 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Create_Multipart_Result;
+
+   --  Private normalization boundary shared with the strict test child.
+   --  @exclude
+   --  @param Value Complete decoded S3 response
+   --  @param Admission Terminal HTTP admission certainty
+   --  @return Normalized UploadPart result
+   function Normalize_Upload_Part_Response
+     (Value     : Low_Level.Upload_Part_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Upload_Part_Result;
+
+   --  @exclude
+   --  @param Kind Typed HTTP failure
+   --  @param Admission Terminal HTTP admission certainty
+   --  @param Phase Causal HTTP phase
+   --  @param Detail Bounded sanitized HTTP diagnostic
+   --  @return Normalized UploadPart failure
+   function Normalize_Upload_Part_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Upload_Part_Result;
 
 end Flyology.Object_Storage.Client.Scoped;

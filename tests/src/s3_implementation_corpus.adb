@@ -8,6 +8,7 @@ with Ada.Streams.Stream_IO;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Flyology;
+with Flyology.Buffers;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP;
@@ -28,6 +29,7 @@ with Flyology.Object_Storage.Tags;
 
 procedure S3_Implementation_Corpus is
    package HTTP_Client renames Flyology.HTTP.Client;
+   package Buffers renames Flyology.Buffers;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
    package Client_Buckets renames Flyology.Object_Storage.Client.Buckets;
    package Client_Objects renames Flyology.Object_Storage.Client.Objects;
@@ -84,6 +86,8 @@ procedure S3_Implementation_Corpus is
    use type Scoped.Deletion_Disposition;
    use type Scoped.Create_Multipart_Result_Kind;
    use type Scoped.Multipart_Creation_Disposition;
+   use type Scoped.Upload_Part_Result_Kind;
+   use type Scoped.Part_Upload_Disposition;
    use type Client_Objects.List_Outcome_Kind;
    use type Client_Objects.Whole_Get_Outcome_Kind;
    use type Client_Objects.Tagging_Outcome_Kind;
@@ -2599,10 +2603,26 @@ procedure S3_Implementation_Corpus is
                return US.Unbounded_String
             is
                Parameters : Low_Level.Upload_Part_Parameters;
-               Source : Upload_Source (Payload'Access);
+               --  Derived test geometry: one acquired token contains this
+               --  exact multipart range and no second body can be in flight.
+               Pool : aliased Buffers.Pool
+                 (Block_Size => Length, Capacity => 1);
+               Payload_Buffer : Buffers.Unique_Buffer (Pool'Access);
+
+               procedure Fill
+                 (Data : in out Ada.Streams.Stream_Element_Array;
+                  Used : in out Natural) is
+               begin
+                  for Offset in 0 .. Length - 1 loop
+                     Data
+                       (Data'First +
+                          Ada.Streams.Stream_Element_Offset (Offset)) :=
+                       Ada.Streams.Stream_Element
+                         (Character'Pos (Payload (First + Offset)));
+                  end loop;
+                  Used := Length;
+               end Fill;
             begin
-               Source.First := First;
-               Source.Length := Length;
                Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
                Parameters.Part_Number := Number;
                Parameters.Checksum_Algorithm :=
@@ -2612,25 +2632,33 @@ procedure S3_Implementation_Corpus is
                Parameters.Payload_SHA256 := US.To_Unbounded_String
                  (SigV4.SHA256_Hex
                     (Payload (First .. First + Length - 1)));
+               Buffers.Acquire (Payload_Buffer);
+               Buffers.With_Writable_Data (Payload_Buffer, Fill'Access);
                declare
-                  Uploaded : constant Low_Level.Upload_Part_Outcome :=
+                  Uploaded : constant Scoped.Upload_Part_Result :=
                     Transfers.Upload_Part
-                      (HTTP, Origin, Bucket, Key, Parameters, Source,
+                      (HTTP, Origin, Bucket, Key, Parameters, Payload_Buffer,
                        Identity, "us-east-1", Low_Level.Path_Style,
                        Timeout => 60.0);
                begin
-                  if Uploaded.Kind /= Low_Level.Part_Uploaded then
+                  if Uploaded.Kind /=
+                    Scoped.Upload_Part_Response_Available
+                    or else Uploaded.Disposition /= Scoped.Part_Published
+                    or else Uploaded.Response.Kind /= Low_Level.Part_Uploaded
+                    or else not Buffers.Has_Buffer (Payload_Buffer)
+                  then
                      raise Program_Error with
                        "S3 implementation rejected UploadPart" &
                        Number'Image;
-                  elsif US.To_String (Uploaded.Result.Checksum_SHA256) /=
+                  elsif US.To_String
+                    (Uploaded.Response.Result.Checksum_SHA256) /=
                     (if Number = 1 then First_SHA256 else Second_SHA256)
                   then
                      raise Program_Error with
                        "S3 implementation UploadPart checksum mismatch" &
                        Number'Image;
                   end if;
-                  return Uploaded.Result.Entity_Tag;
+                  return Uploaded.Response.Result.Entity_Tag;
                end;
             end Upload;
          begin

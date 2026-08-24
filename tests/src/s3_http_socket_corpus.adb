@@ -97,6 +97,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Conditional_Put_Result_Kind;
    use type Scoped.Failure_Reason;
    use type Scoped.Publication_Disposition;
+   use type Scoped.Part_Upload_Disposition;
+   use type Scoped.Upload_Part_Result_Kind;
    use type Scoped.Whole_Get_Result_Kind;
    use type Scoped.Range_Get_Result_Kind;
    use type Scoped.Head_Result_Kind;
@@ -2254,6 +2256,12 @@ procedure S3_HTTP_Socket_Corpus is
               "AAAAAAAAAAAAAAAAAAAAAA==" & CRLF);
          Serve_Upload_Response
            ("upload-response-minimal", "ETag: opaque-part-etag" & CRLF);
+         Serve_Upload_Response
+           ("upload-response-composed-first",
+            "ETag: composed-part-first" & CRLF);
+         Serve_Upload_Response
+           ("upload-response-composed-second",
+            "ETag: composed-part-second" & CRLF);
          Serve_Upload_Response
            ("upload-response-body", "ETag: opaque-part-etag" & CRLF, "x");
          for Index in Upload_Response_Headers'Range loop
@@ -4516,6 +4524,92 @@ procedure S3_HTTP_Socket_Corpus is
                     Upload_Parameters, Identity, "us-east-1",
                     "20130524T000000Z");
             begin
+               if Key = "upload-response-minimal" then
+                  declare
+                     --  Derived test geometry: the sole token holds exactly
+                     --  this fixed request fixture while the synchronous
+                     --  wrapper waits on its owner-driven operation.
+                     Pool : aliased Buffers.Pool
+                       (Block_Size => Put_Response_Vector_Payload'Length,
+                        Capacity => 1);
+                     Payload_Buffer : Buffers.Unique_Buffer (Pool'Access);
+                  begin
+                     Buffers.Acquire (Payload_Buffer);
+                     Buffers.Copy_From
+                       (Payload_Buffer, Bytes (Put_Response_Vector_Payload));
+                     declare
+                        Result : constant Scoped.Upload_Part_Result :=
+                          Transfers.Upload_Part
+                            (HTTP, Origin, "example-bucket", Key,
+                             Upload_Parameters, Payload_Buffer, Identity,
+                             Timeout => 5.0);
+                     begin
+                        if Result.Kind /=
+                          Scoped.Upload_Part_Response_Available
+                          or else Result.Disposition /= Scoped.Part_Published
+                          or else Result.Response.Kind /=
+                            Low_Level.Part_Uploaded
+                          or else not Buffers.Has_Buffer (Payload_Buffer)
+                          or else Buffer_String (Payload_Buffer) /=
+                            Put_Response_Vector_Payload
+                        then
+                           raise Program_Error with
+                             "composable UploadPart success/ownership " &
+                             "mismatch";
+                        end if;
+                     end;
+                     declare
+                        --  Parent, HTTP exchange, and one transport child.
+                        Set : aliased Operations.Completion_Set (3);
+                        Operation : Scoped.Upload_Part_Operation :=
+                          Scoped.Upload_Part
+                            (Set'Access, HTTP'Access, Origin,
+                             "example-bucket",
+                             "upload-response-composed-first",
+                             Upload_Parameters, Payload_Buffer, Identity,
+                             HTTP_Client.Deadline_After (5.0));
+                        Result : Scoped.Upload_Part_Result;
+                     begin
+                        Operations.Wait_All (Set);
+                        Scoped.Finish
+                          (Operation, Result, Payload_Buffer);
+                        if Result.Kind /=
+                          Scoped.Upload_Part_Response_Available
+                          or else Result.Disposition /= Scoped.Part_Published
+                          or else US.To_String
+                            (Result.Response.Result.Entity_Tag) /=
+                              "composed-part-first"
+                          or else not Buffers.Has_Buffer (Payload_Buffer)
+                        then
+                           raise Program_Error with
+                             "composed UploadPart constructor mismatch";
+                        end if;
+
+                        Scoped.Start_Upload_Part
+                          (Operation, HTTP'Access, Origin, "example-bucket",
+                           "upload-response-composed-second",
+                           Upload_Parameters, Payload_Buffer, Identity,
+                           HTTP_Client.Deadline_After (5.0));
+                        Operations.Wait_All (Set);
+                        Scoped.Finish
+                          (Operation, Result, Payload_Buffer);
+                        if Result.Kind /=
+                          Scoped.Upload_Part_Response_Available
+                          or else Result.Disposition /= Scoped.Part_Published
+                          or else US.To_String
+                            (Result.Response.Result.Entity_Tag) /=
+                              "composed-part-second"
+                          or else not Buffers.Has_Buffer (Payload_Buffer)
+                          or else Buffer_String (Payload_Buffer) /=
+                            Put_Response_Vector_Payload
+                        then
+                           raise Program_Error with
+                             "composed UploadPart restart mismatch";
+                        end if;
+                     end;
+                  end;
+                  return;
+               end if;
                begin
                   declare
                      Result : constant Low_Level.Upload_Part_Outcome :=
@@ -6549,8 +6643,12 @@ procedure S3_HTTP_Socket_Corpus is
                 (HTTP, Origin, "example-bucket", "lost-upload-prime",
                  Identity, Timeout => 5.0);
             Upload_Parameters : Low_Level.Upload_Part_Parameters;
-            Source : Upload_Source (Lost_Upload_Payload'Access);
-            Ambiguous : Boolean := False;
+            --  Derived test geometry: one token holds the exact fixed lost-
+            --  response part while typed Finish restores it for
+            --  reconciliation.
+            Pool : aliased Buffers.Pool
+              (Block_Size => Lost_Upload_Payload'Length, Capacity => 1);
+            Payload_Buffer : Buffers.Unique_Buffer (Pool'Access);
          begin
             if Prime.Kind /= Transfers.Object_Found
               or else US.To_String (Prime.Entity_Tag) /= """lost-prime"""
@@ -6566,29 +6664,51 @@ procedure S3_HTTP_Socket_Corpus is
               US.To_Unbounded_String ("SHA256");
             Upload_Parameters.Checksum_SHA256 :=
               US.To_Unbounded_String (Lost_Upload_SHA256);
+            Buffers.Acquire (Payload_Buffer);
+            Buffers.Copy_From
+              (Payload_Buffer, Bytes (Lost_Upload_Payload));
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
             begin
+               Stop.Request;
                declare
-                  Unexpected : constant Low_Level.Upload_Part_Outcome :=
+                  Cancelled : constant Scoped.Upload_Part_Result :=
                     Transfers.Upload_Part
-                      (HTTP, Origin, "example-bucket", "lost-upload",
-                       Upload_Parameters, Source, Identity, Timeout => 5.0);
-                  pragma Unreferenced (Unexpected);
+                      (HTTP, Origin, "example-bucket", "upload-cancelled",
+                       Upload_Parameters, Payload_Buffer, Identity,
+                       Timeout => 5.0, Token => Stop'Access);
                begin
-                  raise Program_Error with
-                    "lost UploadPart response returned a definite outcome";
+                  if Cancelled.Kind /= Scoped.Upload_Part_Exchange_Failed
+                    or else Cancelled.Disposition /=
+                      Scoped.Part_Cancelled_Before_Admission
+                    or else Cancelled.Admission /= HTTP_Client.Not_Admitted
+                    or else not Buffers.Has_Buffer (Payload_Buffer)
+                    or else Buffer_String (Payload_Buffer) /=
+                      Lost_Upload_Payload
+                  then
+                     raise Program_Error with
+                       "pre-admission UploadPart cancellation/ownership " &
+                       "mismatch";
+                  end if;
                end;
-            exception
-               when Low_Level.Invalid_Request |
-                    Low_Level.Invalid_Response |
-                    Program_Error =>
-                  raise;
-               when others =>
-                  Ambiguous := True;
             end;
-            if not Ambiguous then
-               raise Program_Error with
-                 "lost UploadPart response was not publication-ambiguous";
-            end if;
+            declare
+               Result : constant Scoped.Upload_Part_Result :=
+                 Transfers.Upload_Part
+                   (HTTP, Origin, "example-bucket", "lost-upload",
+                    Upload_Parameters, Payload_Buffer, Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Upload_Part_Exchange_Failed
+                 or else Result.Disposition /= Scoped.Part_Outcome_Unknown
+                 or else Result.Admission /= HTTP_Client.Possibly_Admitted
+                 or else not Buffers.Has_Buffer (Payload_Buffer)
+                 or else Buffer_String (Payload_Buffer) /= Lost_Upload_Payload
+               then
+                  raise Program_Error with
+                    "lost UploadPart response certainty/ownership mismatch";
+               end if;
+            end;
 
             declare
                List_Parameters : Low_Level.List_Parts_Parameters;
@@ -11360,6 +11480,8 @@ begin
    Flyology.Object_Storage.Client.Scoped.Testing.Check_Delete_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_Create_Multipart_Certainty_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_Upload_Part_Certainty_Corpus;
    Run_And_Report;
    declare
       task Lightweight_Client is

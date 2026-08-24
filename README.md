@@ -72,9 +72,10 @@ The core crate includes:
   one-shot UploadPart API whose bodies are borrowed from forward-only streaming
   sources and whose post-admission exceptions require ListParts reconciliation;
 - completion-set-aware conditional Put, bounded whole Get, generation-bound
-  single-range Get, bodyless Head, and non-replaying Delete operations, with
-  typed synchronous overloads that wait on the same owner-driven state
-  machines and never create a per-operation helper task;
+  single-range Get, bodyless Head, non-replaying Delete, multipart initiation,
+  and one-shot UploadPart operations, with typed synchronous overloads that
+  wait on the same owner-driven state machines and never create a per-operation
+  helper task;
 - a bounded ordered DeleteObjects backend batch, with process-atomic memory,
   transactional SQLite, and explicitly scoped per-file durability semantics
   (see [DeleteObjects qualification](docs/qualification/delete-objects.md));

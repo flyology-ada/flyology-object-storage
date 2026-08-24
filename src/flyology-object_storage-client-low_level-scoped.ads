@@ -5,6 +5,13 @@ with Flyology.HTTP.Client;
 --  Bridges prepared S3 requests into caller-owned composable HTTP exchanges.
 package Flyology.Object_Storage.Client.Low_Level.Scoped is
 
+   --  Release all owned request, signing, selector, and header storage from a
+   --  prepared request after its HTTP child has drained. This is an internal
+   --  lifecycle boundary for composable parents; callers must not clear a
+   --  request while an exchange still borrows it.
+   --  @param Prepared Drained request whose retained storage is released
+   procedure Clear_Prepared_Request (Prepared : in out Prepared_Request);
+
    --  Start a prepared PutObject exchange with a nonblocking source and a
    --  bounded immediate response sink. Prepared, Source, Sink, Client, Token,
    --  and their owners must outlive terminal typed Finish of Operation.
@@ -98,6 +105,28 @@ package Flyology.Object_Storage.Client.Low_Level.Scoped is
    --  @param Token Optional cancellation source
    --  @exception Invalid_Request Prepared is not CreateMultipartUpload
    procedure Start_Create_Multipart_Upload
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null);
+
+   --  Start a prepared UploadPart exchange with a nonblocking one-shot source
+   --  and bounded immediate response sink. Prepared, Source, Sink, Client,
+   --  Token, and their owners must outlive terminal typed Finish.
+   --  @param Operation Established HTTP child operation
+   --  @param Client Configured origin client
+   --  @param Prepared Prepared UploadPart request
+   --  @param Source Nonblocking one-shot part body source
+   --  @param Sink Bounded complete-response sink
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source
+   --  @exception Invalid_Request Prepared is not UploadPart
+   procedure Start_Upload_Part
      (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
       Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;

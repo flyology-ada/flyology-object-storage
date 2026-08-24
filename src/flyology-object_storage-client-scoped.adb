@@ -28,6 +28,7 @@ package body Flyology.Object_Storage.Client.Scoped is
    use type Low_Level.Create_Multipart_Outcome_Kind;
    use type Low_Level.Delete_Object_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
+   use type Low_Level.Upload_Part_Outcome_Kind;
    use type Core.Range_Parse_Status;
    use type Operations.Driver_Event;
    use type System.Storage_Elements.Storage_Offset;
@@ -298,8 +299,9 @@ package body Flyology.Object_Storage.Client.Scoped is
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
             Item.Final_Result := Normalize_Put_Failure
-              (HTTP_Client.Response_Sink_Failed, Admission,
-               HTTP_Client.Receiving_Response_Body);
+               (HTTP_Client.Response_Sink_Failed, Admission,
+                HTTP_Client.Receiving_Response_Body);
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
             Item.Has_Final_Result := True;
             Operation_Drivers.Complete (Item, Operations.Succeeded);
             return;
@@ -312,6 +314,9 @@ package body Flyology.Object_Storage.Client.Scoped is
             end if;
             Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
             Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+            end if;
             Operation_Drivers.Complete (Item, Operations.Failed);
             return;
       end;
@@ -338,6 +343,7 @@ package body Flyology.Object_Storage.Client.Scoped is
                   HTTP_Client.Phase (HTTP_Result));
          end;
       end if;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
       Item.Has_Final_Result := True;
       Operation_Drivers.Complete (Item, Operations.Succeeded);
    end Complete_Child;
@@ -362,6 +368,9 @@ package body Flyology.Object_Storage.Client.Scoped is
       when Error : others =>
          Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
          Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+         end if;
          if Operations.Is_Active (Item) then
             Operation_Drivers.Complete (Item, Operations.Failed);
          end if;
@@ -384,6 +393,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       exception
          when others => null;
       end;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
       Buffer_Drivers.Release (Item.Source);
       Flyology.Bytes.Clear (Item.Response_Data);
    end Finalize;
@@ -443,6 +453,7 @@ package body Flyology.Object_Storage.Client.Scoped is
             if Operations.Is_Active (Item) then
                Operation_Drivers.Rollback_Start (Item);
             end if;
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
             raise;
       end;
    end Start_Put;
@@ -560,6 +571,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       end if;
       Operations.Consume (Operation);
       Buffer_Drivers.Move_To (Operation.Source, Payload_Buffer);
+      Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
       if Operation.Has_Saved_Error then
          Ada.Exceptions.Raise_Exception
            (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
@@ -744,6 +756,9 @@ package body Flyology.Object_Storage.Client.Scoped is
             end if;
             Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
             Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+            end if;
             Operation_Drivers.Complete (Item, Operations.Failed);
             return;
       end;
@@ -790,6 +805,7 @@ package body Flyology.Object_Storage.Client.Scoped is
                Item.Final_Result := Invalid_Read_Result;
          end;
       end if;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
       Item.Has_Final_Result := True;
       Operation_Drivers.Complete (Item, Operations.Succeeded);
    end Complete_Child;
@@ -814,6 +830,9 @@ package body Flyology.Object_Storage.Client.Scoped is
       when Error : others =>
          Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
          Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+         end if;
          if Operations.Is_Active (Item) then
             Operation_Drivers.Complete (Item, Operations.Failed);
          end if;
@@ -836,6 +855,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       exception
          when others => null;
       end;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
    end Finalize;
 
    procedure Complete_Range_Child (Item : in out Range_Get_Operation) is
@@ -855,6 +875,9 @@ package body Flyology.Object_Storage.Client.Scoped is
             end if;
             Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
             Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+            end if;
             Operation_Drivers.Complete (Item, Operations.Failed);
             return;
       end;
@@ -914,6 +937,7 @@ package body Flyology.Object_Storage.Client.Scoped is
                Item.Final_Result := Invalid_Range_Read_Result;
          end;
       end if;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
       Item.Has_Final_Result := True;
       Operation_Drivers.Complete (Item, Operations.Succeeded);
    end Complete_Range_Child;
@@ -938,6 +962,9 @@ package body Flyology.Object_Storage.Client.Scoped is
       when Error : others =>
          Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
          Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+         end if;
          if Operations.Is_Active (Item) then
             Operation_Drivers.Complete (Item, Operations.Failed);
          end if;
@@ -960,6 +987,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       exception
          when others => null;
       end;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
    end Finalize;
 
    procedure Start_Get
@@ -1019,6 +1047,7 @@ package body Flyology.Object_Storage.Client.Scoped is
             if Operations.Is_Active (Item) then
                Operation_Drivers.Rollback_Start (Item);
             end if;
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
             raise;
       end;
    end Start_Get;
@@ -1138,6 +1167,7 @@ package body Flyology.Object_Storage.Client.Scoped is
             if Operations.Is_Active (Operation) then
                Operation_Drivers.Rollback_Start (Operation);
             end if;
+            Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
             raise;
       end;
    end Start_Get_Range;
@@ -1178,6 +1208,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       Result    : out Whole_Get_Result) is
    begin
       Operations.Consume (Operation);
+      Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
       if Operation.Has_Saved_Error then
          Ada.Exceptions.Raise_Exception
            (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
@@ -1193,6 +1224,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       Result    : out Range_Get_Result) is
    begin
       Operations.Consume (Operation);
+      Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
       if Operation.Has_Saved_Error then
          Ada.Exceptions.Raise_Exception
            (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
@@ -1250,6 +1282,7 @@ package body Flyology.Object_Storage.Client.Scoped is
                HTTP_Result => HTTP_Client.Response_Sink_Failed,
                HTTP_Phase  => HTTP_Client.Receiving_Response_Body,
                Detail      => US.Null_Unbounded_String);
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
             Item.Has_Final_Result := True;
             Operation_Drivers.Complete (Item, Operations.Succeeded);
             return;
@@ -1262,6 +1295,7 @@ package body Flyology.Object_Storage.Client.Scoped is
             end if;
             Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
             Item.Has_Saved_Error := True;
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
             Operation_Drivers.Complete (Item, Operations.Failed);
             return;
       end;
@@ -1285,6 +1319,7 @@ package body Flyology.Object_Storage.Client.Scoped is
                   Detail      => US.Null_Unbounded_String);
          end;
       end if;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
       Item.Has_Final_Result := True;
       Operation_Drivers.Complete (Item, Operations.Succeeded);
    end Complete_Head_Child;
@@ -1309,6 +1344,9 @@ package body Flyology.Object_Storage.Client.Scoped is
       when Error : others =>
          Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
          Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+         end if;
          if Operations.Is_Active (Item) then
             Operation_Drivers.Complete (Item, Operations.Failed);
          end if;
@@ -1331,6 +1369,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       exception
          when others => null;
       end;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
    end Finalize;
 
    procedure Start_Head_Object
@@ -1365,6 +1404,7 @@ package body Flyology.Object_Storage.Client.Scoped is
             if Operations.Is_Active (Operation) then
                Operation_Drivers.Rollback_Start (Operation);
             end if;
+            Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
             raise;
       end;
    end Start_Head_Object;
@@ -1395,6 +1435,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       Result    : out Head_Result) is
    begin
       Operations.Consume (Operation);
+      Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
       if Operation.Has_Saved_Error then
          Ada.Exceptions.Raise_Exception
            (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
@@ -1560,6 +1601,7 @@ package body Flyology.Object_Storage.Client.Scoped is
                HTTP_Result => HTTP_Client.Response_Sink_Failed,
                HTTP_Phase  => HTTP_Client.Receiving_Response_Body,
                Detail      => US.Null_Unbounded_String);
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
             Item.Has_Final_Result := True;
             Operation_Drivers.Complete (Item, Operations.Succeeded);
             return;
@@ -1572,6 +1614,9 @@ package body Flyology.Object_Storage.Client.Scoped is
             end if;
             Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
             Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+            end if;
             Operation_Drivers.Complete (Item, Operations.Failed);
             return;
       end;
@@ -1601,6 +1646,7 @@ package body Flyology.Object_Storage.Client.Scoped is
                   Detail      => US.Null_Unbounded_String);
          end;
       end if;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
       Item.Has_Final_Result := True;
       Operation_Drivers.Complete (Item, Operations.Succeeded);
    end Complete_Delete_Child;
@@ -1625,6 +1671,9 @@ package body Flyology.Object_Storage.Client.Scoped is
       when Error : others =>
          Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
          Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+         end if;
          if Operations.Is_Active (Item) then
             Operation_Drivers.Complete (Item, Operations.Failed);
          end if;
@@ -1647,6 +1696,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       exception
          when others => null;
       end;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
       Flyology.Bytes.Clear (Item.Response_Data);
    end Finalize;
 
@@ -1687,6 +1737,7 @@ package body Flyology.Object_Storage.Client.Scoped is
             if Operations.Is_Active (Operation) then
                Operation_Drivers.Rollback_Start (Operation);
             end if;
+            Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
             raise;
       end;
    end Start_Delete_Object;
@@ -1717,6 +1768,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       Result    : out Delete_Result) is
    begin
       Operations.Consume (Operation);
+      Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
       if Operation.Has_Saved_Error then
          Ada.Exceptions.Raise_Exception
            (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
@@ -1886,6 +1938,7 @@ package body Flyology.Object_Storage.Client.Scoped is
                HTTP_Result => HTTP_Client.Response_Sink_Failed,
                HTTP_Phase  => HTTP_Client.Receiving_Response_Body,
                Detail      => US.Null_Unbounded_String);
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
             Item.Has_Final_Result := True;
             Operation_Drivers.Complete (Item, Operations.Succeeded);
             return;
@@ -1898,6 +1951,9 @@ package body Flyology.Object_Storage.Client.Scoped is
             end if;
             Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
             Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+            end if;
             Operation_Drivers.Complete (Item, Operations.Failed);
             return;
       end;
@@ -1928,6 +1984,7 @@ package body Flyology.Object_Storage.Client.Scoped is
                   Detail      => US.Null_Unbounded_String);
          end;
       end if;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
       Item.Has_Final_Result := True;
       Operation_Drivers.Complete (Item, Operations.Succeeded);
    end Complete_Create_Multipart_Child;
@@ -1953,6 +2010,9 @@ package body Flyology.Object_Storage.Client.Scoped is
       when Error : others =>
          Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
          Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+         end if;
          if Operations.Is_Active (Item) then
             Operation_Drivers.Complete (Item, Operations.Failed);
          end if;
@@ -1976,6 +2036,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       exception
          when others => null;
       end;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
       Flyology.Bytes.Clear (Item.Response_Data);
    end Finalize;
 
@@ -2016,6 +2077,7 @@ package body Flyology.Object_Storage.Client.Scoped is
             if Operations.Is_Active (Operation) then
                Operation_Drivers.Rollback_Start (Operation);
             end if;
+            Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
             raise;
       end;
    end Start_Create_Multipart_Upload;
@@ -2046,6 +2108,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       Result    : out Create_Multipart_Result) is
    begin
       Operations.Consume (Operation);
+      Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
       if Operation.Has_Saved_Error then
          Ada.Exceptions.Raise_Exception
            (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
@@ -2053,6 +2116,353 @@ package body Flyology.Object_Storage.Client.Scoped is
       elsif not Operation.Has_Final_Result then
          raise Program_Error with
            "CreateMultipartUpload has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   --  Exact status/code pairs are S3 wire authority. A complete modeled
+   --  rejection still does not prove that an earlier attempt did not stage a
+   --  part, so only a validated success or definite non-admission changes
+   --  publication certainty.
+   function Normalize_Upload_Part_Response
+     (Value     : Low_Level.Upload_Part_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Upload_Part_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Upload_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Failure : constant Failure_Reason :=
+        (if Value.Kind = Low_Level.Part_Uploaded then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchUpload"
+         then Not_Found
+         elsif Value.Status = 400
+           and then Code in
+             "BadDigest" | "InvalidPart" | "InvalidRequest" |
+             "EntityTooLarge"
+         then Invalid_Request
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => Upload_Part_Response_Available,
+         Disposition =>
+           (if Admission = HTTP_Client.Response_Observed
+              and then Value.Kind = Low_Level.Part_Uploaded
+            then Part_Published
+            else Part_Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            else Failure),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Upload_Part_Response;
+
+   function Normalize_Upload_Part_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Upload_Part_Result is
+   begin
+      return
+        (Kind        => Upload_Part_Exchange_Failed,
+         Disposition =>
+           (if Kind = HTTP_Client.Cancelled
+              and then Admission = HTTP_Client.Not_Admitted
+            then Part_Cancelled_Before_Admission
+            elsif Admission = HTTP_Client.Not_Admitted
+            then Definitely_Not_Staged
+            else Part_Outcome_Unknown),
+         Failure     =>
+           (if Kind = HTTP_Client.Response_Body_Too_Large
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Upload_Part_Failure;
+
+   overriding function Declared_Length
+     (Item : Upload_Part_Operation) return HTTP_Client.Body_Length is
+   begin
+      return HTTP_Client.Known_Length
+        (HTTP_Client.Body_Size (Buffer_Drivers.Length (Item.Source)));
+   end Declared_Length;
+
+   overriding procedure Read_Now
+     (Item   : in out Upload_Part_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind)
+   is
+      Length : constant Natural := Buffer_Drivers.Length (Item.Source);
+      Count  : constant Natural :=
+        Natural'Min (Natural (Data'Length), Length - Item.Source_Position);
+   begin
+      Data := (others => 0);
+      Last := Data'First - 1;
+      if Count = 0 then
+         Result := HTTP_Client.Source_Finished;
+         return;
+      end if;
+      for Offset in 0 .. Count - 1 loop
+         Data (Data'First + Ada.Streams.Stream_Element_Offset (Offset)) :=
+           Byte_Pointers.To_Pointer
+             (Buffer_Drivers.Address (Item.Source) +
+                System.Storage_Elements.Storage_Offset
+                  (Item.Source_Position + Offset)).all;
+      end loop;
+      Item.Source_Position := Item.Source_Position + Count;
+      Last := Data'First + Ada.Streams.Stream_Element_Offset (Count) - 1;
+      Result := HTTP_Client.Source_Progress;
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Upload_Part_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      pragma Unreferenced (Item, Required);
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Upload_Part_Operation) is
+   begin
+      pragma Unreferenced (Item);
+      null;
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Upload_Part_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "UploadPart response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Upload_Part_Child
+     (Item : in out Upload_Part_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Scoped.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_Upload_Part_Failure
+               (HTTP_Client.Response_Sink_Failed, Admission,
+                HTTP_Client.Receiving_Response_Body);
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Upload_Part_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Upload_Part_Response
+              (Low_Level.Decode_Upload_Part_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  Item.Prepared),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_Upload_Part_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Upload_Part_Child;
+
+   overriding procedure Drive
+     (Item : in out Upload_Part_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low_Scoped.Start_Upload_Part
+           (Item.Child, Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item'Access, Item.Deadline, Item.Cancellation);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Upload_Part_Child (Item);
+      else
+         raise Program_Error with "invalid UploadPart driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Upload_Part_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Upload_Part_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+      Buffer_Drivers.Release (Item.Source);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Upload_Part
+     (Operation : in out Upload_Part_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Upload_Part_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "UploadPart restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Upload_Part
+        (Origin, Style, Bucket, Key, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Source_Position := 0;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived resource bound: retained UploadPart response bytes use the
+        --  maintained limit of the S3 XML decoder that consumes errors.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Buffer_Drivers.Move_From (Payload_Buffer, Operation.Source);
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Buffer_Drivers.Has_Buffer (Operation.Source) then
+               Buffer_Drivers.Move_To (Operation.Source, Payload_Buffer);
+            end if;
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Upload_Part;
+
+   function Upload_Part
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Upload_Part_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Upload_Part_Operation is
+   begin
+      return Result : Upload_Part_Operation (Set, Client, Token) do
+         Start_Upload_Part
+           (Result, Client, Origin, Bucket, Key, Parameters, Payload_Buffer,
+            Identity, Deadline, Region, Style, Token);
+      end return;
+   end Upload_Part;
+
+   procedure Finish
+     (Operation : in out Upload_Part_Operation;
+      Result    : out Upload_Part_Result;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer) is
+   begin
+      if not Buffer_Drivers.Same_Pool
+        (Operation.Source, Payload_Buffer)
+      then
+         raise Program_Error with
+           "UploadPart Finish requires the original buffer pool";
+      end if;
+      Operations.Consume (Operation);
+      Buffer_Drivers.Move_To (Operation.Source, Payload_Buffer);
+      Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "UploadPart has no terminal result";
       end if;
       Result := Operation.Final_Result;
    end Finish;

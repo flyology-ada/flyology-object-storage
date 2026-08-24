@@ -291,6 +291,39 @@ package body Flyology.Object_Storage.Client.Transfers is
       end;
    end Upload_Part;
 
+   function Upload_Part
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Parameters   : Low_Level.Upload_Part_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Scoped.Upload_Part_Result
+   is
+      --  The UploadPart parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Upload_Part_Operation :=
+           Scoped.Upload_Part
+             (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
+              Payload_Buffer, Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+              Token);
+         Result : Scoped.Upload_Part_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result, Payload_Buffer);
+         return Result;
+      end;
+   end Upload_Part;
+
    function Deadline_For (Timeout : Duration) return Ada.Real_Time.Time is
    begin
       if Timeout < 0.0 then

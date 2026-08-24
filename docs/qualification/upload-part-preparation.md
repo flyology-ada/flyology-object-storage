@@ -31,9 +31,10 @@ documented rather than used to weaken the decoder.
 ## Qualified synchronous client
 
 `Flyology.Object_Storage.Client.Transfers.Upload_Part` is the direct synchronous
-entry point. It accepts the complete 23-member typed request policy, borrows a
-forward-only body source only for the duration of the call, and returns the
-complete 17-member typed response result or a structured S3 rejection. A
+entry point. Its compatibility overload accepts the complete 23-member typed
+request policy, borrows a forward-only body source only for the duration of the
+call, and returns the complete 17-member typed response result or a structured
+S3 rejection. A
 rewindable source and every invalid modeled request combination are rejected
 before HTTP admission. The operation does not create helper tasks, retain the
 source, or transparently retry.
@@ -58,6 +59,17 @@ ListParts before retrying or completing; the library performs no automatic
 retry. The lost-response socket lane accepts one PUT, drops the response,
 requires ListParts next, completes from the reconciled tuple, and verifies the
 exact bytes, ETag, and SHA-256 with a generation-bound whole GET.
+
+The additive `Client.Scoped.Upload_Part` operation accepts an acquired
+`Unique_Buffer`, moves its exact token until terminal `Finish`, and exposes
+both reusable `Start_Upload_Part` and constructor forms. The typed synchronous
+buffer overload waits on that same owner-driven state machine. No borrowed
+request source is retained and no helper task or second protocol engine is
+introduced. The maintained certainty corpus covers 46 response/admission
+tuples. The native and lightweight socket lanes prove successful token
+restoration, cancellation before admission, and a dropped response reported as
+exactly `Possibly_Admitted` plus `Part_Outcome_Unknown`; the next operation is
+read-only ListParts reconciliation, never an automatic PUT replay.
 
 ## Backend and server boundary
 
@@ -95,6 +107,10 @@ The HTTP exchange retains the encoded header until cleanup and the generic MD5
 implementation may create transient request-stack copies that are not
 guaranteed erased. Guaranteed end-to-end zeroization and persisted initiation
 encryption state are prerequisites for any later positive SSE-C support.
+Composable client operations release their prepared signed-request storage
+after the HTTP child has become inactive and again at typed Finish or
+finalization. That lifecycle boundary prevents deliberate post-drain retention
+but does not strengthen the zeroization qualification above.
 
 The authenticated path-style server is a single-tenant application profile.
 Its credential provider reports one stable tenant/account-owner principal for

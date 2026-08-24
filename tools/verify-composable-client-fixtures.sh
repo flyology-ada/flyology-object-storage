@@ -9,6 +9,7 @@ RANGE_FIXTURE=${3:-"$PROJECT_DIR/tests/corpora/composable-client/range-get.tsv"}
 HEAD_FIXTURE=${4:-"$PROJECT_DIR/tests/corpora/composable-client/head-object.tsv"}
 DELETE_FIXTURE=${5:-"$PROJECT_DIR/tests/corpora/composable-client/delete-certainty.tsv"}
 CREATE_FIXTURE=${6:-"$PROJECT_DIR/tests/corpora/composable-client/create-multipart-certainty.tsv"}
+UPLOAD_FIXTURE=${7:-"$PROJECT_DIR/tests/corpora/composable-client/upload-part-certainty.tsv"}
 
 if [ ! -f "$PUT_FIXTURE" ]; then
   printf '%s\n' "missing Put fixture: $PUT_FIXTURE" >&2
@@ -32,6 +33,10 @@ if [ ! -f "$DELETE_FIXTURE" ]; then
 fi
 if [ ! -f "$CREATE_FIXTURE" ]; then
   printf '%s\n' "missing CreateMultipartUpload fixture: $CREATE_FIXTURE" >&2
+  exit 1
+fi
+if [ ! -f "$UPLOAD_FIXTURE" ]; then
+  printf '%s\n' "missing UploadPart fixture: $UPLOAD_FIXTURE" >&2
   exit 1
 fi
 
@@ -525,5 +530,93 @@ verify_read_fixture "$RANGE_FIXTURE" "range-Get" "RG" 34 \
   "RG-RQ-001 RG-RQ-005 RG-RQ-010 RG-RS-001 RG-RS-002 RG-RS-005 RG-RS-006 RG-RS-010 RG-RS-012 RG-RS-013 RG-RS-015 RG-TR-001 RG-TR-002 RG-TR-004"
 verify_read_fixture "$HEAD_FIXTURE" "HeadObject" "HD" 32 \
   "HD-RQ-001 HD-RQ-006 HD-RQ-010 HD-RS-001 HD-RS-002 HD-RS-003 HD-RS-004 HD-RS-006 HD-RS-008 HD-RS-015 HD-TR-001 HD-TR-002 HD-TR-005"
+
+awk -F '\t' '
+function fail(message) {
+  print FILENAME ":" NR ": " message > "/dev/stderr"
+  failed = 1
+}
+
+BEGIN {
+  split("Response_Complete Pre_Admission_Rejected Cancelled Timed_Out Client_Unavailable Connection_Failed Transport_Failed Request_Source_Failed Response_Invalid Response_Body_Too_Large Response_Sink_Failed", values, " ")
+  for (i in values) allowed_http[values[i]] = 1
+  split("Not_Admitted Possibly_Admitted Response_Observed", values, " ")
+  for (i in values) allowed_admission[values[i]] = 1
+  split("Part_Published Definitely_Not_Staged Part_Outcome_Unknown Part_Cancelled_Before_Admission", values, " ")
+  for (i in values) allowed_publication[values[i]] = 1
+  split("No_Failure Authentication_Failed Authorization_Failed Invalid_Request Not_Found Unavailable_Or_Retryable Cancelled Timed_Out Client_Unavailable Connection_Failed Transport_Failed Request_Source_Failed Corrupt_Or_Invalid_Response", values, " ")
+  for (i in values) allowed_reason[values[i]] = 1
+  expected_reason["Pre_Admission_Rejected"] = "Invalid_Request"
+  expected_reason["Cancelled"] = "Cancelled"
+  expected_reason["Timed_Out"] = "Timed_Out"
+  expected_reason["Client_Unavailable"] = "Client_Unavailable"
+  expected_reason["Connection_Failed"] = "Connection_Failed"
+  expected_reason["Transport_Failed"] = "Transport_Failed"
+  expected_reason["Request_Source_Failed"] = "Request_Source_Failed"
+  expected_reason["Response_Invalid"] = "Corrupt_Or_Invalid_Response"
+  expected_reason["Response_Body_Too_Large"] = "Corrupt_Or_Invalid_Response"
+  expected_reason["Response_Sink_Failed"] = "Corrupt_Or_Invalid_Response"
+}
+
+NR == 1 {
+  if (NF != 8 || $1 != "http_result" || $2 != "admission" ||
+      $3 != "status" || $4 != "s3_code" ||
+      $5 != "part_publication" || $6 != "failure_reason" ||
+      $7 != "reconcile" || $8 != "note")
+    fail("unexpected UploadPart fixture header")
+  next
+}
+
+{
+  if (NF != 8) fail("expected 8 tab-separated fields, got " NF)
+  if (!($1 in allowed_http)) fail("unknown HTTP result " $1)
+  if (!($2 in allowed_admission)) fail("unknown admission certainty " $2)
+  if (!($5 in allowed_publication))
+    fail("unknown part-publication disposition " $5)
+  if (!($6 in allowed_reason)) fail("unknown bounded failure reason " $6)
+  if ($7 != "yes" && $7 != "no") fail("reconcile must be yes or no")
+  if ($8 == "") fail("qualification note must not be empty")
+
+  key = $1 SUBSEP $2 SUBSEP $3 SUBSEP $4
+  if (key in seen) fail("duplicate UploadPart input tuple")
+  seen[key] = 1
+  result_seen[$1] = 1
+  semantic_seen[$3 SUBSEP $4] = 1
+
+  if ($5 == "Part_Outcome_Unknown" && $7 != "yes")
+    fail("unknown part publication requires reconciliation")
+  if ($5 != "Part_Outcome_Unknown" && $7 != "no")
+    fail("conclusive part publication must not require reconciliation")
+  if ($2 == "Not_Admitted" && $5 == "Part_Outcome_Unknown")
+    fail("Not_Admitted cannot map to unknown part publication")
+  if ($5 == "Part_Published" &&
+      !($1 == "Response_Complete" && $2 == "Response_Observed" &&
+        $3 == "200" && $4 == "none" && $6 == "No_Failure"))
+    fail("Part_Published requires one complete valid 200 response")
+  if ($5 == "Part_Cancelled_Before_Admission" &&
+      !($1 == "Cancelled" && $2 == "Not_Admitted" && $6 == "Cancelled"))
+    fail("cancelled part disposition requires pre-admission cancellation")
+  if ($1 == "Response_Complete" && $3 != "200" &&
+      $5 != "Part_Outcome_Unknown")
+    fail("modeled UploadPart rejection must remain conservative")
+  if ($1 in expected_reason && $6 != expected_reason[$1])
+    fail("HTTP result does not retain its bounded failure reason")
+}
+
+END {
+  split("Response_Complete Pre_Admission_Rejected Cancelled Timed_Out Client_Unavailable Connection_Failed Transport_Failed Request_Source_Failed Response_Invalid Response_Body_Too_Large Response_Sink_Failed", required, " ")
+  for (i in required)
+    if (!(required[i] in result_seen))
+      fail("missing UploadPart HTTP result coverage for " required[i])
+  split("200:none 400:BadDigest 400:InvalidPart 400:InvalidRequest 400:EntityTooLarge 401:InvalidAccessKeyId 403:AccessDenied 404:NoSuchBucket 404:NoSuchUpload 409:OperationAborted 429:SlowDown 500:InternalError 502:BadGateway 503:SlowDown 504:RequestTimeout 400:missing", required, " ")
+  for (i in required) {
+    split(required[i], pair, ":")
+    if (!(pair[1] SUBSEP pair[2] in semantic_seen))
+      fail("missing UploadPart status/code coverage for " required[i])
+  }
+  if (NR - 1 < 46) fail("UploadPart fixture is unexpectedly small")
+  exit failed
+}
+' "$UPLOAD_FIXTURE"
 
 printf '%s\n' "composable client fixtures: OK"

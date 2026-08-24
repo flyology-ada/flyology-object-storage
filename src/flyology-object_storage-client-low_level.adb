@@ -10996,6 +10996,120 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "malformed UploadPart response";
    end Decode_Upload_Part_Response;
 
+   function Decode_Upload_Part_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Upload_Part_Outcome
+   is
+      Status : constant Flyology.HTTP.Status_Code :=
+        Flyology.HTTP.Client.Status (Response);
+
+      function Singleton_Header
+        (Name : String; Required : Boolean := False) return String
+      is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 or else (Required and then Count /= 1) then
+            raise Invalid_Response with
+              "invalid UploadPart response header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else Value'Length >
+                Maximum_Upload_Part_Response_Header_Bytes
+            then
+               raise Invalid_Response with
+                 "invalid UploadPart response header value";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+
+      Request_ID : constant String := Singleton_Header ("x-amz-request-id");
+      Host_ID : constant String := Singleton_Header ("x-amz-id-2");
+   begin
+      if Prepared.Operation /= Upload_Part_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      if Status = 200 then
+         declare
+            function H
+              (Name : String; Required : Boolean := False)
+               return US.Unbounded_String is
+              (US.To_Unbounded_String (Singleton_Header (Name, Required)));
+
+            Headers : constant Upload_Part_Result :=
+              (Entity_Tag => H ("etag", Required => True),
+               Checksum_CRC32 => H ("x-amz-checksum-crc32"),
+               Checksum_CRC32C => H ("x-amz-checksum-crc32c"),
+               Checksum_CRC64NVME => H ("x-amz-checksum-crc64nvme"),
+               Checksum_SHA1 => H ("x-amz-checksum-sha1"),
+               Checksum_SHA256 => H ("x-amz-checksum-sha256"),
+               Checksum_SHA512 => H ("x-amz-checksum-sha512"),
+               Checksum_MD5 => H ("x-amz-checksum-md5"),
+               Checksum_XXHASH64 => H ("x-amz-checksum-xxhash64"),
+               Checksum_XXHASH3 => H ("x-amz-checksum-xxhash3"),
+               Checksum_XXHASH128 => H ("x-amz-checksum-xxhash128"),
+               Server_Side_Encryption =>
+                 H ("x-amz-server-side-encryption"),
+               SSE_Customer_Algorithm => H
+                 ("x-amz-server-side-encryption-customer-algorithm"),
+               SSE_Customer_Key_MD5 => H
+                 ("x-amz-server-side-encryption-customer-key-md5"),
+               SSE_KMS_Key_ID => H
+                 ("x-amz-server-side-encryption-aws-kms-key-id"),
+               Bucket_Key_Enabled => H
+                 ("x-amz-server-side-encryption-bucket-key-enabled"),
+               Request_Charged => H ("x-amz-request-charged"));
+            Outcome : constant Upload_Part_Outcome :=
+              Decode_Upload_Part_Response
+                (Status, Payload, Headers, Request_ID, Host_ID, Limits);
+            Returned_Checksum : constant String :=
+              (case Prepared.Requested_Upload_Checksum_Algorithm is
+                  when No_Checksum => "",
+                  when Checksum_CRC32 =>
+                    US.To_String (Outcome.Result.Checksum_CRC32),
+                  when Checksum_CRC32C =>
+                    US.To_String (Outcome.Result.Checksum_CRC32C),
+                  when Checksum_CRC64NVME =>
+                    US.To_String (Outcome.Result.Checksum_CRC64NVME),
+                  when Checksum_SHA1 =>
+                    US.To_String (Outcome.Result.Checksum_SHA1),
+                  when Checksum_SHA256 =>
+                    US.To_String (Outcome.Result.Checksum_SHA256),
+                  when Checksum_SHA512 =>
+                    US.To_String (Outcome.Result.Checksum_SHA512),
+                  when Checksum_MD5 =>
+                    US.To_String (Outcome.Result.Checksum_MD5),
+                  when Checksum_XXHASH64 =>
+                    US.To_String (Outcome.Result.Checksum_XXHASH64),
+                  when Checksum_XXHASH3 =>
+                    US.To_String (Outcome.Result.Checksum_XXHASH3),
+                  when Checksum_XXHASH128 =>
+                    US.To_String (Outcome.Result.Checksum_XXHASH128));
+         begin
+            if Prepared.Requested_Upload_Checksum_Algorithm /= No_Checksum
+              and then Returned_Checksum /=
+                US.To_String (Prepared.Requested_Upload_Checksum_Value)
+            then
+               raise Invalid_Response with
+                 "UploadPart response checksum does not match request";
+            end if;
+            return Outcome;
+         end;
+      end if;
+      return Decode_Upload_Part_Response
+        (Status, Payload, (others => <>), Request_ID, Host_ID, Limits);
+   end Decode_Upload_Part_Complete_Response;
+
    function Execute_Upload_Part
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -11021,113 +11135,15 @@ package body Flyology.Object_Storage.Client.Low_Level is
              (Client, Prepared.Message, Source, Timeout, Token);
          Status : constant Flyology.HTTP.Status_Code :=
            Flyology.HTTP.Client.Status (Response);
-         function Singleton_Header
-           (Name : String; Required : Boolean := False) return String
-         is
-            Count : constant Natural :=
-              Flyology.HTTP.Client.Header_Count (Response, Name);
-         begin
-            if Count > 1 or else (Required and then Count /= 1) then
-               raise Invalid_Response with
-                 "invalid UploadPart response header multiplicity";
-            elsif Count = 0 then
-               return "";
-            end if;
-            declare
-               Value : constant String :=
-                 Flyology.HTTP.Client.Header (Response, Name);
-            begin
-               if Value'Length = 0
-                 or else Value'Length >
-                   Maximum_Upload_Part_Response_Header_Bytes
-               then
-                  raise Invalid_Response with
-                    "invalid UploadPart response header value";
-               end if;
-               return Value;
-            end;
-         end Singleton_Header;
-
-         Request_ID : constant String := Singleton_Header ("x-amz-request-id");
-         Host_ID : constant String := Singleton_Header ("x-amz-id-2");
          Maximum : constant Natural :=
            (if Status = 200 then 1 else Limits.Maximum_Document_Bytes);
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Maximum, Token);
       begin
-         if Status = 200 then
-            declare
-               function H
-                 (Name : String; Required : Boolean := False)
-                  return US.Unbounded_String is
-                 (US.To_Unbounded_String
-                    (Singleton_Header (Name, Required)));
-
-               Headers : constant Upload_Part_Result :=
-                 (Entity_Tag => H ("etag", Required => True),
-                  Checksum_CRC32 => H ("x-amz-checksum-crc32"),
-                  Checksum_CRC32C => H ("x-amz-checksum-crc32c"),
-                  Checksum_CRC64NVME => H ("x-amz-checksum-crc64nvme"),
-                  Checksum_SHA1 => H ("x-amz-checksum-sha1"),
-                  Checksum_SHA256 => H ("x-amz-checksum-sha256"),
-                  Checksum_SHA512 => H ("x-amz-checksum-sha512"),
-                  Checksum_MD5 => H ("x-amz-checksum-md5"),
-                  Checksum_XXHASH64 => H ("x-amz-checksum-xxhash64"),
-                  Checksum_XXHASH3 => H ("x-amz-checksum-xxhash3"),
-                  Checksum_XXHASH128 => H ("x-amz-checksum-xxhash128"),
-                  Server_Side_Encryption =>
-                    H ("x-amz-server-side-encryption"),
-                  SSE_Customer_Algorithm => H
-                    ("x-amz-server-side-encryption-customer-algorithm"),
-                  SSE_Customer_Key_MD5 => H
-                    ("x-amz-server-side-encryption-customer-key-md5"),
-                  SSE_KMS_Key_ID => H
-                    ("x-amz-server-side-encryption-aws-kms-key-id"),
-                  Bucket_Key_Enabled => H
-                    ("x-amz-server-side-encryption-bucket-key-enabled"),
-                  Request_Charged => H ("x-amz-request-charged"));
-               Outcome : constant Upload_Part_Outcome :=
-                 Decode_Upload_Part_Response
-                   (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-                    Request_ID, Host_ID, Limits);
-               Returned_Checksum : constant String :=
-                 (case Prepared.Requested_Upload_Checksum_Algorithm is
-                     when No_Checksum => "",
-                     when Checksum_CRC32 =>
-                       US.To_String (Outcome.Result.Checksum_CRC32),
-                     when Checksum_CRC32C =>
-                       US.To_String (Outcome.Result.Checksum_CRC32C),
-                     when Checksum_CRC64NVME =>
-                       US.To_String (Outcome.Result.Checksum_CRC64NVME),
-                     when Checksum_SHA1 =>
-                       US.To_String (Outcome.Result.Checksum_SHA1),
-                     when Checksum_SHA256 =>
-                       US.To_String (Outcome.Result.Checksum_SHA256),
-                     when Checksum_SHA512 =>
-                       US.To_String (Outcome.Result.Checksum_SHA512),
-                     when Checksum_MD5 =>
-                       US.To_String (Outcome.Result.Checksum_MD5),
-                     when Checksum_XXHASH64 =>
-                       US.To_String (Outcome.Result.Checksum_XXHASH64),
-                     when Checksum_XXHASH3 =>
-                       US.To_String (Outcome.Result.Checksum_XXHASH3),
-                     when Checksum_XXHASH128 =>
-                       US.To_String (Outcome.Result.Checksum_XXHASH128));
-            begin
-               if Prepared.Requested_Upload_Checksum_Algorithm /= No_Checksum
-                 and then Returned_Checksum /=
-                   US.To_String (Prepared.Requested_Upload_Checksum_Value)
-               then
-                  raise Invalid_Response with
-                    "UploadPart response checksum does not match request";
-               end if;
-               return Outcome;
-            end;
-         end if;
-         return Decode_Upload_Part_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), (others => <>),
-            Request_ID, Host_ID, Limits);
+         return Decode_Upload_Part_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
