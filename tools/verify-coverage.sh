@@ -72,7 +72,9 @@ do
       "$PROJECT_DIR/tests/src/object_storage_test_cases.adb" \
       "$PROJECT_DIR/tests/src/s3_http_socket_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_controls_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_put_bucket_controls_corpus.adb"
+      "$PROJECT_DIR/tests/src/s3_put_bucket_controls_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_object_torrent_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_object_torrent_socket_corpus.adb"
   fi
   if [ "$server_state" = covered ]; then
     require_evidence "$operation_name" server "$pattern" \

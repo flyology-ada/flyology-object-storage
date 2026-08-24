@@ -1056,6 +1056,115 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null)
       return Flyology.HTTP.Client.Response;
 
+   --  Every non-resource member in the pinned GetObjectTorrent request.
+   --  @field Request_Payer Empty or the sole modeled value, requester
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Get_Object_Torrent_Parameters is record
+      Request_Payer         : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare one exact signed GetObjectTorrent request.  Successful torrent
+   --  bytes are not retained in the prepared request or response metadata.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket containing the requested object
+   --  @param Key Object key whose torrent representation is requested
+   --  @param Parameters Optional payer and owner preconditions
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared request with no retained body bytes
+   function Prepare_Get_Object_Torrent
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Get_Object_Torrent_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   --  The sole non-body member in the pinned GetObjectTorrent output.
+   --  @field Request_Charged Empty or the modeled requester value
+   type Get_Object_Torrent_Result is record
+      Request_Charged : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Terminal interpretation of a GetObjectTorrent response head.
+   --  @enum Torrent_Opened Exact 200 response with an unread streaming body
+   --  @enum Get_Object_Torrent_Rejected Bounded non-200 S3 rejection
+   type Get_Object_Torrent_Outcome_Kind is
+     (Torrent_Opened, Get_Object_Torrent_Rejected);
+
+   --  Typed response head.  Torrent_Opened deliberately carries no body:
+   --  the caller consumes the still-open limited HTTP response incrementally.
+   --  Status defaults to the established low-level rejection initializer;
+   --  the value is local state and is never transmitted as an HTTP status.
+   --  @field Kind Whether the response opened a body or returned an S3 error
+   --  @field Status Exact HTTP response status
+   --  @field Result Successful response-head metadata
+   --  @field Error Structured rejected-response diagnostics
+   type Get_Object_Torrent_Outcome
+     (Kind : Get_Object_Torrent_Outcome_Kind :=
+        Get_Object_Torrent_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Torrent_Opened =>
+            Result : Get_Object_Torrent_Result;
+         when Get_Object_Torrent_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode a complete response head plus a bounded error body.  On 200,
+   --  Error_Payload must be empty because the successful torrent body remains
+   --  owned by the streaming HTTP response.
+   --  @param Status Exact HTTP response status
+   --  @param Error_Payload Empty on success or complete bounded error body
+   --  @param Request_Charged Optional modeled response header
+   --  @param Request_ID Optional physical request identifier
+   --  @param Host_ID Optional physical host identifier
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Validated response head or structured S3 rejection
+   function Decode_Get_Object_Torrent_Response_Head
+     (Status          : Flyology.HTTP.Status_Code;
+      Error_Payload   : String;
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Torrent_Outcome;
+
+   --  Execute one exact typed request and return its unconsumed response.  The
+   --  timeout default is the established synchronous low-level client default;
+   --  retaining it preserves cross-operation behavior and caller
+   --  compatibility.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Request returned by Prepare_Get_Object_Torrent
+   --  @param Timeout Whole-exchange timeout including later response reads
+   --  @param Token Optional cancellation source
+   --  @return Limited streaming HTTP response with an unread body
+   function Execute_Get_Object_Torrent
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Flyology.HTTP.Client.Response;
+
+   --  Validate physical response-header multiplicity.  Successful body bytes
+   --  remain unread; rejected bodies are consumed only within Limits.
+   --  @param Response Limited HTTP response returned by the matching executor
+   --  @param Token Optional cancellation source for bounded error-body reads
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Validated response head or structured S3 rejection
+   function Decode_Get_Object_Torrent_Response_Head
+     (Response : in out Flyology.HTTP.Client.Response;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Torrent_Outcome;
+
    --  Every non-resource member in the pinned GetObjectAttributes request.
    --  Presence flags preserve omission for optional numeric headers.
    type Get_Object_Attributes_Parameters is record
@@ -3041,6 +3150,7 @@ private
       Delete_Bucket_Configuration_Operation,
       Get_Bucket_Control_Operation,
       Put_Bucket_Control_Operation,
+      Get_Object_Torrent_Operation,
       Delete_Object_Operation,
       Delete_Objects_Operation,
       Create_Multipart_Operation,

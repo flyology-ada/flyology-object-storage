@@ -5151,6 +5151,176 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Client, Prepared.Message, Timeout, Token);
    end Execute_Get_Object;
 
+   function Prepare_Get_Object_Torrent
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Get_Object_Torrent_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Owner : constant String :=
+        US.To_String (Parameters.Expected_Bucket_Owner);
+      Optional_Count : constant Natural :=
+        Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (Owner'Length > 0);
+      Values : Model_Value_Array (1 .. 2 + Optional_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+   begin
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else Request_Payer not in "" | "requester"
+        or else not Valid_List_Response_Header_Text (Owner)
+      then
+         raise Invalid_Request with "invalid GetObjectTorrent parameters";
+      end if;
+      Add ("Bucket", Bucket);
+      Add ("Key", Key);
+      if Request_Payer'Length > 0 then
+         Add ("RequestPayer", Request_Payer);
+      end if;
+      if Owner'Length > 0 then
+         Add ("ExpectedBucketOwner", Owner);
+      end if;
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Get_Object_Torrent_Operation, Origin, Style, Values, "", False,
+         SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := Get_Object_Torrent_Operation;
+      end return;
+   exception
+      when Constraint_Error =>
+         raise Invalid_Request with "invalid GetObjectTorrent parameters";
+   end Prepare_Get_Object_Torrent;
+
+   function Decode_Get_Object_Torrent_Response_Head
+     (Status          : Flyology.HTTP.Status_Code;
+      Error_Payload   : String;
+      Request_Charged : String := "";
+      Request_ID      : String := "";
+      Host_ID         : String := "";
+      Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Torrent_Outcome
+   is
+   begin
+      if not Valid_List_Response_Header_Text (Request_Charged)
+        or else not Valid_List_Response_Header_Text (Request_ID)
+        or else not Valid_List_Response_Header_Text (Host_ID)
+        or else Request_Charged not in "" | "requester"
+      then
+         raise Invalid_Response with
+           "invalid GetObjectTorrent response headers";
+      elsif Status = 200 then
+         if Error_Payload'Length /= 0 then
+            raise Invalid_Response with
+              "GetObjectTorrent success body was retained as an error";
+         end if;
+         return
+           (Kind   => Torrent_Opened,
+            Status => Status,
+            Result =>
+              (Request_Charged =>
+                 US.To_Unbounded_String (Request_Charged)));
+      end if;
+      return
+        (Kind   => Get_Object_Torrent_Rejected,
+         Status => Status,
+         Error  => Error_Response
+           (Error_Payload, Request_ID, Host_ID, Limits));
+   exception
+      when S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetObjectTorrent error response";
+   end Decode_Get_Object_Torrent_Response_Head;
+
+   function Execute_Get_Object_Torrent
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Flyology.HTTP.Client.Response
+   is
+   begin
+      if Prepared.Operation /= Get_Object_Torrent_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Get_Object_Torrent_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      return Flyology.HTTP.Client.Execute
+        (Client, Prepared.Message, Timeout, Token);
+   end Execute_Get_Object_Torrent;
+
+   function Decode_Get_Object_Torrent_Response_Head
+     (Response : in out Flyology.HTTP.Client.Response;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Torrent_Outcome
+   is
+      Status : constant Flyology.HTTP.Status_Code :=
+        Flyology.HTTP.Client.Status (Response);
+
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "duplicate GetObjectTorrent response header";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else not Valid_List_Response_Header_Text (Value)
+            then
+               raise Invalid_Response with
+                 "invalid GetObjectTorrent response header";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+
+      Request_Charged : constant String :=
+        Singleton_Header ("x-amz-request-charged");
+      Request_ID : constant String := Singleton_Header ("x-amz-request-id");
+      Host_ID : constant String := Singleton_Header ("x-amz-id-2");
+   begin
+      if Status = 200 then
+         return Decode_Get_Object_Torrent_Response_Head
+           (Status, "", Request_Charged, Request_ID, Host_ID, Limits);
+      end if;
+      declare
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Get_Object_Torrent_Response_Head
+           (Status, Flyology.Bytes.To_Byte_String (Payload), Request_Charged,
+            Request_ID, Host_ID, Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "GetObjectTorrent error exceeds XML limit";
+   end Decode_Get_Object_Torrent_Response_Head;
+
    function Decode_Get_Object_Complete_Response
      (Response      : Flyology.HTTP.Client.Response;
       Error_Payload : String;

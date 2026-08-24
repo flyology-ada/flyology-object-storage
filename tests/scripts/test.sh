@@ -13,6 +13,7 @@ python3 "$PROJECT_DIR/tools/verify-delete-bucket-cors-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-delete-bucket-configurations-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-bucket-controls-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-put-bucket-controls-preparation.py"
+python3 "$PROJECT_DIR/tools/verify-get-object-torrent-preparation.py"
 cd "$PROJECT_DIR/tests"
 alr -n build
 
@@ -151,6 +152,8 @@ do
   ./bin/s3_delete_bucket_configurations_corpus
   ./bin/s3_get_bucket_controls_corpus
   ./bin/s3_put_bucket_controls_corpus
+  ./bin/s3_get_object_torrent_corpus
+  ./bin/s3_get_object_torrent_socket_corpus
   ./bin/s3_http_socket_corpus
   ./bin/s3_create_session_tls_corpus
   ./bin/s3_transfer_many_corpus
