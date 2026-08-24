@@ -4,8 +4,9 @@ This record freezes the pinned model inventory, qualified synchronous client,
 and strict authenticated server-admission boundary. Backend initiation
 deliberately retains its narrower policy support; the server admits that
 supported subset and explicitly rejects every validated unsupported policy
-before creating an upload. The server ledger cell remains partial until those
-modeled advanced policies are positively supported.
+before creating an upload. The server ledger cell is covered for this
+authenticated general-purpose capability profile; advanced policies remain
+explicit exclusions rather than silently accepted partial behavior.
 
 ## Pinned authority
 
@@ -151,9 +152,12 @@ silently drops such a field.
 The strict signed corpus exercises malformed and valid-but-unsupported values,
 authentication precedence, a nonempty request body, absence of any upload
 after the rejection matrix, the exact derived Content-Type aggregate boundary,
-and successful creation/abort at that boundary. This qualifies the admission
-behavior but does not promote the partial server cell or claim persistence and
-final application of the explicitly excluded advanced policies.
+and successful creation/abort at that boundary. The files and SQLite black-box
+lanes additionally create a SHA-256 multipart upload, publish one signed part,
+terminate the server, reopen the same storage root, rediscover the upload and
+part through authenticated listings, complete it, and verify exact bytes and
+the returned version identity. This qualifies the covered server profile but
+does not claim persistence or application of explicitly excluded policies.
 
 ## Frozen gate evidence
 

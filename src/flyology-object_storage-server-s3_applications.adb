@@ -5355,6 +5355,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         end case;
                         Response.Checksum_Type := US.To_Unbounded_String
                           (Wire_Method (Info.Checksum.Method));
+                        if US.Length (Info.Version) > 0 then
+                           Apps.Set_Header
+                             (X, "x-amz-version-id",
+                              US.To_String (Info.Version));
+                        end if;
                         Apps.Respond
                           (X, 200, "application/xml",
                            Multipart.Serialize_Complete_Result (Response));

@@ -36,7 +36,7 @@ Disposition meanings:
 | 6 | `ContentEncoding` / `Content-Encoding` | Persist on `REPLACE`; copy on `COPY`. |
 | 7 | `ContentLanguage` / `Content-Language` | Persist on `REPLACE`; copy on `COPY`. |
 | 8 | `ContentType` / `Content-Type` | Persist on `REPLACE`; copy on `COPY`; default replacement is `application/octet-stream`. |
-| 9 | `CopySource` / `x-amz-copy-source` | Parse strictly, including one optional bounded `versionId`, and select that immutable current, null, or exact source snapshot. Memory and SQLite support retained exact versions; files supports current and null and rejects opaque exact IDs. |
+| 9 | `CopySource` / `x-amz-copy-source` | Parse strictly, including one optional bounded `versionId`, and select that immutable current, null, or exact source snapshot on memory, files, and SQLite. |
 | 10 | `CopySourceIfMatch` / `x-amz-copy-source-if-match` | Evaluate strongly against that source snapshot. |
 | 11 | `CopySourceIfModifiedSince` / `x-amz-copy-source-if-modified-since` | Parse all recipient HTTP dates and evaluate against that source snapshot. |
 | 12 | `CopySourceIfNoneMatch` / `x-amz-copy-source-if-none-match` | Evaluate weakly against that source snapshot; failure is 412. |
@@ -93,8 +93,8 @@ Likewise, `x-amz-tagging` is accepted only with `TaggingDirective=REPLACE`.
 |---:|---|---|
 | 1 | `CopyObjectResult` body | Return only after complete atomic publication; a 200 `Error` body remains a typed rejection. |
 | 2 | `Expiration` header | Omit: lifecycle expiration is not modeled. |
-| 3 | `CopySourceVersionId` header | Emit from the same immutable source snapshot when its identity is authoritative: exact opaque IDs for enabled memory/SQLite generations and `null` for null generations. Omit for an unconfigured current source. |
-| 4 | `VersionId` header | Emit from the same destination publication: exact opaque IDs for enabled memory/SQLite destinations and `null` for suspended memory/files/SQLite destinations. Omit for an unconfigured destination. Files rejects enabled publication before rename. |
+| 3 | `CopySourceVersionId` header | Emit from the same immutable source snapshot when its identity is authoritative: exact opaque IDs for enabled memory/files/SQLite generations and `null` for null generations. Omit for an unconfigured current source. |
+| 4 | `VersionId` header | Emit from the same destination publication: exact opaque IDs for enabled memory/files/SQLite destinations and `null` for suspended memory/files/SQLite destinations. Omit for an unconfigured destination. |
 | 5 | `ServerSideEncryption` header | Omit because encryption requests are rejected. |
 | 6 | `SSECustomerAlgorithm` header | Omit because SSE-C requests are rejected. |
 | 7 | `SSECustomerKeyMD5` header | Omit because SSE-C requests are rejected. |
@@ -134,6 +134,15 @@ selection and destination publication boundaries. The server therefore emits
 both version headers without a racy follow-up HEAD. Every failure clears both
 identities; an ambiguous post-publication backend failure remains a failure
 and does not expose a success identity.
+
+The authenticated general-purpose server cell is covered for this complete
+accepted profile. ACLs beyond `private`, encryption, Requester Pays, Object
+Lock, and non-`STANDARD` storage classes remain explicit capability exclusions:
+their valid wire forms receive authenticated `NotImplemented` and never enter
+the backend. The durable files and SQLite black-box lanes exact-select an older
+source generation, copy it into a new retained destination generation, restart
+the server on the same root, and require both returned identities and exact
+destination bytes before generation-bound cleanup.
 
 `Maximum_Copy_Object_Size` is exactly `5 * 1_024 * 1_024 * 1_024` bytes. The
 pure boundary predicate accepts that value and rejects the following byte, so

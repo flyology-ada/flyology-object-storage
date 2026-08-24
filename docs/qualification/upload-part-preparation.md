@@ -1,10 +1,11 @@
 # UploadPart qualification
 
-This record ties the covered UploadPart backend, client, and corpus cells to
-executable evidence. The authenticated Flyology server remains `partial`
-because it validates and explicitly rejects unsupported SSE-C and Requester
-Pays controls and does not accept `aws-chunked` request bodies. Those exclusions
-are not silently ignored and are not counted as positive support.
+This record ties the covered UploadPart backend, client, server, and corpus
+cells to executable evidence. The authenticated general-purpose server
+validates and explicitly rejects unsupported SSE-C and Requester Pays controls
+and does not accept `aws-chunked` request bodies. Those are explicit capability
+and transport-profile exclusions; they are not silently ignored or counted as
+positive support.
 
 ## Authority and scope
 
@@ -70,13 +71,21 @@ headers, physical checksum trailers, expected owner, payer, and SSE-C request
 groups before publication. It checks checksum selection against initiation
 state at the atomic publication boundary. Unsupported policy is authenticated,
 strictly validated, and returned as explicit `NotImplemented`; `aws-chunked`
-content encoding is likewise excluded. The server ledger cell therefore
-remains `partial`.
+content encoding is likewise excluded. The covered server cell qualifies every
+accepted ordinary UploadPart request through complete streaming validation and
+atomic backend publication.
 
 The design intentionally does not claim SSE-C, Requester Pays, directory
-buckets, access points, or object versioning. Unsupported policy must be
+buckets, or access points; UploadPart itself has no object-version selector.
+Unsupported policy must be
 authenticated, strictly validated, and explicitly rejected. It must never be
 accepted and discarded.
+
+The durable files and SQLite black-box lanes create a SHA-256 multipart upload,
+stream one signed part, stop the server, reopen the same storage root, and
+rediscover both upload and part through authenticated bounded listings. They
+then complete the one-part object, require its exact SHA-256 composite value,
+opaque enabled-version identity, and exact bytes, and remove that generation.
 
 For the unsupported SSE-C boundary, the server validates the complete triplet,
 canonical key/digest encodings, key MD5, and HTTPS before returning an

@@ -4,10 +4,12 @@ The authoritative inventory is botocore S3 revision
 `36c34f15391da01cd717c73c0fffa747c9889768`, service-model SHA-256
 `429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9`.
 Its `PutObjectRequest` has 46 members and `PutObjectOutput` has 22 members.
-The backend, client, and corpus ledger cells are covered. The server remains
-partial because it explicitly rejects 17 modeled controls, has no signed
-inner `aws-chunked` signature-chain decoder, and intentionally requires the
-physical `x-amz-content-sha256` header to appear in SigV4 `SignedHeaders`.
+The backend, client, server, and corpus ledger cells are covered for the
+authenticated general-purpose bucket profile. The server explicitly rejects
+17 modeled controls, has no signed inner `aws-chunked` signature-chain decoder,
+and intentionally requires the physical `x-amz-content-sha256` header to appear
+in SigV4 `SignedHeaders`; these are explicit capability and transport-profile
+exclusions rather than silent or partial implementations of accepted requests.
 
 The generated-model inventory test fails closed on member count, order, or
 name drift. Its arithmetic partition is a target inventory; independent
@@ -89,7 +91,7 @@ rather than a payload-hash mismatch proves that the source was not consumed.
 | 12 | `ChecksumXXHASH128` | Emit/decode only as one canonical full-object digest. |
 | 13 | `ChecksumType` | Require `FULL_OBJECT` when a checksum is present; normalize an omitted external type to full-object. |
 | 14 | `ServerSideEncryption` | Strict external decode; omitted by the Flyology server. |
-| 15 | `VersionId` | Bounded decode; omitted for unversioned objects, emitted as the exact retained identity for enabled memory/SQLite buckets, and emitted as `null` for suspended memory/files/SQLite buckets. Files rejects enabled publication before rename because it has no retained-generation data plane. |
+| 15 | `VersionId` | Bounded decode; omitted for unversioned objects, emitted as the exact retained identity for enabled memory/files/SQLite buckets, and emitted as `null` for suspended memory/files/SQLite buckets. |
 | 16 | `SSECustomerAlgorithm` | Strict external decode and relationship checks; omitted by Flyology. |
 | 17 | `SSECustomerKeyMD5` | Canonical Base64 external decode; omitted by Flyology. |
 | 18 | `SSEKMSKeyId` | Bounded external decode and relationship checks; omitted by Flyology. |
@@ -116,10 +118,9 @@ prior tuple byte-for-byte and information-for-information unchanged.
 The backend returns a success-only `Version_Identity` from that same protected,
 rename, or transactional publication boundary. It distinguishes absence from
 the S3 `null` sentinel, so the authenticated server never performs a racy
-follow-up HEAD merely to construct `x-amz-version-id`. The shared memory/SQLite
-state-machine corpus checks unconfigured, enabled, suspended, replacement, and
-failed-condition identities; the files corpus checks enabled fail-before-rename
-and suspended null publication.
+follow-up HEAD merely to construct `x-amz-version-id`. The shared
+memory/files/SQLite state-machine corpus checks unconfigured, enabled,
+suspended, replacement, and failed-condition identities.
 
 Ordinary complete objects accept all ten pinned full-body algorithms. This is
 deliberately separate from the multipart algorithm/type predicate. HeadObject
@@ -154,8 +155,11 @@ The route accepts ordinary fixed-length and HTTP transfer-chunked bodies. It
 fails closed on `Content-Encoding: aws-chunked`: genuine SigV4 streaming needs
 an inner chunk-frame and signature-chain decoder, and stripping the token while
 hashing encoded framing bytes would be unsafe. The 17 modeled unsupported
-controls above are authenticated `NotImplemented`, which is why the server
-ledger cell remains partial even though their dispositions are explicit.
+controls above are authenticated `NotImplemented`. The covered server cell
+means that every accepted general-purpose PutObject request is completely
+authenticated, streamed, validated, and published; it does not claim the
+excluded ACL, encryption, Object Lock, billing, directory, or inner streaming-
+signature capabilities.
 
 HeadObject and GetObject project supported retained metadata from the same
 immutable `Object_Information` snapshot as the ETag, checksum, and body.
@@ -164,6 +168,12 @@ HEAD 304 carries validators but no stored representation metadata; 412 and 416
 also omit stored encoding, disposition, expiry, redirect, and user metadata.
 `x-amz-tagging-count` is omitted because tags are not present in the atomic
 read-information snapshot; the server does not invent a racy count.
+
+The durable files and SQLite black-box lanes create a version-enabled bucket,
+publish two signed PutObject generations, stop the server, reopen the same
+storage root, and require their opaque identities, newest-first listing, exact
+older bytes and attributes, and current newer bytes before cleanup. This is in
+addition to the strict signed admission and raw-socket framing corpora.
 
 ## External oracle profiles
 

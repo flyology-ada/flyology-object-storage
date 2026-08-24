@@ -48,9 +48,16 @@ The direct application corpus covers:
 
 Valid Requester Pays and encryption requests remain explicit typed capability
 exclusions. This route does not claim trailer-based completion manifests or a
-directory-bucket session contract. PutObject and UploadPart retain their own
-partial server status until their wider streaming option and protocol matrices
-close.
+directory-bucket session contract. PutObject and UploadPart are covered for
+their authenticated general-purpose profiles; inner SigV4 `aws-chunked`
+framing, advanced policy controls, and HTTP/2 or HTTP/3 server qualification
+remain separate capabilities.
+
+For an enabled versioned bucket, successful completion emits the exact opaque
+`x-amz-version-id` returned by the same backend publication. The durable files
+and SQLite black-box lanes keep an initiation and signed part live across a
+server restart, complete afterward, and require that identity in a
+generation-bound whole GET before deleting it.
 
 ## Gate
 

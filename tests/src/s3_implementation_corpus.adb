@@ -3032,15 +3032,37 @@ procedure S3_Implementation_Corpus is
          Probe        : constant String := Bucket & "-durable-versions";
          Object_Key   : constant String := "retained/object";
          Batch_Key    : constant String := "retained/batch-peer";
+         Copy_Key     : constant String := "retained/copied";
+         Multipart_Key : constant String := "retained/multipart";
          First_Value  : aliased constant String := "durable-first";
          Second_Value : aliased constant String := "durable-second";
          Batch_Value  : aliased constant String := "durable-batch-peer";
+         --  Test-reference size: a one-part completion may be below the
+         --  nonfinal multipart minimum, while 4 KiB still crosses many source
+         --  read boundaries without making the restart oracle expensive.
+         Multipart_Value : aliased constant String :=
+           String'(1 .. 4 * 1_024 => 'm');
+         Multipart_Digest : constant Checksums.Digest_Value :=
+           Repeated_Digest
+             (Checksum_Policy.Core.SHA256, Multipart_Value'Length);
+         Multipart_Checksum : constant String :=
+           Checksums.Encode_Base64 (Multipart_Digest);
+         Multipart_Composite : constant Checksums.Digest_Value :=
+           Checksums.Composite
+             (Checksum_Policy.Core.SHA256,
+              Checksums.Digest_Array'(1 => Multipart_Digest));
+         Multipart_Composite_Raw : constant String :=
+           Checksums.Encode_Base64 (Multipart_Composite);
+         Multipart_Composite_Object : constant String :=
+           Checksums.Encode_Object
+             (Multipart_Composite, Checksum_Policy.Composite, 1);
          HTTP         : aliased HTTP_Client.Client (Capacity => 1);
          Identity     : constant Low_Level.Credentials :=
            Low_Level.Make_Credentials (Access_Key, Secret_Key);
          First_ID     : US.Unbounded_String;
          Second_ID    : US.Unbounded_String;
          Batch_ID     : US.Unbounded_String;
+         Copy_ID      : US.Unbounded_String;
          Marker_ID    : US.Unbounded_String;
          First_ETag   : US.Unbounded_String;
          --  Test-reference bound: each asserted page contains exactly the
@@ -3125,6 +3147,211 @@ procedure S3_Implementation_Corpus is
                  "durable version-addressed GetObjectAttributes mismatch";
             end if;
          end Require_Attributes;
+
+         procedure Require_Durable_Multipart is
+            Upload_ID : US.Unbounded_String;
+            Part_ETag : US.Unbounded_String;
+         begin
+            if Phase /= Verify_Durable_Restart then
+               declare
+                  Parameters : Low_Level.Create_Multipart_Parameters;
+               begin
+                  Parameters.Content_Type :=
+                    US.To_Unbounded_String ("application/octet-stream");
+                  Parameters.Checksum_Algorithm :=
+                    US.To_Unbounded_String ("SHA256");
+                  Parameters.Checksum_Type :=
+                    US.To_Unbounded_String ("COMPOSITE");
+                  declare
+                     Created : constant Low_Level.Create_Multipart_Outcome :=
+                       Transfers.Create_Multipart_Upload
+                         (HTTP, Origin, Probe, Multipart_Key, Parameters,
+                          Identity, Timeout => 30.0);
+                  begin
+                     if Created.Kind /= Low_Level.Created
+                       or else Created.Status /= 200
+                       or else US.Length (Created.Result.Upload_ID) = 0
+                     then
+                        raise Program_Error with
+                          "durable CreateMultipartUpload mismatch";
+                     end if;
+                     Upload_ID := Created.Result.Upload_ID;
+                  end;
+               end;
+
+               declare
+                  Parameters : Low_Level.Upload_Part_Parameters;
+                  Source     : Upload_Source (Multipart_Value'Access);
+               begin
+                  Parameters.Upload_ID := Upload_ID;
+                  Parameters.Part_Number := 1;
+                  Parameters.Payload_SHA256 := US.To_Unbounded_String
+                    (SigV4.SHA256_Hex (Multipart_Value));
+                  Parameters.Checksum_Algorithm :=
+                    US.To_Unbounded_String ("SHA256");
+                  Parameters.Checksum_SHA256 :=
+                    US.To_Unbounded_String (Multipart_Checksum);
+                  declare
+                     Uploaded : constant Low_Level.Upload_Part_Outcome :=
+                       Transfers.Upload_Part
+                         (HTTP, Origin, Probe, Multipart_Key, Parameters,
+                          Source, Identity, Timeout => 30.0);
+                  begin
+                     if Uploaded.Kind /= Low_Level.Part_Uploaded
+                       or else Uploaded.Status /= 200
+                       or else US.Length (Uploaded.Result.Entity_Tag) = 0
+                       or else US.To_String
+                         (Uploaded.Result.Checksum_SHA256) /=
+                           Multipart_Checksum
+                     then
+                        raise Program_Error with
+                          "durable UploadPart mismatch";
+                     end if;
+                  end;
+               end;
+            end if;
+
+            declare
+               Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+            begin
+               Parameters.Prefix := US.To_Unbounded_String (Multipart_Key);
+               Parameters.Max_Uploads := 1;
+               declare
+                  Listed : constant
+                    Low_Level.List_Multipart_Uploads_Outcome :=
+                      Transfers.List_Multipart_Uploads_Page
+                        (HTTP, Origin, Probe, Parameters, Identity,
+                         Timeout => 30.0);
+               begin
+                  if Listed.Kind /= Low_Level.Multipart_Uploads_Listed
+                    or else Listed.Status /= 200
+                    or else Listed.Result.Listing.Is_Truncated
+                    or else Listed.Result.Listing.Uploads.Length /= 1
+                    or else US.To_String
+                      (Listed.Result.Listing.Uploads (1).Key) /= Multipart_Key
+                    or else US.Length
+                      (Listed.Result.Listing.Uploads (1).Upload_ID) = 0
+                  then
+                     raise Program_Error with
+                       "durable multipart upload listing mismatch";
+                  end if;
+                  Upload_ID := Listed.Result.Listing.Uploads (1).Upload_ID;
+               end;
+            end;
+
+            declare
+               Parameters : Low_Level.List_Parts_Parameters;
+            begin
+               Parameters.Upload_ID := Upload_ID;
+               Parameters.Max_Parts := 1;
+               declare
+                  Listed : constant Low_Level.List_Parts_Outcome :=
+                    Transfers.List_Parts_Page
+                      (HTTP, Origin, Probe, Multipart_Key, Parameters,
+                       Identity, Timeout => 30.0);
+               begin
+                  if Listed.Kind /= Low_Level.Parts_Listed
+                    or else Listed.Status /= 200
+                    or else Listed.Result.Listing.Is_Truncated
+                    or else Listed.Result.Listing.Parts.Length /= 1
+                    or else Listed.Result.Listing.Parts (1).Number /= 1
+                    or else Listed.Result.Listing.Parts (1).Size /=
+                      Multipart_Value'Length
+                    or else US.To_String
+                      (Listed.Result.Listing.Parts (1).Checksum_SHA256) /=
+                        Multipart_Checksum
+                    or else US.Length
+                      (Listed.Result.Listing.Parts (1).Entity_Tag) = 0
+                  then
+                     raise Program_Error with
+                       "durable multipart part listing mismatch";
+                  end if;
+                  Part_ETag := Listed.Result.Listing.Parts (1).Entity_Tag;
+               end;
+            end;
+
+            if Phase = Prepare_Durable_Restart then
+               return;
+            end if;
+
+            declare
+               Completion : Multipart.Complete_Multipart_Upload_Request;
+               Parameters : Low_Level.Complete_Multipart_Parameters;
+            begin
+               Completion.Parts.Append
+                 (Multipart.Completed_Part'
+                    (Number          => 1,
+                     Entity_Tag      => Part_ETag,
+                     Checksum_SHA256 =>
+                       US.To_Unbounded_String (Multipart_Checksum),
+                     others          => <>));
+               Parameters.Checksum_SHA256 :=
+                 US.To_Unbounded_String (Multipart_Composite_Raw);
+               Parameters.Checksum_Type :=
+                 US.To_Unbounded_String ("COMPOSITE");
+               Parameters.Mpu_Object_Size :=
+                 (Is_Set => True, Value => Multipart_Value'Length);
+               declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Complete_Multipart_Upload
+                      (Origin, Low_Level.Path_Style, Probe, Multipart_Key,
+                       US.To_String (Upload_ID), Completion, Parameters,
+                       Identity, "us-east-1", Timestamp);
+                  Completed : constant Low_Level.Complete_Multipart_Outcome :=
+                    Low_Level.Execute_Complete_Multipart_Upload
+                      (HTTP, Prepared, Timeout => 30.0);
+               begin
+                  if Completed.Kind /= Low_Level.Completed
+                    or else Completed.Status /= 200
+                    or else US.To_String (Completed.Result.Key) /=
+                      Multipart_Key
+                    or else US.To_String
+                      (Completed.Result.Checksum_SHA256) /=
+                        Multipart_Composite_Object
+                    or else US.Length (Completed.Result.Version_ID) = 0
+                  then
+                     raise Program_Error with
+                       "durable CompleteMultipartUpload mismatch: kind=" &
+                       Completed.Kind'Image & " status=" &
+                       Completed.Status'Image &
+                       (if Completed.Kind = Low_Level.Completed
+                        then " key=" & US.To_String (Completed.Result.Key) &
+                          " checksum=" & US.To_String
+                            (Completed.Result.Checksum_SHA256) &
+                          " version=" & US.To_String
+                            (Completed.Result.Version_ID)
+                        else " code=" & US.To_String
+                          (Completed.Error.Code));
+                  end if;
+                  declare
+                     Whole : constant Client_Objects.Whole_Get_Outcome :=
+                       Client_Objects.Get_Whole
+                         (HTTP, Origin, Probe, Multipart_Key,
+                          Multipart_Value'Length, Identity,
+                          Version_ID =>
+                            US.To_String (Completed.Result.Version_ID),
+                          Timeout => 30.0);
+                     Removed : constant Client_Objects.Delete_Outcome :=
+                       Client_Objects.Delete
+                         (HTTP, Origin, Probe, Multipart_Key, Identity,
+                          Version_ID =>
+                            US.To_String (Completed.Result.Version_ID),
+                          Timeout => 30.0);
+                  begin
+                     if Whole.Kind /= Client_Objects.Whole_Object_Read
+                       or else Whole.Status /= 200
+                       or else Flyology.Bytes.To_Byte_String
+                         (Whole.Object_Bytes) /= Multipart_Value
+                       or else Removed.Kind /= Client_Objects.Object_Removed
+                       or else Removed.Status /= 204
+                     then
+                        raise Program_Error with
+                          "durable multipart completion bytes mismatch";
+                     end if;
+                  end;
+               end;
+            end;
+         end Require_Durable_Multipart;
       begin
          HTTP_Client.Configure (HTTP, Origin);
          if Phase /= Verify_Durable_Restart then
@@ -3198,6 +3425,69 @@ procedure S3_Implementation_Corpus is
             First_ETag := Page.Page.Versions (2).Entity_Tag;
          end;
 
+         if Phase /= Verify_Durable_Restart then
+            declare
+               Parameters : Low_Level.Copy_Object_Parameters;
+            begin
+               Parameters.Copy_Source := US.To_Unbounded_String
+                 (Probe & "/" & Object_Key & "?versionId=" &
+                  US.To_String (First_ID));
+               Parameters.Metadata_Directive :=
+                 US.To_Unbounded_String ("COPY");
+               Parameters.Tagging_Directive :=
+                 US.To_Unbounded_String ("COPY");
+               Parameters.Checksum_Algorithm :=
+                 US.To_Unbounded_String ("SHA256");
+               declare
+                  Prepared : constant Low_Level.Prepared_Request :=
+                    Low_Level.Prepare_Copy_Object
+                      (Origin, Low_Level.Path_Style, Probe, Copy_Key,
+                       Parameters, Identity, "us-east-1", Timestamp);
+                  Copied : constant Low_Level.Copy_Object_Outcome :=
+                    Low_Level.Execute_Copy_Object
+                      (HTTP, Prepared, Timeout => 30.0);
+               begin
+                  if Copied.Kind /= Low_Level.Object_Copied
+                    or else Copied.Status /= 200
+                    or else Copied.Result.Copy_Source_Version_ID /= First_ID
+                    or else US.Length (Copied.Result.Version_ID) = 0
+                    or else US.Length
+                      (Copied.Result.Copy_Result.Entity_Tag) = 0
+                    or else US.Length
+                      (Copied.Result.Copy_Result.Checksum_SHA256) = 0
+                  then
+                     raise Program_Error with
+                       "durable exact-source CopyObject mismatch";
+                  end if;
+               end;
+            end;
+         end if;
+
+         declare
+            --  Test-reference bound: the copied key has exactly one retained
+            --  generation and the page must therefore be complete.
+            Copy_Page_Bound : constant S3_Core.Page_Size := 1;
+            Page : constant Client_Objects.List_Versions_Outcome :=
+              Client_Objects.List_Versions_Page
+                (HTTP, Origin, Probe, Identity, Prefix => Copy_Key,
+                 Maximum => Copy_Page_Bound, Timeout => 30.0);
+         begin
+            if Page.Kind /= Client_Objects.Page_Available
+              or else Page.Status /= 200
+              or else Page.Page.Is_Truncated
+              or else Page.Page.Versions.Length /= 1
+              or else not Page.Page.Delete_Markers.Is_Empty
+              or else US.To_String (Page.Page.Versions (1).Key) /= Copy_Key
+              or else not Page.Page.Versions (1).Has_Version_ID
+              or else US.Length (Page.Page.Versions (1).Version_ID) = 0
+              or else not Page.Page.Versions (1).Is_Latest
+            then
+               raise Program_Error with
+                 "durable copied generation listing mismatch";
+            end if;
+            Copy_ID := Page.Page.Versions (1).Version_ID;
+         end;
+
          declare
             --  Test-reference bound: the peer key has exactly one retained
             --  generation and the page must therefore be complete.
@@ -3225,9 +3515,27 @@ procedure S3_Implementation_Corpus is
 
          Require_Whole (US.To_String (First_ID), First_Value);
          Require_Current (US.To_String (Second_ID), Second_Value);
+         declare
+            Copied : constant Client_Objects.Whole_Get_Outcome :=
+              Client_Objects.Get_Whole
+                (HTTP, Origin, Probe, Copy_Key, First_Value'Length, Identity,
+                 Version_ID => US.To_String (Copy_ID), Timeout => 30.0);
+         begin
+            if Copied.Kind /= Client_Objects.Whole_Object_Read
+              or else Copied.Status /= 200
+              or else US.To_String (Copied.Result.Version_ID) /=
+                US.To_String (Copy_ID)
+              or else Flyology.Bytes.To_Byte_String (Copied.Object_Bytes) /=
+                First_Value
+            then
+               raise Program_Error with
+                 "durable copied generation bytes mismatch";
+            end if;
+         end;
          Require_Attributes
            (US.To_String (First_ID), US.To_String (First_ETag),
             First_Value'Length);
+         Require_Durable_Multipart;
 
          if Phase = Prepare_Durable_Restart then
             HTTP_Client.Shutdown (HTTP);
@@ -3274,6 +3582,11 @@ procedure S3_Implementation_Corpus is
                  (Key        => US.To_Unbounded_String (Batch_Key),
                   Version_ID => Batch_ID,
                   others     => <>));
+            Request.Objects.Append
+              (Deletions.Object_Identifier'
+                 (Key        => US.To_Unbounded_String (Copy_Key),
+                  Version_ID => Copy_ID,
+                  others     => <>));
             declare
                Prepared : constant Low_Level.Prepared_Request :=
                  Low_Level.Prepare_Delete_Objects
@@ -3285,7 +3598,7 @@ procedure S3_Implementation_Corpus is
             begin
                if Removed.Kind /= Low_Level.Objects_Deleted
                  or else Removed.Status /= 200
-                 or else Removed.Result.Result.Deleted.Length /= 2
+                 or else Removed.Result.Result.Deleted.Length /= 3
                  or else not Removed.Result.Result.Errors.Is_Empty
                  or else US.To_String
                    (Removed.Result.Result.Deleted (1).Key) /= Object_Key
@@ -3297,6 +3610,11 @@ procedure S3_Implementation_Corpus is
                  or else Removed.Result.Result.Deleted (2).Version_ID /=
                    Batch_ID
                  or else Removed.Result.Result.Deleted (2).Delete_Marker.Is_Set
+                 or else US.To_String
+                   (Removed.Result.Result.Deleted (3).Key) /= Copy_Key
+                 or else Removed.Result.Result.Deleted (3).Version_ID /=
+                   Copy_ID
+                 or else Removed.Result.Result.Deleted (3).Delete_Marker.Is_Set
                then
                   raise Program_Error with
                     "durable exact-generation DeleteObjects mismatch";
