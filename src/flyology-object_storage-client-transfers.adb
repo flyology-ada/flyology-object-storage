@@ -199,6 +199,47 @@ package body Flyology.Object_Storage.Client.Transfers is
       If_Match_Initiated_Time : String := "";
       Timeout      : Duration := 30.0;
       Token        : access Flyology.Cancellation.Token := null)
+      return Scoped.Multipart_Abort_Result
+   is
+      Parameters : constant Low_Level.Abort_Multipart_Parameters :=
+        (Request_Payer => US.To_Unbounded_String (Request_Payer),
+         Expected_Bucket_Owner =>
+           US.To_Unbounded_String (Expected_Bucket_Owner),
+         If_Match_Initiated_Time =>
+           US.To_Unbounded_String (If_Match_Initiated_Time));
+      --  The abort parent, HTTP exchange, and HTTP's single active transport
+      --  child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Abort_Multipart_Operation :=
+           Scoped.Abort_Multipart_Upload
+             (Set'Access, Client'Access, Origin, Bucket, Key, Upload_ID,
+              Parameters, Identity, Flyology.HTTP.Client.Deadline_After
+                (Timeout),
+              Region, Style, Token);
+         Result : Scoped.Multipart_Abort_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Abort_Multipart_Upload;
+
+   function Abort_Multipart_Upload
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Upload_ID    : String;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Request_Payer : String := "";
+      Expected_Bucket_Owner : String := "";
+      If_Match_Initiated_Time : String := "";
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
       return Low_Level.Abort_Multipart_Outcome
    is
       Parameters : constant Low_Level.Abort_Multipart_Parameters :=

@@ -280,10 +280,11 @@ per chunk or retain a massive object.
 
 The completion-set-aware `Client.Scoped` layer currently covers conditional
 Put, whole and exact-range Get, Head, Delete, CreateMultipartUpload,
-UploadPart, and CompleteMultipartUpload. The typed synchronous overloads wait
-on those same owner-driven state machines. Multipart initiation uses a one-shot
-empty source, UploadPart moves one owned bounded buffer, and completion owns
-the exact serialized XML behind a one-shot source. Each preserves HTTP
+UploadPart, CompleteMultipartUpload, and AbortMultipartUpload. The typed
+synchronous overloads wait on those same owner-driven state machines.
+Multipart initiation and abort use one-shot empty sources, UploadPart moves one
+owned bounded buffer, and completion owns the exact serialized XML behind a
+one-shot source. Each preserves HTTP
 admission and mutation certainty: after possible admission, a lost or invalid
 response is unknown and must be reconciled before any retry.
 
@@ -292,6 +293,9 @@ server may have committed the object. Best-effort abort is cleanup, not
 rollback. The typed result therefore reports unknown completion after possible
 admission, including an error embedded in HTTP 200, and applications reconcile
 the destination object plus the exact upload before choosing retry or abort.
+Abort is likewise one-shot: only a complete validated 204 proves acceptance.
+Every service rejection or failure after possible admission remains unknown,
+and applications reconcile the exact upload read-only before any later action.
 The detailed policy is in
 [client transfers](docs/architecture/client-transfers.md).
 

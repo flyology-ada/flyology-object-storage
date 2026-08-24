@@ -90,6 +90,8 @@ procedure S3_Implementation_Corpus is
    use type Scoped.Part_Upload_Disposition;
    use type Scoped.Multipart_Completion_Result_Kind;
    use type Scoped.Multipart_Completion_Disposition;
+   use type Scoped.Multipart_Abort_Result_Kind;
+   use type Scoped.Multipart_Abort_Disposition;
    use type Client_Objects.List_Outcome_Kind;
    use type Client_Objects.Whole_Get_Outcome_Kind;
    use type Client_Objects.Tagging_Outcome_Kind;
@@ -2786,13 +2788,16 @@ procedure S3_Implementation_Corpus is
               "S3 implementation rejected abort-corpus initiation";
          end if;
          declare
-            Aborted : constant Low_Level.Abort_Multipart_Outcome :=
+            Aborted : constant Scoped.Multipart_Abort_Result :=
               Transfers.Abort_Multipart_Upload
                 (HTTP, Origin, Bucket, Abort_Key,
                  US.To_String (Created.Result.Upload_ID), Identity,
                  Timeout => 30.0);
          begin
-            if Aborted.Kind /= Low_Level.Aborted then
+            if Aborted.Kind /= Scoped.Abort_Multipart_Response_Available
+              or else Aborted.Disposition /= Scoped.Multipart_Aborted
+              or else Aborted.Response.Kind /= Low_Level.Aborted
+            then
                raise Program_Error with
                  "S3 implementation rejected AbortMultipartUpload";
             end if;

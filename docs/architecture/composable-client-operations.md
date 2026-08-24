@@ -3,7 +3,8 @@
 This note records the implemented contract for the completion-set-aware object
 client slice: conditional complete-object Put, generation-bound whole and
 single-range Get, bodyless Head, non-replaying Delete, non-replaying multipart
-initiation, one-shot UploadPart, and one-shot multipart completion. The
+initiation, one-shot UploadPart, one-shot multipart completion, and one-shot
+multipart abort. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -43,11 +44,12 @@ The initial operation order is:
 1. conditional complete `Put_Object`;
 2. whole `Get_Object`;
 3. generation-bound exact-range `Get_Object`;
-4. `Head_Object`; and
+4. `Head_Object`;
 5. `Delete_Object`;
 6. `Create_Multipart_Upload`;
 7. `Upload_Part`; and
-8. `Complete_Multipart_Upload`.
+8. `Complete_Multipart_Upload`; and
+9. `Abort_Multipart_Upload`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -75,6 +77,10 @@ CompleteMultipartUpload serializes the caller's part manifest exactly once
 during bounded initiation. The operation owns that XML and exposes it through
 a non-rewindable source, so neither the composable operation nor its typed
 synchronous wait can replay a possibly admitted completion.
+AbortMultipartUpload supplies a non-rewindable known-empty source. The
+operation can be restarted only after typed Finish consumes its prior result;
+neither the composable operation nor its typed synchronous wait retries an
+admitted abort.
 
 An abandoned operation first requests cancellation and drains all HTTP,
 kernel, token, descriptor, source, and response leases. Only after no borrower
@@ -184,6 +190,14 @@ or committing completion work. The operation never retries automatically.
 The caller reconciles the destination object and exact upload read-only before
 choosing a later completion retry or abort; abort is cleanup, not rollback.
 
+AbortMultipartUpload reports `Multipart_Aborted` only for a complete validated
+204 response. Definite non-admission reports `Definitely_Not_Aborted`, with a
+separate pre-admission cancellation spelling. Every complete service rejection
+and every failure after possible admission reports `Abort_Outcome_Unknown`.
+The caller reconciles the exact upload read-only before choosing any later
+retry or completion action. `NoSuchUpload` is deliberately not conclusive: it
+can follow this abort, a concurrent abort, or successful completion.
+
 The Flyology.DB recovery sequence enabled by these operations is:
 
 1. publish an immutable batch with `If-None-Match: *`;
@@ -201,7 +215,8 @@ listing.
 The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Get_Range`, and `Head_Object` overloads and the typed-result `Delete` and
 `Create_Multipart_Upload`, `Upload_Part`, and
-`Complete_Multipart_Upload` overloads are literal waits on the same
+`Complete_Multipart_Upload`, and `Abort_Multipart_Upload` overloads are literal
+waits on the same
 `Client.Scoped` state machines and retain their typed certainty, capacity,
 metadata, and ownership results. The established raising `Delete_Outcome` and
 `Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer
@@ -338,6 +353,14 @@ embedded in HTTP 200, and every composable HTTP terminal failure across all
 admission-certainty states. Unknown completion always requires read-only
 reconciliation; the verifier rejects any fixture that treats a modeled
 completion rejection as proof of non-publication.
+
+The abort oracle is
+`tests/corpora/composable-client/abort-multipart-certainty.tsv`. Its 45 tuples
+gate complete validated acceptance, the exact modeled rejection set, and every
+composable HTTP terminal failure across all admission-certainty states.
+Unknown abort state always requires exact-upload reconciliation; the verifier
+rejects any fixture that treats a modeled rejection as proof that this abort
+was not accepted.
 
 The sibling `range-get.tsv` and `head-object.tsv` corpora are normative for the
 read surface. They enumerate typed request forms, physical singleton handling,

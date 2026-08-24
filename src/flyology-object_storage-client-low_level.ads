@@ -3860,6 +3860,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Abort_Multipart_Outcome;
 
+   --  Decode one complete AbortMultipartUpload HTTP response. Physical
+   --  singleton headers and bounded values are validated before the modeled
+   --  response is exposed.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared AbortMultipartUpload request
+   --  @param Limits Bounded XML parser limits
+   --  @return Typed abort success or S3 rejection
+   --  @exception Invalid_Request Prepared is not AbortMultipartUpload
+   --  @exception Invalid_Response Complete response is inconsistent
+   function Decode_Abort_Multipart_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Abort_Multipart_Outcome;
+
    function Execute_Abort_Multipart_Upload
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;

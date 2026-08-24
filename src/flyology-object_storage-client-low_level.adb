@@ -10034,6 +10034,65 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "malformed AbortMultipartUpload response";
    end Decode_Abort_Multipart_Response;
 
+   --  Derived compatibility bound: abort response fields use the established
+   --  multipart-response header policy rather than a new resource ceiling.
+   Maximum_Abort_Multipart_Response_Header_Bytes : constant Positive :=
+     Maximum_Create_Multipart_Response_Header_Bytes;
+
+   function Decode_Abort_Multipart_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Abort_Multipart_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "invalid AbortMultipartUpload header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else Value'Length >
+                Maximum_Abort_Multipart_Response_Header_Bytes
+            then
+               raise Invalid_Response with
+                 "invalid AbortMultipartUpload response header";
+            end if;
+            for Character_Value of Value loop
+               if Character'Pos (Character_Value) < 32
+                 or else Character'Pos (Character_Value) = 127
+               then
+                  raise Invalid_Response with
+                    "invalid AbortMultipartUpload response header";
+               end if;
+            end loop;
+            return Value;
+         end;
+      end Singleton_Header;
+
+      Request_ID : constant String := Singleton_Header ("x-amz-request-id");
+      Host_ID : constant String := Singleton_Header ("x-amz-id-2");
+      Headers : constant Abort_Multipart_Result :=
+        (Request_Charged => US.To_Unbounded_String
+           (Singleton_Header ("x-amz-request-charged")));
+   begin
+      if Prepared.Operation /= Abort_Multipart_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      return Decode_Abort_Multipart_Response
+        (Flyology.HTTP.Client.Status (Response), Payload, Headers,
+         Request_ID, Host_ID, Limits);
+   end Decode_Abort_Multipart_Complete_Response;
+
    function Execute_Abort_Multipart_Upload
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -10047,26 +10106,17 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
+         Source : Non_Replayable_Empty_Source;
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
-             (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
+             (Client, Prepared.Message, Source, Timeout, Token);
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
-         Headers : constant Abort_Multipart_Result :=
-           (Request_Charged => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-request-charged")));
       begin
-         return Decode_Abort_Multipart_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-            Request_ID, Host_ID, Limits);
+         return Decode_Abort_Multipart_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

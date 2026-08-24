@@ -11,4 +11,6 @@ package Flyology.Object_Storage.Client.Scoped.Testing is
 
    procedure Check_Complete_Multipart_Certainty_Corpus;
 
+   procedure Check_Abort_Multipart_Certainty_Corpus;
+
 end Flyology.Object_Storage.Client.Scoped.Testing;

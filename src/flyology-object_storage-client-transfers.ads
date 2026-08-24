@@ -86,9 +86,57 @@ package Flyology.Object_Storage.Client.Transfers is
       Token        : access Flyology.Cancellation.Token := null)
       return Low_Level.Create_Multipart_Outcome;
 
+   --  Abort one multipart upload by waiting on the composable owner-driven
+   --  one-shot operation. This result-type overload preserves admission and
+   --  abort certainty. Selecting the established low-level outcome overload
+   --  retains its raising transport contract; parameters and defaults match.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Destination S3 bucket
+   --  @param Key Destination S3 object key
+   --  @param Upload_ID Exact multipart upload identifier
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Request_Payer Empty or requester for Requester Pays buckets
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param If_Match_Initiated_Time Optional RFC 822 initiation predicate
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed abort certainty and terminal response or failure
+   function Abort_Multipart_Upload
+     (Client       : aliased in out Flyology.HTTP.Client.Client;
+      Origin       : Flyology.HTTP.Origin;
+      Bucket       : String;
+      Key          : String;
+      Upload_ID    : String;
+      Identity     : Low_Level.Credentials;
+      Region       : String := "us-east-1";
+      Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Request_Payer : String := "";
+      Expected_Bucket_Owner : String := "";
+      If_Match_Initiated_Time : String := "";
+      Timeout      : Duration := 30.0;
+      Token        : access Flyology.Cancellation.Token := null)
+      return Scoped.Multipart_Abort_Result;
+
    --  Abort one active multipart upload without constructing a modeled
    --  request record. Optional advanced members map directly to the pinned
    --  S3 input shape; If_Match_Initiated_Time is an RFC 822 HTTP date.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Destination S3 bucket
+   --  @param Key Destination S3 object key
+   --  @param Upload_ID Exact multipart upload identifier
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Request_Payer Empty or requester for Requester Pays buckets
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param If_Match_Initiated_Time Optional RFC 822 initiation predicate
+   --  @param Timeout Whole synchronous operation budget
+   --  @param Token Optional cancellation source
+   --  @return Modeled abort success or S3 rejection
    function Abort_Multipart_Upload
      (Client       : aliased in out Flyology.HTTP.Client.Client;
       Origin       : Flyology.HTTP.Origin;

@@ -101,6 +101,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Upload_Part_Result_Kind;
    use type Scoped.Multipart_Completion_Disposition;
    use type Scoped.Multipart_Completion_Result_Kind;
+   use type Scoped.Multipart_Abort_Disposition;
+   use type Scoped.Multipart_Abort_Result_Kind;
    use type Scoped.Whole_Get_Result_Kind;
    use type Scoped.Range_Get_Result_Kind;
    use type Scoped.Head_Result_Kind;
@@ -1551,6 +1553,9 @@ procedure S3_HTTP_Socket_Corpus is
       Embedded_Error_XML : constant String :=
         "<Error><Code>InternalError</Code>" &
         "<Message>late failure</Message></Error>";
+      No_Such_Upload_XML : constant String :=
+        "<Error><Code>NoSuchUpload</Code>" &
+        "<Message>upload is absent</Message></Error>";
       List_Uploads_XML : constant String :=
         "<ListMultipartUploadsResult>" &
         "<Bucket>example-bucket</Bucket><KeyMarker>before</KeyMarker>" &
@@ -2388,6 +2393,22 @@ procedure S3_HTTP_Socket_Corpus is
             "GET", "/example-bucket/lost-upload",
             Expected_If_Match => """lost-whole""",
             Expected_Checksum_Mode => "ENABLED");
+         --  Accept exactly one one-shot abort and lose its response. The next
+         --  request must be exact-upload ListParts reconciliation; a replayed
+         --  DELETE desynchronizes this oracle.
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               Create_Result_XML
+                 ("example-bucket", "lost-abort", "lost-abort-id")),
+            "POST", "/example-bucket/lost-abort?uploads");
+         Serve
+           ("", "DELETE",
+            "/example-bucket/lost-abort?uploadId=lost-abort-id");
+         Serve
+           (HTTP_Response ("404 Not Found", No_Such_Upload_XML), "GET",
+            "/example-bucket/lost-abort?max-parts=1000&" &
+              "part-number-marker=0&uploadId=lost-abort-id");
          Serve
            (HTTP_Response
               ("200 OK", "", "ETag: bound-part" & CRLF &
@@ -3179,6 +3200,17 @@ procedure S3_HTTP_Socket_Corpus is
          Serve
            (HTTP_Response
               ("204 No Content", "", Omit_Content_Length => True), "DELETE",
+            "/example-bucket/object%20key?uploadId=socket-upload");
+         Serve
+           (HTTP_Response ("404 Not Found", No_Such_Upload_XML), "DELETE",
+            "/example-bucket/object%20key?uploadId=socket-upload");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE",
             "/example-bucket/object%20key?uploadId=socket-upload");
          Serve
            (HTTP_Response
@@ -6828,6 +6860,79 @@ procedure S3_HTTP_Socket_Corpus is
                end;
             end;
          end;
+         declare
+            Create_Parameters : Low_Level.Create_Multipart_Parameters;
+            Created : constant Low_Level.Create_Multipart_Outcome :=
+              Transfers.Create_Multipart_Upload
+                (HTTP, Origin, "example-bucket", "lost-abort",
+                 Create_Parameters, Identity, Timeout => 5.0);
+         begin
+            if Created.Kind /= Low_Level.Created
+              or else US.To_String (Created.Result.Upload_ID) /=
+                "lost-abort-id"
+            then
+               raise Program_Error with
+                 "AbortMultipartUpload lost-response setup failed";
+            end if;
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+            begin
+               Stop.Request;
+               declare
+                  Cancelled : constant Scoped.Multipart_Abort_Result :=
+                    Transfers.Abort_Multipart_Upload
+                      (HTTP, Origin, "example-bucket", "lost-abort",
+                       "lost-abort-id", Identity, Timeout => 5.0,
+                       Token => Stop'Access);
+               begin
+                  if Cancelled.Kind /=
+                    Scoped.Abort_Multipart_Exchange_Failed
+                    or else Cancelled.Disposition /=
+                      Scoped.Abort_Cancelled_Before_Admission
+                    or else Cancelled.Admission /= HTTP_Client.Not_Admitted
+                  then
+                     raise Program_Error with
+                       "pre-admission lost AbortMultipartUpload " &
+                       "cancellation mismatch";
+                  end if;
+               end;
+            end;
+            declare
+               Aborted : constant Scoped.Multipart_Abort_Result :=
+                 Transfers.Abort_Multipart_Upload
+                   (HTTP, Origin, "example-bucket", "lost-abort",
+                    "lost-abort-id", Identity, Timeout => 5.0);
+            begin
+               if Aborted.Kind /= Scoped.Abort_Multipart_Exchange_Failed
+                 or else Aborted.Disposition /= Scoped.Abort_Outcome_Unknown
+                 or else Aborted.Admission /= HTTP_Client.Possibly_Admitted
+               then
+                  raise Program_Error with
+                    "lost AbortMultipartUpload response certainty mismatch";
+               end if;
+            end;
+            declare
+               List_Parameters : Low_Level.List_Parts_Parameters;
+            begin
+               List_Parameters.Upload_ID :=
+                 US.To_Unbounded_String ("lost-abort-id");
+               declare
+                  Listed : constant Low_Level.List_Parts_Outcome :=
+                    Transfers.List_Parts_Page
+                      (HTTP, Origin, "example-bucket", "lost-abort",
+                       List_Parameters, Identity, Timeout => 5.0);
+               begin
+                  if Listed.Kind /= Low_Level.List_Parts_Rejected
+                    or else Listed.Status /= 404
+                    or else US.To_String (Listed.Error.Code) /=
+                      "NoSuchUpload"
+                  then
+                     raise Program_Error with
+                       "lost AbortMultipartUpload reconciliation failed";
+                  end if;
+               end;
+            end;
+         end;
          Require_Upload_Response
            ("upload-bind-wrong-algorithm", False, Bind_SHA256 => True);
          Require_Upload_Response
@@ -9022,19 +9127,89 @@ procedure S3_HTTP_Socket_Corpus is
                     "composed embedded multipart error mismatch";
                end if;
                declare
-                  Prepared_Abort : constant Low_Level.Prepared_Request :=
-                    Low_Level.Prepare_Abort_Multipart_Upload
-                      (Origin, Low_Level.Path_Style, "example-bucket",
-                       "object key", "socket-upload", Identity,
-                       "us-east-1", "20130524T000000Z");
-                  Aborted_Result : constant
-                    Low_Level.Abort_Multipart_Outcome :=
-                      Low_Level.Execute_Abort_Multipart_Upload
-                        (HTTP, Prepared_Abort, Timeout => 5.0);
+                  Stop : aliased Flyology.Cancellation.Token;
                begin
-                  if Aborted_Result.Kind /= Low_Level.Aborted then
+                  Stop.Request;
+                  declare
+                     Cancelled : constant Scoped.Multipart_Abort_Result :=
+                       Transfers.Abort_Multipart_Upload
+                         (HTTP, Origin, "example-bucket", "object key",
+                          "socket-upload", Identity, Timeout => 5.0,
+                          Token => Stop'Access);
+                  begin
+                     if Cancelled.Kind /=
+                       Scoped.Abort_Multipart_Exchange_Failed
+                       or else Cancelled.Disposition /=
+                         Scoped.Abort_Cancelled_Before_Admission
+                       or else Cancelled.Admission /= HTTP_Client.Not_Admitted
+                     then
+                        raise Program_Error with
+                          "pre-admission AbortMultipartUpload cancellation " &
+                          "mismatch";
+                     end if;
+                  end;
+               end;
+               declare
+                  Abort_Parameters : constant
+                    Low_Level.Abort_Multipart_Parameters :=
+                      (others => US.Null_Unbounded_String);
+                  --  Abort parent, HTTP exchange, and one transport child.
+                  Abort_Set : aliased Operations.Completion_Set (3);
+                  Abort_Operation : Scoped.Abort_Multipart_Operation :=
+                    Scoped.Abort_Multipart_Upload
+                      (Abort_Set'Access, HTTP'Access, Origin,
+                       "example-bucket", "object key", "socket-upload",
+                       Abort_Parameters, Identity,
+                       HTTP_Client.Deadline_After (5.0));
+                  Abort_Result : Scoped.Multipart_Abort_Result;
+               begin
+                  Operations.Wait_All (Abort_Set);
+                  Scoped.Finish (Abort_Operation, Abort_Result);
+                  if Abort_Result.Kind /=
+                    Scoped.Abort_Multipart_Response_Available
+                    or else Abort_Result.Disposition /=
+                      Scoped.Multipart_Aborted
+                    or else Abort_Result.Response.Kind /= Low_Level.Aborted
+                  then
                      raise Program_Error with
-                       "socket AbortMultipartUpload result mismatch";
+                       "composed AbortMultipartUpload result mismatch";
+                  end if;
+                  Scoped.Start_Abort_Multipart_Upload
+                    (Abort_Operation, HTTP'Access, Origin, "example-bucket",
+                     "object key", "socket-upload", Abort_Parameters,
+                     Identity, HTTP_Client.Deadline_After (5.0));
+                  Operations.Wait_All (Abort_Set);
+                  Scoped.Finish (Abort_Operation, Abort_Result);
+                  if Abort_Result.Kind /=
+                    Scoped.Abort_Multipart_Response_Available
+                    or else Abort_Result.Disposition /=
+                      Scoped.Abort_Outcome_Unknown
+                    or else Abort_Result.Response.Kind /=
+                      Low_Level.Abort_Rejected
+                    or else US.To_String
+                      (Abort_Result.Response.Error.Code) /= "NoSuchUpload"
+                  then
+                     raise Program_Error with
+                       "composed AbortMultipartUpload rejection mismatch";
+                  end if;
+                  Scoped.Start_Abort_Multipart_Upload
+                    (Abort_Operation, HTTP'Access, Origin, "example-bucket",
+                     "object key", "socket-upload", Abort_Parameters,
+                     Identity, HTTP_Client.Deadline_After (5.0));
+                  Operations.Wait_All (Abort_Set);
+                  Scoped.Finish (Abort_Operation, Abort_Result);
+                  if Abort_Result.Kind /=
+                    Scoped.Abort_Multipart_Exchange_Failed
+                    or else Abort_Result.Disposition /=
+                      Scoped.Abort_Outcome_Unknown
+                    or else Abort_Result.HTTP_Result /=
+                      HTTP_Client.Response_Invalid
+                    or else Abort_Result.Admission /=
+                      HTTP_Client.Response_Observed
+                  then
+                     raise Program_Error with
+                       "composed AbortMultipartUpload physical header " &
+                       "validation mismatch";
                   end if;
                end;
             end;
@@ -11522,6 +11697,8 @@ begin
      Check_Upload_Part_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_Complete_Multipart_Certainty_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_Abort_Multipart_Certainty_Corpus;
    Run_And_Report;
    declare
       task Lightweight_Client is
