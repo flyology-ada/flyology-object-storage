@@ -1,8 +1,10 @@
-# ListMultipartUploads client qualification
+# ListMultipartUploads qualification
 
-This record freezes the pinned model inventory and the qualified synchronous
-client boundary. Backend coverage is complete; owner and requester-pays server
-policy remains partial.
+This record freezes the pinned model inventory and qualifies the synchronous
+client plus the authenticated general-purpose path-style server. Backend,
+client, server, and corpus coverage are complete within that scope. Directory
+buckets and configured Requester Pays accounting remain explicit capability
+exclusions.
 
 ## Pinned authority
 
@@ -75,14 +77,16 @@ rejected. The codec enforces combined upload/common-prefix bounds, complete and
 unique uploads, canonical initiation timestamps, checksum type/algorithm
 coherence, unique grouping prefixes, grouped-upload exclusion, final/truncated
 marker consistency, and advancing general-purpose cursor pairs. The server
-does not yet implement all owner and billing policy, so its coverage remains
-partial.
+enforces a matching expected owner, rejects duplicate controls before listing,
+accepts only the modeled `requester` billing token, and returns authenticated
+`NotImplemented` for that valid token because Requester Pays bucket policy is
+not configured. It does not silently accept unsupported billing.
 
-The future client must reject duplicate modeled singleton XML fields and
-headers, distinguish required nonempty identities from permitted absent or
-empty default markers, validate complete upload records and optional identity,
-storage-class, and checksum fields, and enforce document/depth/element/text and
-combined-page bounds. Unknown extensions may be ignored only at deliberately
+The client rejects duplicate modeled singleton XML fields and headers,
+distinguishes required nonempty identities from permitted absent or empty
+default markers, validates complete upload records and optional identity,
+storage-class, and checksum fields, and enforces document/depth/element/text
+and combined-page bounds. Unknown extensions are ignored only at deliberately
 bounded forward-compatible positions; misplaced modeled fields and entity
 expansion remain invalid.
 
@@ -117,14 +121,17 @@ build Ada, invoke shared runners, edit a manifest or ledger, or run GNATprove.
 The fragmented raw-loopback corpus runs through both native and Flyology
 lightweight clients, independently mutates all seven echoed scope/cursor
 fields, exercises duplicate and present-empty headers, and follows a real
-two-page paired cursor. The repeated implementation matrix calls the public
-page API against RustFS, supplemental MinIO, and Flyology memory/files/SQLite;
-the exact SeaweedFS exclusion above remains pinned. Ledger promotion records
-this qualified client boundary only.
+two-page paired cursor. The signed server corpus additionally requires matching
+owner success, mismatched-owner `AccessDenied`, duplicate-owner rejection, and
+valid, invalid, and duplicate requester-pays dispositions. The repeated
+implementation matrix calls the public page API against RustFS, supplemental
+MinIO, and Flyology memory/files/SQLite; the exact SeaweedFS exclusion above
+remains pinned. Ledger promotion records the qualified client and
+general-purpose server boundaries.
 
 ## Frozen gate evidence
 
-The qualified source passed the root gate with 37/37 AUnit tests, the 88-case
+The qualified source passed the root gate with 40/40 AUnit tests, the 88-case
 files crash matrix, 320 checksum vectors, 210 chunk boundaries, the 64-GiB CRC
 linearization oracle, the server application corpus, and three repetitions of
 the native/lightweight socket corpus. The SQLite gate passed. The six-server

@@ -3207,28 +3207,39 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                end;
 
             when List_Multipart_Uploads =>
-               if Apps.Request_Header_Count
-                    (X, "x-amz-expected-bucket-owner") > 1
-                 or else Apps.Request_Header_Count
-                   (X, "x-amz-request-payer") > 1
-               then
-                  Send_Error
-                    (X, 400, "InvalidRequest",
-                     "A ListMultipartUploads header is duplicated",
-                     Target_Text);
-               elsif Apps.Request_Header_Count
-                 (X, "x-amz-expected-bucket-owner") = 1
-               then
-                  Send_Error
-                    (X, 501, "NotImplemented",
-                     "Expected bucket owner policy is not implemented",
-                     Target_Text);
-               elsif Apps.Request_Header_Count (X, "x-amz-request-payer") = 1
-               then
-                  Send_Error
-                    (X, 501, "NotImplemented",
-                     "Requester Pays is not implemented", Target_Text);
-               else
+               declare
+                  Owner_OK : Boolean := False;
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+               begin
+                  if Apps.Request_Header_Count
+                       (X, "x-amz-expected-bucket-owner") > 1
+                    or else Payer_Count > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A ListMultipartUploads header is duplicated",
+                        Target_Text);
+                     return;
+                  end if;
+                  Check_Expected_Bucket_Owner
+                    (US.To_String (Auth.Principal), Owner_OK);
+                  if not Owner_OK then
+                     return;
+                  elsif Payer_Count = 1
+                    and then Apps.Request_Header
+                      (X, "x-amz-request-payer") /= "requester"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The request payer is invalid", Target_Text);
+                     return;
+                  elsif Payer_Count = 1 then
+                     Send_Error
+                       (X, 501, "NotImplemented",
+                        "Requester Pays is not implemented", Target_Text);
+                     return;
+                  end if;
                   begin
                      declare
                         Request : constant
@@ -3334,7 +3345,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            "The ListMultipartUploads request is invalid",
                            Target_Text);
                   end;
-               end if;
+               end;
 
             when Create_Multipart =>
                if Apps.Request_Header_Count (X, "content-type") > 1

@@ -2408,9 +2408,76 @@ procedure S3_Server_Application_Corpus is
                  (Run
                     (Signed_Query_Request
                        ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-request-payer", "owner")),
+                  "InvalidArgument"),
+               "ListMultipartUploads misclassified invalid payer");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-request-payer", "Requester")),
+                  "InvalidArgument"),
+               "ListMultipartUploads accepted wrong-case payer");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-request-payer", "")),
+                  "InvalidArgument"),
+               "ListMultipartUploads accepted empty payer");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-request-payer", "requester", "",
+                        "requester")),
+                  "InvalidRequest"),
+               "ListMultipartUploads accepted duplicate payer");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-request-payer", "requester", "", "owner")),
+                  "InvalidRequest"),
+               "ListMultipartUploads accepted conflicting duplicate payer");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-expected-bucket-owner", "test-principal")),
+                  "200 OK"),
+               "ListMultipartUploads rejected matching expected owner");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
                         "x-amz-expected-bucket-owner", "123456789012")),
-                  "NotImplemented"),
-               "ListMultipartUploads silently accepted expected owner");
+                  "AccessDenied"),
+               "ListMultipartUploads accepted mismatched expected owner");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-expected-bucket-owner", "123456789012",
+                        "x-amz-request-payer", "owner")),
+                  "AccessDenied"),
+               "ListMultipartUploads checked payer before expected owner");
+            Require
+              (Has
+                 (Run
+                    (Signed_Query_Request
+                       ("GET", "/test-bucket", Missing_Query,
+                        "x-amz-expected-bucket-owner", "test-principal", "",
+                        "test-principal")),
+                  "InvalidRequest"),
+               "ListMultipartUploads accepted duplicate expected owner");
          end;
          Abort_One ("/test-bucket/multipart-z", Z_ID);
          Abort_One ("/test-bucket/nested/active+key", Nested_ID);
