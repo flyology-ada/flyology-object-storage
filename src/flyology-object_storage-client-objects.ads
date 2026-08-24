@@ -794,6 +794,34 @@ package Flyology.Object_Storage.Client.Objects is
    subtype Get_Attributes_Outcome is
      Low_Level.Get_Object_Attributes_Outcome;
 
+   --  Retrieve selected object metadata by waiting on the composable
+   --  owner-driven operation. This parameter-record overload preserves typed
+   --  HTTP failure and admission information and is restart-compatible with
+   --  the corresponding Client.Scoped operation.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket containing the object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled selection and controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   function Get_Attributes
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Get_Object_Attributes_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Get_Object_Attributes_Result;
+
    --  Retrieve selected object metadata without downloading the body. By
    --  default all five root attribute groups are requested. Numeric presence
    --  flags allow callers to omit pagination headers independently of their

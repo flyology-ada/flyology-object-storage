@@ -107,6 +107,25 @@ package Flyology.Object_Storage.Client.Low_Level.Scoped is
       Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
       Token     : access Flyology.Cancellation.Token := null);
 
+   --  Start a prepared GetObjectAttributes exchange into a bounded sink.
+   --  Prepared, Sink, Client, Token, and their owners must outlive terminal
+   --  typed Finish of Operation.
+   --  @param Operation Established HTTP child operation
+   --  @param Client Configured origin client
+   --  @param Prepared Prepared GetObjectAttributes request
+   --  @param Sink Bounded complete-response sink
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source
+   --  @exception Invalid_Request Prepared is not GetObjectAttributes
+   procedure Start_Get_Object_Attributes
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null);
+
    --  Start a prepared HeadObject exchange into a bounded immediate sink.
    --  @param Operation Established HTTP child operation
    --  @param Client Configured origin client

@@ -1948,6 +1948,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits          : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Attributes_Outcome;
 
+   --  Decode one complete GetObjectAttributes HTTP response and bind its
+   --  singleton headers, requester-pays admission, and any exact requested
+   --  version to the prepared request.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared GetObjectAttributes request
+   --  @param Limits Bounded XML parser limits
+   --  @return Typed object attributes or S3 rejection
+   --  @exception Invalid_Request Prepared is not GetObjectAttributes
+   --  @exception Invalid_Response Complete response is inconsistent
+   function Decode_Get_Object_Attributes_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Attributes_Outcome;
+
    --  Execute a matching typed request, bound the complete response body,
    --  and decode every modeled output member.
    function Execute_Get_Object_Attributes
@@ -4536,6 +4553,13 @@ private
       --  Derived request/response binding: a charged listing response is
       --  valid only when the exact prepared request admitted requester pays.
       Requested_List_Request_Payer :
+        Ada.Strings.Unbounded.Unbounded_String;
+      --  Derived GetObjectAttributes response binding: a charged response is
+      --  valid only when the exact request admitted requester pays, and a
+      --  requested version must be echoed by a successful response.
+      Requested_Get_Attributes_Request_Payer :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Get_Attributes_Version_ID :
         Ada.Strings.Unbounded.Unbounded_String;
       --  Derived request/response binding: a charged CopyObject response is
       --  valid only when the exact prepared request admitted requester pays.

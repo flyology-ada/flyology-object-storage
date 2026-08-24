@@ -1117,6 +1117,37 @@ package body Flyology.Object_Storage.Client.Objects is
       Origin   : Flyology.HTTP.Origin;
       Bucket   : String;
       Key      : String;
+      Parameters : Low_Level.Get_Object_Attributes_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Get_Object_Attributes_Result
+   is
+      --  The attributes parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Get_Object_Attributes_Operation :=
+           Scoped.Get_Object_Attributes
+             (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
+              Identity, Flyology.HTTP.Client.Deadline_After (Timeout), Region,
+              Style, Token);
+         Result : Scoped.Get_Object_Attributes_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Get_Attributes;
+
+   function Get_Attributes
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
       Identity : Low_Level.Credentials;
       Region   : String := "us-east-1";
       Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;

@@ -103,6 +103,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Part_Upload_Disposition;
    use type Scoped.List_Objects_V2_Result_Kind;
    use type Scoped.List_Object_Versions_Result_Kind;
+   use type Scoped.Get_Object_Attributes_Result_Kind;
    use type Scoped.List_Parts_Result_Kind;
    use type Scoped.List_Multipart_Uploads_Result_Kind;
    use type Scoped.Copy_Result_Kind;
@@ -2804,7 +2805,7 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", Attributes_XML,
                "x-amz-delete-marker: false" & CRLF &
                "Last-Modified: Fri, 24 May 2013 00:00:00 GMT" & CRLF &
-               "x-amz-version-id: socket-version" & CRLF &
+               "x-amz-version-id: socket version" & CRLF &
                "x-amz-request-charged: requester" & CRLF),
             "GET", "/example-bucket/object%20key?attributes&" &
               "versionId=socket%20version",
@@ -2825,6 +2826,44 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-id: attributes-request" & CRLF &
                "x-amz-id-2: attributes-host" & CRLF),
             "GET", "/example-bucket/missing-attributes?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response
+              ("200 OK", Attributes_XML,
+               "x-amz-version-id: scoped-version" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket/scoped-attributes?attributes&" &
+              "versionId=scoped-version",
+            Expected_Request_Payer => "requester",
+            Expected_Get_Object_Attributes => "ObjectSize",
+            Fragmented => True);
+         Serve
+           (HTTP_Response ("200 OK", Attributes_XML),
+            "GET", "/example-bucket/scoped-attributes-restart?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "GET", "/example-bucket/scoped-attributes-error?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response
+              ("200 OK", Attributes_XML,
+               "x-amz-version-id: wrong-version" & CRLF),
+            "GET", "/example-bucket/scoped-attributes-wrong?attributes&" &
+              "versionId=expected-version",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response
+              ("200 OK", Attributes_XML,
+               "x-amz-version-id: duplicate" & CRLF &
+               "x-amz-version-id: duplicate" & CRLF),
+            "GET", "/example-bucket/scoped-attributes-duplicate?attributes",
+            Expected_Get_Object_Attributes => "ObjectSize");
+         Serve
+           (HTTP_Response
+              ("200 OK", Attributes_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket/scoped-attributes-payer?attributes",
             Expected_Get_Object_Attributes => "ObjectSize");
          Serve
            (HTTP_Response
@@ -8125,7 +8164,7 @@ procedure S3_HTTP_Socket_Corpus is
                  or else not Result.Result.Delete_Marker.Is_Set
                  or else Result.Result.Delete_Marker.Value
                  or else US.To_String (Result.Result.Version_ID) /=
-                   "socket-version"
+                   "socket version"
                  or else US.To_String (Result.Result.Request_Charged) /=
                    "requester"
                  or else not Result.Result.Attributes.Has_Object_Parts
@@ -8177,6 +8216,143 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "GetObjectAttributes socket rejection mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Get_Object_Attributes_Parameters;
+            --  Attributes parent, HTTP exchange, and one transport child.
+            Set : aliased Operations.Completion_Set (3);
+         begin
+            Parameters.Version_ID :=
+              US.To_Unbounded_String ("scoped-version");
+            Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+            Parameters.Attributes.Object_Size := True;
+            declare
+               Operation : Scoped.Get_Object_Attributes_Operation :=
+                 Scoped.Get_Object_Attributes
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "scoped-attributes", Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.Get_Object_Attributes_Result;
+            begin
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /=
+                 Scoped.Get_Object_Attributes_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Attributes_Found
+                 or else US.To_String
+                   (Result.Response.Result.Version_ID) /= "scoped-version"
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /= "requester"
+               then
+                  raise Program_Error with
+                    "composable GetObjectAttributes success mismatch";
+               end if;
+               Parameters.Version_ID := US.Null_Unbounded_String;
+               Parameters.Request_Payer := US.Null_Unbounded_String;
+               Scoped.Start_Get_Object_Attributes
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  "scoped-attributes-restart", Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /=
+                 Scoped.Get_Object_Attributes_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Attributes_Found
+               then
+                  raise Program_Error with
+                    "composable GetObjectAttributes restart mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Get_Object_Attributes_Parameters;
+         begin
+            Parameters.Attributes.Object_Size := True;
+            declare
+               Result : constant Scoped.Get_Object_Attributes_Result :=
+                 Objects.Get_Attributes
+                   (HTTP, Origin, "example-bucket",
+                    "scoped-attributes-error", Parameters, Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                 Scoped.Get_Object_Attributes_Response_Available
+                 or else Result.Failure /= Scoped.Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Object_Attributes_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "composable GetObjectAttributes rejection mismatch";
+               end if;
+            end;
+         end;
+         declare
+            procedure Require_Invalid_Get_Object_Attributes
+              (Key, Version_ID, Message : String) is
+               Parameters : Low_Level.Get_Object_Attributes_Parameters;
+               --  Attributes parent, HTTP exchange, and one transport child.
+               Set : aliased Operations.Completion_Set (3);
+            begin
+               Parameters.Version_ID := US.To_Unbounded_String (Version_ID);
+               Parameters.Attributes.Object_Size := True;
+               declare
+                  Operation : Scoped.Get_Object_Attributes_Operation :=
+                    Scoped.Get_Object_Attributes
+                      (Set'Access, HTTP'Access, Origin, "example-bucket", Key,
+                       Parameters, Identity,
+                       HTTP_Client.Deadline_After (5.0));
+                  Result : Scoped.Get_Object_Attributes_Result;
+               begin
+                  Operations.Wait_All (Set);
+                  Scoped.Finish (Operation, Result);
+                  if Result.Kind /=
+                    Scoped.Get_Object_Attributes_Exchange_Failed
+                    or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                  then
+                     raise Program_Error with Message;
+                  end if;
+               end;
+            end Require_Invalid_Get_Object_Attributes;
+         begin
+            Require_Invalid_Get_Object_Attributes
+              ("scoped-attributes-wrong", "expected-version",
+               "GetObjectAttributes accepted a mismatched version");
+            Require_Invalid_Get_Object_Attributes
+              ("scoped-attributes-duplicate", "",
+               "GetObjectAttributes accepted duplicate response metadata");
+            Require_Invalid_Get_Object_Attributes
+              ("scoped-attributes-payer", "",
+               "GetObjectAttributes accepted unrequested payer admission");
+         end;
+         declare
+            Stop : aliased Flyology.Cancellation.Token;
+            Parameters : Low_Level.Get_Object_Attributes_Parameters;
+         begin
+            Stop.Request;
+            Parameters.Attributes.Object_Size := True;
+            declare
+               Result : constant Scoped.Get_Object_Attributes_Result :=
+                 Objects.Get_Attributes
+                   (HTTP, Origin, "example-bucket",
+                    "cancelled-attributes", Parameters, Identity,
+                    Timeout => 5.0, Token => Stop'Access);
+            begin
+               if Result.Kind /=
+                 Scoped.Get_Object_Attributes_Exchange_Failed
+                 or else Result.Failure /= Scoped.Cancelled
+                 or else Result.Admission /= HTTP_Client.Not_Admitted
+               then
+                  raise Program_Error with
+                    "pre-admission GetObjectAttributes cancellation mismatch";
                end if;
             end;
          end;

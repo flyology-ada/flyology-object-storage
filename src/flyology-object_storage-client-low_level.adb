@@ -4823,6 +4823,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
          False, SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
       do
          Result.Operation := Get_Object_Attributes_Operation;
+         Result.Requested_Get_Attributes_Request_Payer :=
+           Parameters.Request_Payer;
+         Result.Requested_Get_Attributes_Version_ID := Parameters.Version_ID;
       end return;
    exception
       when S3.Attributes.Malformed_Attributes | Constraint_Error =>
@@ -4868,6 +4871,73 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "malformed GetObjectAttributes response";
    end Decode_Get_Object_Attributes_Response;
 
+   function Decode_Get_Object_Attributes_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Attributes_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "invalid GetObjectAttributes response header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else not Valid_List_Response_Header_Text (Value)
+            then
+               raise Invalid_Response with
+                 "invalid GetObjectAttributes response header value";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+
+   begin
+      if Prepared.Operation /= Get_Object_Attributes_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Version_ID : constant String :=
+           Singleton_Header ("x-amz-version-id");
+         Request_Charged : constant String :=
+           Singleton_Header ("x-amz-request-charged");
+         Outcome : constant Get_Object_Attributes_Outcome :=
+           Decode_Get_Object_Attributes_Response
+             (Flyology.HTTP.Client.Status (Response), Payload,
+              Singleton_Header ("x-amz-delete-marker"),
+              Singleton_Header ("last-modified"), Version_ID,
+              Request_Charged, Singleton_Header ("x-amz-request-id"),
+              Singleton_Header ("x-amz-id-2"), Limits);
+      begin
+         if Outcome.Kind = Object_Attributes_Found
+           and then
+             ((Request_Charged'Length > 0
+               and then US.To_String
+                 (Prepared.Requested_Get_Attributes_Request_Payer) /=
+                   "requester")
+              or else
+                (US.Length
+                   (Prepared.Requested_Get_Attributes_Version_ID) > 0
+                 and then Version_ID /= US.To_String
+                   (Prepared.Requested_Get_Attributes_Version_ID)))
+         then
+            raise Invalid_Response with
+              "GetObjectAttributes response does not match request";
+         end if;
+         return Outcome;
+      end;
+   end Decode_Get_Object_Attributes_Complete_Response;
+
    function Execute_Get_Object_Attributes
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -4884,20 +4954,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
              (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_Get_Object_Attributes_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload),
-            Flyology.HTTP.Client.Header (Response, "x-amz-delete-marker"),
-            Flyology.HTTP.Client.Header (Response, "last-modified"),
-            Flyology.HTTP.Client.Header (Response, "x-amz-version-id"),
-            Flyology.HTTP.Client.Header (Response, "x-amz-request-charged"),
-            Flyology.HTTP.Client.Header (Response, "x-amz-request-id"),
-            Flyology.HTTP.Client.Header (Response, "x-amz-id-2"), Limits);
+         return Decode_Get_Object_Attributes_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
