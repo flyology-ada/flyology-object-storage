@@ -5697,6 +5697,32 @@ begin
       Query : constant SigV4.Name_Value_Array :=
         (SigV4.Pair ("attributes", ""),
          SigV4.Pair ("x-id", "GetObjectAttributes"));
+      SSE_Key : constant String :=
+        Checksum_Value (Core.SHA256, "attributes-sse-key");
+      Decoded_SSE_Key : constant Checksums.Decode_Result :=
+        Checksums.Decode_Base64 (SSE_Key, Core.SHA256);
+      SSE_Key_MD5 : constant String := Checksums.Encode_Base64
+        (Checksums.Compute
+           (Core.MD5, Checksums.Raw_Bytes (Decoded_SSE_Key.Value)));
+
+      procedure Reject_Control
+        (Headers : String;
+         Code    : String;
+         Label   : String;
+         Scheme  : Flyology.HTTP.Origin_Scheme := Flyology.HTTP.Plain_HTTP)
+      is
+         Value : constant String := Run
+           (Signed_Query_Body_Request
+              ("GET", "/test-bucket/object", Query, "",
+               "x-amz-object-attributes: ObjectSize" & CRLF & Headers),
+            Scheme => Scheme);
+      begin
+         Require
+           (not Has (Value, "200 OK")
+            and then Has (Value, "<Code>" & Code & "</Code>"),
+            "GetObjectAttributes accepted " & Label & ": " & Value);
+      end Reject_Control;
+
       Response : constant String := Run
         (Signed_Query_Request
            ("GET", "/test-bucket/object", Query,
@@ -5841,52 +5867,91 @@ begin
                   "x-amz-expected-bucket-owner: different-owner" & CRLF)),
             "403 Forbidden"),
          "GetObjectAttributes ignored the expected owner");
-      Require
-        (Has
-           (Run
-              (Signed_Query_Body_Request
-                 ("GET", "/test-bucket/object",
-                  (1 => SigV4.Pair ("attributes", "")), "",
-                  "x-amz-object-attributes: ObjectSize" & CRLF &
-                  "x-amz-request-payer: owner" & CRLF)),
-            "400 Bad Request"),
-         "GetObjectAttributes accepted an invalid request payer");
-      Require
-        (Has
-           (Run
-              (Signed_Query_Body_Request
-                 ("GET", "/test-bucket/object",
-                  (1 => SigV4.Pair ("attributes", "")), "",
-                  "x-amz-object-attributes: ObjectSize" & CRLF &
-                  "x-amz-request-payer: requester" & CRLF)),
-            "501 Not Implemented"),
-         "GetObjectAttributes silently ignored requester-pays");
-      Require
-        (Has
-           (Run
-              (Signed_Query_Body_Request
-                 ("GET", "/test-bucket/object",
-                  (1 => SigV4.Pair ("attributes", "")), "",
-                  "x-amz-object-attributes: ObjectSize" & CRLF &
-                  "x-amz-server-side-encryption-customer-algorithm: " &
-                  "AES256" & CRLF)),
-            "400 Bad Request"),
-         "GetObjectAttributes accepted an incomplete SSE-C group");
-      Require
-        (Has
-           (Run
-              (Signed_Query_Body_Request
-                 ("GET", "/test-bucket/object",
-                  (1 => SigV4.Pair ("attributes", "")), "",
-                  "x-amz-object-attributes: ObjectSize" & CRLF &
-                  "x-amz-server-side-encryption-customer-algorithm: " &
-                  "AES256" & CRLF &
-                  "x-amz-server-side-encryption-customer-key: " &
-                  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" & CRLF &
-                  "x-amz-server-side-encryption-customer-key-md5: " &
-                  "AAAAAAAAAAAAAAAAAAAAAA==" & CRLF)),
-            "501 Not Implemented"),
-         "GetObjectAttributes silently ignored a valid SSE-C group");
+      Reject_Control
+        ("x-amz-request-payer: owner" & CRLF, "InvalidRequest",
+         "invalid request payer");
+      Reject_Control
+        ("x-amz-request-payer: Requester" & CRLF, "InvalidRequest",
+         "wrong-case request payer");
+      Reject_Control
+        ("x-amz-request-payer: " & CRLF, "InvalidRequest",
+         "empty request payer");
+      Reject_Control
+        ("x-amz-request-payer: requester" & CRLF &
+         "x-amz-request-payer: requester" & CRLF,
+         "InvalidRequest", "duplicate request payer");
+      Reject_Control
+        ("x-amz-request-payer: requester" & CRLF, "NotImplemented",
+         "unsupported requester pays");
+      Reject_Control
+        ("x-amz-expected-bucket-owner: " & CRLF, "InvalidRequest",
+         "empty expected owner");
+      Reject_Control
+        ("x-amz-expected-bucket-owner: test-principal" & CRLF &
+         "x-amz-expected-bucket-owner: test-principal" & CRLF,
+         "InvalidRequest", "duplicate expected owner");
+      Reject_Control
+        ("x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF,
+         "InvalidRequest", "incomplete SSE-C group");
+      Reject_Control
+        ("x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
+         "x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Key & CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " & SSE_Key_MD5 &
+         CRLF, "InvalidRequest", "duplicate SSE-C algorithm",
+         Flyology.HTTP.Secure_HTTPS);
+      Reject_Control
+        ("x-amz-server-side-encryption-customer-algorithm: AES128" & CRLF &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Key & CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " & SSE_Key_MD5 &
+         CRLF, "InvalidArgument", "invalid SSE-C algorithm",
+         Flyology.HTTP.Secure_HTTPS);
+      Reject_Control
+        ("x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
+         "x-amz-server-side-encryption-customer-key: malformed" & CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " & SSE_Key_MD5 &
+         CRLF, "InvalidDigest", "malformed SSE-C key",
+         Flyology.HTTP.Secure_HTTPS);
+      Reject_Control
+        ("x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Key & CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " &
+         Content_MD5 ("different") & CRLF, "InvalidDigest",
+         "mismatched SSE-C digest", Flyology.HTTP.Secure_HTTPS);
+      Reject_Control
+        ("x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Key & CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " & SSE_Key_MD5 &
+         CRLF, "InvalidRequest", "SSE-C over plaintext");
+      Reject_Control
+        ("x-amz-server-side-encryption-customer-algorithm: AES256" & CRLF &
+         "x-amz-server-side-encryption-customer-key: " & SSE_Key & CRLF &
+         "x-amz-server-side-encryption-customer-key-md5: " & SSE_Key_MD5 &
+         CRLF, "NotImplemented", "unsupported valid SSE-C",
+         Flyology.HTTP.Secure_HTTPS);
+      Reject_Control
+        ("x-amz-server-side-encryption: AES256" & CRLF, "NotImplemented",
+         "unmodeled encryption control");
+      declare
+         Value : constant String := Run
+           (Signed_Query_Body_Request
+              ("GET", "/test-bucket/missing", Query, "",
+               "x-amz-object-attributes: ObjectSize" & CRLF &
+               "x-amz-request-payer: owner" & CRLF &
+               "x-amz-expected-bucket-owner: different-owner" & CRLF &
+               "x-amz-server-side-encryption-customer-algorithm: AES256" &
+               CRLF,
+               Corrupt_Signature => True));
+      begin
+         Require
+           (Has (Value, "<Code>SignatureDoesNotMatch</Code>")
+            and then not Has (Value, "NoSuchKey")
+            and then not Has (Value, "InvalidRequest")
+            and then not Has (Value, "AccessDenied")
+            and then not Has (Value, "NotImplemented"),
+            "GetObjectAttributes controls ran before authentication: " &
+            Value);
+      end;
       Require
         (Has
            (Run
