@@ -8,6 +8,7 @@ with Ada.Streams.Stream_IO;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Flyology;
+with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
@@ -77,6 +78,7 @@ procedure S3_Implementation_Corpus is
    use type Tags.Tag_Vectors.Vector;
    use type Client_Objects.Delete_Outcome_Kind;
    use type Client_Objects.List_Outcome_Kind;
+   use type Client_Objects.Whole_Get_Outcome_Kind;
    use type Client_Objects.Tagging_Outcome_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Client_Buckets.Set_Versioning_Outcome_Kind;
@@ -2996,6 +2998,282 @@ procedure S3_Implementation_Corpus is
          raise;
    end Require_Bucket_Versioning;
 
+   procedure Require_Durable_Version_Routing
+     (Origin : Flyology.HTTP.Origin; Bucket, Timestamp : String)
+   is
+      --  Test-oracle identity: test-flyology-server.sh assigns this exact
+      --  implementation name to the SQLite-backed authenticated endpoint.
+      Implementation_Variable : constant String :=
+        "FLYOLOGY_S3_IMPLEMENTATION";
+      SQLite_Implementation : constant String := "flyology-sqlite";
+   begin
+      if not Ada.Environment_Variables.Exists (Implementation_Variable)
+        or else Ada.Environment_Variables.Value (Implementation_Variable) /=
+          SQLite_Implementation
+      then
+         return;
+      end if;
+
+      declare
+         Probe        : constant String := Bucket & "-durable-versions";
+         Object_Key   : constant String := "retained/object";
+         First_Value  : aliased constant String := "durable-first";
+         Second_Value : aliased constant String := "durable-second";
+         HTTP         : aliased HTTP_Client.Client (Capacity => 1);
+         Identity     : constant Low_Level.Credentials :=
+           Low_Level.Make_Credentials (Access_Key, Secret_Key);
+         First_ID     : US.Unbounded_String;
+         Second_ID    : US.Unbounded_String;
+         Marker_ID    : US.Unbounded_String;
+         --  Test-reference bound: each asserted page contains exactly the
+         --  two retained entries under examination and must not truncate.
+         Version_Page_Bound : constant S3_Core.Page_Size := 2;
+
+         function Put
+           (Value : not null access constant String)
+            return Low_Level.Put_Object_Outcome
+         is
+            Source : Upload_Source (Value);
+         begin
+            return Client_Objects.Put_Object
+              (HTTP, Origin, Probe, Object_Key, Source,
+               SigV4.SHA256_Hex (Value.all), Identity, Timeout => 30.0);
+         end Put;
+
+         procedure Require_Whole
+           (Version_ID, Expected : String)
+         is
+            Result : constant Client_Objects.Whole_Get_Outcome :=
+              Client_Objects.Get_Whole
+                (HTTP, Origin, Probe, Object_Key, Expected'Length, Identity,
+                 Version_ID => Version_ID, Timeout => 30.0);
+         begin
+            if Result.Kind /= Client_Objects.Whole_Object_Read
+              or else Result.Status /= 200
+              or else US.To_String (Result.Result.Version_ID) /= Version_ID
+              or else Flyology.Bytes.To_Byte_String (Result.Object_Bytes) /=
+                Expected
+            then
+               raise Program_Error with
+                 "durable version-addressed GetObject mismatch";
+            end if;
+         end Require_Whole;
+
+         procedure Require_Current
+           (Version_ID, Expected : String)
+         is
+            Result : constant Client_Objects.Whole_Get_Outcome :=
+              Client_Objects.Get_Whole
+                (HTTP, Origin, Probe, Object_Key, Expected'Length, Identity,
+                 Timeout => 30.0);
+         begin
+            if Result.Kind /= Client_Objects.Whole_Object_Read
+              or else Result.Status /= 200
+              or else US.To_String (Result.Result.Version_ID) /= Version_ID
+              or else Flyology.Bytes.To_Byte_String (Result.Object_Bytes) /=
+                Expected
+            then
+               raise Program_Error with
+                 "durable current-generation GetObject mismatch";
+            end if;
+         end Require_Current;
+      begin
+         Create_Bucket (Origin, Probe, "");
+         HTTP_Client.Configure (HTTP, Origin);
+         declare
+            Enabled : constant Client_Buckets.Set_Versioning_Outcome :=
+              Client_Buckets.Set_Versioning
+                (HTTP, Origin, Probe,
+                 Flyology.Object_Storage.Versioning_Enabled, Identity,
+                 Timeout => 30.0);
+         begin
+            if Enabled.Kind /= Client_Buckets.Versioning_Updated then
+               raise Program_Error with
+                 "durable version-routing bucket enablement failed";
+            end if;
+         end;
+
+         declare
+            First  : constant Low_Level.Put_Object_Outcome :=
+              Put (First_Value'Access);
+            Second : constant Low_Level.Put_Object_Outcome :=
+              Put (Second_Value'Access);
+         begin
+            if First.Kind /= Low_Level.Object_Put
+              or else First.Status /= 200
+              or else US.Length (First.Result.Version_ID) = 0
+              or else Second.Kind /= Low_Level.Object_Put
+              or else Second.Status /= 200
+              or else US.Length (Second.Result.Version_ID) = 0
+              or else First.Result.Version_ID = Second.Result.Version_ID
+            then
+               raise Program_Error with
+                 "durable version-routing PutObject generations mismatch";
+            end if;
+            First_ID := First.Result.Version_ID;
+            Second_ID := Second.Result.Version_ID;
+         end;
+
+         declare
+            Page : constant Client_Objects.List_Versions_Outcome :=
+              Client_Objects.List_Versions_Page
+                (HTTP, Origin, Probe, Identity, Prefix => Object_Key,
+                 Maximum => Version_Page_Bound, Timeout => 30.0);
+         begin
+            if Page.Kind /= Client_Objects.Page_Available
+              or else Page.Status /= 200
+              or else Page.Page.Is_Truncated
+              or else Page.Page.Versions.Length /= 2
+              or else not Page.Page.Delete_Markers.Is_Empty
+              or else US.To_String (Page.Page.Versions (1).Key) /= Object_Key
+              or else Page.Page.Versions (1).Version_ID /= Second_ID
+              or else not Page.Page.Versions (1).Is_Latest
+              or else Page.Page.Versions (2).Version_ID /= First_ID
+              or else Page.Page.Versions (2).Is_Latest
+            then
+               raise Program_Error with
+                 "durable ListObjectVersions retained ordering mismatch";
+            end if;
+         end;
+
+         Require_Whole (US.To_String (First_ID), First_Value);
+         Require_Current (US.To_String (Second_ID), Second_Value);
+
+         declare
+            Parameters : Low_Level.Head_Object_Parameters;
+         begin
+            Parameters.Version_ID := Second_ID;
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Head_Object
+                   (Origin, Low_Level.Path_Style, Probe, Object_Key,
+                    Parameters, Identity, "us-east-1", Timestamp);
+               Head : constant Low_Level.Head_Object_Outcome :=
+                 Low_Level.Execute_Head_Object
+                   (HTTP, Prepared, Timeout => 30.0);
+            begin
+               if Head.Kind /= Low_Level.Object_Found
+                 or else Head.Status /= 200
+                 or else Head.Result.Version_ID /= Second_ID
+                 or else Head.Result.Content_Length /= Second_Value'Length
+               then
+                  raise Program_Error with
+                    "durable version-addressed HeadObject mismatch";
+               end if;
+            end;
+         end;
+
+         declare
+            Removed : constant Client_Objects.Delete_Outcome :=
+              Client_Objects.Delete
+                (HTTP, Origin, Probe, Object_Key, Identity,
+                 Version_ID => US.To_String (Second_ID), Timeout => 30.0);
+         begin
+            if Removed.Kind /= Client_Objects.Object_Removed
+              or else Removed.Status /= 204
+              or else Removed.Version_ID /= Second_ID
+              or else
+                (Removed.Delete_Marker.Is_Set
+                 and then Removed.Delete_Marker.Value)
+            then
+               raise Program_Error with
+                 "durable exact version deletion response mismatch";
+            end if;
+         end;
+         Require_Current (US.To_String (First_ID), First_Value);
+
+         declare
+            Deleted : constant Client_Objects.Delete_Outcome :=
+              Client_Objects.Delete
+                (HTTP, Origin, Probe, Object_Key, Identity,
+                 Timeout => 30.0);
+         begin
+            if Deleted.Kind /= Client_Objects.Object_Removed
+              or else Deleted.Status /= 204
+              or else not Deleted.Delete_Marker.Is_Set
+              or else not Deleted.Delete_Marker.Value
+              or else US.Length (Deleted.Version_ID) = 0
+            then
+               raise Program_Error with
+                 "durable delete-marker publication response mismatch";
+            end if;
+            Marker_ID := Deleted.Version_ID;
+         end;
+
+         declare
+            Missing : constant Client_Objects.Whole_Get_Outcome :=
+              Client_Objects.Get_Whole
+                (HTTP, Origin, Probe, Object_Key, First_Value'Length,
+                 Identity, Timeout => 30.0);
+         begin
+            if Missing.Kind /= Client_Objects.Whole_Get_Rejected
+              or else Missing.Status /= 404
+              or else US.To_String (Missing.Error.Code) /= "NoSuchKey"
+            then
+               raise Program_Error with
+                 "durable delete marker did not hide the current object";
+            end if;
+         end;
+         Require_Whole (US.To_String (First_ID), First_Value);
+
+         declare
+            Page : constant Client_Objects.List_Versions_Outcome :=
+              Client_Objects.List_Versions_Page
+                (HTTP, Origin, Probe, Identity, Prefix => Object_Key,
+                 Maximum => Version_Page_Bound, Timeout => 30.0);
+         begin
+            if Page.Kind /= Client_Objects.Page_Available
+              or else Page.Page.Versions.Length /= 1
+              or else Page.Page.Delete_Markers.Length /= 1
+              or else Page.Page.Versions (1).Version_ID /= First_ID
+              or else Page.Page.Versions (1).Is_Latest
+              or else Page.Page.Delete_Markers (1).Version_ID /= Marker_ID
+              or else not Page.Page.Delete_Markers (1).Is_Latest
+            then
+               raise Program_Error with
+                 "durable delete-marker version listing mismatch";
+            end if;
+         end;
+
+         declare
+            Removed_Marker : constant Client_Objects.Delete_Outcome :=
+              Client_Objects.Delete
+                (HTTP, Origin, Probe, Object_Key, Identity,
+                 Version_ID => US.To_String (Marker_ID), Timeout => 30.0);
+         begin
+            if Removed_Marker.Kind /= Client_Objects.Object_Removed
+              or else Removed_Marker.Version_ID /= Marker_ID
+              or else not Removed_Marker.Delete_Marker.Is_Set
+              or else not Removed_Marker.Delete_Marker.Value
+            then
+               raise Program_Error with
+                 "durable exact delete-marker removal response mismatch";
+            end if;
+         end;
+         Require_Current (US.To_String (First_ID), First_Value);
+
+         declare
+            Removed_First : constant Client_Objects.Delete_Outcome :=
+              Client_Objects.Delete
+                (HTTP, Origin, Probe, Object_Key, Identity,
+                 Version_ID => US.To_String (First_ID), Timeout => 30.0);
+         begin
+            if Removed_First.Kind /= Client_Objects.Object_Removed
+              or else Removed_First.Version_ID /= First_ID
+            then
+               raise Program_Error with
+                 "durable final version removal response mismatch";
+            end if;
+         end;
+         HTTP_Client.Shutdown (HTTP);
+         Delete_Empty_Bucket (Origin, Probe, "");
+      exception
+         when others =>
+            HTTP_Client.Shutdown (HTTP);
+            raise;
+      end;
+   end Require_Durable_Version_Routing;
+
    procedure Delete_One
      (Origin    : Flyology.HTTP.Origin;
       Bucket    : String;
@@ -3232,9 +3510,11 @@ begin
          Require_Bucket_Location (Origin, Bucket, Timestamp);
          Require_Listed_Bucket (Origin, Bucket, Timestamp);
          Require_Bucket_Versioning (Origin, Bucket);
+         Require_Durable_Version_Routing (Origin, Bucket, Timestamp);
          Ada.Text_IO.Put_Line
            ("S3 implementation setup: bucket created, located, headed, " &
-            "listed, and versioning-configured");
+            "listed, and versioning-configured; durable SQLite routing " &
+            "checked when selected");
       elsif Ada.Command_Line.Argument (4) = "cleanup" then
          Delete_One (Origin, Bucket, "native-object", Timestamp);
          Delete_One

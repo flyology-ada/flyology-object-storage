@@ -3,9 +3,9 @@
 This slice qualifies the pinned S3 `DeleteObject` request and response model,
 atomic current-object deletion, signed low- and high-level clients, and the
 authenticated server route. The coverage ledger remains deliberately
-`partial` for the server: retained-generation deletion is qualified only on
-memory, while Requester Pays enforcement, governance retention, directory
-buckets, and durable files/SQLite versions are not implemented.
+`partial` for the server: retained-generation deletion is qualified on memory
+and SQLite, while Requester Pays enforcement, governance retention, directory
+buckets, and durable files versions are not implemented.
 
 The complete modeled request surface is represented: bucket, key, MFA,
 version ID, Requester Pays, governance-retention bypass, expected owner,
@@ -24,12 +24,13 @@ deletion under the same protected, publication-gate, or transactional
 boundary. An ordinary missing unversioned key succeeds idempotently. A missing
 key with `If-Match` is `Not_Found`; a mismatched existing object is
 `Precondition_Failed`. Race lanes admit one atomic outcome and preserve exact
-body/metadata on rejection. The memory server maps absent, `null`, and opaque
-version selectors onto the same protected state machine. Enabled and suspended
-simple deletes publish typed markers; exact data or marker removal returns the
-selected version and delete-marker headers; missing exact identities remain
-idempotent; and MFA Delete admission is checked within the mutation. Durable
-backends continue to fail closed for configured versioning.
+body/metadata on rejection. The memory and SQLite servers map absent, `null`,
+and opaque version selectors onto their protected or transactional state
+machines. Enabled and suspended simple deletes publish typed markers; exact
+data or marker removal returns the selected version and delete-marker headers;
+missing exact identities remain idempotent; and MFA Delete admission is checked
+within the mutation. Pure-files continues to fail closed for configured
+versioning.
 
 The files backend treats every required store, bucket, configuration, object,
 and multipart namespace component as an exact nonsymlink kind before using it.
@@ -57,11 +58,12 @@ accepts one conditional DELETE, drops its response, and requires the next
 request to be reconciliation HEAD. The call raises an outcome-unknown transport
 exception; it never converts a replayed 404 into a definite predicate result.
 
-The supported server semantics are ordinary unversioned deletion, memory
-version selection and marker publication, atomic `If-Match`, expected-owner
-policy, and pluggable fail-closed MFA authorization. A present false
-governance-bypass value is a no-op. Durable version selection, Requester Pays,
-and a true governance bypass return explicit modeled `NotImplemented`;
+The supported server semantics are ordinary unversioned deletion, memory and
+SQLite version selection and marker publication, atomic `If-Match`,
+expected-owner policy, and pluggable fail-closed MFA authorization. A present
+false governance-bypass value is a no-op. Durable version selection outside
+SQLite, Requester Pays, and a true governance bypass return explicit modeled
+`NotImplemented`;
 directory-only time/size predicates return `InvalidArgument`. MFA requires
 secure transport and a bounded non-retained verifier decision for the bucket
 root owner; missing, malformed, duplicate, overlong, insecure, non-root,

@@ -90,7 +90,8 @@ fi
 if [ -n "${FLYOLOGY_S3_SERVER_RUNNER:-}" ]; then
   echo "Flyology $BACKEND endpoint runner: OK"
 else
-  "$SCRIPT_DIR/run-s3-implementation.sh" \
+  FLYOLOGY_S3_IMPLEMENTATION="flyology-$BACKEND" \
+    "$SCRIPT_DIR/run-s3-implementation.sh" \
     "http://127.0.0.1:$PORT" \
     "http://host.docker.internal:$PORT" \
     "flyology-$BACKEND-corpus-$$" "$ACCESS_KEY" "$SECRET_KEY" yes

@@ -48,6 +48,14 @@ a separate GET, and deletes the probe without ever creating a versionable
 object. The pinned RustFS, SeaweedFS, supplemental MinIO, and Flyology
 memory/files/SQLite launchers run this same executable.
 
+When the launcher identifies the authenticated Flyology SQLite server, the
+same setup also creates an independent version-enabled probe and runs the
+retained ordinary-generation, exact GET/HEAD/delete, marker publication,
+listing, re-exposure, and cleanup lifecycle recorded in the
+ListObjectVersions qualification. Other implementations retain the
+configuration-only oracle, so this SQLite evidence does not silently widen an
+external capability claim.
+
 On 2026-08-22, the default three-repeat post-change campaign passed all 18
 lanes: the three digest-pinned external images and Flyology memory, files, and
 SQLite, each three times. Every lane retained the independent s5cmd byte,

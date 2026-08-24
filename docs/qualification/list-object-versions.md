@@ -1,15 +1,16 @@
 # ListObjectVersions qualification
 
 This record qualifies the bounded synchronous client, strict wire codecs,
-authenticated memory-backed server route, and bounded in-memory slice for
+authenticated memory and SQLite server routes, and bounded in-memory slice for
 `ListObjectVersions`. The memory slice includes enabled and suspended delete
 markers, permanent selected-generation removal, and delimiter/common-prefix
 pagination. The SQLite slice additionally qualifies durable ordinary PUT,
 current/null/exact selection and tags, enabled and suspended delete-marker
 transitions, permanent selected-generation deletion, catalog ordering, paired
 cursors, delimiter projection, retained multipart publication and selected
-part attributes, and reopen recovery. It does not yet claim durable server
-behavior, files generations, or external-server interoperability.
+part attributes, reopen recovery, and one authenticated retained-generation
+lifecycle. It does not yet claim a server-restart lifecycle, files generations,
+or external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -134,6 +135,17 @@ marker removal that re-exposes the preceding generation. It also covers a
 signed delimiter request whose response combines object versions and one
 escaped common prefix.
 
+The SQLite black-box server gate creates a dedicated version-enabled bucket,
+publishes two ordinary versions through signed PutObject calls, and requires
+unique nonempty response version IDs in newest-first ListObjectVersions order.
+It exact-selects the older generation with whole GetObject and the newer one
+with HeadObject, permanently removes the newer version, and requires the older
+version to become current. A simple delete then publishes a typed marker that
+hides only current reads; the older exact generation remains readable and both
+entries remain listed. Exact marker removal re-exposes the data generation,
+and exact data removal leaves the bucket deletable. Every result is observed
+through the public authenticated S3 route and typed client response headers.
+
 The SQLite catalog corpus reopens a three-generation fixture containing a null
 data generation, one exact data generation, and a latest exact delete marker.
 It gates newest-first ordering, typed null/exact identities, `Is_Latest`, paired
@@ -145,8 +157,8 @@ suspended marker transitions, permanent exact data and marker deletion, MFA
 admission, prior-generation re-exposure, retained multipart completion,
 selected-generation part attributes, payload-reference recovery, and
 generation/file cardinality after startup collection. The backend and server
-cells remain partial until durable server selection, files generations, and
-black-box external S3 behavior are independently qualified.
+cells remain partial until restart-spanning server selection, files
+generations, and black-box external S3 behavior are independently qualified.
 
 ## Gate evidence
 
@@ -155,6 +167,9 @@ assertions or unexpected errors, the 88-case files crash matrix, 320 checksum
 oracle vectors, 210 chunk boundaries, the strict server application corpus,
 and three repetitions of the native/lightweight socket and TLS corpora. The
 SQLite wrapper, catalog, backend, reopen, and upgrade gate passed separately.
+The authenticated SQLite black-box server slice passed the signed retained
+generation and delete-marker lifecycle together with its independent s5cmd
+byte, multi-delete, and cleanup oracles.
 The inventory verifier reported 45 modeled members across seven shapes and 23
 reciprocal vectors; the 116-operation coverage verifier and its negative oracle
 also passed. The new backend-neutral memory corpus covers state transitions,
