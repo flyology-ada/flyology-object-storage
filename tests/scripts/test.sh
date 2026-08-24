@@ -141,6 +141,11 @@ run_crash_cases() {
 run_crash_cases bucket 10
 run_crash_cases put 3
 run_crash_cases conditional-put 3
+run_crash_cases versioned-put 3
+run_crash_cases versioned-delete-marker 3
+run_crash_cases suspended-put 4
+run_crash_cases suspended-delete-marker 4
+run_crash_cases suspended-exact-delete 5
 run_crash_cases object-tags 3
 run_crash_cases bucket-tags 3
 run_crash_cases bucket-tag-delete 1
@@ -154,7 +159,7 @@ run_crash_cases complete 4
 run_crash_cases versioning 3
 rm -rf "$CRASH_ROOT"
 trap - EXIT INT TERM
-echo "files abrupt-crash matrix: 88 pre/post-barrier cases including conditional DeleteObject OK"
+echo "files abrupt-crash matrix: 126 pre/post-barrier cases including retained generations OK"
 
 ./bin/flyology_object_storage_tests
 ./bin/s3_bucket_tagging_benchmark --self-test

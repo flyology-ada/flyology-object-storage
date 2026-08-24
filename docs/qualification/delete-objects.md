@@ -1,12 +1,9 @@
 # DeleteObjects qualification and boundaries
 
 This slice qualifies current, null, and exact-generation `DeleteObjects` for
-the memory and SQLite backends, including delete-marker publication/removal
-and MFA Delete enforcement. The files backend qualifies current deletion while
-unconfigured and explicit null deletion; opaque exact generations and enabled
-version retention remain an explicit capability exclusion. Directory buckets,
-Requester Pays accounting, and Object Lock governance enforcement are not
-qualified.
+the memory, pure-files, and SQLite backends, including delete-marker
+publication/removal and MFA Delete enforcement. Directory buckets, Requester
+Pays accounting, and Object Lock governance enforcement are not qualified.
 
 The request boundary accepts at most 1,000 entries and a bounded XML body. It
 requires one canonical Content-MD5 computed over the exact body bytes and can
@@ -33,10 +30,10 @@ When MFA Delete is enabled, any actionable null/exact entry requires one
 verified `x-amz-mfa` credential. A missing or invalid credential rejects the
 request before backend mutation; the verified authorization is carried into
 the same batch boundary that reads bucket policy and publishes deletions.
-Memory performs that boundary in its protected state and SQLite in one catalog
-transaction. Files reads policy under its publication gate but returns
-per-entry `NotImplemented` for exact generations it cannot represent. The
-legacy `Require_Unversioned` backend requirement remains available for callers
+Memory performs that boundary in its protected state, SQLite in one catalog
+transaction, and files under one publication gate with durable per-generation
+namespace mutations. The legacy `Require_Unversioned` backend requirement
+remains available for callers
 that specifically require pre-versioning semantics and is still checked under
 the same publication boundary.
 
@@ -59,10 +56,10 @@ indeterminate conditional batch.
 Executable evidence is provided by:
 
 - `backends.delete-objects-conformance` for memory and files, including
-  duplicate entries, condition results, whole-request validation, files
-  null/exact capability mapping, and failpoints;
-- the shared memory/SQLite retained-generation conformance for mixed exact,
-  current-marker, missing-exact, and conditional entries in one batch;
+  duplicate entries, condition results, whole-request validation, selected
+  null/exact semantics, and failpoints;
+- the shared memory/files/SQLite retained-generation conformance for mixed
+  exact, current-marker, missing-exact, and conditional entries in one batch;
 - the SQLite conformance, authoritative-generation rollback trigger,
   migration, reopen, MFA, and orphan-payload recovery cases;
 - `s3.delete-objects-result-codec` and `s3.low-level-delete-requests` for every
@@ -85,7 +82,6 @@ Reproduce the deterministic local qualification with:
 ./sqlite/tests/scripts/test.sh
 ```
 
-The coverage ledger marks the client covered because it projects every pinned
-request member and decodes every result member. Backend and server remain
-partial solely for the files exact-generation and directory/policy boundaries
-above; corpus coverage remains covered.
+The coverage ledger marks backend, client, and corpus covered. Server remains
+partial until an authenticated files-server retained-generation batch is added;
+the directory/policy exclusions above remain explicit.

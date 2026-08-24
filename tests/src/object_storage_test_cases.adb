@@ -3815,8 +3815,8 @@ package body Object_Storage_Test_Cases is
             Null_Tags : Object_Tag_Set := Empty_Object_Tags;
             Read_Tags : Object_Tag_Set;
             Identity  : Version_Identity;
-            --  Test-reference opaque ID: pure-files must distinguish an
-            --  unsupported retained identity from its supported null alias.
+            --  Test-reference opaque ID: no retained generation has this
+            --  identity, so exact selectors must return clean Not_Found.
             Opaque : constant Version_Selector :=
               (Kind => Exact_Version,
                ID   => US.To_Unbounded_String ("opaque-generation"));
@@ -3877,8 +3877,8 @@ package body Object_Storage_Test_Cases is
               ("file-bucket", Key, null, Ada.Real_Time.Time_Last,
                Null_Info, Result, Selector => Opaque);
             Assert
-              (Result = Not_Implemented,
-               "files opaque retained HeadObject did not fail closed");
+              (Result = Not_Found,
+               "files missing opaque HeadObject was not classified");
             Identity :=
               (Has_Version_ID  => True,
                Is_Null_Version => True,
@@ -3887,12 +3887,12 @@ package body Object_Storage_Test_Cases is
               ("file-bucket", Key, null, Ada.Real_Time.Time_Last,
                Read_Tags, Identity, Result, Selector => Opaque);
             Assert
-              (Result = Not_Implemented
+              (Result = Not_Found
                and then Read_Tags = Empty_Object_Tags
                and then not Identity.Has_Version_ID
                and then not Identity.Is_Null_Version
                and then US.Length (Identity.Version_ID) = 0,
-               "files opaque tag rejection retained output state");
+               "files missing opaque tag lookup retained output state");
          end;
          declare
             Snapshot : Object_Attribute_Snapshot;
@@ -4530,7 +4530,7 @@ package body Object_Storage_Test_Cases is
          Ada.Directories.Delete_Tree (Base);
       end if;
 
-      for Point in 0 .. 11 loop
+      for Point in 0 .. 13 loop
          declare
             Root : constant String := Path ("bucket", Point);
             Result : Status;
@@ -4544,7 +4544,7 @@ package body Object_Storage_Test_Cases is
             end;
             Assert
               (Result =
-                 (if Point < 10 then Backend_Unavailable else Success),
+                 (if Point < 12 then Backend_Unavailable else Success),
                "bucket creation durability barrier count changed");
             declare
                Store : Files.Store := Files.Open (Root);
@@ -5270,7 +5270,8 @@ package body Object_Storage_Test_Cases is
                Ada.Real_Time.Time_Last, Outcomes, Result);
             Assert
               (Result = Success and then Outcomes.Length = 2
-               and then Outcomes (1).Result = Not_Implemented
+               and then Outcomes (1).Result = Success
+               and then Outcomes (1).Publication.Kind = No_Version_Removed
                and then Outcomes (2).Result = Success
                and then Outcomes (2).Publication.Kind =
                  Object_Version_Removed
@@ -5396,6 +5397,155 @@ package body Object_Storage_Test_Cases is
       Versioned_Object_Conformance.Exercise
         (Store, "memory-object-versions-bucket");
    end Check_Memory_Object_Versions;
+
+   procedure Check_Files_Object_Versions (Unused : in out Fixture) is
+      pragma Unreferenced (Unused);
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      use Flyology.Object_Storage.Backends;
+      package Files renames Flyology.Object_Storage.Backends.Files;
+      package US renames Ada.Strings.Unbounded;
+      use type US.Unbounded_String;
+      Root : constant String := Ada.Directories.Compose
+        (Ada.Directories.Compose
+           (Ada.Directories.Current_Directory, "obj"),
+         "files-object-version-conformance");
+      Bucket : constant String := "files-version-reopen";
+      V1_ID  : US.Unbounded_String;
+      V2_ID  : US.Unbounded_String;
+      Marker_ID : US.Unbounded_String;
+
+      procedure Clean is
+      begin
+         if Ada.Directories.Exists (Root) then
+            Ada.Directories.Delete_Tree (Root);
+         end if;
+      end Clean;
+   begin
+      Clean;
+      declare
+         Store : Files.Store := Files.Open
+           (Root, Maximum_Object_Size => 1_024,
+            Commit => Files.Process_Crash_Atomic);
+      begin
+         Versioned_Object_Conformance.Exercise
+           (Store, "files-object-versions-bucket");
+         declare
+            Result : Status;
+            Info   : Object_Information;
+            Source : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String ("persistent-v1"),
+               Position => 0,
+               Length   => (Kind => Known, Bytes => 13),
+               Bad_Last => False);
+            Replacement : Buffer_Source :=
+              (Data     => Flyology.Bytes.From_Byte_String ("persistent-v2"),
+               Position => 0,
+               Length   => (Kind => Known, Bytes => 13),
+               Bad_Last => False);
+            Deleted : Version_Delete_Outcome;
+         begin
+            Store.Create_Bucket
+              (Bucket, null, Ada.Real_Time.Time_Last, Result);
+            Assert (Result = Success, "reopen bucket setup");
+            Store.Put_Bucket_Versioning
+              (Bucket, (Status => Versioning_Enabled, others => <>), null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert (Result = Success, "reopen versioning setup");
+            Store.Put_Object
+              (Bucket, "item", Source, Default_Put_Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Success and then US.Length (Info.Version) > 0,
+               "reopen first retained publication");
+            V1_ID := Info.Version;
+            Store.Put_Object
+              (Bucket, "item", Replacement, Default_Put_Options, null,
+               Ada.Real_Time.Time_Last, Info, Result);
+            Assert
+              (Result = Success and then US.Length (Info.Version) > 0
+               and then Info.Version /= V1_ID,
+               "reopen second retained publication");
+            V2_ID := Info.Version;
+            Store.Delete_Selected_Object
+              (Bucket, "item", Current_Version_Selector,
+               No_Delete_Object_Conditions, False, null,
+               Ada.Real_Time.Time_Last, Deleted, Result);
+            Assert
+              (Result = Success
+               and then Deleted.Kind = Delete_Marker_Created
+               and then US.Length (Deleted.Version_ID) > 0,
+               "reopen retained marker publication");
+            Marker_ID := Deleted.Version_ID;
+         end;
+      end;
+      declare
+         Store : Files.Store := Files.Open
+           (Root, Maximum_Object_Size => 1_024,
+            Commit => Files.Process_Crash_Atomic);
+         Result  : Status;
+         Info    : Object_Information;
+         Page    : List_Versions_Page;
+         Sink    : Buffer_Sink;
+         Deleted : Version_Delete_Outcome;
+      begin
+         Store.Head_Object
+           (Bucket, "item", null, Ada.Real_Time.Time_Last, Info, Result);
+         Assert
+           (Result = Not_Found,
+            "reopened delete marker did not hide the current object");
+         Store.List_Object_Versions
+           (Bucket, (others => <>), null, Ada.Real_Time.Time_Last, Page,
+            Result);
+         Assert
+           (Result = Success and then Page.Entries.Length = 3
+            and then Page.Entries (1).Is_Delete_Marker
+            and then Page.Entries (1).Is_Latest
+            and then Page.Entries (1).Version_ID = Marker_ID
+            and then Page.Entries (2).Version_ID = V2_ID
+            and then Page.Entries (3).Version_ID = V1_ID,
+            "reopened generation catalog lost retained ordering");
+         Store.Get_Object
+           (Bucket, "item", Whole_Object, Sink, null,
+            Ada.Real_Time.Time_Last, Info, Result,
+            Selector => (Kind => Exact_Version, ID => V1_ID));
+         Assert
+           (Result = Success
+            and then Flyology.Bytes.To_Byte_String (Sink.Data) =
+              "persistent-v1",
+            "reopened exact generation returned the wrong bytes");
+         Store.Delete_Selected_Object
+           (Bucket, "item", (Kind => Exact_Version, ID => Marker_ID),
+            No_Delete_Object_Conditions, False, null,
+            Ada.Real_Time.Time_Last, Deleted, Result);
+         Assert
+           (Result = Success and then Deleted.Kind = Delete_Marker_Removed,
+            "reopened marker cleanup failed");
+         Store.Head_Object
+           (Bucket, "item", null, Ada.Real_Time.Time_Last, Info, Result);
+         Assert
+           (Result = Success and then Info.Version = V2_ID,
+            "marker removal did not reveal the prior current generation");
+         Store.Delete_Selected_Object
+           (Bucket, "item", (Kind => Exact_Version, ID => V2_ID),
+            No_Delete_Object_Conditions, False, null,
+            Ada.Real_Time.Time_Last, Deleted, Result);
+         Assert (Result = Success, "reopen second version cleanup");
+         Store.Delete_Selected_Object
+           (Bucket, "item", (Kind => Exact_Version, ID => V1_ID),
+            No_Delete_Object_Conditions, False, null,
+            Ada.Real_Time.Time_Last, Deleted, Result);
+         Assert (Result = Success, "reopen first version cleanup");
+         Store.Delete_Bucket
+           (Bucket, null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "reopen bucket cleanup");
+      end;
+      Clean;
+   exception
+      when others =>
+         Clean;
+         raise;
+   end Check_Files_Object_Versions;
 
    procedure Check_Memory_Object_Version_Capacity
      (Unused : in out Fixture)
@@ -17302,6 +17452,7 @@ package body Object_Storage_Test_Cases is
            (Has_Version_ID  => True,
             Is_Null_Version => False,
             Version_ID      => US.To_Unbounded_String ("stale"));
+         Enabled_Publication : Version_Identity;
       begin
          Store.Get_Bucket_Versioning
            ("versioning-bucket", null, Ada.Real_Time.Time_Last,
@@ -17324,15 +17475,19 @@ package body Object_Storage_Test_Cases is
                Publication, Result);
          end;
          Assert
-           (Result = Not_Implemented
-            and then not Publication.Has_Version_ID,
-            "files enabled PutObject was not rejected before publication");
+           (Result = Success and then Publication.Has_Version_ID
+            and then not Publication.Is_Null_Version
+            and then US.Length (Publication.Version_ID) > 0,
+            "files enabled PutObject did not retain an opaque generation");
+         Enabled_Publication := Publication;
          Store.Head_Object
            ("versioning-bucket", "enabled", null,
             Ada.Real_Time.Time_Last, Info, Result);
          Assert
-           (Result = Not_Found,
-            "files enabled PutObject published despite capability rejection");
+           (Result = Success
+            and then US.To_String (Info.Version) =
+              US.To_String (Publication.Version_ID),
+            "files enabled PutObject was not current after publication");
 
          Store.Put_Bucket_Versioning
            ("versioning-bucket",
@@ -17388,11 +17543,22 @@ package body Object_Storage_Test_Cases is
                "unsupported-copy", Options, null, Ada.Real_Time.Time_Last,
                Copied, Source_Identity, Destination_Identity, Result);
             Assert
-              (Result = Not_Implemented
+              (Result = Source_Not_Found
                and then not Source_Identity.Has_Version_ID
                and then not Destination_Identity.Has_Version_ID,
-               "files exact CopyObject did not fail closed");
+               "files missing exact CopyObject did not fail cleanly");
          end;
+         declare
+            Cleanup : Version_Delete_Outcome;
+         begin
+            Store.Delete_Selected_Object
+              ("versioning-bucket", "enabled",
+               (Kind => Exact_Version,
+                ID   => Enabled_Publication.Version_ID),
+               No_Delete_Object_Conditions, True, null,
+               Ada.Real_Time.Time_Last, Cleanup, Result);
+         end;
+         Assert (Result = Success, "files opaque identity cleanup failed");
          declare
             Cleanup : Version_Delete_Outcome;
          begin
@@ -17665,6 +17831,10 @@ package body Object_Storage_Test_Cases is
         (Caller.Create
            ("memory.object-version-conformance",
             Check_Memory_Object_Versions'Access));
+      Result.Add_Test
+        (Caller.Create
+           ("files.object-version-conformance",
+            Check_Files_Object_Versions'Access));
       Result.Add_Test
         (Caller.Create
            ("memory.object-version-capacity",

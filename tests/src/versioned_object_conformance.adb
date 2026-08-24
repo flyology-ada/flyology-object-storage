@@ -273,6 +273,54 @@ package body Versioned_Object_Conformance is
       end;
 
       declare
+         Upload_ID : US.Unbounded_String;
+         Part_Info : Object_Information;
+         Completed : Object_Information;
+         References : Multipart_Part_References;
+         Sink : Buffer_Sink;
+      begin
+         Store.Create_Multipart_Upload
+           (Copy_Bucket, "multipart-current", Default_Multipart_Options,
+            null, Ada.Real_Time.Time_Last, Upload_ID, Result);
+         Require (Result = Success, "versioned multipart initiation");
+         Store.Copy_Multipart_Part
+           (Bucket, "alpha", Copy_Bucket, "multipart-current",
+            US.To_String (Upload_ID), 1, Whole_Object,
+            Default_Copy_Conditions, null, Ada.Real_Time.Time_Last,
+            Part_Info, Result);
+         Require
+           (Result = Success,
+            "versioned UploadPartCopy did not select the current source");
+         References.Append
+           (Multipart_Part_Reference'
+              (Number => 1, Entity_Tag => Part_Info.Entity_Tag,
+               Checksum => No_Checksum_Information));
+         Store.Complete_Multipart_Upload
+           (Copy_Bucket, "multipart-current", US.To_String (Upload_ID),
+            References, null, Ada.Real_Time.Time_Last, Completed, Result);
+         Require
+           (Result = Success and then US.Length (Completed.Version) > 0,
+            "versioned multipart completion lacked an opaque generation");
+         Store.Get_Object
+           (Copy_Bucket, "multipart-current", Whole_Object, Sink, null,
+            Ada.Real_Time.Time_Last, Info, Result,
+            Selector => (Kind => Exact_Version, ID => Completed.Version));
+         Require
+           (Result = Success
+            and then Flyology.Bytes.To_Byte_String (Sink.Data) = "v2",
+            "versioned multipart completion retained the wrong body");
+         Store.Delete_Selected_Object
+           (Copy_Bucket, "multipart-current",
+            (Kind => Exact_Version, ID => Completed.Version),
+            No_Delete_Object_Conditions, False, null,
+            Ada.Real_Time.Time_Last, Delete_Outcome, Result);
+         Require
+           (Result = Success
+            and then Delete_Outcome.Kind = Object_Version_Removed,
+            "versioned multipart generation cleanup");
+      end;
+
+      declare
          Options : Copy_Options := Default_Copy_Options;
          Copied  : Object_Information;
          Existing : Object_Information;

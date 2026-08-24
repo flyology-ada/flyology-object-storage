@@ -1,16 +1,21 @@
 # ListObjectVersions qualification
 
 This record qualifies the bounded synchronous client, strict wire codecs,
-authenticated memory and SQLite server routes, and bounded in-memory slice for
-`ListObjectVersions`. The memory slice includes enabled and suspended delete
-markers, permanent selected-generation removal, and delimiter/common-prefix
-pagination. The SQLite slice additionally qualifies durable ordinary PUT,
+authenticated memory and SQLite server routes, and the memory, pure-files,
+and SQLite backend state machines for `ListObjectVersions`. The memory slice
+includes enabled and suspended delete markers, permanent selected-generation
+removal, and delimiter/common-prefix pagination. The SQLite slice additionally
+qualifies durable ordinary PUT,
 current/null/exact selection and tags, enabled and suspended delete-marker
 transitions, permanent selected-generation deletion, catalog ordering, paired
 cursors, delimiter projection, retained multipart publication and selected
 part attributes, reopen recovery, and one authenticated retained-generation
-lifecycle across a real server process restart. It does not yet claim files
-generations or external-server interoperability.
+lifecycle across a real server process restart. The pure-files slice qualifies
+durable immutable generations, same-snapshot exact reads, bounded-memory
+listing, paired cursors, delimiter projection, retained multipart completion,
+reopen recovery, and pre/post durability-barrier publication oracles. It does
+not yet claim an authenticated files-server lifecycle or external-server
+interoperability.
 
 ## Pinned authority and inventory
 
@@ -111,7 +116,7 @@ gate repeats the executable three times.
 
 ## Coverage boundary
 
-The machine ledger records `ListObjectVersions` as `partial / covered /
+The machine ledger records `ListObjectVersions` as `covered / covered /
 partial / covered`. The memory backend preserves null and opaque object
 generations across unconfigured, enabled, and suspended transitions; identical
 overwrites receive distinct opaque IDs; current, null, and exact generation
@@ -157,14 +162,25 @@ publication, current/null/exact reads, per-generation tags, enabled and
 suspended marker transitions, permanent exact data and marker deletion, MFA
 admission, prior-generation re-exposure, retained multipart completion,
 selected-generation part attributes, payload-reference recovery, and
-generation/file cardinality after startup collection. The backend and server
-cells remain partial until files generations and black-box external S3
-behavior are independently qualified.
+generation/file cardinality after startup collection.
+
+The pure-files backend runs that same generation-state corpus. Its per-key
+catalog uses immutable FOSOBJ05 payload files and a bounded publication-order
+name, rejects symlinked or malformed catalog entries, and retains at most the
+requested page plus one lookahead entry while streaming per-key generation
+selection without retaining the catalog in memory. A reopen oracle requires
+exact bytes for the older generation after a
+newer generation and delete marker have published, then removes the marker and
+requires the prior generation to become current. The durability matrix covers
+every pre/post barrier of versioned PUT and marker publication and accepts only
+complete old or new generation-bound bytes. Server coverage remains partial
+until the same retained lifecycle is qualified through the authenticated files
+server; external interoperability is not claimed.
 
 ## Gate evidence
 
-The warning-strict root gate passed 40/40 AUnit tests with zero failed
-assertions or unexpected errors, the 88-case files crash matrix, 320 checksum
+The warning-strict root gate passed 41/41 AUnit tests with zero failed
+assertions or unexpected errors, the 126-case files crash matrix, 320 checksum
 oracle vectors, 210 chunk boundaries, the strict server application corpus,
 and three repetitions of the native/lightweight socket and TLS corpora. The
 SQLite wrapper, catalog, backend, reopen, and upgrade gate passed separately.
@@ -178,7 +194,8 @@ also rejects a concurrent same-process root owner while permitting recovery
 after process death.
 The inventory verifier reported 45 modeled members across seven shapes and 23
 reciprocal vectors; the 116-operation coverage verifier and its negative oracle
-also passed. The new backend-neutral memory corpus covers state transitions,
+also passed. The backend-neutral memory/files/SQLite corpus covers state
+transitions,
 unique identical overwrites, null/current/exact reads, per-version tag
 isolation, enabled and suspended marker publication, repeated-marker identity,
 exact data and marker removal, MFA admission, full ordering, one-entry paired

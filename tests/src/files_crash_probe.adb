@@ -62,6 +62,51 @@ procedure Files_Crash_Probe is
       Finished := Item.Position = Flyology.Bytes.Length (Item.Data);
    end Read;
 
+   type Buffer_Sink is new Backends.Byte_Sink with record
+      Data : Flyology.Bytes.Unbounded_Bytes;
+   end record;
+
+   overriding procedure Begin_Object
+     (Item           : in out Buffer_Sink;
+      Info           : Storage.Object_Information;
+      First          : Storage.Byte_Count;
+      Content_Length : Storage.Byte_Count;
+      Partial        : Boolean;
+      Token          : access Flyology.Cancellation.Token;
+      Deadline       : Ada.Real_Time.Time);
+
+   overriding procedure Write
+     (Item     : in out Buffer_Sink;
+      Data     : Ada.Streams.Stream_Element_Array;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time);
+
+   overriding procedure Begin_Object
+     (Item           : in out Buffer_Sink;
+      Info           : Storage.Object_Information;
+      First          : Storage.Byte_Count;
+      Content_Length : Storage.Byte_Count;
+      Partial        : Boolean;
+      Token          : access Flyology.Cancellation.Token;
+      Deadline       : Ada.Real_Time.Time)
+   is
+      pragma Unreferenced
+        (Info, First, Content_Length, Partial, Token, Deadline);
+   begin
+      Flyology.Bytes.Clear (Item.Data);
+   end Begin_Object;
+
+   overriding procedure Write
+     (Item     : in out Buffer_Sink;
+      Data     : Ada.Streams.Stream_Element_Array;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time)
+   is
+      pragma Unreferenced (Token, Deadline);
+   begin
+      Flyology.Bytes.Append (Item.Data, Data);
+   end Write;
+
    procedure Require (Condition : Boolean; Message : String) is
    begin
       if not Condition then
@@ -204,6 +249,28 @@ procedure Files_Crash_Probe is
             if Scenario in "part" | "complete" then
                Put_Part (Store, US.To_String (Upload_ID), "old");
             end if;
+         elsif Scenario in "versioned-put" | "versioned-delete-marker" then
+            Store.Put_Bucket_Versioning
+              (Bucket,
+               (Status     => Storage.Versioning_Enabled,
+                MFA_Delete => Storage.MFA_Delete_Unconfigured),
+               null, Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Storage.Success,
+               "could not prepare retained-generation versioning");
+            Put (Store, "old");
+         elsif Scenario in "suspended-put" | "suspended-delete-marker" |
+           "suspended-exact-delete"
+         then
+            Store.Put_Bucket_Versioning
+              (Bucket,
+               (Status     => Storage.Versioning_Suspended,
+                MFA_Delete => Storage.MFA_Delete_Unconfigured),
+               null, Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Storage.Success,
+               "could not prepare suspended generation state");
+            Put (Store, "old");
          elsif Scenario = "versioning" then
             Store.Put_Bucket_Versioning
               (Bucket,
@@ -251,6 +318,39 @@ procedure Files_Crash_Probe is
             Store.Put_Object
               (Bucket, Key, Source, Storage.Default_Put_Options,
                null, Ada.Real_Time.Time_Last, Info, Result, Conditions);
+         end;
+      elsif Scenario = "versioned-put" then
+         Put (Store, "replacement");
+         Result := Storage.Success;
+      elsif Scenario = "versioned-delete-marker" then
+         declare
+            Outcome : Backends.Version_Delete_Outcome;
+         begin
+            Store.Delete_Selected_Object
+              (Bucket, Key, Backends.Current_Version_Selector,
+               Backends.No_Delete_Object_Conditions, False, null,
+               Ada.Real_Time.Time_Last, Outcome, Result);
+         end;
+      elsif Scenario = "suspended-put" then
+         Put (Store, "replacement");
+         Result := Storage.Success;
+      elsif Scenario = "suspended-delete-marker" then
+         declare
+            Outcome : Backends.Version_Delete_Outcome;
+         begin
+            Store.Delete_Selected_Object
+              (Bucket, Key, Backends.Current_Version_Selector,
+               Backends.No_Delete_Object_Conditions, False, null,
+               Ada.Real_Time.Time_Last, Outcome, Result);
+         end;
+      elsif Scenario = "suspended-exact-delete" then
+         declare
+            Outcome : Backends.Version_Delete_Outcome;
+         begin
+            Store.Delete_Selected_Object
+              (Bucket, Key, Backends.Null_Version_Selector,
+               Backends.No_Delete_Object_Conditions, False, null,
+               Ada.Real_Time.Time_Last, Outcome, Result);
          end;
       elsif Scenario = "bucket-tags" then
          Put_Bucket_Tags (Store, "replacement");
@@ -365,6 +465,132 @@ procedure Files_Crash_Probe is
               (Result in Storage.Success | Storage.Not_Found,
                "crash exposed malformed object deletion");
          end if;
+      elsif Scenario in "versioned-put" | "versioned-delete-marker" then
+         declare
+            Page         : Backends.List_Versions_Page;
+            Sink         : Buffer_Sink;
+            Object_Count : Natural := 0;
+            Marker_Count : Natural := 0;
+            Head_Result  : Storage.Status;
+         begin
+            Store.Head_Object
+              (Bucket, Key, null, Ada.Real_Time.Time_Last, Info, Result);
+            Head_Result := Result;
+            Store.List_Object_Versions
+              (Bucket, (others => <>), null, Ada.Real_Time.Time_Last,
+               Page, Result);
+            Require
+              (Result = Storage.Success
+               and then Page.Entries.Length in 1 .. 2,
+               "crash exposed a malformed retained-generation catalog");
+            for Listed of Page.Entries loop
+               if Listed.Is_Delete_Marker then
+                  Marker_Count := Marker_Count + 1;
+               else
+                  Object_Count := Object_Count + 1;
+                  Store.Get_Object
+                    (Bucket, Key, Storage.Whole_Object, Sink, null,
+                     Ada.Real_Time.Time_Last, Info, Result,
+                     Selector =>
+                        (Kind => Backends.Exact_Version,
+                        ID   => Listed.Version_ID));
+                  Require
+                    (Result = Storage.Success
+                     and then Flyology.Bytes.To_Byte_String (Sink.Data) in
+                       "old" | "replacement",
+                     "crash exposed partial generation-bound bytes");
+               end if;
+            end loop;
+            if Scenario = "versioned-put" then
+               Require
+                 (Object_Count in 1 .. 2 and then Marker_Count = 0
+                  and then Head_Result = Storage.Success
+                  and then Page.Entries.First_Element.Is_Latest,
+                  "versioned Put crash lost its complete publication set");
+            else
+               Require
+                 (Object_Count = 1 and then Marker_Count in 0 .. 1
+                  and then
+                    ((Marker_Count = 0
+                      and then Head_Result = Storage.Success
+                      and then Page.Entries.First_Element.Is_Latest)
+                     or else
+                       (Marker_Count = 1
+                        and then Head_Result = Storage.Not_Found
+                        and then
+                          Page.Entries.First_Element.Is_Delete_Marker
+                        and then
+                          Page.Entries.First_Element.Is_Latest)),
+                  "delete-marker crash exposed an inconsistent current set");
+            end if;
+         end;
+      elsif Scenario in "suspended-put" | "suspended-delete-marker" then
+         declare
+            Page        : Backends.List_Versions_Page;
+            Sink        : Buffer_Sink;
+            Head_Result : Storage.Status;
+         begin
+            Store.Head_Object
+              (Bucket, Key, null, Ada.Real_Time.Time_Last, Info, Result);
+            Head_Result := Result;
+            Store.List_Object_Versions
+              (Bucket, (others => <>), null, Ada.Real_Time.Time_Last,
+               Page, Result);
+            Require
+              (Result = Storage.Success and then Page.Entries.Length = 1
+               and then Page.Entries.First_Element.Is_Latest
+               and then US.To_String
+                 (Page.Entries.First_Element.Version_ID) = "null",
+               "crash exposed multiple active null generations");
+            if Page.Entries.First_Element.Is_Delete_Marker then
+               Require
+                 (Scenario = "suspended-delete-marker"
+                  and then Head_Result = Storage.Not_Found,
+                  "suspended marker crash exposed a readable current object");
+            else
+               Store.Get_Object
+                 (Bucket, Key, Storage.Whole_Object, Sink, null,
+                  Ada.Real_Time.Time_Last, Info, Result,
+                  Selector => Backends.Null_Version_Selector);
+               Require
+                 (Result = Storage.Success
+                  and then Flyology.Bytes.To_Byte_String (Sink.Data) in
+                    "old" | "replacement"
+                  and then Head_Result = Storage.Success,
+                  "suspended crash exposed partial null-version bytes");
+            end if;
+         end;
+      elsif Scenario = "suspended-exact-delete" then
+         declare
+            Page    : Backends.List_Versions_Page;
+            Outcome : Backends.Version_Delete_Outcome;
+         begin
+            Store.List_Object_Versions
+              (Bucket, (others => <>), null, Ada.Real_Time.Time_Last,
+               Page, Result);
+            Require
+              (Result = Storage.Success and then Page.Entries.Length <= 1,
+               "reopen retained an incomplete null tombstone state");
+            if Page.Entries.Length = 1 then
+               Require
+                 (not Page.Entries.First_Element.Is_Delete_Marker
+                  and then US.To_String
+                    (Page.Entries.First_Element.Version_ID) = "null",
+                  "reopen exposed the transient null tombstone");
+               Store.Delete_Selected_Object
+                 (Bucket, Key, Backends.Null_Version_Selector,
+                  Backends.No_Delete_Object_Conditions, False, null,
+                  Ada.Real_Time.Time_Last, Outcome, Result);
+               Require
+                 (Result = Storage.Success,
+                  "could not reconcile the pre-publication null generation");
+            end if;
+            Store.Delete_Bucket
+              (Bucket, null, Ada.Real_Time.Time_Last, Result);
+            Require
+              (Result = Storage.Success,
+               "recovered null tombstone kept its bucket nonempty");
+         end;
       elsif Scenario = "delete-objects" then
          Store.Head_Object
            (Bucket, Key, null, Ada.Real_Time.Time_Last, Info, Result);

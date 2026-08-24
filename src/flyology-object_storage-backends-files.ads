@@ -98,9 +98,10 @@ package Flyology.Object_Storage.Backends.Files is
       Configuration : out Bucket_Versioning_Configuration;
       Result        : out Status);
 
-   --  Publish an unversioned or suspended null generation and return its
-   --  identity from the same rename boundary. Enabled retained publication is
-   --  rejected before rename because this backend cannot retain generations.
+   --  Publish an unversioned current object, a suspended null generation, or
+   --  an enabled opaque retained generation. The returned identity and object
+   --  bytes cross the same atomic rename boundary. A failure after rename and
+   --  before the directory durability barrier is an ambiguous publication.
    --  @param Item Filesystem store
    --  @param Bucket Destination bucket name
    --  @param Key Destination object key
@@ -109,7 +110,7 @@ package Flyology.Object_Storage.Backends.Files is
    --  @param Token Optional cooperative cancellation token
    --  @param Deadline Absolute operation deadline
    --  @param Info Metadata published on success
-   --  @param Identity Omitted or null identity on success only
+   --  @param Identity Omitted, null, or opaque identity on success only
    --  @param Result Publication result
    --  @param Conditions Atomic destination ETag predicates
    overriding procedure Put_Object
@@ -125,8 +126,8 @@ package Flyology.Object_Storage.Backends.Files is
       Result   : out Status;
       Conditions : Write_Conditions := Default_Write_Conditions);
 
-   --  Copy one current or null filesystem generation. Opaque exact source
-   --  selectors are not retained and return Not_Implemented.
+   --  Copy one current, null, or opaque exact filesystem generation from a
+   --  stable source snapshot into the destination versioning state.
    --  @param Item Files backend instance
    --  @param Source_Bucket Source bucket name
    --  @param Source_Key Source key
@@ -136,8 +137,8 @@ package Flyology.Object_Storage.Backends.Files is
    --  @param Token Optional cooperative cancellation token
    --  @param Deadline Absolute operation deadline
    --  @param Info Published destination metadata on success
-   --  @param Source_Identity Omitted or null source identity on success
-   --  @param Destination_Identity Omitted or null destination identity
+   --  @param Source_Identity Selected source generation on success
+   --  @param Destination_Identity Published destination generation on success
    --  @param Result Storage-domain outcome
    overriding procedure Copy_Object
      (Item               : in out Store;
@@ -153,9 +154,9 @@ package Flyology.Object_Storage.Backends.Files is
       Destination_Identity : out Version_Identity;
       Result             : out Status);
 
-   --  Read the current/null filesystem metadata generation. Opaque exact
-   --  versions are not retained by FOSOBJ05 and return Not_Implemented.
-   --  @param Selector Current or null generation selection
+   --  Read the current, null, or opaque exact filesystem metadata generation.
+   --  Delete markers are not readable as objects.
+   --  @param Selector Current, null, or opaque exact generation selection
    overriding procedure Head_Object
      (Item     : in out Store;
       Bucket   : String;
@@ -167,9 +168,9 @@ package Flyology.Object_Storage.Backends.Files is
       Conditions : Read_Conditions := Default_Read_Conditions;
       Selector : Version_Selector := Current_Version_Selector);
 
-   --  Stream the current/null filesystem object generation. Opaque exact
-   --  versions are not retained by FOSOBJ05 and return Not_Implemented.
-   --  @param Selector Current or null generation selection
+   --  Stream the current, null, or opaque exact filesystem object generation.
+   --  The selected immutable file provides one metadata-and-body snapshot.
+   --  @param Selector Current, null, or opaque exact generation selection
    overriding procedure Get_Object
      (Item      : in out Store;
       Bucket    : String;
@@ -183,9 +184,9 @@ package Flyology.Object_Storage.Backends.Files is
       Conditions : Read_Conditions := Default_Read_Conditions;
       Selector : Version_Selector := Current_Version_Selector);
 
-   --  Read attributes from the current/null filesystem generation. Opaque
-   --  exact versions are not retained and return Not_Implemented.
-   --  @param Selector Current or null generation selection
+   --  Read attributes from the current, null, or opaque exact filesystem
+   --  generation. The returned snapshot is bound to that selected file.
+   --  @param Selector Current, null, or opaque exact generation selection
    overriding procedure Get_Object_Attributes
      (Item     : in out Store;
       Bucket   : String;
@@ -242,10 +243,10 @@ package Flyology.Object_Storage.Backends.Files is
       Outcomes : out Delete_Object_Outcomes;
       Result   : out Status);
 
-   --  Replace tags on the current/null filesystem generation. Opaque exact
-   --  versions are not retained and return Not_Implemented.
-   --  @param Identity Selected current or null generation on success
-   --  @param Selector Current or null generation selection
+   --  Replace tags on the current, null, or opaque exact filesystem
+   --  generation without changing its version identity.
+   --  @param Identity Selected generation on success
+   --  @param Selector Current, null, or opaque exact generation selection
    overriding procedure Put_Object_Tags
      (Item : in out Store; Bucket, Key : String; Tags : Object_Tag_Set;
       Token : access Flyology.Cancellation.Token;
@@ -254,10 +255,9 @@ package Flyology.Object_Storage.Backends.Files is
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
-   --  Read tags from the current/null filesystem generation. Opaque exact
-   --  versions are not retained and return Not_Implemented.
-   --  @param Identity Selected current or null generation on success
-   --  @param Selector Current or null generation selection
+   --  Read tags from the current, null, or opaque exact filesystem generation.
+   --  @param Identity Selected generation on success
+   --  @param Selector Current, null, or opaque exact generation selection
    overriding procedure Get_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;
@@ -266,10 +266,10 @@ package Flyology.Object_Storage.Backends.Files is
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector);
 
-   --  Clear tags on the current/null filesystem generation. Opaque exact
-   --  versions are not retained and return Not_Implemented.
-   --  @param Identity Selected current or null generation on success
-   --  @param Selector Current or null generation selection
+   --  Clear tags on the current, null, or opaque exact filesystem generation
+   --  without changing its version identity.
+   --  @param Identity Selected generation on success
+   --  @param Selector Current, null, or opaque exact generation selection
    overriding procedure Delete_Object_Tags
      (Item : in out Store; Bucket, Key : String;
       Token : access Flyology.Cancellation.Token;

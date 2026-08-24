@@ -27,6 +27,7 @@ package body Flyology.Object_Storage.Backends.Files is
    use type Ada.Containers.Count_Type;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Streams.Stream_IO.Count;
+   use type Ada.Strings.Unbounded.Unbounded_String;
 
    package SIO renames Ada.Streams.Stream_IO;
    package US renames Ada.Strings.Unbounded;
@@ -39,6 +40,19 @@ package body Flyology.Object_Storage.Backends.Files is
    Part_Magic : constant String := "FOSOBJ03";
    Checksum_Magic : constant String := "FOSOBJ04";
    Magic : constant String := "FOSOBJ05";
+   Generation_File_Suffix : constant String := ".fos";
+   Generation_Order_Width : constant Positive := 19;
+   --  Generation filenames use the full decimal width of a nonnegative
+   --  Long_Long_Integer.  This persisted-format field preserves bytewise
+   --  publication order without depending on filesystem timestamps.
+   Generated_Version_ID_Length : constant Positive := 64;
+   --  Flyology files versions use one SHA-256 hexadecimal digest.  The value
+   --  is an opaque S3 identity; changing its width would alter persisted paths
+   --  and exact-version compatibility.
+   Files_Version_ID_Domain : constant String := "flyology-files-version";
+   --  Persisted-format domain separation for deterministic files-backend
+   --  version IDs.  It distinguishes these identities from other SHA-256 uses;
+   --  changing it would make existing exact-version paths unreachable.
    Bucket_Tag_Magic : constant String := "FOSTAG01";
    Versioning_Magic : constant String := "FOSVER01";
    Maximum_Metadata_Length : constant Natural := 8 * 1_024;
@@ -79,12 +93,29 @@ package body Flyology.Object_Storage.Backends.Files is
    function Join (Left, Right : String) return String is
      (Ada.Directories.Compose (Left, Right));
 
-   --  FOSOBJ05 stores exactly one unversioned/null object generation. Current
-   --  and Null therefore select the same file; opaque IDs require a retained
-   --  generation layout and remain explicitly unsupported.
-   function Supported_Object_Selector
-     (Selector : Version_Selector) return Boolean is
-     (Selector.Kind in Current_Version | Null_Version);
+   type Generation_Kind is
+     (Opaque_Object,
+      Opaque_Delete_Marker,
+      Null_Object,
+      Null_Delete_Marker,
+      Null_Tombstone);
+
+   type Generation_Entry is record
+      Publication : Long_Long_Integer := 0;
+      Kind        : Generation_Kind := Null_Tombstone;
+      Version_ID  : US.Unbounded_String;
+      Path        : US.Unbounded_String;
+   end record;
+
+   type Selected_Generation is record
+      Present          : Boolean := False;
+      Legacy           : Boolean := False;
+      Is_Delete_Marker : Boolean := False;
+      Is_Null_Version  : Boolean := False;
+      Publication      : Long_Long_Integer := 0;
+      Version_ID       : US.Unbounded_String;
+      Path             : US.Unbounded_String;
+   end record;
 
    procedure Sync_Directory (Item : Store; Path : String) is
    begin
@@ -243,6 +274,9 @@ package body Flyology.Object_Storage.Backends.Files is
 
    function Objects_Path (Item : Store; Bucket : String) return String is
      (Join (Bucket_Path (Item, Bucket), "objects"));
+
+   function Versions_Path (Item : Store; Bucket : String) return String is
+     (Join (Bucket_Path (Item, Bucket), "versions"));
 
    function Temp_Path (Item : Store) return String is
      (Join (Root_Directory (Item), "tmp"));
@@ -617,11 +651,10 @@ package body Flyology.Object_Storage.Backends.Files is
       GNAT.MD5.Update (Hash, Digest);
    end Include_Part_Digest;
 
-   function Object_Path
-     (Item : Store; Bucket : String; Key : String) return String
+   function Encoded_Object_Path
+     (Root : String; Key : String; Suffix : String) return String
    is
-      Result  : US.Unbounded_String :=
-        US.To_Unbounded_String (Objects_Path (Item, Bucket));
+      Result  : US.Unbounded_String := US.To_Unbounded_String (Root);
       Segment : String (1 .. 100);
       Used    : Natural := 0;
    begin
@@ -638,20 +671,66 @@ package body Flyology.Object_Storage.Backends.Files is
          end if;
       end loop;
       if Used = 0 then
-         return US.To_String (Result) & ".fos";
+         return US.To_String (Result) & Suffix;
       else
          return Join
-           (US.To_String (Result), Segment (1 .. Used) & ".fos");
+           (US.To_String (Result), Segment (1 .. Used) & Suffix);
       end if;
-   end Object_Path;
+   end Encoded_Object_Path;
 
-   function Object_Ancestors_Exist
-     (Item : Store; Bucket : String; Key : String) return Boolean
+   function Object_Path
+     (Item : Store; Bucket : String; Key : String) return String is
+     (Encoded_Object_Path (Objects_Path (Item, Bucket), Key, ".fos"));
+
+   function Generation_Directory
+     (Item : Store; Bucket : String; Key : String) return String is
+     (Encoded_Object_Path
+        (Versions_Path (Item, Bucket), Key, ".versions"));
+
+   function Decimal_Publication
+     (Value : Long_Long_Integer) return String
    is
-      Root : constant String := Objects_Path (Item, Bucket);
-      Leaf : constant String := Ada.Directories.Containing_Directory
-        (Object_Path (Item, Bucket, Key));
+      Image : constant String := Ada.Strings.Fixed.Trim
+        (Long_Long_Integer'Image (Value), Ada.Strings.Both);
+   begin
+      if Value <= 0 or else Image'Length > Generation_Order_Width then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      return String'(1 .. Generation_Order_Width - Image'Length => '0') &
+        Image;
+   end Decimal_Publication;
 
+   function Generation_File_Name
+     (Publication : Long_Long_Integer;
+      Kind        : Generation_Kind;
+      Version_ID  : String := "") return String
+   is
+      Code : constant Character :=
+        (case Kind is
+            when Opaque_Object        => 'O',
+            when Opaque_Delete_Marker => 'M',
+            when Null_Object          => 'N',
+            when Null_Delete_Marker   => 'D',
+            when Null_Tombstone       => 'T');
+   begin
+      if Kind in Opaque_Object | Opaque_Delete_Marker then
+         if Version_ID'Length /= Generated_Version_ID_Length then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         return Decimal_Publication (Publication) & '-' & Code & '-' &
+           Version_ID & Generation_File_Suffix;
+      elsif Version_ID'Length /= 0 then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         return Decimal_Publication (Publication) & '-' & Code &
+           Generation_File_Suffix;
+      end if;
+   end Generation_File_Name;
+
+   function Encoded_Ancestors_Exist
+     (Item : Store; Bucket : String; Root : String; Leaf : String)
+      return Boolean
+   is
       function Safe_Directory_Chain (Path : String) return Boolean is
          Parent : constant String :=
            Ada.Directories.Containing_Directory (Path);
@@ -688,7 +767,32 @@ package body Flyology.Object_Storage.Backends.Files is
          raise Ada.IO_Exceptions.Data_Error;
       end if;
       return Safe_Directory_Chain (Leaf);
-   end Object_Ancestors_Exist;
+   end Encoded_Ancestors_Exist;
+
+   function Object_Ancestors_Exist
+     (Item : Store; Bucket : String; Key : String) return Boolean is
+     (Encoded_Ancestors_Exist
+        (Item, Bucket, Objects_Path (Item, Bucket),
+         Ada.Directories.Containing_Directory
+           (Object_Path (Item, Bucket, Key))));
+
+   function Generation_Ancestors_Exist
+     (Item : Store; Bucket : String; Key : String) return Boolean
+   is
+      Root : constant String := Versions_Path (Item, Bucket);
+   begin
+      if GNAT.OS_Lib.Is_Symbolic_Link (Root) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Root) then
+         return False;
+      elsif Ada.Directories.Kind (Root) /= Ada.Directories.Directory then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      return Encoded_Ancestors_Exist
+        (Item, Bucket, Root,
+         Ada.Directories.Containing_Directory
+           (Generation_Directory (Item, Bucket, Key)));
+   end Generation_Ancestors_Exist;
 
    procedure Inspect_Object_Path
      (Item   : Store;
@@ -710,6 +814,333 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Exists := True;
    end Inspect_Object_Path;
+
+   function Parse_Publication (Value : String) return Long_Long_Integer is
+      Result : Long_Long_Integer := 0;
+   begin
+      if Value'Length /= Generation_Order_Width then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      for Item of Value loop
+         if Item not in '0' .. '9'
+           or else Result >
+             (Long_Long_Integer'Last -
+                Long_Long_Integer (Character'Pos (Item) - Character'Pos ('0')))
+             / 10
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         Result := Result * 10 +
+           Long_Long_Integer (Character'Pos (Item) - Character'Pos ('0'));
+      end loop;
+      if Result = 0 then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      return Result;
+   end Parse_Publication;
+
+   function Valid_Generated_Version_ID (Value : String) return Boolean is
+   begin
+      if Value'Length /= Generated_Version_ID_Length then
+         return False;
+      end if;
+      for Item of Value loop
+         if Hex_Nibble (Item) > 15 then
+            return False;
+         end if;
+      end loop;
+      return True;
+   end Valid_Generated_Version_ID;
+
+   function Parse_Generation_Name
+     (Directory : String; Name : String) return Generation_Entry
+   is
+      Null_Length : constant Positive :=
+        Generation_Order_Width + 2 + Generation_File_Suffix'Length;
+      Opaque_Length : constant Positive :=
+        Generation_Order_Width + 3 + Generated_Version_ID_Length +
+        Generation_File_Suffix'Length;
+      Code : Character;
+      Result : Generation_Entry;
+   begin
+      if (Name'Length /= Null_Length and then Name'Length /= Opaque_Length)
+        or else Name (Name'First + Generation_Order_Width) /= '-'
+        or else Name (Name'Last - Generation_File_Suffix'Length + 1 ..
+                      Name'Last) /= Generation_File_Suffix
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Result.Publication := Parse_Publication
+        (Name (Name'First .. Name'First + Generation_Order_Width - 1));
+      Code := Name (Name'First + Generation_Order_Width + 1);
+      if Name'Length = Null_Length then
+         Result.Kind :=
+           (case Code is
+               when 'N' => Null_Object,
+               when 'D' => Null_Delete_Marker,
+               when 'T' => Null_Tombstone,
+               when others => raise Ada.IO_Exceptions.Data_Error);
+      else
+         if Name (Name'First + Generation_Order_Width + 2) /= '-'
+           or else Code not in 'O' | 'M'
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         declare
+            ID : constant String :=
+              Name
+                (Name'First + Generation_Order_Width + 3 ..
+                 Name'Last - Generation_File_Suffix'Length);
+         begin
+            if not Valid_Generated_Version_ID (ID) then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+            Result.Kind :=
+              (if Code = 'O' then Opaque_Object
+               else Opaque_Delete_Marker);
+            Result.Version_ID := US.To_Unbounded_String (ID);
+         end;
+      end if;
+      Result.Path := US.To_Unbounded_String (Join (Directory, Name));
+      return Result;
+   end Parse_Generation_Name;
+
+   procedure Scan_Generations
+     (Item    : Store;
+      Bucket  : String;
+      Key     : String;
+      Process : not null access procedure (Candidate : Generation_Entry))
+   is
+      Directory : constant String := Generation_Directory (Item, Bucket, Key);
+      Search : Ada.Directories.Search_Type;
+      Directory_Entry : Ada.Directories.Directory_Entry_Type;
+      Searching : Boolean := False;
+      Filter : constant Ada.Directories.Filter_Type :=
+        (Ada.Directories.Ordinary_File => True,
+         Ada.Directories.Directory     => True,
+         Ada.Directories.Special_File  => True);
+   begin
+      if not Generation_Ancestors_Exist (Item, Bucket, Key) then
+         return;
+      elsif GNAT.OS_Lib.Is_Symbolic_Link (Directory) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Directory) then
+         return;
+      elsif Ada.Directories.Kind (Directory) /= Ada.Directories.Directory then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Validate_Immediate_Directory (Directory);
+      Ada.Directories.Start_Search (Search, Directory, "*", Filter);
+      Searching := True;
+      while Ada.Directories.More_Entries (Search) loop
+         Ada.Directories.Get_Next_Entry (Search, Directory_Entry);
+         declare
+            Name : constant String :=
+              Ada.Directories.Simple_Name (Directory_Entry);
+            Path : constant String :=
+              Ada.Directories.Full_Name (Directory_Entry);
+         begin
+            if Name /= "." and then Name /= ".." then
+               if GNAT.OS_Lib.Is_Symbolic_Link (Path)
+                 or else Ada.Directories.Kind (Path) /=
+                   Ada.Directories.Ordinary_File
+               then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+               Process.all (Parse_Generation_Name (Directory, Name));
+            end if;
+         end;
+      end loop;
+      Ada.Directories.End_Search (Search);
+      Searching := False;
+   exception
+      when others =>
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         raise;
+   end Scan_Generations;
+
+   function Next_Generation_Publication
+     (Item : Store; Bucket : String; Key : String) return Long_Long_Integer
+   is
+      Highest : Long_Long_Integer := 0;
+
+      procedure Consider (Candidate : Generation_Entry) is
+      begin
+         Highest := Long_Long_Integer'Max
+           (Highest, Candidate.Publication);
+      end Consider;
+   begin
+      Scan_Generations (Item, Bucket, Key, Consider'Access);
+      if Highest = Long_Long_Integer'Last then
+         raise Storage_Error;
+      end if;
+      return Highest + 1;
+   end Next_Generation_Publication;
+
+   function Select_Generation
+     (Item     : Store;
+      Bucket   : String;
+      Key      : String;
+      Selector : Version_Selector) return Selected_Generation
+   is
+      Legacy_Exists : Boolean := False;
+      Latest_Null : Generation_Entry;
+      Has_Null_Record : Boolean := False;
+      Latest_Opaque : Generation_Entry;
+      Has_Opaque_Record : Boolean := False;
+      Result : Selected_Generation;
+
+      function To_Selected
+        (Candidate : Generation_Entry) return Selected_Generation is
+        ((Present          => True,
+          Legacy           => False,
+          Is_Delete_Marker => Candidate.Kind in
+            Opaque_Delete_Marker | Null_Delete_Marker,
+          Is_Null_Version  => Candidate.Kind in
+            Null_Object | Null_Delete_Marker | Null_Tombstone,
+          Publication      => Candidate.Publication,
+          Version_ID       => Candidate.Version_ID,
+          Path             => Candidate.Path));
+
+      procedure Consider (Candidate : Generation_Entry) is
+      begin
+         if Candidate.Kind in
+           Null_Object | Null_Delete_Marker | Null_Tombstone
+         then
+            if Has_Null_Record
+              and then Candidate.Publication = Latest_Null.Publication
+            then
+               raise Ada.IO_Exceptions.Data_Error;
+            elsif not Has_Null_Record
+              or else Candidate.Publication > Latest_Null.Publication
+            then
+               Latest_Null := Candidate;
+               Has_Null_Record := True;
+            end if;
+         else
+            if Selector.Kind = Exact_Version
+              and then Candidate.Version_ID = Selector.ID
+            then
+               if Result.Present then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+               Result := To_Selected (Candidate);
+            end if;
+            if Has_Opaque_Record
+              and then Candidate.Publication = Latest_Opaque.Publication
+            then
+               raise Ada.IO_Exceptions.Data_Error;
+            elsif not Has_Opaque_Record
+              or else Candidate.Publication > Latest_Opaque.Publication
+            then
+               Latest_Opaque := Candidate;
+               Has_Opaque_Record := True;
+            end if;
+         end if;
+      end Consider;
+   begin
+      Scan_Generations (Item, Bucket, Key, Consider'Access);
+      Inspect_Object_Path (Item, Bucket, Key, Legacy_Exists);
+
+      case Selector.Kind is
+         when Exact_Version =>
+            null;
+         when Null_Version =>
+            if Has_Null_Record then
+               if Latest_Null.Kind /= Null_Tombstone then
+                  Result := To_Selected (Latest_Null);
+               end if;
+            elsif Legacy_Exists then
+               Result :=
+                 (Present          => True,
+                  Legacy           => True,
+                  Is_Delete_Marker => False,
+                  Is_Null_Version  => True,
+                  Publication      => 0,
+                  Version_ID       => US.Null_Unbounded_String,
+                  Path             => US.To_Unbounded_String
+                    (Object_Path (Item, Bucket, Key)));
+            end if;
+         when Current_Version =>
+            if Has_Null_Record then
+               if Latest_Null.Kind /= Null_Tombstone then
+                  Result := To_Selected (Latest_Null);
+               end if;
+            elsif Legacy_Exists then
+               Result :=
+                 (Present          => True,
+                  Legacy           => True,
+                  Is_Delete_Marker => False,
+                  Is_Null_Version  => True,
+                  Publication      => 0,
+                  Version_ID       => US.Null_Unbounded_String,
+                  Path             => US.To_Unbounded_String
+                    (Object_Path (Item, Bucket, Key)));
+            end if;
+            if Has_Opaque_Record
+              and then
+                (not Result.Present
+                 or else Latest_Opaque.Publication > Result.Publication)
+            then
+               Result := To_Selected (Latest_Opaque);
+            end if;
+      end case;
+      return Result;
+   end Select_Generation;
+
+   procedure Remove_Superseded_Null_Generations
+     (Item      : Store;
+      Bucket    : String;
+      Key       : String;
+      Keep_Path : String)
+   is
+      Legacy_Exists : Boolean := False;
+      Directory    : constant String :=
+        Generation_Directory (Item, Bucket, Key);
+      Legacy       : constant String := Object_Path (Item, Bucket, Key);
+
+      procedure Remove_Ordinary_File (Path : String) is
+      begin
+         if GNAT.OS_Lib.Is_Symbolic_Link (Path)
+           or else not Ada.Directories.Exists (Path)
+           or else Ada.Directories.Kind (Path) /=
+             Ada.Directories.Ordinary_File
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         Ada.Directories.Delete_File (Path);
+      end Remove_Ordinary_File;
+   begin
+      loop
+         declare
+            Found : US.Unbounded_String;
+
+            procedure Find_One (Candidate : Generation_Entry) is
+            begin
+               if US.Length (Found) = 0
+                 and then Candidate.Kind in
+                   Null_Object | Null_Delete_Marker | Null_Tombstone
+                 and then US.To_String (Candidate.Path) /= Keep_Path
+               then
+                  Found := Candidate.Path;
+               end if;
+            end Find_One;
+         begin
+            Scan_Generations (Item, Bucket, Key, Find_One'Access);
+            exit when US.Length (Found) = 0;
+            Remove_Ordinary_File (US.To_String (Found));
+         end;
+      end loop;
+      Inspect_Object_Path (Item, Bucket, Key, Legacy_Exists);
+      if Legacy_Exists then
+         Remove_Ordinary_File (Legacy);
+         Sync_Directory
+           (Item, Ada.Directories.Containing_Directory (Legacy));
+      end if;
+      Sync_Directory (Item, Directory);
+   end Remove_Superseded_Null_Generations;
 
    function Valid_Options (Options : Put_Options) return Boolean is
      (US.Length (Options.Entity_Tag) <= Maximum_Metadata_Length
@@ -1374,19 +1805,6 @@ package body Flyology.Object_Storage.Backends.Files is
         (File, Key, Info, Tags, Parts, Body_At);
    end Read_Header_Any;
 
-   procedure Read_Header_Any_With_Tags
-     (File      : in out SIO.File_Type;
-      Key       : out US.Unbounded_String;
-      Info      : out Object_Information;
-      Tags      : out Object_Tag_Set;
-      Body_At   : out SIO.Positive_Count)
-   is
-      Parts : Completed_Object_Part_List;
-   begin
-      Read_Header_Any_With_Metadata
-        (File, Key, Info, Tags, Parts, Body_At);
-   end Read_Header_Any_With_Tags;
-
    procedure Read_Header_With_Tags
      (File      : in out SIO.File_Type;
       Expected  : String;
@@ -1424,6 +1842,48 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
    end Read_Header;
 
+   procedure Read_Selected_Header
+     (File     : in out SIO.File_Type;
+      Key      : String;
+      Selected : Selected_Generation;
+      Info     : out Object_Information;
+      Tags     : out Object_Tag_Set;
+      Parts    : out Completed_Object_Part_List;
+      Body_At  : out SIO.Positive_Count)
+   is
+   begin
+      if not Selected.Present then
+         raise Ada.IO_Exceptions.Name_Error;
+      end if;
+      Read_Header_With_Tags (File, Key, Info, Tags, Parts, Body_At);
+      if Selected.Is_Delete_Marker then
+         if Info.Size /= 0 then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+      elsif Selected.Is_Null_Version then
+         Info.Version := US.Null_Unbounded_String;
+      else
+         Info.Version := Selected.Version_ID;
+      end if;
+   end Read_Selected_Header;
+
+   function Identity_Of
+     (Selected      : Selected_Generation;
+      Configuration : Bucket_Versioning_Configuration;
+      Explicit      : Boolean := False) return Version_Identity is
+   begin
+      if not Selected.Present then
+         return (others => <>);
+      end if;
+      return
+        (Has_Version_ID  =>
+           Explicit
+           or else not Selected.Legacy
+           or else Configuration.Status /= Versioning_Unconfigured,
+         Is_Null_Version => Selected.Is_Null_Version,
+         Version_ID      => Selected.Version_ID);
+   end Identity_Of;
+
    procedure Read_Staged_Part_Header
      (File      : in out SIO.File_Type;
       Expected  : String;
@@ -1442,22 +1902,211 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
    end Read_Staged_Part_Header;
 
-   procedure Read_Header_With_Parts
-     (File      : in out SIO.File_Type;
-      Expected  : String;
-      Info      : out Object_Information;
-      Parts     : out Completed_Object_Part_List;
-      Body_At   : out SIO.Positive_Count)
-   is
-      Key : US.Unbounded_String;
-      Tags : Object_Tag_Set;
+   procedure Recover_Null_Tombstones (Item : Store) is
+      procedure Recover_Key_Directory
+        (Bucket : String; Directory : String)
+      is
+         Search      : Ada.Directories.Search_Type;
+         Found       : Ada.Directories.Directory_Entry_Type;
+         Searching   : Boolean := False;
+         Has_Null    : Boolean := False;
+         Latest_Null : Generation_Entry;
+         Filter      : constant Ada.Directories.Filter_Type :=
+           (others => True);
+      begin
+         Validate_Immediate_Directory (Directory);
+         Ada.Directories.Start_Search (Search, Directory, "*", Filter);
+         Searching := True;
+         while Ada.Directories.More_Entries (Search) loop
+            Ada.Directories.Get_Next_Entry (Search, Found);
+            declare
+               Name : constant String := Ada.Directories.Simple_Name (Found);
+               Path : constant String := Ada.Directories.Full_Name (Found);
+            begin
+               if Name /= "." and then Name /= ".." then
+                  if GNAT.OS_Lib.Is_Symbolic_Link (Path)
+                    or else Ada.Directories.Kind (Path) /=
+                      Ada.Directories.Ordinary_File
+                  then
+                     raise Ada.IO_Exceptions.Data_Error;
+                  end if;
+                  declare
+                     Candidate : constant Generation_Entry :=
+                       Parse_Generation_Name (Directory, Name);
+                  begin
+                     if Candidate.Kind in
+                       Null_Object | Null_Delete_Marker | Null_Tombstone
+                     then
+                        if Has_Null
+                          and then Candidate.Publication =
+                            Latest_Null.Publication
+                        then
+                           raise Ada.IO_Exceptions.Data_Error;
+                        elsif not Has_Null
+                          or else Candidate.Publication >
+                            Latest_Null.Publication
+                        then
+                           Latest_Null := Candidate;
+                           Has_Null := True;
+                        end if;
+                     end if;
+                  end;
+               end if;
+            end;
+         end loop;
+         Ada.Directories.End_Search (Search);
+         Searching := False;
+         if Has_Null and then Latest_Null.Kind = Null_Tombstone then
+            declare
+               File    : SIO.File_Type;
+               Key     : US.Unbounded_String;
+               Info    : Object_Information;
+               Body_At : SIO.Positive_Count;
+            begin
+               SIO.Open (File, SIO.In_File, US.To_String (Latest_Null.Path));
+               Read_Header_Any (File, Key, Info, Body_At);
+               SIO.Close (File);
+               if Info.Size /= 0
+                 or else not Valid_Object_Key (US.To_String (Key))
+                 or else Generation_Directory
+                   (Item, Bucket, US.To_String (Key)) /= Directory
+               then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+               Remove_Superseded_Null_Generations
+                 (Item, Bucket, US.To_String (Key),
+                  US.To_String (Latest_Null.Path));
+               if GNAT.OS_Lib.Is_Symbolic_Link
+                   (US.To_String (Latest_Null.Path))
+                 or else not Ada.Directories.Exists
+                   (US.To_String (Latest_Null.Path))
+                 or else Ada.Directories.Kind
+                   (US.To_String (Latest_Null.Path)) /=
+                     Ada.Directories.Ordinary_File
+               then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+               Ada.Directories.Delete_File
+                 (US.To_String (Latest_Null.Path));
+               Sync_Directory (Item, Directory);
+            exception
+               when others =>
+                  if SIO.Is_Open (File) then
+                     SIO.Close (File);
+                  end if;
+                  raise;
+            end;
+         end if;
+      exception
+         when others =>
+            if Searching then
+               Ada.Directories.End_Search (Search);
+            end if;
+            raise;
+      end Recover_Key_Directory;
+
+      procedure Visit
+        (Bucket : String; Directory : String; Depth : Natural := 0)
+      is
+         Name : constant String := Ada.Directories.Simple_Name (Directory);
+         Search    : Ada.Directories.Search_Type;
+         Found     : Ada.Directories.Directory_Entry_Type;
+         Searching : Boolean := False;
+         Filter    : constant Ada.Directories.Filter_Type := (others => True);
+      begin
+         if Depth > Maximum_Object_Path_Depth
+           or else GNAT.OS_Lib.Is_Symbolic_Link (Directory)
+           or else not Ada.Directories.Exists (Directory)
+           or else Ada.Directories.Kind (Directory) /=
+             Ada.Directories.Directory
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         elsif Name'Length >= 9
+           and then Name (Name'Last - 8 .. Name'Last) = ".versions"
+         then
+            Recover_Key_Directory (Bucket, Directory);
+            return;
+         end if;
+         Validate_Immediate_Directory (Directory);
+         Ada.Directories.Start_Search (Search, Directory, "*", Filter);
+         Searching := True;
+         while Ada.Directories.More_Entries (Search) loop
+            Ada.Directories.Get_Next_Entry (Search, Found);
+            declare
+               Child_Name : constant String :=
+                 Ada.Directories.Simple_Name (Found);
+               Child : constant String := Ada.Directories.Full_Name (Found);
+            begin
+               if Child_Name /= "." and then Child_Name /= ".." then
+                  if GNAT.OS_Lib.Is_Symbolic_Link (Child)
+                    or else Ada.Directories.Kind (Child) /=
+                      Ada.Directories.Directory
+                  then
+                     raise Ada.IO_Exceptions.Data_Error;
+                  end if;
+                  Visit (Bucket, Child, Depth + 1);
+               end if;
+            end;
+         end loop;
+         Ada.Directories.End_Search (Search);
+         Searching := False;
+      exception
+         when others =>
+            if Searching then
+               Ada.Directories.End_Search (Search);
+            end if;
+            raise;
+      end Visit;
+
+      Search    : Ada.Directories.Search_Type;
+      Found     : Ada.Directories.Directory_Entry_Type;
+      Searching : Boolean := False;
+      Filter    : constant Ada.Directories.Filter_Type := (others => True);
    begin
-      Read_Header_Any_With_Metadata
-        (File, Key, Info, Tags, Parts, Body_At);
-      if US.To_String (Key) /= Expected then
+      if GNAT.OS_Lib.Is_Symbolic_Link (Buckets_Path (Item))
+        or else not Ada.Directories.Exists (Buckets_Path (Item))
+        or else Ada.Directories.Kind (Buckets_Path (Item)) /=
+          Ada.Directories.Directory
+      then
          raise Ada.IO_Exceptions.Data_Error;
       end if;
-   end Read_Header_With_Parts;
+      Ada.Directories.Start_Search
+        (Search, Buckets_Path (Item), "*", Filter);
+      Searching := True;
+      while Ada.Directories.More_Entries (Search) loop
+         Ada.Directories.Get_Next_Entry (Search, Found);
+         declare
+            Bucket : constant String := Ada.Directories.Simple_Name (Found);
+            Path   : constant String := Ada.Directories.Full_Name (Found);
+            Versions : constant String := Join (Path, "versions");
+         begin
+            if Bucket /= "." and then Bucket /= ".." then
+               if not Valid_Bucket_Name (Bucket) then
+                  raise Ada.IO_Exceptions.Data_Error;
+               elsif GNAT.OS_Lib.Is_Symbolic_Link (Path) then
+                  --  Recovery never follows a poisoned bucket entry. The
+                  --  operation that names it retains the established
+                  --  Backend_Unavailable fail-closed result.
+                  null;
+               elsif Ada.Directories.Kind (Path) /=
+                   Ada.Directories.Directory
+               then
+                  raise Ada.IO_Exceptions.Data_Error;
+               elsif Ada.Directories.Exists (Versions) then
+                  Visit (Bucket, Versions);
+               end if;
+            end if;
+         end;
+      end loop;
+      Ada.Directories.End_Search (Search);
+      Searching := False;
+   exception
+      when others =>
+         if Searching then
+            Ada.Directories.End_Search (Search);
+         end if;
+         raise;
+   end Recover_Null_Tombstones;
 
    procedure Read_Manifest
      (Item      : Store;
@@ -1613,6 +2262,7 @@ package body Flyology.Object_Storage.Backends.Files is
          end if;
          Ensure_Directory (Result, Join (US.To_String (Full), "tmp"));
          Sync_Directory (Result, US.To_String (Full));
+         Recover_Null_Tombstones (Result);
       end return;
    exception
       when Configuration_Error =>
@@ -1660,6 +2310,9 @@ package body Flyology.Object_Storage.Backends.Files is
          Ensure_Directory
            (Item,
             Join (US.To_String (Staged), "objects"));
+         Ensure_Directory
+           (Item,
+            Join (US.To_String (Staged), "versions"));
          Ensure_Directory
            (Item,
             Join (US.To_String (Staged), "multipart"));
@@ -1881,10 +2534,19 @@ package body Flyology.Object_Storage.Backends.Files is
         or else not Ada.Directories.Exists (Join (Path, "multipart"))
         or else Ada.Directories.Kind (Join (Path, "multipart")) /=
           Ada.Directories.Directory
+        or else
+          (Ada.Directories.Exists (Join (Path, "versions"))
+           and then
+             (GNAT.OS_Lib.Is_Symbolic_Link (Join (Path, "versions"))
+              or else Ada.Directories.Kind (Join (Path, "versions")) /=
+                Ada.Directories.Directory))
       then
          raise Ada.IO_Exceptions.Data_Error;
       elsif Has_Objects (Join (Path, "objects"))
         or else Has_Objects (Join (Path, "multipart"))
+        or else
+          (Ada.Directories.Exists (Join (Path, "versions"))
+           and then Has_Objects (Join (Path, "versions")))
       then
          Result := Bucket_Not_Empty;
       else
@@ -2351,7 +3013,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Published : Boolean := False;
       Number   : Long_Long_Integer;
       Declared : Source_Length := (Kind => Unknown);
-      Target   : constant String := Object_Path (Item, Bucket, Key);
+      Target   : US.Unbounded_String;
       Temp     : US.Unbounded_String;
       Rename_Succeeded : Boolean;
       Locked   : Boolean := False;
@@ -2538,23 +3200,24 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Validate_Configuration_Path (Item, Bucket);
       Configuration := Read_Versioning (Item, Bucket);
-      if Configuration.Status = Versioning_Enabled then
-         Item.Publication.Release;
-         Locked := False;
-         Ada.Directories.Delete_File (US.To_String (Temp));
-         Result := Not_Implemented;
-         return;
-      end if;
       declare
          Existing_Info : Object_Information := Empty_Info;
          Existing_File : SIO.File_Type;
          Body_At       : SIO.Positive_Count;
-         Exists        : Boolean := False;
+         Existing_Tags : Object_Tag_Set;
+         Existing_Parts : Completed_Object_Part_List;
+         Selected      : constant Selected_Generation :=
+           Select_Generation
+             (Item, Bucket, Key, Current_Version_Selector);
+         Exists        : constant Boolean :=
+           Selected.Present and then not Selected.Is_Delete_Marker;
       begin
-         Inspect_Object_Path (Item, Bucket, Key, Exists);
-         if Exists then
-            SIO.Open (Existing_File, SIO.In_File, Target);
-            Read_Header (Existing_File, Key, Existing_Info, Body_At);
+         if Selected.Present then
+            SIO.Open
+              (Existing_File, SIO.In_File, US.To_String (Selected.Path));
+            Read_Selected_Header
+              (Existing_File, Key, Selected, Existing_Info, Existing_Tags,
+               Existing_Parts, Body_At);
             SIO.Close (Existing_File);
          end if;
          Result := Evaluate_Write_Conditions
@@ -2574,10 +3237,48 @@ package body Flyology.Object_Storage.Backends.Files is
          Ada.Directories.Delete_File (US.To_String (Temp));
          return;
       end if;
+
+      if Configuration.Status = Versioning_Unconfigured then
+         Target := US.To_Unbounded_String (Object_Path (Item, Bucket, Key));
+         Info.Version := US.Null_Unbounded_String;
+      else
+         declare
+            Publication : Long_Long_Integer;
+            Kind : constant Generation_Kind :=
+              (if Configuration.Status = Versioning_Enabled
+               then Opaque_Object else Null_Object);
+            Version_ID : US.Unbounded_String;
+            Directory : constant String :=
+              Generation_Directory (Item, Bucket, Key);
+         begin
+            Publication := Next_Generation_Publication (Item, Bucket, Key);
+            if Kind = Opaque_Object then
+               Version_ID := US.To_Unbounded_String
+                 (GNAT.SHA256.Digest
+                    (Files_Version_ID_Domain & Character'Val (0) &
+                     Bucket & Character'Val (0) & Key & Character'Val (0) &
+                     Long_Long_Integer'Image (Publication)));
+            end if;
+            Ensure_Directory (Item, Versions_Path (Item, Bucket));
+            Ensure_Directory (Item, Directory);
+            Target := US.To_Unbounded_String
+              (Join
+                 (Directory,
+                  Generation_File_Name
+                    (Publication, Kind, US.To_String (Version_ID))));
+            if GNAT.OS_Lib.Is_Symbolic_Link (US.To_String (Target))
+              or else Ada.Directories.Exists (US.To_String (Target))
+            then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+            Info.Version := Version_ID;
+         end;
+      end if;
       Ensure_Directory
-        (Item, Ada.Directories.Containing_Directory (Target));
+        (Item,
+         Ada.Directories.Containing_Directory (US.To_String (Target)));
       GNAT.OS_Lib.Rename_File
-        (US.To_String (Temp), Target, Rename_Succeeded);
+        (US.To_String (Temp), US.To_String (Target), Rename_Succeeded);
       if not Rename_Succeeded then
          Item.Publication.Release;
          Locked := False;
@@ -2587,16 +3288,20 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Published := True;
       Sync_Directory
-        (Item, Ada.Directories.Containing_Directory (Target));
+        (Item, Ada.Directories.Containing_Directory (US.To_String (Target)));
+      if Configuration.Status = Versioning_Suspended then
+         Remove_Superseded_Null_Generations
+           (Item, Bucket, Key, US.To_String (Target));
+      end if;
       Sync_Directory (Item, Temp_Path (Item));
       Item.Publication.Release;
       Locked := False;
       Identity :=
         (Has_Version_ID  =>
-           Configuration.Status = Versioning_Suspended,
+           Configuration.Status /= Versioning_Unconfigured,
          Is_Null_Version =>
            Configuration.Status = Versioning_Suspended,
-         Version_ID      => US.Null_Unbounded_String);
+         Version_ID      => Info.Version);
       Result := Success;
    exception
       when Flyology.Cancellation.Operation_Cancelled
@@ -2699,6 +3404,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Source_Tags : Object_Tag_Set;
       Source_Configuration : Bucket_Versioning_Configuration := (others => <>);
       Selected_Source : Version_Identity;
+      Source_Selection : Selected_Generation;
       Published_Destination : Version_Identity;
       Source_Parts : Completed_Object_Part_List;
       Body_At     : SIO.Positive_Count;
@@ -2745,9 +3451,6 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          Result := Invalid_Request;
          return;
-      elsif not Supported_Object_Selector (Options.Source_Selector) then
-         Result := Not_Implemented;
-         return;
       elsif Source_Bucket = Destination_Bucket
         and then Source_Key = Destination_Key
         and then Options.Metadata_Directive = Copy_Metadata
@@ -2761,8 +3464,6 @@ package body Flyology.Object_Storage.Backends.Files is
 
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
-      Source_Path := US.To_Unbounded_String
-        (Object_Path (Item, Source_Bucket, Source_Key));
       if not Ada.Directories.Exists (Bucket_Path (Item, Source_Bucket)) then
          Item.Publication.Release;
          Locked := False;
@@ -2776,23 +3477,25 @@ package body Flyology.Object_Storage.Backends.Files is
          raise Ada.IO_Exceptions.Data_Error;
       end if;
       Source_Configuration := Read_Versioning (Item, Source_Bucket);
-      Inspect_Object_Path
-        (Item, Source_Bucket, Source_Key, Source_Exists);
+      Source_Selection := Select_Generation
+        (Item, Source_Bucket, Source_Key, Options.Source_Selector);
+      Source_Exists := Source_Selection.Present
+        and then not Source_Selection.Is_Delete_Marker;
       if not Source_Exists then
          Item.Publication.Release;
          Locked := False;
          Result := Source_Not_Found;
          return;
       end if;
+      Source_Path := Source_Selection.Path;
 
       SIO.Open (Original, SIO.In_File, US.To_String (Source_Path));
-      Read_Header_With_Tags
-        (Original, Source_Key, Source_Info, Source_Tags, Source_Parts,
-         Body_At);
-      Selected_Source.Has_Version_ID :=
-        Options.Source_Selector.Kind /= Current_Version
-        or else Source_Configuration.Status /= Versioning_Unconfigured;
-      Selected_Source.Is_Null_Version := Selected_Source.Has_Version_ID;
+      Read_Selected_Header
+        (Original, Source_Key, Source_Selection, Source_Info, Source_Tags,
+         Source_Parts, Body_At);
+      Selected_Source := Identity_Of
+        (Source_Selection, Source_Configuration,
+         Explicit => Options.Source_Selector.Kind /= Current_Version);
       if not Valid_Copy_Object_Size (Source_Info.Size) then
          SIO.Close (Original);
          Item.Publication.Release;
@@ -2956,9 +3659,10 @@ package body Flyology.Object_Storage.Backends.Files is
    is
       File : SIO.File_Type;
       Body_At : SIO.Positive_Count;
-      Path : constant String := Object_Path (Item, Bucket, Key);
       Locked : Boolean := False;
-      Exists : Boolean := False;
+      Selected : Selected_Generation;
+      Tags : Object_Tag_Set;
+      Parts : Completed_Object_Part_List;
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
@@ -2968,19 +3672,17 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          Result := Invalid_Request;
          return;
-      elsif not Supported_Object_Selector (Selector) then
-         Result := Not_Implemented;
-         return;
       end if;
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
       Check_Context (Token, Deadline);
-      Inspect_Object_Path (Item, Bucket, Key, Exists);
-      if not Exists then
+      Selected := Select_Generation (Item, Bucket, Key, Selector);
+      if not Selected.Present or else Selected.Is_Delete_Marker then
          Result := Not_Found;
       else
-         SIO.Open (File, SIO.In_File, Path);
-         Read_Header (File, Key, Info, Body_At);
+         SIO.Open (File, SIO.In_File, US.To_String (Selected.Path));
+         Read_Selected_Header
+           (File, Key, Selected, Info, Tags, Parts, Body_At);
          SIO.Close (File);
          Result := Evaluate_Read_Conditions
            (Conditions, US.To_String (Info.Entity_Tag), Info.Modified);
@@ -3023,9 +3725,9 @@ package body Flyology.Object_Storage.Backends.Files is
       File    : SIO.File_Type;
       Body_At : SIO.Positive_Count;
       All_Parts : Completed_Object_Part_List;
-      Path : constant String := Object_Path (Item, Bucket, Key);
       Locked : Boolean := False;
-      Exists : Boolean := False;
+      Selected : Selected_Generation;
+      Tags : Object_Tag_Set;
    begin
       Snapshot := (others => <>);
       Check_Context (Token, Deadline);
@@ -3035,23 +3737,20 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          Result := Invalid_Request;
          return;
-      elsif not Supported_Object_Selector (Selector) then
-         Result := Not_Implemented;
-         return;
       end if;
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
       Check_Context (Token, Deadline);
-      Inspect_Object_Path (Item, Bucket, Key, Exists);
-      if not Exists then
+      Selected := Select_Generation (Item, Bucket, Key, Selector);
+      if not Selected.Present or else Selected.Is_Delete_Marker then
          Result := Not_Found;
          Item.Publication.Release;
          Locked := False;
          return;
       end if;
-      SIO.Open (File, SIO.In_File, Path);
-      Read_Header_With_Parts
-        (File, Key, Snapshot.Info, All_Parts, Body_At);
+      SIO.Open (File, SIO.In_File, US.To_String (Selected.Path));
+      Read_Selected_Header
+        (File, Key, Selected, Snapshot.Info, Tags, All_Parts, Body_At);
       SIO.Close (File);
       Result := Evaluate_Read_Conditions
         (Conditions, US.To_String (Snapshot.Info.Entity_Tag),
@@ -3120,14 +3819,15 @@ package body Flyology.Object_Storage.Backends.Files is
    is
       File      : SIO.File_Type;
       Body_At   : SIO.Positive_Count;
-      Path      : constant String := Object_Path (Item, Bucket, Key);
       Resolution : Range_Resolution;
       First      : Byte_Count := 0;
       Remaining : Byte_Count;
       Buffer    : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
       In_Callback : Boolean := False;
       Locked    : Boolean := False;
-      Exists    : Boolean := False;
+      Selected  : Selected_Generation;
+      Tags      : Object_Tag_Set;
+      Parts     : Completed_Object_Part_List;
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
@@ -3136,21 +3836,19 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          Result := Invalid_Request;
          return;
-      elsif not Supported_Object_Selector (Selector) then
-         Result := Not_Implemented;
-         return;
       end if;
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
-      Inspect_Object_Path (Item, Bucket, Key, Exists);
-      if not Exists then
+      Selected := Select_Generation (Item, Bucket, Key, Selector);
+      if not Selected.Present or else Selected.Is_Delete_Marker then
          Result := Not_Found;
          Item.Publication.Release;
          Locked := False;
          return;
       end if;
-      SIO.Open (File, SIO.In_File, Path);
-      Read_Header (File, Key, Info, Body_At);
+      SIO.Open (File, SIO.In_File, US.To_String (Selected.Path));
+      Read_Selected_Header
+        (File, Key, Selected, Info, Tags, Parts, Body_At);
       Result := Evaluate_Read_Conditions
         (Conditions, US.To_String (Info.Entity_Tag), Info.Modified);
       if Result /= Success then
@@ -3340,8 +4038,213 @@ package body Flyology.Object_Storage.Backends.Files is
       Result   : out Status)
    is
       Locked   : Boolean := False;
-      Removals : Delete_Object_Entries;
       Configuration : Bucket_Versioning_Configuration := (others => <>);
+
+      procedure Publish_Generation
+        (Key        : String;
+         Kind       : Generation_Kind;
+         Publication : out Long_Long_Integer;
+         Version_ID : out US.Unbounded_String)
+      is
+         Number  : Long_Long_Integer;
+         File    : SIO.File_Type;
+         Opened  : Boolean := False;
+         Temp    : US.Unbounded_String;
+         Target  : US.Unbounded_String;
+         Renamed : Boolean := False;
+         Directory : constant String :=
+           Generation_Directory (Item, Bucket, Key);
+         Marker_Info : Object_Information :=
+           (Size       => 0,
+            Modified   => Unix_Time (Unix_Seconds (Ada.Calendar.Clock)),
+            others     => <>);
+      begin
+         Version_ID := US.Null_Unbounded_String;
+         Publication := Next_Generation_Publication (Item, Bucket, Key);
+         if Kind in Opaque_Object | Opaque_Delete_Marker then
+            Version_ID := US.To_Unbounded_String
+              (GNAT.SHA256.Digest
+                 (Files_Version_ID_Domain & Character'Val (0) & Bucket &
+                  Character'Val (0) & Key & Character'Val (0) &
+                  Long_Long_Integer'Image (Publication)));
+            Marker_Info.Version := Version_ID;
+         end if;
+         Item.Temp_Sequence.Next (Number);
+         Temp := US.To_Unbounded_String
+           (Join
+              (Temp_Path (Item),
+               "generation-" & GNAT.SHA256.Digest
+                 (Bucket & Character'Val (0) & Key & Character'Val (0) &
+                  Long_Long_Integer'Image (Number) &
+                  Ada.Calendar.Time'Image (Ada.Calendar.Clock))));
+         Validate_New_Temp_Target (Item, US.To_String (Temp));
+         SIO.Create (File, SIO.Out_File, US.To_String (Temp));
+         Opened := True;
+         Write_Header (File, Key, Marker_Info);
+         SIO.Close (File);
+         Opened := False;
+         Sync_File (Item, US.To_String (Temp));
+         Ensure_Directory (Item, Versions_Path (Item, Bucket));
+         Ensure_Directory (Item, Directory);
+         Target := US.To_Unbounded_String
+           (Join
+              (Directory,
+               Generation_File_Name
+                 (Publication, Kind, US.To_String (Version_ID))));
+         if GNAT.OS_Lib.Is_Symbolic_Link (US.To_String (Target))
+           or else Ada.Directories.Exists (US.To_String (Target))
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         GNAT.OS_Lib.Rename_File
+           (US.To_String (Temp), US.To_String (Target), Renamed);
+         if not Renamed then
+            raise Ada.IO_Exceptions.Use_Error;
+         end if;
+         Sync_Directory (Item, Directory);
+         Sync_Directory (Item, Temp_Path (Item));
+      exception
+         when others =>
+            if Opened then
+               SIO.Close (File);
+            end if;
+            if US.Length (Temp) > 0
+              and then Ada.Directories.Exists (US.To_String (Temp))
+            then
+               Ada.Directories.Delete_File (US.To_String (Temp));
+            end if;
+            raise;
+      end Publish_Generation;
+
+      procedure Delete_One
+        (Request_Entry : Delete_Object_Entry;
+         Outcome       : out Delete_Object_Outcome)
+      is
+         Key : constant String := US.To_String (Request_Entry.Key);
+         Selected : constant Selected_Generation :=
+           Select_Generation
+             (Item, Bucket, Key, Request_Entry.Selector);
+         Info : Object_Information := Empty_Info;
+         Condition_Exists : constant Boolean :=
+           Selected.Present
+           and then
+             (Request_Entry.Selector.Kind /= Current_Version
+              or else not Selected.Is_Delete_Marker);
+         File : SIO.File_Type;
+         Body_At : SIO.Positive_Count;
+         Tags : Object_Tag_Set;
+         Parts : Completed_Object_Part_List;
+
+         procedure Remove_Path (Path : String) is
+         begin
+            if GNAT.OS_Lib.Is_Symbolic_Link (Path)
+              or else not Ada.Directories.Exists (Path)
+              or else Ada.Directories.Kind (Path) /=
+                Ada.Directories.Ordinary_File
+            then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+            Ada.Directories.Delete_File (Path);
+            Sync_Directory
+              (Item, Ada.Directories.Containing_Directory (Path));
+         end Remove_Path;
+
+         procedure Create_Marker (Null_Marker : Boolean) is
+            Publication : Long_Long_Integer;
+            Version_ID  : US.Unbounded_String;
+         begin
+            Publish_Generation
+              (Key,
+               (if Null_Marker then Null_Delete_Marker
+                else Opaque_Delete_Marker),
+               Publication, Version_ID);
+            if Null_Marker then
+               Remove_Superseded_Null_Generations
+                 (Item, Bucket, Key,
+                  Join
+                    (Generation_Directory (Item, Bucket, Key),
+                     Generation_File_Name
+                       (Publication, Null_Delete_Marker)));
+            end if;
+            Outcome.Publication :=
+              (Kind            => Delete_Marker_Created,
+               Has_Version_ID  => True,
+               Is_Null_Version => Null_Marker,
+               Version_ID      => Version_ID);
+         end Create_Marker;
+      begin
+         Outcome := (others => <>);
+         if Selected.Present then
+            SIO.Open (File, SIO.In_File, US.To_String (Selected.Path));
+            Read_Selected_Header
+              (File, Key, Selected, Info, Tags, Parts, Body_At);
+            SIO.Close (File);
+         end if;
+         Outcome.Result := Evaluate_Delete_Object_Conditions
+           (Request_Entry.Conditions, Condition_Exists, Info);
+         if Outcome.Result /= Success then
+            return;
+         end if;
+
+         if Request_Entry.Selector.Kind /= Current_Version then
+            Outcome.Publication.Has_Version_ID := True;
+            Outcome.Publication.Is_Null_Version :=
+              Request_Entry.Selector.Kind = Null_Version;
+            Outcome.Publication.Version_ID :=
+              (if Request_Entry.Selector.Kind = Exact_Version
+               then Request_Entry.Selector.ID
+               else US.Null_Unbounded_String);
+            if not Selected.Present then
+               Outcome.Publication.Kind := No_Version_Removed;
+            else
+               Outcome.Publication.Kind :=
+                 (if Selected.Is_Delete_Marker
+                  then Delete_Marker_Removed else Object_Version_Removed);
+               if Request_Entry.Selector.Kind = Null_Version
+                 and then not Selected.Legacy
+               then
+                  declare
+                     Publication : Long_Long_Integer;
+                     Ignored_ID  : US.Unbounded_String;
+                     Tombstone : US.Unbounded_String;
+                  begin
+                     Publish_Generation
+                       (Key, Null_Tombstone, Publication, Ignored_ID);
+                     Tombstone := US.To_Unbounded_String
+                       (Join
+                          (Generation_Directory (Item, Bucket, Key),
+                           Generation_File_Name
+                             (Publication, Null_Tombstone)));
+                     Remove_Superseded_Null_Generations
+                       (Item, Bucket, Key, US.To_String (Tombstone));
+                     Remove_Path (US.To_String (Tombstone));
+                  end;
+               else
+                  Remove_Path (US.To_String (Selected.Path));
+               end if;
+            end if;
+         else
+            case Configuration.Status is
+               when Versioning_Unconfigured =>
+                  if Condition_Exists then
+                     Outcome.Publication.Kind := Object_Version_Removed;
+                     Remove_Path (US.To_String (Selected.Path));
+                  else
+                     Outcome.Publication.Kind := No_Version_Removed;
+                  end if;
+               when Versioning_Enabled =>
+                  Create_Marker (Null_Marker => False);
+               when Versioning_Suspended =>
+                  Create_Marker (Null_Marker => True);
+            end case;
+         end if;
+      exception
+         when others =>
+            if SIO.Is_Open (File) then
+               SIO.Close (File);
+            end if;
+            raise;
+      end Delete_One;
    begin
       Outcomes.Clear;
       Check_Context (Token, Deadline);
@@ -3368,7 +4271,6 @@ package body Flyology.Object_Storage.Backends.Files is
          end if;
       end loop;
       Outcomes.Reserve_Capacity (Entries.Length);
-      Removals.Reserve_Capacity (Entries.Length);
 
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
@@ -3413,100 +4315,10 @@ package body Flyology.Object_Storage.Backends.Files is
       for Request_Entry of Entries loop
          Check_Context (Token, Deadline);
          declare
-            Key  : constant String := US.To_String (Request_Entry.Key);
-            Path : constant String := Object_Path (Item, Bucket, Key);
-            Removed_Earlier : Boolean := False;
-            Ancestors_Exist : constant Boolean :=
-              Object_Ancestors_Exist (Item, Bucket, Key);
-            Path_Is_Symbolic_Link : constant Boolean :=
-              Ancestors_Exist and then GNAT.OS_Lib.Is_Symbolic_Link (Path);
-            Physical_Exists : constant Boolean :=
-              Ancestors_Exist and then Ada.Directories.Exists (Path);
-            Info : Object_Information := Empty_Info;
-            Supported : constant Boolean :=
-              Request_Entry.Selector.Kind = Null_Version
-              or else
-                (Request_Entry.Selector.Kind = Current_Version
-                 and then Configuration.Status = Versioning_Unconfigured);
+            Outcome : Delete_Object_Outcome;
          begin
-            for Removal of Removals loop
-               if US.To_String (Removal.Key) = Key then
-                  Removed_Earlier := True;
-                  exit;
-               end if;
-            end loop;
-            declare
-               Exists : constant Boolean :=
-                 Physical_Exists and then not Removed_Earlier;
-            begin
-               if Path_Is_Symbolic_Link then
-                  raise Ada.IO_Exceptions.Data_Error;
-               elsif Exists then
-                  if Ada.Directories.Kind (Path) /=
-                      Ada.Directories.Ordinary_File
-                  then
-                     raise Ada.IO_Exceptions.Data_Error;
-                  end if;
-                  declare
-                     File    : SIO.File_Type;
-                     Body_At : SIO.Positive_Count;
-                  begin
-                     SIO.Open (File, SIO.In_File, Path);
-                     Read_Header (File, Key, Info, Body_At);
-                     SIO.Close (File);
-                  exception
-                     when others =>
-                        if SIO.Is_Open (File) then
-                           SIO.Close (File);
-                        end if;
-                        raise;
-                  end;
-               end if;
-               declare
-                  Entry_Result : constant Status :=
-                    (if not Supported then Not_Implemented
-                     else Evaluate_Delete_Object_Conditions
-                       (Request_Entry.Conditions, Exists, Info));
-                  Publication : Version_Delete_Outcome;
-               begin
-                  if Entry_Result = Success then
-                     Publication.Kind :=
-                       (if Exists then Object_Version_Removed
-                        else No_Version_Removed);
-                     Publication.Has_Version_ID :=
-                       Request_Entry.Selector.Kind = Null_Version;
-                     Publication.Is_Null_Version :=
-                       Request_Entry.Selector.Kind = Null_Version;
-                  end if;
-                  Outcomes.Append
-                    (Delete_Object_Outcome'
-                       (Result => Entry_Result,
-                        Publication => Publication));
-                  if Entry_Result = Success and then Exists then
-                     Removals.Append (Request_Entry);
-                  end if;
-               end;
-            end;
-         end;
-      end loop;
-      for Removal of Removals loop
-         Check_Context (Token, Deadline);
-         declare
-            Path : constant String :=
-              Object_Path (Item, Bucket, US.To_String (Removal.Key));
-         begin
-            if not Object_Ancestors_Exist
-                (Item, Bucket, US.To_String (Removal.Key))
-              or else GNAT.OS_Lib.Is_Symbolic_Link (Path)
-              or else not Ada.Directories.Exists (Path)
-              or else Ada.Directories.Kind (Path) /=
-                Ada.Directories.Ordinary_File
-            then
-               raise Ada.IO_Exceptions.Data_Error;
-            end if;
-            Ada.Directories.Delete_File (Path);
-            Sync_Directory
-              (Item, Ada.Directories.Containing_Directory (Path));
+            Delete_One (Request_Entry, Outcome);
+            Outcomes.Append (Outcome);
          end;
       end loop;
       Result := Success;
@@ -3535,7 +4347,7 @@ package body Flyology.Object_Storage.Backends.Files is
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector)
    is
-      Path      : constant String := Object_Path (Item, Bucket, Key);
+      Path      : US.Unbounded_String;
       Source    : SIO.File_Type;
       Staged    : SIO.File_Type;
       Source_Open : Boolean := False;
@@ -3552,7 +4364,8 @@ package body Flyology.Object_Storage.Backends.Files is
       Buffer    : Ada.Streams.Stream_Element_Array (1 .. 64 * 1_024);
       Last      : Ada.Streams.Stream_Element_Offset;
       Renamed   : Boolean;
-      Exists    : Boolean := False;
+      Selected  : Selected_Generation;
+      Configuration : Bucket_Versioning_Configuration := (others => <>);
    begin
       Identity := (others => <>);
       Check_Context (Token, Deadline);
@@ -3561,9 +4374,6 @@ package body Flyology.Object_Storage.Backends.Files is
         or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
-         return;
-      elsif not Supported_Object_Selector (Selector) then
-         Result := Not_Implemented;
          return;
       end if;
       Acquire_Publication (Item, Token, Deadline);
@@ -3580,18 +4390,21 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          raise Ada.IO_Exceptions.Data_Error;
       end if;
-      Inspect_Object_Path (Item, Bucket, Key, Exists);
-      if not Exists then
+      Validate_Configuration_Path (Item, Bucket);
+      Configuration := Read_Versioning (Item, Bucket);
+      Selected := Select_Generation (Item, Bucket, Key, Selector);
+      if not Selected.Present or else Selected.Is_Delete_Marker then
          Result := Not_Found;
          Item.Publication.Release;
          Locked := False;
          return;
       end if;
+      Path := Selected.Path;
 
-      SIO.Open (Source, SIO.In_File, Path);
+      SIO.Open (Source, SIO.In_File, US.To_String (Path));
       Source_Open := True;
-      Read_Header_With_Tags
-        (Source, Key, Info, Old_Tags, Completed_Parts, Body_At);
+      Read_Selected_Header
+        (Source, Key, Selected, Info, Old_Tags, Completed_Parts, Body_At);
       Item.Temp_Sequence.Next (Number);
       Temp := US.To_Unbounded_String
         (Join
@@ -3627,7 +4440,8 @@ package body Flyology.Object_Storage.Backends.Files is
       SIO.Close (Staged);
       Staged_Open := False;
       Sync_File (Item, US.To_String (Temp));
-      GNAT.OS_Lib.Rename_File (US.To_String (Temp), Path, Renamed);
+      GNAT.OS_Lib.Rename_File
+        (US.To_String (Temp), US.To_String (Path), Renamed);
       if not Renamed then
          Ada.Directories.Delete_File (US.To_String (Temp));
          Item.Publication.Release;
@@ -3636,14 +4450,14 @@ package body Flyology.Object_Storage.Backends.Files is
          return;
       end if;
       Published := True;
-      Sync_Directory (Item, Ada.Directories.Containing_Directory (Path));
+      Sync_Directory
+        (Item, Ada.Directories.Containing_Directory (US.To_String (Path)));
       Sync_Directory (Item, Temp_Path (Item));
       Item.Publication.Release;
       Locked := False;
-      Identity :=
-        (Has_Version_ID  => Selector.Kind = Null_Version,
-         Is_Null_Version => Selector.Kind = Null_Version,
-         Version_ID      => US.Null_Unbounded_String);
+      Identity := Identity_Of
+        (Selected, Configuration,
+         Explicit => Selector.Kind /= Current_Version);
       Result := Success;
    exception
       when Flyology.Cancellation.Operation_Cancelled |
@@ -3691,13 +4505,13 @@ package body Flyology.Object_Storage.Backends.Files is
       Result : out Status;
       Selector : Version_Selector := Current_Version_Selector)
    is
-      Path    : constant String := Object_Path (Item, Bucket, Key);
       File    : SIO.File_Type;
-      Key_In_File : US.Unbounded_String;
       Info    : Object_Information;
       Body_At : SIO.Positive_Count;
       Locked  : Boolean := False;
-      Exists  : Boolean := False;
+      Selected : Selected_Generation;
+      Configuration : Bucket_Versioning_Configuration := (others => <>);
+      Parts : Completed_Object_Part_List;
    begin
       Tags := Empty_Object_Tags;
       Identity := (others => <>);
@@ -3707,9 +4521,6 @@ package body Flyology.Object_Storage.Backends.Files is
         or else not Valid_Version_Selector (Selector)
       then
          Result := Invalid_Request;
-         return;
-      elsif not Supported_Object_Selector (Selector) then
-         Result := Not_Implemented;
          return;
       end if;
       Acquire_Publication (Item, Token, Deadline);
@@ -3723,21 +4534,19 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          raise Ada.IO_Exceptions.Data_Error;
       else
-         Inspect_Object_Path (Item, Bucket, Key, Exists);
-         if not Exists then
+         Validate_Configuration_Path (Item, Bucket);
+         Configuration := Read_Versioning (Item, Bucket);
+         Selected := Select_Generation (Item, Bucket, Key, Selector);
+         if not Selected.Present or else Selected.Is_Delete_Marker then
             Result := Not_Found;
          else
-            SIO.Open (File, SIO.In_File, Path);
-            Read_Header_Any_With_Tags
-              (File, Key_In_File, Info, Tags, Body_At);
+            SIO.Open (File, SIO.In_File, US.To_String (Selected.Path));
+            Read_Selected_Header
+              (File, Key, Selected, Info, Tags, Parts, Body_At);
             SIO.Close (File);
-            if US.To_String (Key_In_File) /= Key then
-               raise Ada.IO_Exceptions.Data_Error;
-            end if;
-            Identity :=
-              (Has_Version_ID  => Selector.Kind = Null_Version,
-               Is_Null_Version => Selector.Kind = Null_Version,
-               Version_ID      => US.Null_Unbounded_String);
+            Identity := Identity_Of
+              (Selected, Configuration,
+               Explicit => Selector.Kind /= Current_Version);
             Result := Success;
          end if;
       end if;
@@ -3791,21 +4600,47 @@ package body Flyology.Object_Storage.Backends.Files is
       Builder : Listing.Builder;
       Locked  : Boolean := False;
 
-      procedure Consider_File (Path : String) is
+      procedure Consider_File (Path : String; Is_Generation : Boolean) is
          File    : SIO.File_Type;
          Key     : US.Unbounded_String;
          Info    : Object_Information;
          Body_At : SIO.Positive_Count;
+         Selected : Selected_Generation;
       begin
          SIO.Open (File, SIO.In_File, Path);
          Read_Header_Any (File, Key, Info, Body_At);
          SIO.Close (File);
          if not Valid_Object_Key (US.To_String (Key))
-           or else Path /= Object_Path (Item, Bucket, US.To_String (Key))
+           or else
+             (if Is_Generation
+              then Ada.Directories.Containing_Directory (Path) /=
+                Generation_Directory (Item, Bucket, US.To_String (Key))
+              else Path /= Object_Path
+                (Item, Bucket, US.To_String (Key)))
          then
             raise Ada.IO_Exceptions.Data_Error;
          end if;
-         Listing.Consider (Builder, US.To_String (Key), Info);
+         if Is_Generation then
+            declare
+               Parsed : constant Generation_Entry := Parse_Generation_Name
+                 (Ada.Directories.Containing_Directory (Path),
+                  Ada.Directories.Simple_Name (Path));
+               pragma Unreferenced (Parsed);
+            begin
+               null;
+            end;
+         end if;
+         Selected := Select_Generation
+           (Item, Bucket, US.To_String (Key), Current_Version_Selector);
+         if Selected.Present
+           and then not Selected.Is_Delete_Marker
+           and then US.To_String (Selected.Path) = Path
+         then
+            Info.Version :=
+              (if Selected.Is_Null_Version
+               then US.Null_Unbounded_String else Selected.Version_ID);
+            Listing.Consider (Builder, US.To_String (Key), Info);
+         end if;
       exception
          when others =>
             if SIO.Is_Open (File) then
@@ -3814,7 +4649,11 @@ package body Flyology.Object_Storage.Backends.Files is
             raise;
       end Consider_File;
 
-      procedure Visit (Directory : String; Depth : Natural := 0) is
+      procedure Visit
+        (Directory : String;
+         Is_Generation : Boolean;
+         Depth : Natural := 0)
+      is
          Search          : Ada.Directories.Search_Type;
          Directory_Entry : Ada.Directories.Directory_Entry_Type;
          Started         : Boolean := False;
@@ -3850,13 +4689,13 @@ package body Flyology.Object_Storage.Backends.Files is
                   if Ada.Directories.Kind (Full) =
                     Ada.Directories.Directory
                   then
-                     Visit (Full, Depth + 1);
+                     Visit (Full, Is_Generation, Depth + 1);
                   elsif Ada.Directories.Kind (Full) =
                     Ada.Directories.Ordinary_File
                     and then Name'Length >= 4
                     and then Name (Name'Last - 3 .. Name'Last) = ".fos"
                   then
-                     Consider_File (Full);
+                     Consider_File (Full, Is_Generation);
                   else
                      raise Ada.IO_Exceptions.Data_Error;
                   end if;
@@ -3898,7 +4737,10 @@ package body Flyology.Object_Storage.Backends.Files is
             null;
          end;
          Listing.Initialize (Builder, Options);
-         Visit (Objects_Path (Item, Bucket));
+         Visit (Objects_Path (Item, Bucket), Is_Generation => False);
+         if Ada.Directories.Exists (Versions_Path (Item, Bucket)) then
+            Visit (Versions_Path (Item, Bucket), Is_Generation => True);
+         end if;
          Page := Listing.Finish (Builder);
          Result := Success;
       end if;
@@ -3929,15 +4771,406 @@ package body Flyology.Object_Storage.Backends.Files is
       Page     : out List_Versions_Page;
       Result   : out Status)
    is
-      pragma Unreferenced (Item, Options);
+      type Scan_Mode is (Find_Marker, Collect_Page);
+
+      type Page_Candidate is record
+         Is_Prefix      : Boolean := False;
+         Value          : Listed_Version;
+         Common_Prefix  : US.Unbounded_String;
+         Sort_Key       : US.Unbounded_String;
+         Publication    : Long_Long_Integer := 0;
+         Cursor_Key     : US.Unbounded_String;
+         Cursor_Version : US.Unbounded_String;
+      end record;
+
+      package Page_Candidate_Vectors is new Ada.Containers.Vectors
+        (Index_Type => Positive, Element_Type => Page_Candidate);
+
+      Candidates : Page_Candidate_Vectors.Vector;
+      Locked : Boolean := False;
+      Marker_Found : Boolean := False;
+      Marker_Publication : Long_Long_Integer := 0;
+
+      function Before (Left, Right : Page_Candidate) return Boolean is
+         Left_Key : constant String := US.To_String (Left.Sort_Key);
+         Right_Key : constant String := US.To_String (Right.Sort_Key);
+      begin
+         if Left_Key /= Right_Key then
+            return Left_Key < Right_Key;
+         elsif Left.Is_Prefix /= Right.Is_Prefix then
+            return not Left.Is_Prefix;
+         else
+            return Left.Publication > Right.Publication;
+         end if;
+      end Before;
+
+      procedure Keep (Value : Page_Candidate) is
+         Existing : Natural := 0;
+         Position : Natural := 0;
+         Limit : constant Natural := Natural (Options.Maximum) + 1;
+      begin
+         if Value.Is_Prefix and then not Candidates.Is_Empty then
+            for Index in Candidates.First_Index .. Candidates.Last_Index loop
+               if Candidates (Index).Is_Prefix
+                 and then Candidates (Index).Common_Prefix =
+                   Value.Common_Prefix
+               then
+                  Existing := Index;
+                  exit;
+               end if;
+            end loop;
+         end if;
+         if Existing /= 0 then
+            if US.To_String (Value.Cursor_Key) >
+                 US.To_String (Candidates (Existing).Cursor_Key)
+              or else
+                (Value.Cursor_Key = Candidates (Existing).Cursor_Key
+                 and then Value.Publication <
+                   Candidates (Existing).Publication)
+            then
+               Candidates.Reference (Existing).Cursor_Key := Value.Cursor_Key;
+               Candidates.Reference (Existing).Cursor_Version :=
+                 Value.Cursor_Version;
+               Candidates.Reference (Existing).Publication :=
+                 Value.Publication;
+            end if;
+            return;
+         end if;
+         if not Candidates.Is_Empty then
+            for Index in Candidates.First_Index .. Candidates.Last_Index loop
+               if Before (Value, Candidates (Index)) then
+                  Position := Index;
+                  exit;
+               end if;
+            end loop;
+         end if;
+         if Position = 0 then
+            Candidates.Append (Value);
+         else
+            Candidates.Insert (Position, Value);
+         end if;
+         if Natural (Candidates.Length) > Limit then
+            Candidates.Delete_Last;
+         end if;
+      end Keep;
+
+      function Follows_Cursor
+        (Key : String; Publication : Long_Long_Integer) return Boolean
+      is
+         Marker_Key : constant String := US.To_String (Options.Key_Marker);
+      begin
+         if not Options.Has_Key_Marker then
+            return True;
+         elsif Key /= Marker_Key then
+            return Key > Marker_Key;
+         elsif not Options.Has_Version_ID_Marker then
+            return False;
+         else
+            return Publication < Marker_Publication;
+         end if;
+      end Follows_Cursor;
+
+      procedure Consider_File
+        (Path : String; Is_Generation : Boolean; Mode : Scan_Mode)
+      is
+         File : SIO.File_Type;
+         Key_Value : US.Unbounded_String;
+         Info : Object_Information;
+         Body_At : SIO.Positive_Count;
+         Parsed : Generation_Entry;
+         Selected : Selected_Generation;
+         Publication : Long_Long_Integer := 0;
+         Version_ID : US.Unbounded_String := US.To_Unbounded_String ("null");
+         Is_Marker : Boolean := False;
+         Active : Boolean := True;
+      begin
+         SIO.Open (File, SIO.In_File, Path);
+         Read_Header_Any (File, Key_Value, Info, Body_At);
+         SIO.Close (File);
+         if not Valid_Object_Key (US.To_String (Key_Value)) then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         if Is_Generation then
+            if Ada.Directories.Containing_Directory (Path) /=
+              Generation_Directory (Item, Bucket, US.To_String (Key_Value))
+            then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+            Parsed := Parse_Generation_Name
+              (Ada.Directories.Containing_Directory (Path),
+               Ada.Directories.Simple_Name (Path));
+            Publication := Parsed.Publication;
+            Is_Marker := Parsed.Kind in
+              Opaque_Delete_Marker | Null_Delete_Marker;
+            if Parsed.Kind in
+              Null_Object | Null_Delete_Marker | Null_Tombstone
+            then
+               Selected := Select_Generation
+                 (Item, Bucket, US.To_String (Key_Value),
+                  Null_Version_Selector);
+               Active := Parsed.Kind /= Null_Tombstone
+                 and then Selected.Present
+                 and then US.To_String (Selected.Path) = Path;
+            else
+               Version_ID := Parsed.Version_ID;
+               Selected := Select_Generation
+                 (Item, Bucket, US.To_String (Key_Value),
+                  (Kind => Exact_Version, ID => Version_ID));
+               if not Selected.Present
+                 or else US.To_String (Selected.Path) /= Path
+               then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+            end if;
+         else
+            if Path /= Object_Path (Item, Bucket, US.To_String (Key_Value))
+            then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+            Selected := Select_Generation
+              (Item, Bucket, US.To_String (Key_Value),
+               Null_Version_Selector);
+            Active := Selected.Present and then Selected.Legacy
+              and then US.To_String (Selected.Path) = Path;
+         end if;
+         if not Active then
+            return;
+         end if;
+         if Is_Marker and then Info.Size /= 0 then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         Info.Version :=
+           (if US.To_String (Version_ID) = "null"
+            then US.Null_Unbounded_String else Version_ID);
+
+         if Mode = Find_Marker then
+            if US.To_String (Key_Value) = US.To_String (Options.Key_Marker)
+              and then Version_ID = Options.Version_ID_Marker
+            then
+               if Marker_Found then
+                  raise Ada.IO_Exceptions.Data_Error;
+               end if;
+               Marker_Found := True;
+               Marker_Publication := Publication;
+            end if;
+            return;
+         elsif not Listing_Matches_Prefix
+           (US.To_String (Key_Value), US.To_String (Options.Prefix))
+           or else not Follows_Cursor
+             (US.To_String (Key_Value), Publication)
+         then
+            return;
+         end if;
+
+         Selected := Select_Generation
+           (Item, Bucket, US.To_String (Key_Value),
+            Current_Version_Selector);
+         declare
+            Key : constant String := US.To_String (Key_Value);
+            Prefix : constant String := US.To_String (Options.Prefix);
+            Delimiter : constant String := US.To_String (Options.Delimiter);
+            Delimiter_At : constant Natural :=
+              (if Delimiter'Length = 0 or else Prefix'Length >= Key'Length
+               then 0
+               else Ada.Strings.Fixed.Index
+                 (Key, Delimiter, From => Key'First + Prefix'Length));
+            Value : Page_Candidate;
+         begin
+            if Delimiter_At = 0 then
+               Value :=
+                 (Is_Prefix => False,
+                  Value =>
+                    (Key              => Key_Value,
+                     Version_ID       => Version_ID,
+                     Info             => Info,
+                     Is_Latest        =>
+                       Selected.Present
+                       and then US.To_String (Selected.Path) = Path,
+                     Is_Delete_Marker => Is_Marker),
+                  Common_Prefix  => US.Null_Unbounded_String,
+                  Sort_Key       => Key_Value,
+                  Publication    => Publication,
+                  Cursor_Key     => Key_Value,
+                  Cursor_Version => Version_ID);
+            else
+               declare
+                  Common : constant String :=
+                    Key (Key'First .. Delimiter_At + Delimiter'Length - 1);
+               begin
+                  if Options.Has_Key_Marker
+                    and then Common <= US.To_String (Options.Key_Marker)
+                  then
+                     return;
+                  end if;
+                  Value :=
+                    (Is_Prefix      => True,
+                     Value          => (others => <>),
+                     Common_Prefix  => US.To_Unbounded_String (Common),
+                     Sort_Key       => US.To_Unbounded_String (Common),
+                     Publication    => Publication,
+                     Cursor_Key     => Key_Value,
+                     Cursor_Version => Version_ID);
+               end;
+            end if;
+            Keep (Value);
+         end;
+      exception
+         when others =>
+            if SIO.Is_Open (File) then
+               SIO.Close (File);
+            end if;
+            raise;
+      end Consider_File;
+
+      procedure Visit
+        (Directory : String;
+         Is_Generation : Boolean;
+         Mode : Scan_Mode;
+         Depth : Natural := 0)
+      is
+         Search : Ada.Directories.Search_Type;
+         Directory_Entry : Ada.Directories.Directory_Entry_Type;
+         Started : Boolean := False;
+         Filter : constant Ada.Directories.Filter_Type := (others => True);
+      begin
+         if Depth > Maximum_Object_Path_Depth
+           or else GNAT.OS_Lib.Is_Symbolic_Link (Directory)
+           or else not Ada.Directories.Exists (Directory)
+           or else Ada.Directories.Kind (Directory) /=
+             Ada.Directories.Directory
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         end if;
+         Validate_Immediate_Directory (Directory);
+         Ada.Directories.Start_Search (Search, Directory, "", Filter);
+         Started := True;
+         while Ada.Directories.More_Entries (Search) loop
+            Check_Context (Token, Deadline);
+            Ada.Directories.Get_Next_Entry (Search, Directory_Entry);
+            declare
+               Name : constant String :=
+                 Ada.Directories.Simple_Name (Directory_Entry);
+               Full : constant String :=
+                 Ada.Directories.Full_Name (Directory_Entry);
+            begin
+               if Name /= "." and then Name /= ".." then
+                  if GNAT.OS_Lib.Is_Symbolic_Link (Full) then
+                     raise Ada.IO_Exceptions.Data_Error;
+                  elsif Ada.Directories.Kind (Full) =
+                    Ada.Directories.Directory
+                  then
+                     Visit (Full, Is_Generation, Mode, Depth + 1);
+                  elsif Ada.Directories.Kind (Full) =
+                    Ada.Directories.Ordinary_File
+                    and then Name'Length >= Generation_File_Suffix'Length
+                    and then Name
+                      (Name'Last - Generation_File_Suffix'Length + 1 ..
+                       Name'Last) = Generation_File_Suffix
+                  then
+                     Consider_File (Full, Is_Generation, Mode);
+                  else
+                     raise Ada.IO_Exceptions.Data_Error;
+                  end if;
+               end if;
+            end;
+         end loop;
+         Ada.Directories.End_Search (Search);
+         Started := False;
+      exception
+         when others =>
+            if Started then
+               Ada.Directories.End_Search (Search);
+            end if;
+            raise;
+      end Visit;
+
+      procedure Scan (Mode : Scan_Mode) is
+      begin
+         Visit (Objects_Path (Item, Bucket), False, Mode);
+         if Ada.Directories.Exists (Versions_Path (Item, Bucket)) then
+            Visit (Versions_Path (Item, Bucket), True, Mode);
+         end if;
+      end Scan;
    begin
       Page := (others => <>);
       Check_Context (Token, Deadline);
-      if not Valid_Bucket_Name (Bucket) then
+      if not Valid_Bucket_Name (Bucket)
+        or else
+          (Options.Has_Version_ID_Marker
+           and then not Options.Has_Key_Marker)
+        or else
+          (Options.Has_Version_ID_Marker
+           and then
+            (US.Length (Options.Version_ID_Marker) = 0
+             or else US.Length (Options.Version_ID_Marker) >
+               Maximum_Version_ID_Length))
+      then
          Result := Invalid_Request;
-      else
-         Result := Not_Implemented;
+         return;
       end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Path (Item, Bucket)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Not_Found;
+         Item.Publication.Release;
+         Locked := False;
+         return;
+      elsif Ada.Directories.Kind (Bucket_Path (Item, Bucket)) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      if Options.Has_Version_ID_Marker then
+         Scan (Find_Marker);
+         if not Marker_Found then
+            Result := Invalid_Request;
+            Item.Publication.Release;
+            Locked := False;
+            return;
+         end if;
+      end if;
+      Scan (Collect_Page);
+      if Options.Maximum > 0 and then not Candidates.Is_Empty then
+         declare
+            Returned : constant Natural := Natural'Min
+              (Natural (Options.Maximum), Natural (Candidates.Length));
+         begin
+            for Index in 1 .. Returned loop
+               if Candidates (Index).Is_Prefix then
+                  Page.Common_Prefixes.Append
+                    (Candidates (Index).Common_Prefix);
+               else
+                  Page.Entries.Append (Candidates (Index).Value);
+               end if;
+            end loop;
+            Page.Is_Truncated :=
+              Natural (Candidates.Length) > Returned;
+            if Page.Is_Truncated then
+               Page.Next_Key_Marker := Candidates (Returned).Cursor_Key;
+               Page.Next_Version_ID_Marker :=
+                 Candidates (Returned).Cursor_Version;
+            end if;
+         end;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+      Result := Success;
+      Check_Context (Token, Deadline);
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Page := (others => <>);
+         Result := Backend_Unavailable;
    end List_Object_Versions;
 
    overriding procedure Create_Multipart_Upload
@@ -4726,6 +5959,9 @@ package body Flyology.Object_Storage.Backends.Files is
       Length      : Byte_Count := 0;
       Locked      : Boolean := False;
       Source_Exists : Boolean := False;
+      Selected    : Selected_Generation;
+      Source_Tags : Object_Tag_Set;
+      Source_Parts : Completed_Object_Part_List;
    begin
       Info := Empty_Info;
       Check_Context (Token, Deadline);
@@ -4742,8 +5978,6 @@ package body Flyology.Object_Storage.Backends.Files is
 
       Acquire_Publication (Item, Token, Deadline);
       Locked := True;
-      Source_Path := US.To_Unbounded_String
-        (Object_Path (Item, Source_Bucket, Source_Key));
       if not Ada.Directories.Exists (Bucket_Path (Item, Source_Bucket)) then
          Item.Publication.Release;
          Locked := False;
@@ -4756,16 +5990,20 @@ package body Flyology.Object_Storage.Backends.Files is
       then
          raise Ada.IO_Exceptions.Data_Error;
       end if;
-      Inspect_Object_Path
-        (Item, Source_Bucket, Source_Key, Source_Exists);
+      Selected := Select_Generation
+        (Item, Source_Bucket, Source_Key, Current_Version_Selector);
+      Source_Exists := Selected.Present and then not Selected.Is_Delete_Marker;
       if not Source_Exists then
          Item.Publication.Release;
          Locked := False;
          Result := Source_Not_Found;
          return;
       end if;
+      Source_Path := Selected.Path;
       SIO.Open (File, SIO.In_File, US.To_String (Source_Path));
-      Read_Header (File, Source_Key, Source_Info, Body_At);
+      Read_Selected_Header
+        (File, Source_Key, Selected, Source_Info, Source_Tags, Source_Parts,
+         Body_At);
       Item.Publication.Release;
       Locked := False;
 
@@ -4856,8 +6094,9 @@ package body Flyology.Object_Storage.Backends.Files is
       Published   : Boolean := False;
       Number      : Long_Long_Integer;
       Temp        : US.Unbounded_String;
-      Target      : constant String := Object_Path (Item, Bucket, Key);
+      Target      : US.Unbounded_String;
       Upload_Options : Multipart_Options;
+      Configuration : Bucket_Versioning_Configuration := (others => <>);
       Previous    : Multipart_Part_Number := Multipart_Part_Number'First;
       First       : Boolean := True;
       Total       : Byte_Count := 0;
@@ -4898,6 +6137,8 @@ package body Flyology.Object_Storage.Backends.Files is
          return;
       end if;
       Read_Manifest (Item, Bucket, Key, Upload_ID, Upload_Options);
+      Validate_Configuration_Path (Item, Bucket);
+      Configuration := Read_Versioning (Item, Bucket);
       if Upload_Options.Checksum.Method = Composite_Checksum then
          Previous := Multipart_Part_Number'First;
          First := True;
@@ -4916,16 +6157,23 @@ package body Flyology.Object_Storage.Backends.Files is
          end loop;
       end if;
       declare
-         Exists : Boolean := False;
+         Selected : constant Selected_Generation := Select_Generation
+           (Item, Bucket, Key, Current_Version_Selector);
+         Exists : constant Boolean :=
+           Selected.Present and then not Selected.Is_Delete_Marker;
          Existing : Object_Information := Empty_Info;
          Body_At : SIO.Positive_Count;
+         Existing_Tags : Object_Tag_Set;
+         Existing_Parts : Completed_Object_Part_List;
          Condition_Result : Status;
       begin
-         Inspect_Object_Path (Item, Bucket, Key, Exists);
-         if Exists then
-            SIO.Open (Part_File, SIO.In_File, Target);
+         if Selected.Present then
+            SIO.Open
+              (Part_File, SIO.In_File, US.To_String (Selected.Path));
             Part_Opened := True;
-            Read_Header (Part_File, Key, Existing, Body_At);
+            Read_Selected_Header
+              (Part_File, Key, Selected, Existing, Existing_Tags,
+               Existing_Parts, Body_At);
             SIO.Close (Part_File);
             Part_Opened := False;
          end if;
@@ -5080,6 +6328,41 @@ package body Flyology.Object_Storage.Backends.Files is
          Version      => US.Null_Unbounded_String,
          Checksum     => Completed_Checksum,
          Metadata     => (others => <>));
+      if Configuration.Status = Versioning_Unconfigured then
+         Target := US.To_Unbounded_String (Object_Path (Item, Bucket, Key));
+      else
+         declare
+            Publication : Long_Long_Integer;
+            Kind : constant Generation_Kind :=
+              (if Configuration.Status = Versioning_Enabled
+               then Opaque_Object else Null_Object);
+            Version_ID : US.Unbounded_String;
+            Directory : constant String :=
+              Generation_Directory (Item, Bucket, Key);
+         begin
+            Publication := Next_Generation_Publication (Item, Bucket, Key);
+            if Kind = Opaque_Object then
+               Version_ID := US.To_Unbounded_String
+                 (GNAT.SHA256.Digest
+                    (Files_Version_ID_Domain & Character'Val (0) &
+                     Bucket & Character'Val (0) & Key & Character'Val (0) &
+                     Long_Long_Integer'Image (Publication)));
+            end if;
+            Ensure_Directory (Item, Versions_Path (Item, Bucket));
+            Ensure_Directory (Item, Directory);
+            Target := US.To_Unbounded_String
+              (Join
+                 (Directory,
+                  Generation_File_Name
+                    (Publication, Kind, US.To_String (Version_ID))));
+            if GNAT.OS_Lib.Is_Symbolic_Link (US.To_String (Target))
+              or else Ada.Directories.Exists (US.To_String (Target))
+            then
+               raise Ada.IO_Exceptions.Data_Error;
+            end if;
+            Info.Version := Version_ID;
+         end;
+      end if;
       Item.Temp_Sequence.Next (Number);
       Temp := US.To_Unbounded_String
         (Join
@@ -5131,8 +6414,10 @@ package body Flyology.Object_Storage.Backends.Files is
       Opened := False;
       Sync_File (Item, US.To_String (Temp));
       Ensure_Directory
-        (Item, Ada.Directories.Containing_Directory (Target));
-      GNAT.OS_Lib.Rename_File (US.To_String (Temp), Target, Renamed);
+        (Item,
+         Ada.Directories.Containing_Directory (US.To_String (Target)));
+      GNAT.OS_Lib.Rename_File
+        (US.To_String (Temp), US.To_String (Target), Renamed);
       if not Renamed then
          Item.Publication.Release;
          Locked := False;
@@ -5142,7 +6427,11 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Published := True;
       Sync_Directory
-        (Item, Ada.Directories.Containing_Directory (Target));
+        (Item, Ada.Directories.Containing_Directory (US.To_String (Target)));
+      if Configuration.Status = Versioning_Suspended then
+         Remove_Superseded_Null_Generations
+           (Item, Bucket, Key, US.To_String (Target));
+      end if;
       Sync_Directory (Item, Temp_Path (Item));
       Remove_Tree (Item, Upload_Path (Item, Bucket, Upload_ID));
       Item.Publication.Release;

@@ -1626,7 +1626,9 @@ package body Flyology.Object_Storage.Backends.Memory is
       is
          Upload_At : constant Natural :=
            Upload_Index (Bucket, Key, Upload_ID);
-         Object_At : Natural := Object_Index (Bucket, Key);
+         Bucket_At : constant Natural := Bucket_Index (Bucket);
+         Current_At : constant Natural := Object_Index (Bucket, Key);
+         Object_At : Natural := 0;
          Previous  : Multipart_Part_Number := Multipart_Part_Number'First;
          First     : Boolean := True;
          Final_Data : Owned_Bytes;
@@ -1637,6 +1639,8 @@ package body Flyology.Object_Storage.Backends.Memory is
          Assembly_Reserved : Boolean := False;
          Completed_Parts : Completed_Object_Part_List;
          Completed_Checksum : Checksum_Information;
+         New_Order : Version_Publication_Order;
+         Is_Null : Boolean := True;
       begin
          Info := Empty_Info;
          if Upload_At = 0 then
@@ -1804,10 +1808,10 @@ package body Flyology.Object_Storage.Backends.Memory is
          end if;
          declare
             Condition_Result : constant Status := Evaluate_Write_Conditions
-              (Options.Conditions, Object_At /= 0,
-               (if Object_At = 0 then ""
+              (Options.Conditions, Current_At /= 0,
+               (if Current_At = 0 then ""
                 else Ada.Strings.Unbounded.To_String
-                  (Objects (Object_At).Info.Entity_Tag)));
+                  (Objects (Current_At).Info.Entity_Tag)));
          begin
             if Condition_Result /= Success then
                Result := Condition_Result;
@@ -1833,6 +1837,27 @@ package body Flyology.Object_Storage.Backends.Memory is
                Append (Final_Data, Parts (Stored_At).Data);
             end;
          end loop;
+
+         if Next_Version = Version_Publication_Order'Last then
+            Final_Data :=
+              (Ada.Finalization.Controlled with others => <>);
+            if Assembly_Reserved then
+               Reserved_Bytes := Reserved_Bytes - Final_Size;
+               Assembly_Reserved := False;
+            end if;
+            Result := Capacity_Exceeded;
+            return;
+         end if;
+         New_Order := Next_Version + 1;
+         case Buckets (Bucket_At).Versioning.Status is
+            when Versioning_Unconfigured =>
+               Object_At := Current_At;
+            when Versioning_Enabled =>
+               Is_Null := False;
+            when Versioning_Suspended =>
+               Object_At := Selected_Generation_Index
+                 (Bucket, Key, Null_Version_Selector);
+         end case;
 
          if Object_At /= 0 then
             Existing_Size := Byte_Count (Objects (Object_At).Data.Capacity);
@@ -1867,7 +1892,7 @@ package body Flyology.Object_Storage.Backends.Memory is
          end loop;
 
          declare
-            Completed_Info : constant Object_Information :=
+            Completed_Info : Object_Information :=
               (Size         => Final_Size,
                Modified     => Modified,
                Entity_Tag   => Ada.Strings.Unbounded.To_Unbounded_String
@@ -1884,12 +1909,24 @@ package body Flyology.Object_Storage.Backends.Memory is
             Stored_Key : constant Ada.Strings.Unbounded.Unbounded_String :=
               Ada.Strings.Unbounded.To_Unbounded_String (Key);
          begin
+            if not Is_Null then
+               Completed_Info.Version :=
+                 Ada.Strings.Unbounded.To_Unbounded_String
+                   (GNAT.SHA256.Digest
+                      ("flyology-object-version" & Character'Val (0) &
+                       Bucket & Character'Val (0) & Key & Character'Val (0) &
+                       Version_Publication_Order'Image (New_Order)));
+            end if;
             --  Finish every allocating metadata operation before consuming
             --  the staged upload or publishing its assembled payload.
+            Next_Version := New_Order;
             Objects (Object_At).Bucket := Stored_Bucket;
             Objects (Object_At).Key := Stored_Key;
             Objects (Object_At).Info := Completed_Info;
             Objects (Object_At).Tags := Empty_Object_Tags;
+            Objects (Object_At).Is_Null_Version := Is_Null;
+            Objects (Object_At).Is_Delete_Marker := False;
+            Objects (Object_At).Publication := New_Order;
             Completed_Object_Part_Vectors.Move
               (Objects (Object_At).Completed_Parts, Completed_Parts);
             Info := Completed_Info;
