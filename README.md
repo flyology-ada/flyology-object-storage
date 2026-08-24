@@ -153,7 +153,7 @@ alr build
 ```
 
 The composable client rollout temporarily uses Flyology HTTP PR #33 at exact
-commit `b7fb54748eb40a4816d6277decf752c37c90171b`. Because its
+commit `153c9c80c73a07c2cccf5bbb0087e4d95676ce30`. Because its
 `flyology_quic=0.1.2-dev` dependency is not yet indexed, every independently
 solved Alire root pins that subcrate from the same repository and commit. These
 immutable git pins are provisional until the reviewed HTTP merge and dev-index
