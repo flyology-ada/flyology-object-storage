@@ -46,6 +46,11 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
      "2026-07-24 19:02:57 " &
      "bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc";
 
+   --  Test SQL spelling of the externally fixed S3 version ID "null".  The
+   --  exact bytes are the compatibility oracle for migrated and live
+   --  unversioned generations; changing them would test a different identity.
+   Null_Version_SQL : constant String := "X'6E756C6C'";
+
    Database_Path : constant String := "obj/database-wrapper.sqlite";
    Backend_Root : constant String := "obj/sqlite-backend";
    Conditional_Root : constant String := "obj/sqlite-conditional-backend";
@@ -454,6 +459,42 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V8_Database;
+
+   procedure Create_V9_Database is
+      Seed   : Catalogs.Catalog;
+      Legacy : Databases.Database;
+   begin
+      Delete_Database;
+      Catalogs.Open (Seed, Database_Path);
+      Catalogs.Close (Seed);
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "DROP TABLE current_object_versions;" &
+         "DROP TABLE object_version_tags;" &
+         "DROP TABLE object_version_metadata;" &
+         "DROP TABLE object_version_parts;" &
+         "DROP TABLE object_versions;" &
+         "INSERT INTO buckets(name,created) VALUES('legacy-bucket',17);" &
+         "INSERT INTO objects(bucket_name,object_key,payload,size,modified," &
+         "entity_tag,content_type) VALUES(" &
+         "'legacy-bucket',X'6B','legacy-v9-payload',3,19,X'65746167'," &
+         "X'746578742F706C61696E');" &
+         "INSERT INTO object_tags(bucket_name,object_key,tag_index,tag_key," &
+         "tag_value) VALUES('legacy-bucket',X'6B',1,X'7374617465'," &
+         "X'6F6C64');" &
+         "INSERT INTO object_metadata(bucket_name,object_key,ordinal," &
+         "metadata_key,metadata_value) VALUES(" &
+         "'legacy-bucket',X'6B',1,X'70726F6A656374',X'666C796F6C6F6779');" &
+         "PRAGMA user_version=9;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V9_Database;
 
    procedure Assert_Unconfigured_Versioning
      (Catalog : in out Catalogs.Catalog;
@@ -1315,6 +1356,137 @@ begin
    end;
    Delete_Database;
 
+   Create_V9_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   Assert
+     (Catalogs.Payload_Referenced (Catalog, "legacy-v9-payload"),
+      "schema-v9 migration did not retain the generation payload");
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version    : Databases.Statement;
+      Generation : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Generation, Database,
+         "SELECT " &
+         "(SELECT count(*) FROM object_versions v JOIN " &
+         "current_object_versions c USING(bucket_name,object_key," &
+         "version_id) WHERE v.bucket_name='legacy-bucket' " &
+         "AND v.object_key=X'6B' AND v.version_id=" & Null_Version_SQL & " " &
+         "AND v.is_delete_marker=0 AND v.payload='legacy-v9-payload')," &
+         "(SELECT count(*) FROM object_version_tags WHERE " &
+         "bucket_name='legacy-bucket' AND object_key=X'6B' " &
+         "AND version_id=" & Null_Version_SQL & " AND tag_index=1)," &
+         "(SELECT count(*) FROM object_version_metadata WHERE " &
+         "bucket_name='legacy-bucket' AND object_key=X'6B' " &
+         "AND version_id=" & Null_Version_SQL & " AND ordinal=1)");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 10
+         and then Databases.Step (Generation) = Databases.Row
+         and then Databases.Column (Generation, 0) = 1
+         and then Databases.Column (Generation, 1) = 1
+         and then Databases.Column (Generation, 2) = 1,
+         "schema-v9 migration did not atomically preserve generations");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V9_Database;
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "CREATE TABLE object_versions(publication_order INTEGER PRIMARY KEY);");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema-v9 migration accepted a partial generation publication");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "ALTER TABLE object_versions " &
+      "RENAME COLUMN version_id TO version_id_bogus;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema10 accepted a same-count generation identity rename");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "PRAGMA writable_schema=ON;" &
+      "UPDATE sqlite_schema SET sql=replace(sql," &
+      "'CHECK(length(version_id) BETWEEN 1 AND 1024)'," &
+      "'CHECK(length(version_id) BETWEEN 1 AND 2048)') " &
+      "WHERE type='table' AND name='object_versions';" &
+      "PRAGMA writable_schema=OFF;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema10 accepted a weakened generation identity bound");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "PRAGMA writable_schema=ON;" &
+      "UPDATE sqlite_schema SET sql=replace(sql,'ON DELETE CASCADE'," &
+      "'ON DELETE RESTRICT') WHERE type='table' " &
+      "AND name='object_version_tags';" &
+      "PRAGMA writable_schema=OFF;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema10 accepted a weakened generation tag foreign key");
+   end;
+   Delete_Database;
+
    Catalogs.Open (Catalog, Database_Path);
    Catalogs.Close (Catalog);
    Databases.Open (Database, Database_Path);
@@ -1333,7 +1505,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema9 accepted a same-count object_metadata column rename");
+         "schema10 accepted a same-count object_metadata column rename");
    end;
    Delete_Database;
 
@@ -1359,7 +1531,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema9 accepted a weakened object_metadata value constraint");
+         "schema10 accepted a weakened object_metadata value constraint");
    end;
    Delete_Database;
 
@@ -1379,7 +1551,7 @@ begin
          when Catalogs.Catalog_Error => Rejected := True;
       end;
       Assert
-        (Rejected, "schema9 accepted a same-count objects column rename");
+        (Rejected, "schema10 accepted a same-count objects column rename");
    end;
    Delete_Database;
 
@@ -1720,6 +1892,43 @@ begin
            "concurrent catalog operations were not serialized safely");
    Catalogs.Close (Catalog);
 
+   Databases.Open (Database, Database_Path);
+   declare
+      Mirrors : Databases.Statement;
+   begin
+      Databases.Prepare
+        (Mirrors, Database,
+         "SELECT " &
+         "(SELECT count(*) FROM object_versions v JOIN " &
+         "current_object_versions c USING(bucket_name,object_key," &
+         "version_id) WHERE v.bucket_name='catalog-bucket' " &
+         "AND v.object_key=?1 AND v.version_id=" & Null_Version_SQL & " " &
+         "AND v.payload='payload-two')," &
+         "(SELECT count(*) FROM object_version_tags WHERE " &
+         "bucket_name='catalog-bucket' AND object_key=?1 " &
+         "AND version_id=" & Null_Version_SQL & ")," &
+         "(SELECT count(*) FROM object_versions v JOIN " &
+         "current_object_versions c USING(bucket_name,object_key," &
+         "version_id) WHERE v.bucket_name='catalog-bucket' " &
+         "AND v.object_key=X'6D756C7469706172742D6B6579' " &
+         "AND v.version_id=" & Null_Version_SQL & " " &
+         "AND v.payload='multipart-final-payload')," &
+         "(SELECT count(*) FROM object_version_parts WHERE " &
+         "bucket_name='catalog-bucket' " &
+         "AND object_key=X'6D756C7469706172742D6B6579' " &
+         "AND version_id=" & Null_Version_SQL & ")");
+      Databases.Bind_Bytes
+        (Mirrors, 1, Character'Val (255) & "/opaque-key");
+      Assert
+        (Databases.Step (Mirrors) = Databases.Row
+         and then Databases.Column (Mirrors, 0) = 1
+         and then Databases.Column (Mirrors, 1) = 2
+         and then Databases.Column (Mirrors, 2) = 1
+         and then Databases.Column (Mirrors, 3) = 2,
+         "live catalog mutations did not maintain generation mirrors");
+   end;
+   Databases.Close (Database);
+
    Catalogs.Open (Catalog, Database_Path);
    declare
       Result  : Flyology.Object_Storage.Status;
@@ -1882,17 +2091,19 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 9,
-         "schema-v1 migration did not publish version 9");
+         and then Databases.Column (Version, 0) = 10,
+         "schema-v1 migration did not publish version 10");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
          "AND name IN ('buckets','objects','object_tags','object_metadata'," &
          "'multipart_uploads','multipart_parts','object_parts'," &
-         "'bucket_tags')");
+         "'bucket_tags','object_versions','current_object_versions'," &
+         "'object_version_tags','object_version_metadata'," &
+         "'object_version_parts')");
       Assert
         (Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 8,
+         and then Databases.Column (Tables, 0) = 13,
          "schema-v1 migration did not create the complete schema");
    end;
    Databases.Close (Database);
@@ -1958,8 +2169,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 9,
-         "schema-v2 migration did not publish version 9");
+         and then Databases.Column (Version, 0) = 10,
+         "schema-v2 migration did not publish version 10");
    end;
    declare
       Tables : Databases.Statement;
@@ -1995,10 +2206,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 9
+         and then Databases.Column (Version, 0) = 10
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 9 tables");
+         "schema-v3 migration did not publish schema 10 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2069,8 +2280,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 9,
-            "schema-v4 migration did not publish version 9");
+            and then Databases.Column (Version, 0) = 10,
+            "schema-v4 migration did not publish version 10");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -2137,7 +2348,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 9
+            and then Databases.Column (Version, 0) = 10
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -2215,8 +2426,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 9,
-         "schema-v6 migration did not publish version 9");
+         and then Databases.Column (Version, 0) = 10,
+         "schema-v6 migration did not publish version 10");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2346,7 +2557,7 @@ begin
          "length(checksum_value)) FROM object_parts)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 9
+         and then Databases.Column (Version, 0) = 10
          and then Databases.Step (Defaults) = Databases.Row
          and then Databases.Column (Defaults, 0) = 0,
          "schema-v7 checksum migration did not publish safe defaults");
@@ -2417,10 +2628,10 @@ begin
          "AND name='object_metadata')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 9
+         and then Databases.Column (Version, 0) = 10
          and then Databases.Step (Topology) = Databases.Row
          and then Databases.Column (Topology, 0) = 13,
-         "schema-v8 migration did not atomically publish schema9 topology");
+         "schema-v8 migration did not atomically publish schema10 topology");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2500,7 +2711,7 @@ begin
              (Is_Set => True,
               Value => Flyology.Object_Storage.Metadata_Time
                 (-315_619_200)),
-         "schema9 pre-epoch Expires did not survive backend reopen");
+         "schema10 pre-epoch Expires did not survive backend reopen");
       Store.Head_Object
         ("sqlite-copy-object-bucket", "copy-max-expires", null,
          Ada.Real_Time.Time_Last, Info, Result);
@@ -2510,7 +2721,7 @@ begin
            Flyology.Object_Storage.Optional_Metadata_Time'
              (Is_Set => True,
               Value => Flyology.Object_Storage.Metadata_Time'Last),
-         "schema9 maximum Expires did not survive backend reopen");
+         "schema10 maximum Expires did not survive backend reopen");
    end;
    Ada.Directories.Delete_Tree (Copy_Root);
 

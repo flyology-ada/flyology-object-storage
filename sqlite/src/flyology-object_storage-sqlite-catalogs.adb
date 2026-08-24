@@ -11,7 +11,16 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   Schema_Version : constant Long_Long_Integer := 9;
+   --  Persisted schema 10 introduces normalized retained-generation records
+   --  and a transactional current-generation pointer. The value is the next
+   --  repository migration after metadata schema 9; older readers must reject
+   --  it because deleting a payload without seeing these references loses
+   --  versioned data. Never renumber or reuse it.
+   Schema_Version : constant Long_Long_Integer := 10;
+   --  Persisted SQL BLOB spelling of the externally fixed S3 version ID
+   --  "null". It identifies the sole unversioned/suspended generation; changing
+   --  these bytes would make migrated and reopened objects unreachable.
+   Null_Version_SQL : constant String := "X'6E756C6C'";
    Empty_Info : constant Object_Information := (others => <>);
    Object_Tags_Schema : constant String :=
      "CREATE TABLE object_tags (" &
@@ -136,6 +145,108 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "DEFAULT 0 CHECK(checksum_method BETWEEN 0 AND 2);" &
      "ALTER TABLE object_parts ADD COLUMN checksum_value BLOB NOT NULL " &
      "DEFAULT X'' CHECK(length(checksum_value) <= 96);";
+   --  Retained generation identity uses the public 1..1024-byte version-ID
+   --  contract; metadata, tags, parts, checksums, and time bounds are copied
+   --  from the existing object contracts. These normalized rows keep every
+   --  external payload reference visible to crash recovery and let one SQLite
+   --  transaction move the current pointer without rewriting retained rows.
+   Generation_Schema : constant String :=
+     "CREATE TABLE object_versions (" &
+     "publication_order INTEGER PRIMARY KEY AUTOINCREMENT," &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "object_key BLOB NOT NULL," &
+     "version_id BLOB NOT NULL CHECK(length(version_id) BETWEEN 1 AND 1024)," &
+     "is_delete_marker INTEGER NOT NULL CHECK(is_delete_marker IN (0,1))," &
+     "payload TEXT UNIQUE," &
+     "size INTEGER NOT NULL CHECK(size >= 0)," &
+     "modified INTEGER NOT NULL CHECK(modified >= 0)," &
+     "entity_tag BLOB NOT NULL," &
+     "content_type BLOB NOT NULL," &
+     "checksum_algorithm INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(checksum_algorithm BETWEEN 0 AND 10)," &
+     "checksum_method INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(checksum_method BETWEEN 0 AND 2)," &
+     "checksum_value BLOB NOT NULL DEFAULT X'' " &
+     "CHECK(length(checksum_value) <= 96)," &
+     "cache_control_present INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(cache_control_present IN (0,1))," &
+     "cache_control BLOB NOT NULL DEFAULT X'' " &
+     "CHECK(length(cache_control) <= 2048)," &
+     "content_disposition_present INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(content_disposition_present IN (0,1))," &
+     "content_disposition BLOB NOT NULL DEFAULT X'' " &
+     "CHECK(length(content_disposition) <= 2048)," &
+     "content_encoding_present INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(content_encoding_present IN (0,1))," &
+     "content_encoding BLOB NOT NULL DEFAULT X'' " &
+     "CHECK(length(content_encoding) <= 2048)," &
+     "content_language_present INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(content_language_present IN (0,1))," &
+     "content_language BLOB NOT NULL DEFAULT X'' " &
+     "CHECK(length(content_language) <= 2048)," &
+     "expires_present INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(expires_present IN (0,1))," &
+     "expires INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(expires BETWEEN -62135596800 AND 253402300799)," &
+     "redirect_present INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(redirect_present IN (0,1))," &
+     "redirect BLOB NOT NULL DEFAULT X'' " &
+     "CHECK(length(redirect) <= 2048)," &
+     "UNIQUE(bucket_name,object_key,version_id)," &
+     "CHECK((is_delete_marker=0 AND payload IS NOT NULL) OR " &
+     "(is_delete_marker=1 AND payload IS NULL))," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE RESTRICT" &
+     ");" &
+     "CREATE TABLE current_object_versions (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "object_key BLOB NOT NULL," &
+     "version_id BLOB NOT NULL," &
+     "PRIMARY KEY(bucket_name,object_key)," &
+     "FOREIGN KEY(bucket_name,object_key,version_id) REFERENCES " &
+     "object_versions(bucket_name,object_key,version_id) ON DELETE RESTRICT" &
+     ") WITHOUT ROWID;" &
+     "CREATE TABLE object_version_tags (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "object_key BLOB NOT NULL," &
+     "version_id BLOB NOT NULL," &
+     "tag_index INTEGER NOT NULL CHECK(tag_index BETWEEN 1 AND 10)," &
+     "tag_key BLOB NOT NULL," &
+     "tag_value BLOB NOT NULL," &
+     "PRIMARY KEY(bucket_name,object_key,version_id,tag_index)," &
+     "UNIQUE(bucket_name,object_key,version_id,tag_key)," &
+     "FOREIGN KEY(bucket_name,object_key,version_id) REFERENCES " &
+     "object_versions(bucket_name,object_key,version_id) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;" &
+     "CREATE TABLE object_version_metadata (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "object_key BLOB NOT NULL," &
+     "version_id BLOB NOT NULL," &
+     "ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 1 AND 64)," &
+     "metadata_key BLOB NOT NULL " &
+     "CHECK(length(metadata_key) BETWEEN 1 AND 117)," &
+     "metadata_value BLOB NOT NULL CHECK(length(metadata_value) <= 2048)," &
+     "PRIMARY KEY(bucket_name,object_key,version_id,metadata_key)," &
+     "UNIQUE(bucket_name,object_key,version_id,ordinal)," &
+     "FOREIGN KEY(bucket_name,object_key,version_id) REFERENCES " &
+     "object_versions(bucket_name,object_key,version_id) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;" &
+     "CREATE TABLE object_version_parts (" &
+     "bucket_name TEXT NOT NULL COLLATE BINARY," &
+     "object_key BLOB NOT NULL," &
+     "version_id BLOB NOT NULL," &
+     "part_number INTEGER NOT NULL " &
+     "CHECK(part_number BETWEEN 1 AND 10000)," &
+     "size INTEGER NOT NULL CHECK(size >= 0)," &
+     "checksum_algorithm INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(checksum_algorithm BETWEEN 0 AND 10)," &
+     "checksum_method INTEGER NOT NULL DEFAULT 0 " &
+     "CHECK(checksum_method BETWEEN 0 AND 2)," &
+     "checksum_value BLOB NOT NULL DEFAULT X'' " &
+     "CHECK(length(checksum_value) <= 96)," &
+     "PRIMARY KEY(bucket_name,object_key,version_id,part_number)," &
+     "FOREIGN KEY(bucket_name,object_key,version_id) REFERENCES " &
+     "object_versions(bucket_name,object_key,version_id) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
 
    function Checksum_From_Columns
      (Query        : DB.Statement;
@@ -688,6 +799,122 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         and then Has_Metadata_SQL ("withoutrowid");
    end Valid_Metadata_Schema;
 
+   function Valid_Generation_Schema (Item : in out Catalog) return Boolean is
+      Normalized_SQL : constant String :=
+        "lower(replace(replace(replace(replace(sql,' ','')," &
+        "char(9),''),char(10),''),char(13),''))";
+      function Has_Version_SQL (Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='object_versions' AND instr(" & Normalized_SQL &
+            ",'" & Fragment & "')>0") = 1);
+      function Has_Table_SQL
+        (Table_Name, Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='" & Table_Name & "' AND instr(" & Normalized_SQL &
+            ",'" & Fragment & "')>0") = 1);
+   begin
+      return
+        Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('object_versions')") = 25
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('object_versions') " &
+           "WHERE name IN ('publication_order','bucket_name','object_key'," &
+           "'version_id','is_delete_marker','payload','size','modified'," &
+           "'entity_tag','content_type','checksum_algorithm'," &
+           "'checksum_method','checksum_value','cache_control_present'," &
+           "'cache_control','content_disposition_present'," &
+           "'content_disposition','content_encoding_present'," &
+           "'content_encoding','content_language_present'," &
+           "'content_language','expires_present','expires'," &
+           "'redirect_present','redirect')") = 25
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info(" &
+           "'current_object_versions')") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info(" &
+           "'object_version_tags')") = 6
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info(" &
+           "'object_version_metadata')") = 6
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info(" &
+           "'object_version_parts')") = 8
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list(" &
+           "'object_versions')") = 1
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list(" &
+           "'current_object_versions')") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list(" &
+           "'object_version_tags')") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list(" &
+           "'object_version_metadata')") = 3
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list(" &
+           "'object_version_parts')") = 3
+        and then Has_Version_SQL
+          ("check(length(version_id)between1and1024)")
+        and then Has_Version_SQL
+          ("unique(bucket_name,object_key,version_id)")
+        and then Has_Version_SQL
+          ("check((is_delete_marker=0andpayloadisnotnull)or" &
+           "(is_delete_marker=1andpayloadisnull))")
+        and then Has_Version_SQL
+          ("foreignkey(bucket_name)referencesbuckets(name)" &
+           "ondeleterestrict")
+        and then Has_Table_SQL
+          ("current_object_versions",
+           "primarykey(bucket_name,object_key)")
+        and then Has_Table_SQL
+          ("current_object_versions",
+           "foreignkey(bucket_name,object_key,version_id)references" &
+           "object_versions(bucket_name,object_key,version_id)" &
+           "ondeleterestrict")
+        and then Has_Table_SQL
+          ("object_version_tags",
+           "primarykey(bucket_name,object_key,version_id,tag_index)")
+        and then Has_Table_SQL
+          ("object_version_tags",
+           "foreignkey(bucket_name,object_key,version_id)references" &
+           "object_versions(bucket_name,object_key,version_id)" &
+           "ondeletecascade")
+        and then Has_Table_SQL
+          ("object_version_metadata",
+           "primarykey(bucket_name,object_key,version_id,metadata_key)")
+        and then Has_Table_SQL
+          ("object_version_metadata",
+           "foreignkey(bucket_name,object_key,version_id)references" &
+           "object_versions(bucket_name,object_key,version_id)" &
+           "ondeletecascade")
+        and then Has_Table_SQL
+          ("object_version_parts",
+           "primarykey(bucket_name,object_key,version_id,part_number)")
+        and then Has_Table_SQL
+          ("object_version_parts",
+           "foreignkey(bucket_name,object_key,version_id)references" &
+           "object_versions(bucket_name,object_key,version_id)" &
+           "ondeletecascade")
+        and then Scalar
+          (Item, "SELECT count(*) FROM pragma_foreign_key_check") = 0;
+   end Valid_Generation_Schema;
+
    function Text_Scalar (Item : in out Catalog; SQL : String) return String is
       Query : DB.Statement;
    begin
@@ -797,8 +1024,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          ") WITHOUT ROWID;" &
          Object_Parts_Schema_V8 &
          Bucket_Tags_Schema &
+         Generation_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=9;");
+         "PRAGMA user_version=10;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -1105,6 +1333,72 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V8;
 
+   procedure Upgrade_From_V9 (Item : in out Catalog) is
+      In_Transaction : Boolean := False;
+      Existing_Tables : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' AND " &
+           "name IN ('object_versions','current_object_versions'," &
+           "'object_version_tags','object_version_metadata'," &
+           "'object_version_parts')");
+   begin
+      if Existing_Tables /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 9";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Generation_Schema &
+         "INSERT INTO object_versions(" &
+         "bucket_name,object_key,version_id,is_delete_marker,payload,size," &
+         "modified,entity_tag,content_type,checksum_algorithm," &
+         "checksum_method,checksum_value,cache_control_present," &
+         "cache_control,content_disposition_present,content_disposition," &
+         "content_encoding_present,content_encoding," &
+         "content_language_present,content_language,expires_present," &
+         "expires,redirect_present,redirect) " &
+         "SELECT bucket_name,object_key," & Null_Version_SQL &
+         ",0,payload,size," &
+         "modified,entity_tag,content_type,checksum_algorithm," &
+         "checksum_method,checksum_value,cache_control_present," &
+         "cache_control,content_disposition_present,content_disposition," &
+         "content_encoding_present,content_encoding," &
+         "content_language_present,content_language,expires_present," &
+         "expires,redirect_present,redirect FROM objects " &
+         "ORDER BY bucket_name,object_key;" &
+         "INSERT INTO current_object_versions(bucket_name,object_key," &
+         "version_id) SELECT bucket_name,object_key," & Null_Version_SQL &
+         " " &
+         "FROM objects;" &
+         "INSERT INTO object_version_tags(bucket_name,object_key," &
+         "version_id,tag_index,tag_key,tag_value) " &
+         "SELECT bucket_name,object_key," & Null_Version_SQL &
+         ",tag_index,tag_key," &
+         "tag_value FROM object_tags;" &
+         "INSERT INTO object_version_metadata(bucket_name,object_key," &
+         "version_id,ordinal,metadata_key,metadata_value) " &
+         "SELECT bucket_name,object_key," & Null_Version_SQL &
+         ",ordinal,metadata_key," &
+         "metadata_value FROM object_metadata;" &
+         "INSERT INTO object_version_parts(bucket_name,object_key," &
+         "version_id,part_number,size,checksum_algorithm,checksum_method," &
+         "checksum_value) SELECT bucket_name,object_key," &
+         Null_Version_SQL & "," &
+         "part_number,size,checksum_algorithm,checksum_method," &
+         "checksum_value FROM object_parts;" &
+         "PRAGMA user_version=10;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V9;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -1144,6 +1438,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 7 => null;
             when 8 => null;
             when 9 => null;
+            when 10 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -1155,6 +1450,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          if Version = 8 then
             Upgrade_From_V8 (Item);
             Version := 9;
+         end if;
+         if Version = 9 then
+            Upgrade_From_V9 (Item);
+            Version := 10;
          end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
@@ -1170,7 +1469,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "AND name IN " &
          "('buckets','objects','object_tags','object_metadata'," &
          "'multipart_uploads','multipart_parts','object_parts'," &
-         "'bucket_tags')") /= 8
+         "'bucket_tags','object_versions','current_object_versions'," &
+         "'object_version_tags','object_version_metadata'," &
+         "'object_version_parts')") /= 13
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -1183,6 +1484,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       elsif not Valid_Metadata_Schema (Item)
       then
          raise Catalog_Error with "SQLite metadata schema is incomplete";
+      elsif not Valid_Generation_Schema (Item)
+      then
+         raise Catalog_Error with "SQLite generation schema is incomplete";
       elsif Scalar
         (Item,
          "SELECT count(*) FROM pragma_table_info('buckets') " &
@@ -1924,6 +2228,149 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Get_Object_Attributes;
 
+   procedure Delete_Generation_Mirror_Internal
+     (Item : in out Catalog; Bucket, Key : String)
+   is
+      Delete_Current : DB.Statement;
+      Delete_Versions : DB.Statement;
+   begin
+      DB.Prepare
+        (Delete_Current, Item.Database,
+         "DELETE FROM current_object_versions " &
+         "WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Delete_Current, 1, Bucket);
+      DB.Bind_Bytes (Delete_Current, 2, Key);
+      if DB.Step (Delete_Current) /= DB.Done then
+         raise Catalog_Error with
+           "current generation pointer delete returned a row";
+      end if;
+      DB.Prepare
+        (Delete_Versions, Item.Database,
+         "DELETE FROM object_versions " &
+         "WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Delete_Versions, 1, Bucket);
+      DB.Bind_Bytes (Delete_Versions, 2, Key);
+      if DB.Step (Delete_Versions) /= DB.Done then
+         raise Catalog_Error with "generation delete returned a row";
+      end if;
+   end Delete_Generation_Mirror_Internal;
+
+   procedure Replace_Null_Generation_Internal
+     (Item : in out Catalog; Bucket, Key : String)
+   is
+      Insert_Version  : DB.Statement;
+      Insert_Current  : DB.Statement;
+      Insert_Tags     : DB.Statement;
+      Insert_Metadata : DB.Statement;
+      Insert_Parts    : DB.Statement;
+   begin
+      Delete_Generation_Mirror_Internal (Item, Bucket, Key);
+      DB.Prepare
+        (Insert_Version, Item.Database,
+         "INSERT INTO object_versions(" &
+         "bucket_name,object_key,version_id,is_delete_marker,payload,size," &
+         "modified,entity_tag,content_type,checksum_algorithm," &
+         "checksum_method,checksum_value,cache_control_present," &
+         "cache_control,content_disposition_present,content_disposition," &
+         "content_encoding_present,content_encoding," &
+         "content_language_present,content_language,expires_present," &
+         "expires,redirect_present,redirect) SELECT bucket_name,object_key," &
+         Null_Version_SQL &
+         ",0,payload,size,modified,entity_tag,content_type," &
+         "checksum_algorithm,checksum_method,checksum_value," &
+         "cache_control_present,cache_control," &
+         "content_disposition_present,content_disposition," &
+         "content_encoding_present,content_encoding," &
+         "content_language_present,content_language,expires_present," &
+         "expires,redirect_present,redirect FROM objects " &
+         "WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Insert_Version, 1, Bucket);
+      DB.Bind_Bytes (Insert_Version, 2, Key);
+      if DB.Step (Insert_Version) /= DB.Done
+        or else DB.Changes (Item.Database) /= 1
+      then
+         raise Catalog_Error with "null generation insert changed no row";
+      end if;
+      DB.Prepare
+        (Insert_Current, Item.Database,
+         "INSERT INTO current_object_versions(" &
+         "bucket_name,object_key,version_id) VALUES(?1,?2," &
+         Null_Version_SQL & ")");
+      DB.Bind (Insert_Current, 1, Bucket);
+      DB.Bind_Bytes (Insert_Current, 2, Key);
+      if DB.Step (Insert_Current) /= DB.Done then
+         raise Catalog_Error with "current generation insert returned a row";
+      end if;
+      DB.Prepare
+        (Insert_Tags, Item.Database,
+         "INSERT INTO object_version_tags(bucket_name,object_key," &
+         "version_id,tag_index,tag_key,tag_value) SELECT bucket_name," &
+         "object_key," & Null_Version_SQL &
+         ",tag_index,tag_key,tag_value " &
+         "FROM object_tags WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Insert_Tags, 1, Bucket);
+      DB.Bind_Bytes (Insert_Tags, 2, Key);
+      if DB.Step (Insert_Tags) /= DB.Done then
+         raise Catalog_Error with "generation tag copy returned a row";
+      end if;
+      DB.Prepare
+        (Insert_Metadata, Item.Database,
+         "INSERT INTO object_version_metadata(bucket_name,object_key," &
+         "version_id,ordinal,metadata_key,metadata_value) SELECT " &
+         "bucket_name,object_key," & Null_Version_SQL &
+         ",ordinal,metadata_key," &
+         "metadata_value FROM object_metadata " &
+         "WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Insert_Metadata, 1, Bucket);
+      DB.Bind_Bytes (Insert_Metadata, 2, Key);
+      if DB.Step (Insert_Metadata) /= DB.Done then
+         raise Catalog_Error with "generation metadata copy returned a row";
+      end if;
+      DB.Prepare
+        (Insert_Parts, Item.Database,
+         "INSERT INTO object_version_parts(bucket_name,object_key," &
+         "version_id,part_number,size,checksum_algorithm,checksum_method," &
+         "checksum_value) SELECT bucket_name,object_key," &
+         Null_Version_SQL & "," &
+         "part_number,size,checksum_algorithm,checksum_method," &
+         "checksum_value FROM object_parts " &
+         "WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Insert_Parts, 1, Bucket);
+      DB.Bind_Bytes (Insert_Parts, 2, Key);
+      if DB.Step (Insert_Parts) /= DB.Done then
+         raise Catalog_Error with "generation part copy returned a row";
+      end if;
+   end Replace_Null_Generation_Internal;
+
+   procedure Replace_Null_Generation_Tags_Internal
+     (Item : in out Catalog; Bucket, Key : String)
+   is
+      Delete : DB.Statement;
+      Insert : DB.Statement;
+   begin
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM object_version_tags WHERE bucket_name=?1 " &
+         "AND object_key=?2 AND version_id=" & Null_Version_SQL);
+      DB.Bind (Delete, 1, Bucket);
+      DB.Bind_Bytes (Delete, 2, Key);
+      if DB.Step (Delete) /= DB.Done then
+         raise Catalog_Error with "generation tag delete returned a row";
+      end if;
+      DB.Prepare
+        (Insert, Item.Database,
+         "INSERT INTO object_version_tags(bucket_name,object_key," &
+         "version_id,tag_index,tag_key,tag_value) SELECT bucket_name," &
+         "object_key," & Null_Version_SQL &
+         ",tag_index,tag_key,tag_value " &
+         "FROM object_tags WHERE bucket_name=?1 AND object_key=?2");
+      DB.Bind (Insert, 1, Bucket);
+      DB.Bind_Bytes (Insert, 2, Key);
+      if DB.Step (Insert) /= DB.Done then
+         raise Catalog_Error with "generation tag insert returned a row";
+      end if;
+   end Replace_Null_Generation_Tags_Internal;
+
    procedure Put_Object
      (Item             : in out Catalog;
       Bucket           : String;
@@ -2046,6 +2493,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             raise Catalog_Error with "object part delete returned a row";
          end if;
       end;
+      Replace_Null_Generation_Internal (Item, Bucket, Key);
       DB.Commit (Item.Database);
       In_Transaction := False;
       Result := Success;
@@ -2151,6 +2599,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
               (Backends.Delete_Object_Outcome'(Result => Entry_Result));
             if Entry_Result = Success and then Lookup = Success then
                Retired.Append (Payload);
+               Delete_Generation_Mirror_Internal (Item, Bucket, Key);
                DB.Bind (Delete, 1, Bucket);
                DB.Bind_Bytes (Delete, 2, Key);
                if DB.Step (Delete) /= DB.Done then
@@ -2245,6 +2694,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             raise Catalog_Error with "object tag insert returned a row";
          end if;
       end loop;
+      Replace_Null_Generation_Tags_Internal (Item, Bucket, Key);
       DB.Commit (Item.Database);
       In_Transaction := False;
       Result := Success;
@@ -2990,6 +3440,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       if DB.Step (Clear_Tags) /= DB.Done then
          raise Catalog_Error with "multipart object tag reset returned a row";
       end if;
+      Replace_Null_Generation_Internal (Item, Bucket, Key);
       DB.Prepare
         (Delete, Item.Database,
          "DELETE FROM multipart_uploads WHERE upload_id=?1");
@@ -3095,14 +3546,17 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       Item.Gate.Acquire;
       Locked := True;
       DB.Prepare
-        (Query, Item.Database,
+         (Query, Item.Database,
          "SELECT EXISTS(SELECT 1 FROM objects WHERE payload=?1), " &
-         "EXISTS(SELECT 1 FROM multipart_parts WHERE payload=?1)");
+         "EXISTS(SELECT 1 FROM multipart_parts WHERE payload=?1), " &
+         "EXISTS(SELECT 1 FROM object_versions WHERE payload=?1)");
       DB.Bind (Query, 1, Payload);
       if DB.Step (Query) /= DB.Row then
          raise Catalog_Error with "payload reference query returned no row";
       end if;
-      Result := DB.Column (Query, 0) /= 0 or else DB.Column (Query, 1) /= 0;
+      Result := DB.Column (Query, 0) /= 0
+        or else DB.Column (Query, 1) /= 0
+        or else DB.Column (Query, 2) /= 0;
       Item.Gate.Release;
       Locked := False;
       return Result;

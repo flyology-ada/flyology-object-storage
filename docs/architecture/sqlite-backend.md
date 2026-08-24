@@ -17,7 +17,8 @@ A successful PUT follows this order:
 An interruption before step 5 leaves an unreferenced immutable payload. An
 interruption after step 5 leaves a complete referenced payload. At open, the
 backend removes all staging files and object payloads not referenced by the
-catalog, then flushes both directories. Superseded and deleted bodies are
+current-object, retained-generation, or multipart catalog, then flushes both
+directories. Superseded and deleted bodies are
 intentionally retained until that recovery pass so an already-open reader is
 never invalidated by replacement.
 
@@ -41,6 +42,20 @@ multipart completion clear any prior rows in the same transaction that
 publishes the replacement payload. Tag reads and object-existence classification
 remain under the catalog operation gate, so a reader cannot combine tags from
 one version with the body identity of another.
+
+Schema version 10 adds the durable retained-generation foundation without
+moving bodies into SQLite. `object_versions` stores one bounded metadata row
+per opaque version identity and assigns a monotonically increasing publication
+order. `current_object_versions` selects the visible generation in the same
+transaction, while generation-specific tag, user-metadata, and completed-part
+tables preserve the complete snapshot. A delete-marker row has no payload;
+every data generation has exactly one immutable payload reference. Existing
+catalogs migrate each current object as the S3 `null` generation and copy its
+tags, metadata, and parts under one exclusive transaction. Until the
+version-enabled append/delete-marker operations are qualified, current
+unversioned PUT, multipart completion, tag replacement, and deletion maintain
+that null-generation mirror transactionally; this schema foundation alone does
+not claim durable version-selection support.
 
 Opening a
 nonempty unrecognized database, an unsupported schema, corrupt metadata, a
@@ -70,17 +85,19 @@ inserts the complete validated set in one transaction under the catalog gate;
 Get returns ordinal order and fails closed on invalid catalog data. Tags do not
 participate in the bucket-nonempty check and are removed with their bucket.
 
-Version 3 records bucket creation time transactionally. Version 4 introduced
+Schema version 9 added bounded standard and user object metadata. Version 3
+records bucket creation time transactionally. Version 4 introduced
 the object-tag table; the independently developed bucket-tag-only version-4
 layout is also recognized. Version 5 existed in two released-development
 layouts: object tags plus `object_parts`, and object tags plus `bucket_tags`.
 The independently developed versioning-only version-4 layout is recognized in
 addition to both tag-table version-4 layouts. Opening any recognized version-1
-through version-7 catalog upgrades it under exclusive transactions to version
-8, creates only missing tables and columns, and preserves existing object tags,
+through version-9 catalog upgrades it under exclusive transactions to version
+10, creates only missing tables and columns, and preserves existing object tags,
 staged and completed-part rows, bucket tags, multipart configuration, and
 versioning values. Version-7 checksum columns receive explicit no-checksum
-defaults; no digest is invented for historical bodies. Existing
+defaults; version-9 objects become `null` generations and no digest or opaque
+non-null version ID is invented for historical bodies. Existing
 buckets use
 `0` to mean that the historical creation time is unavailable, while every new
 bucket receives its actual commit-time value. Versioning and MFA-delete use
