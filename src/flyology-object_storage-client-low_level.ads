@@ -15,6 +15,7 @@ with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Model;
+with Flyology.Object_Storage.S3.Object_Lock;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.S3.Versions;
@@ -1164,6 +1165,93 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token    : access Flyology.Cancellation.Token := null;
       Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Object_Torrent_Outcome;
+
+   --  Every non-resource member in the pinned GetObjectLegalHold request.
+   --  @field Version_ID Optional exact generation selector
+   --  @field Request_Payer Empty or the sole modeled value, requester
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Get_Object_Legal_Hold_Parameters is record
+      Version_ID               : Ada.Strings.Unbounded.Unbounded_String;
+      Request_Payer            : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner    : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare one exact signed GetObjectLegalHold request.
+   --  @param Origin Exact HTTP origin used by the caller-owned client
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Object key whose legal-hold state is requested
+   --  @param Parameters Optional version, payer, and owner selectors
+   --  @param Identity Credentials borrowed only for signing
+   --  @param Region SigV4 signing region
+   --  @param Timestamp SigV4 basic-format UTC timestamp
+   --  @return Immutable prepared request
+   function Prepare_Get_Object_Legal_Hold
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Get_Object_Legal_Hold_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request;
+
+   --  Terminal interpretation of a GetObjectLegalHold response.
+   --  @enum Object_Legal_Hold_Found Exact 200 response decoded successfully
+   --  @enum Get_Object_Legal_Hold_Rejected Bounded non-200 S3 rejection
+   type Get_Object_Legal_Hold_Outcome_Kind is
+     (Object_Legal_Hold_Found, Get_Object_Legal_Hold_Rejected);
+
+   --  Presence-preserving legal-hold result or structured rejection.  Status
+   --  uses the established low-level local rejection initializer and is never
+   --  transmitted as an HTTP value.
+   --  @field Kind Whether legal-hold state or an S3 error was returned
+   --  @field Status Exact HTTP response status
+   --  @field Legal_Hold Optional outer payload and nested status
+   --  @field Error Structured rejected-response diagnostics
+   type Get_Object_Legal_Hold_Outcome
+     (Kind : Get_Object_Legal_Hold_Outcome_Kind :=
+        Get_Object_Legal_Hold_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Object_Legal_Hold_Found =>
+            Legal_Hold : S3.Object_Lock.Legal_Hold;
+         when Get_Object_Legal_Hold_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
+   --  Decode a complete bounded legal-hold or structured S3 error body.
+   --  @param Status Exact HTTP response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Optional physical request identifier
+   --  @param Host_ID Optional physical host identifier
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Presence-preserving legal hold or structured S3 rejection
+   function Decode_Get_Object_Legal_Hold_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Legal_Hold_Outcome;
+
+   --  Execute and fully decode one matching request within caller-selected
+   --  XML limits.  The timeout is the established synchronous client default.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Prepared Request returned by Prepare_Get_Object_Legal_Hold
+   --  @param Timeout Whole-operation timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits XML document, depth, element, and text limits
+   --  @return Presence-preserving legal hold or structured S3 rejection
+   function Execute_Get_Object_Legal_Hold
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Legal_Hold_Outcome;
 
    --  Every non-resource member in the pinned GetObjectAttributes request.
    --  Presence flags preserve omission for optional numeric headers.
@@ -3151,6 +3239,7 @@ private
       Get_Bucket_Control_Operation,
       Put_Bucket_Control_Operation,
       Get_Object_Torrent_Operation,
+      Get_Object_Legal_Hold_Operation,
       Delete_Object_Operation,
       Delete_Objects_Operation,
       Create_Multipart_Operation,

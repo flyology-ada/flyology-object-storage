@@ -1,0 +1,8 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	278	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind its exact value into the signed legal-hold target.	GOH-RQ-001,GOH-RQ-003,GOH-RQ-004
+request	278	2	Key	471	uri-label	true	projected	Require one valid object key and preserve its exact path encoding before the legal-hold subresource.	GOH-RQ-001,GOH-RQ-003,GOH-RQ-004
+request	278	3	VersionId	492	query	false	projected	Preserve omission or one bounded opaque generation selector in the exact versionId query member.	GOH-RQ-002,GOH-RQ-003,GOH-RQ-004
+request	278	4	RequestPayer	599	header	false	projected	Preserve omission or sign the sole modeled requester value exactly once.	GOH-RQ-002,GOH-RQ-003,GOH-RQ-004
+request	278	5	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	GOH-RQ-002,GOH-RQ-003,GOH-RQ-004
+output	277	1	LegalHold	476	body	false	decoded	Preserve absence or decode one exact LegalHold payload without assigning a default policy.	GOH-RS-001,GOH-RS-002,GOH-RS-005,GOH-TR-001,GOH-TR-002
+nested	476	1	Status	477	body	false	decoded	Preserve absence or decode exactly ON or OFF with case-sensitive wire semantics.	GOH-RS-001,GOH-RS-002,GOH-RS-005,GOH-TR-001,GOH-TR-002

@@ -26,6 +26,7 @@ with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
+with Flyology.Object_Storage.S3.Object_Lock;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.Tags;
@@ -49,6 +50,7 @@ procedure S3_HTTP_Socket_Corpus is
    package Checksum_Policy renames Checksums.Policy;
    package Model renames Flyology.Object_Storage.S3.Model;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
+   package Object_Lock renames Flyology.Object_Storage.S3.Object_Lock;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
    package S3_Tagging renames Flyology.Object_Storage.S3.Tagging;
    package Tags renames Flyology.Object_Storage.Tags;
@@ -87,6 +89,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Head_Result_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
+   use type Low_Level.Get_Object_Legal_Hold_Outcome_Kind;
+   use type Object_Lock.Legal_Hold_Status;
    use type Buckets.Put_Tags_Outcome_Kind;
    use type Buckets.Get_Tags_Outcome_Kind;
    use type Buckets.Delete_Tags_Outcome_Kind;
@@ -3299,6 +3303,50 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-charged: requester" & CRLF &
                "x-amz-request-charged: requester" & CRLF),
             "GET", "/example-bucket?accelerate");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<LegalHold><Status>ON</Status></LegalHold>",
+               "x-amz-request-id: legal-request" & CRLF &
+               "x-amz-id-2: legal-host" & CRLF),
+            "GET",
+            "/example-bucket/object?legal-hold&versionId=version%20one",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", "<LegalHold/>"),
+            "GET", "/example-bucket/object?legal-hold");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: legal-error-request" & CRLF &
+               "x-amz-id-2: legal-error-host" & CRLF),
+            "GET", "/example-bucket/object?legal-hold");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<LegalHold/>",
+               "x-amz-request-id: first" & CRLF &
+               "x-amz-request-id: second" & CRLF),
+            "GET", "/example-bucket/object?legal-hold");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<LegalHold/>",
+               "x-amz-id-2: first" & CRLF &
+               "x-amz-id-2: second" & CRLF),
+            "GET", "/example-bucket/object?legal-hold");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<LegalHold/>", "x-amz-request-id:" & CRLF),
+            "GET", "/example-bucket/object?legal-hold");
+         Serve
+           (HTTP_Response ("200 OK", "<LegalHold><Unknown/></LegalHold>"),
+            "GET", "/example-bucket/object?legal-hold");
+         Serve
+           (HTTP_Response
+              --  42 text bytes plus 23 markup bytes are one past the paired
+              --  caller-selected 64-byte document limit.
+              ("200 OK", "<LegalHold>" & String'(1 .. 42 => ' ') &
+               "</LegalHold>"),
+            "GET", "/example-bucket/object?legal-hold");
          Serve
            (HTTP_Response
               ("403 Forbidden", Error_XML,
@@ -8214,6 +8262,118 @@ procedure S3_HTTP_Socket_Corpus is
                  "GetBucketAccelerateConfiguration accepted duplicate " &
                  "request-charged headers";
             end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Legal_Hold
+                (Origin, Low_Level.Path_Style, "example-bucket", "object",
+                 (Version_ID => US.To_Unbounded_String ("version one"),
+                  Request_Payer => US.To_Unbounded_String ("requester"),
+                  Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity, "us-east-1", "20130524T000000Z");
+            Result : constant Low_Level.Get_Object_Legal_Hold_Outcome :=
+              Low_Level.Execute_Get_Object_Legal_Hold
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Object_Legal_Hold_Found
+              or else not Result.Legal_Hold.Is_Set
+              or else Result.Legal_Hold.Status /= Object_Lock.Legal_Hold_On
+            then
+               raise Program_Error with
+                 "GetObjectLegalHold socket success mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Legal_Hold
+                (Origin, Low_Level.Path_Style, "example-bucket", "object",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant Low_Level.Get_Object_Legal_Hold_Outcome :=
+              Low_Level.Execute_Get_Object_Legal_Hold
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Object_Legal_Hold_Found
+              or else not Result.Legal_Hold.Is_Set
+              or else Result.Legal_Hold.Status /=
+                Object_Lock.Legal_Hold_Status_Absent
+            then
+               raise Program_Error with
+                 "GetObjectLegalHold absent status mismatch";
+            end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Legal_Hold
+                (Origin, Low_Level.Path_Style, "example-bucket", "object",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Result : constant Low_Level.Get_Object_Legal_Hold_Outcome :=
+              Low_Level.Execute_Get_Object_Legal_Hold
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Get_Object_Legal_Hold_Rejected
+              or else Result.Status /= 403
+              or else US.To_String (Result.Error.Code) /= "AccessDenied"
+              or else US.To_String (Result.Error.Request_ID) /=
+                "legal-error-request"
+              or else US.To_String (Result.Error.Host_ID) /=
+                "legal-error-host"
+            then
+               raise Program_Error with
+                 "GetObjectLegalHold socket rejection mismatch";
+            end if;
+         end;
+         declare
+            procedure Must_Reject_Legal_Hold
+              (Message : String; Small_Limits : Boolean := False)
+            is
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Get_Object_Legal_Hold
+                   (Origin, Low_Level.Path_Style, "example-bucket", "object",
+                    (others => <>), Identity, "us-east-1",
+                    "20130524T000000Z");
+               Raised : Boolean := False;
+            begin
+               begin
+                  declare
+                     Ignored : constant
+                       Low_Level.Get_Object_Legal_Hold_Outcome :=
+                         (if Small_Limits
+                          then Low_Level.Execute_Get_Object_Legal_Hold
+                            (HTTP, Prepared, Timeout => 5.0,
+                             Limits =>
+                               (Maximum_Document_Bytes => 64,
+                                Maximum_Depth          => 8,
+                                Maximum_Elements       => 32,
+                                Maximum_Text_Bytes     => 64))
+                          else Low_Level.Execute_Get_Object_Legal_Hold
+                            (HTTP, Prepared, Timeout => 5.0));
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Response =>
+                     Raised := True;
+               end;
+               if not Raised then
+                  raise Program_Error with Message;
+               end if;
+            end Must_Reject_Legal_Hold;
+         begin
+            Must_Reject_Legal_Hold
+              ("GetObjectLegalHold accepted duplicate request identifier");
+            Must_Reject_Legal_Hold
+              ("GetObjectLegalHold accepted duplicate host identifier");
+            Must_Reject_Legal_Hold
+              ("GetObjectLegalHold accepted empty request identifier");
+            Must_Reject_Legal_Hold
+              ("GetObjectLegalHold accepted malformed success XML");
+            Must_Reject_Legal_Hold
+              ("GetObjectLegalHold accepted oversized success XML",
+               Small_Limits => True);
          end;
          declare
             Prepared : constant Low_Level.Prepared_Request :=

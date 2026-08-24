@@ -24,6 +24,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
      Flyology.Object_Storage.S3.Bucket_Controls;
    package Encoding renames Flyology.Object_Storage.S3.SigV4_Encoding;
    package Object_Reads renames Flyology.Object_Storage.S3.Object_Reads;
+   package Object_Lock renames Flyology.Object_Storage.S3.Object_Lock;
    package Checksum_Policy renames
      Flyology.Object_Storage.S3.Checksum_Policy;
    package Checksums renames Flyology.Object_Storage.S3.Checksums;
@@ -5320,6 +5321,163 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with
            "GetObjectTorrent error exceeds XML limit";
    end Decode_Get_Object_Torrent_Response_Head;
+
+   function Prepare_Get_Object_Legal_Hold
+     (Origin     : Flyology.HTTP.Origin;
+      Style      : Addressing_Style;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Get_Object_Legal_Hold_Parameters;
+      Identity   : Credentials;
+      Region     : String;
+      Timestamp  : String) return Prepared_Request
+   is
+      Version_ID : constant String := US.To_String (Parameters.Version_ID);
+      Request_Payer : constant String :=
+        US.To_String (Parameters.Request_Payer);
+      Owner : constant String :=
+        US.To_String (Parameters.Expected_Bucket_Owner);
+      Optional_Count : constant Natural :=
+        Boolean'Pos (Version_ID'Length > 0) +
+        Boolean'Pos (Request_Payer'Length > 0) +
+        Boolean'Pos (Owner'Length > 0);
+      Values : Model_Value_Array (1 .. 2 + Optional_Count);
+      Last : Natural := 0;
+
+      procedure Add (Name, Value : String) is
+      begin
+         Last := Last + 1;
+         Values (Last) :=
+           (Member_Name => US.To_Unbounded_String (Name),
+            Map_Key     => US.Null_Unbounded_String,
+            Value       => US.To_Unbounded_String (Value));
+      end Add;
+   begin
+      if not Valid_Bucket_Name (Bucket)
+        or else not Valid_Object_Key (Key)
+        or else not S3.Deletions.Valid_Version_ID (Version_ID)
+        or else Request_Payer not in "" | "requester"
+        or else not Valid_List_Response_Header_Text (Owner)
+      then
+         raise Invalid_Request with
+           "invalid GetObjectLegalHold parameters";
+      end if;
+      Add ("Bucket", Bucket);
+      Add ("Key", Key);
+      if Version_ID'Length > 0 then
+         Add ("VersionId", Version_ID);
+      end if;
+      if Request_Payer'Length > 0 then
+         Add ("RequestPayer", Request_Payer);
+      end if;
+      if Owner'Length > 0 then
+         Add ("ExpectedBucketOwner", Owner);
+      end if;
+      return Result : Prepared_Request := Prepare_Model_Request
+        (Model.Get_Object_Legal_Hold_Operation, Origin, Style, Values, "",
+         False, SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
+      do
+         Result.Operation := Get_Object_Legal_Hold_Operation;
+      end return;
+   exception
+      when Constraint_Error =>
+         raise Invalid_Request with
+           "invalid GetObjectLegalHold parameters";
+   end Prepare_Get_Object_Legal_Hold;
+
+   function Decode_Get_Object_Legal_Hold_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Legal_Hold_Outcome
+   is
+   begin
+      if not Valid_List_Response_Header_Text (Request_ID)
+        or else not Valid_List_Response_Header_Text (Host_ID)
+      then
+         raise Invalid_Response with
+           "invalid GetObjectLegalHold response identifiers";
+      elsif Status = 200 then
+         return
+           (Kind       => Object_Legal_Hold_Found,
+            Status     => Status,
+            Legal_Hold =>
+              (if Payload'Length = 0
+               then (others => <>)
+               else Object_Lock.Parse_Legal_Hold (Payload, Limits)));
+      end if;
+      return
+        (Kind   => Get_Object_Legal_Hold_Rejected,
+         Status => Status,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Object_Lock.Malformed_Object_Lock |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetObjectLegalHold response";
+   end Decode_Get_Object_Legal_Hold_Response;
+
+   function Execute_Get_Object_Legal_Hold
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Object_Legal_Hold_Outcome
+   is
+   begin
+      if Prepared.Operation /= Get_Object_Legal_Hold_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Get_Object_Legal_Hold_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Timeout, Token);
+
+         function Singleton_Header (Name : String) return String is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count (Response, Name);
+         begin
+            if Count > 1 then
+               raise Invalid_Response with
+                 "duplicate GetObjectLegalHold response identifier";
+            elsif Count = 0 then
+               return "";
+            end if;
+            declare
+               Value : constant String :=
+                 Flyology.HTTP.Client.Header (Response, Name);
+            begin
+               if Value'Length = 0
+                 or else not Valid_List_Response_Header_Text (Value)
+               then
+                  raise Invalid_Response with
+                    "invalid GetObjectLegalHold response identifier";
+               end if;
+               return Value;
+            end;
+         end Singleton_Header;
+
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Get_Object_Legal_Hold_Response
+           (Flyology.HTTP.Client.Status (Response),
+            Flyology.Bytes.To_Byte_String (Payload),
+            Singleton_Header ("x-amz-request-id"),
+            Singleton_Header ("x-amz-id-2"), Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "GetObjectLegalHold response exceeds XML limit";
+   end Execute_Get_Object_Legal_Hold;
 
    function Decode_Get_Object_Complete_Response
      (Response      : Flyology.HTTP.Client.Response;
