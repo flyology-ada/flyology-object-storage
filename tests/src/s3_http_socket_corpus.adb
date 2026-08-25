@@ -134,6 +134,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Delete_Bucket_Tagging_Result_Kind;
    use type Head_Bucket_Result_Kind;
    use type Get_Bucket_Location_Result_Kind;
+   use type Get_Bucket_Policy_Result_Kind;
    use type Get_Bucket_Versioning_Result_Kind;
    use type Put_Bucket_Versioning_Result_Kind;
    use type List_Objects_V2_Result_Kind;
@@ -4065,6 +4066,16 @@ procedure S3_HTTP_Socket_Corpus is
          Serve
            (HTTP_Response ("200 OK", "{""Statement"":[]}"),
             "GET", "/example-bucket?policy",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", "{""Version"":""2012-10-17""}"),
+            "GET", "/composed-policy?policy",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-policy-request" & CRLF),
+            "GET", "/restart-policy?policy",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
@@ -12550,16 +12561,109 @@ procedure S3_HTTP_Socket_Corpus is
             end if;
          end;
          declare
-            Result : constant Low_Level.Get_Bucket_Policy_Outcome :=
-              Buckets.Get_Policy
-                (HTTP, Origin, "example-bucket", Identity,
-                 Expected_Bucket_Owner => "123456789012", Timeout => 5.0);
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Abac
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Bucket_Policy_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
          begin
-            if Result.Kind /= Low_Level.Bucket_Control_Found
-              or else US.To_String (Result.Policy) /= "{""Statement"":[]}"
+            begin
+               Low_Level.Get_Bucket_Policy
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "GetBucketPolicy accepted a prepared ABAC request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Policy_Result :=
+              Buckets.Get_Policy
+                (HTTP, Origin, "example-bucket", Parameters, Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Get_Bucket_Policy_Response_Available
+              or else Result.Failure /= No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+              or else Result.Response.Kind /= Low_Level.Bucket_Control_Found
+              or else US.To_String (Result.Response.Policy) /=
+                "{""Statement"":[]}"
             then
                raise Program_Error with "GetBucketPolicy socket mismatch";
             end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            --  Policy parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_Policy_Result;
+         begin
+            declare
+               Operation : Get_Bucket_Policy_Operation :=
+                 Get_Policy
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-policy",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Policy_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Bucket_Control_Found
+                 or else US.To_String (Result.Response.Policy) /=
+                   "{""Version"":""2012-10-17""}"
+               then
+                  raise Program_Error with
+                    "composed GetBucketPolicy first result mismatch";
+               end if;
+               Get_Policy
+                 (HTTP'Access,
+                  Origin,
+                  "restart-policy",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Policy_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Bucket_Control_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-policy-request"
+               then
+                  raise Program_Error with
+                    "composed GetBucketPolicy restart mismatch";
+               end if;
+            end;
          end;
          declare
             Result : constant Low_Level.Get_Bucket_Policy_Status_Outcome :=
@@ -14691,6 +14795,7 @@ begin
    Buckets_Testing.Check_Delete_Bucket_Certainty_Corpus;
    Buckets_Testing.Check_Head_Bucket_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Location_Result_Corpus;
+   Buckets_Testing.Check_Get_Bucket_Policy_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Versioning_Result_Corpus;
    Buckets_Testing.Check_Put_Bucket_Versioning_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;

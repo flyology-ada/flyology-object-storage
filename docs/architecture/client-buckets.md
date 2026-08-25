@@ -129,18 +129,21 @@ allow a prepared request to be executed as another operation. These are
 client-only wire boundaries and make no backend, Flyology server, or external
 provider interoperability claim.
 
-Six small bucket-control reads use a second shared synchronous state machine:
+Six small bucket-control reads share low-level request and response machinery:
 ABAC, transfer acceleration, raw bucket policy, policy status, requester-pays,
 and public-access block. Their public preparers, executors, outcomes, and
 convenience calls remain operation-specific. Optional modeled fields preserve
 absence, including each of the four public-access-block booleans; enum and
 boolean spellings are exact. Policy is returned as the bounded same-response
-payload without XML interpretation. The four XML responses use the caller's
-shared S3 XML resource limits and accept the established compatible empty or
-AWS S3 namespace, while rejecting foreign namespaces, attributes, unknown or
-duplicate fields, nesting, DTDs, and entities. This is a client-only boundary:
-Flyology backends and the authenticated server do not implement these six
-operations, and external-provider interoperability is not claimed.
+payload without XML interpretation. Its provider-owned composable form owns
+the signed request and retained bytes through typed `Finish`, supports
+operation-last restart, and uses the caller's existing response limit. The four
+XML responses use the caller's shared S3 XML resource limits and accept the
+established compatible empty or AWS S3 namespace, while rejecting foreign
+namespaces, attributes, unknown or duplicate fields, nesting, DTDs, and
+entities. Bucket policy and public-access block have independently qualified
+backend and authenticated-server implementations; the other four controls
+remain client-only, and external-provider interoperability is not claimed.
 
 The scalar write companion covers ABAC, acceleration, raw bucket policy,
 requester payment, and public-access block. The four structured operations

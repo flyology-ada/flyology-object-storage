@@ -67,6 +67,14 @@ and mismatched MD5, invalid confirmation, expected-owner rejection, unsupported
 RequestPayer, extra query members, body rejection, deletion, and absent bucket
 and policy errors.
 
+The provider-owned Get client uses one bounded response sink and retains the
+prepared request until its HTTP child drains. Its limited constructor,
+operation-last restart, typed `Finish`, and typed synchronous wait share the
+same state machine and caller-selected `Parse_Limits`. The normalization corpus
+covers modeled success and rejection, inconsistent admission, and every typed
+HTTP failure across all admission states. Native and lightweight signed sockets
+cover blocking success, limited-root success, and a restarted structured 403.
+
 The machine ledger records all three operations as `covered / covered /
 covered / covered`. The maintained 116-operation ledger verifier and its
 negative oracle gate those claims. The root and SQLite deterministic suites,

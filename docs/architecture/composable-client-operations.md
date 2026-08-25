@@ -7,7 +7,8 @@ initiation, one-shot UploadPart, one-shot multipart completion and abort,
 bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
 ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
-bounded GetBucketLocation, non-replaying Put/GetBucketVersioning, and bucket tagging
+bounded GetBucketLocation, bounded GetBucketPolicy, non-replaying
+Put/GetBucketVersioning, and bucket tagging
 Put/Get/Delete, plus object tagging Put/Get/Delete. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
@@ -83,14 +84,15 @@ The implemented operation order is:
 22. bounded `Get_Bucket_Location`;
 23. non-replaying `Put_Bucket_Versioning` and bounded
     `Get_Bucket_Versioning`;
-24. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
+24. bounded `Get_Bucket_Policy`;
+25. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
-25. `Put_Object_Tagging`, `Get_Object_Tagging`, and
+26. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
 
-The provider surface contains 33 domain operations: 15 in `Client.Objects`,
-ten in `Client.Buckets`, and eight in `Client.Transfers`. Those operations
-map to 30 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 34 domain operations: 15 in `Client.Objects`,
+eleven in `Client.Buckets`, and eight in `Client.Transfers`. Those operations
+map to 31 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object` prepared-request
@@ -203,6 +205,12 @@ outcome-unknown, and no automatic mutation replay occurs. A caller may use the
 paired composable GetBucketVersioning read to reconcile before selecting any
 later retry. Restart is allowed only after Finish with the same HTTP client and
 cancellation owner; all newly supplied inputs are copied during preparation.
+GetBucketPolicy retains its exact signed owner precondition and one bounded raw
+same-response policy document through terminal drain. The limited constructor,
+operation-last restart, typed Finish, and typed synchronous wait use the same
+provider state machine and caller-selected `Parse_Limits`. The read retains
+admission information for diagnostics but does not select retry policy or imply
+policy evaluation.
 PutBucketTagging likewise serializes and owns its complete validated tag set
 once, and DeleteBucketTagging supplies a non-rewindable known-empty source.
 Neither mutation is replayed after possible admission. Their typed results

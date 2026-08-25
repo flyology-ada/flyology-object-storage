@@ -49,6 +49,7 @@ package body Flyology.Object_Storage.Client.Buckets is
    use type Low_Level.Delete_Bucket_Tagging_Outcome_Kind;
    use type Low_Level.Put_Bucket_Versioning_Outcome_Kind;
    use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
+   use type Low_Level.Get_Bucket_Control_Outcome_Kind;
 
    function Timestamp return String is
       Image : constant String := Ada.Calendar.Formatting.Image
@@ -811,6 +812,75 @@ package body Flyology.Object_Storage.Client.Buckets is
    end Get_ABAC;
 
    function Get_Policy
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Get_Bucket_Policy_Result
+   is
+      --  The policy parent, HTTP exchange, and HTTP's single active transport
+      --  child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Get_Bucket_Policy_Operation :=
+           Get_Policy
+             (Set'Access,
+              Client'Access,
+              Origin,
+              Bucket,
+              Parameters,
+              Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout),
+              Region,
+              Style,
+              Limits,
+              Token);
+         Result : Get_Bucket_Policy_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Get_Policy;
+
+   procedure Raise_Get_Bucket_Policy_Exchange_Failure
+     (Result : Get_Bucket_Policy_Result) is
+   begin
+      case Result.HTTP_Result is
+         when Flyology.HTTP.Client.Response_Complete =>
+            raise Program_Error
+              with "unreachable complete GetBucketPolicy exchange failure";
+         when Flyology.HTTP.Client.Pre_Admission_Rejected =>
+            raise Constraint_Error with "HTTP request was rejected";
+         when Flyology.HTTP.Client.Cancelled =>
+            raise Flyology.Cancellation.Operation_Cancelled;
+         when Flyology.HTTP.Client.Timed_Out =>
+            raise Flyology.IO.Timeout_Error;
+         when Flyology.HTTP.Client.Client_Unavailable =>
+            raise Flyology.HTTP.Client.Client_Closed;
+         when Flyology.HTTP.Client.Connection_Failed =>
+            raise Flyology.HTTP.Client.Connection_Error;
+         when Flyology.HTTP.Client.Transport_Failed =>
+            raise Flyology.IO.Device_Error;
+         when Flyology.HTTP.Client.Request_Source_Failed =>
+            raise Flyology.HTTP.Client.Request_Body_Error;
+         when Flyology.HTTP.Client.Response_Invalid
+            | Flyology.HTTP.Client.Response_Body_Too_Large
+            | Flyology.HTTP.Client.Response_Sink_Failed =>
+            raise Low_Level.Invalid_Response with
+              "GetBucketPolicy response is invalid or exceeds byte limit";
+      end case;
+   end Raise_Get_Bucket_Policy_Exchange_Failure;
+
+   function Get_Policy
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket : String;
       Identity : Low_Level.Credentials; Region : String := "us-east-1";
@@ -821,15 +891,24 @@ package body Flyology.Object_Storage.Client.Buckets is
         Flyology.Object_Storage.S3.XML.Default_Limits)
       return Low_Level.Get_Bucket_Policy_Outcome
    is
-      Prepared : constant Low_Level.Prepared_Request :=
-        Low_Level.Prepare_Get_Bucket_Policy
-          (Origin, Style, Bucket,
+      Result : constant Get_Bucket_Policy_Result :=
+        Get_Policy
+          (Client,
+           Origin,
+           Bucket,
            (Expected_Bucket_Owner =>
               US.To_Unbounded_String (Expected_Bucket_Owner)),
-           Identity, Region, Timestamp);
+           Identity,
+           Region,
+           Style,
+           Timeout,
+           Token,
+           Limits);
    begin
-      return Low_Level.Execute_Get_Bucket_Policy
-        (Client, Prepared, Timeout, Token, Limits);
+      if Result.Kind = Get_Bucket_Policy_Exchange_Failed then
+         Raise_Get_Bucket_Policy_Exchange_Failure (Result);
+      end if;
+      return Result.Response;
    end Get_Policy;
 
    function Get_Policy_Status
@@ -2962,6 +3041,292 @@ package body Flyology.Object_Storage.Client.Buckets is
       Result := Operation.Final_Result;
    end Finish;
 
+   --  Exact status/code pairs are the maintained S3 GetBucketPolicy error
+   --  surface. This read-only classification authorizes no mutation or retry.
+   function Normalize_Get_Bucket_Policy_Response
+     (Value     : Low_Level.Get_Bucket_Policy_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Get_Bucket_Policy_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Get_Bucket_Control_Rejected
+         then US.To_String (Value.Error.Code)
+         else "");
+      Failure : constant Failure_Reason :=
+        (if Admission /= HTTP_Client.Response_Observed
+         then Corrupt_Or_Invalid_Response
+         elsif Value.Kind = Low_Level.Bucket_Control_Found
+         then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchBucketPolicy"
+         then Not_Found
+         elsif Value.Status = 400
+           and then Code in "InvalidBucketName" | "InvalidRequest"
+         then Invalid_Request
+         elsif Value.Status = 501 and then Code = "NotImplemented"
+         then Invalid_Request
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind      => Get_Bucket_Policy_Response_Available,
+         Failure   => Failure,
+         Admission => Admission,
+         Response  => Value);
+   end Normalize_Get_Bucket_Policy_Response;
+
+   function Normalize_Get_Bucket_Policy_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Get_Bucket_Policy_Result is
+   begin
+      return
+        (Kind        => Get_Bucket_Policy_Exchange_Failed,
+         Failure     =>
+           (if Kind
+               in HTTP_Client.Response_Invalid
+                | HTTP_Client.Response_Body_Too_Large
+                | HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Get_Bucket_Policy_Failure;
+
+   overriding procedure Write
+     (Item : in out Get_Bucket_Policy_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length)
+        > Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded
+           with "GetBucketPolicy response exceeds the caller-selected limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Get_Bucket_Policy_Child
+     (Item : in out Get_Bucket_Policy_Operation)
+   is
+      Admission   : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response    : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result :=
+              Normalize_Get_Bucket_Policy_Failure
+                (HTTP_Client.Response_Sink_Failed,
+                 Admission,
+                 HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result :=
+           Normalize_Get_Bucket_Policy_Failure
+             (HTTP_Client.Kind (HTTP_Result),
+              HTTP_Client.Certainty (HTTP_Result),
+              HTTP_Client.Phase (HTTP_Result),
+              HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result :=
+              Normalize_Get_Bucket_Policy_Response
+                (Low_Level.Decode_Get_Bucket_Policy_Response
+                   (HTTP_Client.Status (Response),
+                    Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                    HTTP_Client.Header (Response, "x-amz-request-id"),
+                    HTTP_Client.Header (Response, "x-amz-id-2"),
+                    Item.Limits),
+                 HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result :=
+                 Normalize_Get_Bucket_Policy_Failure
+                   (HTTP_Client.Response_Invalid,
+                    HTTP_Client.Certainty (HTTP_Result),
+                    HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Get_Bucket_Policy_Child;
+
+   overriding procedure Drive
+     (Item  : in out Get_Bucket_Policy_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Get_Bucket_Policy
+           (Item.HTTP,
+            Item.Prepared'Access,
+            Item'Access,
+            Item.Deadline,
+            Item.Cancellation,
+            Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Get_Bucket_Policy_Child (Item);
+      else
+         raise Program_Error with "invalid GetBucketPolicy driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Bucket_Policy_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others =>
+         null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Get_Bucket_Policy_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others =>
+            null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Get_Bucket_Policy
+     (Operation  : in out Get_Bucket_Policy_Operation;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error
+           with "GetBucketPolicy restart changed a retained owner";
+      end if;
+      Operation.Prepared :=
+        Low_Level.Prepare_Get_Bucket_Policy
+          (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Limits := Limits;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      --  Caller-selected policy/error bound; this is the same field consumed
+      --  by the existing synchronous decoder and introduces no new ceiling.
+      Operation.Response_Limit := Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Get_Bucket_Policy;
+
+   function Get_Policy
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Bucket_Policy_Operation is
+   begin
+      return Result : Get_Bucket_Policy_Operation (Set, Client, Token) do
+         Start_Get_Bucket_Policy
+           (Result, Client, Origin, Bucket, Parameters, Identity, Deadline,
+            Region, Style, Limits, Token);
+      end return;
+   end Get_Policy;
+
+   procedure Finish
+     (Operation : in out Get_Bucket_Policy_Operation;
+      Result    : out Get_Bucket_Policy_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "GetBucketPolicy has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
    --  Exact status/code pairs are the maintained S3 GetBucketLocation error
    --  surface. This read-only classification authorizes no mutation or retry.
    function Normalize_Get_Bucket_Location_Response
@@ -4937,6 +5302,34 @@ package body Flyology.Object_Storage.Client.Buckets is
          Style,
          Token);
    end Head;
+
+   procedure Get_Policy
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Get_Bucket_Policy_Operation) is
+   begin
+      Start_Get_Bucket_Policy
+        (Operation,
+         Client,
+         Origin,
+         Bucket,
+         Parameters,
+         Identity,
+         Deadline,
+         Region,
+         Style,
+         Limits,
+         Token);
+   end Get_Policy;
 
    procedure Get_Location
      (Client     : not null access Flyology.HTTP.Client.Client;
