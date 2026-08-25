@@ -88,15 +88,16 @@ The implemented operation order is:
 24. bounded `Get_Bucket_Policy`;
 25. `Set_Public_Access_Block`, `Get_Public_Access_Block`, and
     `Delete_Public_Access_Block`;
-26. bounded `Get_Ownership_Controls`;
+26. bounded `Get_Ownership_Controls` and non-replaying
+    `Set_Ownership_Controls`;
 27. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
 28. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
 
-The provider surface contains 38 domain operations: 15 in `Client.Objects`,
-15 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 35 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 39 domain operations: 15 in `Client.Objects`,
+16 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 36 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -462,9 +463,9 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Create_Multipart_Upload`, `Upload_Part`, and
 `Complete_Multipart_Upload`, `Abort_Multipart_Upload`, `List_Parts_Page`, and
 `List_Multipart_Uploads_Page` overloads, plus the typed-result `Copy_Object`,
-`Get_Public_Access_Block`, and `Get_Ownership_Controls` overloads are literal
-waits on the same provider-owned state machines and retain their typed
-certainty, capacity,
+`Get_Public_Access_Block`, `Get_Ownership_Controls`, and
+`Set_Ownership_Controls` overloads are literal waits on the same
+provider-owned state machines and retain their typed certainty, capacity,
 metadata, and ownership results. The established raising `Delete_Outcome` and
 `Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer
 overloads remain source compatible.

@@ -140,6 +140,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Bucket_Policy_Mutation_Disposition;
    use type Get_Public_Access_Block_Result_Kind;
    use type Get_Bucket_Ownership_Controls_Result_Kind;
+   use type Put_Bucket_Ownership_Controls_Result_Kind;
+   use type Bucket_Ownership_Controls_Mutation_Disposition;
    use type Put_Public_Access_Block_Result_Kind;
    use type Delete_Public_Access_Block_Result_Kind;
    use type Public_Access_Block_Mutation_Disposition;
@@ -4652,6 +4654,20 @@ procedure S3_HTTP_Socket_Corpus is
             "PUT", "/example-bucket?ownershipControls",
             Expected_Body_Root => "<OwnershipControls",
             Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/composed-ownership?ownershipControls",
+            Expected_Body_Root => "<OwnershipControls",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-put-ownership" & CRLF),
+            "PUT", "/restart-ownership?ownershipControls",
+            Expected_Body_Root => "<OwnershipControls",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response ("200 OK", ""), "POST",
             "/example-bucket?metadataTable",
@@ -14353,6 +14369,106 @@ procedure S3_HTTP_Socket_Corpus is
                Small_Limits => True);
          end;
          declare
+            function Configuration
+              return Bucket_Controls.Ownership_Controls_Configuration
+            is
+            begin
+               return Value :
+                 Bucket_Controls.Ownership_Controls_Configuration :=
+                   (Is_Set => True, others => <>)
+               do
+                  Value.Rules.Append
+                    (Bucket_Controls.Ownership_Control_Rule'
+                       (Ownership =>
+                          Bucket_Controls.Bucket_Owner_Enforced));
+               end return;
+            end Configuration;
+
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Public_Access_Block
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (others => <>),
+                 (others => <>),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Put_Bucket_Ownership_Controls_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Put_Bucket_Ownership_Controls
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "PutBucketOwnershipControls accepted a public-access request";
+            end if;
+
+            declare
+               Parameters : constant Low_Level.Put_Bucket_Control_Parameters :=
+                 (Content_MD5 => US.Null_Unbounded_String,
+                  Checksum_Algorithm => US.Null_Unbounded_String,
+                  Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012"));
+               Result : Put_Bucket_Ownership_Controls_Result;
+               Operation : Put_Bucket_Ownership_Controls_Operation :=
+                 Set_Ownership_Controls
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-ownership",
+                    Configuration,
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Put_Bucket_Ownership_Controls_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Ownership_Controls_Mutation_Completed
+               then
+                  raise Program_Error with
+                    "composed PutBucketOwnershipControls result mismatch";
+               end if;
+               Set_Ownership_Controls
+                 (HTTP'Access,
+                  Origin,
+                  "restart-ownership",
+                  Configuration,
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Put_Bucket_Ownership_Controls_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Ownership_Controls_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-put-ownership"
+               then
+                  raise Program_Error with
+                    "restarted PutBucketOwnershipControls result mismatch";
+               end if;
+            end;
+         end;
+         declare
             function Prepare
               (Checksum : String := ""; Owner : String := "")
                return Low_Level.Prepared_Request is
@@ -15534,6 +15650,7 @@ begin
    Buckets_Testing.Check_Get_Bucket_Policy_Result_Corpus;
    Buckets_Testing.Check_Bucket_Policy_Certainty_Corpus;
    Buckets_Testing.Check_Public_Access_Block_Certainty_Corpus;
+   Buckets_Testing.Check_Ownership_Controls_Certainty_Corpus;
    Buckets_Testing.Check_Get_Bucket_Versioning_Result_Corpus;
    Buckets_Testing.Check_Put_Bucket_Versioning_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;

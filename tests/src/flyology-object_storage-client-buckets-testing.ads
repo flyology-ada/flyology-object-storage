@@ -17,6 +17,8 @@ package Flyology.Object_Storage.Client.Buckets.Testing is
 
    procedure Check_Public_Access_Block_Certainty_Corpus;
 
+   procedure Check_Ownership_Controls_Certainty_Corpus;
+
    procedure Check_Get_Bucket_Versioning_Result_Corpus;
 
    procedure Check_Put_Bucket_Versioning_Certainty_Corpus;
