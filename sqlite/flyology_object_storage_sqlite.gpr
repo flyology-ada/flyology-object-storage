@@ -18,6 +18,9 @@ project Flyology_Object_Storage_Sqlite is
 
    package Compiler is
       for Default_Switches ("Ada") use Flyology_Object_Storage_Sqlite_Config.Ada_Compiler_Switches;
+      --  The catalog uses ordinary SQLite tables and indexes. Keep optional
+      --  FTS5 disabled: it adds unused query surface and a Linux libm
+      --  dependency through its BM25 implementation.
       for Default_Switches ("C") use
         ("-O2",
          "-fPIC",
@@ -28,7 +31,6 @@ project Flyology_Object_Storage_Sqlite is
          "-DSQLITE_ENABLE_API_ARMOR",
          "-DSQLITE_ENABLE_COLUMN_METADATA",
          "-DSQLITE_ENABLE_DBSTAT_VTAB",
-         "-DSQLITE_ENABLE_FTS5",
          "-DSQLITE_ENABLE_RTREE",
          "-DSQLITE_USE_URI=1");
    end Compiler;

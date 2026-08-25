@@ -1,4 +1,6 @@
-with "flyology.gpr";
+with "flyology_http.gpr";
+with "xmlada_input.gpr";
+with "xmlada_sax.gpr";
 
 project Flyology_Object_Storage_Proof is
    for Languages use ("Ada");
