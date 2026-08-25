@@ -237,6 +237,133 @@ package Flyology.Object_Storage.Client.Buckets is
    procedure Finish
      (Operation : in out Create_Bucket_Operation;
       Result    : out Create_Bucket_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  What is known about one DeleteBucket mutation after terminal drain.
+   --  An unknown result requires caller-selected HeadBucket reconciliation
+   --  before any retry.
+   --  @enum Bucket_Deletion_Completed Complete validated 204 proves deletion
+   --  @enum Bucket_Definitely_Not_Deleted Exact non-admission or rejection
+   --     proves this request did not delete the bucket
+   --  @enum Bucket_Deletion_Outcome_Unknown State must be reconciled
+   --  @enum Bucket_Deletion_Cancelled_Before_Admission Cancellation preceded
+   --     possible server admission
+   type Bucket_Deletion_Disposition is
+     (Bucket_Deletion_Completed,
+      Bucket_Definitely_Not_Deleted,
+      Bucket_Deletion_Outcome_Unknown,
+      Bucket_Deletion_Cancelled_Before_Admission);
+
+   --  Shape of a terminal DeleteBucket mutation.
+   --  @enum Delete_Bucket_Response_Available Complete modeled response exists
+   --  @enum Delete_Bucket_Exchange_Failed No complete modeled response exists
+   type Delete_Bucket_Result_Kind is
+     (Delete_Bucket_Response_Available, Delete_Bucket_Exchange_Failed);
+
+   --  Typed bucket-deletion certainty plus the modeled S3 response or exact
+   --  composable HTTP failure. No outcome authorizes automatic retry.
+   --  @field Kind Result shape
+   --  @field Disposition Bucket-deletion certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Delete_Bucket_Result
+     (Kind : Delete_Bucket_Result_Kind := Delete_Bucket_Exchange_Failed)
+   is record
+      Disposition : Bucket_Deletion_Disposition :=
+        Bucket_Deletion_Outcome_Unknown;
+      Failure     : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Delete_Bucket_Response_Available =>
+            Response : Low_Level.Delete_Bucket_Outcome;
+
+         when Delete_Bucket_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase  : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail      : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot DeleteBucket parent with one hidden HTTP child. The operation
+   --  owns its prepared request and supplies a non-replayable empty source so
+   --  a reused-transport failure cannot transparently repeat the mutation.
+   --  Compatibility contract: region and addressing defaults match the
+   --  established synchronous Delete overload. The composable forms replace
+   --  its established 30-second timeout only with a caller-supplied deadline.
+   type Delete_Bucket_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token)
+   is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one non-replaying DeleteBucket mutation.
+   --  @param Operation Fresh or consumed established deletion operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Empty bucket to delete
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Delete
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Delete_Bucket_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one non-replaying DeleteBucket mutation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Empty bucket to delete
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven bucket deletion
+   function Delete
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Delete_Bucket_Operation;
+
+   --  Consume one terminal DeleteBucket operation.
+   --  @param Operation Terminal bucket deletion request
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Delete_Bucket_Operation;
+      Result    : out Delete_Bucket_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
    --  Shape of a terminal bodyless HeadBucket read.
@@ -818,6 +945,34 @@ package Flyology.Object_Storage.Client.Buckets is
             Error : Flyology.Object_Storage.S3.Errors.Error_Response;
       end case;
    end record;
+
+   --  Delete one bucket by waiting on the owner-driven composable operation.
+   --  This parameter-record overload preserves typed admission and deletion
+   --  certainty for caller-directed HeadBucket reconciliation.
+   --  Compatibility contract: its region, addressing, and 30-second timeout
+   --  defaults are the established synchronous Delete policy; changing one
+   --  overload independently would break shared-state-machine equivalence.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Empty bucket to delete
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region Region used to sign the DeleteBucket request
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded ambiguous exchange failure
+   function Delete
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Delete_Bucket_Result;
 
    --  Delete one empty bucket. S3 rejects buckets that still contain objects
    --  or active multipart state; callers receive that rejection unchanged.
@@ -1803,6 +1958,26 @@ private
    end record;
 
    --  @exclude
+   type Delete_Bucket_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural := 0;
+      Final_Result     : Delete_Bucket_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error  : Boolean := False;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
    type Head_Bucket_Operation
      (Set : not null access Flyology.Operations.Completion_Set'Class;
       HTTP : not null access Flyology.HTTP.Client.Client;
@@ -1855,6 +2030,33 @@ private
      (Item : in out Create_Bucket_Operation);
    overriding procedure Finalize
      (Item : in out Create_Bucket_Operation);
+   overriding
+   function Declared_Length
+     (Item : Delete_Bucket_Operation) return Flyology.HTTP.Client.Body_Length;
+   overriding
+   procedure Read_Now
+     (Item   : in out Delete_Bucket_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   overriding
+   procedure Source_Wait_Source
+     (Item       : in out Delete_Bucket_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   overriding
+   procedure Release_Source (Item : in out Delete_Bucket_Operation);
+   overriding procedure Write
+     (Item : in out Delete_Bucket_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Delete_Bucket_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Delete_Bucket_Operation);
+   overriding procedure Finalize
+     (Item : in out Delete_Bucket_Operation);
    overriding procedure Write
      (Item : in out Head_Bucket_Operation;
       Data : Ada.Streams.Stream_Element_Array);
@@ -1883,6 +2085,15 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Create_Bucket_Result;
+   function Normalize_Delete_Bucket_Response
+     (Value     : Low_Level.Delete_Bucket_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Delete_Bucket_Result;
+   function Normalize_Delete_Bucket_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Delete_Bucket_Result;
    function Normalize_Head_Bucket_Response
      (Value     : Low_Level.Head_Bucket_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)

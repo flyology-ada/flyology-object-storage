@@ -287,8 +287,9 @@ providers: object operations in `Client.Objects`, bucket operations in
 They cover conditional Put, whole and exact-range Get, Head, Delete,
 CreateMultipartUpload, UploadPart, CompleteMultipartUpload,
 AbortMultipartUpload, bounded ListParts and ListMultipartUploads, and
-CopyObject. The typed synchronous overloads wait on those same owner-driven
-state machines.
+CopyObject, together with service-level ListBuckets and non-replaying
+CreateBucket and DeleteBucket. The typed synchronous overloads wait on those
+same owner-driven state machines.
 Multipart initiation and abort use one-shot empty sources, UploadPart moves one
 owned bounded buffer, and completion owns the exact serialized XML behind a
 one-shot source. Each preserves HTTP

@@ -124,6 +124,9 @@ procedure S3_HTTP_Socket_Corpus is
    use type List_Buckets_Result_Kind;
    use type Create_Bucket_Result_Kind;
    use type Bucket_Creation_Disposition;
+   use type Delete_Bucket_Result_Kind;
+   use type Bucket_Deletion_Disposition;
+   use type Low_Level.Delete_Bucket_Outcome_Kind;
    use type Bucket_Tag_Mutation_Disposition;
    use type Put_Bucket_Tagging_Result_Kind;
    use type Get_Bucket_Tagging_Result_Kind;
@@ -1923,6 +1926,25 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-id: restarted-create-request" & CRLF),
             "PUT", "/restart-existing",
             Expected_Body_Root => "<CreateBucketConfiguration");
+         Serve
+           (HTTP_Response ("204 No Content", ""),
+            "DELETE",
+            "/typed-deleted",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""),
+            "DELETE",
+            "/composed-deleted",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("409 Conflict",
+               "<Error><Code>BucketNotEmpty</Code>"
+               & "<Message>not empty</Message></Error>",
+               "x-amz-request-id: restarted-delete-request" & CRLF),
+            "DELETE",
+            "/restart-nonempty",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
               ("200 OK", "",
@@ -6325,6 +6347,79 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "high-level CreateBucket ignored cancellation/deadline";
                end if;
+            end;
+
+            declare
+               Parameters : constant Low_Level.Delete_Bucket_Parameters :=
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012"));
+               Result     : constant Delete_Bucket_Result :=
+                 Buckets.Delete
+                   (HTTP,
+                    Origin,
+                    "typed-deleted",
+                    Parameters,
+                    Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Delete_Bucket_Response_Available
+                 or else Result.Disposition /= Bucket_Deletion_Completed
+                 or else Result.Failure /= No_Failure
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /= Low_Level.Bucket_Deleted
+               then
+                  raise Program_Error
+                    with "typed DeleteBucket response mismatch";
+               end if;
+            end;
+
+            declare
+               Parameters : constant Low_Level.Delete_Bucket_Parameters :=
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012"));
+               --  DeleteBucket parent, HTTP exchange, and transport child.
+               Set        : aliased Operations.Completion_Set (3);
+               Result     : Delete_Bucket_Result;
+            begin
+               declare
+                  Operation : Delete_Bucket_Operation :=
+                    Buckets.Delete
+                      (Set'Access,
+                       HTTP'Access,
+                       Origin,
+                       "composed-deleted",
+                       Parameters,
+                       Identity,
+                       HTTP_Client.Deadline_After (5.0));
+               begin
+                  Operations.Wait_All (Set);
+                  Finish (Operation, Result);
+                  if Result.Disposition /= Bucket_Deletion_Completed then
+                     raise Program_Error
+                       with "composed DeleteBucket first result mismatch";
+                  end if;
+                  Buckets.Delete
+                    (HTTP'Access,
+                     Origin,
+                     "restart-nonempty",
+                     Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Operation => Operation);
+                  Operations.Wait_All (Set);
+                  Finish (Operation, Result);
+                  if Result.Kind /= Delete_Bucket_Response_Available
+                    or else Result.Disposition /= Bucket_Definitely_Not_Deleted
+                    or else Result.Failure /= Invalid_Request
+                    or else Result.Response.Kind
+                            /= Low_Level.Delete_Bucket_Rejected
+                    or else US.To_String (Result.Response.Error.Request_ID)
+                            /= "restarted-delete-request"
+                  then
+                     raise Program_Error
+                       with "composed DeleteBucket restart mismatch";
+                  end if;
+               end;
             end;
 
             declare
@@ -14257,6 +14352,7 @@ begin
    Objects_Testing.Check_List_Objects_Result_Corpus;
    Buckets_Testing.Check_List_Buckets_Result_Corpus;
    Buckets_Testing.Check_Create_Bucket_Certainty_Corpus;
+   Buckets_Testing.Check_Delete_Bucket_Certainty_Corpus;
    Buckets_Testing.Check_Head_Bucket_Result_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;
    Objects_Testing.Check_Object_Tagging_Certainty_Corpus;

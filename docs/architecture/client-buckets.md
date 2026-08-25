@@ -48,6 +48,12 @@ controls and rejects malformed or duplicate controls before backend mutation.
 `Location` normalizes the legacy empty and `EU` values into signing regions
 while preserving the wire spelling. `Delete` removes an empty bucket and
 preserves `BucketNotEmpty`, owner-precondition, and other S3 rejections.
+The parameter-record `Delete` overload waits on the provider-owned limited
+operation and preserves HTTP admission plus deletion certainty. Directly
+composed callers use the same-name constructor or operation-last procedure and
+typed `Finish`; its known-empty source is deliberately non-replayable. A lost
+response after possible admission requires caller-selected `Head` reconciliation
+before retry, and no helper task or borrowed request input survives initiation.
 
 `Put_Tags` and `Get_Tags` expose the complete bucket tag set as the shared
 HTTP-independent `Tags.Tag_Set`. Put generates the strict REST/XML document and
