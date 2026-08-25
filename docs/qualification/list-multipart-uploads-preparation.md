@@ -64,7 +64,7 @@ until their endpoint and session policy exists.
 ## Qualified client and oracle boundary
 
 The low-level client projects all nine modeled request positions and parses all
-13 top-level output positions. `Client.Scoped.List_Multipart_Uploads` is the
+13 top-level output positions. `Client.Transfers.List_Multipart_Uploads_Page` is the
 caller-owned completion-set-aware operation; the typed
 `Client.Transfers.List_Multipart_Uploads_Page` overload is a literal wait on
 that same state machine. The established low-level-outcome overload remains

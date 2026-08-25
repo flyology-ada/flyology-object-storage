@@ -281,11 +281,14 @@ in-flight bytes independently. Flyology's runtime owns multiplexing,
 backpressure and waiting, so the convenience layer does not create one task
 per chunk or retain a massive object.
 
-The completion-set-aware `Client.Scoped` layer currently covers conditional
-Put, whole and exact-range Get, Head, Delete, CreateMultipartUpload,
-UploadPart, CompleteMultipartUpload, AbortMultipartUpload, and bounded
-ListParts and ListMultipartUploads, plus CopyObject. The typed synchronous
-overloads wait on those same owner-driven state machines.
+The completion-set-aware overloads are colocated with their synchronous
+providers: object operations in `Client.Objects`, bucket operations in
+`Client.Buckets`, and multipart and copy operations in `Client.Transfers`.
+They cover conditional Put, whole and exact-range Get, Head, Delete,
+CreateMultipartUpload, UploadPart, CompleteMultipartUpload,
+AbortMultipartUpload, bounded ListParts and ListMultipartUploads, and
+CopyObject. The typed synchronous overloads wait on those same owner-driven
+state machines.
 Multipart initiation and abort use one-shot empty sources, UploadPart moves one
 owned bounded buffer, and completion owns the exact serialized XML behind a
 one-shot source. Each preserves HTTP

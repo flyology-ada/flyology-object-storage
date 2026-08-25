@@ -34,11 +34,25 @@ The exact indexed `flyology_http=0.1.3-dev` dependency selects
 uses those exchanges directly; it does not simulate composition with a helper
 task or a retained borrowed source, and no committed dependency pin remains.
 
-## Intended public boundary
+## Provider-centric public boundary
 
-The additive child package is
-`Flyology.Object_Storage.Client.Scoped`. Existing synchronous low-level,
-object, and transfer calls remain source compatible. Ordinary
+`Scoped` describes an operation's lifetime and ownership discipline; it is not
+the provider that performs the operation. Each domain provider therefore owns
+its complete operation vocabulary: `Client.Objects` owns object calls,
+`Client.Buckets` owns bucket calls, and `Client.Transfers` owns multipart and
+copy calls. Each provider contains the synchronous call, limited constructor,
+operation-last reusable initiation procedure, operation type and state, and
+typed `Finish` overloads. Ada overload resolution distinguishes these forms
+without a second parallel API tree.
+
+This colocation makes the shared state machine and semantics discoverable at
+the synchronous provider, avoids duplicated package locations and downstream
+wrapper conventions, and keeps documentation and tests attached to the
+operation owner. Scoped lifetime remains explicit through the limited
+operation, completion-set ownership, cancellation and drain rules, retained
+borrows, and typed Finish. The former lifetime-named child was removed on the
+current development line without compatibility declarations so new callers
+cannot retain the misleading convention. Ordinary
 `Flyology.Operations.Reference` values and gates compose these operations;
 the object-storage API does not define a competing scheduler or gate type.
 
@@ -58,22 +72,32 @@ The implemented operation order is:
 12. complete modeled `Put_Object` controls;
 13. `List_Objects_V2`;
 14. `List_Object_Versions`;
-15. `Get_Object_Attributes`; and
+15. `Get_Object_Attributes`;
 16. `Upload_Part_Copy`;
-17. `List_Objects` (v1); and
-18. service-level `List_Buckets`; and
-19. bodyless `Head_Bucket`; and
-20. non-replaying `Create_Bucket`; and
+17. `List_Objects` (v1);
+18. service-level `List_Buckets`;
+19. bodyless `Head_Bucket`;
+20. non-replaying `Create_Bucket`;
 21. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
-    `Delete_Bucket_Tagging`; and
+    `Delete_Bucket_Tagging`;
 22. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
 
+The provider surface contains 29 domain operations: 15 in `Client.Objects`,
+six in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 26 prepared-request initiators in `Client.Low_Level`. The count difference
+is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
+provider operations with distinct certainty contracts, but all three select
+their condition and use the one `Client.Low_Level.Put_Object` prepared-request
+initiator. `Get_Whole` and `Get_Range` are two provider projections of the one
+`Client.Low_Level.Get_Object` prepared-request initiator. Every provider
+operation therefore has a prepared-request initiator; none was omitted.
+
 Each implemented operation has both a limited constructor taking a completion
-set and an established-operation `Start` overload suitable for a reusable
-component in a larger state machine. Initiation performs bounded validation and
-state setup, then returns without waiting. The established overload accepts
-only a fresh, released, or consumed nonterminal operation.
+set and a same-name, operation-last procedure suitable for a reusable component
+in a larger state machine. Initiation performs bounded validation and state
+setup, then returns without waiting. The established overload accepts only a
+fresh, released, or consumed nonterminal operation.
 
 Each body call moves an acquired `Flyology.Buffers.Unique_Buffer` into the
 operation. The public handle is vacant on successful initiation. Validation or
@@ -364,8 +388,8 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Create_Multipart_Upload`, `Upload_Part`, and
 `Complete_Multipart_Upload`, `Abort_Multipart_Upload`, `List_Parts_Page`, and
 `List_Multipart_Uploads_Page` overloads, plus the typed-result `Copy_Object`,
-are literal waits on the same
-`Client.Scoped` state machines and retain their typed certainty, capacity,
+are literal waits on the same provider-owned state machines and retain their
+typed certainty, capacity,
 metadata, and ownership results. The established raising `Delete_Outcome` and
 `Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer
 overloads remain source compatible.

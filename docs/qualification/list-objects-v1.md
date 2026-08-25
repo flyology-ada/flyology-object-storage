@@ -25,7 +25,7 @@ before the next request signs and percent-encodes it. Tests cover slash, space,
 literal percent, non-ASCII bytes, malformed escapes, multiple-character
 delimiters, mutation between pages, cancellation, and deadline propagation.
 
-The public `Client.Scoped.List_Objects` operation owns the prepared request
+The public `Client.Objects.List_V1_Page` operation owns the prepared request
 and bounded response bytes until typed Finish. It can restart after Finish on
 the same retained HTTP client and cancellation token, without a helper task or
 automatic retry. Complete-response decoding enforces physical singleton

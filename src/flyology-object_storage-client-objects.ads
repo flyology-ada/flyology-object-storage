@@ -1,21 +1,1703 @@
+with Ada.Exceptions;
+with Ada.Streams;
 with Ada.Strings.Unbounded;
 with Flyology.Buffers;
+with Flyology.Buffers.Drivers;
 with Flyology.Bytes;
 with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
+with Flyology.IO;
 with Flyology.Object_Storage.Client.Low_Level;
-with Flyology.Object_Storage.Client.Scoped;
-with Flyology.Object_Storage.S3.Deletions;
-with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Core;
+with Flyology.Object_Storage.S3.Deletions;
+with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Versions;
+with Flyology.Operations;
 
 --  High-level object and object-listing operations over a configured Flyology
 --  HTTP client.
 package Flyology.Object_Storage.Client.Objects is
+
+   --  Shape of a terminal complete-object PUT result.
+   --  @enum Put_Response_Available Complete modeled S3 response is available
+   --  @enum Put_Exchange_Failed No complete modeled S3 response is available
+   type Conditional_Put_Result_Kind is
+     (Put_Response_Available, Put_Exchange_Failed);
+
+   --  Typed publication certainty plus either the exact modeled S3 response
+   --  or the composable HTTP failure that prevented response decoding.
+   --  @field Kind Result shape
+   --  @field Disposition Publication certainty independent of failure reason
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Required_Body_Length Exact known capacity requirement
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Conditional_Put_Result
+     (Kind : Conditional_Put_Result_Kind := Put_Exchange_Failed) is record
+      Disposition : Publication_Disposition := Outcome_Unknown;
+      Failure     : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Put_Response_Available =>
+            Response : Low_Level.Put_Object_Outcome;
+         when Put_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Required_Body_Length : Flyology.HTTP.Client.Length_Requirement :=
+              (others => <>);
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  Complete-object PUT operation. The input buffer token moves into this
+   --  object until Finish; no borrowed request bytes are retained. The
+   --  conditional constructors are restricted projections of this same
+   --  operation and certainty model.
+   type Conditional_Put_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Compatibility contract: Region, addressing style, empty optional
+   --  fields, and cancellation defaults below mirror the established
+   --  Client.Objects PutObject surfaces. Changing them would make the
+   --  synchronous and composable forms select different wire behavior.
+
+   --  Start or restart a complete modeled PutObject in an established
+   --  operation. Validation and signing complete before the payload token
+   --  moves. The exact prepared parameters bind any requested checksum and
+   --  requester-pays response. No request is retried.
+   --  @param Operation Fresh or consumed established operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination key
+   --  @param Parameters Complete modeled non-body PutObject inputs
+   --  @param Payload_Buffer Acquired complete-object bytes moved until Finish
+   --  @param Payload_SHA256 Exact lowercase digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Put_Object
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Put_Object_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Conditional_Put_Operation)
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer)
+       and then not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one complete modeled PutObject operation. Ownership,
+   --  certainty, request binding, and retry behavior match Put_Object.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination key
+   --  @param Parameters Complete modeled non-body PutObject inputs
+   --  @param Payload_Buffer Acquired complete-object bytes moved until Finish
+   --  @param Payload_SHA256 Exact lowercase digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started complete-object publication operation
+   function Put_Object
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Put_Object_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Conditional_Put_Operation
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
+
+   --  Start or restart immutable publication in an established operation.
+   --  Parameters and ownership match the constructor overload.
+   --  @param Operation Fresh or consumed established operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination key
+   --  @param Payload_Buffer Acquired complete-object bytes moved until Finish
+   --  @param Payload_SHA256 Exact lowercase digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Content_Type Optional content type
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Token Optional cancellation source retained through drain
+   procedure Put_If_Absent
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Content_Type : String := "";
+      Expected_Bucket_Owner : String := "";
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Conditional_Put_Operation)
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer)
+       and then not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Start or restart compare-and-swap publication in an established
+   --  operation. Parameters and ownership match the constructor overload.
+   --  @param Operation Fresh or consumed established operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination key
+   --  @param Expected_Entity_Tag Exact strong opaque generation validator
+   --  @param Payload_Buffer Acquired complete-object bytes moved until Finish
+   --  @param Payload_SHA256 Exact lowercase digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Content_Type Optional content type
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Token Optional cancellation source retained through drain
+   procedure Put_If_Matches
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Expected_Entity_Tag : String;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Content_Type : String := "";
+      Expected_Bucket_Owner : String := "";
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Conditional_Put_Operation)
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer)
+       and then not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Start immutable publication with If-None-Match: *. Signing and all
+   --  request validation finish before Body ownership moves. Body must remain
+   --  vacant until Finish restores the exact token. No request is retried.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination key
+   --  @param Payload_Buffer Acquired complete-object bytes moved until Finish
+   --  @param Payload_SHA256 Exact lowercase digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Content_Type Optional content type
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started conditional publication operation
+   function Put_If_Absent
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Content_Type : String := "";
+      Expected_Bucket_Owner : String := "";
+      Token    : access Flyology.Cancellation.Token := null)
+      return Conditional_Put_Operation
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
+
+   --  Start compare-and-swap publication with one exact strong opaque ETag.
+   --  Ownership, certainty, deadline, and retry behavior match Put_If_Absent.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Destination bucket
+   --  @param Key Exact destination key
+   --  @param Expected_Entity_Tag Exact strong opaque generation validator
+   --  @param Payload_Buffer Acquired complete-object bytes moved until Finish
+   --  @param Payload_SHA256 Exact lowercase digest or UNSIGNED-PAYLOAD
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Content_Type Optional content type
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started conditional publication operation
+   function Put_If_Matches
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Expected_Entity_Tag : String;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Payload_SHA256 : String;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Content_Type : String := "";
+      Expected_Bucket_Owner : String := "";
+      Token    : access Flyology.Cancellation.Token := null)
+      return Conditional_Put_Operation
+     with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
+
+   --  Consume one terminal complete-object PUT and restore its input token.
+   --  Result is typed for every expected HTTP/S3 outcome. An unexpected local
+   --  provider exception is re-raised only after Body ownership is restored.
+   --  @param Operation Terminal complete-object publication
+   --  @param Result Publication certainty and modeled terminal result
+   --  @param Payload_Buffer Vacant same-pool handle receiving the moved token
+   procedure Finish
+     (Operation : in out Conditional_Put_Operation;
+      Result    : out Conditional_Put_Result;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer)
+     with Pre => Flyology.Operations.Is_Terminal (Operation)
+       and then not Flyology.Buffers.Has_Buffer (Payload_Buffer);
+
+   --  Shape of a terminal bounded whole-Get result.
+   --  @enum Whole_Get_Response_Available Complete modeled S3 response exists
+   --  @enum Whole_Get_Exchange_Failed No complete modeled S3 response exists
+   type Whole_Get_Result_Kind is
+     (Whole_Get_Response_Available, Whole_Get_Exchange_Failed);
+
+   --  Typed same-response GetObject metadata. On Object_Opened, the exact
+   --  bytes and this metadata come from one complete HTTP response snapshot.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Required_Body_Length Exact known capacity requirement
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Whole_Get_Result
+     (Kind : Whole_Get_Result_Kind := Whole_Get_Exchange_Failed) is record
+      Failure : Failure_Reason := Corrupt_Or_Invalid_Response;
+      case Kind is
+         when Whole_Get_Response_Available =>
+            Response : Low_Level.Get_Object_Head_Outcome;
+         when Whole_Get_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Required_Body_Length : Flyology.HTTP.Client.Length_Requirement :=
+              (others => <>);
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  Resolved single response interval from Content-Range. Total_Length is
+   --  the immutable representation size against which suffix and open-ended
+   --  requests were resolved.
+   --  @field First First returned byte offset
+   --  @field Last Last returned byte offset
+   --  @field Total_Length Complete representation length
+   type Resolved_Byte_Range is record
+      First        : Byte_Count := 0;
+      Last         : Byte_Count := 0;
+      Total_Length : Byte_Count := 0;
+   end record;
+
+   --  Shape of a terminal generation-bound range result.
+   --  @enum Range_Get_Response_Available Complete modeled S3 response exists
+   --  @enum Range_Get_Exchange_Failed No complete modeled S3 response exists
+   type Range_Get_Result_Kind is
+     (Range_Get_Response_Available, Range_Get_Exchange_Failed);
+
+   --  Typed generation-bound range result. A modeled rejection has a complete
+   --  Response with Has_Resolved_Range false. Successful 206 responses carry
+   --  the exact interval after request/response binding.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Response Complete modeled S3 response
+   --  @field Has_Resolved_Range Whether a successful interval is present
+   --  @field Resolved Exact returned interval and representation length
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Required_Body_Length Exact known capacity requirement
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Range_Get_Result
+     (Kind : Range_Get_Result_Kind := Range_Get_Exchange_Failed) is record
+      Failure : Failure_Reason := Corrupt_Or_Invalid_Response;
+      case Kind is
+         when Range_Get_Response_Available =>
+            Response : Low_Level.Get_Object_Head_Outcome;
+            Has_Resolved_Range : Boolean := False;
+            Resolved : Resolved_Byte_Range;
+         when Range_Get_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Required_Body_Length : Flyology.HTTP.Client.Length_Requirement :=
+              (others => <>);
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  Same-response bounded whole GetObject operation. Destination is an
+   --  explicit retained handle borrow: it must outlive terminal Finish and
+   --  must not be inspected while the operation is active. Initiation moves
+   --  its exact token into HTTP; terminalization restores it. Non-success
+   --  outcomes restore readable length zero.
+   type Whole_Get_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation with private;
+
+   --  Compatibility contract: the read selectors and their defaults below
+   --  mirror the established Client.Objects whole-Get surface. This keeps a
+   --  synchronous wait and a directly composed operation wire-identical.
+
+   --  Start or restart a same-response whole GET in an established operation.
+   --  @param Operation Fresh or consumed established operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Destination Acquired retained output handle
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Expected_Entity_Tag Optional exact strong ETag validator
+   --  @param Version_ID Optional exact provider version selector
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Checksum_Mode Whether to request provider checksum headers
+   --  @param Token Optional cancellation source retained through drain
+   procedure Get_Whole
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Expected_Entity_Tag : String := "";
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Whole_Get_Operation)
+     with Pre => Flyology.Buffers.Has_Buffer (Destination.all)
+       and then not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Start one complete GetObject, optionally bound to an exact ETag and/or
+   --  version identifier. Destination capacity is the response body bound.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Destination Acquired retained output handle
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Expected_Entity_Tag Optional exact strong ETag validator
+   --  @param Version_ID Optional exact provider version selector
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Checksum_Mode Whether to request provider checksum headers
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started bounded same-response read
+   function Get_Whole
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Expected_Entity_Tag : String := "";
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Whole_Get_Operation
+     with Pre => Flyology.Buffers.Has_Buffer (Destination.all);
+
+   --  Consume one terminal whole GET. Destination already owns its exact
+   --  token; a successful result leaves complete object bytes readable.
+   --  @param Operation Terminal same-response read
+   --  @param Result Typed response or transport/capacity failure
+   procedure Finish
+     (Operation : in out Whole_Get_Operation;
+      Result    : out Whole_Get_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  A distinct range type prevents a caller from consuming the operation
+   --  through whole-Get Finish while retaining the same owner-driven shape.
+   type Range_Get_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation with private;
+
+   --  Start or restart a generation-bound single-range GET. Requested must be
+   --  bounded, open-ended, or suffix; the response interval is resolved and
+   --  bound to it against one immutable representation length. The exact
+   --  quoted entity tag prevents bytes from another generation being
+   --  accepted. Destination ownership matches Get_Whole.
+   --  @param Operation Fresh or consumed established range operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Requested Typed non-whole single range
+   --  @param Destination Acquired retained output handle
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Expected_Entity_Tag Exact strong generation validator
+   --  @param Version_ID Optional exact provider version selector
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Checksum_Mode Whether to request provider checksum headers
+   --  @param Token Optional cancellation source retained through drain
+   procedure Get_Range
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Requested : Byte_Range;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Expected_Entity_Tag : String;
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Range_Get_Operation)
+     with Pre => Flyology.Buffers.Has_Buffer (Destination.all)
+       and then not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one generation-bound single-range GET operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Requested Typed non-whole single range
+   --  @param Destination Acquired retained output handle
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Expected_Entity_Tag Exact strong generation validator
+   --  @param Version_ID Optional exact provider version selector
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Expected_Bucket_Owner Optional owner precondition
+   --  @param Request_Payer Empty or requester
+   --  @param Checksum_Mode Whether to request provider checksum headers
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started bounded same-response range read
+   function Get_Range
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Requested : Byte_Range;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Expected_Entity_Tag : String;
+      Version_ID : String := "";
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Expected_Bucket_Owner : String := "";
+      Request_Payer : String := "";
+      Checksum_Mode : Boolean := False;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Range_Get_Operation
+     with Pre => Flyology.Buffers.Has_Buffer (Destination.all);
+
+   --  Consume one terminal range GET and return its bound interval.
+   --  @param Operation Terminal same-response range read
+   --  @param Result Typed response, resolved interval, or bounded failure
+   procedure Finish
+     (Operation : in out Range_Get_Operation;
+      Result    : out Range_Get_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Shape of a terminal bodyless HeadObject result.
+   --  @enum Head_Response_Available Complete modeled S3 response exists
+   --  @enum Head_Exchange_Failed No complete modeled S3 response exists
+   type Head_Result_Kind is
+     (Head_Response_Available, Head_Exchange_Failed);
+
+   --  Typed bodyless HeadObject result or bounded HTTP failure.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Head_Result
+     (Kind : Head_Result_Kind := Head_Exchange_Failed) is record
+      Failure : Failure_Reason := Corrupt_Or_Invalid_Response;
+      case Kind is
+         when Head_Response_Available =>
+            Response : Low_Level.Head_Object_Outcome;
+         when Head_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  Bodyless HeadObject parent with one hidden HTTP child. Parameters is the
+   --  complete pinned HeadObject input surface and is copied into the signed
+   --  request before initiation returns.
+   type Head_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart a bodyless HeadObject operation.
+   --  @param Operation Fresh or consumed established HeadObject operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Parameters Complete modeled HeadObject controls
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Head_Object
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Head_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Head_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bodyless HeadObject operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Source bucket
+   --  @param Key Exact source key
+   --  @param Parameters Complete modeled HeadObject controls
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started bodyless HeadObject operation
+   function Head_Object
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Head_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Head_Operation;
+
+   --  Consume one terminal HeadObject operation.
+   --  @param Operation Terminal bodyless metadata request
+   --  @param Result Typed modeled response or bounded failure
+   procedure Finish
+     (Operation : in out Head_Operation;
+      Result    : out Head_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  What is known about one DeleteObject mutation after terminal drain.
+   --  Deletion_Outcome_Unknown requires an exact read before any
+   --  caller-selected retry.
+   --  @enum Deletion_Completed Complete validated 204 proves acceptance
+   --  @enum Definitely_Not_Deleted Admission or modeled rejection proves no
+   --     deletion
+   --  @enum Deletion_Outcome_Unknown Deletion must be reconciled by a bound
+   --     read
+   --  @enum Deletion_Cancelled_Before_Admission Cancellation preceded
+   --     possible server admission
+   type Deletion_Disposition is
+     (Deletion_Completed,
+      Definitely_Not_Deleted,
+      Deletion_Outcome_Unknown,
+      Deletion_Cancelled_Before_Admission);
+
+   --  Shape of a terminal DeleteObject result.
+   --  @enum Delete_Response_Available Complete modeled S3 response exists
+   --  @enum Delete_Exchange_Failed No complete modeled S3 response exists
+   type Delete_Result_Kind is
+     (Delete_Response_Available, Delete_Exchange_Failed);
+
+   --  Typed deletion certainty plus either the exact modeled S3 response or
+   --  the composable HTTP failure that prevented response decoding.
+   --  @field Kind Result shape
+   --  @field Disposition Deletion certainty independent of failure reason
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Delete_Result
+     (Kind : Delete_Result_Kind := Delete_Exchange_Failed) is record
+      Disposition : Deletion_Disposition := Deletion_Outcome_Unknown;
+      Failure     : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Delete_Response_Available =>
+            Response : Low_Level.Delete_Object_Outcome;
+         when Delete_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot DeleteObject parent with one hidden HTTP child. Parameters is
+   --  the complete pinned DeleteObject input surface and is copied before
+   --  initiation returns. The operation supplies a non-replayable empty body
+   --  so a reused-transport failure cannot transparently repeat the mutation.
+   type Delete_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one DeleteObject operation.
+   --  @param Operation Fresh or consumed established deletion operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled DeleteObject controls
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Delete
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Delete_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Delete_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one DeleteObject operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled DeleteObject controls
+   --  @param Identity Credentials used only during synchronous signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started non-replaying deletion operation
+   function Delete
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Delete_Object_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Delete_Operation;
+
+   --  Consume one terminal DeleteObject operation.
+   --  @param Operation Terminal deletion request
+   --  @param Result Typed modeled response or bounded ambiguous failure
+   procedure Finish
+     (Operation : in out Delete_Operation;
+      Result    : out Delete_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  What is known about one DeleteObjects batch after terminal drain. A
+   --  validated 200 proves that the server processed the batch, while each
+   --  per-entry Deleted/Error result remains authoritative. Unknown outcomes
+   --  require read-only reconciliation of every requested generation before
+   --  any caller-selected retry.
+   --  @enum Batch_Processed Complete validated response proves processing
+   --  @enum Batch_Definitely_Not_Processed Exact rejection or non-admission
+   --     proves the batch was not processed
+   --  @enum Batch_Outcome_Unknown Some entries may have been durably applied
+   --  @enum Batch_Cancelled_Before_Admission Cancellation preceded admission
+   type Delete_Objects_Disposition is
+     (Batch_Processed,
+      Batch_Definitely_Not_Processed,
+      Batch_Outcome_Unknown,
+      Batch_Cancelled_Before_Admission);
+
+   --  Shape of a terminal DeleteObjects result.
+   --  @enum Delete_Objects_Response_Available Complete modeled response exists
+   --  @enum Delete_Objects_Exchange_Failed No complete response exists
+   type Delete_Objects_Result_Kind is
+     (Delete_Objects_Response_Available, Delete_Objects_Exchange_Failed);
+
+   --  Typed batch-processing certainty plus either the exact per-entry S3
+   --  response or the composable HTTP failure that prevented decoding.
+   --  @field Kind Result shape
+   --  @field Disposition Batch-processing certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Delete_Objects_Result
+     (Kind : Delete_Objects_Result_Kind := Delete_Objects_Exchange_Failed)
+   is record
+      Disposition : Delete_Objects_Disposition := Batch_Outcome_Unknown;
+      Failure     : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Delete_Objects_Response_Available =>
+            Response : Low_Level.Delete_Objects_Outcome;
+         when Delete_Objects_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot DeleteObjects parent with one hidden HTTP child. The exact
+   --  serialized request XML is owned by the operation and cannot be replayed
+   --  after possible server admission.
+   type Delete_Objects_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one bounded non-replaying DeleteObjects operation.
+   --  Request validation, serialization, and signing finish before start.
+   --  @param Operation Fresh or consumed established batch operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose selected entries are deleted
+   --  @param Request Bounded ordered delete request copied before start
+   --  @param Parameters Complete modeled DeleteObjects controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Delete_Objects
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Request  : S3.Deletions.Delete_Objects_Request;
+      Parameters : Low_Level.Delete_Objects_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Delete_Objects_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded non-replaying DeleteObjects operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose selected entries are deleted
+   --  @param Request Bounded ordered delete request copied before start
+   --  @param Parameters Complete modeled DeleteObjects controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven batch deletion operation
+   function Delete_Objects
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Request  : S3.Deletions.Delete_Objects_Request;
+      Parameters : Low_Level.Delete_Objects_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Delete_Objects_Operation;
+
+   --  Consume one terminal DeleteObjects operation.
+   --  @param Operation Terminal batch deletion request
+   --  @param Result Typed per-entry response or bounded ambiguous failure
+   procedure Finish
+     (Operation : in out Delete_Objects_Operation;
+      Result    : out Delete_Objects_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Shape of a terminal ListObjects v1 read.
+   --  @enum List_Objects_Response_Available Modeled S3 response exists
+   --  @enum List_Objects_Exchange_Failed No complete response exists
+   type List_Objects_Result_Kind is
+     (List_Objects_Response_Available, List_Objects_Exchange_Failed);
+
+   --  Typed bounded ListObjects v1 response or composable HTTP failure.
+   --  Admission is retained for diagnostics; listing is read-only and each
+   --  page remains an independent service snapshot.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type List_Objects_Result
+     (Kind : List_Objects_Result_Kind := List_Objects_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when List_Objects_Response_Available =>
+            Response : Low_Level.List_Objects_Outcome;
+         when List_Objects_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded ListObjects v1 parent with one hidden HTTP child. The
+   --  operation owns its prepared request and retained response bytes through
+   --  terminal Finish; no borrowed request input is retained.
+   type List_Objects_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one bounded ListObjects v1 operation. Request
+   --  validation and signing finish before start.
+   --  @param Operation Fresh or consumed established listing operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose current objects are listed
+   --  @param Parameters Complete modeled v1 listing scope and marker
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure List_V1_Page
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Objects_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out List_Objects_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded ListObjects v1 operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose current objects are listed
+   --  @param Parameters Complete modeled v1 listing scope and marker
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven ListObjects v1 operation
+   function List_V1_Page
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Objects_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Objects_Operation;
+
+   --  Consume one terminal ListObjects v1 operation.
+   --  @param Operation Terminal ListObjects v1 request
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out List_Objects_Operation;
+      Result    : out List_Objects_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Shape of a terminal ListObjectsV2 read.
+   --  @enum List_Objects_V2_Response_Available Modeled S3 response exists
+   --  @enum List_Objects_V2_Exchange_Failed No complete response exists
+   type List_Objects_V2_Result_Kind is
+     (List_Objects_V2_Response_Available,
+      List_Objects_V2_Exchange_Failed);
+
+   --  Typed bounded ListObjectsV2 response or composable HTTP failure.
+   --  Admission is retained for diagnostics; listing is read-only and each
+   --  page remains an independent service snapshot.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type List_Objects_V2_Result
+     (Kind : List_Objects_V2_Result_Kind :=
+        List_Objects_V2_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when List_Objects_V2_Response_Available =>
+            Response : Low_Level.List_Objects_V2_Outcome;
+         when List_Objects_V2_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded ListObjectsV2 parent with one hidden HTTP child. The
+   --  operation owns its prepared request and retained response bytes through
+   --  terminal Finish; no borrowed request input is retained.
+   type List_Objects_V2_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Compatibility contract: parameters, region, addressing style, and
+   --  cancellation defaults match the established synchronous ListObjectsV2
+   --  API. The response buffer bound is derived from the shared XML limits.
+
+   --  Start or restart one bounded ListObjectsV2 operation. Request
+   --  validation and signing finish before start.
+   --  @param Operation Fresh or consumed established listing operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose current objects are listed
+   --  @param Parameters Complete modeled listing scope and cursor
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure List_Page
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Objects_V2_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out List_Objects_V2_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded ListObjectsV2 operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose current objects are listed
+   --  @param Parameters Complete modeled listing scope and cursor
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven ListObjectsV2 operation
+   function List_Page
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Objects_V2_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Objects_V2_Operation;
+
+   --  Consume one terminal ListObjectsV2 operation.
+   --  @param Operation Terminal ListObjectsV2 request
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out List_Objects_V2_Operation;
+      Result    : out List_Objects_V2_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Shape of a terminal ListObjectVersions read.
+   --  @enum List_Object_Versions_Response_Available Modeled response exists
+   --  @enum List_Object_Versions_Exchange_Failed No complete response exists
+   type List_Object_Versions_Result_Kind is
+     (List_Object_Versions_Response_Available,
+      List_Object_Versions_Exchange_Failed);
+
+   --  Typed bounded version-listing response or composable HTTP failure.
+   --  Each page is a read-only service snapshot. Version identifiers remain
+   --  opaque; URL-encoded key markers must be decoded before a later Start.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type List_Object_Versions_Result
+     (Kind : List_Object_Versions_Result_Kind :=
+        List_Object_Versions_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when List_Object_Versions_Response_Available =>
+            Response : Low_Level.List_Object_Versions_Outcome;
+         when List_Object_Versions_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded ListObjectVersions parent with one hidden HTTP child. It
+   --  owns the prepared request and response bytes through terminal Finish;
+   --  no caller request value is borrowed after Start returns.
+   type List_Object_Versions_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one bounded ListObjectVersions operation. Request
+   --  validation and signing finish before start.
+   --  @param Operation Fresh or consumed established listing operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose retained generations are listed
+   --  @param Parameters Complete modeled scope and paired cursor
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure List_Versions_Page
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Object_Versions_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out List_Object_Versions_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded ListObjectVersions operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose retained generations are listed
+   --  @param Parameters Complete modeled scope and paired cursor
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven ListObjectVersions operation
+   function List_Versions_Page
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Object_Versions_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Object_Versions_Operation;
+
+   --  Consume one terminal ListObjectVersions operation.
+   --  @param Operation Terminal ListObjectVersions request
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out List_Object_Versions_Operation;
+      Result    : out List_Object_Versions_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Shape of a terminal GetObjectAttributes read.
+   --  @enum Get_Object_Attributes_Response_Available Modeled response exists
+   --  @enum Get_Object_Attributes_Exchange_Failed No complete response exists
+   type Get_Object_Attributes_Result_Kind is
+     (Get_Object_Attributes_Response_Available,
+      Get_Object_Attributes_Exchange_Failed);
+
+   --  Typed bounded object-attributes response or composable HTTP failure.
+   --  The operation is read-only; admission is retained for diagnostics and
+   --  no retry policy is implied.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Get_Object_Attributes_Result
+     (Kind : Get_Object_Attributes_Result_Kind :=
+        Get_Object_Attributes_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Get_Object_Attributes_Response_Available =>
+            Response : Low_Level.Get_Object_Attributes_Outcome;
+         when Get_Object_Attributes_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded GetObjectAttributes parent with one hidden HTTP child. It
+   --  owns the prepared request and response bytes through terminal Finish;
+   --  no caller parameter or credential value is borrowed after Start.
+   type Get_Object_Attributes_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one bounded GetObjectAttributes operation. Request
+   --  validation and signing finish before start.
+   --  @param Operation Fresh or consumed established attributes operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled selection and controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Get_Attributes
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Get_Object_Attributes_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Get_Object_Attributes_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded GetObjectAttributes operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled selection and controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven GetObjectAttributes operation
+   function Get_Attributes
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Get_Object_Attributes_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Get_Object_Attributes_Operation;
+
+   --  Consume one terminal GetObjectAttributes operation.
+   --  @param Operation Terminal GetObjectAttributes request
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out Get_Object_Attributes_Operation;
+      Result    : out Get_Object_Attributes_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  What is known about one object-tag mutation after terminal drain.
+   --  Unknown outcomes require caller-selected GetObjectTagging
+   --  reconciliation for the exact object version before any retry.
+   --  @enum Object_Tag_Mutation_Completed Complete response proves mutation
+   --  @enum Object_Tag_Mutation_Definitely_Not_Applied Exact rejection or
+   --     non-admission proves the requested mutation was not applied
+   --  @enum Object_Tag_Mutation_Outcome_Unknown State must be reconciled
+   --  @enum Object_Tag_Mutation_Cancelled_Before_Admission Cancellation
+   --     preceded possible server admission
+   type Object_Tag_Mutation_Disposition is
+     (Object_Tag_Mutation_Completed,
+      Object_Tag_Mutation_Definitely_Not_Applied,
+      Object_Tag_Mutation_Outcome_Unknown,
+      Object_Tag_Mutation_Cancelled_Before_Admission);
+
+   --  Shape of a terminal PutObjectTagging mutation.
+   --  @enum Put_Object_Tagging_Response_Available Modeled response exists
+   --  @enum Put_Object_Tagging_Exchange_Failed No modeled response exists
+   type Put_Object_Tagging_Result_Kind is
+     (Put_Object_Tagging_Response_Available,
+      Put_Object_Tagging_Exchange_Failed);
+
+   --  Typed PutObjectTagging certainty and response or HTTP failure.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Put_Object_Tagging_Result
+     (Kind : Put_Object_Tagging_Result_Kind :=
+        Put_Object_Tagging_Exchange_Failed)
+   is record
+      Disposition : Object_Tag_Mutation_Disposition :=
+        Object_Tag_Mutation_Outcome_Unknown;
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Put_Object_Tagging_Response_Available =>
+            Response : Low_Level.Object_Tagging_Outcome;
+         when Put_Object_Tagging_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot PutObjectTagging parent owning its serialized tag document.
+   type Put_Object_Tagging_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one nonreplaying PutObjectTagging mutation.
+   --  @param Operation Fresh or consumed established operation
+   --  @param Client Configured origin client retained through drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Tags Complete validated tag set copied during preparation
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Put_Tags
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Tags       : Flyology.Object_Storage.Object_Tag_Set;
+      Parameters : Low_Level.Put_Object_Tagging_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Put_Object_Tagging_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying PutObjectTagging mutation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Tags Complete validated tag set copied during preparation
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven mutation
+   function Put_Tags
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Tags       : Flyology.Object_Storage.Object_Tag_Set;
+      Parameters : Low_Level.Put_Object_Tagging_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Put_Object_Tagging_Operation;
+
+   --  Consume one terminal PutObjectTagging operation.
+   --  @param Operation Terminal object-tag replacement
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Put_Object_Tagging_Operation;
+      Result    : out Put_Object_Tagging_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Shape of a terminal GetObjectTagging read.
+   --  @enum Get_Object_Tagging_Response_Available Modeled response exists
+   --  @enum Get_Object_Tagging_Exchange_Failed No modeled response exists
+   type Get_Object_Tagging_Result_Kind is
+     (Get_Object_Tagging_Response_Available,
+      Get_Object_Tagging_Exchange_Failed);
+
+   --  Typed bounded GetObjectTagging response or composable HTTP failure.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Get_Object_Tagging_Result
+     (Kind : Get_Object_Tagging_Result_Kind :=
+        Get_Object_Tagging_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Get_Object_Tagging_Response_Available =>
+            Response : Low_Level.Object_Tagging_Outcome;
+         when Get_Object_Tagging_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded read-only GetObjectTagging parent with one HTTP child.
+   type Get_Object_Tagging_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one bounded GetObjectTagging read.
+   --  @param Operation Fresh or consumed established operation
+   --  @param Client Configured origin client retained through drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Get_Tags
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Tagging_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Get_Object_Tagging_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded GetObjectTagging read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven read
+   function Get_Tags
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Tagging_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Object_Tagging_Operation;
+
+   --  Consume one terminal GetObjectTagging operation.
+   --  @param Operation Terminal object-tag read
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out Get_Object_Tagging_Operation;
+      Result    : out Get_Object_Tagging_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Shape of a terminal DeleteObjectTagging mutation.
+   --  @enum Delete_Object_Tagging_Response_Available Modeled response exists
+   --  @enum Delete_Object_Tagging_Exchange_Failed No modeled response exists
+   type Delete_Object_Tagging_Result_Kind is
+     (Delete_Object_Tagging_Response_Available,
+      Delete_Object_Tagging_Exchange_Failed);
+
+   --  Typed DeleteObjectTagging certainty and response or HTTP failure.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Delete_Object_Tagging_Result
+     (Kind : Delete_Object_Tagging_Result_Kind :=
+        Delete_Object_Tagging_Exchange_Failed)
+   is record
+      Disposition : Object_Tag_Mutation_Disposition :=
+        Object_Tag_Mutation_Outcome_Unknown;
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Delete_Object_Tagging_Response_Available =>
+            Response : Low_Level.Object_Tagging_Outcome;
+         when Delete_Object_Tagging_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot DeleteObjectTagging parent with nonreplayable empty source.
+   type Delete_Object_Tagging_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one nonreplaying DeleteObjectTagging mutation.
+   --  @param Operation Fresh or consumed established operation
+   --  @param Client Configured origin client retained through drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Delete_Tags
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Delete_Object_Tagging_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Delete_Object_Tagging_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying DeleteObjectTagging mutation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven mutation
+   function Delete_Tags
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Delete_Object_Tagging_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Delete_Object_Tagging_Operation;
+
+   --  Consume one terminal DeleteObjectTagging operation.
+   --  @param Operation Terminal object-tag deletion
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Delete_Object_Tagging_Operation;
+      Result    : out Delete_Object_Tagging_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
 
    type List_Outcome_Kind is (Page_Available, List_Rejected);
 
@@ -95,7 +1777,7 @@ package Flyology.Object_Storage.Client.Objects is
       Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
-      return Scoped.List_Objects_Result;
+      return List_Objects_Result;
 
    --  List one bounded page of current objects with S3 ListObjectsV2.
    --  Pass Page.Next_Continuation_Token from a truncated result to continue
@@ -165,7 +1847,7 @@ package Flyology.Object_Storage.Client.Objects is
       Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
-      return Scoped.List_Objects_V2_Result;
+      return List_Objects_V2_Result;
 
    --  One complete typed version-listing page or structured S3 rejection.
    type List_Versions_Outcome
@@ -251,7 +1933,7 @@ package Flyology.Object_Storage.Client.Objects is
       Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
-      return Scoped.List_Object_Versions_Result;
+      return List_Object_Versions_Result;
 
    subtype Complete_Put_Outcome is Low_Level.Put_Object_Outcome;
    subtype Conditional_Put_Outcome is Complete_Put_Outcome;
@@ -348,7 +2030,7 @@ package Flyology.Object_Storage.Client.Objects is
       Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
-      return Scoped.Conditional_Put_Result
+      return Conditional_Put_Result
      with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
 
    --  Publish a complete object only when no current object exists. Source
@@ -423,7 +2105,7 @@ package Flyology.Object_Storage.Client.Objects is
       Expected_Bucket_Owner : String := "";
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
-      return Scoped.Conditional_Put_Result
+      return Conditional_Put_Result
      with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
 
    --  Replace a complete current object only when its opaque HTTP entity tag
@@ -481,7 +2163,7 @@ package Flyology.Object_Storage.Client.Objects is
       Expected_Bucket_Owner : String := "";
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
-      return Scoped.Conditional_Put_Result
+      return Conditional_Put_Result
      with Pre => Flyology.Buffers.Has_Buffer (Payload_Buffer);
 
    type Whole_Get_Outcome_Kind is (Whole_Object_Read, Whole_Get_Rejected);
@@ -560,7 +2242,7 @@ package Flyology.Object_Storage.Client.Objects is
       Checksum_Mode : Boolean := False;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
-      return Scoped.Whole_Get_Result
+      return Whole_Get_Result
      with Pre => Flyology.Buffers.Has_Buffer (Destination);
 
    --  Read exactly one generation-bound byte interval by waiting on the
@@ -602,7 +2284,7 @@ package Flyology.Object_Storage.Client.Objects is
       Checksum_Mode : Boolean := False;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
-      return Scoped.Range_Get_Result
+      return Range_Get_Result
      with Pre => Flyology.Buffers.Has_Buffer (Destination);
 
    --  Execute one bodyless HeadObject by waiting on the composable operation.
@@ -630,7 +2312,7 @@ package Flyology.Object_Storage.Client.Objects is
       Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
-      return Scoped.Head_Result;
+      return Head_Result;
 
    type Delete_Outcome_Kind is (Object_Removed, Delete_Rejected);
 
@@ -690,7 +2372,7 @@ package Flyology.Object_Storage.Client.Objects is
       If_Match_Last_Modified_Time : String := "";
       If_Match_Size : Low_Level.Optional_Byte_Count :=
         (Is_Set => False, Value => 0))
-      return Scoped.Delete_Result;
+      return Delete_Result;
 
    --  Execute one DeleteObjects request by waiting on the composable
    --  operation. Request is serialized and copied before admission; the
@@ -719,7 +2401,7 @@ package Flyology.Object_Storage.Client.Objects is
       Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
-      return Scoped.Delete_Objects_Result;
+      return Delete_Objects_Result;
 
    --  Delete one object or a specific object version. S3 treats a missing
    --  unversioned key as a successful idempotent deletion. Every modeled
@@ -809,7 +2491,7 @@ package Flyology.Object_Storage.Client.Objects is
       Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null)
-      return Scoped.Put_Object_Tagging_Result;
+      return Put_Object_Tagging_Result;
 
    function Put_Tags
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -844,7 +2526,7 @@ package Flyology.Object_Storage.Client.Objects is
       Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null)
-      return Scoped.Get_Object_Tagging_Result;
+      return Get_Object_Tagging_Result;
 
    function Get_Tags
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -878,7 +2560,7 @@ package Flyology.Object_Storage.Client.Objects is
       Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null)
-      return Scoped.Delete_Object_Tagging_Result;
+      return Delete_Object_Tagging_Result;
 
    function Delete_Tags
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -896,7 +2578,7 @@ package Flyology.Object_Storage.Client.Objects is
    --  Retrieve selected object metadata by waiting on the composable
    --  owner-driven operation. This parameter-record overload preserves typed
    --  HTTP failure and admission information and is restart-compatible with
-   --  the corresponding Client.Scoped operation.
+   --  the corresponding owner-driven operation in this provider.
    --  @param Client Configured, caller-owned Flyology HTTP client
    --  @param Origin Exact origin used to configure Client and sign requests
    --  @param Bucket Bucket containing the object
@@ -919,7 +2601,7 @@ package Flyology.Object_Storage.Client.Objects is
       Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
-      return Scoped.Get_Object_Attributes_Result;
+      return Get_Object_Attributes_Result;
 
    --  Retrieve selected object metadata without downloading the body. By
    --  default all five root attribute groups are requested. Numeric presence
@@ -968,5 +2650,565 @@ package Flyology.Object_Storage.Client.Objects is
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
       return Get_Attributes_Outcome;
+
+private
+
+   type Put_Object_Tagging_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Source_Position : Natural := 0;
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Put_Object_Tagging_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   overriding function Declared_Length
+     (Item : Put_Object_Tagging_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Put_Object_Tagging_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Put_Object_Tagging_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Put_Object_Tagging_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Put_Object_Tagging_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Put_Object_Tagging_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Put_Object_Tagging_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Put_Object_Tagging_Operation);
+
+   --  @exclude
+   type Get_Object_Tagging_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Get_Object_Tagging_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Get_Object_Tagging_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Get_Object_Tagging_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Object_Tagging_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Get_Object_Tagging_Operation);
+
+   --  @exclude
+   type Delete_Object_Tagging_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Source_Position : Natural := 0;
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Delete_Object_Tagging_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   overriding function Declared_Length
+     (Item : Delete_Object_Tagging_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Delete_Object_Tagging_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Delete_Object_Tagging_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Delete_Object_Tagging_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Delete_Object_Tagging_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Delete_Object_Tagging_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Delete_Object_Tagging_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Delete_Object_Tagging_Operation);
+
+   --  @exclude
+   type Conditional_Put_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Source     : Flyology.Buffers.Drivers.Detached_Buffer;
+      Source_Position : Natural := 0;
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Conditional_Put_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type List_Objects_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : List_Objects_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type List_Objects_V2_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : List_Objects_V2_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type List_Object_Versions_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : List_Object_Versions_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Get_Object_Attributes_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Get_Object_Attributes_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Whole_Get_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Expected_Entity_Tag : Ada.Strings.Unbounded.Unbounded_String;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Final_Result : Whole_Get_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Range_Get_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Destination : not null access Flyology.Buffers.Unique_Buffer;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Expected_Entity_Tag : Ada.Strings.Unbounded.Unbounded_String;
+      Requested_Range : Byte_Range := Whole_Object;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Final_Result : Range_Get_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Head_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Final_Result : Head_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Delete_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Delete_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Delete_Objects_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Source_Position : Natural := 0;
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Delete_Objects_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+   overriding function Declared_Length
+     (Item : Conditional_Put_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   overriding procedure Read_Now
+     (Item   : in out Conditional_Put_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   overriding procedure Source_Wait_Source
+     (Item       : in out Conditional_Put_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   overriding procedure Release_Source
+     (Item : in out Conditional_Put_Operation);
+   overriding procedure Write
+     (Item : in out Conditional_Put_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Conditional_Put_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Conditional_Put_Operation);
+   overriding procedure Finalize (Item : in out Conditional_Put_Operation);
+   overriding procedure Drive
+     (Item : in out Whole_Get_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Whole_Get_Operation);
+   overriding procedure Finalize (Item : in out Whole_Get_Operation);
+   overriding procedure Drive
+     (Item : in out Range_Get_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Range_Get_Operation);
+   overriding procedure Finalize (Item : in out Range_Get_Operation);
+   overriding procedure Write
+     (Item : in out Head_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Head_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Head_Operation);
+   overriding procedure Finalize (Item : in out Head_Operation);
+   overriding function Declared_Length
+     (Item : Delete_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   overriding procedure Read_Now
+     (Item   : in out Delete_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   overriding procedure Source_Wait_Source
+     (Item       : in out Delete_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   overriding procedure Release_Source (Item : in out Delete_Operation);
+   overriding procedure Write
+     (Item : in out Delete_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Delete_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Delete_Operation);
+   overriding procedure Finalize (Item : in out Delete_Operation);
+   overriding function Declared_Length
+     (Item : Delete_Objects_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   overriding procedure Read_Now
+     (Item   : in out Delete_Objects_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   overriding procedure Source_Wait_Source
+     (Item       : in out Delete_Objects_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   overriding procedure Release_Source
+     (Item : in out Delete_Objects_Operation);
+   overriding procedure Write
+     (Item : in out Delete_Objects_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Delete_Objects_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Delete_Objects_Operation);
+   overriding procedure Finalize
+     (Item : in out Delete_Objects_Operation);
+   overriding procedure Write
+     (Item : in out List_Objects_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out List_Objects_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out List_Objects_Operation);
+   overriding procedure Finalize
+     (Item : in out List_Objects_Operation);
+   overriding procedure Write
+     (Item : in out List_Objects_V2_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out List_Objects_V2_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out List_Objects_V2_Operation);
+   overriding procedure Finalize
+     (Item : in out List_Objects_V2_Operation);
+   overriding procedure Write
+     (Item : in out List_Object_Versions_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out List_Object_Versions_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out List_Object_Versions_Operation);
+   overriding procedure Finalize
+     (Item : in out List_Object_Versions_Operation);
+   overriding procedure Write
+     (Item : in out Get_Object_Attributes_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Get_Object_Attributes_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Object_Attributes_Operation);
+   overriding procedure Finalize
+     (Item : in out Get_Object_Attributes_Operation);
+   function Normalize_List_Objects_Response
+     (Value     : Low_Level.List_Objects_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return List_Objects_Result;
+   function Normalize_List_Objects_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return List_Objects_Result;
+   function Normalize_Put_Response
+     (Value     : Low_Level.Put_Object_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Conditional_Put_Result;
+   function Normalize_Put_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Required  : Flyology.HTTP.Client.Length_Requirement := (others => <>);
+      Detail    : String := "") return Conditional_Put_Result;
+   function Normalize_Delete_Response
+     (Value     : Low_Level.Delete_Object_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Delete_Result;
+   function Normalize_Delete_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Delete_Result;
+   function Normalize_Delete_Objects_Response
+     (Value     : Low_Level.Delete_Objects_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Delete_Objects_Result;
+   function Normalize_Delete_Objects_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Delete_Objects_Result;
+   function Normalize_List_Objects_V2_Response
+     (Value     : Low_Level.List_Objects_V2_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return List_Objects_V2_Result;
+   function Normalize_List_Objects_V2_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return List_Objects_V2_Result;
+   function Normalize_List_Object_Versions_Response
+     (Value     : Low_Level.List_Object_Versions_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return List_Object_Versions_Result;
+   function Normalize_List_Object_Versions_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return List_Object_Versions_Result;
+   function Normalize_Get_Object_Attributes_Response
+     (Value     : Low_Level.Get_Object_Attributes_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Get_Object_Attributes_Result;
+   function Normalize_Get_Object_Attributes_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Get_Object_Attributes_Result;
+   function Normalize_Put_Object_Tagging_Response
+     (Value     : Low_Level.Object_Tagging_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Put_Object_Tagging_Result;
+   function Normalize_Put_Object_Tagging_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Put_Object_Tagging_Result;
+   function Normalize_Get_Object_Tagging_Response
+     (Value     : Low_Level.Object_Tagging_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Get_Object_Tagging_Result;
+   function Normalize_Get_Object_Tagging_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Get_Object_Tagging_Result;
+   function Normalize_Delete_Object_Tagging_Response
+     (Value     : Low_Level.Object_Tagging_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Delete_Object_Tagging_Result;
+   function Normalize_Delete_Object_Tagging_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Delete_Object_Tagging_Result;
 
 end Flyology.Object_Storage.Client.Objects;

@@ -6,7 +6,7 @@ access-point, Outposts, or Requester Pays capabilities.
 
 ## Composable client boundary
 
-`Flyology.Object_Storage.Client.Scoped.Abort_Multipart_Upload` owns a
+`Flyology.Object_Storage.Client.Transfers.Abort_Multipart_Upload` owns a
 non-rewindable known-empty request source and one hidden HTTP child driven on
 the caller's completion-set owner stack. It has no helper task, retained
 borrowed input, automatic retry, or second protocol engine. The typed

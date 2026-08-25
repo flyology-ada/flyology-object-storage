@@ -60,9 +60,9 @@ retry. The lost-response socket lane accepts one PUT, drops the response,
 requires ListParts next, completes from the reconciled tuple, and verifies the
 exact bytes, ETag, and SHA-256 with a generation-bound whole GET.
 
-The additive `Client.Scoped.Upload_Part` operation accepts an acquired
+The limited `Client.Transfers.Upload_Part` operation accepts an acquired
 `Unique_Buffer`, moves its exact token until terminal `Finish`, and exposes
-both reusable `Start_Upload_Part` and constructor forms. The typed synchronous
+both reusable operation-last procedure and constructor forms. The typed synchronous
 buffer overload waits on that same owner-driven state machine. No borrowed
 request source is retained and no helper task or second protocol engine is
 introduced. The maintained certainty corpus covers 46 response/admission

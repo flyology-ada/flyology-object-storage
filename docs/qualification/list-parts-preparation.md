@@ -47,7 +47,7 @@ repeat a part at or below the supplied marker, or loop on a stale next marker.
 ## Qualified client boundary
 
 The low-level client projects all modeled request positions and parses all
-top-level output positions. `Client.Scoped.List_Parts` is the caller-owned,
+top-level output positions. `Client.Transfers.List_Parts_Page` is the caller-owned,
 completion-set-aware operation; the typed `Client.Transfers.List_Parts_Page`
 overload is a literal wait on that same state machine. The established
 low-level-outcome overload remains source compatible. The prepared request

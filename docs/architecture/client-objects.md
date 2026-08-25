@@ -18,7 +18,7 @@ double-encode the cursor. FetchOwner is not a ListObjects v1 input; owner is
 an optional member of each returned object.
 
 The parameter-record overload waits on the public owner-driven
-`Client.Scoped.List_Objects` operation and returns its typed HTTP failure and
+`Client.Objects.List_V1_Page` operation and returns its typed HTTP failure and
 admission state. The convenience overload drives that same state machine,
 then applies the v1 marker fallback. The operation bounds retained XML by the
 shared decoder limit, supports cancellation and restart after Finish, and

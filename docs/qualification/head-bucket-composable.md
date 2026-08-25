@@ -1,7 +1,7 @@
 # Composable HeadBucket qualification
 
-`Flyology.Object_Storage.Client.Scoped.Head_Bucket` provides the owner-driven
-bodyless bucket probe. `Start_Head_Bucket` restarts a consumed operation only
+`Flyology.Object_Storage.Client.Buckets.Head` provides the owner-driven
+bodyless bucket probe. Its operation-last procedure restarts a consumed operation only
 with its retained HTTP client and cancellation owner. The operation owns its
 prepared signed request through terminal drain and retains no borrowed bucket,
 owner-precondition, credential, or region input after initiation.

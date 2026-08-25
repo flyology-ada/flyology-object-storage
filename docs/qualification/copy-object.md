@@ -150,7 +150,7 @@ the off-by-one policy is tested without allocating a 5 GiB body.
 
 ## Publication certainty
 
-The composable `Client.Scoped.Copy_Object` boundary owns the encoded raw source,
+The composable `Client.Transfers.Copy_Object` boundary owns the encoded raw source,
 destination, complete options record, one non-rewindable empty request source,
 and one XML-limit-bounded response sink. It drives one hidden HTTP child on the
 owner's stack and never creates a helper task or retries the mutation. The

@@ -15,19 +15,20 @@ with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.IO;
 with Flyology.IO.Sockets;
+with Flyology.Object_Storage.Client.Buckets;
+with Flyology.Object_Storage.Client.Buckets.Testing;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Client.Objects;
-with Flyology.Object_Storage.Client.Scoped;
-with Flyology.Object_Storage.Client.Scoped.Testing;
-with Flyology.Object_Storage.Client.Buckets;
+with Flyology.Object_Storage.Client.Objects.Testing;
 with Flyology.Object_Storage.Client.Transfers;
-with Flyology.Object_Storage.S3.Deletions;
+with Flyology.Object_Storage.Client.Transfers.Testing;
 with Flyology.Object_Storage.S3.ACL;
+with Flyology.Object_Storage.S3.Bucket_Controls;
+with Flyology.Object_Storage.S3.Checksums;
+with Flyology.Object_Storage.S3.Core;
+with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Metadata_Tables;
-with Flyology.Object_Storage.S3.Checksums;
-with Flyology.Object_Storage.S3.Bucket_Controls;
-with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
@@ -38,10 +39,20 @@ with Flyology.Object_Storage.Tags;
 with Flyology.Operations;
 
 procedure S3_HTTP_Socket_Corpus is
+   use Flyology.Object_Storage.Client;
+   use Flyology.Object_Storage.Client.Objects;
+   use Flyology.Object_Storage.Client.Buckets;
+   use Flyology.Object_Storage.Client.Transfers;
+   package Client_API renames Flyology.Object_Storage.Client;
+   package Objects_Testing renames
+     Flyology.Object_Storage.Client.Objects.Testing;
+   package Buckets_Testing renames
+     Flyology.Object_Storage.Client.Buckets.Testing;
+   package Transfers_Testing renames
+     Flyology.Object_Storage.Client.Transfers.Testing;
    package HTTP_Client renames Flyology.HTTP.Client;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
    package Objects renames Flyology.Object_Storage.Client.Objects;
-   package Scoped renames Flyology.Object_Storage.Client.Scoped;
    package Buffers renames Flyology.Buffers;
    package Operations renames Flyology.Operations;
    package Buckets renames Flyology.Object_Storage.Client.Buckets;
@@ -105,44 +116,44 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Object_Tagging_Outcome_Kind;
    use type Objects.Tagging_Outcome_Kind;
    use type Objects.Whole_Get_Outcome_Kind;
-   use type Scoped.Conditional_Put_Result_Kind;
-   use type Scoped.Failure_Reason;
-   use type Scoped.Publication_Disposition;
-   use type Scoped.Part_Upload_Disposition;
-   use type Scoped.List_Objects_Result_Kind;
-   use type Scoped.List_Buckets_Result_Kind;
-   use type Scoped.Create_Bucket_Result_Kind;
-   use type Scoped.Bucket_Creation_Disposition;
-   use type Scoped.Bucket_Tag_Mutation_Disposition;
-   use type Scoped.Put_Bucket_Tagging_Result_Kind;
-   use type Scoped.Get_Bucket_Tagging_Result_Kind;
-   use type Scoped.Delete_Bucket_Tagging_Result_Kind;
-   use type Scoped.Head_Bucket_Result_Kind;
-   use type Scoped.List_Objects_V2_Result_Kind;
-   use type Scoped.List_Object_Versions_Result_Kind;
-   use type Scoped.Get_Object_Attributes_Result_Kind;
-   use type Scoped.List_Parts_Result_Kind;
-   use type Scoped.List_Multipart_Uploads_Result_Kind;
-   use type Scoped.Copy_Result_Kind;
-   use type Scoped.Upload_Part_Result_Kind;
-   use type Scoped.Upload_Part_Copy_Result_Kind;
-   use type Scoped.Multipart_Completion_Disposition;
-   use type Scoped.Multipart_Completion_Result_Kind;
-   use type Scoped.Multipart_Abort_Disposition;
-   use type Scoped.Multipart_Abort_Result_Kind;
-   use type Scoped.Whole_Get_Result_Kind;
-   use type Scoped.Range_Get_Result_Kind;
-   use type Scoped.Head_Result_Kind;
-   use type Scoped.Delete_Result_Kind;
-   use type Scoped.Deletion_Disposition;
-   use type Scoped.Delete_Objects_Result_Kind;
-   use type Scoped.Delete_Objects_Disposition;
-   use type Scoped.Put_Object_Tagging_Result_Kind;
-   use type Scoped.Get_Object_Tagging_Result_Kind;
-   use type Scoped.Delete_Object_Tagging_Result_Kind;
-   use type Scoped.Object_Tag_Mutation_Disposition;
-   use type Scoped.Create_Multipart_Result_Kind;
-   use type Scoped.Multipart_Creation_Disposition;
+   use type Conditional_Put_Result_Kind;
+   use type Failure_Reason;
+   use type Publication_Disposition;
+   use type Part_Upload_Disposition;
+   use type List_Objects_Result_Kind;
+   use type List_Buckets_Result_Kind;
+   use type Create_Bucket_Result_Kind;
+   use type Bucket_Creation_Disposition;
+   use type Bucket_Tag_Mutation_Disposition;
+   use type Put_Bucket_Tagging_Result_Kind;
+   use type Get_Bucket_Tagging_Result_Kind;
+   use type Delete_Bucket_Tagging_Result_Kind;
+   use type Head_Bucket_Result_Kind;
+   use type List_Objects_V2_Result_Kind;
+   use type List_Object_Versions_Result_Kind;
+   use type Get_Object_Attributes_Result_Kind;
+   use type List_Parts_Result_Kind;
+   use type List_Multipart_Uploads_Result_Kind;
+   use type Copy_Result_Kind;
+   use type Upload_Part_Result_Kind;
+   use type Upload_Part_Copy_Result_Kind;
+   use type Multipart_Completion_Disposition;
+   use type Multipart_Completion_Result_Kind;
+   use type Multipart_Abort_Disposition;
+   use type Multipart_Abort_Result_Kind;
+   use type Whole_Get_Result_Kind;
+   use type Range_Get_Result_Kind;
+   use type Head_Result_Kind;
+   use type Delete_Result_Kind;
+   use type Deletion_Disposition;
+   use type Delete_Objects_Result_Kind;
+   use type Delete_Objects_Disposition;
+   use type Put_Object_Tagging_Result_Kind;
+   use type Get_Object_Tagging_Result_Kind;
+   use type Delete_Object_Tagging_Result_Kind;
+   use type Object_Tag_Mutation_Disposition;
+   use type Create_Multipart_Result_Kind;
+   use type Multipart_Creation_Disposition;
    use type HTTP_Client.Admission_Certainty;
    use type HTTP_Client.Exchange_Result_Kind;
    use type Flyology.Object_Storage.Object_Tag_Set;
@@ -5169,15 +5180,15 @@ procedure S3_HTTP_Socket_Corpus is
                      Buffers.Copy_From
                        (Payload_Buffer, Bytes (Put_Response_Vector_Payload));
                      declare
-                        Result : constant Scoped.Upload_Part_Result :=
+                        Result : constant Upload_Part_Result :=
                           Transfers.Upload_Part
                             (HTTP, Origin, "example-bucket", Key,
                              Upload_Parameters, Payload_Buffer, Identity,
                              Timeout => 5.0);
                      begin
                         if Result.Kind /=
-                          Scoped.Upload_Part_Response_Available
-                          or else Result.Disposition /= Scoped.Part_Published
+                          Upload_Part_Response_Available
+                          or else Result.Disposition /= Part_Published
                           or else Result.Response.Kind /=
                             Low_Level.Part_Uploaded
                           or else not Buffers.Has_Buffer (Payload_Buffer)
@@ -5192,21 +5203,21 @@ procedure S3_HTTP_Socket_Corpus is
                      declare
                         --  Parent, HTTP exchange, and one transport child.
                         Set : aliased Operations.Completion_Set (3);
-                        Operation : Scoped.Upload_Part_Operation :=
-                          Scoped.Upload_Part
+                        Operation : Upload_Part_Operation :=
+                          Upload_Part
                             (Set'Access, HTTP'Access, Origin,
                              "example-bucket",
                              "upload-response-composed-first",
                              Upload_Parameters, Payload_Buffer, Identity,
                              HTTP_Client.Deadline_After (5.0));
-                        Result : Scoped.Upload_Part_Result;
+                        Result : Upload_Part_Result;
                      begin
                         Operations.Wait_All (Set);
-                        Scoped.Finish
+                        Finish
                           (Operation, Result, Payload_Buffer);
                         if Result.Kind /=
-                          Scoped.Upload_Part_Response_Available
-                          or else Result.Disposition /= Scoped.Part_Published
+                          Upload_Part_Response_Available
+                          or else Result.Disposition /= Part_Published
                           or else US.To_String
                             (Result.Response.Result.Entity_Tag) /=
                               "composed-part-first"
@@ -5216,17 +5227,22 @@ procedure S3_HTTP_Socket_Corpus is
                              "composed UploadPart constructor mismatch";
                         end if;
 
-                        Scoped.Start_Upload_Part
-                          (Operation, HTTP'Access, Origin, "example-bucket",
+                        Upload_Part
+                          (HTTP'Access,
+                           Origin,
+                           "example-bucket",
                            "upload-response-composed-second",
-                           Upload_Parameters, Payload_Buffer, Identity,
-                           HTTP_Client.Deadline_After (5.0));
+                           Upload_Parameters,
+                           Payload_Buffer,
+                           Identity,
+                           HTTP_Client.Deadline_After (5.0),
+                           Operation => Operation);
                         Operations.Wait_All (Set);
-                        Scoped.Finish
+                        Finish
                           (Operation, Result, Payload_Buffer);
                         if Result.Kind /=
-                          Scoped.Upload_Part_Response_Available
-                          or else Result.Disposition /= Scoped.Part_Published
+                          Upload_Part_Response_Available
+                          or else Result.Disposition /= Part_Published
                           or else US.To_String
                             (Result.Response.Result.Entity_Tag) /=
                               "composed-part-second"
@@ -5764,22 +5780,22 @@ procedure S3_HTTP_Socket_Corpus is
             declare
                --  Object, HTTP exchange, and its single transport child.
                Set : aliased Operations.Completion_Set (3);
-               Operation : Scoped.Conditional_Put_Operation :=
-                 Scoped.Put_If_Absent
+               Operation : Conditional_Put_Operation :=
+                 Put_If_Absent
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     "scoped-put", Payload_Buffer,
                     SigV4.SHA256_Hex ("scoped-put-body"), Identity,
                     HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.Conditional_Put_Result;
+               Result : Conditional_Put_Result;
             begin
                if Buffers.Has_Buffer (Payload_Buffer) then
                   raise Program_Error with
                     "scoped PutObject did not move its input token";
                end if;
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result, Payload_Buffer);
-               if Result.Kind /= Scoped.Put_Response_Available
-                 or else Result.Disposition /= Scoped.Published
+               Finish (Operation, Result, Payload_Buffer);
+               if Result.Kind /= Put_Response_Available
+                 or else Result.Disposition /= Published
                  or else Result.Response.Kind /= Low_Level.Object_Put
                  or else US.To_String
                    (Result.Response.Result.Entity_Tag) /=
@@ -5795,15 +5811,15 @@ procedure S3_HTTP_Socket_Corpus is
             Buffers.Copy_From
               (Payload_Buffer, Bytes ("scoped-cas-body"));
             declare
-               Result : constant Scoped.Conditional_Put_Result :=
+               Result : constant Conditional_Put_Result :=
                  Objects.Put_If_Matches
                    (HTTP, Origin, "example-bucket", "scoped-cas",
                     """scoped-generation""", Payload_Buffer,
                     SigV4.SHA256_Hex ("scoped-cas-body"), Identity,
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Put_Response_Available
-                 or else Result.Disposition /= Scoped.Precondition_Failed
+               if Result.Kind /= Put_Response_Available
+                 or else Result.Disposition /= Precondition_Failed
                  or else Result.Response.Kind /=
                    Low_Level.Put_Object_Rejected
                  or else not Buffers.Has_Buffer (Payload_Buffer)
@@ -5811,14 +5827,14 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "synchronous composable CAS mapping mismatch: kind=" &
-                    Scoped.Conditional_Put_Result_Kind'Image (Result.Kind) &
+                    Conditional_Put_Result_Kind'Image (Result.Kind) &
                     " disposition=" &
-                    Scoped.Publication_Disposition'Image
+                    Publication_Disposition'Image
                       (Result.Disposition) & " failure=" &
-                    Scoped.Failure_Reason'Image (Result.Failure) &
+                    Failure_Reason'Image (Result.Failure) &
                     " buffer=" & Boolean'Image
                       (Buffers.Has_Buffer (Payload_Buffer)) &
-                    (if Result.Kind = Scoped.Put_Exchange_Failed
+                    (if Result.Kind = Put_Exchange_Failed
                      then " http=" &
                        HTTP_Client.Exchange_Result_Kind'Image
                          (Result.HTTP_Result) & " phase=" &
@@ -5832,20 +5848,20 @@ procedure S3_HTTP_Socket_Corpus is
             declare
                --  Object, HTTP exchange, and its single transport child.
                Set : aliased Operations.Completion_Set (3);
-               Operation : Scoped.Whole_Get_Operation := Scoped.Get_Whole
+               Operation : Whole_Get_Operation := Get_Whole
                  (Set'Access, HTTP'Access, Origin, "example-bucket",
                   "scoped-get", Destination'Access, Identity,
                   HTTP_Client.Deadline_After (5.0),
                   Expected_Entity_Tag => """scoped-generation""");
-               Result : Scoped.Whole_Get_Result;
+               Result : Whole_Get_Result;
             begin
                if Buffers.Has_Buffer (Destination) then
                   raise Program_Error with
                     "scoped GetObject did not move its output token";
                end if;
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.Whole_Get_Response_Available
+               Finish (Operation, Result);
+               if Result.Kind /= Whole_Get_Response_Available
                  or else Result.Response.Kind /= Low_Level.Object_Opened
                  or else US.To_String (Result.Response.Result.Entity_Tag) /=
                    """scoped-generation"""
@@ -5859,13 +5875,13 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Whole_Get_Result :=
+               Result : constant Whole_Get_Result :=
                  Objects.Get_Whole
                    (HTTP, Origin, "example-bucket", "scoped-oversized",
                     Destination, Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Whole_Get_Exchange_Failed
-                 or else Result.Failure /= Scoped.Response_Too_Large
+               if Result.Kind /= Whole_Get_Exchange_Failed
+                 or else Result.Failure /= Response_Too_Large
                  or else not Result.Required_Body_Length.Known
                  or else Result.Required_Body_Length.Bytes /= 112
                  or else Buffers.Length (Destination) /= 0
@@ -5878,7 +5894,7 @@ procedure S3_HTTP_Socket_Corpus is
             declare
                --  Object, HTTP exchange, and its single transport child.
                Set : aliased Operations.Completion_Set (3);
-               Operation : Scoped.Range_Get_Operation := Scoped.Get_Range
+               Operation : Range_Get_Operation := Get_Range
                  (Set'Access, HTTP'Access, Origin, "example-bucket",
                   "scoped-range",
                   (Kind  => Flyology.Object_Storage.Bounded_Range,
@@ -5886,15 +5902,15 @@ procedure S3_HTTP_Socket_Corpus is
                   Destination'Access, Identity,
                   HTTP_Client.Deadline_After (5.0),
                   """range-generation""");
-               Result : Scoped.Range_Get_Result;
+               Result : Range_Get_Result;
             begin
                if Buffers.Has_Buffer (Destination) then
                   raise Program_Error with
                     "scoped range GetObject did not move its output token";
                end if;
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.Range_Get_Response_Available
+               Finish (Operation, Result);
+               if Result.Kind /= Range_Get_Response_Available
                  or else Result.Response.Kind /= Low_Level.Object_Opened
                  or else not Result.Has_Resolved_Range
                  or else Result.Resolved.First /= 2
@@ -5908,7 +5924,7 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Range_Get_Result :=
+               Result : constant Range_Get_Result :=
                  Objects.Get_Range
                    (HTTP, Origin, "example-bucket", "scoped-range-open",
                     (Kind  => Flyology.Object_Storage.Open_Ended_Range,
@@ -5916,7 +5932,7 @@ procedure S3_HTTP_Socket_Corpus is
                     Destination, Identity, """range-generation""",
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Range_Get_Response_Available
+               if Result.Kind /= Range_Get_Response_Available
                  or else not Result.Has_Resolved_Range
                  or else Result.Resolved.First /= 6
                  or else Result.Resolved.Last /= 9
@@ -5929,7 +5945,7 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Range_Get_Result :=
+               Result : constant Range_Get_Result :=
                  Objects.Get_Range
                    (HTTP, Origin, "example-bucket", "scoped-range-suffix",
                     (Kind  => Flyology.Object_Storage.Suffix_Range,
@@ -5937,7 +5953,7 @@ procedure S3_HTTP_Socket_Corpus is
                     Destination, Identity, """range-generation""",
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Range_Get_Response_Available
+               if Result.Kind /= Range_Get_Response_Available
                  or else not Result.Has_Resolved_Range
                  or else Result.Resolved.First /= 7
                  or else Result.Resolved.Last /= 9
@@ -5950,7 +5966,7 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Range_Get_Result :=
+               Result : constant Range_Get_Result :=
                  Objects.Get_Range
                    (HTTP, Origin, "example-bucket", "scoped-range-wrong",
                     (Kind  => Flyology.Object_Storage.Bounded_Range,
@@ -5958,9 +5974,9 @@ procedure S3_HTTP_Socket_Corpus is
                     Destination, Identity, """range-generation""",
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Range_Get_Exchange_Failed
+               if Result.Kind /= Range_Get_Exchange_Failed
                  or else Result.Failure /=
-                   Scoped.Corrupt_Or_Invalid_Response
+                   Corrupt_Or_Invalid_Response
                  or else Buffers.Length (Destination) /= 0
                then
                   raise Program_Error with
@@ -5969,7 +5985,7 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Range_Get_Result :=
+               Result : constant Range_Get_Result :=
                  Objects.Get_Range
                    (HTTP, Origin, "example-bucket",
                     "scoped-range-rejected",
@@ -5978,7 +5994,7 @@ procedure S3_HTTP_Socket_Corpus is
                     Destination, Identity, """stale-generation""",
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Range_Get_Response_Available
+               if Result.Kind /= Range_Get_Response_Available
                  or else Result.Response.Kind /=
                    Low_Level.Get_Object_Rejected
                  or else Result.Response.Status /= 412
@@ -5991,7 +6007,7 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Range_Get_Result :=
+               Result : constant Range_Get_Result :=
                  Objects.Get_Range
                    (HTTP, Origin, "example-bucket",
                     "scoped-range-duplicate",
@@ -6000,9 +6016,9 @@ procedure S3_HTTP_Socket_Corpus is
                     Destination, Identity, """range-generation""",
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Range_Get_Exchange_Failed
+               if Result.Kind /= Range_Get_Exchange_Failed
                  or else Result.Failure /=
-                   Scoped.Corrupt_Or_Invalid_Response
+                   Corrupt_Or_Invalid_Response
                  or else Buffers.Length (Destination) /= 0
                then
                   raise Program_Error with
@@ -6020,7 +6036,7 @@ procedure S3_HTTP_Socket_Corpus is
             begin
                Buffers.Acquire (Small);
                declare
-                  Result : constant Scoped.Range_Get_Result :=
+                  Result : constant Range_Get_Result :=
                     Objects.Get_Range
                       (HTTP, Origin, "example-bucket",
                        "scoped-range-oversized",
@@ -6029,8 +6045,8 @@ procedure S3_HTTP_Socket_Corpus is
                        Small, Identity, """range-generation""",
                        Timeout => 5.0);
                begin
-                  if Result.Kind /= Scoped.Range_Get_Exchange_Failed
-                    or else Result.Failure /= Scoped.Response_Too_Large
+                  if Result.Kind /= Range_Get_Exchange_Failed
+                    or else Result.Failure /= Response_Too_Large
                     or else not Result.Required_Body_Length.Known
                     or else Result.Required_Body_Length.Bytes /= 5
                     or else Buffers.Length (Small) /= 0
@@ -6052,15 +6068,15 @@ procedure S3_HTTP_Socket_Corpus is
                declare
                   --  Object, HTTP exchange, and its single transport child.
                   Set : aliased Operations.Completion_Set (3);
-                  Operation : Scoped.Head_Operation := Scoped.Head_Object
+                  Operation : Head_Operation := Head_Object
                     (Set'Access, HTTP'Access, Origin, "example-bucket",
                      "scoped-head", Parameters, Identity,
                      HTTP_Client.Deadline_After (5.0));
-                  Result : Scoped.Head_Result;
+                  Result : Head_Result;
                begin
                   Operations.Wait_All (Set);
-                  Scoped.Finish (Operation, Result);
-                  if Result.Kind /= Scoped.Head_Response_Available
+                  Finish (Operation, Result);
+                  if Result.Kind /= Head_Response_Available
                     or else Result.Response.Kind /= Low_Level.Object_Found
                     or else Result.Response.Result.Content_Length /= 10
                     or else US.To_String
@@ -6078,11 +6094,11 @@ procedure S3_HTTP_Socket_Corpus is
             declare
                Parameters : constant Low_Level.Head_Object_Parameters :=
                  (others => <>);
-               Result : constant Scoped.Head_Result := Objects.Head_Object
+               Result : constant Head_Result := Objects.Head_Object
                  (HTTP, Origin, "example-bucket", "scoped-head-missing",
                   Parameters, Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Head_Response_Available
+               if Result.Kind /= Head_Response_Available
                  or else Result.Response.Kind /=
                    Low_Level.Head_Object_Rejected
                  or else Result.Response.Status /= 404
@@ -6099,13 +6115,13 @@ procedure S3_HTTP_Socket_Corpus is
             declare
                Parameters : constant Low_Level.Head_Object_Parameters :=
                  (others => <>);
-               Result : constant Scoped.Head_Result := Objects.Head_Object
+               Result : constant Head_Result := Objects.Head_Object
                  (HTTP, Origin, "example-bucket", "scoped-head-duplicate",
                   Parameters, Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Head_Exchange_Failed
+               if Result.Kind /= Head_Exchange_Failed
                  or else Result.Failure /=
-                   Scoped.Corrupt_Or_Invalid_Response
+                   Corrupt_Or_Invalid_Response
                then
                   raise Program_Error with
                     "HeadObject accepted duplicate singleton metadata";
@@ -6119,15 +6135,15 @@ procedure S3_HTTP_Socket_Corpus is
                Parameters.Configuration.Location_Constraint :=
                  US.To_Unbounded_String ("us-west-2");
                declare
-                  Result : constant Scoped.Create_Bucket_Result :=
+                  Result : constant Create_Bucket_Result :=
                     Buckets.Create
                       (HTTP, Origin, "typed-created", Parameters, Identity,
                        Region => "us-west-2", Timeout => 5.0);
                begin
-                  if Result.Kind /= Scoped.Create_Bucket_Response_Available
+                  if Result.Kind /= Create_Bucket_Response_Available
                     or else Result.Disposition /=
-                      Scoped.Bucket_Creation_Completed
-                    or else Result.Failure /= Scoped.No_Failure
+                      Bucket_Creation_Completed
+                    or else Result.Failure /= No_Failure
                     or else Result.Admission /= HTTP_Client.Response_Observed
                     or else Result.Response.Kind /= Low_Level.Bucket_Created
                     or else US.To_String (Result.Response.Result.Location) /=
@@ -6136,7 +6152,7 @@ procedure S3_HTTP_Socket_Corpus is
                       (Result.Response.Result.Bucket_ARN) /=
                         "arn:aws:s3:::typed-created"
                   then
-                     if Result.Kind = Scoped.Create_Bucket_Exchange_Failed
+                     if Result.Kind = Create_Bucket_Exchange_Failed
                      then
                         Ada.Text_IO.Put_Line
                           (Ada.Text_IO.Standard_Error,
@@ -6149,16 +6165,16 @@ procedure S3_HTTP_Socket_Corpus is
                      end if;
                      raise Program_Error with
                        "composable CreateBucket response mismatch: kind=" &
-                       Scoped.Create_Bucket_Result_Kind'Image
+                       Create_Bucket_Result_Kind'Image
                          (Result.Kind) & " disposition=" &
-                       Scoped.Bucket_Creation_Disposition'Image
+                       Bucket_Creation_Disposition'Image
                          (Result.Disposition) & " failure=" &
-                       Scoped.Failure_Reason'Image (Result.Failure) &
+                       Failure_Reason'Image (Result.Failure) &
                        " admission=" &
                        HTTP_Client.Admission_Certainty'Image
                          (Result.Admission) &
                        (if Result.Kind =
-                           Scoped.Create_Bucket_Response_Available
+                           Create_Bucket_Response_Available
                         then " response=" &
                           Low_Level.Create_Bucket_Outcome_Kind'Image
                             (Result.Response.Kind) & " status=" &
@@ -6203,16 +6219,16 @@ procedure S3_HTTP_Socket_Corpus is
                Parameters.Configuration.Location_Constraint :=
                  US.To_Unbounded_String ("us-west-2");
                declare
-                  Result : constant Scoped.Create_Bucket_Result :=
+                  Result : constant Create_Bucket_Result :=
                     Buckets.Create
                       (HTTP, Origin, "duplicate-create", Parameters, Identity,
                        Region => "us-west-2", Timeout => 5.0);
                begin
-                  if Result.Kind /= Scoped.Create_Bucket_Exchange_Failed
+                  if Result.Kind /= Create_Bucket_Exchange_Failed
                     or else Result.Disposition /=
-                      Scoped.Bucket_Creation_Outcome_Unknown
+                      Bucket_Creation_Outcome_Unknown
                     or else Result.Failure /=
-                      Scoped.Corrupt_Or_Invalid_Response
+                      Corrupt_Or_Invalid_Response
                   then
                      raise Program_Error with
                        "CreateBucket accepted duplicate response metadata";
@@ -6225,35 +6241,40 @@ procedure S3_HTTP_Socket_Corpus is
                  (others => <>);
                --  CreateBucket parent, HTTP exchange, and transport child.
                Set : aliased Operations.Completion_Set (3);
-               Result : Scoped.Create_Bucket_Result;
+               Result : Create_Bucket_Result;
             begin
                Parameters.Configuration.Location_Constraint :=
                  US.To_Unbounded_String ("us-west-2");
                declare
-                  Operation : Scoped.Create_Bucket_Operation :=
-                    Scoped.Create_Bucket
+                  Operation : Create_Bucket_Operation :=
+                    Create
                       (Set'Access, HTTP'Access, Origin, "restart-created",
                        Parameters, Identity,
                        HTTP_Client.Deadline_After (5.0), "us-west-2");
                begin
                   Operations.Wait_All (Set);
-                  Scoped.Finish (Operation, Result);
+                  Finish (Operation, Result);
                   if Result.Disposition /=
-                    Scoped.Bucket_Creation_Completed
+                    Bucket_Creation_Completed
                   then
                      raise Program_Error with
                        "composed CreateBucket first result mismatch";
                   end if;
-                  Scoped.Start_Create_Bucket
-                    (Operation, HTTP'Access, Origin, "restart-existing",
-                     Parameters, Identity, HTTP_Client.Deadline_After (5.0),
-                     "us-west-2");
+                  Create
+                    (HTTP'Access,
+                     Origin,
+                     "restart-existing",
+                     Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     "us-west-2",
+                     Operation => Operation);
                   Operations.Wait_All (Set);
-                  Scoped.Finish (Operation, Result);
-                  if Result.Kind /= Scoped.Create_Bucket_Response_Available
+                  Finish (Operation, Result);
+                  if Result.Kind /= Create_Bucket_Response_Available
                     or else Result.Disposition /=
-                      Scoped.Bucket_Definitely_Not_Created
-                    or else Result.Failure /= Scoped.Invalid_Request
+                      Bucket_Definitely_Not_Created
+                    or else Result.Failure /= Invalid_Request
                     or else Result.Response.Kind /=
                       Low_Level.Create_Bucket_Rejected
                     or else US.To_String (Result.Response.Error.Request_ID) /=
@@ -6310,13 +6331,13 @@ procedure S3_HTTP_Socket_Corpus is
                Parameters : constant Low_Level.Head_Bucket_Parameters :=
                  (Expected_Bucket_Owner =>
                     US.To_Unbounded_String ("123456789012"));
-               Result : constant Scoped.Head_Bucket_Result :=
+               Result : constant Head_Bucket_Result :=
                  Buckets.Head
                    (HTTP, Origin, "example-bucket", Parameters, Identity,
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Head_Bucket_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+               if Result.Kind /= Head_Bucket_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Admission /= HTTP_Client.Response_Observed
                  or else Result.Response.Kind /= Low_Level.Bucket_Found
                  or else US.To_String
@@ -6355,14 +6376,14 @@ procedure S3_HTTP_Socket_Corpus is
                Parameters : constant Low_Level.Head_Bucket_Parameters :=
                  (Expected_Bucket_Owner =>
                     US.To_Unbounded_String ("123456789012"));
-               Result : constant Scoped.Head_Bucket_Result :=
+               Result : constant Head_Bucket_Result :=
                  Buckets.Head
                    (HTTP, Origin, "duplicate-bucket", Parameters, Identity,
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Head_Bucket_Exchange_Failed
+               if Result.Kind /= Head_Bucket_Exchange_Failed
                  or else Result.Failure /=
-                   Scoped.Corrupt_Or_Invalid_Response
+                   Corrupt_Or_Invalid_Response
                then
                   raise Program_Error with
                     "HeadBucket accepted duplicate singleton metadata";
@@ -6375,28 +6396,33 @@ procedure S3_HTTP_Socket_Corpus is
                     US.To_Unbounded_String ("123456789012"));
                --  HeadBucket parent, HTTP exchange, and one transport child.
                Set : aliased Operations.Completion_Set (3);
-               Operation : Scoped.Head_Bucket_Operation :=
-                 Scoped.Head_Bucket
+               Operation : Head_Bucket_Operation :=
+                 Head
                    (Set'Access, HTTP'Access, Origin, "restart-bucket",
                     Parameters, Identity, HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.Head_Bucket_Result;
+               Result : Head_Bucket_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.Head_Bucket_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+               Finish (Operation, Result);
+               if Result.Kind /= Head_Bucket_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Bucket_Found
                then
                   raise Program_Error with
                     "composed HeadBucket first result mismatch";
                end if;
-               Scoped.Start_Head_Bucket
-                 (Operation, HTTP'Access, Origin, "restarted-bucket",
-                  Parameters, Identity, HTTP_Client.Deadline_After (5.0));
+               Head
+                 (HTTP'Access,
+                  Origin,
+                  "restarted-bucket",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.Head_Bucket_Response_Available
-                 or else Result.Failure /= Scoped.Authorization_Failed
+               Finish (Operation, Result);
+               if Result.Kind /= Head_Bucket_Response_Available
+                 or else Result.Failure /= Authorization_Failed
                  or else Result.Response.Kind /=
                    Low_Level.Head_Bucket_Rejected
                  or else US.To_String (Result.Response.Error.Request_ID) /=
@@ -6460,17 +6486,17 @@ procedure S3_HTTP_Socket_Corpus is
                declare
                   --  Object, HTTP exchange, and its single transport child.
                   Set : aliased Operations.Completion_Set (3);
-                  Operation : Scoped.Delete_Operation := Scoped.Delete_Object
+                  Operation : Delete_Operation := Delete
                     (Set'Access, HTTP'Access, Origin, "example-bucket",
                      "scoped-delete", Parameters, Identity,
                      HTTP_Client.Deadline_After (5.0));
-                  Result : Scoped.Delete_Result;
+                  Result : Delete_Result;
                begin
                   Operations.Wait_All (Set);
-                  Scoped.Finish (Operation, Result);
-                  if Result.Kind /= Scoped.Delete_Response_Available
-                    or else Result.Disposition /= Scoped.Deletion_Completed
-                    or else Result.Failure /= Scoped.No_Failure
+                  Finish (Operation, Result);
+                  if Result.Kind /= Delete_Response_Available
+                    or else Result.Disposition /= Deletion_Completed
+                    or else Result.Failure /= No_Failure
                     or else Result.Admission /= HTTP_Client.Response_Observed
                     or else Result.Response.Kind /= Low_Level.Object_Deleted
                     or else not Result.Response.Result.Delete_Marker.Is_Set
@@ -6488,14 +6514,14 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Delete_Result := Objects.Delete
+               Result : constant Delete_Result := Objects.Delete
                  (HTTP, Origin, "example-bucket", "scoped-delete-stale",
                   Identity, If_Match => """stale-delete-generation""",
                   Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Delete_Response_Available
-                 or else Result.Disposition /= Scoped.Definitely_Not_Deleted
-                 or else Result.Failure /= Scoped.No_Failure
+               if Result.Kind /= Delete_Response_Available
+                 or else Result.Disposition /= Definitely_Not_Deleted
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /=
                    Low_Level.Delete_Object_Rejected
                  or else Result.Response.Status /= 412
@@ -6506,14 +6532,14 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Delete_Result := Objects.Delete
+               Result : constant Delete_Result := Objects.Delete
                  (HTTP, Origin, "example-bucket", "scoped-delete-conflict",
                   Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Delete_Response_Available
+               if Result.Kind /= Delete_Response_Available
                  or else Result.Disposition /=
-                   Scoped.Deletion_Outcome_Unknown
-                 or else Result.Failure /= Scoped.Unavailable_Or_Retryable
+                   Deletion_Outcome_Unknown
+                 or else Result.Failure /= Unavailable_Or_Retryable
                  or else Result.Response.Kind /=
                    Low_Level.Delete_Object_Rejected
                  or else Result.Response.Status /= 409
@@ -6524,15 +6550,15 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Delete_Result := Objects.Delete
+               Result : constant Delete_Result := Objects.Delete
                  (HTTP, Origin, "example-bucket", "scoped-delete-duplicate",
                   Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Delete_Exchange_Failed
+               if Result.Kind /= Delete_Exchange_Failed
                  or else Result.Disposition /=
-                   Scoped.Deletion_Outcome_Unknown
+                   Deletion_Outcome_Unknown
                  or else Result.Failure /=
-                   Scoped.Corrupt_Or_Invalid_Response
+                   Corrupt_Or_Invalid_Response
                  or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                then
                   raise Program_Error with
@@ -6545,15 +6571,15 @@ procedure S3_HTTP_Socket_Corpus is
             begin
                Stop.Request;
                declare
-                  Result : constant Scoped.Delete_Result := Objects.Delete
+                  Result : constant Delete_Result := Objects.Delete
                     (HTTP, Origin, "example-bucket",
                      "scoped-delete-cancelled", Identity, Timeout => 5.0,
                      Token => Stop'Access);
                begin
-                  if Result.Kind /= Scoped.Delete_Exchange_Failed
+                  if Result.Kind /= Delete_Exchange_Failed
                     or else Result.Disposition /=
-                      Scoped.Deletion_Cancelled_Before_Admission
-                    or else Result.Failure /= Scoped.Cancelled
+                      Deletion_Cancelled_Before_Admission
+                    or else Result.Failure /= Client_API.Cancelled
                     or else Result.Admission /= HTTP_Client.Not_Admitted
                   then
                      raise Program_Error with
@@ -6563,13 +6589,13 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Delete_Result := Objects.Delete
+               Result : constant Delete_Result := Objects.Delete
                  (HTTP, Origin, "example-bucket", "scoped-delete-timeout",
                   Identity, Timeout => 0.0);
             begin
-               if Result.Kind /= Scoped.Delete_Exchange_Failed
-                 or else Result.Disposition /= Scoped.Definitely_Not_Deleted
-                 or else Result.Failure /= Scoped.Timed_Out
+               if Result.Kind /= Delete_Exchange_Failed
+                 or else Result.Disposition /= Definitely_Not_Deleted
+                 or else Result.Failure /= Timed_Out
                  or else Result.Admission /= HTTP_Client.Not_Admitted
                then
                   raise Program_Error with
@@ -6587,7 +6613,7 @@ procedure S3_HTTP_Socket_Corpus is
                begin
                   begin
                      declare
-                        Ignored : constant Scoped.Range_Get_Result :=
+                        Ignored : constant Range_Get_Result :=
                           Objects.Get_Range
                             (HTTP, Origin, "example-bucket",
                              "scoped-range-invalid", Requested, Destination,
@@ -6629,7 +6655,7 @@ procedure S3_HTTP_Socket_Corpus is
             begin
                Stop.Request;
                declare
-                  Result : constant Scoped.Range_Get_Result :=
+                  Result : constant Range_Get_Result :=
                     Objects.Get_Range
                       (HTTP, Origin, "example-bucket",
                        "scoped-range-cancelled",
@@ -6638,8 +6664,8 @@ procedure S3_HTTP_Socket_Corpus is
                        Destination, Identity, """range-generation""",
                        Timeout => 5.0, Token => Stop'Access);
                begin
-                  if Result.Kind /= Scoped.Range_Get_Exchange_Failed
-                    or else Result.Failure /= Scoped.Cancelled
+                  if Result.Kind /= Range_Get_Exchange_Failed
+                    or else Result.Failure /= Client_API.Cancelled
                     or else not Buffers.Has_Buffer (Destination)
                     or else Buffers.Length (Destination) /= 0
                   then
@@ -6650,7 +6676,7 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Range_Get_Result :=
+               Result : constant Range_Get_Result :=
                  Objects.Get_Range
                    (HTTP, Origin, "example-bucket", "scoped-range-timeout",
                     (Kind  => Flyology.Object_Storage.Bounded_Range,
@@ -6658,8 +6684,8 @@ procedure S3_HTTP_Socket_Corpus is
                     Destination, Identity, """range-generation""",
                     Timeout => 0.0);
             begin
-               if Result.Kind /= Scoped.Range_Get_Exchange_Failed
-                 or else Result.Failure /= Scoped.Timed_Out
+               if Result.Kind /= Range_Get_Exchange_Failed
+                 or else Result.Failure /= Timed_Out
                  or else not Buffers.Has_Buffer (Destination)
                  or else Buffers.Length (Destination) /= 0
                then
@@ -6675,13 +6701,13 @@ procedure S3_HTTP_Socket_Corpus is
             begin
                Stop.Request;
                declare
-                  Result : constant Scoped.Head_Result := Objects.Head_Object
+                  Result : constant Head_Result := Objects.Head_Object
                     (HTTP, Origin, "example-bucket", "scoped-head-cancelled",
                      Parameters, Identity, Timeout => 5.0,
                      Token => Stop'Access);
                begin
-                  if Result.Kind /= Scoped.Head_Exchange_Failed
-                    or else Result.Failure /= Scoped.Cancelled
+                  if Result.Kind /= Head_Exchange_Failed
+                    or else Result.Failure /= Client_API.Cancelled
                   then
                      raise Program_Error with
                        "pre-admission HeadObject cancellation mismatch";
@@ -6692,12 +6718,12 @@ procedure S3_HTTP_Socket_Corpus is
             declare
                Parameters : constant Low_Level.Head_Object_Parameters :=
                  (others => <>);
-               Result : constant Scoped.Head_Result := Objects.Head_Object
+               Result : constant Head_Result := Objects.Head_Object
                  (HTTP, Origin, "example-bucket", "scoped-head-timeout",
                   Parameters, Identity, Timeout => 0.0);
             begin
-               if Result.Kind /= Scoped.Head_Exchange_Failed
-                 or else Result.Failure /= Scoped.Timed_Out
+               if Result.Kind /= Head_Exchange_Failed
+                 or else Result.Failure /= Timed_Out
                then
                   raise Program_Error with
                     "pre-admission HeadObject deadline mismatch";
@@ -6763,13 +6789,13 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end;
             declare
-               Result : constant Scoped.List_Buckets_Result :=
+               Result : constant List_Buckets_Result :=
                  Buckets.List_Page
                    (HTTP, Origin, Bucket_Parameters, Identity,
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.List_Buckets_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+               if Result.Kind /= List_Buckets_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Buckets_Listed
                  or else Natural (Result.Response.Result.Buckets.Length) /= 1
                  or else US.To_String
@@ -6781,13 +6807,13 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end;
             declare
-               Result : constant Scoped.List_Buckets_Result :=
+               Result : constant List_Buckets_Result :=
                  Buckets.List_Page
                    (HTTP, Origin, Bucket_Parameters, Identity,
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.List_Buckets_Response_Available
-                 or else Result.Failure /= Scoped.Authorization_Failed
+               if Result.Kind /= List_Buckets_Response_Available
+                 or else Result.Failure /= Authorization_Failed
                  or else Result.Response.Kind /=
                    Low_Level.List_Buckets_Rejected
                  or else US.To_String (Result.Response.Error.Request_ID) /=
@@ -6801,12 +6827,12 @@ procedure S3_HTTP_Socket_Corpus is
             end;
             declare
                procedure Require_Invalid_List_Buckets (Message : String) is
-                  Result : constant Scoped.List_Buckets_Result :=
+                  Result : constant List_Buckets_Result :=
                     Buckets.List_Page
                       (HTTP, Origin, Bucket_Parameters, Identity,
                        Timeout => 5.0);
                begin
-                  if Result.Kind /= Scoped.List_Buckets_Exchange_Failed
+                  if Result.Kind /= List_Buckets_Exchange_Failed
                     or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                     or else Result.Admission /= HTTP_Client.Response_Observed
                   then
@@ -6832,13 +6858,13 @@ procedure S3_HTTP_Socket_Corpus is
             begin
                Stop.Request;
                declare
-                  Result : constant Scoped.List_Buckets_Result :=
+                  Result : constant List_Buckets_Result :=
                     Buckets.List_Page
                       (HTTP, Origin, Bucket_Parameters, Identity,
                        Timeout => 5.0, Token => Stop'Access);
                begin
-                  if Result.Kind /= Scoped.List_Buckets_Exchange_Failed
-                    or else Result.Failure /= Scoped.Cancelled
+                  if Result.Kind /= List_Buckets_Exchange_Failed
+                    or else Result.Failure /= Client_API.Cancelled
                     or else Result.Admission /= HTTP_Client.Not_Admitted
                   then
                      raise Program_Error with
@@ -6893,16 +6919,16 @@ procedure S3_HTTP_Socket_Corpus is
                  Bucket_Parameters;
                --  Listing parent, HTTP exchange, and one transport child.
                Set : aliased Operations.Completion_Set (3);
-               Operation : Scoped.List_Buckets_Operation :=
-                 Scoped.List_Buckets
+               Operation : List_Buckets_Operation :=
+                 List_Page
                    (Set'Access, HTTP'Access, Origin, Page_Parameters,
                     Identity, HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.List_Buckets_Result;
+               Result : List_Buckets_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.List_Buckets_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+               Finish (Operation, Result);
+               if Result.Kind /= List_Buckets_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Buckets_Listed
                  or else not Result.Response.Result.Has_Continuation_Token
                then
@@ -6912,13 +6938,17 @@ procedure S3_HTTP_Socket_Corpus is
                Page_Parameters.Continuation_Token :=
                  Result.Response.Result.Continuation_Token;
                Page_Parameters.Has_Continuation_Token := True;
-               Scoped.Start_List_Buckets
-                 (Operation, HTTP'Access, Origin, Page_Parameters, Identity,
-                  HTTP_Client.Deadline_After (5.0));
+               List_Page
+                 (HTTP'Access,
+                  Origin,
+                  Page_Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.List_Buckets_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+               Finish (Operation, Result);
+               if Result.Kind /= List_Buckets_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Buckets_Listed
                  or else Natural (Result.Response.Result.Buckets.Length) /= 1
                  or else US.To_String
@@ -6985,13 +7015,13 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end;
             declare
-               Result : constant Scoped.List_Objects_Result :=
+               Result : constant List_Objects_Result :=
                  Objects.List_V1_Page
                    (HTTP, Origin, "example-bucket", V1_Parameters,
                     Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.List_Objects_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+               if Result.Kind /= List_Objects_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Listed
                  or else US.To_String
                    (Result.Response.Result.Request_Charged) /= "requester"
@@ -7001,13 +7031,13 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end;
             declare
-               Result : constant Scoped.List_Objects_Result :=
+               Result : constant List_Objects_Result :=
                  Objects.List_V1_Page
                    (HTTP, Origin, "example-bucket", V1_Parameters,
                     Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.List_Objects_Response_Available
-                 or else Result.Failure /= Scoped.Authorization_Failed
+               if Result.Kind /= List_Objects_Response_Available
+                 or else Result.Failure /= Authorization_Failed
                  or else Result.Response.Kind /= Low_Level.Rejected
                  or else US.To_String (Result.Response.Error.Request_ID) /=
                    "v1-scoped-request"
@@ -7025,16 +7055,16 @@ procedure S3_HTTP_Socket_Corpus is
                is
                   --  Listing parent, HTTP exchange, and one transport child.
                   Set : aliased Operations.Completion_Set (3);
-                  Operation : Scoped.List_Objects_Operation :=
-                    Scoped.List_Objects
+                  Operation : List_Objects_Operation :=
+                    List_V1_Page
                       (Set'Access, HTTP'Access, Origin, "example-bucket",
                        Parameters, Identity,
                        HTTP_Client.Deadline_After (5.0));
-                  Result : Scoped.List_Objects_Result;
+                  Result : List_Objects_Result;
                begin
                   Operations.Wait_All (Set);
-                  Scoped.Finish (Operation, Result);
-                  if Result.Kind /= Scoped.List_Objects_Exchange_Failed
+                  Finish (Operation, Result);
+                  if Result.Kind /= List_Objects_Exchange_Failed
                     or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                     or else Result.Admission /= HTTP_Client.Response_Observed
                   then
@@ -7063,13 +7093,13 @@ procedure S3_HTTP_Socket_Corpus is
             begin
                Stop.Request;
                declare
-                  Result : constant Scoped.List_Objects_Result :=
+                  Result : constant List_Objects_Result :=
                     Objects.List_V1_Page
                       (HTTP, Origin, "example-bucket", V1_Parameters,
                        Identity, Timeout => 5.0, Token => Stop'Access);
                begin
-                  if Result.Kind /= Scoped.List_Objects_Exchange_Failed
-                    or else Result.Failure /= Scoped.Cancelled
+                  if Result.Kind /= List_Objects_Exchange_Failed
+                    or else Result.Failure /= Client_API.Cancelled
                     or else Result.Admission /= HTTP_Client.Not_Admitted
                   then
                      raise Program_Error with
@@ -7090,17 +7120,17 @@ procedure S3_HTTP_Socket_Corpus is
                   others       => <>);
                --  Listing parent, HTTP exchange, and one transport child.
                Set : aliased Operations.Completion_Set (3);
-               Operation : Scoped.List_Objects_Operation :=
-                 Scoped.List_Objects
+               Operation : List_Objects_Operation :=
+                 List_V1_Page
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     Page_Parameters, Identity,
                     HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.List_Objects_Result;
+               Result : List_Objects_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.List_Objects_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+               Finish (Operation, Result);
+               if Result.Kind /= List_Objects_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Listed
                  or else not Result.Response.Result.Listing.Is_Truncated
                  or else Natural
@@ -7112,14 +7142,18 @@ procedure S3_HTTP_Socket_Corpus is
                Page_Parameters.Marker :=
                  US.To_Unbounded_String (Special_Key);
                Page_Parameters.Has_Marker := True;
-               Scoped.Start_List_Objects
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  Page_Parameters, Identity,
-                  HTTP_Client.Deadline_After (5.0));
+               List_V1_Page
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  Page_Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.List_Objects_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+               Finish (Operation, Result);
+               if Result.Kind /= List_Objects_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Listed
                  or else Result.Response.Result.Listing.Is_Truncated
                  or else Natural
@@ -7288,13 +7322,13 @@ procedure S3_HTTP_Socket_Corpus is
             end if;
          end;
          declare
-            Result : constant Scoped.List_Objects_V2_Result :=
+            Result : constant List_Objects_V2_Result :=
               Objects.List_Page
                 (HTTP, Origin, "example-bucket", Parameters, Identity,
                  Timeout => 5.0);
          begin
-            if Result.Kind /= Scoped.List_Objects_V2_Response_Available
-              or else Result.Failure /= Scoped.No_Failure
+            if Result.Kind /= List_Objects_V2_Response_Available
+              or else Result.Failure /= No_Failure
               or else Result.Response.Kind /= Low_Level.Listed
               or else Result.Response.Listing.Key_Count /= 0
               or else US.To_String (Result.Response.Request_Charged) /=
@@ -7309,15 +7343,15 @@ procedure S3_HTTP_Socket_Corpus is
               (Message : String) is
                --  Listing parent, HTTP exchange, and one transport child.
                Set : aliased Operations.Completion_Set (3);
-               Operation : Scoped.List_Objects_V2_Operation :=
-                 Scoped.List_Objects_V2
+               Operation : List_Objects_V2_Operation :=
+                 List_Page
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     Parameters, Identity, HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.List_Objects_V2_Result;
+               Result : List_Objects_V2_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.List_Objects_V2_Exchange_Failed
+               Finish (Operation, Result);
+               if Result.Kind /= List_Objects_V2_Exchange_Failed
                  or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                  or else Result.Admission /= HTTP_Client.Response_Observed
                then
@@ -7335,13 +7369,13 @@ procedure S3_HTTP_Socket_Corpus is
          begin
             Stop.Request;
             declare
-               Result : constant Scoped.List_Objects_V2_Result :=
+               Result : constant List_Objects_V2_Result :=
                  Objects.List_Page
                    (HTTP, Origin, "example-bucket", Parameters, Identity,
                     Timeout => 5.0, Token => Stop'Access);
             begin
-               if Result.Kind /= Scoped.List_Objects_V2_Exchange_Failed
-                 or else Result.Failure /= Scoped.Cancelled
+               if Result.Kind /= List_Objects_V2_Exchange_Failed
+                 or else Result.Failure /= Client_API.Cancelled
                  or else Result.Admission /= HTTP_Client.Not_Admitted
                then
                   raise Program_Error with
@@ -7472,17 +7506,17 @@ procedure S3_HTTP_Socket_Corpus is
                others => <>);
             --  Listing parent, HTTP exchange, and one transport child.
             Set : aliased Operations.Completion_Set (3);
-            Operation : Scoped.List_Objects_V2_Operation :=
-              Scoped.List_Objects_V2
+            Operation : List_Objects_V2_Operation :=
+              List_Page
                 (Set'Access, HTTP'Access, Origin, "example-bucket",
                  Page_Parameters, Identity,
                  HTTP_Client.Deadline_After (5.0));
-            Result : Scoped.List_Objects_V2_Result;
+            Result : List_Objects_V2_Result;
          begin
             Operations.Wait_All (Set);
-            Scoped.Finish (Operation, Result);
-            if Result.Kind /= Scoped.List_Objects_V2_Response_Available
-              or else Result.Failure /= Scoped.No_Failure
+            Finish (Operation, Result);
+            if Result.Kind /= List_Objects_V2_Response_Available
+              or else Result.Failure /= No_Failure
               or else Result.Response.Kind /= Low_Level.Listed
               or else not Result.Response.Listing.Is_Truncated
               or else Natural
@@ -7496,14 +7530,18 @@ procedure S3_HTTP_Socket_Corpus is
             Page_Parameters.Continuation_Token :=
               Result.Response.Listing.Next_Continuation_Token;
             Page_Parameters.Has_Continuation_Token := True;
-            Scoped.Start_List_Objects_V2
-              (Operation, HTTP'Access, Origin, "example-bucket",
-               Page_Parameters, Identity,
-               HTTP_Client.Deadline_After (5.0));
+            List_Page
+              (HTTP'Access,
+               Origin,
+               "example-bucket",
+               Page_Parameters,
+               Identity,
+               HTTP_Client.Deadline_After (5.0),
+               Operation => Operation);
             Operations.Wait_All (Set);
-            Scoped.Finish (Operation, Result);
-            if Result.Kind /= Scoped.List_Objects_V2_Response_Available
-              or else Result.Failure /= Scoped.No_Failure
+            Finish (Operation, Result);
+            if Result.Kind /= List_Objects_V2_Response_Available
+              or else Result.Failure /= No_Failure
               or else Result.Response.Kind /= Low_Level.Listed
               or else Result.Response.Listing.Is_Truncated
               or else Natural
@@ -7531,13 +7569,13 @@ procedure S3_HTTP_Socket_Corpus is
             List_Parameters.Expected_Bucket_Owner :=
               US.To_Unbounded_String ("123456789012");
             declare
-               Result : constant Scoped.List_Multipart_Uploads_Result :=
+               Result : constant List_Multipart_Uploads_Result :=
                  Transfers.List_Multipart_Uploads_Page
                    (HTTP, Origin, "example-bucket", List_Parameters,
                     Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Multipart_Uploads_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+               if Result.Kind /= Multipart_Uploads_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /=
                    Low_Level.Multipart_Uploads_Listed
                  or else Natural
@@ -7580,16 +7618,16 @@ procedure S3_HTTP_Socket_Corpus is
             procedure Require_Invalid_Uploads (Message : String) is
                --  Listing parent, HTTP exchange, and one transport child.
                Set : aliased Operations.Completion_Set (3);
-               Operation : Scoped.List_Multipart_Uploads_Operation :=
-                 Scoped.List_Multipart_Uploads
+               Operation : List_Multipart_Uploads_Operation :=
+                 List_Multipart_Uploads_Page
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     Uploads_Parameters, Identity,
                     HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.List_Multipart_Uploads_Result;
+               Result : List_Multipart_Uploads_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.List_Multipart_Uploads_Exchange_Failed
+               Finish (Operation, Result);
+               if Result.Kind /= List_Multipart_Uploads_Exchange_Failed
                  or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                  or else Result.Admission /= HTTP_Client.Response_Observed
                then
@@ -7642,12 +7680,12 @@ procedure S3_HTTP_Socket_Corpus is
                others => <>);
             --  Listing parent, HTTP exchange, and one transport child.
             Set : aliased Operations.Completion_Set (3);
-            Operation : Scoped.List_Multipart_Uploads_Operation :=
-              Scoped.List_Multipart_Uploads
+            Operation : List_Multipart_Uploads_Operation :=
+              List_Multipart_Uploads_Page
                 (Set'Access, HTTP'Access, Origin, "example-bucket",
                  Uploads_Parameters, Identity,
                  HTTP_Client.Deadline_After (5.0));
-            Result : Scoped.List_Multipart_Uploads_Result;
+            Result : List_Multipart_Uploads_Result;
          begin
             declare
                Stop : aliased Flyology.Cancellation.Token;
@@ -7655,14 +7693,14 @@ procedure S3_HTTP_Socket_Corpus is
                Stop.Request;
                declare
                   Cancelled : constant
-                    Scoped.List_Multipart_Uploads_Result :=
+                    List_Multipart_Uploads_Result :=
                       Transfers.List_Multipart_Uploads_Page
                         (HTTP, Origin, "example-bucket", Uploads_Parameters,
                          Identity, Timeout => 5.0, Token => Stop'Access);
                begin
                   if Cancelled.Kind /=
-                    Scoped.List_Multipart_Uploads_Exchange_Failed
-                    or else Cancelled.Failure /= Scoped.Cancelled
+                    List_Multipart_Uploads_Exchange_Failed
+                    or else Cancelled.Failure /= Client_API.Cancelled
                     or else Cancelled.Admission /= HTTP_Client.Not_Admitted
                   then
                      raise Program_Error with
@@ -7672,9 +7710,9 @@ procedure S3_HTTP_Socket_Corpus is
                end;
             end;
             Operations.Wait_All (Set);
-            Scoped.Finish (Operation, Result);
-            if Result.Kind /= Scoped.Multipart_Uploads_Response_Available
-              or else Result.Failure /= Scoped.No_Failure
+            Finish (Operation, Result);
+            if Result.Kind /= Multipart_Uploads_Response_Available
+              or else Result.Failure /= No_Failure
               or else Result.Response.Kind /=
                 Low_Level.Multipart_Uploads_Listed
               or else not Result.Response.Result.Listing.Is_Truncated
@@ -7692,14 +7730,18 @@ procedure S3_HTTP_Socket_Corpus is
               Result.Response.Result.Listing.Next_Key_Marker;
             Uploads_Parameters.Upload_ID_Marker :=
               Result.Response.Result.Listing.Next_Upload_ID_Marker;
-            Scoped.Start_List_Multipart_Uploads
-              (Operation, HTTP'Access, Origin, "example-bucket",
-               Uploads_Parameters, Identity,
-               HTTP_Client.Deadline_After (5.0));
+            List_Multipart_Uploads_Page
+              (HTTP'Access,
+               Origin,
+               "example-bucket",
+               Uploads_Parameters,
+               Identity,
+               HTTP_Client.Deadline_After (5.0),
+               Operation => Operation);
             Operations.Wait_All (Set);
-            Scoped.Finish (Operation, Result);
-            if Result.Kind /= Scoped.Multipart_Uploads_Response_Available
-              or else Result.Failure /= Scoped.No_Failure
+            Finish (Operation, Result);
+            if Result.Kind /= Multipart_Uploads_Response_Available
+              or else Result.Failure /= No_Failure
               or else Result.Response.Kind /=
                 Low_Level.Multipart_Uploads_Listed
               or else Result.Response.Result.Listing.Is_Truncated
@@ -7720,26 +7762,26 @@ procedure S3_HTTP_Socket_Corpus is
                others => <>);
             --  ListParts parent, HTTP exchange, and one transport child.
             Set : aliased Operations.Completion_Set (3);
-            Operation : Scoped.List_Parts_Operation :=
-              Scoped.List_Parts
+            Operation : List_Parts_Operation :=
+              List_Parts_Page
                 (Set'Access, HTTP'Access, Origin, "example-bucket",
                  "paged-parts", Parts_Parameters, Identity,
                  HTTP_Client.Deadline_After (5.0));
-            Result : Scoped.List_Parts_Result;
+            Result : List_Parts_Result;
          begin
             declare
                Stop : aliased Flyology.Cancellation.Token;
             begin
                Stop.Request;
                declare
-                  Cancelled : constant Scoped.List_Parts_Result :=
+                  Cancelled : constant List_Parts_Result :=
                     Transfers.List_Parts_Page
                       (HTTP, Origin, "example-bucket", "paged-parts",
                        Parts_Parameters, Identity, Timeout => 5.0,
                        Token => Stop'Access);
                begin
-                  if Cancelled.Kind /= Scoped.List_Parts_Exchange_Failed
-                    or else Cancelled.Failure /= Scoped.Cancelled
+                  if Cancelled.Kind /= List_Parts_Exchange_Failed
+                    or else Cancelled.Failure /= Client_API.Cancelled
                     or else Cancelled.Admission /= HTTP_Client.Not_Admitted
                   then
                      raise Program_Error with
@@ -7748,9 +7790,9 @@ procedure S3_HTTP_Socket_Corpus is
                end;
             end;
             Operations.Wait_All (Set);
-            Scoped.Finish (Operation, Result);
-            if Result.Kind /= Scoped.List_Parts_Response_Available
-              or else Result.Failure /= Scoped.No_Failure
+            Finish (Operation, Result);
+            if Result.Kind /= List_Parts_Response_Available
+              or else Result.Failure /= No_Failure
               or else Result.Response.Kind /= Low_Level.Parts_Listed
               or else not Result.Response.Result.Listing.Is_Truncated
               or else Natural
@@ -7763,14 +7805,19 @@ procedure S3_HTTP_Socket_Corpus is
             end if;
             Parts_Parameters.Part_Number_Marker :=
               Result.Response.Result.Listing.Next_Part_Number_Marker;
-            Scoped.Start_List_Parts
-              (Operation, HTTP'Access, Origin, "example-bucket",
-               "paged-parts", Parts_Parameters, Identity,
-               HTTP_Client.Deadline_After (5.0));
+            List_Parts_Page
+              (HTTP'Access,
+               Origin,
+               "example-bucket",
+               "paged-parts",
+               Parts_Parameters,
+               Identity,
+               HTTP_Client.Deadline_After (5.0),
+               Operation => Operation);
             Operations.Wait_All (Set);
-            Scoped.Finish (Operation, Result);
-            if Result.Kind /= Scoped.List_Parts_Response_Available
-              or else Result.Failure /= Scoped.No_Failure
+            Finish (Operation, Result);
+            if Result.Kind /= List_Parts_Response_Available
+              or else Result.Failure /= No_Failure
               or else Result.Response.Kind /= Low_Level.Parts_Listed
               or else Result.Response.Result.Listing.Is_Truncated
               or else Natural
@@ -7783,13 +7830,18 @@ procedure S3_HTTP_Socket_Corpus is
             end if;
             Parts_Parameters.Part_Number_Marker := 0;
             for Case_Index in 1 .. 4 loop
-               Scoped.Start_List_Parts
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  "paged-parts", Parts_Parameters, Identity,
-                  HTTP_Client.Deadline_After (5.0));
+               List_Parts_Page
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  "paged-parts",
+                  Parts_Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.List_Parts_Exchange_Failed
+               Finish (Operation, Result);
+               if Result.Kind /= List_Parts_Exchange_Failed
                  or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                  or else Result.Admission /= HTTP_Client.Response_Observed
                then
@@ -7806,13 +7858,18 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end loop;
             for Echo_Index in 1 .. 4 loop
-               Scoped.Start_List_Parts
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  "paged-parts", Parts_Parameters, Identity,
-                  HTTP_Client.Deadline_After (5.0));
+               List_Parts_Page
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  "paged-parts",
+                  Parts_Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.List_Parts_Exchange_Failed
+               Finish (Operation, Result);
+               if Result.Kind /= List_Parts_Exchange_Failed
                  or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                  or else Result.Admission /= HTTP_Client.Response_Observed
                then
@@ -8122,15 +8179,15 @@ procedure S3_HTTP_Socket_Corpus is
             begin
                Stop.Request;
                declare
-                  Cancelled : constant Scoped.Upload_Part_Result :=
+                  Cancelled : constant Upload_Part_Result :=
                     Transfers.Upload_Part
                       (HTTP, Origin, "example-bucket", "upload-cancelled",
                        Upload_Parameters, Payload_Buffer, Identity,
                        Timeout => 5.0, Token => Stop'Access);
                begin
-                  if Cancelled.Kind /= Scoped.Upload_Part_Exchange_Failed
+                  if Cancelled.Kind /= Upload_Part_Exchange_Failed
                     or else Cancelled.Disposition /=
-                      Scoped.Part_Cancelled_Before_Admission
+                      Part_Cancelled_Before_Admission
                     or else Cancelled.Admission /= HTTP_Client.Not_Admitted
                     or else not Buffers.Has_Buffer (Payload_Buffer)
                     or else Buffer_String (Payload_Buffer) /=
@@ -8143,14 +8200,14 @@ procedure S3_HTTP_Socket_Corpus is
                end;
             end;
             declare
-               Result : constant Scoped.Upload_Part_Result :=
+               Result : constant Upload_Part_Result :=
                  Transfers.Upload_Part
                    (HTTP, Origin, "example-bucket", "lost-upload",
                     Upload_Parameters, Payload_Buffer, Identity,
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Upload_Part_Exchange_Failed
-                 or else Result.Disposition /= Scoped.Part_Outcome_Unknown
+               if Result.Kind /= Upload_Part_Exchange_Failed
+                 or else Result.Disposition /= Part_Outcome_Unknown
                  or else Result.Admission /= HTTP_Client.Possibly_Admitted
                  or else not Buffers.Has_Buffer (Payload_Buffer)
                  or else Buffer_String (Payload_Buffer) /= Lost_Upload_Payload
@@ -8211,7 +8268,7 @@ procedure S3_HTTP_Socket_Corpus is
                         Stop.Request;
                         declare
                            Cancelled : constant
-                             Scoped.Multipart_Completion_Result :=
+                             Multipart_Completion_Result :=
                                Transfers.Complete_Multipart_Upload
                                  (HTTP, Origin, "example-bucket",
                                   "lost-upload", "lost-upload-id",
@@ -8219,9 +8276,9 @@ procedure S3_HTTP_Socket_Corpus is
                                   Timeout => 5.0, Token => Stop'Access);
                         begin
                            if Cancelled.Kind /=
-                             Scoped.Complete_Multipart_Exchange_Failed
+                             Complete_Multipart_Exchange_Failed
                              or else Cancelled.Disposition /=
-                               Scoped.
+
                                  Completion_Cancelled_Before_Admission
                              or else Cancelled.Admission /=
                                HTTP_Client.Not_Admitted
@@ -8233,7 +8290,7 @@ procedure S3_HTTP_Socket_Corpus is
                         end;
                         declare
                            Completed : constant
-                             Scoped.Multipart_Completion_Result :=
+                             Multipart_Completion_Result :=
                                Transfers.Complete_Multipart_Upload
                                  (HTTP, Origin, "example-bucket",
                                   "lost-upload", "lost-upload-id",
@@ -8241,9 +8298,9 @@ procedure S3_HTTP_Socket_Corpus is
                                   Timeout => 5.0);
                         begin
                            if Completed.Kind /=
-                             Scoped.Complete_Multipart_Exchange_Failed
+                             Complete_Multipart_Exchange_Failed
                              or else Completed.Disposition /=
-                               Scoped.Completion_Outcome_Unknown
+                               Completion_Outcome_Unknown
                              or else Completed.Admission /=
                                HTTP_Client.Possibly_Admitted
                            then
@@ -8297,16 +8354,16 @@ procedure S3_HTTP_Socket_Corpus is
             begin
                Stop.Request;
                declare
-                  Cancelled : constant Scoped.Multipart_Abort_Result :=
+                  Cancelled : constant Multipart_Abort_Result :=
                     Transfers.Abort_Multipart_Upload
                       (HTTP, Origin, "example-bucket", "lost-abort",
                        "lost-abort-id", Identity, Timeout => 5.0,
                        Token => Stop'Access);
                begin
                   if Cancelled.Kind /=
-                    Scoped.Abort_Multipart_Exchange_Failed
+                    Abort_Multipart_Exchange_Failed
                     or else Cancelled.Disposition /=
-                      Scoped.Abort_Cancelled_Before_Admission
+                      Abort_Cancelled_Before_Admission
                     or else Cancelled.Admission /= HTTP_Client.Not_Admitted
                   then
                      raise Program_Error with
@@ -8316,13 +8373,13 @@ procedure S3_HTTP_Socket_Corpus is
                end;
             end;
             declare
-               Aborted : constant Scoped.Multipart_Abort_Result :=
+               Aborted : constant Multipart_Abort_Result :=
                  Transfers.Abort_Multipart_Upload
                    (HTTP, Origin, "example-bucket", "lost-abort",
                     "lost-abort-id", Identity, Timeout => 5.0);
             begin
-               if Aborted.Kind /= Scoped.Abort_Multipart_Exchange_Failed
-                 or else Aborted.Disposition /= Scoped.Abort_Outcome_Unknown
+               if Aborted.Kind /= Abort_Multipart_Exchange_Failed
+                 or else Aborted.Disposition /= Abort_Outcome_Unknown
                  or else Aborted.Admission /= HTTP_Client.Possibly_Admitted
                then
                   raise Program_Error with
@@ -8335,13 +8392,13 @@ procedure S3_HTTP_Socket_Corpus is
                List_Parameters.Upload_ID :=
                  US.To_Unbounded_String ("lost-abort-id");
                declare
-                  Listed : constant Scoped.List_Parts_Result :=
+                  Listed : constant List_Parts_Result :=
                     Transfers.List_Parts_Page
                       (HTTP, Origin, "example-bucket", "lost-abort",
                        List_Parameters, Identity, Timeout => 5.0);
                begin
-                  if Listed.Kind /= Scoped.List_Parts_Response_Available
-                    or else Listed.Failure /= Scoped.Not_Found
+                  if Listed.Kind /= List_Parts_Response_Available
+                    or else Listed.Failure /= Not_Found
                     or else Listed.Response.Kind /=
                       Low_Level.List_Parts_Rejected
                     or else Listed.Response.Status /= 404
@@ -8373,13 +8430,13 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters.Copy_Source :=
               US.To_Unbounded_String ("source-bucket/source-key");
             declare
-               Result : constant Scoped.Upload_Part_Copy_Result :=
+               Result : constant Upload_Part_Copy_Result :=
                  Transfers.Upload_Part_Copy
                    (HTTP, Origin, "example-bucket", "lost-copy-part",
                     Parameters, Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Upload_Part_Copy_Exchange_Failed
-                 or else Result.Disposition /= Scoped.Outcome_Unknown
+               if Result.Kind /= Upload_Part_Copy_Exchange_Failed
+                 or else Result.Disposition /= Outcome_Unknown
                  or else Result.Admission /= HTTP_Client.Possibly_Admitted
                then
                   raise Program_Error with
@@ -8392,12 +8449,12 @@ procedure S3_HTTP_Socket_Corpus is
                List_Parameters.Upload_ID :=
                  US.To_Unbounded_String ("lost-copy-part-id");
                declare
-                  Listed : constant Scoped.List_Parts_Result :=
+                  Listed : constant List_Parts_Result :=
                     Transfers.List_Parts_Page
                       (HTTP, Origin, "example-bucket", "lost-copy-part",
                        List_Parameters, Identity, Timeout => 5.0);
                begin
-                  if Listed.Kind /= Scoped.List_Parts_Response_Available
+                  if Listed.Kind /= List_Parts_Response_Available
                     or else Listed.Response.Kind /= Low_Level.Parts_Listed
                     or else Natural
                       (Listed.Response.Result.Listing.Parts.Length) /= 1
@@ -8516,22 +8573,22 @@ procedure S3_HTTP_Socket_Corpus is
                declare
                   --  Object, HTTP exchange, and one transport child.
                   Set : aliased Operations.Completion_Set (3);
-                  Operation : Scoped.Conditional_Put_Operation :=
-                    Scoped.Put_Object
+                  Operation : Conditional_Put_Operation :=
+                    Put_Object
                       (Set'Access, HTTP'Access, Origin, "example-bucket",
                        "composable-put-first", Parameters, Payload_Buffer,
                        SigV4.SHA256_Hex (Convenience_Put_Payload), Identity,
                        HTTP_Client.Deadline_After (5.0));
-                  Result : Scoped.Conditional_Put_Result;
+                  Result : Conditional_Put_Result;
                begin
                   if Buffers.Has_Buffer (Payload_Buffer) then
                      raise Program_Error with
                        "composable complete PutObject retained caller token";
                   end if;
                   Operations.Wait_All (Set);
-                  Scoped.Finish (Operation, Result, Payload_Buffer);
-                  if Result.Kind /= Scoped.Put_Response_Available
-                    or else Result.Disposition /= Scoped.Published
+                  Finish (Operation, Result, Payload_Buffer);
+                  if Result.Kind /= Put_Response_Available
+                    or else Result.Disposition /= Published
                     or else Result.Response.Kind /= Low_Level.Object_Put
                     or else US.To_String
                       (Result.Response.Result.Entity_Tag) /=
@@ -8542,15 +8599,21 @@ procedure S3_HTTP_Socket_Corpus is
                        "composable complete PutObject constructor mismatch";
                   end if;
 
-                  Scoped.Start_Put_Object
-                    (Operation, HTTP'Access, Origin, "example-bucket",
-                     "composable-put-second", Parameters, Payload_Buffer,
-                     SigV4.SHA256_Hex (Convenience_Put_Payload), Identity,
-                     HTTP_Client.Deadline_After (5.0));
+                  Put_Object
+                    (HTTP'Access,
+                     Origin,
+                     "example-bucket",
+                     "composable-put-second",
+                     Parameters,
+                     Payload_Buffer,
+                     SigV4.SHA256_Hex (Convenience_Put_Payload),
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Operation => Operation);
                   Operations.Wait_All (Set);
-                  Scoped.Finish (Operation, Result, Payload_Buffer);
-                  if Result.Kind /= Scoped.Put_Response_Available
-                    or else Result.Disposition /= Scoped.Published
+                  Finish (Operation, Result, Payload_Buffer);
+                  if Result.Kind /= Put_Response_Available
+                    or else Result.Disposition /= Published
                     or else US.To_String
                       (Result.Response.Result.Entity_Tag) /=
                         """composable-put-second"""
@@ -8566,15 +8629,15 @@ procedure S3_HTTP_Socket_Corpus is
                end;
 
                declare
-                  Result : constant Scoped.Conditional_Put_Result :=
+                  Result : constant Conditional_Put_Result :=
                     Objects.Put_Object
                       (HTTP, Origin, "example-bucket",
                        "composable-put-mismatch", Payload_Buffer,
                        SigV4.SHA256_Hex (Convenience_Put_Payload), Identity,
                        Options => Options, Timeout => 5.0);
                begin
-                  if Result.Kind /= Scoped.Put_Exchange_Failed
-                    or else Result.Disposition /= Scoped.Outcome_Unknown
+                  if Result.Kind /= Put_Exchange_Failed
+                    or else Result.Disposition /= Outcome_Unknown
                     or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                     or else not Buffers.Has_Buffer (Payload_Buffer)
                     or else Buffer_String (Payload_Buffer) /=
@@ -8735,19 +8798,19 @@ procedure S3_HTTP_Socket_Corpus is
               (Key => US.To_Unbounded_String ("team"),
                Value => US.To_Unbounded_String ("storage"));
             declare
-               Operation : Scoped.Put_Object_Tagging_Operation :=
-                 Scoped.Put_Object_Tagging
+               Operation : Put_Object_Tagging_Operation :=
+                 Put_Tags
                     (Set'Access, HTTP'Access, Origin, "example-bucket",
                     "typed-tagged", Tags, Put_Parameters, Identity,
                     --  Test/reference loopback budget, not production policy.
                     HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.Put_Object_Tagging_Result;
+               Result : Put_Object_Tagging_Result;
             begin
                Flyology.Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.Put_Object_Tagging_Response_Available
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Object_Tagging_Response_Available
                  or else Result.Disposition /=
-                   Scoped.Object_Tag_Mutation_Completed
+                   Object_Tag_Mutation_Completed
                  or else Result.Response.Kind /= Low_Level.Tags_Put
                  or else US.To_String (Result.Response.Result.Version_ID) /=
                    "tag-put-version"
@@ -8755,17 +8818,23 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "typed PutObjectTagging socket result mismatch";
                end if;
-               Scoped.Start_Put_Object_Tagging
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  "typed-tagged", Tags, Put_Parameters, Identity,
+               Put_Tags
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  "typed-tagged",
+                  Tags,
+                  Put_Parameters,
+                  Identity,
                   --  Test/reference loopback budget, not production policy.
-                  HTTP_Client.Deadline_After (5.0));
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Flyology.Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.Put_Object_Tagging_Response_Available
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Object_Tagging_Response_Available
                  or else Result.Disposition /=
-                   Scoped.Object_Tag_Mutation_Definitely_Not_Applied
-                 or else Result.Failure /= Scoped.Invalid_Request
+                   Object_Tag_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Invalid_Request
                  or else Result.Response.Kind /=
                    Low_Level.Object_Tagging_Rejected
                  or else US.To_String (Result.Response.Error.Code) /=
@@ -8776,17 +8845,17 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end;
             declare
-               Operation : Scoped.Get_Object_Tagging_Operation :=
-                 Scoped.Get_Object_Tagging
+               Operation : Get_Object_Tagging_Operation :=
+                 Get_Tags
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     "typed-tagged", Get_Parameters, Identity,
                     --  Test/reference loopback budget, not production policy.
                     HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.Get_Object_Tagging_Result;
+               Result : Get_Object_Tagging_Result;
             begin
                Flyology.Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.Get_Object_Tagging_Response_Available
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Object_Tagging_Response_Available
                  or else Result.Response.Kind /= Low_Level.Tags_Gotten
                  or else Result.Response.Result.Tags /= Tags
                  or else US.To_String
@@ -8796,15 +8865,20 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "typed GetObjectTagging socket result mismatch";
                end if;
-               Scoped.Start_Get_Object_Tagging
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  "typed-tagged", Get_Parameters, Identity,
+               Get_Tags
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  "typed-tagged",
+                  Get_Parameters,
+                  Identity,
                   --  Test/reference loopback budget, not production policy.
-                  HTTP_Client.Deadline_After (5.0));
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Flyology.Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.Get_Object_Tagging_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Object_Tagging_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Tags_Gotten
                  or else Result.Response.Result.Tags /= Tags
                  or else US.To_String
@@ -8816,20 +8890,20 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end;
             declare
-               Operation : Scoped.Delete_Object_Tagging_Operation :=
-                 Scoped.Delete_Object_Tagging
+               Operation : Delete_Object_Tagging_Operation :=
+                 Delete_Tags
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     "typed-tagged", Delete_Parameters, Identity,
                     --  Test/reference loopback budget, not production policy.
                     HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.Delete_Object_Tagging_Result;
+               Result : Delete_Object_Tagging_Result;
             begin
                Flyology.Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
+               Finish (Operation, Result);
                if Result.Kind /=
-                   Scoped.Delete_Object_Tagging_Response_Available
+                   Delete_Object_Tagging_Response_Available
                  or else Result.Disposition /=
-                   Scoped.Object_Tag_Mutation_Completed
+                   Object_Tag_Mutation_Completed
                  or else Result.Response.Kind /= Low_Level.Tags_Deleted
                  or else US.To_String
                    (Result.Response.Result.Version_ID) /=
@@ -8838,18 +8912,23 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "typed DeleteObjectTagging socket result mismatch";
                end if;
-               Scoped.Start_Delete_Object_Tagging
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  "typed-tagged", Delete_Parameters, Identity,
+               Delete_Tags
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  "typed-tagged",
+                  Delete_Parameters,
+                  Identity,
                   --  Test/reference loopback budget, not production policy.
-                  HTTP_Client.Deadline_After (5.0));
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Flyology.Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
+               Finish (Operation, Result);
                if Result.Kind /=
-                   Scoped.Delete_Object_Tagging_Response_Available
+                   Delete_Object_Tagging_Response_Available
                  or else Result.Disposition /=
-                   Scoped.Object_Tag_Mutation_Completed
-                 or else Result.Failure /= Scoped.No_Failure
+                   Object_Tag_Mutation_Completed
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Tags_Deleted
                  or else US.To_String
                    (Result.Response.Result.Version_ID) /=
@@ -9153,13 +9232,13 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters.Checksum_Algorithm :=
               US.To_Unbounded_String ("CRC32");
             declare
-               Result : constant Scoped.Delete_Objects_Result :=
+               Result : constant Delete_Objects_Result :=
                  Objects.Delete_Objects
                    (HTTP, Origin, "example-bucket", Request, Parameters,
                     Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Delete_Objects_Response_Available
-                 or else Result.Disposition /= Scoped.Batch_Processed
+               if Result.Kind /= Delete_Objects_Response_Available
+                 or else Result.Disposition /= Batch_Processed
                  or else Result.Response.Kind /= Low_Level.Objects_Deleted
                  or else Natural
                    (Result.Response.Result.Result.Deleted.Length) /= 1
@@ -9211,14 +9290,14 @@ procedure S3_HTTP_Socket_Corpus is
                   others     => <>));
             Parameters := (others => <>);
             declare
-               Result : constant Scoped.Delete_Objects_Result :=
+               Result : constant Delete_Objects_Result :=
                  Objects.Delete_Objects
                    (HTTP, Origin, "missing-bucket", Request, Parameters,
                     Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Delete_Objects_Response_Available
+               if Result.Kind /= Delete_Objects_Response_Available
                  or else Result.Disposition /=
-                   Scoped.Batch_Definitely_Not_Processed
+                   Batch_Definitely_Not_Processed
                  or else Result.Response.Kind /=
                    Low_Level.Delete_Objects_Rejected
                  or else US.To_String (Result.Response.Error.Code) /=
@@ -9236,15 +9315,15 @@ procedure S3_HTTP_Socket_Corpus is
             begin
                Stop.Request;
                declare
-                  Result : constant Scoped.Delete_Objects_Result :=
+                  Result : constant Delete_Objects_Result :=
                     Objects.Delete_Objects
                       (HTTP, Origin, "example-bucket", Request, Parameters,
                        Identity, Timeout => 5.0, Token => Stop'Access);
                begin
-                  if Result.Kind /= Scoped.Delete_Objects_Exchange_Failed
+                  if Result.Kind /= Delete_Objects_Exchange_Failed
                     or else Result.Disposition /=
-                      Scoped.Batch_Cancelled_Before_Admission
-                    or else Result.Failure /= Scoped.Cancelled
+                      Batch_Cancelled_Before_Admission
+                    or else Result.Failure /= Client_API.Cancelled
                     or else Result.Admission /= HTTP_Client.Not_Admitted
                   then
                      raise Program_Error with
@@ -9255,43 +9334,49 @@ procedure S3_HTTP_Socket_Corpus is
             declare
                --  Batch parent, HTTP exchange, and one transport child.
                Set : aliased Operations.Completion_Set (3);
-               Operation : Scoped.Delete_Objects_Operation :=
-                 Scoped.Delete_Objects
+               Operation : Delete_Objects_Operation :=
+                 Delete_Objects
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     Request, Parameters, Identity,
                     HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.Delete_Objects_Result;
+               Result : Delete_Objects_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.Delete_Objects_Response_Available
-                 or else Result.Disposition /= Scoped.Batch_Processed
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Objects_Response_Available
+                 or else Result.Disposition /= Batch_Processed
                then
                   raise Program_Error with
                     "direct DeleteObjects completion mismatch";
                end if;
-               Scoped.Start_Delete_Objects
-                 (Operation, HTTP'Access, Origin, "example-bucket", Request,
-                  Parameters, Identity, HTTP_Client.Deadline_After (5.0));
+               Delete_Objects
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  Request,
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.Delete_Objects_Response_Available
-                 or else Result.Disposition /= Scoped.Batch_Processed
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Objects_Response_Available
+                 or else Result.Disposition /= Batch_Processed
                then
                   raise Program_Error with
                     "direct DeleteObjects restart mismatch";
                end if;
             end;
             declare
-               Result : constant Scoped.Delete_Objects_Result :=
+               Result : constant Delete_Objects_Result :=
                  Objects.Delete_Objects
                    (HTTP, Origin, "example-bucket", Request, Parameters,
                     Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Delete_Objects_Exchange_Failed
-                 or else Result.Disposition /= Scoped.Batch_Outcome_Unknown
+               if Result.Kind /= Delete_Objects_Exchange_Failed
+                 or else Result.Disposition /= Batch_Outcome_Unknown
                  or else Result.Failure /=
-                   Scoped.Corrupt_Or_Invalid_Response
+                   Corrupt_Or_Invalid_Response
                  or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                then
                   raise Program_Error with
@@ -9394,18 +9479,18 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters.Request_Payer := US.To_Unbounded_String ("requester");
             Parameters.Attributes.Object_Size := True;
             declare
-               Operation : Scoped.Get_Object_Attributes_Operation :=
-                 Scoped.Get_Object_Attributes
+               Operation : Get_Object_Attributes_Operation :=
+                 Get_Attributes
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     "scoped-attributes", Parameters, Identity,
                     HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.Get_Object_Attributes_Result;
+               Result : Get_Object_Attributes_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
+               Finish (Operation, Result);
                if Result.Kind /=
-                 Scoped.Get_Object_Attributes_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+                 Get_Object_Attributes_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /=
                    Low_Level.Object_Attributes_Found
                  or else US.To_String
@@ -9418,15 +9503,20 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
                Parameters.Version_ID := US.Null_Unbounded_String;
                Parameters.Request_Payer := US.Null_Unbounded_String;
-               Scoped.Start_Get_Object_Attributes
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  "scoped-attributes-restart", Parameters, Identity,
-                  HTTP_Client.Deadline_After (5.0));
+               Get_Attributes
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  "scoped-attributes-restart",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
+               Finish (Operation, Result);
                if Result.Kind /=
-                 Scoped.Get_Object_Attributes_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+                 Get_Object_Attributes_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /=
                    Low_Level.Object_Attributes_Found
                then
@@ -9440,15 +9530,15 @@ procedure S3_HTTP_Socket_Corpus is
          begin
             Parameters.Attributes.Object_Size := True;
             declare
-               Result : constant Scoped.Get_Object_Attributes_Result :=
+               Result : constant Get_Object_Attributes_Result :=
                  Objects.Get_Attributes
                    (HTTP, Origin, "example-bucket",
                     "scoped-attributes-error", Parameters, Identity,
                     Timeout => 5.0);
             begin
                if Result.Kind /=
-                 Scoped.Get_Object_Attributes_Response_Available
-                 or else Result.Failure /= Scoped.Authorization_Failed
+                 Get_Object_Attributes_Response_Available
+                 or else Result.Failure /= Authorization_Failed
                  or else Result.Response.Kind /=
                    Low_Level.Get_Object_Attributes_Rejected
                  or else US.To_String (Result.Response.Error.Code) /=
@@ -9469,17 +9559,17 @@ procedure S3_HTTP_Socket_Corpus is
                Parameters.Version_ID := US.To_Unbounded_String (Version_ID);
                Parameters.Attributes.Object_Size := True;
                declare
-                  Operation : Scoped.Get_Object_Attributes_Operation :=
-                    Scoped.Get_Object_Attributes
+                  Operation : Get_Object_Attributes_Operation :=
+                    Get_Attributes
                       (Set'Access, HTTP'Access, Origin, "example-bucket", Key,
                        Parameters, Identity,
                        HTTP_Client.Deadline_After (5.0));
-                  Result : Scoped.Get_Object_Attributes_Result;
+                  Result : Get_Object_Attributes_Result;
                begin
                   Operations.Wait_All (Set);
-                  Scoped.Finish (Operation, Result);
+                  Finish (Operation, Result);
                   if Result.Kind /=
-                    Scoped.Get_Object_Attributes_Exchange_Failed
+                    Get_Object_Attributes_Exchange_Failed
                     or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                     or else Result.Admission /= HTTP_Client.Response_Observed
                   then
@@ -9505,15 +9595,15 @@ procedure S3_HTTP_Socket_Corpus is
             Stop.Request;
             Parameters.Attributes.Object_Size := True;
             declare
-               Result : constant Scoped.Get_Object_Attributes_Result :=
+               Result : constant Get_Object_Attributes_Result :=
                  Objects.Get_Attributes
                    (HTTP, Origin, "example-bucket",
                     "cancelled-attributes", Parameters, Identity,
                     Timeout => 5.0, Token => Stop'Access);
             begin
                if Result.Kind /=
-                 Scoped.Get_Object_Attributes_Exchange_Failed
-                 or else Result.Failure /= Scoped.Cancelled
+                 Get_Object_Attributes_Exchange_Failed
+                 or else Result.Failure /= Client_API.Cancelled
                  or else Result.Admission /= HTTP_Client.Not_Admitted
                then
                   raise Program_Error with
@@ -10127,15 +10217,15 @@ procedure S3_HTTP_Socket_Corpus is
               US.To_Unbounded_String ("source-bucket/source-key");
             Parameters.Request_Payer := US.To_Unbounded_String ("requester");
             declare
-               Result : constant Scoped.Upload_Part_Copy_Result :=
+               Result : constant Upload_Part_Copy_Result :=
                  Transfers.Upload_Part_Copy
                    (HTTP, Origin, "example-bucket", "copy-part-sync",
                     Parameters, Identity, Timeout => 5.0);
             begin
                if Result.Kind /=
-                 Scoped.Upload_Part_Copy_Response_Available
-                 or else Result.Disposition /= Scoped.Published
-                 or else Result.Failure /= Scoped.No_Failure
+                 Upload_Part_Copy_Response_Available
+                 or else Result.Disposition /= Published
+                 or else Result.Failure /= No_Failure
                  or else Result.Admission /= HTTP_Client.Response_Observed
                  or else Result.Response.Kind /= Low_Level.Part_Copied
                  or else Result.Response.Status /= 200
@@ -10158,16 +10248,16 @@ procedure S3_HTTP_Socket_Corpus is
             begin
                Stop.Request;
                declare
-                  Result : constant Scoped.Upload_Part_Copy_Result :=
+                  Result : constant Upload_Part_Copy_Result :=
                     Transfers.Upload_Part_Copy
                       (HTTP, Origin, "example-bucket", "copy-part-cancelled",
                        Parameters, Identity, Timeout => 5.0,
                        Token => Stop'Access);
                begin
-                  if Result.Kind /= Scoped.Upload_Part_Copy_Exchange_Failed
+                  if Result.Kind /= Upload_Part_Copy_Exchange_Failed
                     or else Result.Disposition /=
-                      Scoped.Cancelled_Before_Publication
-                    or else Result.Failure /= Scoped.Cancelled
+                      Cancelled_Before_Publication
+                    or else Result.Failure /= Client_API.Cancelled
                     or else Result.Admission /= HTTP_Client.Not_Admitted
                   then
                      raise Program_Error with
@@ -10180,47 +10270,57 @@ procedure S3_HTTP_Socket_Corpus is
             declare
                --  Copy-part parent, HTTP exchange, and one transport child.
                Set : aliased Operations.Completion_Set (3);
-               Operation : Scoped.Upload_Part_Copy_Operation :=
-                 Scoped.Upload_Part_Copy
+               Operation : Upload_Part_Copy_Operation :=
+                 Upload_Part_Copy
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     "copy-part-restart-one", Parameters, Identity,
                     HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.Upload_Part_Copy_Result;
+               Result : Upload_Part_Copy_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
+               Finish (Operation, Result);
                if Result.Kind /=
-                 Scoped.Upload_Part_Copy_Response_Available
-                 or else Result.Disposition /= Scoped.Published
+                 Upload_Part_Copy_Response_Available
+                 or else Result.Disposition /= Published
                then
                   raise Program_Error with
                     "direct UploadPartCopy first completion mismatch";
                end if;
-               Scoped.Start_Upload_Part_Copy
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  "copy-part-restart-two", Parameters, Identity,
-                  HTTP_Client.Deadline_After (5.0));
+               Upload_Part_Copy
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  "copy-part-restart-two",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
+               Finish (Operation, Result);
                if Result.Kind /=
-                 Scoped.Upload_Part_Copy_Response_Available
-                 or else Result.Disposition /= Scoped.Published
+                 Upload_Part_Copy_Response_Available
+                 or else Result.Disposition /= Published
                then
                   raise Program_Error with
                     "direct UploadPartCopy restart mismatch";
                end if;
 
                for Case_Index in 1 .. 2 loop
-                  Scoped.Start_Upload_Part_Copy
-                    (Operation, HTTP'Access, Origin, "example-bucket",
+                  Upload_Part_Copy
+                    (HTTP'Access,
+                     Origin,
+                     "example-bucket",
                      (if Case_Index = 1
                       then "copy-part-invalid-duplicate"
                       else "copy-part-invalid-charged"),
-                     Parameters, Identity, HTTP_Client.Deadline_After (5.0));
+                     Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Operation => Operation);
                   Operations.Wait_All (Set);
-                  Scoped.Finish (Operation, Result);
-                  if Result.Kind /= Scoped.Upload_Part_Copy_Exchange_Failed
-                    or else Result.Disposition /= Scoped.Outcome_Unknown
+                  Finish (Operation, Result);
+                  if Result.Kind /= Upload_Part_Copy_Exchange_Failed
+                    or else Result.Disposition /= Outcome_Unknown
                     or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                     or else Result.Admission /= HTTP_Client.Response_Observed
                   then
@@ -10231,16 +10331,16 @@ procedure S3_HTTP_Socket_Corpus is
             end;
 
             declare
-               Result : constant Scoped.Upload_Part_Copy_Result :=
+               Result : constant Upload_Part_Copy_Result :=
                  Transfers.Upload_Part_Copy
                    (HTTP, Origin, "example-bucket", "copy-part-rejected",
                     Parameters, Identity, Timeout => 5.0);
             begin
                if Result.Kind /=
-                 Scoped.Upload_Part_Copy_Response_Available
+                 Upload_Part_Copy_Response_Available
                  or else Result.Disposition /=
-                   Scoped.Definitely_Not_Published
-                 or else Result.Failure /= Scoped.Authorization_Failed
+                   Definitely_Not_Published
+                 or else Result.Failure /= Authorization_Failed
                  or else Result.Admission /= HTTP_Client.Response_Observed
                  or else Result.Response.Kind /= Low_Level.Copy_Part_Rejected
                  or else Result.Response.Status /= 403
@@ -10259,15 +10359,15 @@ procedure S3_HTTP_Socket_Corpus is
               US.To_Unbounded_String ("""source-etag""");
             Options.Request_Payer := US.To_Unbounded_String ("requester");
             declare
-               Result : constant Scoped.Copy_Result :=
+               Result : constant Copy_Result :=
                  Transfers.Copy_Object
                    (HTTP, Origin, "source-bucket", "source key+%25",
                     "example-bucket", "copied object+%25", Options, Identity,
                     Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Copy_Response_Available
-                 or else Result.Disposition /= Scoped.Published
-                 or else Result.Failure /= Scoped.No_Failure
+               if Result.Kind /= Copy_Response_Available
+                 or else Result.Disposition /= Published
+                 or else Result.Failure /= No_Failure
                  or else Result.Admission /= HTTP_Client.Response_Observed
                  or else Result.Response.Kind /= Low_Level.Object_Copied
                  or else Result.Response.Status /= 200
@@ -10296,15 +10396,15 @@ procedure S3_HTTP_Socket_Corpus is
          begin
             Stop.Request;
             declare
-               Result : constant Scoped.Copy_Result := Transfers.Copy_Object
+               Result : constant Copy_Result := Transfers.Copy_Object
                  (HTTP, Origin, "source-bucket", "source-key",
                   "example-bucket", "copy-cancelled", Options, Identity,
                   Timeout => 5.0, Token => Stop'Access);
             begin
-               if Result.Kind /= Scoped.Copy_Exchange_Failed
+               if Result.Kind /= Copy_Exchange_Failed
                  or else Result.Disposition /=
-                   Scoped.Cancelled_Before_Publication
-                 or else Result.Failure /= Scoped.Cancelled
+                   Cancelled_Before_Publication
+                 or else Result.Failure /= Client_API.Cancelled
                  or else Result.Admission /= HTTP_Client.Not_Admitted
                then
                   raise Program_Error with
@@ -10316,45 +10416,58 @@ procedure S3_HTTP_Socket_Corpus is
             Options : Low_Level.Copy_Object_Parameters;
             --  Copy parent, HTTP exchange, and one transport child.
             Set : aliased Operations.Completion_Set (3);
-            Operation : Scoped.Copy_Operation := Scoped.Copy_Object
+            Operation : Copy_Operation := Copy_Object
               (Set'Access, HTTP'Access, Origin, "source-bucket", "source-key",
                "example-bucket", "copy-restart-one", Options, Identity,
                HTTP_Client.Deadline_After (5.0));
-            Result : Scoped.Copy_Result;
+            Result : Copy_Result;
          begin
             Operations.Wait_All (Set);
-            Scoped.Finish (Operation, Result);
-            if Result.Kind /= Scoped.Copy_Response_Available
-              or else Result.Disposition /= Scoped.Published
+            Finish (Operation, Result);
+            if Result.Kind /= Copy_Response_Available
+              or else Result.Disposition /= Published
             then
                raise Program_Error with
                  "direct CopyObject first completion mismatch";
             end if;
-            Scoped.Start_Copy_Object
-              (Operation, HTTP'Access, Origin, "source-bucket", "source-key",
-               "example-bucket", "copy-restart-two", Options, Identity,
-               HTTP_Client.Deadline_After (5.0));
+            Copy_Object
+              (HTTP'Access,
+               Origin,
+               "source-bucket",
+               "source-key",
+               "example-bucket",
+               "copy-restart-two",
+               Options,
+               Identity,
+               HTTP_Client.Deadline_After (5.0),
+               Operation => Operation);
             Operations.Wait_All (Set);
-            Scoped.Finish (Operation, Result);
-            if Result.Kind /= Scoped.Copy_Response_Available
-              or else Result.Disposition /= Scoped.Published
+            Finish (Operation, Result);
+            if Result.Kind /= Copy_Response_Available
+              or else Result.Disposition /= Published
             then
                raise Program_Error with
                  "direct CopyObject restart mismatch";
             end if;
             for Case_Index in 1 .. 3 loop
-               Scoped.Start_Copy_Object
-                 (Operation, HTTP'Access, Origin, "source-bucket",
-                  "source-key", "example-bucket",
+               Copy_Object
+                 (HTTP'Access,
+                  Origin,
+                  "source-bucket",
+                  "source-key",
+                  "example-bucket",
                   (case Case_Index is
                      when 1 => "copy-invalid-duplicate",
                      when 2 => "copy-invalid-empty",
                      when others => "copy-invalid-charged"),
-                  Options, Identity, HTTP_Client.Deadline_After (5.0));
+                  Options,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
-               if Result.Kind /= Scoped.Copy_Exchange_Failed
-                 or else Result.Disposition /= Scoped.Outcome_Unknown
+               Finish (Operation, Result);
+               if Result.Kind /= Copy_Exchange_Failed
+                 or else Result.Disposition /= Outcome_Unknown
                  or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                  or else Result.Admission /= HTTP_Client.Response_Observed
                then
@@ -10954,21 +11067,21 @@ procedure S3_HTTP_Socket_Corpus is
                Put_Parameters : constant
                  Low_Level.Put_Bucket_Tagging_Parameters :=
                  (others => <>);
-               Operation : Scoped.Put_Bucket_Tagging_Operation :=
-                 Scoped.Put_Bucket_Tagging
+               Operation : Put_Bucket_Tagging_Operation :=
+                 Put_Tags
                    (Set'Access, HTTP'Access, Origin, "example-bucket", Value,
                     Put_Parameters, Identity,
                     --  Test/reference loopback budget, not production policy.
                     HTTP_Client.Deadline_After (5.0));
-               Put_Result : Scoped.Put_Bucket_Tagging_Result;
+               Put_Result : Put_Bucket_Tagging_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Put_Result);
+               Finish (Operation, Put_Result);
                if Put_Result.Kind /=
-                   Scoped.Put_Bucket_Tagging_Response_Available
+                   Put_Bucket_Tagging_Response_Available
                  or else Put_Result.Disposition /=
-                   Scoped.Bucket_Tag_Mutation_Completed
-                 or else Put_Result.Failure /= Scoped.No_Failure
+                   Bucket_Tag_Mutation_Completed
+                 or else Put_Result.Failure /= No_Failure
                  or else Put_Result.Admission /=
                    HTTP_Client.Response_Observed
                  or else Put_Result.Response.Kind /=
@@ -10977,18 +11090,23 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "scoped PutBucketTagging socket mismatch";
                end if;
-               Scoped.Start_Put_Bucket_Tagging
-                 (Operation, HTTP'Access, Origin, "example-bucket", Value,
-                  Put_Parameters, Identity,
+               Put_Tags
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  Value,
+                  Put_Parameters,
+                  Identity,
                   --  Test/reference loopback budget, not production policy.
-                  HTTP_Client.Deadline_After (5.0));
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Put_Result);
+               Finish (Operation, Put_Result);
                if Put_Result.Kind /=
-                   Scoped.Put_Bucket_Tagging_Response_Available
+                   Put_Bucket_Tagging_Response_Available
                  or else Put_Result.Disposition /=
-                   Scoped.Bucket_Tag_Mutation_Definitely_Not_Applied
-                 or else Put_Result.Failure /= Scoped.Invalid_Request
+                   Bucket_Tag_Mutation_Definitely_Not_Applied
+                 or else Put_Result.Failure /= Invalid_Request
                  or else Put_Result.Admission /=
                    HTTP_Client.Response_Observed
                  or else Put_Result.Response.Kind /=
@@ -11005,19 +11123,19 @@ procedure S3_HTTP_Socket_Corpus is
                Parameters : constant
                  Low_Level.Get_Bucket_Tagging_Parameters :=
                  (others => <>);
-               Operation : Scoped.Get_Bucket_Tagging_Operation :=
-                 Scoped.Get_Bucket_Tagging
+               Operation : Get_Bucket_Tagging_Operation :=
+                 Get_Tags
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     Parameters, Identity,
                     --  Test/reference loopback budget, not production policy.
                     HTTP_Client.Deadline_After (5.0));
-               Get_Result : Scoped.Get_Bucket_Tagging_Result;
+               Get_Result : Get_Bucket_Tagging_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Get_Result);
+               Finish (Operation, Get_Result);
                if Get_Result.Kind /=
-                   Scoped.Get_Bucket_Tagging_Response_Available
-                 or else Get_Result.Failure /= Scoped.No_Failure
+                   Get_Bucket_Tagging_Response_Available
+                 or else Get_Result.Failure /= No_Failure
                  or else Get_Result.Admission /=
                    HTTP_Client.Response_Observed
                  or else Get_Result.Response.Kind /=
@@ -11027,16 +11145,20 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "scoped GetBucketTagging socket mismatch";
                end if;
-               Scoped.Start_Get_Bucket_Tagging
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  Parameters, Identity,
+               Get_Tags
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  Parameters,
+                  Identity,
                   --  Test/reference loopback budget, not production policy.
-                  HTTP_Client.Deadline_After (5.0));
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Get_Result);
+               Finish (Operation, Get_Result);
                if Get_Result.Kind /=
-                   Scoped.Get_Bucket_Tagging_Response_Available
-                 or else Get_Result.Failure /= Scoped.No_Failure
+                   Get_Bucket_Tagging_Response_Available
+                 or else Get_Result.Failure /= No_Failure
                  or else Get_Result.Response.Kind /=
                    Low_Level.Bucket_Tags_Found
                  or else Get_Result.Response.Result.Value /= Value
@@ -11050,21 +11172,21 @@ procedure S3_HTTP_Socket_Corpus is
                Parameters : constant
                  Low_Level.Delete_Bucket_Tagging_Parameters :=
                  (others => <>);
-               Operation : Scoped.Delete_Bucket_Tagging_Operation :=
-                 Scoped.Delete_Bucket_Tagging
+               Operation : Delete_Bucket_Tagging_Operation :=
+                 Delete_Tags
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     Parameters, Identity,
                     --  Test/reference loopback budget, not production policy.
                     HTTP_Client.Deadline_After (5.0));
-               Delete_Result : Scoped.Delete_Bucket_Tagging_Result;
+               Delete_Result : Delete_Bucket_Tagging_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Delete_Result);
+               Finish (Operation, Delete_Result);
                if Delete_Result.Kind /=
-                   Scoped.Delete_Bucket_Tagging_Response_Available
+                   Delete_Bucket_Tagging_Response_Available
                  or else Delete_Result.Disposition /=
-                   Scoped.Bucket_Tag_Mutation_Completed
-                 or else Delete_Result.Failure /= Scoped.No_Failure
+                   Bucket_Tag_Mutation_Completed
+                 or else Delete_Result.Failure /= No_Failure
                  or else Delete_Result.Admission /=
                    HTTP_Client.Response_Observed
                  or else Delete_Result.Response.Kind /=
@@ -11073,18 +11195,22 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "scoped DeleteBucketTagging socket mismatch";
                end if;
-               Scoped.Start_Delete_Bucket_Tagging
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  Parameters, Identity,
+               Delete_Tags
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  Parameters,
+                  Identity,
                   --  Test/reference loopback budget, not production policy.
-                  HTTP_Client.Deadline_After (5.0));
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Delete_Result);
+               Finish (Operation, Delete_Result);
                if Delete_Result.Kind /=
-                   Scoped.Delete_Bucket_Tagging_Response_Available
+                   Delete_Bucket_Tagging_Response_Available
                  or else Delete_Result.Disposition /=
-                   Scoped.Bucket_Tag_Mutation_Completed
-                 or else Delete_Result.Failure /= Scoped.No_Failure
+                   Bucket_Tag_Mutation_Completed
+                 or else Delete_Result.Failure /= No_Failure
                  or else Delete_Result.Response.Kind /=
                    Low_Level.Bucket_Tags_Deleted
                then
@@ -11116,20 +11242,20 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters : Low_Level.Create_Multipart_Parameters;
             --  Multipart parent, HTTP exchange, and one transport child.
             Set : aliased Operations.Completion_Set (3);
-            Operation : Scoped.Create_Multipart_Operation :=
-              Scoped.Create_Multipart_Upload
+            Operation : Create_Multipart_Operation :=
+              Create_Multipart_Upload
                 (Set'Access, HTTP'Access, Origin, "example-bucket",
                  "scoped-create", Parameters, Identity,
                  --  Test/reference value: reuse this corpus's established
                  --  loopback deadline; it does not set production policy.
                  HTTP_Client.Deadline_After (5.0));
-            Result : Scoped.Create_Multipart_Result;
+            Result : Create_Multipart_Result;
          begin
             Operations.Wait_All (Set);
-            Scoped.Finish (Operation, Result);
-            if Result.Kind /= Scoped.Create_Multipart_Response_Available
-              or else Result.Disposition /= Scoped.Multipart_Upload_Created
-              or else Result.Failure /= Scoped.No_Failure
+            Finish (Operation, Result);
+            if Result.Kind /= Create_Multipart_Response_Available
+              or else Result.Disposition /= Multipart_Upload_Created
+              or else Result.Failure /= No_Failure
               or else Result.Admission /= HTTP_Client.Response_Observed
               or else Result.Response.Kind /= Low_Level.Created
               or else US.To_String (Result.Response.Result.Upload_ID) /=
@@ -11147,16 +11273,16 @@ procedure S3_HTTP_Socket_Corpus is
             declare
                --  Test/reference value: retain the established five-second
                --  loopback budget; this does not affect the public default.
-               Result : constant Scoped.Create_Multipart_Result :=
+               Result : constant Create_Multipart_Result :=
                  Transfers.Create_Multipart_Upload
                    (HTTP, Origin, "example-bucket", "create-cancelled",
                     Parameters, Identity, Timeout => 5.0,
                     Token => Stop'Access);
             begin
-               if Result.Kind /= Scoped.Create_Multipart_Exchange_Failed
+               if Result.Kind /= Create_Multipart_Exchange_Failed
                  or else Result.Disposition /=
-                   Scoped.Creation_Cancelled_Before_Admission
-                 or else Result.Failure /= Scoped.Cancelled
+                   Creation_Cancelled_Before_Admission
+                 or else Result.Failure /= Client_API.Cancelled
                  or else Result.Admission /= HTTP_Client.Not_Admitted
                then
                   raise Program_Error with
@@ -11168,13 +11294,13 @@ procedure S3_HTTP_Socket_Corpus is
          declare
             Create_Parameters : Low_Level.Create_Multipart_Parameters;
             List_Parameters : Low_Level.List_Multipart_Uploads_Parameters;
-            Result : constant Scoped.Create_Multipart_Result :=
+            Result : constant Create_Multipart_Result :=
               Transfers.Create_Multipart_Upload
                 (HTTP, Origin, "example-bucket", "create-lost",
                  Create_Parameters, Identity, Timeout => 5.0);
          begin
-            if Result.Kind /= Scoped.Create_Multipart_Exchange_Failed
-              or else Result.Disposition /= Scoped.Creation_Outcome_Unknown
+            if Result.Kind /= Create_Multipart_Exchange_Failed
+              or else Result.Disposition /= Creation_Outcome_Unknown
               or else Result.Admission /= HTTP_Client.Possibly_Admitted
             then
                raise Program_Error with
@@ -11217,13 +11343,13 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters.Checksum_Type :=
               US.To_Unbounded_String ("FULL_OBJECT");
             declare
-               Result : constant Scoped.Create_Multipart_Result :=
+               Result : constant Create_Multipart_Result :=
                  Transfers.Create_Multipart_Upload
                    (HTTP, Origin, "example-bucket", "object key", Parameters,
                     Identity, Timeout => 5.0);
             begin
-               if Result.Kind /= Scoped.Create_Multipart_Response_Available
-                 or else Result.Disposition /= Scoped.Multipart_Upload_Created
+               if Result.Kind /= Create_Multipart_Response_Available
+                 or else Result.Disposition /= Multipart_Upload_Created
                  or else Result.Response.Kind /= Low_Level.Created
                  or else US.To_String (Result.Response.Result.Upload_ID) /=
                    "socket-upload"
@@ -11330,18 +11456,18 @@ procedure S3_HTTP_Socket_Corpus is
                Parameters : Low_Level.Complete_Multipart_Parameters;
                --  Completion parent, HTTP exchange, and one transport child.
                Set : aliased Operations.Completion_Set (3);
-               Operation : Scoped.Complete_Multipart_Operation :=
-                 Scoped.Complete_Multipart_Upload
+               Operation : Complete_Multipart_Operation :=
+                 Complete_Multipart_Upload
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     "object key", "socket-upload", Completion, Parameters,
                     Identity, HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.Multipart_Completion_Result;
+               Result : Multipart_Completion_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
+               Finish (Operation, Result);
                if Result.Kind /=
-                 Scoped.Complete_Multipart_Response_Available
-                 or else Result.Disposition /= Scoped.Multipart_Completed
+                 Complete_Multipart_Response_Available
+                 or else Result.Disposition /= Multipart_Completed
                  or else Result.Response.Kind /= Low_Level.Completed
                  or else US.To_String (Result.Response.Result.Entity_Tag) /=
                    """whole"""
@@ -11349,16 +11475,23 @@ procedure S3_HTTP_Socket_Corpus is
                   raise Program_Error with
                     "composed CompleteMultipartUpload result mismatch";
                end if;
-               Scoped.Start_Complete_Multipart_Upload
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  "object key", "socket-upload", Completion, Parameters,
-                  Identity, HTTP_Client.Deadline_After (5.0));
+               Complete_Multipart_Upload
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  "object key",
+                  "socket-upload",
+                  Completion,
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
+               Finish (Operation, Result);
                if Result.Kind /=
-                 Scoped.Complete_Multipart_Response_Available
+                 Complete_Multipart_Response_Available
                  or else Result.Disposition /=
-                   Scoped.Completion_Outcome_Unknown
+                   Completion_Outcome_Unknown
                  or else Result.Response.Kind /= Low_Level.Complete_Rejected
                  or else US.To_String (Result.Response.Error.Code) /=
                    "InternalError"
@@ -11371,16 +11504,16 @@ procedure S3_HTTP_Socket_Corpus is
                begin
                   Stop.Request;
                   declare
-                     Cancelled : constant Scoped.Multipart_Abort_Result :=
+                     Cancelled : constant Multipart_Abort_Result :=
                        Transfers.Abort_Multipart_Upload
                          (HTTP, Origin, "example-bucket", "object key",
                           "socket-upload", Identity, Timeout => 5.0,
                           Token => Stop'Access);
                   begin
                      if Cancelled.Kind /=
-                       Scoped.Abort_Multipart_Exchange_Failed
+                       Abort_Multipart_Exchange_Failed
                        or else Cancelled.Disposition /=
-                         Scoped.Abort_Cancelled_Before_Admission
+                         Abort_Cancelled_Before_Admission
                        or else Cancelled.Admission /= HTTP_Client.Not_Admitted
                      then
                         raise Program_Error with
@@ -11395,35 +11528,41 @@ procedure S3_HTTP_Socket_Corpus is
                       (others => US.Null_Unbounded_String);
                   --  Abort parent, HTTP exchange, and one transport child.
                   Abort_Set : aliased Operations.Completion_Set (3);
-                  Abort_Operation : Scoped.Abort_Multipart_Operation :=
-                    Scoped.Abort_Multipart_Upload
+                  Abort_Operation : Abort_Multipart_Operation :=
+                    Abort_Multipart_Upload
                       (Abort_Set'Access, HTTP'Access, Origin,
                        "example-bucket", "object key", "socket-upload",
                        Abort_Parameters, Identity,
                        HTTP_Client.Deadline_After (5.0));
-                  Abort_Result : Scoped.Multipart_Abort_Result;
+                  Abort_Result : Multipart_Abort_Result;
                begin
                   Operations.Wait_All (Abort_Set);
-                  Scoped.Finish (Abort_Operation, Abort_Result);
+                  Finish (Abort_Operation, Abort_Result);
                   if Abort_Result.Kind /=
-                    Scoped.Abort_Multipart_Response_Available
+                    Abort_Multipart_Response_Available
                     or else Abort_Result.Disposition /=
-                      Scoped.Multipart_Aborted
+                      Multipart_Aborted
                     or else Abort_Result.Response.Kind /= Low_Level.Aborted
                   then
                      raise Program_Error with
                        "composed AbortMultipartUpload result mismatch";
                   end if;
-                  Scoped.Start_Abort_Multipart_Upload
-                    (Abort_Operation, HTTP'Access, Origin, "example-bucket",
-                     "object key", "socket-upload", Abort_Parameters,
-                     Identity, HTTP_Client.Deadline_After (5.0));
+                  Abort_Multipart_Upload
+                    (HTTP'Access,
+                     Origin,
+                     "example-bucket",
+                     "object key",
+                     "socket-upload",
+                     Abort_Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Operation => Abort_Operation);
                   Operations.Wait_All (Abort_Set);
-                  Scoped.Finish (Abort_Operation, Abort_Result);
+                  Finish (Abort_Operation, Abort_Result);
                   if Abort_Result.Kind /=
-                    Scoped.Abort_Multipart_Response_Available
+                    Abort_Multipart_Response_Available
                     or else Abort_Result.Disposition /=
-                      Scoped.Abort_Outcome_Unknown
+                      Abort_Outcome_Unknown
                     or else Abort_Result.Response.Kind /=
                       Low_Level.Abort_Rejected
                     or else US.To_String
@@ -11432,16 +11571,22 @@ procedure S3_HTTP_Socket_Corpus is
                      raise Program_Error with
                        "composed AbortMultipartUpload rejection mismatch";
                   end if;
-                  Scoped.Start_Abort_Multipart_Upload
-                    (Abort_Operation, HTTP'Access, Origin, "example-bucket",
-                     "object key", "socket-upload", Abort_Parameters,
-                     Identity, HTTP_Client.Deadline_After (5.0));
+                  Abort_Multipart_Upload
+                    (HTTP'Access,
+                     Origin,
+                     "example-bucket",
+                     "object key",
+                     "socket-upload",
+                     Abort_Parameters,
+                     Identity,
+                     HTTP_Client.Deadline_After (5.0),
+                     Operation => Abort_Operation);
                   Operations.Wait_All (Abort_Set);
-                  Scoped.Finish (Abort_Operation, Abort_Result);
+                  Finish (Abort_Operation, Abort_Result);
                   if Abort_Result.Kind /=
-                    Scoped.Abort_Multipart_Exchange_Failed
+                    Abort_Multipart_Exchange_Failed
                     or else Abort_Result.Disposition /=
-                      Scoped.Abort_Outcome_Unknown
+                      Abort_Outcome_Unknown
                     or else Abort_Result.HTTP_Result /=
                       HTTP_Client.Response_Invalid
                     or else Abort_Result.Admission /=
@@ -11713,14 +11858,14 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters.Has_Max_Keys := True;
             Parameters.Request_Payer := US.To_Unbounded_String ("requester");
             declare
-               Result : constant Scoped.List_Object_Versions_Result :=
+               Result : constant List_Object_Versions_Result :=
                  Objects.List_Versions_Page
                    (HTTP, Origin, "example-bucket", Parameters, Identity,
                     Timeout => 5.0);
             begin
                if Result.Kind /=
-                 Scoped.List_Object_Versions_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+                 List_Object_Versions_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Listed
                  or else US.To_String
                    (Result.Response.Result.Request_Charged) /= "requester"
@@ -11738,14 +11883,14 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters.Max_Keys := 1;
             Parameters.Has_Max_Keys := True;
             declare
-               Result : constant Scoped.List_Object_Versions_Result :=
+               Result : constant List_Object_Versions_Result :=
                  Objects.List_Versions_Page
                    (HTTP, Origin, "example-bucket", Parameters, Identity,
                     Timeout => 5.0);
             begin
                if Result.Kind /=
-                 Scoped.List_Object_Versions_Response_Available
-                 or else Result.Failure /= Scoped.Authorization_Failed
+                 List_Object_Versions_Response_Available
+                 or else Result.Failure /= Authorization_Failed
                  or else Result.Response.Kind /= Low_Level.Rejected
                  or else US.To_String (Result.Response.Error.Code) /=
                    "AccessDenied"
@@ -11767,17 +11912,17 @@ procedure S3_HTTP_Socket_Corpus is
                Parameters.Max_Keys := 1;
                Parameters.Has_Max_Keys := True;
                declare
-                  Operation : Scoped.List_Object_Versions_Operation :=
-                    Scoped.List_Object_Versions
+                  Operation : List_Object_Versions_Operation :=
+                    List_Versions_Page
                       (Set'Access, HTTP'Access, Origin, "example-bucket",
                        Parameters, Identity,
                        HTTP_Client.Deadline_After (5.0));
-                  Result : Scoped.List_Object_Versions_Result;
+                  Result : List_Object_Versions_Result;
                begin
                   Operations.Wait_All (Set);
-                  Scoped.Finish (Operation, Result);
+                  Finish (Operation, Result);
                   if Result.Kind /=
-                    Scoped.List_Object_Versions_Exchange_Failed
+                    List_Object_Versions_Exchange_Failed
                     or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
                     or else Result.Admission /= HTTP_Client.Response_Observed
                   then
@@ -11804,14 +11949,14 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters.Max_Keys := 1;
             Parameters.Has_Max_Keys := True;
             declare
-               Result : constant Scoped.List_Object_Versions_Result :=
+               Result : constant List_Object_Versions_Result :=
                  Objects.List_Versions_Page
                    (HTTP, Origin, "example-bucket", Parameters, Identity,
                     Timeout => 5.0, Token => Stop'Access);
             begin
                if Result.Kind /=
-                 Scoped.List_Object_Versions_Exchange_Failed
-                 or else Result.Failure /= Scoped.Cancelled
+                 List_Object_Versions_Exchange_Failed
+                 or else Result.Failure /= Client_API.Cancelled
                  or else Result.Admission /= HTTP_Client.Not_Admitted
                then
                   raise Program_Error with
@@ -11830,17 +11975,17 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters.Has_Max_Keys := True;
             Parameters.URL_Encoding := True;
             declare
-               Operation : Scoped.List_Object_Versions_Operation :=
-                 Scoped.List_Object_Versions
+               Operation : List_Object_Versions_Operation :=
+                 List_Versions_Page
                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     Parameters, Identity, HTTP_Client.Deadline_After (5.0));
-               Result : Scoped.List_Object_Versions_Result;
+               Result : List_Object_Versions_Result;
             begin
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
+               Finish (Operation, Result);
                if Result.Kind /=
-                 Scoped.List_Object_Versions_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+                 List_Object_Versions_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Listed
                  or else not Result.Response.Result.Listing.Is_Truncated
                then
@@ -11855,14 +12000,19 @@ procedure S3_HTTP_Socket_Corpus is
                Parameters.Version_ID_Marker :=
                  Result.Response.Result.Listing.Next_Version_ID_Marker;
                Parameters.Has_Version_ID_Marker := True;
-               Scoped.Start_List_Object_Versions
-                 (Operation, HTTP'Access, Origin, "example-bucket",
-                  Parameters, Identity, HTTP_Client.Deadline_After (5.0));
+               List_Versions_Page
+                 (HTTP'Access,
+                  Origin,
+                  "example-bucket",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
                Operations.Wait_All (Set);
-               Scoped.Finish (Operation, Result);
+               Finish (Operation, Result);
                if Result.Kind /=
-                 Scoped.List_Object_Versions_Response_Available
-                 or else Result.Failure /= Scoped.No_Failure
+                 List_Object_Versions_Response_Available
+                 or else Result.Failure /= No_Failure
                  or else Result.Response.Kind /= Low_Level.Listed
                  or else Result.Response.Result.Listing.Is_Truncated
                then
@@ -14096,37 +14246,23 @@ procedure S3_HTTP_Socket_Corpus is
    Server_Detail : US.Unbounded_String;
    Client_Detail : US.Unbounded_String;
 begin
-   Flyology.Object_Storage.Client.Scoped.Testing.Check_Put_Certainty_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.Check_Delete_Certainty_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_Delete_Objects_Certainty_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_Create_Multipart_Certainty_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_Upload_Part_Certainty_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_Upload_Part_Copy_Certainty_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_Complete_Multipart_Certainty_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_Abort_Multipart_Certainty_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_List_Objects_Result_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_List_Buckets_Result_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_Create_Bucket_Certainty_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_Head_Bucket_Result_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_Bucket_Tagging_Certainty_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_Object_Tagging_Certainty_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_List_Parts_Result_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.
-     Check_List_Multipart_Uploads_Result_Corpus;
-   Flyology.Object_Storage.Client.Scoped.Testing.Check_Copy_Result_Corpus;
+   Objects_Testing.Check_Put_Certainty_Corpus;
+   Objects_Testing.Check_Delete_Certainty_Corpus;
+   Objects_Testing.Check_Delete_Objects_Certainty_Corpus;
+   Transfers_Testing.Check_Create_Multipart_Certainty_Corpus;
+   Transfers_Testing.Check_Upload_Part_Certainty_Corpus;
+   Transfers_Testing.Check_Upload_Part_Copy_Certainty_Corpus;
+   Transfers_Testing.Check_Complete_Multipart_Certainty_Corpus;
+   Transfers_Testing.Check_Abort_Multipart_Certainty_Corpus;
+   Objects_Testing.Check_List_Objects_Result_Corpus;
+   Buckets_Testing.Check_List_Buckets_Result_Corpus;
+   Buckets_Testing.Check_Create_Bucket_Certainty_Corpus;
+   Buckets_Testing.Check_Head_Bucket_Result_Corpus;
+   Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;
+   Objects_Testing.Check_Object_Tagging_Certainty_Corpus;
+   Transfers_Testing.Check_List_Parts_Result_Corpus;
+   Transfers_Testing.Check_List_Multipart_Uploads_Result_Corpus;
+   Transfers_Testing.Check_Copy_Result_Corpus;
    Run_And_Report;
    declare
       task Lightweight_Client is

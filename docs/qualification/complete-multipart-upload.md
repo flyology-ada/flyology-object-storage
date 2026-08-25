@@ -7,7 +7,7 @@ server-side-encryption capability set.
 
 ## Composable client boundary
 
-`Flyology.Object_Storage.Client.Scoped.Complete_Multipart_Upload` serializes
+`Flyology.Object_Storage.Client.Transfers.Complete_Multipart_Upload` serializes
 the part manifest exactly once during bounded initiation. Its limited operation
 owns the XML and exposes it as a non-rewindable request-body source while one
 hidden HTTP child is driven on the caller's completion-set owner stack. It has

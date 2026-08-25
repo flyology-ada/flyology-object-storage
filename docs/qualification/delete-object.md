@@ -57,8 +57,8 @@ accepts one conditional DELETE, drops its response, and requires the next
 request to be reconciliation HEAD. The call raises an outcome-unknown transport
 exception; it never converts a replayed 404 into a definite predicate result.
 
-The composable `Client.Scoped.Delete_Object` constructor and reusable
-`Start_Delete_Object` form drive that same one-shot policy through one hidden
+The limited `Client.Objects.Delete` constructor and reusable operation-last
+procedure drive that same one-shot policy through one hidden
 HTTP child on the caller's completion-set owner stack. Its typed result keeps
 admission certainty separate from deletion disposition. Valid 204 is
 `Deletion_Completed`; exact modeled rejections are

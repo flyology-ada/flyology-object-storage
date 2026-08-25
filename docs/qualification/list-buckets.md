@@ -1,6 +1,6 @@
 # ListBuckets composable client qualification
 
-The service-level `Client.Scoped.List_Buckets` operation composes the existing
+The service-level `Client.Buckets.List_Page` operation composes the existing
 complete ListBuckets request and response model without adding a second HTTP
 engine. Initiation copies the complete presence-preserving parameter record,
 prepares and signs the request, and retains bounded response storage through

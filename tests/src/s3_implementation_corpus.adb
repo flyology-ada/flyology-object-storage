@@ -14,10 +14,9 @@ with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage;
-with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Client.Buckets;
+with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Client.Objects;
-with Flyology.Object_Storage.Client.Scoped;
 with Flyology.Object_Storage.Client.Transfers;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Checksums;
@@ -28,12 +27,15 @@ with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.Tags;
 
 procedure S3_Implementation_Corpus is
+   use Flyology.Object_Storage.Client;
+   use Flyology.Object_Storage.Client.Objects;
+   use Flyology.Object_Storage.Client.Buckets;
+   use Flyology.Object_Storage.Client.Transfers;
    package HTTP_Client renames Flyology.HTTP.Client;
    package Buffers renames Flyology.Buffers;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
    package Client_Buckets renames Flyology.Object_Storage.Client.Buckets;
    package Client_Objects renames Flyology.Object_Storage.Client.Objects;
-   package Scoped renames Flyology.Object_Storage.Client.Scoped;
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
    package Attributes renames Flyology.Object_Storage.S3.Attributes;
    package Checksums renames Flyology.Object_Storage.S3.Checksums;
@@ -82,24 +84,24 @@ procedure S3_Implementation_Corpus is
    use type Client_Buckets.Delete_Tags_Outcome_Kind;
    use type Tags.Tag_Vectors.Vector;
    use type Client_Objects.Delete_Outcome_Kind;
-   use type Scoped.Delete_Result_Kind;
-   use type Scoped.Deletion_Disposition;
-   use type Scoped.Delete_Objects_Result_Kind;
-   use type Scoped.Delete_Objects_Disposition;
-   use type Scoped.Create_Multipart_Result_Kind;
-   use type Scoped.Multipart_Creation_Disposition;
-   use type Scoped.Upload_Part_Result_Kind;
-   use type Scoped.Part_Upload_Disposition;
-   use type Scoped.Multipart_Completion_Result_Kind;
-   use type Scoped.Multipart_Completion_Disposition;
-   use type Scoped.Multipart_Abort_Result_Kind;
-   use type Scoped.Multipart_Abort_Disposition;
-   use type Scoped.List_Parts_Result_Kind;
-   use type Scoped.List_Multipart_Uploads_Result_Kind;
-   use type Scoped.Copy_Result_Kind;
-   use type Scoped.Publication_Disposition;
-   use type Scoped.Whole_Get_Result_Kind;
-   use type Scoped.Failure_Reason;
+   use type Delete_Result_Kind;
+   use type Deletion_Disposition;
+   use type Delete_Objects_Result_Kind;
+   use type Delete_Objects_Disposition;
+   use type Create_Multipart_Result_Kind;
+   use type Multipart_Creation_Disposition;
+   use type Upload_Part_Result_Kind;
+   use type Part_Upload_Disposition;
+   use type Multipart_Completion_Result_Kind;
+   use type Multipart_Completion_Disposition;
+   use type Multipart_Abort_Result_Kind;
+   use type Multipart_Abort_Disposition;
+   use type List_Parts_Result_Kind;
+   use type List_Multipart_Uploads_Result_Kind;
+   use type Copy_Result_Kind;
+   use type Publication_Disposition;
+   use type Whole_Get_Result_Kind;
+   use type Failure_Reason;
    use type HTTP_Client.Exchange_Result_Kind;
    use type Client_Objects.List_Outcome_Kind;
    use type Client_Objects.Whole_Get_Outcome_Kind;
@@ -1767,13 +1769,13 @@ procedure S3_Implementation_Corpus is
          Parameters.Max_Parts := 1;
          Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
          declare
-            Result : constant Scoped.List_Parts_Result :=
+            Result : constant List_Parts_Result :=
               Transfers.List_Parts_Page
                 (HTTP, Origin, Bucket, Object_Key, Parameters, Identity,
                  Timeout => 30.0);
          begin
-            if Result.Kind /= Scoped.List_Parts_Response_Available
-              or else Result.Failure /= Scoped.No_Failure
+            if Result.Kind /= List_Parts_Response_Available
+              or else Result.Failure /= No_Failure
             then
                raise Program_Error with
                  "S3 implementation rejected composable ListParts";
@@ -1855,13 +1857,13 @@ procedure S3_Implementation_Corpus is
          Parameters.Max_Parts := 1;
          Parameters.Upload_ID := US.To_Unbounded_String (Upload_ID);
          declare
-            First_Result : constant Scoped.List_Parts_Result :=
+            First_Result : constant List_Parts_Result :=
               Transfers.List_Parts_Page
                 (HTTP, Origin, Bucket, Object_Key, Parameters, Identity,
                  Timeout => 30.0);
          begin
-            if First_Result.Kind /= Scoped.List_Parts_Response_Available
-              or else First_Result.Failure /= Scoped.No_Failure
+            if First_Result.Kind /= List_Parts_Response_Available
+              or else First_Result.Failure /= No_Failure
             then
                raise Program_Error with
                  "S3 implementation composable ListParts first failed";
@@ -1887,13 +1889,13 @@ procedure S3_Implementation_Corpus is
             end;
          end;
          declare
-            Second_Result : constant Scoped.List_Parts_Result :=
+            Second_Result : constant List_Parts_Result :=
               Transfers.List_Parts_Page
                 (HTTP, Origin, Bucket, Object_Key, Parameters, Identity,
                  Timeout => 30.0);
          begin
-            if Second_Result.Kind /= Scoped.List_Parts_Response_Available
-              or else Second_Result.Failure /= Scoped.No_Failure
+            if Second_Result.Kind /= List_Parts_Response_Available
+              or else Second_Result.Failure /= No_Failure
             then
                raise Program_Error with
                  "S3 implementation composable ListParts second failed";
@@ -1924,13 +1926,13 @@ procedure S3_Implementation_Corpus is
          Parameters.Prefix := US.To_Unbounded_String (Object_Key);
          Parameters.Max_Uploads := 1;
          declare
-            Result : constant Scoped.List_Multipart_Uploads_Result :=
+            Result : constant List_Multipart_Uploads_Result :=
               Transfers.List_Multipart_Uploads_Page
                 (HTTP, Origin, Bucket, Parameters, Identity,
                  Timeout => 30.0);
          begin
-            if Result.Kind /= Scoped.Multipart_Uploads_Response_Available
-              or else Result.Failure /= Scoped.No_Failure
+            if Result.Kind /= Multipart_Uploads_Response_Available
+              or else Result.Failure /= No_Failure
             then
                raise Program_Error with
                  "S3 implementation rejected composable " &
@@ -2106,15 +2108,15 @@ procedure S3_Implementation_Corpus is
             Options : Low_Level.Copy_Object_Parameters;
          begin
             declare
-               Copied : constant Scoped.Copy_Result := Transfers.Copy_Object
+               Copied : constant Copy_Result := Transfers.Copy_Object
                  (HTTP, Origin, Bucket, Key & "-high level+%25", Bucket,
                   Convenience_Key, Options, Identity, Timeout => 60.0);
             begin
                if Copy_Object_Oracle_Mode = Complete_Copy_Object
                  and then
-                   (Copied.Kind /= Scoped.Copy_Response_Available
-                    or else Copied.Disposition /= Scoped.Published
-                    or else Copied.Failure /= Scoped.No_Failure
+                   (Copied.Kind /= Copy_Response_Available
+                    or else Copied.Disposition /= Published
+                    or else Copied.Failure /= No_Failure
                     or else Copied.Response.Kind /= Low_Level.Object_Copied
                     or else US.Length
                       (Copied.Response.Result.Copy_Result.Entity_Tag) = 0
@@ -2125,8 +2127,8 @@ procedure S3_Implementation_Corpus is
                     "S3 implementation rejected composable CopyObject";
                elsif Copy_Object_Oracle_Mode /= Complete_Copy_Object
                  and then
-                   (Copied.Kind /= Scoped.Copy_Exchange_Failed
-                    or else Copied.Disposition /= Scoped.Outcome_Unknown
+                   (Copied.Kind /= Copy_Exchange_Failed
+                    or else Copied.Disposition /= Outcome_Unknown
                     or else Copied.HTTP_Result /=
                       HTTP_Client.Response_Invalid)
                then
@@ -2191,13 +2193,13 @@ procedure S3_Implementation_Corpus is
                Version_ID => US.Null_Unbounded_String,
                others     => <>));
          declare
-            Deleted : constant Scoped.Delete_Objects_Result :=
+            Deleted : constant Delete_Objects_Result :=
               Client_Objects.Delete_Objects
                 (HTTP, Origin, Bucket, Request, Parameters, Identity,
                  Timeout => 60.0);
          begin
-            if Deleted.Kind /= Scoped.Delete_Objects_Response_Available
-              or else Deleted.Disposition /= Scoped.Batch_Processed
+            if Deleted.Kind /= Delete_Objects_Response_Available
+              or else Deleted.Disposition /= Batch_Processed
               or else Deleted.Response.Kind /= Low_Level.Objects_Deleted
               or else Deleted.Response.Result.Result.Deleted.Length /= 2
               or else not Deleted.Response.Result.Result.Errors.Is_Empty
@@ -2253,12 +2255,12 @@ procedure S3_Implementation_Corpus is
          begin
             Buffers.Acquire (Destination);
             declare
-               Result : constant Scoped.Whole_Get_Result :=
+               Result : constant Whole_Get_Result :=
                  Client_Objects.Get_Whole
                    (HTTP, Origin, Bucket, Object_Key, Destination, Identity,
                     Expected_Entity_Tag => Expected_ETag, Timeout => 30.0);
             begin
-               if Result.Kind /= Scoped.Whole_Get_Response_Available
+               if Result.Kind /= Whole_Get_Response_Available
                  or else Result.Response.Kind /= Low_Level.Object_Opened
                  or else Result.Response.Status /= 200
                  or else US.To_String
@@ -2635,13 +2637,13 @@ procedure S3_Implementation_Corpus is
          end;
       end;
       declare
-         Created : constant Scoped.Create_Multipart_Result :=
+         Created : constant Create_Multipart_Result :=
            Transfers.Create_Multipart_Upload
              (HTTP, Origin, Bucket, Key, Composite_Create_Parameters,
               Identity, Timeout => 30.0);
       begin
-         if Created.Kind /= Scoped.Create_Multipart_Response_Available
-           or else Created.Disposition /= Scoped.Multipart_Upload_Created
+         if Created.Kind /= Create_Multipart_Response_Available
+           or else Created.Disposition /= Multipart_Upload_Created
            or else Created.Response.Kind /= Low_Level.Created
          then
             raise Program_Error with
@@ -2694,15 +2696,15 @@ procedure S3_Implementation_Corpus is
                Buffers.Acquire (Payload_Buffer);
                Buffers.With_Writable_Data (Payload_Buffer, Fill'Access);
                declare
-                  Uploaded : constant Scoped.Upload_Part_Result :=
+                  Uploaded : constant Upload_Part_Result :=
                     Transfers.Upload_Part
                       (HTTP, Origin, Bucket, Key, Parameters, Payload_Buffer,
                        Identity, "us-east-1", Low_Level.Path_Style,
                        Timeout => 60.0);
                begin
                   if Uploaded.Kind /=
-                    Scoped.Upload_Part_Response_Available
-                    or else Uploaded.Disposition /= Scoped.Part_Published
+                    Upload_Part_Response_Available
+                    or else Uploaded.Disposition /= Part_Published
                     or else Uploaded.Response.Kind /= Low_Level.Part_Uploaded
                     or else not Buffers.Has_Buffer (Payload_Buffer)
                   then
@@ -2755,16 +2757,16 @@ procedure S3_Implementation_Corpus is
                           US.To_Unbounded_String (Second_SHA256),
                         others     => <>));
                   declare
-                     Completed : constant Scoped.Multipart_Completion_Result :=
+                     Completed : constant Multipart_Completion_Result :=
                        Transfers.Complete_Multipart_Upload
                          (HTTP, Origin, Bucket, Key, Upload_ID, Completion,
                           Composite_Complete_Parameters, Identity,
                           Timeout => 30.0);
                   begin
                      if Completed.Kind /=
-                       Scoped.Complete_Multipart_Response_Available
+                       Complete_Multipart_Response_Available
                        or else Completed.Disposition /=
-                         Scoped.Multipart_Completed
+                         Multipart_Completed
                        or else Completed.Response.Kind /= Low_Level.Completed
                        or else
                          US.To_String (Completed.Response.Result.Key) /= Key
@@ -2796,7 +2798,7 @@ procedure S3_Implementation_Corpus is
                           "checksum mismatch: result=" & Completed.Kind'Image &
                           " disposition=" & Completed.Disposition'Image &
                           (if Completed.Kind =
-                            Scoped.Complete_Multipart_Response_Available
+                            Complete_Multipart_Response_Available
                            then " kind=" & Completed.Response.Kind'Image &
                              " status=" & Completed.Response.Status'Image &
                              " key=" & US.To_String
@@ -2843,14 +2845,14 @@ procedure S3_Implementation_Corpus is
               "S3 implementation rejected abort-corpus initiation";
          end if;
          declare
-            Aborted : constant Scoped.Multipart_Abort_Result :=
+            Aborted : constant Multipart_Abort_Result :=
               Transfers.Abort_Multipart_Upload
                 (HTTP, Origin, Bucket, Abort_Key,
                  US.To_String (Created.Result.Upload_ID), Identity,
                  Timeout => 30.0);
          begin
-            if Aborted.Kind /= Scoped.Abort_Multipart_Response_Available
-              or else Aborted.Disposition /= Scoped.Multipart_Aborted
+            if Aborted.Kind /= Abort_Multipart_Response_Available
+              or else Aborted.Disposition /= Multipart_Aborted
               or else Aborted.Response.Kind /= Low_Level.Aborted
             then
                raise Program_Error with
@@ -3323,14 +3325,14 @@ procedure S3_Implementation_Corpus is
                Parameters.Prefix := US.To_Unbounded_String (Multipart_Key);
                Parameters.Max_Uploads := 1;
                declare
-                  Result : constant Scoped.List_Multipart_Uploads_Result :=
+                  Result : constant List_Multipart_Uploads_Result :=
                       Transfers.List_Multipart_Uploads_Page
                         (HTTP, Origin, Probe, Parameters, Identity,
                          Timeout => 30.0);
                begin
                   if Result.Kind /=
-                    Scoped.Multipart_Uploads_Response_Available
-                    or else Result.Failure /= Scoped.No_Failure
+                    Multipart_Uploads_Response_Available
+                    or else Result.Failure /= No_Failure
                     or else Result.Response.Kind /=
                       Low_Level.Multipart_Uploads_Listed
                     or else Result.Response.Status /= 200
@@ -3700,13 +3702,13 @@ procedure S3_Implementation_Corpus is
                   Version_ID => Copy_ID,
                   others     => <>));
             declare
-               Removed : constant Scoped.Delete_Objects_Result :=
+               Removed : constant Delete_Objects_Result :=
                  Client_Objects.Delete_Objects
                    (HTTP, Origin, Probe, Request, Parameters, Identity,
                     Timeout => 30.0);
             begin
-               if Removed.Kind /= Scoped.Delete_Objects_Response_Available
-                 or else Removed.Disposition /= Scoped.Batch_Processed
+               if Removed.Kind /= Delete_Objects_Response_Available
+                 or else Removed.Disposition /= Batch_Processed
                  or else Removed.Response.Kind /= Low_Level.Objects_Deleted
                  or else Removed.Response.Status /= 200
                  or else Removed.Response.Result.Result.Deleted.Length /= 3
@@ -3873,7 +3875,7 @@ procedure S3_Implementation_Corpus is
               "S3 implementation could not bind DeleteObject generation";
          end if;
          declare
-            Mismatch : constant Scoped.Delete_Result :=
+            Mismatch : constant Delete_Result :=
               Client_Objects.Delete
                 (HTTP, Origin, Bucket, Key, Identity,
                  If_Match => """definitely-stale""", Timeout => 30.0);
@@ -3882,8 +3884,8 @@ procedure S3_Implementation_Corpus is
                 (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
          begin
             if Delete_Object_Oracle_Mode = MinIO_2025_Ignores_If_Match then
-               if Mismatch.Kind /= Scoped.Delete_Response_Available
-                 or else Mismatch.Disposition /= Scoped.Deletion_Completed
+               if Mismatch.Kind /= Delete_Response_Available
+                 or else Mismatch.Disposition /= Deletion_Completed
                  or else Mismatch.Response.Kind /= Low_Level.Object_Deleted
                  or else Preserved.Kind /= Transfers.Head_Rejected
                  or else Preserved.Status /= 404
@@ -3892,9 +3894,9 @@ procedure S3_Implementation_Corpus is
                     "MinIO DeleteObject If-Match divergence changed";
                end if;
             else
-               if Mismatch.Kind /= Scoped.Delete_Response_Available
+               if Mismatch.Kind /= Delete_Response_Available
                  or else Mismatch.Disposition /=
-                   Scoped.Definitely_Not_Deleted
+                   Definitely_Not_Deleted
                  or else Mismatch.Response.Kind /=
                    Low_Level.Delete_Object_Rejected
                  or else Mismatch.Response.Status /= 412
@@ -3909,23 +3911,23 @@ procedure S3_Implementation_Corpus is
          end;
          if Delete_Object_Oracle_Mode = MinIO_2025_Ignores_If_Match then
             declare
-               Missing_Conditional : constant Scoped.Delete_Result :=
+               Missing_Conditional : constant Delete_Result :=
                  Client_Objects.Delete
                    (HTTP, Origin, Bucket, Key, Identity,
                     If_Match => "*", Timeout => 30.0);
-               Missing_Idempotent : constant Scoped.Delete_Result :=
+               Missing_Idempotent : constant Delete_Result :=
                  Client_Objects.Delete
                    (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
             begin
-               if Missing_Conditional.Kind /= Scoped.Delete_Response_Available
+               if Missing_Conditional.Kind /= Delete_Response_Available
                  or else Missing_Conditional.Disposition /=
-                   Scoped.Deletion_Completed
+                   Deletion_Completed
                  or else Missing_Conditional.Response.Kind /=
                    Low_Level.Object_Deleted
                  or else Missing_Idempotent.Kind /=
-                   Scoped.Delete_Response_Available
+                   Delete_Response_Available
                  or else Missing_Idempotent.Disposition /=
-                   Scoped.Deletion_Completed
+                   Deletion_Completed
                  or else Missing_Idempotent.Response.Kind /=
                    Low_Level.Object_Deleted
                then
@@ -3935,26 +3937,26 @@ procedure S3_Implementation_Corpus is
             end;
          else
             declare
-               Deleted : constant Scoped.Delete_Result :=
+               Deleted : constant Delete_Result :=
                  Client_Objects.Delete
                    (HTTP, Origin, Bucket, Key, Identity,
                     If_Match => US.To_String (Head.Entity_Tag),
                     Timeout => 30.0);
-               Missing_Conditional : constant Scoped.Delete_Result :=
+               Missing_Conditional : constant Delete_Result :=
                  Client_Objects.Delete
                    (HTTP, Origin, Bucket, Key, Identity,
                     If_Match => "*", Timeout => 30.0);
-               Missing_Idempotent : constant Scoped.Delete_Result :=
+               Missing_Idempotent : constant Delete_Result :=
                  Client_Objects.Delete
                    (HTTP, Origin, Bucket, Key, Identity, Timeout => 30.0);
             begin
-               if Deleted.Kind /= Scoped.Delete_Response_Available
-                 or else Deleted.Disposition /= Scoped.Deletion_Completed
+               if Deleted.Kind /= Delete_Response_Available
+                 or else Deleted.Disposition /= Deletion_Completed
                  or else Deleted.Response.Kind /= Low_Level.Object_Deleted
                  or else Missing_Conditional.Kind /=
-                   Scoped.Delete_Response_Available
+                   Delete_Response_Available
                  or else Missing_Conditional.Disposition /=
-                   Scoped.Definitely_Not_Deleted
+                   Definitely_Not_Deleted
                  or else Missing_Conditional.Response.Kind /=
                    Low_Level.Delete_Object_Rejected
                  or else Missing_Conditional.Response.Status /=
@@ -3967,9 +3969,9 @@ procedure S3_Implementation_Corpus is
                          Conditioned_Missing_Is_412
                     then "PreconditionFailed" else "NoSuchKey")
                  or else Missing_Idempotent.Kind /=
-                   Scoped.Delete_Response_Available
+                   Delete_Response_Available
                  or else Missing_Idempotent.Disposition /=
-                   Scoped.Deletion_Completed
+                   Deletion_Completed
                  or else Missing_Idempotent.Response.Kind /=
                    Low_Level.Object_Deleted
                then

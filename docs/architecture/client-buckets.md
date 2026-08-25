@@ -16,8 +16,8 @@ creation time, region, ARN, prefix-presence, and continuation-presence fields.
 Callers that must distinguish an explicitly supplied empty query value use the
 presence flags on `Client.Low_Level.List_Buckets_Parameters`.
 
-The parameter-record `List_Page` overload waits on
-`Client.Scoped.List_Buckets` and preserves typed HTTP failure, causal phase,
+The parameter-record `List_Page` overload waits on the limited
+`Client.Buckets.List_Page` operation and preserves typed HTTP failure, causal phase,
 and request-admission certainty. The same limited operation can instead be
 constructed directly, composed through a caller-owned completion set, and
 restarted after typed `Finish`. It owns the prepared signed request and a

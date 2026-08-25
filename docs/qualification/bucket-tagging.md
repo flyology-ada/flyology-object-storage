@@ -12,7 +12,7 @@ the pinned model. The AWS documentation also contains a 204 example, so the
 client accepts both 200 and 204 without inventing response metadata. Delete
 requires and emits 204 with an exactly empty body.
 
-The additive `Client.Scoped` family exposes one owner-driven operation each
+The `Client.Buckets` provider exposes one owner-driven operation each
 for PutBucketTagging, GetBucketTagging, and DeleteBucketTagging. Put serializes
 and owns the exact signed tag document once; Delete owns a known-empty source;
 neither mutation can be replayed. Get retains a bounded whole response and

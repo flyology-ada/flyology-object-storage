@@ -142,8 +142,8 @@ gate observes exactly one PUT and then requires an exact generation-bound GET;
 there is no transparent replay. Expected S3 rejections remain structured and
 typed; programming errors are not accepted as a transport-loss oracle.
 
-The additive `Client.Scoped.Put_Object` constructor and reusable
-`Start_Put_Object` overload accept the complete modeled non-body parameter
+The limited `Client.Objects.Put_Object` constructor and reusable operation-last
+overload accept the complete modeled non-body parameter
 record and move an acquired bounded payload token only after validation and
 signing. Terminal `Finish` restores that exact token. The typed synchronous
 buffer overload in `Client.Objects` waits on the same owner-driven state

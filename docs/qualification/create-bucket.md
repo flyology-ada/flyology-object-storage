@@ -45,7 +45,7 @@ memory, files, and SQLite in three repeated lifecycle runs.
 
 ## Composable client boundary
 
-The additive `Client.Scoped.Create_Bucket` operation owns the exact serialized
+The limited `Client.Buckets.Create` operation owns the exact serialized
 configuration and supplies it as a one-shot non-rewindable source. The blocking
 typed and convenience overloads wait on that same operation. No helper task,
 second protocol engine, retained borrowed input, or automatic mutation retry is

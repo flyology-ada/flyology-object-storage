@@ -55,7 +55,7 @@ also black-box gated.
 
 ## Composable client
 
-The additive `Client.Scoped` family exposes operation-specific Put, Get, and
+The `Client.Objects` provider exposes operation-specific Put, Get, and
 Delete operations. Put serializes and owns the exact signed tag document once;
 Delete owns a known-empty non-rewindable source; neither mutation can be
 replayed. Get retains a complete response bounded by both the shared XML limit

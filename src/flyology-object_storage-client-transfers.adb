@@ -1,18 +1,18 @@
+with System.Address_To_Access_Conversions;
+with System.Storage_Elements;
+with Flyology.Object_Storage.S3.XML;
+with Flyology.Operations.Drivers;
 with Ada.Calendar;
 with Ada.Calendar.Formatting;
 with Ada.Containers.Vectors;
 with Ada.Directories;
-with Ada.Exceptions;
 with Ada.Real_Time;
-with Ada.Streams;
 with Ada.Strings.Fixed;
-with Flyology.IO;
 with Flyology.IO.Files;
 with Flyology.HTTP.Client.Request_Bodies.Files;
 with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Requests;
 with Flyology.Object_Storage.S3.SigV4_Encoding;
-with Flyology.Operations;
 with Flyology.Task_Scopes;
 with GNAT.OS_Lib;
 with GNAT.SHA256;
@@ -20,15 +20,84 @@ with GNAT.SHA256;
 package body Flyology.Object_Storage.Client.Transfers is
 
    package US renames Ada.Strings.Unbounded;
+   package Buffer_Drivers renames Flyology.Buffers.Drivers;
    package HTTP_Client renames Flyology.HTTP.Client;
-   package Files renames Flyology.IO.Files;
-   package File_Bodies renames Flyology.HTTP.Client.Request_Bodies.Files;
+   package Operations renames Flyology.Operations;
+   package Operation_Drivers renames Flyology.Operations.Drivers;
+   package Low renames Flyology.Object_Storage.Client.Low_Level;
    package Core renames Flyology.Object_Storage.S3.Core;
-   package Multipart renames Flyology.Object_Storage.S3.Multipart;
-   package Checksums renames Flyology.Object_Storage.S3.Checksums;
    package Requests renames Flyology.Object_Storage.S3.Requests;
    package Encoding renames
      Flyology.Object_Storage.S3.SigV4_Encoding;
+   package Byte_Pointers is new System.Address_To_Access_Conversions
+     (Ada.Streams.Stream_Element);
+
+   use type Ada.Streams.Stream_Element_Offset;
+   use type HTTP_Client.Admission_Certainty;
+   use type HTTP_Client.Exchange_Result_Kind;
+   use type Operations.Driver_Event;
+   use type Requests.Target_Kind;
+   use type Requests.Target_Status;
+   use type System.Storage_Elements.Storage_Offset;
+   use type US.Unbounded_String;
+
+   Response_Limit_Exceeded : exception;
+
+   function Failed_Reason
+     (Kind : HTTP_Client.Exchange_Result_Kind) return Failure_Reason is
+     (case Kind is
+         when HTTP_Client.Pre_Admission_Rejected => Invalid_Request,
+         when HTTP_Client.Cancelled => Cancelled,
+         when HTTP_Client.Timed_Out => Timed_Out,
+         when HTTP_Client.Client_Unavailable => Client_Unavailable,
+         when HTTP_Client.Connection_Failed => Connection_Failed,
+         when HTTP_Client.Transport_Failed => Transport_Failed,
+         when HTTP_Client.Request_Source_Failed => Request_Source_Failed,
+         when HTTP_Client.Response_Body_Too_Large => Response_Too_Large,
+         when HTTP_Client.Response_Complete |
+              HTTP_Client.Response_Invalid |
+              HTTP_Client.Response_Sink_Failed =>
+           Corrupt_Or_Invalid_Response);
+
+   function Failed_Disposition
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Publication_Disposition is
+   begin
+      if Kind = HTTP_Client.Cancelled
+        and then Admission = HTTP_Client.Not_Admitted
+      then
+         return Cancelled_Before_Publication;
+      elsif Admission = HTTP_Client.Not_Admitted then
+         return Definitely_Not_Published;
+      else
+         return Outcome_Unknown;
+      end if;
+   end Failed_Disposition;
+
+   use type Low_Level.Abort_Multipart_Outcome_Kind;
+   use type Low_Level.List_Parts_Outcome_Kind;
+   use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
+   use type Low_Level.Upload_Part_Copy_Outcome_Kind;
+   --  SigV4 external wire contract: basic-format timestamps are UTC
+   --  YYYYMMDD'T'HHMMSS'Z'. The slices below project that fixed shape from
+   --  Ada.Calendar.Formatting.Image; changing them invalidates signatures.
+   function Timestamp return String is
+      Image : constant String := Ada.Calendar.Formatting.Image
+        (Ada.Calendar.Clock, Include_Time_Fraction => False, Time_Zone => 0);
+   begin
+      return Image (Image'First .. Image'First + 3) &
+        Image (Image'First + 5 .. Image'First + 6) &
+        Image (Image'First + 8 .. Image'First + 9) & "T" &
+        Image (Image'First + 11 .. Image'First + 12) &
+        Image (Image'First + 14 .. Image'First + 15) &
+        Image (Image'First + 17 .. Image'First + 18) & "Z";
+   end Timestamp;
+
+   package Files renames Flyology.IO.Files;
+   package File_Bodies renames Flyology.HTTP.Client.Request_Bodies.Files;
+   package Multipart renames Flyology.Object_Storage.S3.Multipart;
+   package Checksums renames Flyology.Object_Storage.S3.Checksums;
 
    package Digest_Vectors is new Ada.Containers.Vectors
      (Index_Type => Positive, Element_Type => GNAT.SHA256.Message_Digest);
@@ -42,7 +111,6 @@ package body Flyology.Object_Storage.Client.Transfers is
 
    use type Ada.Real_Time.Time;
    use type Ada.Containers.Count_Type;
-   use type Ada.Streams.Stream_Element_Offset;
    use type Files.File_Descriptor;
    use type Files.File_Offset;
    use type Low_Level.Complete_Multipart_Outcome_Kind;
@@ -52,10 +120,7 @@ package body Flyology.Object_Storage.Client.Transfers is
    use type Low_Level.Head_Object_Outcome_Kind;
    use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
-   use type Requests.Target_Kind;
-   use type Requests.Target_Status;
    use type Checksum_Policy.Checksum_Type;
-   use type US.Unbounded_String;
 
    Hash_Buffer_Size : constant := 64 * 1_024;
    Transfer_Buffer_Size : constant := 64 * 1_024;
@@ -143,22 +208,22 @@ package body Flyology.Object_Storage.Client.Transfers is
       Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout      : Duration := 30.0;
       Token        : access Flyology.Cancellation.Token := null)
-      return Scoped.Create_Multipart_Result
+      return Create_Multipart_Result
    is
       --  The multipart parent, HTTP exchange, and HTTP's single active
       --  transport child determine this capacity; it is a derived bound.
       Set : aliased Flyology.Operations.Completion_Set (3);
    begin
       declare
-         Operation : Scoped.Create_Multipart_Operation :=
-           Scoped.Create_Multipart_Upload
+         Operation : Create_Multipart_Operation :=
+           Create_Multipart_Upload
              (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
               Identity, Flyology.HTTP.Client.Deadline_After (Timeout), Region,
               Style, Token);
-         Result : Scoped.Create_Multipart_Result;
+         Result : Create_Multipart_Result;
       begin
          Flyology.Operations.Wait_All (Set);
-         Scoped.Finish (Operation, Result);
+         Finish (Operation, Result);
          return Result;
       end;
    end Create_Multipart_Upload;
@@ -199,7 +264,7 @@ package body Flyology.Object_Storage.Client.Transfers is
       If_Match_Initiated_Time : String := "";
       Timeout      : Duration := 30.0;
       Token        : access Flyology.Cancellation.Token := null)
-      return Scoped.Multipart_Abort_Result
+      return Multipart_Abort_Result
    is
       Parameters : constant Low_Level.Abort_Multipart_Parameters :=
         (Request_Payer => US.To_Unbounded_String (Request_Payer),
@@ -212,16 +277,16 @@ package body Flyology.Object_Storage.Client.Transfers is
       Set : aliased Flyology.Operations.Completion_Set (3);
    begin
       declare
-         Operation : Scoped.Abort_Multipart_Operation :=
-           Scoped.Abort_Multipart_Upload
+         Operation : Abort_Multipart_Operation :=
+           Abort_Multipart_Upload
              (Set'Access, Client'Access, Origin, Bucket, Key, Upload_ID,
               Parameters, Identity, Flyology.HTTP.Client.Deadline_After
                 (Timeout),
               Region, Style, Token);
-         Result : Scoped.Multipart_Abort_Result;
+         Result : Multipart_Abort_Result;
       begin
          Flyology.Operations.Wait_All (Set);
-         Scoped.Finish (Operation, Result);
+         Finish (Operation, Result);
          return Result;
       end;
    end Abort_Multipart_Upload;
@@ -268,22 +333,22 @@ package body Flyology.Object_Storage.Client.Transfers is
       Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout      : Duration := 30.0;
       Token        : access Flyology.Cancellation.Token := null)
-      return Scoped.List_Parts_Result
+      return List_Parts_Result
    is
       --  The ListParts parent, HTTP exchange, and HTTP's single active
       --  transport child determine this capacity; it is a derived bound.
       Set : aliased Flyology.Operations.Completion_Set (3);
    begin
       declare
-         Operation : Scoped.List_Parts_Operation :=
-           Scoped.List_Parts
+         Operation : List_Parts_Operation :=
+           List_Parts_Page
              (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
               Identity, Flyology.HTTP.Client.Deadline_After (Timeout),
               Region, Style, Token);
-         Result : Scoped.List_Parts_Result;
+         Result : List_Parts_Result;
       begin
          Flyology.Operations.Wait_All (Set);
-         Scoped.Finish (Operation, Result);
+         Finish (Operation, Result);
          return Result;
       end;
    end List_Parts_Page;
@@ -320,22 +385,22 @@ package body Flyology.Object_Storage.Client.Transfers is
       Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout      : Duration := 30.0;
       Token        : access Flyology.Cancellation.Token := null)
-      return Scoped.List_Multipart_Uploads_Result
+      return List_Multipart_Uploads_Result
    is
       --  The listing parent, HTTP exchange, and HTTP's single active
       --  transport child determine this capacity; it is a derived bound.
       Set : aliased Flyology.Operations.Completion_Set (3);
    begin
       declare
-         Operation : Scoped.List_Multipart_Uploads_Operation :=
-           Scoped.List_Multipart_Uploads
+         Operation : List_Multipart_Uploads_Operation :=
+           List_Multipart_Uploads_Page
              (Set'Access, Client'Access, Origin, Bucket, Parameters,
               Identity, Flyology.HTTP.Client.Deadline_After (Timeout),
               Region, Style, Token);
-         Result : Scoped.List_Multipart_Uploads_Result;
+         Result : List_Multipart_Uploads_Result;
       begin
          Flyology.Operations.Wait_All (Set);
-         Scoped.Finish (Operation, Result);
+         Finish (Operation, Result);
          return Result;
       end;
    end List_Multipart_Uploads_Page;
@@ -404,23 +469,23 @@ package body Flyology.Object_Storage.Client.Transfers is
       Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout      : Duration := 30.0;
       Token        : access Flyology.Cancellation.Token := null)
-      return Scoped.Upload_Part_Result
+      return Upload_Part_Result
    is
       --  The UploadPart parent, HTTP exchange, and HTTP's single active
       --  transport child determine this capacity; it is a derived bound.
       Set : aliased Flyology.Operations.Completion_Set (3);
    begin
       declare
-         Operation : Scoped.Upload_Part_Operation :=
-           Scoped.Upload_Part
+         Operation : Upload_Part_Operation :=
+           Upload_Part
              (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
               Payload_Buffer, Identity,
               Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
               Token);
-         Result : Scoped.Upload_Part_Result;
+         Result : Upload_Part_Result;
       begin
          Flyology.Operations.Wait_All (Set);
-         Scoped.Finish (Operation, Result, Payload_Buffer);
+         Finish (Operation, Result, Payload_Buffer);
          return Result;
       end;
    end Upload_Part;
@@ -438,22 +503,22 @@ package body Flyology.Object_Storage.Client.Transfers is
       Style        : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout      : Duration := 30.0;
       Token        : access Flyology.Cancellation.Token := null)
-      return Scoped.Multipart_Completion_Result
+      return Multipart_Completion_Result
    is
       --  The completion parent, HTTP exchange, and HTTP's single active
       --  transport child determine this capacity; it is a derived bound.
       Set : aliased Flyology.Operations.Completion_Set (3);
    begin
       declare
-         Operation : Scoped.Complete_Multipart_Operation :=
-           Scoped.Complete_Multipart_Upload
+         Operation : Complete_Multipart_Operation :=
+           Complete_Multipart_Upload
              (Set'Access, Client'Access, Origin, Bucket, Key, Upload_ID,
               Completion, Parameters, Identity,
               HTTP_Client.Deadline_After (Timeout), Region, Style, Token);
-         Result : Scoped.Multipart_Completion_Result;
+         Result : Multipart_Completion_Result;
       begin
          Flyology.Operations.Wait_All (Set);
-         Scoped.Finish (Operation, Result);
+         Finish (Operation, Result);
          return Result;
       end;
    end Complete_Multipart_Upload;
@@ -1317,22 +1382,22 @@ package body Flyology.Object_Storage.Client.Transfers is
       Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout    : Duration := 30.0;
       Token      : access Flyology.Cancellation.Token := null)
-      return Scoped.Upload_Part_Copy_Result
+      return Upload_Part_Copy_Result
    is
       --  The copy-part parent, HTTP exchange, and HTTP's single active
       --  transport child determine this capacity; it is a derived bound.
       Set : aliased Flyology.Operations.Completion_Set (3);
    begin
       declare
-         Operation : Scoped.Upload_Part_Copy_Operation :=
-           Scoped.Upload_Part_Copy
+         Operation : Upload_Part_Copy_Operation :=
+           Upload_Part_Copy
              (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
               Identity, Flyology.HTTP.Client.Deadline_After (Timeout), Region,
               Style, Token);
-         Result : Scoped.Upload_Part_Copy_Result;
+         Result : Upload_Part_Copy_Result;
       begin
          Flyology.Operations.Wait_All (Set);
-         Scoped.Finish (Operation, Result);
+         Finish (Operation, Result);
          return Result;
       end;
    end Upload_Part_Copy;
@@ -1350,23 +1415,23 @@ package body Flyology.Object_Storage.Client.Transfers is
       Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
       Timeout            : Duration := 30.0;
       Token              : access Flyology.Cancellation.Token := null)
-      return Scoped.Copy_Result
+      return Copy_Result
    is
       --  The copy parent, HTTP exchange, and HTTP's single active transport
       --  child determine this capacity; it is a derived bound.
       Set : aliased Flyology.Operations.Completion_Set (3);
    begin
       declare
-         Operation : Scoped.Copy_Operation :=
-           Scoped.Copy_Object
+         Operation : Copy_Operation :=
+           Copy_Object
              (Set'Access, Client'Access, Origin, Source_Bucket, Source_Key,
               Destination_Bucket, Destination_Key, Options, Identity,
               Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
               Token);
-         Result : Scoped.Copy_Result;
+         Result : Copy_Result;
       begin
          Flyology.Operations.Wait_All (Set);
-         Scoped.Finish (Operation, Result);
+         Finish (Operation, Result);
          return Result;
       end;
    end Copy_Object;
@@ -1910,5 +1975,2835 @@ package body Flyology.Object_Storage.Client.Transfers is
          end loop;
       end;
    end Transfer_Many;
+
+   function Normalize_Create_Multipart_Response
+     (Value     : Low_Level.Create_Multipart_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Create_Multipart_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Create_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      --  Wire authority: only exact modeled S3 status/code pairs establish
+      --  rejection; changing this set changes mutation certainty semantics.
+      Conclusive_Rejection : constant Boolean :=
+        (Value.Status = 400 and then Code = "InvalidRequest")
+        or else (Value.Status = 401 and then Code = "InvalidAccessKeyId")
+        or else (Value.Status = 403 and then Code = "AccessDenied")
+        or else (Value.Status = 404 and then Code = "NoSuchBucket");
+      Retryable_Response : constant Boolean :=
+        (Value.Status = 409 and then Code = "OperationAborted")
+        or else (Value.Status = 429 and then Code = "SlowDown")
+        or else (Value.Status = 500 and then Code = "InternalError")
+        or else (Value.Status = 502 and then Code = "BadGateway")
+        or else (Value.Status = 503 and then Code = "SlowDown")
+        or else (Value.Status = 504 and then Code = "RequestTimeout");
+      Failure : constant Failure_Reason :=
+        (if Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404 and then Code = "NoSuchBucket"
+         then Not_Found
+         elsif Value.Status = 400 and then Code = "InvalidRequest"
+         then Invalid_Request
+         elsif Retryable_Response
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => Create_Multipart_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Creation_Outcome_Unknown
+            elsif Value.Kind = Low_Level.Created
+            then Multipart_Upload_Created
+            elsif Conclusive_Rejection
+            then Definitely_Not_Created
+            else Creation_Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Created
+            then No_Failure
+            else Failure),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Create_Multipart_Response;
+
+   function Normalize_Create_Multipart_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Create_Multipart_Result is
+   begin
+      return
+        (Kind        => Create_Multipart_Exchange_Failed,
+         Disposition =>
+           (if Kind = HTTP_Client.Cancelled
+              and then Admission = HTTP_Client.Not_Admitted
+            then Creation_Cancelled_Before_Admission
+            elsif Admission = HTTP_Client.Not_Admitted
+            then Definitely_Not_Created
+            else Creation_Outcome_Unknown),
+         Failure     =>
+           (if Kind = HTTP_Client.Response_Body_Too_Large
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Create_Multipart_Failure;
+
+   overriding function Declared_Length
+     (Item : Create_Multipart_Operation) return HTTP_Client.Body_Length is
+   begin
+      pragma Unreferenced (Item);
+      --  Wire authority: CreateMultipartUpload has no request body.  The
+      --  zero-length declaration prevents content from entering initiation.
+      return HTTP_Client.Known_Length (0);
+   end Declared_Length;
+
+   overriding procedure Read_Now
+     (Item   : in out Create_Multipart_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      pragma Unreferenced (Item);
+      Data := (others => 0);
+      Last := Ada.Streams.Stream_Element_Offset'Pred (Data'First);
+      Result := HTTP_Client.Source_Finished;
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Create_Multipart_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      pragma Unreferenced (Item, Required);
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Create_Multipart_Operation) is
+   begin
+      pragma Unreferenced (Item);
+      null;
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Create_Multipart_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "CreateMultipartUpload response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Create_Multipart_Child
+     (Item : in out Create_Multipart_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result :=
+              (Kind        => Create_Multipart_Exchange_Failed,
+               Disposition =>
+                 (if Admission = HTTP_Client.Not_Admitted
+                  then Definitely_Not_Created
+                  else Creation_Outcome_Unknown),
+               Failure     => Corrupt_Or_Invalid_Response,
+               Admission   => Admission,
+               HTTP_Result => HTTP_Client.Response_Sink_Failed,
+               HTTP_Phase  => HTTP_Client.Receiving_Response_Body,
+               Detail      => US.Null_Unbounded_String);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Create_Multipart_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Create_Multipart_Response
+              (Low_Level.Decode_Create_Multipart_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  Item.Prepared),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result :=
+                 (Kind        => Create_Multipart_Exchange_Failed,
+                  Disposition => Creation_Outcome_Unknown,
+                  Failure     => Corrupt_Or_Invalid_Response,
+                  Admission   => HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Result => HTTP_Client.Response_Invalid,
+                  HTTP_Phase  => HTTP_Client.Phase (HTTP_Result),
+                  Detail      => US.Null_Unbounded_String);
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Create_Multipart_Child;
+
+   overriding procedure Drive
+     (Item : in out Create_Multipart_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Create_Multipart_Upload
+           (Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item'Access, Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Create_Multipart_Child (Item);
+      else
+         raise Program_Error with
+           "invalid CreateMultipartUpload driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Create_Multipart_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Create_Multipart_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Create_Multipart_Upload
+     (Operation : in out Create_Multipart_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Create_Multipart_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "CreateMultipartUpload restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Create_Multipart_Upload
+        (Origin, Style, Bucket, Key, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived resource bound: retained initiation response bytes use the
+        --  maintained limit of the S3 XML decoder that consumes them.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Create_Multipart_Upload;
+
+   function Create_Multipart_Upload
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Create_Multipart_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Create_Multipart_Operation is
+   begin
+      return Result : Create_Multipart_Operation (Set, Client, Token) do
+         Start_Create_Multipart_Upload
+           (Result, Client, Origin, Bucket, Key, Parameters, Identity,
+            Deadline, Region, Style, Token);
+      end return;
+   end Create_Multipart_Upload;
+
+   procedure Finish
+     (Operation : in out Create_Multipart_Operation;
+      Result    : out Create_Multipart_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with
+           "CreateMultipartUpload has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   --  Exact status/code pairs are S3 wire authority. A complete modeled
+   --  rejection still does not prove that an earlier attempt did not stage a
+   --  part, so only a validated success or definite non-admission changes
+   --  publication certainty.
+   function Normalize_Upload_Part_Response
+     (Value     : Low_Level.Upload_Part_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Upload_Part_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Upload_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Failure : constant Failure_Reason :=
+        (if Value.Kind = Low_Level.Part_Uploaded then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchUpload"
+         then Not_Found
+         elsif Value.Status = 400
+           and then Code in
+             "BadDigest" | "InvalidPart" | "InvalidRequest" |
+             "EntityTooLarge"
+         then Invalid_Request
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => Upload_Part_Response_Available,
+         Disposition =>
+           (if Admission = HTTP_Client.Response_Observed
+              and then Value.Kind = Low_Level.Part_Uploaded
+            then Part_Published
+            else Part_Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            else Failure),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Upload_Part_Response;
+
+   function Normalize_Upload_Part_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Upload_Part_Result is
+   begin
+      return
+        (Kind        => Upload_Part_Exchange_Failed,
+         Disposition =>
+           (if Kind = HTTP_Client.Cancelled
+              and then Admission = HTTP_Client.Not_Admitted
+            then Part_Cancelled_Before_Admission
+            elsif Admission = HTTP_Client.Not_Admitted
+            then Definitely_Not_Staged
+            else Part_Outcome_Unknown),
+         Failure     =>
+           (if Kind = HTTP_Client.Response_Body_Too_Large
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Upload_Part_Failure;
+
+   overriding function Declared_Length
+     (Item : Upload_Part_Operation) return HTTP_Client.Body_Length is
+   begin
+      return HTTP_Client.Known_Length
+        (HTTP_Client.Body_Size (Buffer_Drivers.Length (Item.Source)));
+   end Declared_Length;
+
+   overriding procedure Read_Now
+     (Item   : in out Upload_Part_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind)
+   is
+      Length : constant Natural := Buffer_Drivers.Length (Item.Source);
+      Count  : constant Natural :=
+        Natural'Min (Natural (Data'Length), Length - Item.Source_Position);
+   begin
+      Data := (others => 0);
+      Last := Data'First - 1;
+      if Count = 0 then
+         Result := HTTP_Client.Source_Finished;
+         return;
+      end if;
+      for Offset in 0 .. Count - 1 loop
+         Data (Data'First + Ada.Streams.Stream_Element_Offset (Offset)) :=
+           Byte_Pointers.To_Pointer
+             (Buffer_Drivers.Address (Item.Source) +
+                System.Storage_Elements.Storage_Offset
+                  (Item.Source_Position + Offset)).all;
+      end loop;
+      Item.Source_Position := Item.Source_Position + Count;
+      Last := Data'First + Ada.Streams.Stream_Element_Offset (Count) - 1;
+      Result := HTTP_Client.Source_Progress;
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Upload_Part_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      pragma Unreferenced (Item, Required);
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Upload_Part_Operation) is
+   begin
+      pragma Unreferenced (Item);
+      null;
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Upload_Part_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "UploadPart response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Upload_Part_Child
+     (Item : in out Upload_Part_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_Upload_Part_Failure
+               (HTTP_Client.Response_Sink_Failed, Admission,
+                HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Upload_Part_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Upload_Part_Response
+              (Low_Level.Decode_Upload_Part_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  Item.Prepared),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_Upload_Part_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Upload_Part_Child;
+
+   overriding procedure Drive
+     (Item : in out Upload_Part_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Upload_Part
+           (Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item'Access, Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Upload_Part_Child (Item);
+      else
+         raise Program_Error with "invalid UploadPart driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Upload_Part_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Upload_Part_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Buffer_Drivers.Release (Item.Source);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Upload_Part
+     (Operation : in out Upload_Part_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Upload_Part_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "UploadPart restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Upload_Part
+        (Origin, Style, Bucket, Key, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Source_Position := 0;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived resource bound: retained UploadPart response bytes use the
+        --  maintained limit of the S3 XML decoder that consumes errors.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Buffer_Drivers.Move_From (Payload_Buffer, Operation.Source);
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Buffer_Drivers.Has_Buffer (Operation.Source) then
+               Buffer_Drivers.Move_To (Operation.Source, Payload_Buffer);
+            end if;
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Upload_Part;
+
+   function Upload_Part
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Upload_Part_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Upload_Part_Operation is
+   begin
+      return Result : Upload_Part_Operation (Set, Client, Token) do
+         Start_Upload_Part
+           (Result, Client, Origin, Bucket, Key, Parameters, Payload_Buffer,
+            Identity, Deadline, Region, Style, Token);
+      end return;
+   end Upload_Part;
+
+   procedure Finish
+     (Operation : in out Upload_Part_Operation;
+      Result    : out Upload_Part_Result;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer) is
+   begin
+      if not Buffer_Drivers.Same_Pool
+        (Operation.Source, Payload_Buffer)
+      then
+         raise Program_Error with
+           "UploadPart Finish requires the original buffer pool";
+      end if;
+      Operations.Consume (Operation);
+      Buffer_Drivers.Move_To (Operation.Source, Payload_Buffer);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "UploadPart has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   --  Exact status/code pairs are S3 wire authority. Even a complete modeled
+   --  rejection may be an embedded HTTP 200 error after server-side work, so
+   --  only validated success or definite non-admission is conclusive.
+   function Normalize_Complete_Multipart_Response
+     (Value     : Low_Level.Complete_Multipart_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Multipart_Completion_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Complete_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Failure : constant Failure_Reason :=
+        (if Value.Kind = Low_Level.Completed then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status in 200 | 404
+           and then Code in "NoSuchBucket" | "NoSuchKey" | "NoSuchUpload"
+         then Not_Found
+         elsif Value.Status in 200 | 400 | 412
+           and then Code in
+             "BadDigest" | "EntityTooSmall" | "InvalidPart" |
+             "InvalidPartOrder" | "InvalidRequest" | "PreconditionFailed"
+         then Invalid_Request
+         elsif (Value.Status in 200 | 409
+                  and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status in 200 | 500
+                      and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => Complete_Multipart_Response_Available,
+         Disposition =>
+           (if Admission = HTTP_Client.Response_Observed
+              and then Value.Kind = Low_Level.Completed
+            then Multipart_Completed
+            else Completion_Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            else Failure),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Complete_Multipart_Response;
+
+   function Normalize_Complete_Multipart_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Multipart_Completion_Result is
+   begin
+      return
+        (Kind        => Complete_Multipart_Exchange_Failed,
+         Disposition =>
+           (if Kind = HTTP_Client.Cancelled
+              and then Admission = HTTP_Client.Not_Admitted
+            then Completion_Cancelled_Before_Admission
+            elsif Admission = HTTP_Client.Not_Admitted
+            then Definitely_Not_Completed
+            else Completion_Outcome_Unknown),
+         Failure     =>
+           (if Kind = HTTP_Client.Response_Body_Too_Large
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Complete_Multipart_Failure;
+
+   overriding function Declared_Length
+     (Item : Complete_Multipart_Operation) return HTTP_Client.Body_Length is
+   begin
+      return HTTP_Client.Known_Length
+        (HTTP_Client.Body_Size
+           (Low.Owned_Payload_Length (Item.Prepared)));
+   end Declared_Length;
+
+   overriding procedure Read_Now
+     (Item   : in out Complete_Multipart_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind)
+   is
+      Length : constant Natural :=
+        Low.Owned_Payload_Length (Item.Prepared);
+      Count : constant Natural :=
+        Natural'Min (Natural (Data'Length), Length - Item.Source_Position);
+   begin
+      Data := (others => 0);
+      Last := Data'First - 1;
+      if Count = 0 then
+         Result := HTTP_Client.Source_Finished;
+         return;
+      end if;
+      for Offset in 0 .. Count - 1 loop
+         Data (Data'First + Ada.Streams.Stream_Element_Offset (Offset)) :=
+           Ada.Streams.Stream_Element
+             (Character'Pos
+                (Low.Owned_Payload_Element
+                   (Item.Prepared, Item.Source_Position + Offset + 1)));
+      end loop;
+      Item.Source_Position := Item.Source_Position + Count;
+      Last := Data'First + Ada.Streams.Stream_Element_Offset (Count) - 1;
+      Result := HTTP_Client.Source_Progress;
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Complete_Multipart_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      pragma Unreferenced (Item, Required);
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Complete_Multipart_Operation) is
+   begin
+      pragma Unreferenced (Item);
+      null;
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Complete_Multipart_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "CompleteMultipartUpload response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Multipart_Child
+     (Item : in out Complete_Multipart_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_Complete_Multipart_Failure
+              (HTTP_Client.Response_Sink_Failed, Admission,
+               HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Complete_Multipart_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Complete_Multipart_Response
+              (Low_Level.Decode_Complete_Multipart_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  Item.Prepared),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_Complete_Multipart_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Multipart_Child;
+
+   overriding procedure Drive
+     (Item : in out Complete_Multipart_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Complete_Multipart_Upload
+           (Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item'Access, Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Multipart_Child (Item);
+      else
+         raise Program_Error with
+           "invalid CompleteMultipartUpload driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Complete_Multipart_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Complete_Multipart_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Complete_Multipart_Upload
+     (Operation : in out Complete_Multipart_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Upload_ID : String;
+      Completion : S3.Multipart.Complete_Multipart_Upload_Request;
+      Parameters : Low_Level.Complete_Multipart_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "CompleteMultipartUpload restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Complete_Multipart_Upload
+        (Origin, Style, Bucket, Key, Upload_ID, Completion, Parameters,
+         Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Source_Position := 0;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived resource bound: retained completion response bytes use the
+        --  maintained limit of the S3 XML decoder that consumes them.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Complete_Multipart_Upload;
+
+   function Complete_Multipart_Upload
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Upload_ID : String;
+      Completion : S3.Multipart.Complete_Multipart_Upload_Request;
+      Parameters : Low_Level.Complete_Multipart_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Complete_Multipart_Operation is
+   begin
+      return Result : Complete_Multipart_Operation (Set, Client, Token) do
+         Start_Complete_Multipart_Upload
+           (Result, Client, Origin, Bucket, Key, Upload_ID, Completion,
+            Parameters, Identity, Deadline, Region, Style, Token);
+      end return;
+   end Complete_Multipart_Upload;
+
+   procedure Finish
+     (Operation : in out Complete_Multipart_Operation;
+      Result    : out Multipart_Completion_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with
+           "CompleteMultipartUpload has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   --  Exact status/code pairs are S3 wire authority for bounded diagnostics.
+   --  Only a validated 204 proves this abort request was accepted; every
+   --  complete rejection remains conservative after possible admission.
+   function Normalize_Abort_Multipart_Response
+     (Value     : Low_Level.Abort_Multipart_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Multipart_Abort_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Abort_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Failure : constant Failure_Reason :=
+        (if Value.Kind = Low_Level.Aborted then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchKey" | "NoSuchUpload"
+         then Not_Found
+         elsif Value.Status in 400 | 412
+           and then Code in "InvalidRequest" | "PreconditionFailed"
+         then Invalid_Request
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => Abort_Multipart_Response_Available,
+         Disposition =>
+           (if Admission = HTTP_Client.Response_Observed
+              and then Value.Kind = Low_Level.Aborted
+            then Multipart_Aborted
+            else Abort_Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            else Failure),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Abort_Multipart_Response;
+
+   function Normalize_Abort_Multipart_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Multipart_Abort_Result is
+   begin
+      return
+        (Kind        => Abort_Multipart_Exchange_Failed,
+         Disposition =>
+           (if Kind = HTTP_Client.Cancelled
+              and then Admission = HTTP_Client.Not_Admitted
+            then Abort_Cancelled_Before_Admission
+            elsif Admission = HTTP_Client.Not_Admitted
+            then Definitely_Not_Aborted
+            else Abort_Outcome_Unknown),
+         Failure     =>
+           (if Kind = HTTP_Client.Response_Body_Too_Large
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Abort_Multipart_Failure;
+
+   overriding function Declared_Length
+     (Item : Abort_Multipart_Operation) return HTTP_Client.Body_Length is
+   begin
+      pragma Unreferenced (Item);
+      --  S3 wire contract: AbortMultipartUpload has no request body.
+      return HTTP_Client.Known_Length (0);
+   end Declared_Length;
+
+   overriding procedure Read_Now
+     (Item   : in out Abort_Multipart_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      pragma Unreferenced (Item);
+      Data := (others => 0);
+      Last := Ada.Streams.Stream_Element_Offset'Pred (Data'First);
+      Result := HTTP_Client.Source_Finished;
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Abort_Multipart_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      pragma Unreferenced (Item, Required);
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Abort_Multipart_Operation) is
+   begin
+      pragma Unreferenced (Item);
+      null;
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Abort_Multipart_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "AbortMultipartUpload response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Abort_Multipart_Child
+     (Item : in out Abort_Multipart_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_Abort_Multipart_Failure
+              (HTTP_Client.Response_Sink_Failed, Admission,
+               HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Abort_Multipart_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Abort_Multipart_Response
+              (Low_Level.Decode_Abort_Multipart_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  Item.Prepared),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_Abort_Multipart_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Abort_Multipart_Child;
+
+   overriding procedure Drive
+     (Item : in out Abort_Multipart_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Abort_Multipart_Upload
+           (Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item'Access, Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Abort_Multipart_Child (Item);
+      else
+         raise Program_Error with
+           "invalid AbortMultipartUpload driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Abort_Multipart_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Abort_Multipart_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Abort_Multipart_Upload
+     (Operation : in out Abort_Multipart_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Upload_ID : String;
+      Parameters : Low_Level.Abort_Multipart_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "AbortMultipartUpload restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Abort_Multipart_Upload
+        (Origin, Style, Bucket, Key, Upload_ID, Parameters, Identity, Region,
+         Timestamp);
+      Operation.Deadline := Deadline;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived resource bound: retained abort error bytes use the
+        --  maintained limit of the S3 XML decoder that consumes them.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Abort_Multipart_Upload;
+
+   function Abort_Multipart_Upload
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Upload_ID : String;
+      Parameters : Low_Level.Abort_Multipart_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Abort_Multipart_Operation is
+   begin
+      return Result : Abort_Multipart_Operation (Set, Client, Token) do
+         Start_Abort_Multipart_Upload
+           (Result, Client, Origin, Bucket, Key, Upload_ID, Parameters,
+            Identity, Deadline, Region, Style, Token);
+      end return;
+   end Abort_Multipart_Upload;
+
+   procedure Finish
+     (Operation : in out Abort_Multipart_Operation;
+      Result    : out Multipart_Abort_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with
+           "AbortMultipartUpload has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   --  S3 service status/code pairs below are externally modeled response
+   --  values. The mapping classifies one read-only ListObjectVersions attempt;
+   --  it does not authorize retry or join snapshots across pages.
+   function Normalize_List_Parts_Response
+     (Value     : Low_Level.List_Parts_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return List_Parts_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.List_Parts_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Failure : constant Failure_Reason :=
+        (if Admission /= HTTP_Client.Response_Observed
+         then Corrupt_Or_Invalid_Response
+         elsif Value.Kind = Low_Level.Parts_Listed
+         then No_Failure
+         elsif Value.Status = 400
+           and then Code in "InvalidArgument" | "InvalidRequest"
+         then Invalid_Request
+         elsif Value.Status = 501 and then Code = "NotImplemented"
+         then Invalid_Request
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchKey" | "NoSuchUpload"
+         then Not_Found
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind      => List_Parts_Response_Available,
+         Failure   => Failure,
+         Admission => Admission,
+         Response  => Value);
+   end Normalize_List_Parts_Response;
+
+   function Normalize_List_Parts_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return List_Parts_Result is
+   begin
+      return
+        (Kind        => List_Parts_Exchange_Failed,
+         Failure     => Failed_Reason (Kind),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_List_Parts_Failure;
+
+   overriding procedure Write
+     (Item : in out List_Parts_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "ListParts response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_List_Parts_Child
+     (Item : in out List_Parts_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_List_Parts_Failure
+              (HTTP_Client.Response_Sink_Failed, Admission,
+               HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_List_Parts_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_List_Parts_Response
+              (Low_Level.Decode_List_Parts_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  Item.Prepared),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_List_Parts_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_List_Parts_Child;
+
+   overriding procedure Drive
+     (Item : in out List_Parts_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.List_Parts
+           (Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_List_Parts_Child (Item);
+      else
+         raise Program_Error with "invalid ListParts driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out List_Parts_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out List_Parts_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_List_Parts
+     (Operation : in out List_Parts_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.List_Parts_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "ListParts restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_List_Parts
+        (Origin, Style, Bucket, Key, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived resource bound: retained ListParts bytes use the maintained
+        --  limit of the S3 XML decoder that consumes them.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_List_Parts;
+
+   function List_Parts_Page
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.List_Parts_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Parts_Operation is
+   begin
+      return Result : List_Parts_Operation (Set, Client, Token) do
+         Start_List_Parts
+           (Result, Client, Origin, Bucket, Key, Parameters, Identity,
+            Deadline, Region, Style, Token);
+      end return;
+   end List_Parts_Page;
+
+   procedure Finish
+     (Operation : in out List_Parts_Operation;
+      Result    : out List_Parts_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "ListParts has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   --  S3 service status/code pairs below are externally modeled response
+   --  values. The mapping classifies one read-only ListMultipartUploads
+   --  attempt; it does not authorize retry or imply a shared snapshot with a
+   --  later page.
+   function Normalize_List_Multipart_Uploads_Response
+     (Value     : Low_Level.List_Multipart_Uploads_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return List_Multipart_Uploads_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.List_Multipart_Uploads_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Failure : constant Failure_Reason :=
+        (if Admission /= HTTP_Client.Response_Observed
+         then Corrupt_Or_Invalid_Response
+         elsif Value.Kind = Low_Level.Multipart_Uploads_Listed
+         then No_Failure
+         elsif Value.Status = 400
+           and then Code in "InvalidArgument" | "InvalidRequest"
+         then Invalid_Request
+         elsif Value.Status = 501 and then Code = "NotImplemented"
+         then Invalid_Request
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404 and then Code = "NoSuchBucket"
+         then Not_Found
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind      => Multipart_Uploads_Response_Available,
+         Failure   => Failure,
+         Admission => Admission,
+         Response  => Value);
+   end Normalize_List_Multipart_Uploads_Response;
+
+   function Normalize_List_Multipart_Uploads_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return List_Multipart_Uploads_Result is
+   begin
+      return
+        (Kind        => List_Multipart_Uploads_Exchange_Failed,
+         Failure     => Failed_Reason (Kind),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_List_Multipart_Uploads_Failure;
+
+   overriding procedure Write
+     (Item : in out List_Multipart_Uploads_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "ListMultipartUploads response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_List_Multipart_Uploads_Child
+     (Item : in out List_Multipart_Uploads_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_List_Multipart_Uploads_Failure
+              (HTTP_Client.Response_Sink_Failed, Admission,
+               HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_List_Multipart_Uploads_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_List_Multipart_Uploads_Response
+              (Low_Level.Decode_List_Multipart_Uploads_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  Item.Prepared),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_List_Multipart_Uploads_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_List_Multipart_Uploads_Child;
+
+   overriding procedure Drive
+     (Item : in out List_Multipart_Uploads_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.List_Multipart_Uploads
+           (Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_List_Multipart_Uploads_Child (Item);
+      else
+         raise Program_Error with
+           "invalid ListMultipartUploads driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out List_Multipart_Uploads_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out List_Multipart_Uploads_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_List_Multipart_Uploads
+     (Operation : in out List_Multipart_Uploads_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "ListMultipartUploads restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_List_Multipart_Uploads
+        (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived resource bound: retained listing bytes use the maintained
+        --  limit of the S3 XML decoder that consumes them.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_List_Multipart_Uploads;
+
+   function List_Multipart_Uploads_Page
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return List_Multipart_Uploads_Operation is
+   begin
+      return Result : List_Multipart_Uploads_Operation
+        (Set, Client, Token)
+      do
+         Start_List_Multipart_Uploads
+           (Result, Client, Origin, Bucket, Parameters, Identity, Deadline,
+            Region, Style, Token);
+      end return;
+   end List_Multipart_Uploads_Page;
+
+   procedure Finish
+     (Operation : in out List_Multipart_Uploads_Operation;
+      Result    : out List_Multipart_Uploads_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with
+           "ListMultipartUploads has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   --  Exact status/code pairs are S3 wire authority. This operation is never
+   --  replayed, so an exact modeled rejection observed for its one request can
+   --  prove non-publication; embedded or retryable errors remain ambiguous.
+   function Normalize_Upload_Part_Copy_Response
+     (Value     : Low_Level.Upload_Part_Copy_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Upload_Part_Copy_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Copy_Part_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Precondition_Rejection : constant Boolean :=
+        Value.Status = 412 and then Code = "PreconditionFailed";
+      Conclusive_Rejection : constant Boolean :=
+        (Value.Status = 400
+         and then Code in
+           "InvalidArgument" | "InvalidPart" | "InvalidRequest")
+        or else (Value.Status = 401 and then Code = "InvalidAccessKeyId")
+        or else (Value.Status = 403 and then Code = "AccessDenied")
+        or else
+          (Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchKey" | "NoSuchUpload")
+        or else (Value.Status = 501 and then Code = "NotImplemented");
+      Failure : constant Failure_Reason :=
+        (if Value.Kind = Low_Level.Part_Copied then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchKey" | "NoSuchUpload"
+         then Not_Found
+         elsif Value.Status = 400
+           and then Code in
+             "InvalidArgument" | "InvalidPart" | "InvalidRequest"
+         then Invalid_Request
+         elsif Value.Status = 412 and then Code = "PreconditionFailed"
+         then No_Failure
+         elsif Value.Status = 501 and then Code = "NotImplemented"
+         then Invalid_Request
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status in 200 | 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+         (Kind        => Upload_Part_Copy_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Outcome_Unknown
+            elsif Value.Kind = Low_Level.Part_Copied
+            then Published
+            elsif Precondition_Rejection
+            then Precondition_Failed
+            elsif Conclusive_Rejection
+            then Definitely_Not_Published
+            else Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            else Failure),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Upload_Part_Copy_Response;
+
+   function Normalize_Upload_Part_Copy_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Upload_Part_Copy_Result is
+   begin
+      return
+         (Kind        => Upload_Part_Copy_Exchange_Failed,
+         Disposition => Failed_Disposition (Kind, Admission),
+         Failure     =>
+           (if Kind = HTTP_Client.Response_Body_Too_Large
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Upload_Part_Copy_Failure;
+
+   overriding function Declared_Length
+     (Item : Upload_Part_Copy_Operation)
+      return HTTP_Client.Body_Length is
+   begin
+      pragma Unreferenced (Item);
+      --  S3 UploadPartCopy wire contract: the mutation has no request body.
+      --  The one-shot zero-length source prevents transport-layer replay.
+      return HTTP_Client.Known_Length (0);
+   end Declared_Length;
+
+   overriding procedure Read_Now
+     (Item   : in out Upload_Part_Copy_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      pragma Unreferenced (Item);
+      Data := (others => 0);
+      Last := Ada.Streams.Stream_Element_Offset'Pred (Data'First);
+      Result := HTTP_Client.Source_Finished;
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Upload_Part_Copy_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      pragma Unreferenced (Item, Required);
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Upload_Part_Copy_Operation) is
+   begin
+      pragma Unreferenced (Item);
+      null;
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Upload_Part_Copy_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "UploadPartCopy response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Upload_Part_Copy_Child
+     (Item : in out Upload_Part_Copy_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_Upload_Part_Copy_Failure
+              (HTTP_Client.Response_Sink_Failed, Admission,
+               HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Upload_Part_Copy_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Upload_Part_Copy_Response
+              (Low_Level.Decode_Upload_Part_Copy_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  Item.Prepared),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_Upload_Part_Copy_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Upload_Part_Copy_Child;
+
+   overriding procedure Drive
+     (Item : in out Upload_Part_Copy_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Upload_Part_Copy
+           (Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item'Access, Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Upload_Part_Copy_Child (Item);
+      else
+         raise Program_Error with "invalid UploadPartCopy driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Upload_Part_Copy_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Upload_Part_Copy_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Upload_Part_Copy
+     (Operation : in out Upload_Part_Copy_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Upload_Part_Copy_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "UploadPartCopy restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Upload_Part_Copy
+        (Origin, Style, Bucket, Key, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived resource bound: retained UploadPartCopy response bytes use
+        --  the maintained limit of the S3 XML decoder that consumes them.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Upload_Part_Copy;
+
+   function Upload_Part_Copy
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Upload_Part_Copy_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Upload_Part_Copy_Operation is
+   begin
+      return Result : Upload_Part_Copy_Operation (Set, Client, Token) do
+         Start_Upload_Part_Copy
+           (Result, Client, Origin, Bucket, Key, Parameters, Identity,
+            Deadline, Region, Style, Token);
+      end return;
+   end Upload_Part_Copy;
+
+   procedure Finish
+     (Operation : in out Upload_Part_Copy_Operation;
+      Result    : out Upload_Part_Copy_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "UploadPartCopy has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   --  Exact status/code pairs are S3 wire authority. An embedded HTTP-200
+   --  error is never conclusive publication evidence; only validated success,
+   --  an exact precondition failure, or an exact non-mutating rejection can
+   --  avoid read-only reconciliation.
+   function Normalize_Copy_Response
+     (Value     : Low_Level.Copy_Object_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Copy_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Copy_Object_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Precondition_Rejection : constant Boolean :=
+        Value.Status = 412 and then Code = "PreconditionFailed";
+      Conclusive_Rejection : constant Boolean :=
+        (Value.Status = 400
+         and then Code in "InvalidArgument" | "InvalidRequest")
+        or else (Value.Status = 401 and then Code = "InvalidAccessKeyId")
+        or else (Value.Status = 403 and then Code = "AccessDenied")
+        or else
+          (Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchKey")
+        or else (Value.Status = 501 and then Code = "NotImplemented");
+      Retryable_Response : constant Boolean :=
+        (Value.Status = 409 and then Code = "OperationAborted")
+        or else (Value.Status = 429 and then Code = "SlowDown")
+        or else (Value.Status in 200 | 500 and then Code = "InternalError")
+        or else (Value.Status = 502 and then Code = "BadGateway")
+        or else (Value.Status = 503 and then Code = "SlowDown")
+        or else (Value.Status = 504 and then Code = "RequestTimeout");
+      Failure : constant Failure_Reason :=
+        (if Precondition_Rejection then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchKey"
+         then Not_Found
+         elsif Value.Status = 400
+           and then Code in "InvalidArgument" | "InvalidRequest"
+         then Invalid_Request
+         elsif Value.Status = 501 and then Code = "NotImplemented"
+         then Invalid_Request
+         elsif Retryable_Response
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => Copy_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Outcome_Unknown
+            elsif Value.Kind = Low_Level.Object_Copied
+            then Published
+            elsif Precondition_Rejection
+            then Precondition_Failed
+            elsif Conclusive_Rejection
+            then Definitely_Not_Published
+            else Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Object_Copied
+            then No_Failure
+            else Failure),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Copy_Response;
+
+   function Normalize_Copy_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Copy_Result is
+   begin
+      return
+        (Kind        => Copy_Exchange_Failed,
+         Disposition => Failed_Disposition (Kind, Admission),
+         Failure     =>
+           (if Kind = HTTP_Client.Response_Body_Too_Large
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Copy_Failure;
+
+   overriding function Declared_Length
+     (Item : Copy_Operation) return HTTP_Client.Body_Length is
+   begin
+      pragma Unreferenced (Item);
+      --  S3 CopyObject wire contract: the mutation request has no body. The
+      --  one-shot zero-length source prevents transport-layer replay.
+      return HTTP_Client.Known_Length (0);
+   end Declared_Length;
+
+   overriding procedure Read_Now
+     (Item   : in out Copy_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      pragma Unreferenced (Item);
+      Data := (others => 0);
+      Last := Ada.Streams.Stream_Element_Offset'Pred (Data'First);
+      Result := HTTP_Client.Source_Finished;
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Copy_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      pragma Unreferenced (Item, Required);
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source (Item : in out Copy_Operation) is
+   begin
+      pragma Unreferenced (Item);
+      null;
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Copy_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "CopyObject response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Copy_Child (Item : in out Copy_Operation) is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_Copy_Failure
+              (HTTP_Client.Response_Sink_Failed, Admission,
+               HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Copy_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Copy_Response
+              (Low_Level.Decode_Copy_Object_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  Item.Prepared),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_Copy_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Copy_Child;
+
+   overriding procedure Drive
+     (Item : in out Copy_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Copy_Object
+           (Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item'Access, Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Copy_Child (Item);
+      else
+         raise Program_Error with "invalid CopyObject driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation (Item : in out Copy_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize (Item : in out Copy_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   function Prepare_Copy_From_Raw_Source
+     (Origin             : Flyology.HTTP.Origin;
+      Style              : Low_Level.Addressing_Style;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Region             : String) return Low_Level.Prepared_Request
+   is
+      --  Derived header capacity: the leading slash consumes one byte of the
+      --  maintained maximum request-target representation.
+      Maximum_Copy_Source_Length : constant :=
+        Requests.Maximum_Target_Length - 1;
+   begin
+      if Source_Bucket'Length = 0
+        or else Source_Key'Length = 0
+        or else Source_Bucket'Length >= Maximum_Copy_Source_Length
+        or else Source_Key'Length >
+          Maximum_Copy_Source_Length - Source_Bucket'Length - 1
+      then
+         raise Low_Level.Invalid_Request with "invalid CopyObject source";
+      end if;
+      declare
+         Raw_Source : constant String := Source_Bucket & "/" & Source_Key;
+         Encoded_Source : constant String :=
+           Encoding.URI_Encode (Raw_Source, Encode_Slash => False);
+      begin
+         if Encoded_Source'Length > Maximum_Copy_Source_Length then
+            raise Low_Level.Invalid_Request with
+              "encoded CopyObject source exceeds header limit";
+         end if;
+         declare
+            Source_Target : constant String := "/" & Encoded_Source;
+            Parsed_Source : constant Requests.Target_Result :=
+              Requests.Parse_Target (Source_Target);
+            Parameters : Low_Level.Copy_Object_Parameters := Options;
+         begin
+            if Parsed_Source.Status /= Requests.Target_Parsed
+              or else Parsed_Source.Kind /= Requests.Object_Target
+              or else Requests.Bucket_Name
+                (Source_Target, Parsed_Source) /= Source_Bucket
+              or else Requests.Object_Key
+                (Source_Target, Parsed_Source) /= Source_Key
+            then
+               raise Low_Level.Invalid_Request with
+                 "invalid CopyObject source bucket or key";
+            end if;
+            Parameters.Copy_Source :=
+              US.To_Unbounded_String (Encoded_Source);
+            return Low_Level.Prepare_Copy_Object
+              (Origin, Style, Destination_Bucket, Destination_Key,
+               Parameters, Identity, Region, Timestamp);
+         end;
+      end;
+   end Prepare_Copy_From_Raw_Source;
+
+   procedure Start_Copy_Object
+     (Operation          : in out Copy_Operation;
+      Client             : not null access HTTP_Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Deadline           : HTTP_Client.Monotonic_Deadline;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token              : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "CopyObject restart changed a retained owner";
+      end if;
+      Operation.Prepared := Prepare_Copy_From_Raw_Source
+        (Origin, Style, Source_Bucket, Source_Key, Destination_Bucket,
+         Destination_Key, Options, Identity, Region);
+      Operation.Deadline := Deadline;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived resource bound: retained CopyObject response bytes use the
+        --  maintained limit of the S3 XML decoder that consumes them.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Copy_Object;
+
+   function Copy_Object
+     (Set                : not null access Operations.Completion_Set'Class;
+      Client             : not null access HTTP_Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Deadline           : HTTP_Client.Monotonic_Deadline;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token              : access Flyology.Cancellation.Token := null)
+      return Copy_Operation is
+   begin
+      return Result : Copy_Operation (Set, Client, Token) do
+         Start_Copy_Object
+           (Result, Client, Origin, Source_Bucket, Source_Key,
+            Destination_Bucket, Destination_Key, Options, Identity, Deadline,
+            Region, Style, Token);
+      end return;
+   end Copy_Object;
+
+   procedure Finish
+     (Operation : in out Copy_Operation;
+      Result    : out Copy_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "CopyObject has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   procedure Create_Multipart_Upload
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Create_Multipart_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Create_Multipart_Operation) is
+   begin
+      Start_Create_Multipart_Upload
+        (Operation,
+         Client,
+         Origin,
+         Bucket,
+         Key,
+         Parameters,
+         Identity,
+         Deadline,
+         Region,
+         Style,
+         Token);
+   end Create_Multipart_Upload;
+
+   procedure Upload_Part
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Upload_Part_Parameters;
+      Payload_Buffer : in out Flyology.Buffers.Unique_Buffer;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Upload_Part_Operation) is
+   begin
+      Start_Upload_Part
+        (Operation,
+         Client,
+         Origin,
+         Bucket,
+         Key,
+         Parameters,
+         Payload_Buffer,
+         Identity,
+         Deadline,
+         Region,
+         Style,
+         Token);
+   end Upload_Part;
+
+   procedure Complete_Multipart_Upload
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Upload_ID : String;
+      Completion : S3.Multipart.Complete_Multipart_Upload_Request;
+      Parameters : Low_Level.Complete_Multipart_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Complete_Multipart_Operation) is
+   begin
+      Start_Complete_Multipart_Upload
+        (Operation,
+         Client,
+         Origin,
+         Bucket,
+         Key,
+         Upload_ID,
+         Completion,
+         Parameters,
+         Identity,
+         Deadline,
+         Region,
+         Style,
+         Token);
+   end Complete_Multipart_Upload;
+
+   procedure Abort_Multipart_Upload
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Upload_ID : String;
+      Parameters : Low_Level.Abort_Multipart_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Abort_Multipart_Operation) is
+   begin
+      Start_Abort_Multipart_Upload
+        (Operation,
+         Client,
+         Origin,
+         Bucket,
+         Key,
+         Upload_ID,
+         Parameters,
+         Identity,
+         Deadline,
+         Region,
+         Style,
+         Token);
+   end Abort_Multipart_Upload;
+
+   procedure List_Parts_Page
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.List_Parts_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out List_Parts_Operation) is
+   begin
+      Start_List_Parts
+        (Operation,
+         Client,
+         Origin,
+         Bucket,
+         Key,
+         Parameters,
+         Identity,
+         Deadline,
+         Region,
+         Style,
+         Token);
+   end List_Parts_Page;
+
+   procedure List_Multipart_Uploads_Page
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.List_Multipart_Uploads_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out List_Multipart_Uploads_Operation) is
+   begin
+      Start_List_Multipart_Uploads
+        (Operation,
+         Client,
+         Origin,
+         Bucket,
+         Parameters,
+         Identity,
+         Deadline,
+         Region,
+         Style,
+         Token);
+   end List_Multipart_Uploads_Page;
+
+   procedure Upload_Part_Copy
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Key      : String;
+      Parameters : Low_Level.Upload_Part_Copy_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null;
+      Operation : in out Upload_Part_Copy_Operation) is
+   begin
+      Start_Upload_Part_Copy
+        (Operation,
+         Client,
+         Origin,
+         Bucket,
+         Key,
+         Parameters,
+         Identity,
+         Deadline,
+         Region,
+         Style,
+         Token);
+   end Upload_Part_Copy;
+
+   procedure Copy_Object
+     (Client             : not null access Flyology.HTTP.Client.Client;
+      Origin             : Flyology.HTTP.Origin;
+      Source_Bucket      : String;
+      Source_Key         : String;
+      Destination_Bucket : String;
+      Destination_Key    : String;
+      Options            : Low_Level.Copy_Object_Parameters;
+      Identity           : Low_Level.Credentials;
+      Deadline           : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region             : String := "us-east-1";
+      Style              : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token              : access Flyology.Cancellation.Token := null;
+      Operation          : in out Copy_Operation) is
+   begin
+      Start_Copy_Object
+        (Operation,
+         Client,
+         Origin,
+         Source_Bucket,
+         Source_Key,
+         Destination_Bucket,
+         Destination_Key,
+         Options,
+         Identity,
+         Deadline,
+         Region,
+         Style,
+         Token);
+   end Copy_Object;
 
 end Flyology.Object_Storage.Client.Transfers;

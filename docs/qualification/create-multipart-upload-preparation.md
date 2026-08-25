@@ -81,8 +81,8 @@ confirmation headers may be absent; when present they must be coherent with
 the explicitly requested policy. Error request identifiers are bounded by the
 same 8-KiB limit.
 
-`Client.Scoped.Create_Multipart_Upload` and
-`Start_Create_Multipart_Upload` are the reusable completion-set-aware forms.
+The limited constructor and operation-last procedure named
+`Client.Transfers.Create_Multipart_Upload` are the completion-set-aware forms.
 They copy the complete prepared request before returning, drive one hidden
 HTTP child on the caller's stack, use a one-shot non-replayable known-empty
 source, and bound the response sink by the existing S3 XML parse limits.
@@ -210,8 +210,8 @@ lanes across RustFS, SeaweedFS, supplemental MinIO, and Flyology memory, files,
 and SQLite. Its primary CreateMultipartUpload call uses the typed synchronous
 wrapper over the same composable state machine. Pinned external capability
 exclusions remained exact; there was no unexpected failure or unexpected pass.
-GNATdoc generated the public `Client.Scoped` operation, result, constructor,
-restart, and Finish entries. The maintained warning-strict proof gate passed
+GNATdoc generated the public `Client.Transfers` operation, result, constructor,
+reusable procedure, and Finish entries. The maintained warning-strict proof gate passed
 936/936, and the post-run process audit was clean before the exclusive formal
 lane was released.
 
