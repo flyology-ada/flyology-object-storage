@@ -137,6 +137,10 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Deletion_Disposition;
    use type Scoped.Delete_Objects_Result_Kind;
    use type Scoped.Delete_Objects_Disposition;
+   use type Scoped.Put_Object_Tagging_Result_Kind;
+   use type Scoped.Get_Object_Tagging_Result_Kind;
+   use type Scoped.Delete_Object_Tagging_Result_Kind;
+   use type Scoped.Object_Tag_Mutation_Disposition;
    use type Scoped.Create_Multipart_Result_Kind;
    use type Scoped.Multipart_Creation_Disposition;
    use type HTTP_Client.Admission_Certainty;
@@ -2926,6 +2930,13 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Content_MD5 => "FHvgEqWnwx8BYbDb/UMn6Q==");
          Serve
            (HTTP_Response
+              ("400 Bad Request",
+               "<Error><Code>InvalidTag</Code>" &
+               "<Message>invalid tag</Message></Error>"),
+            "PUT", "/example-bucket/typed-tagged?tagging", "<Tagging",
+            Expected_Content_MD5 => "FHvgEqWnwx8BYbDb/UMn6Q==");
+         Serve
+           (HTTP_Response
               ("200 OK",
                "<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
                "<TagSet><Tag><Key>team</Key><Value>storage</Value></Tag>" &
@@ -2935,8 +2946,22 @@ procedure S3_HTTP_Socket_Corpus is
             Fragmented => True);
          Serve
            (HTTP_Response
+              ("200 OK",
+               "<Tagging xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+               "<TagSet><Tag><Key>team</Key><Value>storage</Value></Tag>" &
+               "</TagSet></Tagging>",
+               "x-amz-version-id: tag-get-restart-version" & CRLF),
+            "GET", "/example-bucket/typed-tagged?tagging");
+         Serve
+           (HTTP_Response
               ("204 No Content", "",
                "x-amz-version-id: tag-delete-version" & CRLF,
+               Omit_Content_Length => True),
+            "DELETE", "/example-bucket/typed-tagged?tagging");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-version-id: tag-delete-restart-version" & CRLF,
                Omit_Content_Length => True),
             "DELETE", "/example-bucket/typed-tagged?tagging");
          Serve
@@ -8701,64 +8726,137 @@ procedure S3_HTTP_Socket_Corpus is
             Put_Parameters : Low_Level.Put_Object_Tagging_Parameters;
             Get_Parameters : Low_Level.Get_Object_Tagging_Parameters;
             Delete_Parameters : Low_Level.Delete_Object_Tagging_Parameters;
+            --  Derived capacity: the parent, HTTP exchange, and HTTP's one
+            --  active transport child are the only simultaneous operations.
+            Set : aliased Flyology.Operations.Completion_Set (3);
          begin
             Tags.Length := 1;
             Tags.Items (1) :=
               (Key => US.To_Unbounded_String ("team"),
                Value => US.To_Unbounded_String ("storage"));
             declare
-               Prepared_Put : constant Low_Level.Prepared_Request :=
-                 Low_Level.Prepare_Put_Object_Tagging
-                   (Origin, Low_Level.Path_Style, "example-bucket",
+               Operation : Scoped.Put_Object_Tagging_Operation :=
+                 Scoped.Put_Object_Tagging
+                    (Set'Access, HTTP'Access, Origin, "example-bucket",
                     "typed-tagged", Tags, Put_Parameters, Identity,
-                    "us-east-1", "20130524T000000Z");
-               Result : constant Low_Level.Object_Tagging_Outcome :=
-                 Low_Level.Execute_Put_Object_Tagging
-                   (HTTP, Prepared_Put, Timeout => 5.0);
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.Put_Object_Tagging_Result;
             begin
-               if Result.Kind /= Low_Level.Tags_Put
-                 or else US.To_String (Result.Result.Version_ID) /=
+               Flyology.Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.Put_Object_Tagging_Response_Available
+                 or else Result.Disposition /=
+                   Scoped.Object_Tag_Mutation_Completed
+                 or else Result.Response.Kind /= Low_Level.Tags_Put
+                 or else US.To_String (Result.Response.Result.Version_ID) /=
                    "tag-put-version"
                then
                   raise Program_Error with
                     "typed PutObjectTagging socket result mismatch";
                end if;
+               Scoped.Start_Put_Object_Tagging
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  "typed-tagged", Tags, Put_Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0));
+               Flyology.Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.Put_Object_Tagging_Response_Available
+                 or else Result.Disposition /=
+                   Scoped.Object_Tag_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Scoped.Invalid_Request
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Tagging_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "InvalidTag"
+               then
+                  raise Program_Error with
+                    "typed PutObjectTagging restart mismatch";
+               end if;
             end;
             declare
-               Prepared_Get : constant Low_Level.Prepared_Request :=
-                 Low_Level.Prepare_Get_Object_Tagging
-                   (Origin, Low_Level.Path_Style, "example-bucket",
+               Operation : Scoped.Get_Object_Tagging_Operation :=
+                 Scoped.Get_Object_Tagging
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
                     "typed-tagged", Get_Parameters, Identity,
-                    "us-east-1", "20130524T000000Z");
-               Result : constant Low_Level.Object_Tagging_Outcome :=
-                 Low_Level.Execute_Get_Object_Tagging
-                   (HTTP, Prepared_Get, Timeout => 5.0);
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.Get_Object_Tagging_Result;
             begin
-               if Result.Kind /= Low_Level.Tags_Gotten
-                 or else Result.Result.Tags /= Tags
-                 or else US.To_String (Result.Result.Version_ID) /=
+               Flyology.Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.Get_Object_Tagging_Response_Available
+                 or else Result.Response.Kind /= Low_Level.Tags_Gotten
+                 or else Result.Response.Result.Tags /= Tags
+                 or else US.To_String
+                   (Result.Response.Result.Version_ID) /=
                    "tag-get-version"
                then
                   raise Program_Error with
                     "typed GetObjectTagging socket result mismatch";
                end if;
+               Scoped.Start_Get_Object_Tagging
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  "typed-tagged", Get_Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0));
+               Flyology.Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.Get_Object_Tagging_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Tags_Gotten
+                 or else Result.Response.Result.Tags /= Tags
+                 or else US.To_String
+                   (Result.Response.Result.Version_ID) /=
+                   "tag-get-restart-version"
+               then
+                  raise Program_Error with
+                    "typed GetObjectTagging restart mismatch";
+               end if;
             end;
             declare
-               Prepared_Delete : constant Low_Level.Prepared_Request :=
-                 Low_Level.Prepare_Delete_Object_Tagging
-                   (Origin, Low_Level.Path_Style, "example-bucket",
+               Operation : Scoped.Delete_Object_Tagging_Operation :=
+                 Scoped.Delete_Object_Tagging
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
                     "typed-tagged", Delete_Parameters, Identity,
-                    "us-east-1", "20130524T000000Z");
-               Result : constant Low_Level.Object_Tagging_Outcome :=
-                 Low_Level.Execute_Delete_Object_Tagging
-                   (HTTP, Prepared_Delete, Timeout => 5.0);
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.Delete_Object_Tagging_Result;
             begin
-               if Result.Kind /= Low_Level.Tags_Deleted
-                 or else US.To_String (Result.Result.Version_ID) /=
+               Flyology.Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /=
+                   Scoped.Delete_Object_Tagging_Response_Available
+                 or else Result.Disposition /=
+                   Scoped.Object_Tag_Mutation_Completed
+                 or else Result.Response.Kind /= Low_Level.Tags_Deleted
+                 or else US.To_String
+                   (Result.Response.Result.Version_ID) /=
                    "tag-delete-version"
                then
                   raise Program_Error with
                     "typed DeleteObjectTagging socket result mismatch";
+               end if;
+               Scoped.Start_Delete_Object_Tagging
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  "typed-tagged", Delete_Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0));
+               Flyology.Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /=
+                   Scoped.Delete_Object_Tagging_Response_Available
+                 or else Result.Disposition /=
+                   Scoped.Object_Tag_Mutation_Completed
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Tags_Deleted
+                 or else US.To_String
+                   (Result.Response.Result.Version_ID) /=
+                   "tag-delete-restart-version"
+               then
+                  raise Program_Error with
+                    "typed DeleteObjectTagging restart mismatch";
                end if;
             end;
             declare
@@ -8782,6 +8880,46 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "convenient object tagging socket flow mismatch";
+               end if;
+            end;
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+               Cancelled : Boolean := False;
+               Timed_Out : Boolean := False;
+            begin
+               Stop.Request;
+               begin
+                  declare
+                     Ignored : constant Objects.Tagging_Outcome :=
+                       Objects.Put_Tags
+                         (HTTP, Origin, "example-bucket", "cancelled-tagged",
+                          Tags, Identity, Timeout => 5.0,
+                          Token => Stop'Access);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled =>
+                     Cancelled := True;
+               end;
+               begin
+                  declare
+                     Ignored : constant Objects.Tagging_Outcome :=
+                       Objects.Delete_Tags
+                         (HTTP, Origin, "example-bucket", "expired-tagged",
+                          Identity, Timeout => 0.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.IO.Timeout_Error =>
+                     Timed_Out := True;
+               end;
+               if not Cancelled or else not Timed_Out then
+                  raise Program_Error with
+                    "object tagging ignored cancellation/deadline";
                end if;
             end;
          end;
@@ -13982,6 +14120,8 @@ begin
      Check_Head_Bucket_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_Bucket_Tagging_Certainty_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_Object_Tagging_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_List_Parts_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.

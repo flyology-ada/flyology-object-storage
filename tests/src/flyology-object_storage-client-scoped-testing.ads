@@ -27,6 +27,8 @@ package Flyology.Object_Storage.Client.Scoped.Testing is
 
    procedure Check_Bucket_Tagging_Certainty_Corpus;
 
+   procedure Check_Object_Tagging_Certainty_Corpus;
+
    procedure Check_List_Parts_Result_Corpus;
 
    procedure Check_List_Multipart_Uploads_Result_Corpus;

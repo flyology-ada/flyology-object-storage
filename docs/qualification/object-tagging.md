@@ -53,9 +53,33 @@ convenience clients against RustFS, SeaweedFS, supplemental MinIO, and Flyology
 memory, files, and SQLite. Retained-generation isolation and SQLite reopen are
 also black-box gated.
 
-The qualified source passes the 40/40 AUnit root suite, 88 abrupt files-crash
+## Composable client
+
+The additive `Client.Scoped` family exposes operation-specific Put, Get, and
+Delete operations. Put serializes and owns the exact signed tag document once;
+Delete owns a known-empty non-rewindable source; neither mutation can be
+replayed. Get retains a complete response bounded by both the shared XML limit
+and the stricter tagging-document limit. Exact version selection is retained in
+the signed request, and successful responses preserve the selected
+`x-amz-version-id` from that same exchange.
+
+Typed mutation results report completion only for a validated modeled response.
+Exact service rejection or HTTP non-admission can prove non-application;
+possible admission, malformed or lost responses, and retryable service results
+remain unknown and require caller-selected GetObjectTagging reconciliation for
+the exact version before any retry. Parameter-record `Client.Objects`
+overloads wait on these operations, while the convenience overloads retain
+their established raising transport behavior.
+
+The direct normalization corpus crosses every typed HTTP failure with every
+admission state and covers exact completed, conclusive, retryable, and
+mismatched service responses. The native/lightweight socket corpus drives all
+three operations directly, verifies same-owner restart, fragmented bounded
+reads, exact returned version identities, cancellation and deadline handling,
+and the convenience wrappers through the same state machines.
+
+The qualified source passes the 41/41 AUnit root suite, 126 abrupt files-crash
 cases, 320 checksum vectors, 210 chunk boundaries, the 64-GiB CRC linearization
 oracle, signed server/application/socket/TLS corpora, the SQLite backend suite,
 the 116-operation coverage verifier and negative oracle, and GNATdoc generation.
-The admission repair is outside the SPARK manifest and changes no public API,
-backend state model, pagination algorithm, or scheduling boundary.
+The composable addition changes no backend state model or pagination boundary.

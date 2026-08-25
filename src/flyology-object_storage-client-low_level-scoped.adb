@@ -2,6 +2,8 @@ with Ada.Strings.Unbounded;
 
 package body Flyology.Object_Storage.Client.Low_Level.Scoped is
 
+   use type S3.Model.Operation_Id;
+
    procedure Clear_Prepared_Request
      (Prepared : in out Prepared_Request) is
    begin
@@ -421,5 +423,68 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
         (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
          Token);
    end Start_Delete_Bucket_Tagging;
+
+   procedure Start_Put_Object_Tagging
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null) is
+   begin
+      if Prepared.Operation /= Model_Driven_Operation
+        or else Prepared.Modeled_Operation /=
+          S3.Model.Put_Object_Tagging_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Flyology.HTTP.Client.Scoped.Start
+        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
+         Token);
+   end Start_Put_Object_Tagging;
+
+   procedure Start_Get_Object_Tagging
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null) is
+   begin
+      if Prepared.Operation /= Model_Driven_Operation
+        or else Prepared.Modeled_Operation /=
+          S3.Model.Get_Object_Tagging_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Flyology.HTTP.Client.Scoped.Start
+        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+   end Start_Get_Object_Tagging;
+
+   procedure Start_Delete_Object_Tagging
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null) is
+   begin
+      if Prepared.Operation /= Model_Driven_Operation
+        or else Prepared.Modeled_Operation /=
+          S3.Model.Delete_Object_Tagging_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Flyology.HTTP.Client.Scoped.Start
+        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
+         Token);
+   end Start_Delete_Object_Tagging;
 
 end Flyology.Object_Storage.Client.Low_Level.Scoped;

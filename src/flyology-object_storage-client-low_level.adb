@@ -10193,9 +10193,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Add ("ChecksumAlgorithm", Parameters.Checksum_Algorithm);
       Add ("ExpectedBucketOwner", Parameters.Expected_Bucket_Owner);
       Add ("RequestPayer", Parameters.Request_Payer);
-      return Prepare_Model_Request
+      return Result : Prepared_Request := Prepare_Model_Request
         (Model.Put_Object_Tagging_Operation, Origin, Style, Values, Payload,
-         True, "", Identity, Region, Timestamp);
+         True, "", Identity, Region, Timestamp)
+      do
+         --  The one-shot source owns the exact serialized and signed tag
+         --  document. Keeping it in Request too would select HTTP's retained
+         --  replayable-body form and conflict with composable execution.
+         Result.Owned_Request_Payload := US.To_Unbounded_String (Payload);
+         Flyology.HTTP.Client.Set_Body (Result.Message, "");
+      end return;
    end Prepare_Put_Object_Tagging;
 
    function Prepare_Get_Object_Tagging
@@ -10258,6 +10265,91 @@ package body Flyology.Object_Storage.Client.Low_Level is
          False, "", Identity, Region, Timestamp);
    end Prepare_Delete_Object_Tagging;
 
+   function Decode_Object_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Version_ID : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Expected   : Model.Operation_Id;
+      Limits     : S3.XML.Parse_Limits) return Object_Tagging_Outcome
+   is
+      Version : constant US.Unbounded_String :=
+        US.To_Unbounded_String (Version_ID);
+   begin
+      if Version_ID'Length > 0
+        and then not S3.Deletions.Valid_Version_ID (Version_ID)
+      then
+         raise Invalid_Response with
+           "object tagging response contains an invalid version id";
+      elsif Status /= Model.Response_Code (Expected) then
+         return
+           (Kind   => Object_Tagging_Rejected,
+            Status => Status,
+            Error  => Error_Response
+              (Payload, Request_ID, Host_ID, Limits));
+      elsif Expected = Model.Get_Object_Tagging_Operation then
+         return
+           (Kind   => Tags_Gotten,
+            Status => Status,
+            Result =>
+              (Tags       => S3.Tagging.Parse (Payload, Limits),
+               Version_ID => Version));
+      elsif not Whitespace_Only (Payload) then
+         raise Invalid_Response with
+           "object tagging mutation response contains a body";
+      elsif Expected = Model.Put_Object_Tagging_Operation then
+         return
+           (Kind   => Tags_Put,
+            Status => Status,
+            Result => (Tags => Empty_Object_Tags, Version_ID => Version));
+      else
+         return
+           (Kind   => Tags_Deleted,
+            Status => Status,
+            Result => (Tags => Empty_Object_Tags, Version_ID => Version));
+      end if;
+   exception
+      when S3.Tagging.Malformed_Tagging | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed object tagging response";
+   end Decode_Object_Tagging_Response;
+
+   function Decode_Put_Object_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Version_ID : String := "";
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome is
+     (Decode_Object_Tagging_Response
+        (Status, Payload, Version_ID, Request_ID, Host_ID,
+         Model.Put_Object_Tagging_Operation, Limits));
+
+   function Decode_Get_Object_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Version_ID : String := "";
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome is
+     (Decode_Object_Tagging_Response
+        (Status, Payload, Version_ID, Request_ID, Host_ID,
+         Model.Get_Object_Tagging_Operation, Limits));
+
+   function Decode_Delete_Object_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Version_ID : String := "";
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome is
+     (Decode_Object_Tagging_Response
+        (Status, Payload, Version_ID, Request_ID, Host_ID,
+         Model.Delete_Object_Tagging_Operation, Limits));
+
    function Execute_Object_Tagging
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Expected : Model.Operation_Id;
@@ -10271,16 +10363,30 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
-         Response : Flyology.HTTP.Client.Response :=
-           Execute_Model_Request (Client, Prepared, Timeout, Token);
+         function Execute_Request return Flyology.HTTP.Client.Response is
+         begin
+            if Expected in Model.Put_Object_Tagging_Operation |
+                           Model.Delete_Object_Tagging_Operation
+            then
+               declare
+                  Source : Non_Replayable_Buffer_Source :=
+                    (Data => Prepared.Owned_Request_Payload, Next => 1);
+               begin
+                  return Execute_Model_Request
+                    (Client, Prepared, Source, Timeout, Token);
+               end;
+            else
+               return Execute_Model_Request (Client, Prepared, Timeout, Token);
+            end if;
+         end Execute_Request;
+
+         Response : Flyology.HTTP.Client.Response := Execute_Request;
          Status : constant Flyology.HTTP.Status_Code :=
            Flyology.HTTP.Client.Status (Response);
          Request_ID : constant String :=
            Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
          Host_ID : constant String :=
            Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         Version_ID : constant US.Unbounded_String := US.To_Unbounded_String
-           (Flyology.HTTP.Client.Header (Response, "x-amz-version-id"));
          Maximum : constant Positive :=
            (if Status = Model.Response_Code (Expected)
             then Positive'Min
@@ -10292,47 +10398,14 @@ package body Flyology.Object_Storage.Client.Low_Level is
              (Response, Maximum, Token);
          Document : constant String := Flyology.Bytes.To_Byte_String (Payload);
       begin
-         if US.Length (Version_ID) > 0
-           and then not S3.Deletions.Valid_Version_ID
-             (US.To_String (Version_ID))
-         then
-            raise Invalid_Response with
-              "object tagging response contains an invalid version id";
-         elsif Status /= Model.Response_Code (Expected) then
-            return
-              (Kind   => Object_Tagging_Rejected,
-               Status => Status,
-               Error  => Error_Response
-                 (Document, Request_ID, Host_ID, Limits));
-         elsif Expected = Model.Get_Object_Tagging_Operation then
-            return
-              (Kind   => Tags_Gotten,
-               Status => Status,
-               Result =>
-                 (Tags       => S3.Tagging.Parse (Document, Limits),
-                  Version_ID => Version_ID));
-         elsif not Whitespace_Only (Document) then
-            raise Invalid_Response with
-              "object tagging mutation response contains a body";
-         elsif Expected = Model.Put_Object_Tagging_Operation then
-            return
-              (Kind   => Tags_Put,
-               Status => Status,
-               Result =>
-                 (Tags => Empty_Object_Tags, Version_ID => Version_ID));
-         else
-            return
-              (Kind   => Tags_Deleted,
-               Status => Status,
-               Result =>
-                 (Tags => Empty_Object_Tags, Version_ID => Version_ID));
-         end if;
+         return Decode_Object_Tagging_Response
+           (Status, Document,
+            Flyology.HTTP.Client.Header (Response, "x-amz-version-id"),
+            Request_ID, Host_ID, Expected, Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
          raise Invalid_Response with "object tagging response exceeds limit";
-      when S3.Tagging.Malformed_Tagging | S3.Errors.Malformed_Error =>
-         raise Invalid_Response with "malformed object tagging response";
    end Execute_Object_Tagging;
 
    function Execute_Put_Object_Tagging

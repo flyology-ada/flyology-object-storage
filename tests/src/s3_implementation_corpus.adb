@@ -98,6 +98,7 @@ procedure S3_Implementation_Corpus is
    use type Scoped.List_Multipart_Uploads_Result_Kind;
    use type Scoped.Copy_Result_Kind;
    use type Scoped.Publication_Disposition;
+   use type Scoped.Whole_Get_Result_Kind;
    use type Scoped.Failure_Reason;
    use type HTTP_Client.Exchange_Result_Kind;
    use type Client_Objects.List_Outcome_Kind;
@@ -112,6 +113,20 @@ procedure S3_Implementation_Corpus is
    Secret_Key : constant String := "flyology-s3-oracle-secret-key-tests";
    Payload    : aliased constant String :=
      String'(1 .. 6 * 1_024 * 1_024 => 'm');
+
+   function Buffer_String (Item : Buffers.Unique_Buffer) return String is
+      Value : US.Unbounded_String;
+
+      procedure Copy (Data : Stream_Element_Array) is
+      begin
+         for Element of Data loop
+            US.Append (Value, Character'Val (Element));
+         end loop;
+      end Copy;
+   begin
+      Buffers.With_Readable_Data (Item, Copy'Access);
+      return US.To_String (Value);
+   end Buffer_String;
 
    function Temporary_Path (Name : String) return String is
       Variable : constant String := "FLYOLOGY_S3_CORPUS_TEMP_DIR";
@@ -2230,40 +2245,33 @@ procedure S3_Implementation_Corpus is
          procedure Require_Body
            (Expected_Body, Expected_ETag : String)
          is
-            Parameters : constant Low_Level.Get_Object_Parameters :=
-              (If_Match => US.To_Unbounded_String (Expected_ETag),
-               others   => <>);
-            Prepared : constant Low_Level.Prepared_Request :=
-              Low_Level.Prepare_Get_Object
-                (Origin, Low_Level.Path_Style, Bucket, Object_Key,
-                 Parameters, Identity, "us-east-1", Timestamp);
-            Response : HTTP_Client.Response :=
-              Low_Level.Execute_Get_Object
-                (HTTP, Prepared, Timeout => 30.0);
-            Result : constant Low_Level.Get_Object_Head_Outcome :=
-              Low_Level.Decode_Get_Object_Response_Head (Response);
-            Received : US.Unbounded_String;
-            Buffer : Stream_Element_Array (1 .. 8);
-            Last : Stream_Element_Offset;
-            Finished : Boolean := False;
+            --  Derived provider-oracle geometry: the exact expected body
+            --  occupies one caller-owned token and no other token is needed.
+            Pool : aliased Buffers.Pool
+              (Block_Size => Expected_Body'Length, Capacity => 1);
+            Destination : Buffers.Unique_Buffer (Pool'Access);
          begin
-            if Result.Kind /= Low_Level.Object_Opened
-              or else Result.Status /= 200
-              or else US.To_String (Result.Result.Entity_Tag) /= Expected_ETag
-            then
-               raise Program_Error with
-                 "conditional PutObject returned the wrong generation";
-            end if;
-            while not Finished loop
-               HTTP_Client.Read_Body (Response, Buffer, Last, Finished);
-               for Index in Buffer'First .. Last loop
-                  US.Append (Received, Character'Val (Buffer (Index)));
-               end loop;
-            end loop;
-            if US.To_String (Received) /= Expected_Body then
-               raise Program_Error with
-                 "conditional PutObject changed the committed bytes";
-            end if;
+            Buffers.Acquire (Destination);
+            declare
+               Result : constant Scoped.Whole_Get_Result :=
+                 Client_Objects.Get_Whole
+                   (HTTP, Origin, Bucket, Object_Key, Destination, Identity,
+                    Expected_Entity_Tag => Expected_ETag, Timeout => 30.0);
+            begin
+               if Result.Kind /= Scoped.Whole_Get_Response_Available
+                 or else Result.Response.Kind /= Low_Level.Object_Opened
+                 or else Result.Response.Status /= 200
+                 or else US.To_String
+                   (Result.Response.Result.Entity_Tag) /= Expected_ETag
+               then
+                  raise Program_Error with
+                    "conditional PutObject returned the wrong generation";
+               end if;
+               if Buffer_String (Destination) /= Expected_Body then
+                  raise Program_Error with
+                    "conditional PutObject changed the committed bytes";
+               end if;
+            end;
          end Require_Body;
 
          procedure Require_Stale_Get_Rejected

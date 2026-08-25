@@ -3489,6 +3489,57 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Decode a complete PutObjectTagging response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Version_ID Optional selected object version response header
+   --  @param Request_ID Optional S3 request identifier
+   --  @param Host_ID Optional S3 host identifier
+   --  @param Limits Shared XML/error parsing limits
+   --  @return Typed exact success or structured rejection
+   function Decode_Put_Object_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Version_ID : String := "";
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome;
+
+   --  Decode a complete GetObjectTagging response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Version_ID Optional selected object version response header
+   --  @param Request_ID Optional S3 request identifier
+   --  @param Host_ID Optional S3 host identifier
+   --  @param Limits Shared XML/error parsing limits
+   --  @return Typed exact tag snapshot or structured rejection
+   function Decode_Get_Object_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Version_ID : String := "";
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome;
+
+   --  Decode a complete DeleteObjectTagging response.
+   --  @param Status HTTP response status
+   --  @param Payload Complete bounded response body
+   --  @param Version_ID Optional selected object version response header
+   --  @param Request_ID Optional S3 request identifier
+   --  @param Host_ID Optional S3 host identifier
+   --  @param Limits Shared XML/error parsing limits
+   --  @return Typed exact success or structured rejection
+   function Decode_Delete_Object_Tagging_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Version_ID : String := "";
+      Request_ID : String := "";
+      Host_ID    : String := "";
+      Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Object_Tagging_Outcome;
+
    function Execute_Put_Object_Tagging
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;

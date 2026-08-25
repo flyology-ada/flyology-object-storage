@@ -7,7 +7,7 @@ initiation, one-shot UploadPart, one-shot multipart completion and abort,
 bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
 ListBuckets, CreateBucket, bodyless HeadBucket, and bucket tagging Put/Get/
-Delete. The
+Delete, plus object tagging Put/Get/Delete. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -65,7 +65,9 @@ The implemented operation order is:
 19. bodyless `Head_Bucket`; and
 20. non-replaying `Create_Bucket`; and
 21. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
-    `Delete_Bucket_Tagging`.
+    `Delete_Bucket_Tagging`; and
+22. `Put_Object_Tagging`, `Get_Object_Tagging`, and
+    `Delete_Object_Tagging`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -148,6 +150,15 @@ document bound. All three parameter-record synchronous overloads wait on the
 same owner-driven operations; the convenience forms preserve their established
 raising transport behavior. Restart requires the same HTTP client and
 cancellation owner, and no request input remains borrowed after signing.
+PutObjectTagging owns the exact serialized tag document prepared for signing,
+while DeleteObjectTagging supplies a non-rewindable known-empty source. The
+mutations are never replayed after possible admission. Their typed results
+distinguish completed mutation, conclusive non-application, pre-admission
+cancellation, and an outcome requiring caller-selected GetObjectTagging for
+the exact selected version before any retry. GetObjectTagging retains one
+response bounded by both the shared XML ceiling and the stricter tagging
+document ceiling. Parameter-record synchronous overloads wait on the same
+operations, and restart requires the same HTTP client and cancellation owner.
 ListObjectsV2 retains a bounded response no larger than the shared XML parser
 limit and binds the bucket, prefix, delimiter, opaque continuation token,
 start-after key, maximum, encoding mode, and requester-pays response to the

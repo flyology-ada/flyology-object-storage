@@ -785,6 +785,32 @@ package Flyology.Object_Storage.Client.Objects is
 
    --  Replace the complete tag set. Empty Tags clears the set, while
    --  Delete_Tags provides the explicit S3 deletion operation.
+   --  This parameter-record overload waits on the same owner-driven
+   --  composable operation and preserves admission and mutation certainty.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Tags Complete validated tag set copied during preparation
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Put_Tags
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Key : String;
+      Tags : Object_Tag_Set;
+      Parameters : Low_Level.Put_Object_Tagging_Parameters;
+      Identity : Low_Level.Credentials;
+      Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Scoped.Put_Object_Tagging_Result;
+
    function Put_Tags
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket, Key : String;
@@ -797,6 +823,29 @@ package Flyology.Object_Storage.Client.Objects is
       Token : access Flyology.Cancellation.Token := null)
       return Tagging_Outcome;
 
+   --  Read the exact selected object-version tag snapshot by waiting on the
+   --  bounded composable operation.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   function Get_Tags
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Key : String;
+      Parameters : Low_Level.Get_Object_Tagging_Parameters;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Scoped.Get_Object_Tagging_Result;
+
    function Get_Tags
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Origin : Flyology.HTTP.Origin; Bucket, Key : String;
@@ -806,6 +855,30 @@ package Flyology.Object_Storage.Client.Objects is
       Request_Payer : String := ""; Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null)
       return Tagging_Outcome;
+
+   --  Delete the exact selected object-version tag set by waiting on the
+   --  nonreplaying composable mutation. The result preserves admission and
+   --  mutation certainty; no outcome authorizes automatic retry.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Delete_Tags
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Origin : Flyology.HTTP.Origin; Bucket, Key : String;
+      Parameters : Low_Level.Delete_Object_Tagging_Parameters;
+      Identity : Low_Level.Credentials; Region : String := "us-east-1";
+      Style : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null)
+      return Scoped.Delete_Object_Tagging_Result;
 
    function Delete_Tags
      (Client : aliased in out Flyology.HTTP.Client.Client;
