@@ -103,6 +103,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Publication_Disposition;
    use type Scoped.Part_Upload_Disposition;
    use type Scoped.List_Objects_Result_Kind;
+   use type Scoped.List_Buckets_Result_Kind;
    use type Scoped.List_Objects_V2_Result_Kind;
    use type Scoped.List_Object_Versions_Result_Kind;
    use type Scoped.Get_Object_Attributes_Result_Kind;
@@ -1418,6 +1419,40 @@ procedure S3_HTTP_Socket_Corpus is
         "</Bucket></Buckets><ContinuationToken>socket-next" &
         "</ContinuationToken><Prefix>socket-</Prefix>" &
         "</ListAllMyBucketsResult>";
+      Wrong_List_Buckets_Prefix_XML : constant String :=
+        "<ListAllMyBucketsResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Owner><ID>socket-owner</ID></Owner>" &
+        "<Buckets><Bucket><Name>socket-bucket</Name>" &
+        "<CreationDate>2026-08-22T01:02:03.000Z</CreationDate>" &
+        "<BucketRegion>us-east-1</BucketRegion>" &
+        "</Bucket></Buckets><Prefix>other-</Prefix>" &
+        "</ListAllMyBucketsResult>";
+      Oversized_List_Buckets_XML : constant String :=
+        "<ListAllMyBucketsResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Buckets>" &
+        "<Bucket><Name>socket-a</Name></Bucket>" &
+        "<Bucket><Name>socket-b</Name></Bucket>" &
+        "</Buckets><Prefix>socket-</Prefix>" &
+        "</ListAllMyBucketsResult>";
+      Wrong_List_Buckets_Name_XML : constant String :=
+        "<ListAllMyBucketsResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Buckets>" &
+        "<Bucket><Name>outside</Name></Bucket>" &
+        "</Buckets><Prefix>socket-</Prefix>" &
+        "</ListAllMyBucketsResult>";
+      Wrong_List_Buckets_Region_XML : constant String :=
+        "<ListAllMyBucketsResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Buckets><Bucket><Name>socket-bucket</Name>" &
+        "<BucketRegion>eu-west-1</BucketRegion></Bucket></Buckets>" &
+        "<Prefix>socket-</Prefix></ListAllMyBucketsResult>";
+      Second_List_Buckets_XML : constant String :=
+        "<ListAllMyBucketsResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Owner><ID>socket-owner</ID></Owner>" &
+        "<Buckets><Bucket><Name>socket-second</Name>" &
+        "<CreationDate>2026-08-22T01:02:04.000Z</CreationDate>" &
+        "<BucketRegion>us-east-1</BucketRegion>" &
+        "</Bucket></Buckets><Prefix>socket-</Prefix>" &
+        "</ListAllMyBucketsResult>";
       V1_Success_XML : constant String :=
         "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
         "2006-03-01/""><Name>example-bucket</Name>" &
@@ -1865,6 +1900,50 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-id: list-buckets-request" & CRLF &
                "x-amz-id-2: list-buckets-host" & CRLF),
             "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
+              "prefix=socket-");
+         Serve
+           (HTTP_Response ("200 OK", List_Buckets_XML),
+            "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
+              "prefix=socket-",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: scoped-list-buckets-request" & CRLF &
+               "x-amz-id-2: scoped-list-buckets-host" & CRLF),
+            "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
+              "prefix=socket-");
+         Serve
+           (HTTP_Response ("200 OK", Wrong_List_Buckets_Prefix_XML),
+            "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
+              "prefix=socket-");
+         Serve
+           (HTTP_Response
+              ("200 OK", List_Buckets_XML,
+               "x-amz-request-id: duplicate-a" & CRLF &
+               "x-amz-request-id: duplicate-b" & CRLF),
+            "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
+              "prefix=socket-");
+         Serve
+           (HTTP_Response ("200 OK", Oversized_List_Buckets_XML),
+            "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
+              "prefix=socket-");
+         Serve
+           (HTTP_Response ("200 OK", Wrong_List_Buckets_Name_XML),
+            "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
+              "prefix=socket-");
+         Serve
+           (HTTP_Response ("200 OK", Wrong_List_Buckets_Region_XML),
+            "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
+              "prefix=socket-");
+         Serve
+           (HTTP_Response ("200 OK", List_Buckets_XML),
+            "GET", "/?bucket-region=us-east-1&max-buckets=1&" &
+              "prefix=socket-");
+         Serve
+           (HTTP_Response ("200 OK", Second_List_Buckets_XML),
+            "GET", "/?bucket-region=us-east-1&" &
+              "continuation-token=socket-next&max-buckets=1&" &
               "prefix=socket-");
          Serve
            (HTTP_Response
@@ -6218,6 +6297,174 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "typed ListBuckets socket error mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Scoped.List_Buckets_Result :=
+                 Buckets.List_Page
+                   (HTTP, Origin, Bucket_Parameters, Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.List_Buckets_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Buckets_Listed
+                 or else Natural (Result.Response.Result.Buckets.Length) /= 1
+                 or else US.To_String
+                   (Result.Response.Result.Buckets.First_Element.Name) /=
+                     "socket-bucket"
+               then
+                  raise Program_Error with
+                    "composable ListBuckets socket success mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Scoped.List_Buckets_Result :=
+                 Buckets.List_Page
+                   (HTTP, Origin, Bucket_Parameters, Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.List_Buckets_Response_Available
+                 or else Result.Failure /= Scoped.Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.List_Buckets_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "scoped-list-buckets-request"
+                 or else US.To_String (Result.Response.Error.Host_ID) /=
+                   "scoped-list-buckets-host"
+               then
+                  raise Program_Error with
+                    "composable ListBuckets socket error mismatch";
+               end if;
+            end;
+            declare
+               procedure Require_Invalid_List_Buckets (Message : String) is
+                  Result : constant Scoped.List_Buckets_Result :=
+                    Buckets.List_Page
+                      (HTTP, Origin, Bucket_Parameters, Identity,
+                       Timeout => 5.0);
+               begin
+                  if Result.Kind /= Scoped.List_Buckets_Exchange_Failed
+                    or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                  then
+                     raise Program_Error with Message;
+                  end if;
+               end Require_Invalid_List_Buckets;
+            begin
+               Require_Invalid_List_Buckets
+                 ("ListBuckets accepted a wrong echoed prefix");
+               Require_Invalid_List_Buckets
+                 ("ListBuckets accepted a duplicate singleton header");
+               Require_Invalid_List_Buckets
+                 ("ListBuckets accepted more than the prepared maximum");
+               Require_Invalid_List_Buckets
+                 ("ListBuckets accepted a bucket outside the prepared " &
+                  "prefix");
+               Require_Invalid_List_Buckets
+                 ("ListBuckets accepted returned metadata outside the " &
+                  "prepared region");
+            end;
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+            begin
+               Stop.Request;
+               declare
+                  Result : constant Scoped.List_Buckets_Result :=
+                    Buckets.List_Page
+                      (HTTP, Origin, Bucket_Parameters, Identity,
+                       Timeout => 5.0, Token => Stop'Access);
+               begin
+                  if Result.Kind /= Scoped.List_Buckets_Exchange_Failed
+                    or else Result.Failure /= Scoped.Cancelled
+                    or else Result.Admission /= HTTP_Client.Not_Admitted
+                  then
+                     raise Program_Error with
+                       "pre-admission ListBuckets cancellation mismatch";
+                  end if;
+               end;
+            end;
+            declare
+               Stop      : aliased Flyology.Cancellation.Token;
+               Cancelled : Boolean := False;
+               Timed_Out : Boolean := False;
+            begin
+               Stop.Request;
+               begin
+                  declare
+                     Ignored : constant Buckets.List_Outcome :=
+                       Buckets.List_Page
+                         (HTTP, Origin, Identity, Maximum => 1,
+                          Prefix => "socket-",
+                          Bucket_Region => "us-east-1", Timeout => 5.0,
+                          Token => Stop'Access);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled =>
+                     Cancelled := True;
+               end;
+               begin
+                  declare
+                     Ignored : constant Buckets.List_Outcome :=
+                       Buckets.List_Page
+                         (HTTP, Origin, Identity, Maximum => 1,
+                          Prefix => "socket-",
+                          Bucket_Region => "us-east-1", Timeout => 0.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.IO.Timeout_Error =>
+                     Timed_Out := True;
+               end;
+               if not Cancelled or else not Timed_Out then
+                  raise Program_Error with
+                    "high-level ListBuckets ignored cancellation/deadline";
+               end if;
+            end;
+            declare
+               Page_Parameters : Low_Level.List_Buckets_Parameters :=
+                 Bucket_Parameters;
+               --  Listing parent, HTTP exchange, and one transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Scoped.List_Buckets_Operation :=
+                 Scoped.List_Buckets
+                   (Set'Access, HTTP'Access, Origin, Page_Parameters,
+                    Identity, HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.List_Buckets_Result;
+            begin
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.List_Buckets_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Buckets_Listed
+                 or else not Result.Response.Result.Has_Continuation_Token
+               then
+                  raise Program_Error with
+                    "composed ListBuckets first page mismatch";
+               end if;
+               Page_Parameters.Continuation_Token :=
+                 Result.Response.Result.Continuation_Token;
+               Page_Parameters.Has_Continuation_Token := True;
+               Scoped.Start_List_Buckets
+                 (Operation, HTTP'Access, Origin, Page_Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.List_Buckets_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Buckets_Listed
+                 or else Natural (Result.Response.Result.Buckets.Length) /= 1
+                 or else US.To_String
+                   (Result.Response.Result.Buckets.First_Element.Name) /=
+                     "socket-second"
+                 or else Result.Response.Result.Has_Continuation_Token
+               then
+                  raise Program_Error with
+                    "composed ListBuckets restart mismatch";
                end if;
             end;
          end;
@@ -13175,6 +13422,8 @@ begin
      Check_Abort_Multipart_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_List_Objects_Result_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_List_Buckets_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_List_Parts_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.

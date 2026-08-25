@@ -16,6 +16,16 @@ creation time, region, ARN, prefix-presence, and continuation-presence fields.
 Callers that must distinguish an explicitly supplied empty query value use the
 presence flags on `Client.Low_Level.List_Buckets_Parameters`.
 
+The parameter-record `List_Page` overload waits on
+`Client.Scoped.List_Buckets` and preserves typed HTTP failure, causal phase,
+and request-admission certainty. The same limited operation can instead be
+constructed directly, composed through a caller-owned completion set, and
+restarted after typed `Finish`. It owns the prepared signed request and a
+response bounded by the shared S3 XML document limit; credentials are borrowed
+only during signing. There is no helper task, automatic retry, or retained
+borrowed query input. The convenience overload now waits on this same state
+machine and preserves its established raising transport behavior.
+
 ## Create
 
 `Create` creates a general-purpose bucket. For `us-east-1` it omits the legacy

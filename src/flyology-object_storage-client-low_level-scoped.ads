@@ -88,6 +88,25 @@ package Flyology.Object_Storage.Client.Low_Level.Scoped is
       Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
       Token     : access Flyology.Cancellation.Token := null);
 
+   --  Start a prepared service-level ListBuckets exchange into a bounded
+   --  response sink. Prepared, Sink, Client, Token, and their owners must
+   --  outlive terminal typed Finish of Operation.
+   --  @param Operation Established HTTP child operation
+   --  @param Client Configured origin client
+   --  @param Prepared Prepared ListBuckets request
+   --  @param Sink Bounded complete-response sink
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source
+   --  @exception Invalid_Request Prepared is not ListBuckets
+   procedure Start_List_Buckets
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null);
+
    --  Start a prepared ListObjectsV2 exchange into a bounded response sink.
    --  Prepared, Sink, Client, Token, and their owners must outlive terminal
    --  typed Finish of Operation.

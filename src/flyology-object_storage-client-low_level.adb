@@ -3915,6 +3915,14 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Identity, Region, Timestamp)
       do
          Result.Operation := List_Buckets_Operation;
+         Result.Requested_List_Buckets_Max :=
+           (if Parameters.Has_Max_Buckets
+            then Parameters.Max_Buckets
+            else S3.Buckets.Max_Buckets_Value'Last);
+         Result.Requested_List_Buckets_Prefix := Parameters.Prefix;
+         Result.Requested_List_Buckets_Has_Prefix :=
+           Parameters.Has_Prefix or else US.Length (Parameters.Prefix) > 0;
+         Result.Requested_List_Buckets_Region := Parameters.Bucket_Region;
       end return;
    end Prepare_List_Buckets;
 
@@ -3945,6 +3953,96 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "malformed ListBuckets response";
    end Decode_List_Buckets_Response;
 
+   function Decode_List_Buckets_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Buckets_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "invalid ListBuckets response header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else not Valid_List_Response_Header_Text (Value)
+            then
+               raise Invalid_Response with
+                 "invalid ListBuckets response header value";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+   begin
+      if Prepared.Operation /= List_Buckets_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Outcome : constant List_Buckets_Outcome :=
+           Decode_List_Buckets_Response
+             (Flyology.HTTP.Client.Status (Response), Payload,
+              Singleton_Header ("x-amz-request-id"),
+              Singleton_Header ("x-amz-id-2"), Limits);
+      begin
+         if Outcome.Kind = Buckets_Listed then
+            declare
+               Page : S3.Buckets.List_Buckets_Result renames Outcome.Result;
+               Requested_Prefix : constant String :=
+                 US.To_String (Prepared.Requested_List_Buckets_Prefix);
+               Requested_Region : constant String :=
+                 US.To_String (Prepared.Requested_List_Buckets_Region);
+            begin
+               if Natural (Page.Buckets.Length) >
+                 Natural (Prepared.Requested_List_Buckets_Max)
+                 or else
+                   (if Prepared.Requested_List_Buckets_Has_Prefix
+                    then not Page.Has_Prefix
+                      or else US.To_String (Page.Prefix) /= Requested_Prefix
+                    else Page.Has_Prefix and then US.Length (Page.Prefix) > 0)
+               then
+                  raise Invalid_Response with
+                    "ListBuckets response does not match prepared request";
+               end if;
+               for Bucket of Page.Buckets loop
+                  declare
+                     Name : constant String := US.To_String (Bucket.Name);
+                     Bucket_Region : constant String :=
+                       US.To_String (Bucket.Bucket_Region);
+                  begin
+                     if (Requested_Prefix'Length > 0
+                         and then
+                           (Name'Length < Requested_Prefix'Length
+                            or else Name
+                              (Name'First ..
+                               Name'First + Requested_Prefix'Length - 1) /=
+                              Requested_Prefix))
+                       or else
+                         (Requested_Region'Length > 0
+                          and then Bucket_Region'Length > 0
+                          and then Bucket_Region /= Requested_Region)
+                     then
+                        raise Invalid_Response with
+                          "ListBuckets response does not match prepared " &
+                          "request";
+                     end if;
+                  end;
+               end loop;
+            end;
+         end if;
+         return Outcome;
+      end;
+   end Decode_List_Buckets_Complete_Response;
+
    function Execute_List_Buckets
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -3961,19 +4059,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
              (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_List_Buckets_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Request_ID,
-            Host_ID, Limits);
+         return Decode_List_Buckets_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

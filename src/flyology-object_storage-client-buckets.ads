@@ -3,6 +3,7 @@ with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.Client.Scoped;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Errors;
@@ -54,6 +55,32 @@ package Flyology.Object_Storage.Client.Buckets is
       Timeout  : Duration := 30.0;
       Token    : access Flyology.Cancellation.Token := null)
       return List_Outcome;
+
+   --  List one bounded ListBuckets page by waiting on the composable
+   --  owner-driven operation. This parameter-record overload preserves typed
+   --  HTTP failure and admission information.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Parameters Complete modeled bucket listing scope and cursor
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   --  Region, addressing, and timeout defaults mirror the established
+   --  convenience overload; changing them changes source-visible client
+   --  request policy and compatibility.
+   function List_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Parameters : Low_Level.List_Buckets_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.List_Buckets_Result;
 
    type Create_Outcome_Kind is (Creation_Completed, Create_Rejected);
 

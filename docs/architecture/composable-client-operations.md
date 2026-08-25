@@ -5,7 +5,8 @@ client slice: conditional complete-object Put, generation-bound whole and
 single-range Get, bodyless Head, non-replaying Delete, non-replaying multipart
 initiation, one-shot UploadPart, one-shot multipart completion and abort,
 bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
-ListObjects v1/v2, ListObjectVersions, and GetObjectAttributes. The
+ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
+ListBuckets. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -57,8 +58,9 @@ The implemented operation order is:
 13. `List_Objects_V2`;
 14. `List_Object_Versions`;
 15. `Get_Object_Attributes`; and
-16. `Upload_Part_Copy`; and
-17. `List_Objects` (v1).
+16. `Upload_Part_Copy`;
+17. `List_Objects` (v1); and
+18. service-level `List_Buckets`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -99,6 +101,14 @@ synchronous overload waits on the same owner-driven operation and preserves
 typed HTTP failure and admission state; the convenience overload retains the
 established raising transport contract and derives a logical next marker only
 after typed Finish.
+ListBuckets uses the same bounded owner-driven response shape at the S3
+service root. Complete decoding binds the optional echoed prefix, requested or
+default maximum, and any returned per-bucket region metadata to the exact
+prepared filter. The opaque continuation token is copied into the operation's
+signed request and never interpreted. Its parameter-record synchronous
+overload waits on that same operation; the convenience overload retains its
+established raising transport contract. Each bucket page is an independent
+read-only service snapshot.
 ListObjectsV2 retains a bounded response no larger than the shared XML parser
 limit and binds the bucket, prefix, delimiter, opaque continuation token,
 start-after key, maximum, encoding mode, and requester-pays response to the

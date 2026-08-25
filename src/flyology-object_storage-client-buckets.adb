@@ -1,5 +1,7 @@
 with Ada.Calendar;
 with Ada.Calendar.Formatting;
+with Flyology.IO;
+with Flyology.Operations;
 
 package body Flyology.Object_Storage.Client.Buckets is
 
@@ -8,6 +10,7 @@ package body Flyology.Object_Storage.Client.Buckets is
    package Bucket_Controls renames
      Flyology.Object_Storage.S3.Bucket_Controls;
    use type Low_Level.List_Buckets_Outcome_Kind;
+   use type Scoped.List_Buckets_Result_Kind;
    use type Low_Level.Create_Bucket_Outcome_Kind;
    use type Low_Level.Delete_Bucket_Outcome_Kind;
    use type Low_Level.Delete_Bucket_Configuration_Outcome_Kind;
@@ -30,6 +33,64 @@ package body Flyology.Object_Storage.Client.Buckets is
         & Image (Image'First + 14 .. Image'First + 15)
         & Image (Image'First + 17 .. Image'First + 18) & "Z";
    end Timestamp;
+
+   procedure Raise_List_Buckets_Exchange_Failure
+     (Result : Scoped.List_Buckets_Result) is
+   begin
+      case Result.HTTP_Result is
+         when Flyology.HTTP.Client.Response_Complete =>
+            raise Program_Error with
+              "unreachable complete ListBuckets exchange failure";
+         when Flyology.HTTP.Client.Pre_Admission_Rejected =>
+            raise Constraint_Error with "HTTP request was rejected";
+         when Flyology.HTTP.Client.Cancelled =>
+            raise Flyology.Cancellation.Operation_Cancelled;
+         when Flyology.HTTP.Client.Timed_Out =>
+            raise Flyology.IO.Timeout_Error;
+         when Flyology.HTTP.Client.Client_Unavailable =>
+            raise Flyology.HTTP.Client.Client_Closed;
+         when Flyology.HTTP.Client.Connection_Failed =>
+            raise Flyology.HTTP.Client.Connection_Error;
+         when Flyology.HTTP.Client.Transport_Failed =>
+            raise Flyology.IO.Device_Error;
+         when Flyology.HTTP.Client.Request_Source_Failed =>
+            raise Flyology.HTTP.Client.Request_Body_Error;
+         when Flyology.HTTP.Client.Response_Invalid |
+              Flyology.HTTP.Client.Response_Body_Too_Large |
+              Flyology.HTTP.Client.Response_Sink_Failed =>
+            raise Low_Level.Invalid_Response with
+              "ListBuckets response is invalid or exceeds the XML limit";
+      end case;
+   end Raise_List_Buckets_Exchange_Failure;
+
+   function List_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Parameters : Low_Level.List_Buckets_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.List_Buckets_Result
+   is
+      --  The listing parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.List_Buckets_Operation :=
+           Scoped.List_Buckets
+             (Set'Access, Client'Access, Origin, Parameters, Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+              Token);
+         Result : Scoped.List_Buckets_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end List_Page;
 
    function List_Page
      (Client   : aliased in out Flyology.HTTP.Client.Client;
@@ -55,21 +116,29 @@ package body Flyology.Object_Storage.Client.Buckets is
          Prefix                 => US.To_Unbounded_String (Prefix),
          Has_Prefix             => Prefix'Length > 0,
          Bucket_Region          => US.To_Unbounded_String (Bucket_Region));
-      Prepared : constant Low_Level.Prepared_Request :=
-        Low_Level.Prepare_List_Buckets
-          (Origin, Style, Parameters, Identity, Region, Timestamp);
-      Outcome : constant Low_Level.List_Buckets_Outcome :=
-        Low_Level.Execute_List_Buckets
-          (Client, Prepared, Timeout, Token);
    begin
-      if Outcome.Kind = Low_Level.List_Buckets_Rejected then
-         return
-           (Kind => List_Rejected, Status => Outcome.Status,
-            Error => Outcome.Error);
-      end if;
-      return
-        (Kind => Page_Available, Status => Outcome.Status,
-         Page => Outcome.Result);
+      declare
+         Result : constant Scoped.List_Buckets_Result :=
+           List_Page
+             (Client, Origin, Parameters, Identity, Region, Style, Timeout,
+              Token);
+      begin
+         if Result.Kind = Scoped.List_Buckets_Exchange_Failed then
+            Raise_List_Buckets_Exchange_Failure (Result);
+         end if;
+         declare
+            Outcome : Low_Level.List_Buckets_Outcome renames Result.Response;
+         begin
+            if Outcome.Kind = Low_Level.List_Buckets_Rejected then
+               return
+                 (Kind => List_Rejected, Status => Outcome.Status,
+                  Error => Outcome.Error);
+            end if;
+            return
+              (Kind => Page_Available, Status => Outcome.Status,
+               Page => Outcome.Result);
+         end;
+      end;
    end List_Page;
 
    function Create

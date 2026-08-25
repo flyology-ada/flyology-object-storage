@@ -469,6 +469,22 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return List_Buckets_Outcome;
 
+   --  Decode one complete ListBuckets response and bind the bounded page to
+   --  the exact prefix, region, and maximum of its prepared request.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared ListBuckets request
+   --  @param Limits Bounded XML parser limits
+   --  @return Typed bucket page or S3 rejection
+   --  @exception Invalid_Request Prepared is not ListBuckets
+   --  @exception Invalid_Response Complete response is inconsistent
+   function Decode_List_Buckets_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return List_Buckets_Outcome;
+
    function Execute_List_Buckets
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -4622,6 +4638,13 @@ private
       Requested_Has_Prefix : Boolean := False;
       Requested_Has_Delimiter : Boolean := False;
       Requested_Max_Keys : S3.Core.Page_Size := 0;
+      Requested_List_Buckets_Max : S3.Buckets.Max_Buckets_Value :=
+        S3.Buckets.Max_Buckets_Value'Last;
+      Requested_List_Buckets_Prefix :
+        Ada.Strings.Unbounded.Unbounded_String;
+      Requested_List_Buckets_Has_Prefix : Boolean := False;
+      Requested_List_Buckets_Region :
+        Ada.Strings.Unbounded.Unbounded_String;
       Requested_Create_Server_Side_Encryption :
         Ada.Strings.Unbounded.Unbounded_String;
       Requested_Create_SSE_Customer_Algorithm :
