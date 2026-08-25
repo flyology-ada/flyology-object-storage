@@ -12986,6 +12986,26 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Token, Operation);
    end Get_Public_Access_Block;
 
+   procedure Get_Bucket_Ownership_Controls
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Get_Bucket_Control_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Get_Bucket_Ownership_Controls_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Sink
+        (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
+         Token, Operation);
+   end Get_Bucket_Ownership_Controls;
+
    procedure Put_Public_Access_Block
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;

@@ -139,6 +139,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Delete_Bucket_Policy_Result_Kind;
    use type Bucket_Policy_Mutation_Disposition;
    use type Get_Public_Access_Block_Result_Kind;
+   use type Get_Bucket_Ownership_Controls_Result_Kind;
    use type Put_Public_Access_Block_Result_Kind;
    use type Delete_Public_Access_Block_Result_Kind;
    use type Public_Access_Block_Mutation_Disposition;
@@ -4208,6 +4209,19 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "<OwnershipControls>" &
                  String'(1 .. 26 => ' ') & "</OwnershipControls>"),
             "GET", "/example-bucket?ownershipControls");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<OwnershipControls><Rule><ObjectOwnership>" &
+                 "BucketOwnerEnforced</ObjectOwnership></Rule>" &
+                 "</OwnershipControls>"),
+            "GET", "/composed-ownership?ownershipControls",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-get-ownership" & CRLF),
+            "GET", "/restart-ownership?ownershipControls",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
               ("200 OK", "<CORSConfiguration><CORSRule><ID>socket-rule" &
@@ -13229,6 +13243,90 @@ procedure S3_HTTP_Socket_Corpus is
             Must_Reject_Ownership
               ("GetBucketOwnershipControls accepted oversized success XML",
                Small_Limits => True);
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Abac
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (others => <>),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Bucket_Ownership_Controls_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Get_Bucket_Ownership_Controls
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "GetBucketOwnershipControls accepted a prepared ABAC request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            --  Parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_Ownership_Controls_Result;
+         begin
+            declare
+               Operation : Get_Bucket_Ownership_Controls_Operation :=
+                 Get_Ownership_Controls
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-ownership",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Get_Bucket_Ownership_Controls_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else not Result.Response.Configuration.Is_Set
+                 or else Result.Response.Configuration.Rules.Length /= 1
+                 or else Result.Response.Configuration.Rules.Element (1).
+                   Ownership /= Bucket_Controls.Bucket_Owner_Enforced
+               then
+                  raise Program_Error with
+                    "composed GetBucketOwnershipControls result mismatch";
+               end if;
+               Get_Ownership_Controls
+                 (HTTP'Access,
+                  Origin,
+                  "restart-ownership",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Get_Bucket_Ownership_Controls_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-get-ownership"
+               then
+                  raise Program_Error with
+                    "restarted GetBucketOwnershipControls result mismatch";
+               end if;
+            end;
          end;
          declare
             Prepared : constant Low_Level.Prepared_Request :=

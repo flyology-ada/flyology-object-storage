@@ -1084,6 +1084,45 @@ package body Flyology.Object_Storage.Client.Buckets is
         (Client, Prepared, Timeout, Token, Limits);
    end Get_Request_Payment;
 
+   function Get_Ownership_Controls
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Get_Bucket_Ownership_Controls_Result
+   is
+      --  Parent, HTTP exchange, and HTTP's single active transport child.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Get_Bucket_Ownership_Controls_Operation :=
+           Get_Ownership_Controls
+             (Set'Access,
+              Client'Access,
+              Origin,
+              Bucket,
+              Parameters,
+              Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout),
+              Region,
+              Style,
+              Limits,
+              Token);
+         Result : Get_Bucket_Ownership_Controls_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Get_Ownership_Controls;
+
    function Get_Public_Access_Block
      (Client     : aliased in out Flyology.HTTP.Client.Client;
       Origin     : Flyology.HTTP.Origin;
@@ -3373,6 +3412,300 @@ package body Flyology.Object_Storage.Client.Buckets is
       Result := Operation.Final_Result;
    end Finish;
 
+   --  Exact status/code pairs follow the AWS S3 error table and the
+   --  maintained GetBucketOwnershipControls response corpus. The externally
+   --  fixed OwnershipControlsNotFoundError spelling is compatibility
+   --  significant. This read-only classification authorizes no mutation or
+   --  retry.
+   function Normalize_Get_Bucket_Ownership_Controls_Response
+     (Value     : Low_Level.Get_Bucket_Ownership_Controls_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Get_Bucket_Ownership_Controls_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Get_Bucket_Control_Rejected
+         then US.To_String (Value.Error.Code)
+         else "");
+      Failure : constant Failure_Reason :=
+        (if Admission /= HTTP_Client.Response_Observed
+         then Corrupt_Or_Invalid_Response
+         elsif Value.Kind = Low_Level.Bucket_Control_Found
+         then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in
+             "NoSuchBucket" | "OwnershipControlsNotFoundError"
+         then Not_Found
+         elsif Value.Status = 400
+           and then Code in "InvalidBucketName" | "InvalidRequest"
+         then Invalid_Request
+         elsif Value.Status = 501 and then Code = "NotImplemented"
+         then Invalid_Request
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind      => Get_Bucket_Ownership_Controls_Response_Available,
+         Failure   => Failure,
+         Admission => Admission,
+         Response  => Value);
+   end Normalize_Get_Bucket_Ownership_Controls_Response;
+
+   function Normalize_Get_Bucket_Ownership_Controls_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Get_Bucket_Ownership_Controls_Result is
+   begin
+      return
+        (Kind        => Get_Bucket_Ownership_Controls_Exchange_Failed,
+         Failure     =>
+           (if Kind
+               in HTTP_Client.Response_Invalid
+                | HTTP_Client.Response_Body_Too_Large
+                | HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Get_Bucket_Ownership_Controls_Failure;
+
+   overriding procedure Write
+     (Item : in out Get_Bucket_Ownership_Controls_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length)
+        > Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "GetBucketOwnershipControls response exceeds the " &
+           "caller-selected limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Get_Bucket_Ownership_Controls_Child
+     (Item : in out Get_Bucket_Ownership_Controls_Operation)
+   is
+      Admission   : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response    : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result :=
+              Normalize_Get_Bucket_Ownership_Controls_Failure
+                (HTTP_Client.Response_Sink_Failed,
+                 Admission,
+                 HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result :=
+           Normalize_Get_Bucket_Ownership_Controls_Failure
+             (HTTP_Client.Kind (HTTP_Result),
+              HTTP_Client.Certainty (HTTP_Result),
+              HTTP_Client.Phase (HTTP_Result),
+              HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result :=
+              Normalize_Get_Bucket_Ownership_Controls_Response
+                (Low_Level.Decode_Get_Bucket_Ownership_Controls_Response
+                   (HTTP_Client.Status (Response),
+                    Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                    HTTP_Client.Header (Response, "x-amz-request-id"),
+                    HTTP_Client.Header (Response, "x-amz-id-2"),
+                    Item.Limits),
+                 HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result :=
+                 Normalize_Get_Bucket_Ownership_Controls_Failure
+                   (HTTP_Client.Response_Invalid,
+                    HTTP_Client.Certainty (HTTP_Result),
+                    HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Get_Bucket_Ownership_Controls_Child;
+
+   overriding procedure Drive
+     (Item  : in out Get_Bucket_Ownership_Controls_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Get_Bucket_Ownership_Controls
+           (Item.HTTP,
+            Item.Prepared'Access,
+            Item'Access,
+            Item.Deadline,
+            Item.Cancellation,
+            Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Get_Bucket_Ownership_Controls_Child (Item);
+      else
+         raise Program_Error with
+           "invalid GetBucketOwnershipControls driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Bucket_Ownership_Controls_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others =>
+         null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Get_Bucket_Ownership_Controls_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others =>
+            null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Get_Bucket_Ownership_Controls
+     (Operation  : in out Get_Bucket_Ownership_Controls_Operation;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "GetBucketOwnershipControls restart changed a retained owner";
+      end if;
+      Operation.Prepared :=
+        Low_Level.Prepare_Get_Bucket_Ownership_Controls
+          (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Limits := Limits;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      --  The existing caller-selected XML document limit governs both the
+      --  successful configuration and structured error response.
+      Operation.Response_Limit := Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Get_Bucket_Ownership_Controls;
+
+   function Get_Ownership_Controls
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Bucket_Ownership_Controls_Operation is
+   begin
+      return Result :
+        Get_Bucket_Ownership_Controls_Operation (Set, Client, Token)
+      do
+         Start_Get_Bucket_Ownership_Controls
+           (Result, Client, Origin, Bucket, Parameters, Identity, Deadline,
+            Region, Style, Limits, Token);
+      end return;
+   end Get_Ownership_Controls;
+
+   procedure Finish
+     (Operation : in out Get_Bucket_Ownership_Controls_Operation;
+      Result    : out Get_Bucket_Ownership_Controls_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with
+           "GetBucketOwnershipControls has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
    --  Exact status/code pairs are the maintained GetPublicAccessBlock error
    --  surface. This read-only classification authorizes no mutation or retry.
    function Normalize_Get_Public_Access_Block_Response
@@ -7349,6 +7682,25 @@ package body Flyology.Object_Storage.Client.Buckets is
         (Operation, Client, Origin, Bucket, Parameters, Identity, Deadline,
          Region, Style, Limits, Token);
    end Get_Public_Access_Block;
+
+   procedure Get_Ownership_Controls
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Get_Bucket_Ownership_Controls_Operation) is
+   begin
+      Start_Get_Bucket_Ownership_Controls
+        (Operation, Client, Origin, Bucket, Parameters, Identity, Deadline,
+         Region, Style, Limits, Token);
+   end Get_Ownership_Controls;
 
    procedure Set_Public_Access_Block
      (Client     : not null access Flyology.HTTP.Client.Client;
