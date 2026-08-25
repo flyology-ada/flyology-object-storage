@@ -623,6 +623,33 @@ package Flyology.Object_Storage.Client.Buckets is
       end case;
    end record;
 
+   --  Replace one bucket tag set by waiting on the owner-driven composable
+   --  operation. The result preserves HTTP admission and mutation certainty;
+   --  no outcome authorizes automatic retry.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose complete tag set is replaced
+   --  @param Value Complete bucket tag set copied during request preparation
+   --  @param Parameters Complete modeled request controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Put_Tags
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Value    : Flyology.Object_Storage.Tags.Tag_Set;
+      Parameters : Low_Level.Put_Bucket_Tagging_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Put_Bucket_Tagging_Result;
+
    --  Atomically replace the complete tag set of one bucket. Content-MD5 and
    --  the strict S3 XML body are generated automatically. This unreleased
    --  strict surface intentionally omits RequestPayer, which is absent from
@@ -665,6 +692,31 @@ package Flyology.Object_Storage.Client.Buckets is
       end case;
    end record;
 
+   --  Fetch one bucket tag snapshot by waiting on the bounded composable
+   --  read. The typed result preserves the causal HTTP failure when no
+   --  complete modeled response exists.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose tag snapshot is requested
+   --  @param Parameters Complete modeled request controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   function Get_Tags
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.Get_Bucket_Tagging_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Get_Bucket_Tagging_Result;
+
    --  Fetch one atomic bucket tag snapshot. An untagged bucket is returned as
    --  the structured NoSuchTagSet S3 rejection. This unreleased strict surface
    --  intentionally omits the non-modeled RequestPayer control and charged
@@ -705,6 +757,30 @@ package Flyology.Object_Storage.Client.Buckets is
             Error : Flyology.Object_Storage.S3.Errors.Error_Response;
       end case;
    end record;
+
+   --  Delete one bucket tag set by waiting on the nonreplaying composable
+   --  mutation. The result preserves admission and mutation certainty.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose tag set is removed
+   --  @param Parameters Complete modeled request controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Delete_Tags
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.Delete_Bucket_Tagging_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Delete_Bucket_Tagging_Result;
 
    --  Remove the complete tag set of one bucket. Deleting an already absent
    --  tag set remains successful when the bucket exists.

@@ -222,10 +222,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
               SigV4.Pair (Header_Name, Checksums.Encode_Base64 (Digest));
          end;
       end if;
-      return Prepare_Object_Request
+      return Result : Prepared_Request := Prepare_Object_Request
         (Put_Bucket_Tagging_Operation, "PUT", Origin, Style, Bucket, "",
          Query, Headers, Document, "", Identity, Region, Timestamp,
-         Object_Resource => False);
+         Object_Resource => False, Store_Payload => False)
+      do
+         --  The one-shot source owns the exact serialized and signed tag
+         --  document. Retaining it in Request as well would select HTTP's
+         --  conflicting retained-body form for composable execution.
+         Result.Owned_Request_Payload := US.To_Unbounded_String (Document);
+      end return;
    exception
       when S3.Tagging.Invalid_Tag =>
          raise Invalid_Request with "invalid PutBucketTagging tag set";
@@ -278,9 +284,11 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
+         Source : Non_Replayable_Buffer_Source :=
+           (Data => Prepared.Owned_Request_Payload, Next => 1);
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
-             (Client, Prepared.Message, Timeout, Token);
+             (Client, Prepared.Message, Source, Timeout, Token);
          Status : constant Flyology.HTTP.Status_Code :=
            Flyology.HTTP.Client.Status (Response);
          Request_ID : constant String :=

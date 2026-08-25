@@ -80,6 +80,9 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.List_Parts_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
    use type Low_Level.Upload_Part_Copy_Outcome_Kind;
+   use type Low_Level.Put_Bucket_Tagging_Outcome_Kind;
+   use type Low_Level.Get_Bucket_Tagging_Outcome_Kind;
+   use type Low_Level.Delete_Bucket_Tagging_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
    use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Delete_Object_Outcome_Kind;
@@ -110,6 +113,10 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.List_Buckets_Result_Kind;
    use type Scoped.Create_Bucket_Result_Kind;
    use type Scoped.Bucket_Creation_Disposition;
+   use type Scoped.Bucket_Tag_Mutation_Disposition;
+   use type Scoped.Put_Bucket_Tagging_Result_Kind;
+   use type Scoped.Get_Bucket_Tagging_Result_Kind;
+   use type Scoped.Delete_Bucket_Tagging_Result_Kind;
    use type Scoped.Head_Bucket_Result_Kind;
    use type Scoped.List_Objects_V2_Result_Kind;
    use type Scoped.List_Object_Versions_Result_Kind;
@@ -143,7 +150,6 @@ procedure S3_HTTP_Socket_Corpus is
    use type Object_Lock.Legal_Hold_Status;
    use type Object_Lock.Object_Lock_Enabled_Status;
    use type Object_Lock.Retention_Mode;
-   use type Buckets.Put_Tags_Outcome_Kind;
    use type Buckets.Get_Tags_Outcome_Kind;
    use type Buckets.Delete_Tags_Outcome_Kind;
    use type Buckets.Delete_Outcome_Kind;
@@ -3605,8 +3611,22 @@ procedure S3_HTTP_Socket_Corpus is
             "/example-bucket?tagging", "<Tagging",
             Expected_Content_MD5 => "2VvoA0oifGYAP5yZrGu55w==");
          Serve
+           (HTTP_Response
+              ("400 Bad Request",
+               "<Error><Code>InvalidTag</Code>" &
+               "<Message>invalid tag</Message></Error>"),
+            "PUT", "/example-bucket?tagging", "<Tagging",
+            Expected_Content_MD5 => "2VvoA0oifGYAP5yZrGu55w==");
+         Serve
            (HTTP_Response ("200 OK", Tagging_XML), "GET",
             "/example-bucket?tagging", Fragmented => True);
+         Serve
+           (HTTP_Response ("200 OK", Tagging_XML), "GET",
+            "/example-bucket?tagging", Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", Omit_Content_Length => True),
+            "DELETE", "/example-bucket?tagging");
          Serve
            (HTTP_Response
               ("204 No Content", "", Omit_Content_Length => True),
@@ -10792,51 +10812,165 @@ procedure S3_HTTP_Socket_Corpus is
                  (Key   => US.To_Unbounded_String ("project"),
                   Value => US.To_Unbounded_String ("flyology")));
             declare
-               Put_Result : constant Buckets.Put_Tags_Outcome :=
-                 Buckets.Put_Tags
-                   (HTTP, Origin, "example-bucket", Value, Identity,
-                    Timeout => 5.0);
+               Set : aliased Operations.Completion_Set (3);
+               Put_Parameters : constant
+                 Low_Level.Put_Bucket_Tagging_Parameters :=
+                 (others => <>);
+               Operation : Scoped.Put_Bucket_Tagging_Operation :=
+                 Scoped.Put_Bucket_Tagging
+                   (Set'Access, HTTP'Access, Origin, "example-bucket", Value,
+                    Put_Parameters, Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Put_Result : Scoped.Put_Bucket_Tagging_Result;
+            begin
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Put_Result);
+               if Put_Result.Kind /=
+                   Scoped.Put_Bucket_Tagging_Response_Available
+                 or else Put_Result.Disposition /=
+                   Scoped.Bucket_Tag_Mutation_Completed
+                 or else Put_Result.Failure /= Scoped.No_Failure
+                 or else Put_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Put_Result.Response.Kind /=
+                   Low_Level.Bucket_Tags_Replaced
+               then
+                  raise Program_Error with
+                    "scoped PutBucketTagging socket mismatch";
+               end if;
+               Scoped.Start_Put_Bucket_Tagging
+                 (Operation, HTTP'Access, Origin, "example-bucket", Value,
+                  Put_Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Put_Result);
+               if Put_Result.Kind /=
+                   Scoped.Put_Bucket_Tagging_Response_Available
+                 or else Put_Result.Disposition /=
+                   Scoped.Bucket_Tag_Mutation_Definitely_Not_Applied
+                 or else Put_Result.Failure /= Scoped.Invalid_Request
+                 or else Put_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Put_Result.Response.Kind /=
+                   Low_Level.Put_Bucket_Tagging_Rejected
+                 or else US.To_String (Put_Result.Response.Error.Code) /=
+                   "InvalidTag"
+               then
+                  raise Program_Error with
+                    "scoped PutBucketTagging restart mismatch";
+               end if;
+            end;
+            declare
+               Set : aliased Operations.Completion_Set (3);
+               Parameters : constant
+                 Low_Level.Get_Bucket_Tagging_Parameters :=
+                 (others => <>);
+               Operation : Scoped.Get_Bucket_Tagging_Operation :=
+                 Scoped.Get_Bucket_Tagging
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    Parameters, Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Get_Result : Scoped.Get_Bucket_Tagging_Result;
+            begin
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Get_Result);
+               if Get_Result.Kind /=
+                   Scoped.Get_Bucket_Tagging_Response_Available
+                 or else Get_Result.Failure /= Scoped.No_Failure
+                 or else Get_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Get_Result.Response.Kind /=
+                   Low_Level.Bucket_Tags_Found
+                 or else Get_Result.Response.Result.Value /= Value
+               then
+                  raise Program_Error with
+                    "scoped GetBucketTagging socket mismatch";
+               end if;
+               Scoped.Start_Get_Bucket_Tagging
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Get_Result);
+               if Get_Result.Kind /=
+                   Scoped.Get_Bucket_Tagging_Response_Available
+                 or else Get_Result.Failure /= Scoped.No_Failure
+                 or else Get_Result.Response.Kind /=
+                   Low_Level.Bucket_Tags_Found
+                 or else Get_Result.Response.Result.Value /= Value
+               then
+                  raise Program_Error with
+                    "scoped GetBucketTagging restart mismatch";
+               end if;
+            end;
+            declare
+               Set : aliased Operations.Completion_Set (3);
+               Parameters : constant
+                 Low_Level.Delete_Bucket_Tagging_Parameters :=
+                 (others => <>);
+               Operation : Scoped.Delete_Bucket_Tagging_Operation :=
+                 Scoped.Delete_Bucket_Tagging
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    Parameters, Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Delete_Result : Scoped.Delete_Bucket_Tagging_Result;
+            begin
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Delete_Result);
+               if Delete_Result.Kind /=
+                   Scoped.Delete_Bucket_Tagging_Response_Available
+                 or else Delete_Result.Disposition /=
+                   Scoped.Bucket_Tag_Mutation_Completed
+                 or else Delete_Result.Failure /= Scoped.No_Failure
+                 or else Delete_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Delete_Result.Response.Kind /=
+                   Low_Level.Bucket_Tags_Deleted
+               then
+                  raise Program_Error with
+                    "scoped DeleteBucketTagging socket mismatch";
+               end if;
+               Scoped.Start_Delete_Bucket_Tagging
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Delete_Result);
+               if Delete_Result.Kind /=
+                   Scoped.Delete_Bucket_Tagging_Response_Available
+                 or else Delete_Result.Disposition /=
+                   Scoped.Bucket_Tag_Mutation_Completed
+                 or else Delete_Result.Failure /= Scoped.No_Failure
+                 or else Delete_Result.Response.Kind /=
+                   Low_Level.Bucket_Tags_Deleted
+               then
+                  raise Program_Error with
+                    "scoped DeleteBucketTagging restart mismatch";
+               end if;
+            end;
+            declare
                Get_Result : constant Buckets.Get_Tags_Outcome :=
                  Buckets.Get_Tags
                    (HTTP, Origin, "example-bucket", Identity,
                     Timeout => 5.0);
-            begin
-               if Put_Result.Kind /= Buckets.Tags_Replaced
-                 or else Get_Result.Kind /= Buckets.Tags_Found
-                 or else Get_Result.Value /= Value
-               then
-                  raise Program_Error with
-                    "high-level bucket tagging socket mismatch";
-               end if;
-            end;
-            declare
                Delete_Result : constant Buckets.Delete_Tags_Outcome :=
                  Buckets.Delete_Tags
                    (HTTP, Origin, "example-bucket", Identity,
                     Timeout => 5.0);
-               Get_Result : constant Buckets.Get_Tags_Outcome :=
-                 Buckets.Get_Tags
-                   (HTTP, Origin, "example-bucket", Identity,
-                    Timeout => 5.0);
             begin
-               if Delete_Result.Kind /= Buckets.Tags_Deleted
-                 or else Get_Result.Kind /= Buckets.Get_Tags_Rejected
+               if Get_Result.Kind /= Buckets.Get_Tags_Rejected
                  or else US.To_String (Get_Result.Error.Code) /=
                    "NoSuchTagSet"
+                 or else Delete_Result.Kind /= Buckets.Tags_Deleted
                then
                   raise Program_Error with
-                    "high-level bucket tag deletion socket mismatch";
-               end if;
-            end;
-            declare
-               Delete_Result : constant Buckets.Delete_Tags_Outcome :=
-                 Buckets.Delete_Tags
-                   (HTTP, Origin, "example-bucket", Identity,
-                    Timeout => 5.0);
-            begin
-               if Delete_Result.Kind /= Buckets.Tags_Deleted then
-                  raise Program_Error with
-                    "high-level bucket tag deletion was not idempotent";
+                    "synchronous composable bucket-tag mapping mismatch";
                end if;
             end;
          end;
@@ -13846,6 +13980,8 @@ begin
      Check_Create_Bucket_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_Head_Bucket_Result_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_Bucket_Tagging_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_List_Parts_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.

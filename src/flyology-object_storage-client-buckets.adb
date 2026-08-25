@@ -21,6 +21,9 @@ package body Flyology.Object_Storage.Client.Buckets is
    use type Low_Level.Put_Bucket_Tagging_Outcome_Kind;
    use type Low_Level.Get_Bucket_Tagging_Outcome_Kind;
    use type Low_Level.Delete_Bucket_Tagging_Outcome_Kind;
+   use type Scoped.Put_Bucket_Tagging_Result_Kind;
+   use type Scoped.Get_Bucket_Tagging_Result_Kind;
+   use type Scoped.Delete_Bucket_Tagging_Result_Kind;
    use type Low_Level.Put_Bucket_Versioning_Outcome_Kind;
    use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
 
@@ -35,6 +38,36 @@ package body Flyology.Object_Storage.Client.Buckets is
         & Image (Image'First + 14 .. Image'First + 15)
         & Image (Image'First + 17 .. Image'First + 18) & "Z";
    end Timestamp;
+
+   procedure Raise_Bucket_Tagging_Exchange_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Operation : String) is
+   begin
+      case Kind is
+         when Flyology.HTTP.Client.Response_Complete =>
+            raise Program_Error with
+              "unreachable complete " & Operation & " exchange failure";
+         when Flyology.HTTP.Client.Pre_Admission_Rejected =>
+            raise Constraint_Error with "HTTP request was rejected";
+         when Flyology.HTTP.Client.Cancelled =>
+            raise Flyology.Cancellation.Operation_Cancelled;
+         when Flyology.HTTP.Client.Timed_Out =>
+            raise Flyology.IO.Timeout_Error;
+         when Flyology.HTTP.Client.Client_Unavailable =>
+            raise Flyology.HTTP.Client.Client_Closed;
+         when Flyology.HTTP.Client.Connection_Failed =>
+            raise Flyology.HTTP.Client.Connection_Error;
+         when Flyology.HTTP.Client.Transport_Failed =>
+            raise Flyology.IO.Device_Error;
+         when Flyology.HTTP.Client.Request_Source_Failed =>
+            raise Flyology.HTTP.Client.Request_Body_Error;
+         when Flyology.HTTP.Client.Response_Invalid |
+              Flyology.HTTP.Client.Response_Body_Too_Large |
+              Flyology.HTTP.Client.Response_Sink_Failed =>
+            raise Low_Level.Invalid_Response with
+              Operation & " response is invalid or exceeds the XML limit";
+      end case;
+   end Raise_Bucket_Tagging_Exchange_Failure;
 
    procedure Raise_List_Buckets_Exchange_Failure
      (Result : Scoped.List_Buckets_Result) is
@@ -1036,6 +1069,37 @@ package body Flyology.Object_Storage.Client.Buckets is
       Origin   : Flyology.HTTP.Origin;
       Bucket   : String;
       Value    : Flyology.Object_Storage.Tags.Tag_Set;
+      Parameters : Low_Level.Put_Bucket_Tagging_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Put_Bucket_Tagging_Result
+   is
+      --  Derived capacity: tagging parent, HTTP exchange, and HTTP's single
+      --  active transport child are the only simultaneous operations.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Put_Bucket_Tagging_Operation :=
+           Scoped.Put_Bucket_Tagging
+             (Set'Access, Client'Access, Origin, Bucket, Value, Parameters,
+              Identity, Flyology.HTTP.Client.Deadline_After (Timeout), Region,
+              Style, Token);
+         Result : Scoped.Put_Bucket_Tagging_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Put_Tags;
+
+   function Put_Tags
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Value    : Flyology.Object_Storage.Tags.Tag_Set;
       Identity : Low_Level.Credentials;
       Region   : String := "us-east-1";
       Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
@@ -1050,21 +1114,60 @@ package body Flyology.Object_Storage.Client.Buckets is
          Expected_Bucket_Owner =>
            US.To_Unbounded_String (Expected_Bucket_Owner),
          Request_Payer         => US.Null_Unbounded_String);
-      Prepared : constant Low_Level.Prepared_Request :=
-        Low_Level.Prepare_Put_Bucket_Tagging
-          (Origin, Style, Bucket, Value, Parameters, Identity, Region,
-           Timestamp);
-      Outcome : constant Low_Level.Put_Bucket_Tagging_Outcome :=
-        Low_Level.Execute_Put_Bucket_Tagging
-          (Client, Prepared, Timeout, Token);
    begin
-      if Outcome.Kind = Low_Level.Put_Bucket_Tagging_Rejected then
-         return
-           (Kind => Put_Tags_Rejected, Status => Outcome.Status,
-            Error => Outcome.Error);
-      end if;
-      return (Kind => Tags_Replaced, Status => Outcome.Status);
+      declare
+         Result : constant Scoped.Put_Bucket_Tagging_Result :=
+           Put_Tags
+             (Client, Origin, Bucket, Value, Parameters, Identity, Region,
+              Style, Timeout, Token);
+      begin
+         if Result.Kind = Scoped.Put_Bucket_Tagging_Exchange_Failed then
+            Raise_Bucket_Tagging_Exchange_Failure
+              (Result.HTTP_Result, "PutBucketTagging");
+         end if;
+         declare
+            Outcome : Low_Level.Put_Bucket_Tagging_Outcome renames
+              Result.Response;
+         begin
+            if Outcome.Kind = Low_Level.Put_Bucket_Tagging_Rejected then
+               return
+                 (Kind => Put_Tags_Rejected, Status => Outcome.Status,
+                  Error => Outcome.Error);
+            end if;
+            return (Kind => Tags_Replaced, Status => Outcome.Status);
+         end;
+      end;
    end Put_Tags;
+
+   function Get_Tags
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.Get_Bucket_Tagging_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Get_Bucket_Tagging_Result
+   is
+      --  Derived capacity: tagging parent, HTTP exchange, and HTTP's single
+      --  active transport child are the only simultaneous operations.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Get_Bucket_Tagging_Operation :=
+           Scoped.Get_Bucket_Tagging
+             (Set'Access, Client'Access, Origin, Bucket, Parameters, Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+              Token);
+         Result : Scoped.Get_Bucket_Tagging_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Get_Tags;
 
    function Get_Tags
      (Client   : aliased in out Flyology.HTTP.Client.Client;
@@ -1082,22 +1185,62 @@ package body Flyology.Object_Storage.Client.Buckets is
         (Expected_Bucket_Owner =>
            US.To_Unbounded_String (Expected_Bucket_Owner),
          Request_Payer         => US.Null_Unbounded_String);
-      Prepared : constant Low_Level.Prepared_Request :=
-        Low_Level.Prepare_Get_Bucket_Tagging
-          (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
-      Outcome : constant Low_Level.Get_Bucket_Tagging_Outcome :=
-        Low_Level.Execute_Get_Bucket_Tagging
-          (Client, Prepared, Timeout, Token);
    begin
-      if Outcome.Kind = Low_Level.Get_Bucket_Tagging_Rejected then
-         return
-           (Kind => Get_Tags_Rejected, Status => Outcome.Status,
-            Error => Outcome.Error);
-      end if;
-      return
-        (Kind => Tags_Found, Status => Outcome.Status,
-         Value => Outcome.Result.Value);
+      declare
+         Result : constant Scoped.Get_Bucket_Tagging_Result :=
+           Get_Tags
+             (Client, Origin, Bucket, Parameters, Identity, Region, Style,
+              Timeout, Token);
+      begin
+         if Result.Kind = Scoped.Get_Bucket_Tagging_Exchange_Failed then
+            Raise_Bucket_Tagging_Exchange_Failure
+              (Result.HTTP_Result, "GetBucketTagging");
+         end if;
+         declare
+            Outcome : Low_Level.Get_Bucket_Tagging_Outcome renames
+              Result.Response;
+         begin
+            if Outcome.Kind = Low_Level.Get_Bucket_Tagging_Rejected then
+               return
+                 (Kind => Get_Tags_Rejected, Status => Outcome.Status,
+                  Error => Outcome.Error);
+            end if;
+            return
+              (Kind => Tags_Found, Status => Outcome.Status,
+               Value => Outcome.Result.Value);
+         end;
+      end;
    end Get_Tags;
+
+   function Delete_Tags
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.Delete_Bucket_Tagging_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Delete_Bucket_Tagging_Result
+   is
+      --  Derived capacity: tagging parent, HTTP exchange, and HTTP's single
+      --  active transport child are the only simultaneous operations.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Delete_Bucket_Tagging_Operation :=
+           Scoped.Delete_Bucket_Tagging
+             (Set'Access, Client'Access, Origin, Bucket, Parameters, Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+              Token);
+         Result : Scoped.Delete_Bucket_Tagging_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Delete_Tags;
 
    function Delete_Tags
      (Client   : aliased in out Flyology.HTTP.Client.Client;
@@ -1114,19 +1257,29 @@ package body Flyology.Object_Storage.Client.Buckets is
       Parameters : constant Low_Level.Delete_Bucket_Tagging_Parameters :=
         (Expected_Bucket_Owner =>
            US.To_Unbounded_String (Expected_Bucket_Owner));
-      Prepared : constant Low_Level.Prepared_Request :=
-        Low_Level.Prepare_Delete_Bucket_Tagging
-          (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
-      Outcome : constant Low_Level.Delete_Bucket_Tagging_Outcome :=
-        Low_Level.Execute_Delete_Bucket_Tagging
-          (Client, Prepared, Timeout, Token);
    begin
-      if Outcome.Kind = Low_Level.Delete_Bucket_Tagging_Rejected then
-         return
-           (Kind => Delete_Tags_Rejected, Status => Outcome.Status,
-            Error => Outcome.Error);
-      end if;
-      return (Kind => Tags_Deleted, Status => Outcome.Status);
+      declare
+         Result : constant Scoped.Delete_Bucket_Tagging_Result :=
+           Delete_Tags
+             (Client, Origin, Bucket, Parameters, Identity, Region, Style,
+              Timeout, Token);
+      begin
+         if Result.Kind = Scoped.Delete_Bucket_Tagging_Exchange_Failed then
+            Raise_Bucket_Tagging_Exchange_Failure
+              (Result.HTTP_Result, "DeleteBucketTagging");
+         end if;
+         declare
+            Outcome : Low_Level.Delete_Bucket_Tagging_Outcome renames
+              Result.Response;
+         begin
+            if Outcome.Kind = Low_Level.Delete_Bucket_Tagging_Rejected then
+               return
+                 (Kind => Delete_Tags_Rejected, Status => Outcome.Status,
+                  Error => Outcome.Error);
+            end if;
+            return (Kind => Tags_Deleted, Status => Outcome.Status);
+         end;
+      end;
    end Delete_Tags;
 
    function Set_Versioning

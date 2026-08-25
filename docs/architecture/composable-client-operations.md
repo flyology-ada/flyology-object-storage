@@ -6,7 +6,8 @@ single-range Get, bodyless Head, non-replaying Delete, non-replaying multipart
 initiation, one-shot UploadPart, one-shot multipart completion and abort,
 bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
-ListBuckets, CreateBucket, and bodyless HeadBucket. The
+ListBuckets, CreateBucket, bodyless HeadBucket, and bucket tagging Put/Get/
+Delete. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -62,7 +63,9 @@ The implemented operation order is:
 17. `List_Objects` (v1); and
 18. service-level `List_Buckets`; and
 19. bodyless `Head_Bucket`; and
-20. non-replaying `Create_Bucket`.
+20. non-replaying `Create_Bucket`; and
+21. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
+    `Delete_Bucket_Tagging`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -134,6 +137,17 @@ synchronous overload waits on the same owner-driven operation; the convenience
 overload preserves its established raising transport contract. Restart is
 limited to the same HTTP client and cancellation owner, and no caller request
 input remains borrowed after signing.
+PutBucketTagging likewise serializes and owns its complete validated tag set
+once, and DeleteBucketTagging supplies a non-rewindable known-empty source.
+Neither mutation is replayed after possible admission. Their typed results
+distinguish completed mutation, conclusive non-application, pre-admission
+cancellation, and an outcome that requires caller-selected
+GetBucketTagging reconciliation before retry. GetBucketTagging retains its
+complete response under both the shared S3 XML bound and the stricter tagging
+document bound. All three parameter-record synchronous overloads wait on the
+same owner-driven operations; the convenience forms preserve their established
+raising transport behavior. Restart requires the same HTTP client and
+cancellation owner, and no request input remains borrowed after signing.
 ListObjectsV2 retains a bounded response no larger than the shared XML parser
 limit and binds the bucket, prefix, delimiter, opaque continuation token,
 start-after key, maximum, encoding mode, and requester-pays response to the

@@ -368,4 +368,58 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
          Token);
    end Start_Upload_Part;
 
+   procedure Start_Put_Bucket_Tagging
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null) is
+   begin
+      if Prepared.Operation /= Put_Bucket_Tagging_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Flyology.HTTP.Client.Scoped.Start
+        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
+         Token);
+   end Start_Put_Bucket_Tagging;
+
+   procedure Start_Get_Bucket_Tagging
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null) is
+   begin
+      if Prepared.Operation /= Get_Bucket_Tagging_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Flyology.HTTP.Client.Scoped.Start
+        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+   end Start_Get_Bucket_Tagging;
+
+   procedure Start_Delete_Bucket_Tagging
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null) is
+   begin
+      if Prepared.Operation /= Delete_Bucket_Tagging_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Flyology.HTTP.Client.Scoped.Start
+        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
+         Token);
+   end Start_Delete_Bucket_Tagging;
+
 end Flyology.Object_Storage.Client.Low_Level.Scoped;
