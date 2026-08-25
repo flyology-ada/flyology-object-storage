@@ -7,7 +7,8 @@ initiation, one-shot UploadPart, one-shot multipart completion and abort,
 bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
 ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
-and bucket tagging Put/Get/Delete, plus object tagging Put/Get/Delete. The
+bounded GetBucketLocation, and bucket tagging Put/Get/Delete, plus object
+tagging Put/Get/Delete. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -79,14 +80,15 @@ The implemented operation order is:
 19. bodyless `Head_Bucket`;
 20. non-replaying `Create_Bucket`;
 21. non-replaying `Delete_Bucket`;
-22. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
+22. bounded `Get_Bucket_Location`;
+23. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
-23. `Put_Object_Tagging`, `Get_Object_Tagging`, and
+24. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
 
-The provider surface contains 30 domain operations: 15 in `Client.Objects`,
-seven in `Client.Buckets`, and eight in `Client.Transfers`. Those operations
-map to 27 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 31 domain operations: 15 in `Client.Objects`,
+eight in `Client.Buckets`, and eight in `Client.Transfers`. Those operations
+map to 28 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object` prepared-request
@@ -171,6 +173,16 @@ deletion. Typed Finish distinguishes a validated 204, exact non-application,
 pre-admission cancellation, and an outcome that requires caller-selected
 HeadBucket reconciliation before any retry. Restart requires the same HTTP
 client and cancellation owner, and no bucket name, owner precondition,
+credentials, or other request input remains borrowed after signing.
+GetBucketLocation owns its signed request and retains its response under the
+shared S3 XML document limit. Typed Finish preserves the complete modeled
+response, HTTP admission state, causal phase, and bounded failure reason. Its
+parameter-record synchronous overload waits on the same owner-driven
+operation; the established convenience overload keeps the legacy empty/EU
+normalization and raising transport contract. This read-only operation has no
+request body and relies on Flyology HTTP's bounded safe-GET stale-lease
+recovery rather than adding an Object Storage retry. Restart requires the same
+HTTP client and cancellation owner, and no bucket name, owner precondition,
 credentials, or other request input remains borrowed after signing.
 PutBucketTagging likewise serializes and owns its complete validated tag set
 once, and DeleteBucketTagging supplies a non-rewindable known-empty source.

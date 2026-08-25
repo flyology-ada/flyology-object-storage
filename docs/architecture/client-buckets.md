@@ -48,6 +48,14 @@ controls and rejects malformed or duplicate controls before backend mutation.
 `Location` normalizes the legacy empty and `EU` values into signing regions
 while preserving the wire spelling. `Delete` removes an empty bucket and
 preserves `BucketNotEmpty`, owner-precondition, and other S3 rejections.
+The parameter-record `Get_Location` overload waits on the provider-owned
+limited operation and preserves the raw modeled response, HTTP admission,
+causal phase, and bounded failure reason. Directly composed callers use the
+same-name constructor or operation-last procedure and typed `Finish`; the
+operation owns its signed request and bounded XML response without retaining
+credentials, bucket text, or the owner precondition. The convenience overload
+waits on that same state machine before applying the established empty/EU
+normalization.
 The parameter-record `Delete` overload waits on the provider-owned limited
 operation and preserves HTTP admission plus deletion certainty. Directly
 composed callers use the same-name constructor or operation-last procedure and

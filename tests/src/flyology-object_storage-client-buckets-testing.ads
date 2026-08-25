@@ -9,6 +9,8 @@ package Flyology.Object_Storage.Client.Buckets.Testing is
 
    procedure Check_Head_Bucket_Result_Corpus;
 
+   procedure Check_Get_Bucket_Location_Result_Corpus;
+
    procedure Check_Bucket_Tagging_Certainty_Corpus;
 
 end Flyology.Object_Storage.Client.Buckets.Testing;

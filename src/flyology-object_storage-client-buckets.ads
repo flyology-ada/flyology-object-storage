@@ -467,6 +467,114 @@ package Flyology.Object_Storage.Client.Buckets is
       Result    : out Head_Bucket_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  Shape of a terminal GetBucketLocation read.
+   --  @enum Get_Bucket_Location_Response_Available Modeled response exists
+   --  @enum Get_Bucket_Location_Exchange_Failed No complete response exists
+   type Get_Bucket_Location_Result_Kind is
+     (Get_Bucket_Location_Response_Available,
+      Get_Bucket_Location_Exchange_Failed);
+
+   --  Typed GetBucketLocation response or composable HTTP failure.
+   --  Admission is retained for diagnostics; this operation is read-only.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Get_Bucket_Location_Result
+     (Kind : Get_Bucket_Location_Result_Kind :=
+        Get_Bucket_Location_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Get_Bucket_Location_Response_Available =>
+            Response : Low_Level.Get_Bucket_Location_Outcome;
+         when Get_Bucket_Location_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase  : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail      : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded GetBucketLocation parent with one hidden HTTP child. The
+   --  operation owns its signed request and retained XML through terminal
+   --  Finish, with no borrowed request input after signing.
+   --  Compatibility contract: region and addressing defaults match the
+   --  established synchronous Get_Location overload. Composable forms replace
+   --  its established 30-second timeout with a caller-supplied deadline.
+   type Get_Bucket_Location_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one GetBucketLocation read.
+   --  @param Operation Fresh or consumed established location operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose location is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Get_Location
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Location_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Get_Bucket_Location_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one GetBucketLocation read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose location is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven location read
+   function Get_Location
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Location_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Bucket_Location_Operation;
+
+   --  Consume one terminal GetBucketLocation operation.
+   --  @param Operation Terminal bucket-location read
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out Get_Bucket_Location_Operation;
+      Result    : out Get_Bucket_Location_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
    --  What is known about one bucket-tag mutation after terminal drain.
    --  An unknown outcome requires a caller-selected GetBucketTagging
    --  reconciliation before any retry.
@@ -1396,6 +1504,31 @@ package Flyology.Object_Storage.Client.Buckets is
       end case;
    end record;
 
+   --  Resolve one bucket location by waiting on the provider-owned composable
+   --  operation. Compatibility contract: region, addressing, and 30-second
+   --  timeout defaults are inherited from the established convenience call.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose location is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region Region used to sign the location request
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   function Get_Location
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Location_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Bucket_Location_Result;
+
    --  Resolve one bucket's legacy GetBucketLocation value into a usable
    --  signing region while preserving the raw constraint for callers that
    --  need wire-level compatibility diagnostics.
@@ -1795,6 +1928,25 @@ private
    end record;
 
    --  @exclude
+   type Get_Bucket_Location_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural := 0;
+      Final_Result     : Get_Bucket_Location_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error  : Boolean := False;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
    overriding function Declared_Length
      (Item : Put_Bucket_Tagging_Operation)
       return Flyology.HTTP.Client.Body_Length;
@@ -2067,6 +2219,16 @@ private
      (Item : in out Head_Bucket_Operation);
    overriding procedure Finalize
      (Item : in out Head_Bucket_Operation);
+   overriding procedure Write
+     (Item : in out Get_Bucket_Location_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Get_Bucket_Location_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Bucket_Location_Operation);
+   overriding procedure Finalize
+     (Item : in out Get_Bucket_Location_Operation);
    function Normalize_List_Buckets_Response
      (Value     : Low_Level.List_Buckets_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
@@ -2103,6 +2265,15 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Head_Bucket_Result;
+   function Normalize_Get_Bucket_Location_Response
+     (Value     : Low_Level.Get_Bucket_Location_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Get_Bucket_Location_Result;
+   function Normalize_Get_Bucket_Location_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Get_Bucket_Location_Result;
    function Normalize_Put_Bucket_Tagging_Response
      (Value     : Low_Level.Put_Bucket_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)

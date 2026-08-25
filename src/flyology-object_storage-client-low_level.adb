@@ -12854,6 +12854,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Operation);
    end Head_Bucket;
 
+   procedure Get_Bucket_Location
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Sink
+        (Get_Bucket_Location_Operation, Client, Prepared, Sink, Deadline,
+         Token, Operation);
+   end Get_Bucket_Location;
+
    procedure Delete_Bucket
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
