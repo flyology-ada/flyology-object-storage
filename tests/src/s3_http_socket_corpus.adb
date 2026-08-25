@@ -78,6 +78,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.List_Multipart_Uploads_Outcome_Kind;
    use type Low_Level.List_Parts_Outcome_Kind;
    use type Low_Level.Upload_Part_Outcome_Kind;
+   use type Low_Level.Upload_Part_Copy_Outcome_Kind;
    use type Low_Level.Put_Object_Outcome_Kind;
    use type Low_Level.Delete_Objects_Outcome_Kind;
    use type Low_Level.Delete_Object_Outcome_Kind;
@@ -108,6 +109,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.List_Multipart_Uploads_Result_Kind;
    use type Scoped.Copy_Result_Kind;
    use type Scoped.Upload_Part_Result_Kind;
+   use type Scoped.Upload_Part_Copy_Result_Kind;
    use type Scoped.Multipart_Completion_Disposition;
    use type Scoped.Multipart_Completion_Result_Kind;
    use type Scoped.Multipart_Abort_Disposition;
@@ -1671,6 +1673,11 @@ procedure S3_HTTP_Socket_Corpus is
         "<LastModified>2026-08-21T17:00:00.000Z</LastModified>" &
         "<ETag>&quot;high-level-copy&quot;</ETag>" &
         "</CopyObjectResult>";
+      Copy_Part_XML : constant String :=
+        "<CopyPartResult>" &
+        "<LastModified>2026-08-21T17:00:00.000Z</LastModified>" &
+        "<ETag>&quot;copied-part&quot;</ETag>" &
+        "</CopyPartResult>";
       Attributes_XML : constant String :=
         "<GetObjectAttributesResponse>" &
         "<ETag>&quot;socket-attributes&quot;</ETag>" &
@@ -2468,6 +2475,35 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response ("404 Not Found", No_Such_Upload_XML), "GET",
             "/example-bucket/lost-abort?max-parts=1000&" &
               "part-number-marker=0&uploadId=lost-abort-id");
+         --  Prime a reused connection, accept exactly one one-shot copied
+         --  part, and lose its response. The next request must be ListParts
+         --  reconciliation; a transparent retry desynchronizes this oracle.
+         Serve
+           ("HTTP/1.1 200 OK" & CRLF & "Content-Length: 0" & CRLF &
+            "ETag: ""lost-copy-prime""" & CRLF &
+            "Last-Modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF &
+            "Connection: keep-alive" & CRLF & CRLF,
+            "HEAD", "/example-bucket/lost-copy-part-prime",
+            Keep_Open => True);
+         Serve
+           ("", "PUT", "/example-bucket/lost-copy-part?partNumber=1&" &
+              "uploadId=lost-copy-part-id",
+            Expected_Copy_Source => "source-bucket/source-key",
+            Reuse_Peer => True);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<ListPartsResult><Bucket>example-bucket</Bucket>" &
+               "<Key>lost-copy-part</Key>" &
+               "<UploadId>lost-copy-part-id</UploadId>" &
+               "<PartNumberMarker>0</PartNumberMarker>" &
+               "<MaxParts>1000</MaxParts><IsTruncated>false" &
+               "</IsTruncated><Part><PartNumber>1</PartNumber>" &
+               "<LastModified>2026-08-21T17:00:00Z</LastModified>" &
+               "<ETag>&quot;lost-copy-part&quot;</ETag><Size>17</Size>" &
+               "</Part></ListPartsResult>"),
+            "GET", "/example-bucket/lost-copy-part?max-parts=1000&" &
+              "part-number-marker=0&uploadId=lost-copy-part-id");
          Serve
            (HTTP_Response
               ("200 OK", "", "ETag: bound-part" & CRLF &
@@ -3069,6 +3105,44 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("200 OK", "x", "Content-Range: bytes 0-0/1" & CRLF),
             "GET", "/example-bucket/download-unsolicited-content-range");
+         Serve
+           (HTTP_Response
+              ("200 OK", Copy_Part_XML,
+               "x-amz-copy-source-version-id: source-version" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT", "/example-bucket/copy-part-sync?partNumber=1&" &
+              "uploadId=copy-upload",
+            Expected_Copy_Source => "source-bucket/source-key");
+         Serve
+           (HTTP_Response ("200 OK", Copy_Part_XML), "PUT",
+            "/example-bucket/copy-part-restart-one?partNumber=1&" &
+              "uploadId=copy-upload",
+            Expected_Copy_Source => "source-bucket/source-key");
+         Serve
+           (HTTP_Response ("200 OK", Copy_Part_XML), "PUT",
+            "/example-bucket/copy-part-restart-two?partNumber=1&" &
+              "uploadId=copy-upload",
+            Expected_Copy_Source => "source-bucket/source-key");
+         Serve
+           (HTTP_Response
+              ("200 OK", Copy_Part_XML,
+               "x-amz-copy-source-version-id: first" & CRLF &
+               "x-amz-copy-source-version-id: second" & CRLF),
+            "PUT", "/example-bucket/copy-part-invalid-duplicate?" &
+              "partNumber=1&uploadId=copy-upload",
+            Expected_Copy_Source => "source-bucket/source-key");
+         Serve
+           (HTTP_Response
+              ("200 OK", Copy_Part_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT", "/example-bucket/copy-part-invalid-charged?" &
+              "partNumber=1&uploadId=copy-upload",
+            Expected_Copy_Source => "source-bucket/source-key");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML), "PUT",
+            "/example-bucket/copy-part-rejected?partNumber=1&" &
+              "uploadId=copy-upload",
+            Expected_Copy_Source => "source-bucket/source-key");
          Serve
            (HTTP_Response
               ("200 OK", Copy_XML,
@@ -7361,6 +7435,65 @@ procedure S3_HTTP_Socket_Corpus is
                end;
             end;
          end;
+         declare
+            Prime : constant Transfers.Head_Outcome :=
+              Transfers.Head_Object
+                (HTTP, Origin, "example-bucket", "lost-copy-part-prime",
+                 Identity, Timeout => 5.0);
+            Parameters : Low_Level.Upload_Part_Copy_Parameters;
+         begin
+            if Prime.Kind /= Transfers.Object_Found
+              or else US.To_String (Prime.Entity_Tag) /=
+                """lost-copy-prime"""
+            then
+               raise Program_Error with
+                 "UploadPartCopy lost-response connection prime failed";
+            end if;
+            Parameters.Upload_ID :=
+              US.To_Unbounded_String ("lost-copy-part-id");
+            Parameters.Copy_Source :=
+              US.To_Unbounded_String ("source-bucket/source-key");
+            declare
+               Result : constant Scoped.Upload_Part_Copy_Result :=
+                 Transfers.Upload_Part_Copy
+                   (HTTP, Origin, "example-bucket", "lost-copy-part",
+                    Parameters, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Upload_Part_Copy_Exchange_Failed
+                 or else Result.Disposition /= Scoped.Outcome_Unknown
+                 or else Result.Admission /= HTTP_Client.Possibly_Admitted
+               then
+                  raise Program_Error with
+                    "lost UploadPartCopy response certainty mismatch";
+               end if;
+            end;
+            declare
+               List_Parameters : Low_Level.List_Parts_Parameters;
+            begin
+               List_Parameters.Upload_ID :=
+                 US.To_Unbounded_String ("lost-copy-part-id");
+               declare
+                  Listed : constant Scoped.List_Parts_Result :=
+                    Transfers.List_Parts_Page
+                      (HTTP, Origin, "example-bucket", "lost-copy-part",
+                       List_Parameters, Identity, Timeout => 5.0);
+               begin
+                  if Listed.Kind /= Scoped.List_Parts_Response_Available
+                    or else Listed.Response.Kind /= Low_Level.Parts_Listed
+                    or else Natural
+                      (Listed.Response.Result.Listing.Parts.Length) /= 1
+                    or else Listed.Response.Result.Listing.Parts
+                      .First_Element.Number /= 1
+                    or else US.To_String
+                      (Listed.Response.Result.Listing.Parts
+                         .First_Element.Entity_Tag) /= """lost-copy-part"""
+                  then
+                     raise Program_Error with
+                       "UploadPartCopy lost-response reconciliation failed";
+                  end if;
+               end;
+            end;
+         end;
          Require_Upload_Response
            ("upload-bind-wrong-algorithm", False, Bind_SHA256 => True);
          Require_Upload_Response
@@ -8953,6 +9086,139 @@ procedure S3_HTTP_Socket_Corpus is
                   raise;
             end;
             Cleanup;
+         end;
+         declare
+            Parameters : Low_Level.Upload_Part_Copy_Parameters;
+         begin
+            Parameters.Upload_ID := US.To_Unbounded_String ("copy-upload");
+            Parameters.Copy_Source :=
+              US.To_Unbounded_String ("source-bucket/source-key");
+            Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+            declare
+               Result : constant Scoped.Upload_Part_Copy_Result :=
+                 Transfers.Upload_Part_Copy
+                   (HTTP, Origin, "example-bucket", "copy-part-sync",
+                    Parameters, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                 Scoped.Upload_Part_Copy_Response_Available
+                 or else Result.Disposition /= Scoped.Published
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /= Low_Level.Part_Copied
+                 or else Result.Response.Status /= 200
+                 or else US.To_String
+                   (Result.Response.Result.Copy_Source_Version_ID) /=
+                     "source-version"
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /= "requester"
+                 or else US.To_String
+                   (Result.Response.Result.Copy_Part.Entity_Tag) /=
+                     """copied-part"""
+               then
+                  raise Program_Error with
+                    "typed composable UploadPartCopy result mismatch";
+               end if;
+            end;
+
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+            begin
+               Stop.Request;
+               declare
+                  Result : constant Scoped.Upload_Part_Copy_Result :=
+                    Transfers.Upload_Part_Copy
+                      (HTTP, Origin, "example-bucket", "copy-part-cancelled",
+                       Parameters, Identity, Timeout => 5.0,
+                       Token => Stop'Access);
+               begin
+                  if Result.Kind /= Scoped.Upload_Part_Copy_Exchange_Failed
+                    or else Result.Disposition /=
+                      Scoped.Cancelled_Before_Publication
+                    or else Result.Failure /= Scoped.Cancelled
+                    or else Result.Admission /= HTTP_Client.Not_Admitted
+                  then
+                     raise Program_Error with
+                       "pre-admission UploadPartCopy cancellation mismatch";
+                  end if;
+               end;
+            end;
+
+            Parameters.Request_Payer := US.Null_Unbounded_String;
+            declare
+               --  Copy-part parent, HTTP exchange, and one transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Scoped.Upload_Part_Copy_Operation :=
+                 Scoped.Upload_Part_Copy
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "copy-part-restart-one", Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.Upload_Part_Copy_Result;
+            begin
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /=
+                 Scoped.Upload_Part_Copy_Response_Available
+                 or else Result.Disposition /= Scoped.Published
+               then
+                  raise Program_Error with
+                    "direct UploadPartCopy first completion mismatch";
+               end if;
+               Scoped.Start_Upload_Part_Copy
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  "copy-part-restart-two", Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /=
+                 Scoped.Upload_Part_Copy_Response_Available
+                 or else Result.Disposition /= Scoped.Published
+               then
+                  raise Program_Error with
+                    "direct UploadPartCopy restart mismatch";
+               end if;
+
+               for Case_Index in 1 .. 2 loop
+                  Scoped.Start_Upload_Part_Copy
+                    (Operation, HTTP'Access, Origin, "example-bucket",
+                     (if Case_Index = 1
+                      then "copy-part-invalid-duplicate"
+                      else "copy-part-invalid-charged"),
+                     Parameters, Identity, HTTP_Client.Deadline_After (5.0));
+                  Operations.Wait_All (Set);
+                  Scoped.Finish (Operation, Result);
+                  if Result.Kind /= Scoped.Upload_Part_Copy_Exchange_Failed
+                    or else Result.Disposition /= Scoped.Outcome_Unknown
+                    or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                  then
+                     raise Program_Error with
+                       "invalid complete UploadPartCopy response accepted";
+                  end if;
+               end loop;
+            end;
+
+            declare
+               Result : constant Scoped.Upload_Part_Copy_Result :=
+                 Transfers.Upload_Part_Copy
+                   (HTTP, Origin, "example-bucket", "copy-part-rejected",
+                    Parameters, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                 Scoped.Upload_Part_Copy_Response_Available
+                 or else Result.Disposition /=
+                   Scoped.Definitely_Not_Published
+                 or else Result.Failure /= Scoped.Authorization_Failed
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /= Low_Level.Copy_Part_Rejected
+                 or else Result.Response.Status /= 403
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "typed UploadPartCopy rejection mismatch";
+               end if;
+            end;
          end;
          declare
             Options : Low_Level.Copy_Object_Parameters;
@@ -12692,6 +12958,8 @@ begin
      Check_Create_Multipart_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_Upload_Part_Certainty_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_Upload_Part_Copy_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_Complete_Multipart_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.

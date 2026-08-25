@@ -11757,6 +11757,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
          SigV4.Empty_Payload_Hash, Identity, Region, Timestamp)
       do
          Result.Operation := Upload_Part_Copy_Operation;
+         Result.Requested_Upload_Part_Copy_Request_Payer :=
+           Parameters.Request_Payer;
       end return;
    end Prepare_Upload_Part_Copy;
 
@@ -11843,6 +11845,82 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "malformed UploadPartCopy response";
    end Decode_Upload_Part_Copy_Response;
 
+   function Decode_Upload_Part_Copy_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Upload_Part_Copy_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "invalid UploadPartCopy response header multiplicity";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else not Valid_List_Response_Header_Text (Value)
+            then
+               raise Invalid_Response with
+                 "invalid UploadPartCopy response header value";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+   begin
+      if Prepared.Operation /= Upload_Part_Copy_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Request_Charged : constant String :=
+           Singleton_Header ("x-amz-request-charged");
+         Headers : constant Upload_Part_Copy_Result :=
+           (Copy_Source_Version_ID => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-copy-source-version-id")),
+            Copy_Part => (others => <>),
+            Server_Side_Encryption => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-server-side-encryption")),
+            SSE_Customer_Algorithm => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-customer-algorithm")),
+            SSE_Customer_Key_MD5 => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-customer-key-md5")),
+            SSE_KMS_Key_ID => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-aws-kms-key-id")),
+            Bucket_Key_Enabled => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-bucket-key-enabled")),
+            Request_Charged => US.To_Unbounded_String (Request_Charged));
+         Outcome : constant Upload_Part_Copy_Outcome :=
+           Decode_Upload_Part_Copy_Response
+             (Flyology.HTTP.Client.Status (Response), Payload, Headers,
+              Singleton_Header ("x-amz-request-id"),
+              Singleton_Header ("x-amz-id-2"), Limits);
+      begin
+         if Request_Charged'Length > 0
+           and then
+             (Request_Charged /= "requester"
+              or else US.To_String
+                (Prepared.Requested_Upload_Part_Copy_Request_Payer) /=
+                  "requester")
+         then
+            raise Invalid_Response with
+              "UploadPartCopy charged response was not requested";
+         end if;
+         return Outcome;
+      end;
+   end Decode_Upload_Part_Copy_Complete_Response;
+
    function Execute_Upload_Part_Copy
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -11859,44 +11937,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
              (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         Headers : constant Upload_Part_Copy_Result :=
-           (Copy_Source_Version_ID => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-copy-source-version-id")),
-            Copy_Part => (others => <>),
-            Server_Side_Encryption => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-server-side-encryption")),
-            SSE_Customer_Algorithm => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response,
-                  "x-amz-server-side-encryption-customer-algorithm")),
-            SSE_Customer_Key_MD5 => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-server-side-encryption-customer-key-md5")),
-            SSE_KMS_Key_ID => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-server-side-encryption-aws-kms-key-id")),
-            Bucket_Key_Enabled => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response,
-                  "x-amz-server-side-encryption-bucket-key-enabled")),
-            Request_Charged => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-request-charged")));
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_Upload_Part_Copy_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-            Request_ID, Host_ID, Limits);
+         return Decode_Upload_Part_Copy_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

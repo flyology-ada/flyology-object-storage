@@ -4,8 +4,8 @@ This note records the implemented contract for the completion-set-aware object
 client slice: conditional complete-object Put, generation-bound whole and
 single-range Get, bodyless Head, non-replaying Delete, non-replaying multipart
 initiation, one-shot UploadPart, one-shot multipart completion and abort,
-bounded multipart discovery, CopyObject, DeleteObjects, ListObjectsV2,
-ListObjectVersions, and GetObjectAttributes. The
+bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
+ListObjectsV2, ListObjectVersions, and GetObjectAttributes. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -53,10 +53,11 @@ The implemented operation order is:
 9. `Abort_Multipart_Upload`;
 10. `List_Parts` and `List_Multipart_Uploads`;
 11. `Copy_Object` and `Delete_Objects`;
-12. complete modeled `Put_Object` controls; and
-13. `List_Objects_V2`; and
-14. `List_Object_Versions`; and
-15. `Get_Object_Attributes`.
+12. complete modeled `Put_Object` controls;
+13. `List_Objects_V2`;
+14. `List_Object_Versions`;
+15. `Get_Object_Attributes`; and
+16. `Upload_Part_Copy`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -106,6 +107,19 @@ binds requester-pays admission, and requires an explicitly requested opaque
 version identifier to be echoed exactly. Its parameter-record synchronous
 overload waits on that composable operation and preserves typed HTTP failure
 and admission state.
+UploadPartCopy is a one-shot mutation with the same exact upload-ID and part
+number reconciliation boundary as UploadPart. The operation copies the full
+modeled request into its prepared signed message, supplies a non-rewindable
+known-empty source, and retains a response no larger than the shared XML
+parser limit. Typed Finish reports a part as published only after a complete
+validated CopyPartResult, preserves an exact source-precondition rejection,
+and distinguishes modeled definite non-publication. Embedded HTTP-200 errors,
+malformed or oversized responses, and every failure after possible admission
+remain unknown. The caller reconciles unknown results through ListParts before
+any retry or completion decision.
+Its parameter-record synchronous overload waits on the same owner-driven
+operation, preserving HTTP phase, admission certainty, cancellation, and
+one-shot behavior.
 
 An abandoned operation first requests cancellation and drains all HTTP,
 kernel, token, descriptor, source, and response leases. Only after no borrower

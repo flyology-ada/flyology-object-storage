@@ -11,6 +11,8 @@ package Flyology.Object_Storage.Client.Scoped.Testing is
 
    procedure Check_Upload_Part_Certainty_Corpus;
 
+   procedure Check_Upload_Part_Copy_Certainty_Corpus;
+
    procedure Check_Complete_Multipart_Certainty_Corpus;
 
    procedure Check_Abort_Multipart_Certainty_Corpus;

@@ -1306,6 +1306,37 @@ package body Flyology.Object_Storage.Client.Transfers is
          raise;
    end Upload_File;
 
+   function Upload_Part_Copy
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Upload_Part_Copy_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Scoped.Upload_Part_Copy_Result
+   is
+      --  The copy-part parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Upload_Part_Copy_Operation :=
+           Scoped.Upload_Part_Copy
+             (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
+              Identity, Flyology.HTTP.Client.Deadline_After (Timeout), Region,
+              Style, Token);
+         Result : Scoped.Upload_Part_Copy_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Upload_Part_Copy;
+
    function Copy_Object
      (Client             : aliased in out Flyology.HTTP.Client.Client;
       Origin             : Flyology.HTTP.Origin;

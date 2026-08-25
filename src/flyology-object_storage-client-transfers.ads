@@ -426,6 +426,35 @@ package Flyology.Object_Storage.Client.Transfers is
       Checksum : Upload_Checksum_Selection := Default_Upload_Checksum)
       return Upload_Outcome;
 
+   --  Copy one source range into an established multipart upload by waiting
+   --  on the composable owner-driven mutation. The complete parameter record
+   --  supplies the raw x-amz-copy-source value, upload ID, part number,
+   --  conditions, encryption controls, payer, and expected owners.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Destination bucket
+   --  @param Key Destination object key
+   --  @param Parameters Complete modeled UploadPartCopy controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed part-publication certainty and response or exchange error
+   --  @exception Low_Level.Invalid_Request Parameters are invalid
+   function Upload_Part_Copy
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Upload_Part_Copy_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Scoped.Upload_Part_Copy_Result;
+
    type Copy_Outcome_Kind is (Object_Copied, Copy_Rejected);
 
    type Copy_Outcome

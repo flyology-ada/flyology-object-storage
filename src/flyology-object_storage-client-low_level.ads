@@ -4314,6 +4314,23 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Upload_Part_Copy_Outcome;
 
+   --  Decode one complete UploadPartCopy HTTP response. Physical singleton
+   --  headers, bounded values, embedded HTTP-200 errors, and Requester Pays
+   --  consistency are validated before the modeled response is exposed.
+   --  @param Response Complete HTTP response head
+   --  @param Payload Complete bounded response body
+   --  @param Prepared Exact prepared UploadPartCopy request
+   --  @param Limits Bounded XML parser limits
+   --  @return Typed copied-part success or S3 rejection
+   --  @exception Invalid_Request Prepared is not UploadPartCopy
+   --  @exception Invalid_Response Complete response is inconsistent
+   function Decode_Upload_Part_Copy_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Upload_Part_Copy_Outcome;
+
    function Execute_Upload_Part_Copy
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -4564,6 +4581,11 @@ private
       --  Derived request/response binding: a charged CopyObject response is
       --  valid only when the exact prepared request admitted requester pays.
       Requested_Copy_Request_Payer :
+        Ada.Strings.Unbounded.Unbounded_String;
+      --  Derived request/response binding: a charged UploadPartCopy response
+      --  is valid only when the exact prepared request admitted requester
+      --  pays.
+      Requested_Upload_Part_Copy_Request_Payer :
         Ada.Strings.Unbounded.Unbounded_String;
       --  Derived request/response binding: a charged DeleteObjects response
       --  is valid only when the exact prepared request admitted requester
