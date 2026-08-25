@@ -6,13 +6,13 @@ authors = ["Yurii Rashkovskii"]
 maintainers = ["Yurii Rashkovskii <yrashk@gmail.com>"]
 maintainers-logins = ["yrashk"]
 licenses = "MIT OR Apache-2.0"
-website = ""
+website = "https://github.com/flyology-ada/flyology-object-storage"
 tags = ["ada", "aws", "object-storage", "s3", "sqlite"]
 
 project-files = ["flyology_object_storage_sqlite.gpr"]
 
 [[depends-on]]
-flyology_object_storage = "*"
+flyology_object_storage = "=0.1.0-dev"
 
 [[pins]]
 flyology_object_storage = { path='..' }

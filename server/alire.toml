@@ -17,13 +17,13 @@ flyology = "=0.1.1-dev"
 flyology_http = "=0.1.3-dev"
 
 [[depends-on]]
-flyology_object_storage = "*"
+flyology_object_storage = "=0.1.0-dev"
 
 [[pins]]
 flyology_object_storage = { path = ".." }
 
 [[depends-on]]
-flyology_object_storage_sqlite = "*"
+flyology_object_storage_sqlite = "=0.1.0-dev"
 
 [[pins]]
 flyology_object_storage_sqlite = { path = "../sqlite" }
