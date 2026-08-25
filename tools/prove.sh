@@ -24,10 +24,22 @@ PROOF_UNITS=(
 )
 PROOF_PROJECT="tools/flyology_object_storage_proof.gpr"
 PROOF_LOG_DIR="$PROJECT_DIR/obj/proof/logs"
+
+run_prove() {
+  #  Flyology is an indirect Alire dependency. Its exported root is the stable
+  #  project location even when the shared build cache omits it from the
+  #  indirect GPR search path.
+  alr -n exec -- sh -c '
+    GPR_PROJECT_PATH="${FLYOLOGY_ROOT}${GPR_PROJECT_PATH:+:$GPR_PROJECT_PATH}"
+    export GPR_PROJECT_PATH
+    exec "$@"
+  ' sh "$PROVE" "$@"
+}
+
 cd "$PROJECT_DIR"
-alr -n exec -- "$PROVE" -P "$PROOF_PROJECT" --clean
+run_prove -P "$PROOF_PROJECT" --clean
 mkdir -p "$PROOF_LOG_DIR"
-alr -n exec -- "$PROVE" -P "$PROOF_PROJECT" -j0 --level=0 \
+run_prove -P "$PROOF_PROJECT" -j0 --level=0 \
   --output=oneline --output-header --warnings=error "$@" \
   -u "${PROOF_UNITS[@]}" 2>&1 \
   | tee "$PROOF_LOG_DIR/gnatprove-run.txt"

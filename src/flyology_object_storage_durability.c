@@ -1,3 +1,9 @@
+#ifndef _WIN32
+/* POSIX.1-2008 feature-test contract: expose kill(2) under strict C11.
+ * Changing this selector can hide required POSIX declarations. */
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include <errno.h>
 
 #ifdef _WIN32
