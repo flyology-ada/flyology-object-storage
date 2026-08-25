@@ -91,14 +91,15 @@ The implemented operation order is:
 26. bounded `Get_Ownership_Controls`, non-replaying
     `Set_Ownership_Controls`, and non-replaying
     `Delete_Ownership_Controls`;
-27. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
+27. bounded `Get_Encryption`;
+28. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
-28. `Put_Object_Tagging`, `Get_Object_Tagging`, and
+29. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
 
-The provider surface contains 40 domain operations: 15 in `Client.Objects`,
-17 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 37 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 41 domain operations: 15 in `Client.Objects`,
+18 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 38 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -465,9 +466,9 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Complete_Multipart_Upload`, `Abort_Multipart_Upload`, `List_Parts_Page`, and
 `List_Multipart_Uploads_Page` overloads, plus the typed-result `Copy_Object`,
 `Get_Public_Access_Block`, `Get_Ownership_Controls`, and
-`Set_Ownership_Controls`, and `Delete_Ownership_Controls` overloads are
-literal waits on the same provider-owned state machines and retain their typed
-certainty, capacity,
+`Set_Ownership_Controls`, `Delete_Ownership_Controls`, and `Get_Encryption`
+overloads are literal waits on the same provider-owned state machines and
+retain their typed certainty, capacity,
 metadata, and ownership results. The established raising `Delete_Outcome` and
 `Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer
 overloads remain source compatible.

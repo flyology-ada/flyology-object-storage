@@ -140,6 +140,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Bucket_Policy_Mutation_Disposition;
    use type Get_Public_Access_Block_Result_Kind;
    use type Get_Bucket_Ownership_Controls_Result_Kind;
+   use type Get_Bucket_Encryption_Result_Kind;
    use type Put_Bucket_Ownership_Controls_Result_Kind;
    use type Bucket_Ownership_Controls_Mutation_Disposition;
    use type Delete_Ownership_Controls_Result_Kind;
@@ -4344,6 +4345,21 @@ procedure S3_HTTP_Socket_Corpus is
                  String'(1 .. 64 => ' ') &
                  "</ServerSideEncryptionConfiguration>"),
             "GET", "/example-bucket?encryption");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ServerSideEncryptionConfiguration><Rule>" &
+                 "<ApplyServerSideEncryptionByDefault><SSEAlgorithm>" &
+                 "AES256</SSEAlgorithm>" &
+                 "</ApplyServerSideEncryptionByDefault></Rule>" &
+                 "</ServerSideEncryptionConfiguration>"),
+            "GET", "/composed-encryption?encryption",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-get-encryption" & CRLF),
+            "GET", "/restart-encryption?encryption",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
               ("200 OK",
@@ -13685,6 +13701,87 @@ procedure S3_HTTP_Socket_Corpus is
                Small_Limits => True);
          end;
          declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Abac
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (others => <>),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Bucket_Encryption_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Get_Bucket_Encryption
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "GetBucketEncryption accepted a prepared ABAC request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_Encryption_Result;
+         begin
+            declare
+               Operation : Get_Bucket_Encryption_Operation :=
+                 Get_Encryption
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-encryption",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Encryption_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else not Result.Response.Configuration.Is_Set
+                 or else Result.Response.Configuration.Rules.Length /= 1
+                 or else Result.Response.Configuration.Rules.Element (1).
+                   Default_Encryption.Algorithm /= Encryption.AES256_Encryption
+               then
+                  raise Program_Error with
+                    "composed GetBucketEncryption result mismatch";
+               end if;
+               Get_Encryption
+                 (HTTP'Access,
+                  Origin,
+                  "restart-encryption",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Encryption_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-get-encryption"
+               then
+                  raise Program_Error with
+                    "restarted GetBucketEncryption result mismatch";
+               end if;
+            end;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Get_Bucket_Metadata_Table_Configuration
                 (Origin, Low_Level.Path_Style, "example-bucket",
@@ -15742,6 +15839,7 @@ begin
    Buckets_Testing.Check_Bucket_Policy_Certainty_Corpus;
    Buckets_Testing.Check_Public_Access_Block_Certainty_Corpus;
    Buckets_Testing.Check_Ownership_Controls_Certainty_Corpus;
+   Buckets_Testing.Check_Bucket_Encryption_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Versioning_Result_Corpus;
    Buckets_Testing.Check_Put_Bucket_Versioning_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;

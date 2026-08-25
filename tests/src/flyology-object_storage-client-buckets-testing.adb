@@ -1397,6 +1397,127 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       end loop;
    end Check_Bucket_Policy_Certainty_Corpus;
 
+   procedure Check_Bucket_Encryption_Result_Corpus is
+      type Failure_Kind_Array is array (Positive range <>) of
+        HTTP_Client.Exchange_Result_Kind;
+      Failure_Kinds : constant Failure_Kind_Array :=
+        (HTTP_Client.Pre_Admission_Rejected,
+         HTTP_Client.Cancelled,
+         HTTP_Client.Timed_Out,
+         HTTP_Client.Client_Unavailable,
+         HTTP_Client.Connection_Failed,
+         HTTP_Client.Transport_Failed,
+         HTTP_Client.Request_Source_Failed,
+         HTTP_Client.Response_Invalid,
+         HTTP_Client.Response_Body_Too_Large,
+         HTTP_Client.Response_Sink_Failed);
+
+      function Error_Response (Code : String) return S3.Errors.Error_Response
+      is
+        ((Code       => US.To_Unbounded_String (Code),
+          Message    => US.Null_Unbounded_String,
+          Resource   => US.Null_Unbounded_String,
+          Request_ID => US.Null_Unbounded_String,
+          Host_ID    => US.Null_Unbounded_String));
+
+      function Expected_Failure
+        (Kind : HTTP_Client.Exchange_Result_Kind) return Failure_Reason is
+        (case Kind is
+            when HTTP_Client.Pre_Admission_Rejected => Invalid_Request,
+            when HTTP_Client.Cancelled => Cancelled,
+            when HTTP_Client.Timed_Out => Timed_Out,
+            when HTTP_Client.Client_Unavailable => Client_Unavailable,
+            when HTTP_Client.Connection_Failed => Connection_Failed,
+            when HTTP_Client.Transport_Failed => Transport_Failed,
+            when HTTP_Client.Request_Source_Failed => Request_Source_Failed,
+            when HTTP_Client.Response_Body_Too_Large |
+                 HTTP_Client.Response_Invalid |
+                 HTTP_Client.Response_Sink_Failed =>
+              Corrupt_Or_Invalid_Response,
+            when HTTP_Client.Response_Complete =>
+              raise Program_Error with "complete response is not a failure");
+
+      procedure Check_Response
+        (Status  : Flyology.HTTP.Status_Code;
+         Code    : String;
+         Failure : Failure_Reason)
+      is
+         Value : constant Low_Level.Get_Bucket_Encryption_Outcome :=
+           (if Status = 200
+            then (Kind => Low_Level.Bucket_Control_Found,
+                  Status => Status,
+                  Configuration => (others => <>))
+            else (Kind => Low_Level.Get_Bucket_Control_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant Get_Bucket_Encryption_Result :=
+           Normalize_Get_Bucket_Encryption_Response
+             (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Get_Bucket_Encryption_Response_Available
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "GetBucketEncryption response normalization mismatch";
+         end if;
+      end Check_Response;
+   begin
+      Check_Response (200, "", No_Failure);
+      Check_Response (400, "InvalidBucketName", Invalid_Request);
+      Check_Response (400, "InvalidRequest", Invalid_Request);
+      Check_Response (401, "InvalidAccessKeyId", Authentication_Failed);
+      Check_Response (403, "AccessDenied", Authorization_Failed);
+      Check_Response (404, "NoSuchBucket", Not_Found);
+      Check_Response
+        (404, "ServerSideEncryptionConfigurationNotFoundError", Not_Found);
+      Check_Response (409, "OperationAborted", Unavailable_Or_Retryable);
+      Check_Response (429, "SlowDown", Unavailable_Or_Retryable);
+      Check_Response (500, "InternalError", Unavailable_Or_Retryable);
+      Check_Response (502, "BadGateway", Unavailable_Or_Retryable);
+      Check_Response (503, "SlowDown", Unavailable_Or_Retryable);
+      Check_Response (504, "RequestTimeout", Unavailable_Or_Retryable);
+      Check_Response (501, "NotImplemented", Invalid_Request);
+      Check_Response (409, "", Corrupt_Or_Invalid_Response);
+
+      for Admission in
+        HTTP_Client.Not_Admitted .. HTTP_Client.Possibly_Admitted
+      loop
+         declare
+            Value : constant Low_Level.Get_Bucket_Encryption_Outcome :=
+              (Kind          => Low_Level.Bucket_Control_Found,
+               Status        => 200,
+               Configuration => (others => <>));
+            Result : constant Get_Bucket_Encryption_Result :=
+              Normalize_Get_Bucket_Encryption_Response (Value, Admission);
+         begin
+            if Result.Failure /= Corrupt_Or_Invalid_Response then
+               raise Program_Error with
+                 "inconsistent GetBucketEncryption certainty was accepted";
+            end if;
+         end;
+      end loop;
+
+      for Kind of Failure_Kinds loop
+         for Admission in HTTP_Client.Admission_Certainty loop
+            declare
+               Result : constant Get_Bucket_Encryption_Result :=
+                 Normalize_Get_Bucket_Encryption_Failure
+                   (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+            begin
+               if Result.Kind /= Get_Bucket_Encryption_Exchange_Failed
+                 or else Result.Failure /= Expected_Failure (Kind)
+                 or else Result.Admission /= Admission
+                 or else Result.HTTP_Result /= Kind
+               then
+                  raise Program_Error with
+                    "GetBucketEncryption exchange certainty mismatch";
+               end if;
+            end;
+         end loop;
+      end loop;
+   end Check_Bucket_Encryption_Result_Corpus;
+
    procedure Check_Ownership_Controls_Certainty_Corpus is
       type Failure_Kind_Array is array (Positive range <>) of
         HTTP_Client.Exchange_Result_Kind;

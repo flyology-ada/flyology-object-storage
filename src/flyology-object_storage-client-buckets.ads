@@ -1250,6 +1250,152 @@ package Flyology.Object_Storage.Client.Buckets is
       Token : access Flyology.Cancellation.Token := null)
       return Delete_Outcome;
 
+   --  Shape of a terminal GetBucketEncryption read.
+   --  @enum Get_Bucket_Encryption_Response_Available Modeled
+   --     response exists
+   --  @enum Get_Bucket_Encryption_Exchange_Failed No complete response
+   --     exists
+   type Get_Bucket_Encryption_Result_Kind is
+     (Get_Bucket_Encryption_Response_Available,
+      Get_Bucket_Encryption_Exchange_Failed);
+
+   --  Typed GetBucketEncryption response or composable HTTP failure.
+   --  Admission is retained for diagnostics; this operation is read-only.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Get_Bucket_Encryption_Result
+     (Kind : Get_Bucket_Encryption_Result_Kind :=
+        Get_Bucket_Encryption_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Get_Bucket_Encryption_Response_Available =>
+            Response : Low_Level.Get_Bucket_Encryption_Outcome;
+         when Get_Bucket_Encryption_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase  : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail      : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded GetBucketEncryption parent with one hidden HTTP
+   --  child. The operation owns its signed request and retained response
+   --  bytes through terminal Finish, with no borrowed request input after
+   --  signing.
+   type Get_Bucket_Encryption_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  These overloads use the package's established bucket-control defaults:
+   --  us-east-1, path-style addressing, shared XML limits, and no
+   --  cancellation source. The values preserve existing request-signing
+   --  policy rather than introducing new operation-specific policy.
+   --  Start or restart one bounded GetBucketEncryption read.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose configuration is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established configuration read
+   procedure Get_Encryption
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Get_Bucket_Encryption_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded GetBucketEncryption read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose configuration is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven configuration read
+   function Get_Encryption
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Bucket_Encryption_Operation;
+
+   --  Consume one terminal GetBucketEncryption operation.
+   --  @param Operation Terminal bucket-encryption read
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out Get_Bucket_Encryption_Operation;
+      Result    : out Get_Bucket_Encryption_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Read one bucket-encryption snapshot by waiting on the provider-owned
+   --  composable operation. The established region, addressing, 30-second
+   --  timeout, shared XML-limit, and null-cancellation defaults are preserved.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose configuration is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled response or bounded exchange failure
+   function Get_Encryption
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Get_Bucket_Encryption_Result;
+
    --  Shape of a terminal GetBucketOwnershipControls read.
    --  @enum Get_Bucket_Ownership_Controls_Response_Available Modeled
    --     response exists
@@ -3580,6 +3726,26 @@ package Flyology.Object_Storage.Client.Buckets is
 private
 
    --  @exclude
+   type Get_Bucket_Encryption_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural := 0;
+      Final_Result     : Get_Bucket_Encryption_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error  : Boolean := False;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
    type Get_Bucket_Ownership_Controls_Operation
      (Set          : not null access Flyology.Operations.Completion_Set'Class;
       HTTP         : not null access Flyology.HTTP.Client.Client;
@@ -4121,6 +4287,16 @@ private
    overriding procedure Finalize
      (Item : in out Head_Bucket_Operation);
    overriding procedure Write
+     (Item : in out Get_Bucket_Encryption_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Get_Bucket_Encryption_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Bucket_Encryption_Operation);
+   overriding procedure Finalize
+     (Item : in out Get_Bucket_Encryption_Operation);
+   overriding procedure Write
      (Item : in out Get_Bucket_Ownership_Controls_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    overriding procedure Drive
@@ -4408,6 +4584,15 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Bucket_Ownership_Controls_Result;
+   function Normalize_Get_Bucket_Encryption_Response
+     (Value     : Low_Level.Get_Bucket_Encryption_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Get_Bucket_Encryption_Result;
+   function Normalize_Get_Bucket_Encryption_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Get_Bucket_Encryption_Result;
    function Normalize_Put_Bucket_Ownership_Controls_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
