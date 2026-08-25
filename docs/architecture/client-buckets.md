@@ -85,6 +85,16 @@ creation, version IDs, or delete markers. The separately qualified
 `Client.Objects.List_Versions_Page` is a client-only wire boundary and does not
 change that backend limitation.
 
+The parameter-record `Get_Versioning` overload waits on a provider-owned
+limited operation that retains the exact signed request and response under the
+versioning XML limit. Directly composed callers use the same-name constructor
+or operation-last procedure and typed `Finish`; the result preserves the raw
+modeled response, HTTP admission, causal phase, and bounded failure reason.
+The established convenience overload waits on the same operation and retains
+its raising transport behavior. No request text or credential remains borrowed
+after signing, and this read-only operation does not select mutation retry
+policy.
+
 These operations are deliberately individual. Parallel work across many
 buckets or objects belongs in an application-owned joined scope, while
 multi-file data transfer uses `Client.Transfers.Transfer_Many` and its explicit

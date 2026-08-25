@@ -134,6 +134,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Delete_Bucket_Tagging_Result_Kind;
    use type Head_Bucket_Result_Kind;
    use type Get_Bucket_Location_Result_Kind;
+   use type Get_Bucket_Versioning_Result_Kind;
    use type List_Objects_V2_Result_Kind;
    use type List_Object_Versions_Result_Kind;
    use type Get_Object_Attributes_Result_Kind;
@@ -2445,6 +2446,28 @@ procedure S3_HTTP_Socket_Corpus is
                "<Status>Suspended</Status>" &
                "</VersioningConfiguration>"),
             "GET", "/example-bucket?versioning", Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<VersioningConfiguration>" &
+                 "<Status>Enabled</Status>" &
+                 "</VersioningConfiguration>"),
+            "GET", "/typed-versioning?versioning",
+            Expected_Bucket_Owner => "123456789012",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("200 OK", "<VersioningConfiguration/>"),
+            "GET", "/composed-versioning?versioning",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden",
+               "<Error><Code>AccessDenied</Code>" &
+                 "<Message>denied</Message></Error>",
+               "x-amz-request-id: restarted-versioning-request" & CRLF),
+            "GET", "/restart-versioning?versioning",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
               ("200 OK", "", Omit_Content_Length => True),
@@ -8163,6 +8186,86 @@ procedure S3_HTTP_Socket_Corpus is
                raise Program_Error with
                  "convenience bucket versioning socket result mismatch";
             end if;
+         end;
+         declare
+            Parameters : constant
+              Low_Level.Get_Bucket_Versioning_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Versioning_Result :=
+              Client_Buckets.Get_Versioning
+                (HTTP,
+                 Origin,
+                 "typed-versioning",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Get_Bucket_Versioning_Response_Available
+              or else Result.Failure /= No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+              or else Result.Response.Kind /=
+                Low_Level.Bucket_Versioning_Found
+              or else Result.Response.Configuration.Status /=
+                Flyology.Object_Storage.Versioning_Enabled
+            then
+               raise Program_Error with
+                 "typed GetBucketVersioning response mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant
+              Low_Level.Get_Bucket_Versioning_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            --  Versioning parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_Versioning_Result;
+         begin
+            declare
+               Operation : Get_Bucket_Versioning_Operation :=
+                 Get_Versioning
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-versioning",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Versioning_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Bucket_Versioning_Found
+                 or else Result.Response.Configuration.Status /=
+                   Flyology.Object_Storage.Versioning_Unconfigured
+               then
+                  raise Program_Error with
+                    "composed GetBucketVersioning first result mismatch";
+               end if;
+               Get_Versioning
+                 (HTTP'Access,
+                  Origin,
+                  "restart-versioning",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Versioning_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Bucket_Versioning_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-versioning-request"
+               then
+                  raise Program_Error with
+                    "composed GetBucketVersioning restart mismatch";
+               end if;
+            end;
          end;
          declare
             Values : constant Low_Level.Model_Value_Array :=
@@ -14469,6 +14572,7 @@ begin
    Buckets_Testing.Check_Delete_Bucket_Certainty_Corpus;
    Buckets_Testing.Check_Head_Bucket_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Location_Result_Corpus;
+   Buckets_Testing.Check_Get_Bucket_Versioning_Result_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;
    Objects_Testing.Check_Object_Tagging_Certainty_Corpus;
    Transfers_Testing.Check_List_Parts_Result_Corpus;
