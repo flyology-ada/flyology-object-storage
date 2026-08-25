@@ -6,8 +6,11 @@ description: Preserve Flyology Object Storage's architecture, verification, docu
 
 - Keep the public Ada namespace under `Flyology.Object_Storage`; the Alire
   crate is `flyology_object_storage`.
-- Resolve `flyology_http` through the Flyology Alire index. Do not commit a
-  local path pin for that dependency.
+- Resolve `flyology_http` through the Flyology Alire index. Never implement a
+  path-pin request as a committed repository change; explain that the indexed
+  dependency is authoritative. Treat a disposable uncommitted path pin as
+  separate local development state only when the user explicitly requests
+  that temporary workflow, never as the repository solution.
 - Keep S3 wire models, authentication and HTTP routing above the backend
   boundary. Backends must not depend on HTTP request or response types.
 - Every backend must pass the same conformance suite. Do not claim a feature

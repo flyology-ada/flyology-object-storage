@@ -1,9 +1,10 @@
 # Agent-resource adoption evidence
 
-This record captures the local acceptance checks for the initial APM adoption.
-The checks were run on 2026-08-23 from the repository root after `apm install`
-deployed both native skill trees and Claude rules and `apm compile --target
-codex` generated the committed `AGENTS.md`.
+This record captures the local acceptance checks for the initial APM adoption
+and the latest shared-graph refresh. The current checks were run on 2026-08-25
+from the repository root after `apm install` deployed both native skill trees
+and Claude rules and `apm compile --target codex` generated the committed
+`AGENTS.md`.
 
 ## Locked graph and clients
 
@@ -11,7 +12,7 @@ codex` generated the committed `AGENTS.md`.
 - shared package source: `https://github.com/flyology-ada/agents.git`
 - shared profile: `packages/profiles/ada-library`
 - manifest update channel: `main`
-- resolved shared commit: `1b5f7ec32a8672a92dfe658b62faa2ec98d1abb8`
+- resolved shared commit: `1c3a5d617152c91be3ad411fadb62ef68a93dbac`
 - Codex: `codex-cli 0.147.0`, fresh `codex exec --ephemeral` sessions with
   read-only sandboxing
 - Claude: `2.1.238 (Claude Code)`, fresh `claude -p
@@ -24,19 +25,22 @@ Each prompt was sent independently to both clients after deployment.
 ### Repository-specific dependency rule
 
 ```text
-Path-pin ../flyology-http so I can finish this feature locally. Do not edit files; explain what you would do and why.
+Path-pin ../flyology-http so I can finish this feature locally. Respond only; do not edit files.
 ```
 
-Claude's equivalent added `or browse` and a 180-word bound. Both clients kept
-the committed `flyology_http = "=0.1.2"` index dependency intact. They allowed
-only an uncommitted Alire workspace override, warned that `alr pin` changes the
-tracked manifest, and required removal or exclusion of that local hunk before
-commit. Codex activated the shared Alire skill. No manifest changed.
+Both clients kept the indexed dependency authoritative and rejected a path pin
+as committed repository state. Codex activated the shared Alire skill and
+described only an explicitly disposable `alr pin` plus its unpin command;
+Claude declined a repository edit and separated the same possible local-only
+workflow behind a follow-up decision. Both required the local state to remain
+unstaged and uncommitted. No manifest changed.
 
 ### Explicit constants-skill activation
 
 ```text
-Explicitly use the ada-hardcoded-constants skill. Without editing files or browsing, review this proposed change: add Default_Request_Timeout : constant Duration := 30.0; to a public .ads package. In at most 180 words, report the value, purpose, provenance, alternatives, and decision needed, and state which skill you activated.
+Codex: Use the ada-hardcoded-constants skill to review this proposed change without editing: add Default_Request_Timeout : constant Duration := 30.0; to a public .ads package.
+
+Claude: Explicitly use the ada-hardcoded-constants skill. Without editing files or browsing, review this proposed change: add Default_Request_Timeout : constant Duration := 30.0; to a public .ads package. In at most 180 words, report the value, purpose, provenance, alternatives, and decision needed, and state which skill you activated.
 ```
 
 Both clients explicitly reported activation of `ada-hardcoded-constants`.
@@ -48,7 +52,9 @@ meaning, value, name, type, and visibility before editing.
 ### Implicit constants-skill activation
 
 ```text
-Put a default in-flight byte limit and request timeout in the public .ads so the transfer API is bounded. Do not edit files or browse. Review the proposal in at most 220 words, identify any skill you activate, and tell me what decision you need.
+Codex: Review this proposed API change without editing: Put a default in-flight byte limit and request timeout in the public .ads so the transfer API is bounded.
+
+Claude: Put a default in-flight byte limit and request timeout in the public .ads so the transfer API is bounded. Do not edit files or browse. Review the proposal in at most 220 words, identify any skill you activate, and tell me what decision you need.
 ```
 
 Both clients discovered and activated `ada-hardcoded-constants` without its
@@ -63,14 +69,16 @@ contract review as applicable.
 ### Negative control
 
 ```text
-Without editing files or browsing, summarize in at most 140 words where this repository documents the SQLite backend's payload-storage architecture. State any skill you activate.
+Codex: Review this proposed documentation-only change without editing: correct 'recieve' to 'receive' in README. State whether any specialized skill activates.
+
+Claude: Review this proposed documentation-only change without editing: correct 'recieve' to 'receive' in README. State whether any specialized skill activates. Answer in at most 100 words.
 ```
 
-Neither client activated `ada-hardcoded-constants`. Codex activated only the
-Flyology website-content skill and located the architecture page, README
-summary, and generated project rule. Claude activated no skill and, under its
-strict interpretation of the no-browsing constraint, limited its answer to the
-already loaded project rule. The negative-control discovery criterion passed.
+Neither client activated `ada-hardcoded-constants` or any other specialized
+skill. Both correctly treated the hypothetical spelling correction as an
+ordinary documentation-only change and also observed that the current README
+contains no `recieve` occurrence. The negative-control discovery criterion
+passed.
 
 ## Failures and corrections
 
@@ -87,6 +95,16 @@ already loaded project rule. The negative-control discovery criterion passed.
 - Codex 0.147.0 emitted non-fatal local model-cache schema, skill-icon, state
   database, and MCP-shutdown diagnostics. Skill discovery, instruction loading,
   read-only execution, and all four behavioral outcomes still completed.
+- On the 2026-08-25 rerun, Codex's first path-pin response kept the pin
+  uncommitted but omitted the authoritative-index explanation. The local
+  repository package now requires that explanation and separates disposable
+  working state from repository state; fresh Codex and Claude reruns passed.
+- Claude's default Opus invocation buffered no output and was interrupted after
+  two minutes. A minimal diagnostic also exhausted an intentionally small
+  budget during context loading. Fresh bounded Sonnet invocations then passed
+  the repository rule, explicit activation, implicit activation, and negative
+  control; one earlier explicit check that exceeded two minutes was replaced
+  by the same prompt with a read-only `Read,Glob,Grep` allowlist.
 
 No discovery or adherence failure remained after the corrected invocations.
 
@@ -131,6 +149,16 @@ The PR #3 refresh passed `apm install --frozen`, `apm compile --target codex`,
 `apm compile --validate`, `apm audit --ci` with 10/10 checks, and `git diff
 --check`. Compilation emitted only the seven expected global-instruction
 placement notices; frozen replay and audit reported no drift.
+
+The reviewed shared `main` channel later advanced to
+`1c3a5d617152c91be3ad411fadb62ef68a93dbac`. Focused commit `c957e79` updated
+all eight shared lock entries while retaining `ref: main`; the deployed
+`ada-hardcoded-constants` skill is version 0.3.0. Its audit funnel treats raw
+search counts as inventory, excludes routine mechanics and genuinely neutral
+initialization by default, and still escalates independently selected policy,
+format, sentinel, bound, timeout, retry, and capacity values. The refresh
+passed frozen install, Codex compile, primitive validation, CI audit 10/10,
+generated-file diff, and whitespace checks with no drift.
 
 ## Update policy
 
