@@ -72,7 +72,7 @@ awk -F '\t' '
         rows["rustfs"] !~ /^permissive-reference\texternal\t/ ||
         rows["seaweedfs"] !~ /^permissive-reference\texternal\t/ ||
         rows["flyology-memory"] != "candidate\tmemory\tvolatile" ||
-        rows["flyology-files"] != "candidate\tfiles\tatomic-not-power-durable" ||
+        rows["flyology-files"] != "candidate\tfiles\tpower-loss-durable" ||
         rows["flyology-sqlite"] != "candidate\tsqlite\twal-synchronous-full") {
       print "benchmark matrix must contain two references and three Flyology backends" > "/dev/stderr"
       exit 1
@@ -168,6 +168,19 @@ bash -n "$PROJECT_DIR/benchmarks/run-endpoint.sh" \
   "$PROJECT_DIR/benchmarks/run-bucket-tagging-matrix.sh"
 
 echo "benchmark launchers: executable and syntax-clean"
+
+durability_metadata='  echo "flyology_files_commit_policy=Power_Loss_Durable"'
+for launcher in \
+  "$PROJECT_DIR/benchmarks/run-matrix.sh" \
+  "$PROJECT_DIR/benchmarks/run-bucket-tagging-matrix.sh"
+do
+  if [ "$(grep -Fxc "$durability_metadata" "$launcher")" != 1 ]; then
+    echo "benchmark launcher must retain the files commit policy exactly once: $launcher" >&2
+    exit 1
+  fi
+done
+
+echo "benchmark metadata: files commit policy is retained"
 
 "$PROJECT_DIR/tools/verify-bucket-tagging-benchmark-evidence.sh"
 

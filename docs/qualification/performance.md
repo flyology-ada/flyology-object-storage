@@ -121,6 +121,9 @@ cannot be substituted for the production series. SQLite is measured with its
 production `WAL` and `synchronous=FULL` settings; a weaker SQLite durability
 mode cannot be used to claim parity. Results with different durability
 semantics may guide tuning but must not be presented as equivalent.
+New matrix campaigns retain the exact files selection as
+`flyology_files_commit_policy=Power_Loss_Durable` in `metadata.txt`. Historical
+retained evidence is not rewritten to add this later provenance field.
 
 ## Regression policy
 

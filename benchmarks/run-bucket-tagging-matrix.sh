@@ -62,6 +62,9 @@ fi
   echo "host_label=${FLYOLOGY_BENCH_HOST_LABEL:-unqualified-smoke-host}"
   echo "power_mode=${FLYOLOGY_BENCH_POWER_MODE:-unqualified}"
   echo "cpu_policy=${FLYOLOGY_BENCH_CPU_POLICY:-unqualified}"
+  # The files server selects this exact Ada commit policy explicitly; retain
+  # it with every campaign so durability provenance is not inferred later.
+  echo "flyology_files_commit_policy=Power_Loss_Durable"
   echo "started_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "uname=$(uname -a)"
   echo "docker=$(docker version --format '{{.Client.Version}}/{{.Server.Version}}')"
