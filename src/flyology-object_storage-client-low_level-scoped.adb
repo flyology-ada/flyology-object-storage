@@ -34,9 +34,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Put_Object_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Put_Object;
 
    procedure Start_Get_Object
@@ -50,9 +50,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Get_Object_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Destination, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Buffer
+        (Client, Prepared.Message'Access, Destination, Deadline, Token,
+         Operation);
    end Start_Get_Object;
 
    procedure Start_List_Objects
@@ -67,8 +67,8 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= List_Objects_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_List_Objects;
 
    procedure Start_List_Buckets
@@ -83,8 +83,8 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= List_Buckets_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_List_Buckets;
 
    procedure Start_Create_Bucket
@@ -101,9 +101,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Create_Bucket_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Create_Bucket;
 
    procedure Start_Head_Bucket
@@ -118,8 +118,8 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Head_Bucket_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_Head_Bucket;
 
    procedure Start_List_Objects_V2
@@ -134,8 +134,8 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= List_Objects_V2_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_List_Objects_V2;
 
    procedure Start_List_Object_Versions
@@ -150,8 +150,8 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= List_Object_Versions_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_List_Object_Versions;
 
    procedure Start_Get_Object_Attributes
@@ -166,8 +166,8 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Get_Object_Attributes_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_Get_Object_Attributes;
 
    procedure Start_Head_Object
@@ -182,8 +182,8 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Head_Object_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_Head_Object;
 
    procedure Start_Delete_Object
@@ -200,9 +200,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Delete_Object_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-         (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-          Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Delete_Object;
 
    procedure Start_Delete_Objects
@@ -219,9 +219,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Delete_Objects_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Delete_Objects;
 
    procedure Start_Create_Multipart_Upload
@@ -238,9 +238,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Create_Multipart_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Create_Multipart_Upload;
 
    procedure Start_Complete_Multipart_Upload
@@ -257,9 +257,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Complete_Multipart_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Complete_Multipart_Upload;
 
    procedure Start_Abort_Multipart_Upload
@@ -276,9 +276,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Abort_Multipart_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Abort_Multipart_Upload;
 
    procedure Start_List_Parts
@@ -293,8 +293,8 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= List_Parts_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_List_Parts;
 
    procedure Start_List_Multipart_Uploads
@@ -309,8 +309,8 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= List_Multipart_Uploads_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_List_Multipart_Uploads;
 
    procedure Start_Copy_Object
@@ -327,9 +327,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Copy_Object_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Copy_Object;
 
    procedure Start_Upload_Part_Copy
@@ -346,9 +346,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Upload_Part_Copy_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Upload_Part_Copy;
 
    procedure Start_Upload_Part
@@ -365,9 +365,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Upload_Part_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Upload_Part;
 
    procedure Start_Put_Bucket_Tagging
@@ -384,9 +384,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Put_Bucket_Tagging_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Put_Bucket_Tagging;
 
    procedure Start_Get_Bucket_Tagging
@@ -401,8 +401,8 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Get_Bucket_Tagging_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_Get_Bucket_Tagging;
 
    procedure Start_Delete_Bucket_Tagging
@@ -419,9 +419,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       if Prepared.Operation /= Delete_Bucket_Tagging_Operation then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Delete_Bucket_Tagging;
 
    procedure Start_Put_Object_Tagging
@@ -441,9 +441,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Put_Object_Tagging;
 
    procedure Start_Get_Object_Tagging
@@ -461,8 +461,8 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_Get_Object_Tagging;
 
    procedure Start_Delete_Object_Tagging
@@ -482,9 +482,9 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
       then
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
-      Flyology.HTTP.Client.Scoped.Start
-        (Operation, Client, Prepared.Message'Access, Source, Sink, Deadline,
-         Token);
+      Flyology.HTTP.Client.Exchange_To_Sink
+        (Client, Prepared.Message'Access, Source, Sink, Deadline, Token,
+         Operation);
    end Start_Delete_Object_Tagging;
 
 end Flyology.Object_Storage.Client.Low_Level.Scoped;

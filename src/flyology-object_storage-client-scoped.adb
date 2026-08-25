@@ -312,12 +312,12 @@ package body Flyology.Object_Storage.Client.Scoped is
 
    procedure Complete_Child (Item : in out Conditional_Put_Operation) is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish
+         HTTP_Client.Finish
            (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
@@ -811,7 +811,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       Response    : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish
+         HTTP_Client.Finish
            (Item.Child, HTTP_Result, Response, Item.Destination.all);
       exception
          when Error : others =>
@@ -930,7 +930,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       Response    : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish
+         HTTP_Client.Finish
            (Item.Child, HTTP_Result, Response, Item.Destination.all);
       exception
          when Error : others =>
@@ -1338,7 +1338,7 @@ package body Flyology.Object_Storage.Client.Scoped is
       Response    : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish
+         HTTP_Client.Finish
            (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
@@ -1647,12 +1647,12 @@ package body Flyology.Object_Storage.Client.Scoped is
 
    procedure Complete_Delete_Child (Item : in out Delete_Operation) is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish
+         HTTP_Client.Finish
            (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
@@ -2002,12 +2002,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Delete_Objects_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -2331,12 +2331,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Create_Multipart_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -2678,12 +2678,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Upload_Part_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -3028,12 +3028,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Complete_Multipart_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -3351,12 +3351,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Abort_Multipart_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -3619,12 +3619,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out List_Object_Versions_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -3881,12 +3881,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Get_Object_Attributes_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -4146,12 +4146,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out List_Objects_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -4405,12 +4405,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out List_Buckets_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -4749,12 +4749,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Create_Bucket_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -4996,12 +4996,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Head_Bucket_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -5248,12 +5248,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out List_Objects_V2_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -5510,12 +5510,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out List_Parts_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -5774,12 +5774,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out List_Multipart_Uploads_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -6109,12 +6109,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Upload_Part_Copy_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -6439,12 +6439,12 @@ package body Flyology.Object_Storage.Client.Scoped is
 
    procedure Complete_Copy_Child (Item : in out Copy_Operation) is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -6889,12 +6889,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Put_Bucket_Tagging_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -7134,12 +7134,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Get_Bucket_Tagging_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -7423,12 +7423,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Delete_Bucket_Tagging_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -7765,12 +7765,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Put_Object_Tagging_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -8010,12 +8010,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Get_Object_Tagging_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);
@@ -8298,12 +8298,12 @@ package body Flyology.Object_Storage.Client.Scoped is
      (Item : in out Delete_Object_Tagging_Operation)
    is
       Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Scoped.Admission (Item.Child);
+        HTTP_Client.Admission (Item.Child);
       HTTP_Result : HTTP_Client.Exchange_Result;
       Response : HTTP_Client.Response;
    begin
       begin
-         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
       exception
          when Response_Limit_Exceeded =>
             Operations.Release (Item.Child);

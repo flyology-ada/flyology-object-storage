@@ -30,7 +30,7 @@ operation model:
 
 The exact indexed `flyology_http=0.1.3-dev` dependency selects
 `flyology_quic=0.1.3-dev`; both resolve to reviewed source commit
-`537edbc5a26f701cde3369c5adfbc3236303e6bc`. The Object Storage implementation
+`b5cd966decfc81132b46fdc97f9cbbfa5bcdf86c`. The Object Storage implementation
 uses those exchanges directly; it does not simulate composition with a helper
 task or a retained borrowed source, and no committed dependency pin remains.
 
@@ -449,7 +449,7 @@ cross the sibling-package privacy boundary.
 
 The consumer-approved PR #33 head
 `686094b124338e5609fd5623ea2ac6bae5e4e3f2` is included in indexed source commit
-`537edbc5a26f701cde3369c5adfbc3236303e6bc`. Its qualification includes the
+`b5cd966decfc81132b46fdc97f9cbbfa5bcdf86c`. Its qualification includes the
 established-child lifecycle, typed buffer restoration, admission certainty,
 and owner-driven HTTP/1.1, HTTP/2, and HTTP/3 exchange behavior required by
 this design. The revision adds protected bounded round-robin HTTP/2 pump
