@@ -15,6 +15,20 @@ with GNAT.SHA256;
 
 package body Flyology.Object_Storage.Backends.Memory is
 
+   function Canonical
+     (Value : Optional_Configuration_Boolean)
+      return Optional_Configuration_Boolean is
+     (Is_Set => Value.Is_Set, Value => Value.Is_Set and then Value.Value);
+
+   function Canonical
+     (Value : Bucket_Public_Access_Block_Configuration)
+      return Bucket_Public_Access_Block_Configuration is
+     (Block_Public_ACLs       => Canonical (Value.Block_Public_ACLs),
+      Ignore_Public_ACLs      => Canonical (Value.Ignore_Public_ACLs),
+      Block_Public_Policy     => Canonical (Value.Block_Public_Policy),
+      Restrict_Public_Buckets =>
+        Canonical (Value.Restrict_Public_Buckets));
+
    use type Ada.Calendar.Time;
    use type Ada.Real_Time.Time;
    use type Ada.Containers.Count_Type;
@@ -454,6 +468,55 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Success;
          end if;
       end Delete_Bucket_Tags;
+
+      procedure Put_Bucket_Public_Access_Block
+        (Name          : String;
+         Configuration : Bucket_Public_Access_Block_Configuration;
+         Result        : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Buckets (Index).Public_Access_Block := Canonical (Configuration);
+            Buckets (Index).Public_Access_Block_Configured := True;
+            Result := Success;
+         end if;
+      end Put_Bucket_Public_Access_Block;
+
+      procedure Get_Bucket_Public_Access_Block
+        (Name          : String;
+         Configuration : out Bucket_Public_Access_Block_Configuration;
+         Configured    : out Boolean;
+         Result        : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Configuration := (others => <>);
+         Configured := False;
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Configuration := Buckets (Index).Public_Access_Block;
+            Configured := Buckets (Index).Public_Access_Block_Configured;
+            Result := Success;
+         end if;
+      end Get_Bucket_Public_Access_Block;
+
+      procedure Delete_Bucket_Public_Access_Block
+        (Name : String; Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Buckets (Index).Public_Access_Block := (others => <>);
+            Buckets (Index).Public_Access_Block_Configured := False;
+            Result := Success;
+         end if;
+      end Delete_Bucket_Public_Access_Block;
 
       procedure Reserve_Transient
         (Amount : Byte_Count; Result : out Status) is
@@ -2154,6 +2217,61 @@ package body Flyology.Object_Storage.Backends.Memory is
          Item.State.Delete_Bucket_Tags (Bucket, Result);
       end if;
    end Delete_Bucket_Tags;
+
+   overriding procedure Put_Bucket_Public_Access_Block
+     (Item          : in out Store;
+      Bucket        : String;
+      Configuration : Bucket_Public_Access_Block_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Put_Bucket_Public_Access_Block
+           (Bucket, Configuration, Result);
+      end if;
+   end Put_Bucket_Public_Access_Block;
+
+   overriding procedure Get_Bucket_Public_Access_Block
+     (Item          : in out Store;
+      Bucket        : String;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Configuration : out Bucket_Public_Access_Block_Configuration;
+      Configured    : out Boolean;
+      Result        : out Status)
+   is
+   begin
+      Configuration := (others => <>);
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Public_Access_Block
+           (Bucket, Configuration, Configured, Result);
+      end if;
+   end Get_Bucket_Public_Access_Block;
+
+   overriding procedure Delete_Bucket_Public_Access_Block
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Bucket_Public_Access_Block (Bucket, Result);
+      end if;
+   end Delete_Bucket_Public_Access_Block;
 
    overriding procedure Put_Bucket_Versioning
      (Item          : in out Store;

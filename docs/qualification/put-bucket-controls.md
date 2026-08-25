@@ -3,8 +3,10 @@
 This record qualifies strict bounded synchronous clients and corpora for
 `PutBucketAbac`, `PutBucketAccelerateConfiguration`,
 `PutBucketPolicy`, `PutBucketRequestPayment`, and `PutPublicAccessBlock`. It
-does not claim configuration persistence in a Flyology backend, an
-authenticated Flyology server route, or external-provider interoperability.
+does not manufacture backend or server coverage. `PutPublicAccessBlock` now
+has that independent coverage in
+[public-access-block.md](public-access-block.md). No external-provider
+interoperability is claimed here.
 
 ## Pinned authority and inventory
 
@@ -59,9 +61,10 @@ corpus performs all five high-level calls with body-hash, MD5/checksum, owner,
 confirmation, and operation verification under native and Flyology lightweight
 callers.
 
-The ledger records each operation as `missing / covered / missing / covered`.
-Client and corpus evidence do not manufacture backend persistence or a server
-route.
+The ledger records `PutPublicAccessBlock` as `covered / covered / covered /
+covered` using its independent backend and server evidence. The other four
+operations remain `missing / covered / missing / covered`; this client corpus
+does not manufacture their backend persistence or server routes.
 
 ## Gate evidence
 

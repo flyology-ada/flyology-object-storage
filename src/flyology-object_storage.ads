@@ -155,6 +155,31 @@ is
       MFA_Delete : MFA_Delete_Status := MFA_Delete_Unconfigured;
    end record;
 
+   --  Presence-preserving Boolean storage used by bucket configuration
+   --  records.  The value has no meaning while Is_Set is False.  This is a
+   --  storage-domain representation; XML spelling remains at the S3 boundary.
+   --  @field Is_Set Whether the configuration member is present
+   --  @field Value Member value when present
+   type Optional_Configuration_Boolean is record
+      Is_Set : Boolean := False;
+      Value  : Boolean := False;
+   end record;
+
+   --  Atomic persisted PublicAccessBlock configuration.  Every member is
+   --  independently optional in the pinned S3 model, including a present
+   --  configuration with no members.  Overall configuration absence is
+   --  returned separately by backend reads.
+   --  @field Block_Public_ACLs BlockPublicAcls member and presence
+   --  @field Ignore_Public_ACLs IgnorePublicAcls member and presence
+   --  @field Block_Public_Policy BlockPublicPolicy member and presence
+   --  @field Restrict_Public_Buckets RestrictPublicBuckets member and presence
+   type Bucket_Public_Access_Block_Configuration is record
+      Block_Public_ACLs       : Optional_Configuration_Boolean;
+      Ignore_Public_ACLs      : Optional_Configuration_Boolean;
+      Block_Public_Policy     : Optional_Configuration_Boolean;
+      Restrict_Public_Buckets : Optional_Configuration_Boolean;
+   end record;
+
    --  Merge independently optional configuration fields. An Unconfigured
    --  update field preserves the current field.
    function Merge_Bucket_Versioning

@@ -478,6 +478,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE object_version_metadata;" &
          "DROP TABLE object_version_parts;" &
          "DROP TABLE object_versions;" &
+         "DROP TABLE bucket_public_access_blocks;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-bucket',17);" &
          "INSERT INTO objects(bucket_name,object_key,payload,size,modified," &
          "entity_tag,content_type) VALUES(" &
@@ -1400,7 +1401,7 @@ begin
          "AND version_id=" & Null_Version_SQL & " AND ordinal=1)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 10
+         and then Databases.Column (Version, 0) = 11
          and then Databases.Step (Generation) = Databases.Row
          and then Databases.Column (Generation, 0) = 1
          and then Databases.Column (Generation, 1) = 1
@@ -1448,7 +1449,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema10 accepted a same-count generation identity rename");
+         "schema11 accepted a same-count generation identity rename");
    end;
    Delete_Database;
 
@@ -1474,7 +1475,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema10 accepted a weakened generation identity bound");
+         "schema11 accepted a weakened generation identity bound");
    end;
    Delete_Database;
 
@@ -1499,7 +1500,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema10 accepted a weakened generation tag foreign key");
+         "schema11 accepted a weakened generation tag foreign key");
    end;
    Delete_Database;
 
@@ -1521,7 +1522,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema10 accepted a same-count object_metadata column rename");
+         "schema11 accepted a same-count object_metadata column rename");
    end;
    Delete_Database;
 
@@ -1547,7 +1548,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema10 accepted a weakened object_metadata value constraint");
+         "schema11 accepted a weakened object_metadata value constraint");
    end;
    Delete_Database;
 
@@ -1567,7 +1568,29 @@ begin
          when Catalogs.Catalog_Error => Rejected := True;
       end;
       Assert
-        (Rejected, "schema10 accepted a same-count objects column rename");
+        (Rejected, "schema11 accepted a same-count objects column rename");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "ALTER TABLE bucket_public_access_blocks RENAME COLUMN " &
+      "block_public_policy TO block_public_policy_bogus;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema11 accepted a same-count public access column rename");
    end;
    Delete_Database;
 
@@ -2415,8 +2438,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 10,
-         "schema-v1 migration did not publish version 10");
+         and then Databases.Column (Version, 0) = 11,
+         "schema-v1 migration did not publish version 11");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -2424,10 +2447,10 @@ begin
          "'multipart_uploads','multipart_parts','object_parts'," &
          "'bucket_tags','object_versions','current_object_versions'," &
          "'object_version_tags','object_version_metadata'," &
-         "'object_version_parts')");
+         "'object_version_parts','bucket_public_access_blocks')");
       Assert
         (Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 13,
+         and then Databases.Column (Tables, 0) = 14,
          "schema-v1 migration did not create the complete schema");
    end;
    Databases.Close (Database);
@@ -2493,8 +2516,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 10,
-         "schema-v2 migration did not publish version 10");
+         and then Databases.Column (Version, 0) = 11,
+         "schema-v2 migration did not publish version 11");
    end;
    declare
       Tables : Databases.Statement;
@@ -2530,10 +2553,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 10
+         and then Databases.Column (Version, 0) = 11
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 10 tables");
+         "schema-v3 migration did not publish schema 11 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2604,8 +2627,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 10,
-            "schema-v4 migration did not publish version 10");
+            and then Databases.Column (Version, 0) = 11,
+            "schema-v4 migration did not publish version 11");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -2672,7 +2695,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 10
+            and then Databases.Column (Version, 0) = 11
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -2750,8 +2773,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 10,
-         "schema-v6 migration did not publish version 10");
+         and then Databases.Column (Version, 0) = 11,
+         "schema-v6 migration did not publish version 11");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2882,7 +2905,7 @@ begin
          "length(checksum_value)) FROM object_parts)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 10
+         and then Databases.Column (Version, 0) = 11
          and then Databases.Step (Defaults) = Databases.Row
          and then Databases.Column (Defaults, 0) = 0,
          "schema-v7 checksum migration did not publish safe defaults");
@@ -2953,10 +2976,10 @@ begin
          "AND name='object_metadata')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 10
+         and then Databases.Column (Version, 0) = 11
          and then Databases.Step (Topology) = Databases.Row
          and then Databases.Column (Topology, 0) = 13,
-         "schema-v8 migration did not atomically publish schema10 topology");
+         "schema-v8 migration did not atomically publish schema11 topology");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3036,7 +3059,7 @@ begin
              (Is_Set => True,
               Value => Flyology.Object_Storage.Metadata_Time
                 (-315_619_200)),
-         "schema10 pre-epoch Expires did not survive backend reopen");
+         "schema11 pre-epoch Expires did not survive backend reopen");
       Store.Head_Object
         ("sqlite-copy-object-bucket", "copy-max-expires", null,
          Ada.Real_Time.Time_Last, Info, Result);
@@ -3046,7 +3069,7 @@ begin
            Flyology.Object_Storage.Optional_Metadata_Time'
              (Is_Set => True,
               Value => Flyology.Object_Storage.Metadata_Time'Last),
-         "schema10 maximum Expires did not survive backend reopen");
+         "schema11 maximum Expires did not survive backend reopen");
    end;
    Ada.Directories.Delete_Tree (Copy_Root);
 
@@ -3415,6 +3438,62 @@ begin
                Raised := True;
          end;
          Assert (Raised, "SQLite bucket tag delete ignored deadline");
+      end;
+      declare
+         Configuration : constant Bucket_Public_Access_Block_Configuration :=
+           (Block_Public_ACLs       => (Is_Set => True, Value => True),
+            Ignore_Public_ACLs      => (Is_Set => True, Value => False),
+            Block_Public_Policy     => (Is_Set => False, Value => False),
+            Restrict_Public_Buckets => (Is_Set => True, Value => True));
+         Observed   : Bucket_Public_Access_Block_Configuration;
+         Configured : Boolean;
+      begin
+         Store.Get_Bucket_Public_Access_Block
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Observed,
+            Configured, Result);
+         Assert
+           (Result = Success and then not Configured,
+            "SQLite new bucket unexpectedly had public access state");
+         Store.Put_Bucket_Public_Access_Block
+           ("sqlite-bucket", Configuration, null, Ada.Real_Time.Time_Last,
+            Result);
+         Store.Get_Bucket_Public_Access_Block
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Observed,
+            Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then Observed = Configuration,
+            "SQLite public access block did not round trip");
+         Store.Put_Bucket_Public_Access_Block
+           ("sqlite-bucket", (others => <>), null,
+            Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Public_Access_Block
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Observed,
+            Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then Observed = Bucket_Public_Access_Block_Configuration'
+              (others => <>),
+            "SQLite lost a present empty public access block");
+         Store.Delete_Bucket_Public_Access_Block
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_Public_Access_Block
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Observed,
+            Configured, Result);
+         Assert
+           (Result = Success and then not Configured,
+            "SQLite public access block deletion retained state");
+         Store.Delete_Bucket_Public_Access_Block
+           ("missing-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite public access delete lost missing-bucket status");
+         Store.Put_Bucket_Public_Access_Block
+           ("sqlite-bucket", Configuration, null, Ada.Real_Time.Time_Last,
+            Result);
+         Assert
+           (Result = Success,
+            "SQLite public access state could not be restored");
       end;
       for Index in 1 .. 3 loop
          Store.Create_Bucket
@@ -4691,6 +4770,19 @@ begin
         ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert
         (Result = Success, "SQLite DeleteObjects bucket did not reopen");
+      declare
+         Configuration : Bucket_Public_Access_Block_Configuration;
+         Configured    : Boolean;
+      begin
+         Store.Get_Bucket_Public_Access_Block
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Configuration,
+            Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then Configuration.Block_Public_ACLs.Is_Set
+            and then Configuration.Block_Public_ACLs.Value,
+            "SQLite public access block did not survive reopen");
+      end;
       Store.Head_Object
         ("sqlite-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);
       Assert

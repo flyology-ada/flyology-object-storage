@@ -81,6 +81,30 @@ package Flyology.Object_Storage.Backends.Files is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status);
 
+   overriding procedure Put_Bucket_Public_Access_Block
+     (Item          : in out Store;
+      Bucket        : String;
+      Configuration : Bucket_Public_Access_Block_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Status);
+
+   overriding procedure Get_Bucket_Public_Access_Block
+     (Item          : in out Store;
+      Bucket        : String;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Configuration : out Bucket_Public_Access_Block_Configuration;
+      Configured    : out Boolean;
+      Result        : out Status);
+
+   overriding procedure Delete_Bucket_Public_Access_Block
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
    overriding procedure Put_Bucket_Versioning
      (Item          : in out Store;
       Bucket        : String;

@@ -198,6 +198,9 @@ procedure Files_Conditional_Symlink_Probe is
      Ada.Directories.Compose (Configuration_Path, "versioning.fos");
    Tags_Path : constant String :=
      Ada.Directories.Compose (Configuration_Path, "tags.fos");
+   Public_Access_Block_Path : constant String :=
+     Ada.Directories.Compose
+       (Configuration_Path, "public-access-block.fos");
    Bucket_Link_Path : constant String :=
      Ada.Directories.Compose
        (Ada.Directories.Compose (Root, "buckets"), "root-link-bucket");
@@ -652,6 +655,51 @@ begin
       Require
         (not Ada.Directories.Exists (Missing),
          "bucket tag operations created a dangling tags-file target");
+   end if;
+
+   Ada.Directories.Delete_File (Tags_Path);
+   Create_Symlink
+     (Link_Target, Public_Access_Block_Path, "public-access-block-file");
+   Store.Put_Bucket_Public_Access_Block
+     ("symlink-bucket",
+      (Block_Public_ACLs => (Is_Set => True, Value => True), others => <>),
+      null, Ada.Real_Time.Time_Last, Result);
+   Require
+     (Result = Storage.Backend_Unavailable,
+      "Put_Bucket_Public_Access_Block accepted a file symlink");
+   declare
+      Configuration : Storage.Bucket_Public_Access_Block_Configuration;
+      Configured    : Boolean;
+   begin
+      Store.Get_Bucket_Public_Access_Block
+        ("symlink-bucket", null, Ada.Real_Time.Time_Last,
+         Configuration, Configured, Result);
+      Require
+        (Result = Storage.Backend_Unavailable,
+         "Get_Bucket_Public_Access_Block accepted a file symlink");
+      Store.Delete_Bucket_Public_Access_Block
+        ("symlink-bucket", null, Ada.Real_Time.Time_Last, Result);
+      Require
+        (Result = Storage.Backend_Unavailable,
+         "Delete_Bucket_Public_Access_Block accepted a file symlink");
+   end;
+   Require
+     (GNAT.OS_Lib.Is_Symbolic_Link (Public_Access_Block_Path),
+      "public access block operations replaced the file symlink");
+   if Mode = "live" then
+      declare
+         File : Ada.Text_IO.File_Type;
+      begin
+         Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Sentinel);
+         Require
+           (Ada.Text_IO.Get_Line (File) = "outside-sentinel",
+            "public access block operations modified the external file");
+         Ada.Text_IO.Close (File);
+      end;
+   else
+      Require
+        (not Ada.Directories.Exists (Missing),
+         "public access block operations created a dangling file target");
    end if;
 
    --  A fresh long key spans multiple encoded directories. It must remain a

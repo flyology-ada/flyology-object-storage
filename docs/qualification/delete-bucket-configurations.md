@@ -1,9 +1,11 @@
 # Bodyless bucket-configuration DELETE client qualification
 
 This record qualifies the strict bounded synchronous clients and corpora for
-thirteen bodyless bucket-configuration DELETE operations. It does not claim
-configuration persistence in any Flyology backend, an authenticated Flyology
-server route, or external-provider interoperability.
+thirteen bodyless bucket-configuration DELETE operations. It does not
+manufacture backend or server coverage. `DeletePublicAccessBlock` now has that
+independent coverage in
+[public-access-block.md](public-access-block.md). No external-provider
+interoperability is claimed here.
 
 ## Pinned authority and inventory
 
@@ -66,10 +68,10 @@ corpus three times. The existing shared DeleteBucketCors physical-response
 lane supplies duplicate, empty, malformed, and one-past bounded response
 faults against the same internal decoder and executor machinery.
 
-The machine ledger records each operation as `missing / covered / missing /
-covered`. Client and corpus evidence do not manufacture backend persistence or
-a server route. Promoting either remaining cell requires independent storage,
-reopen/crash/concurrency, authenticated routing, and black-box tests.
+The machine ledger records `DeletePublicAccessBlock` as `covered / covered /
+covered / covered` using its independent backend and server evidence. The
+other twelve operations remain `missing / covered / missing / covered`; this
+client corpus does not manufacture their backend persistence or server routes.
 
 ## Gate evidence
 

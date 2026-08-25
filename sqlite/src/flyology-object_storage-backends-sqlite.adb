@@ -457,6 +457,82 @@ package body Flyology.Object_Storage.Backends.SQLite is
          Result := Backend_Unavailable;
    end Delete_Bucket_Tags;
 
+   overriding procedure Put_Bucket_Public_Access_Block
+     (Item          : in out Store;
+      Bucket        : String;
+      Configuration : Bucket_Public_Access_Block_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Put_Bucket_Public_Access_Block
+           (Item.Catalog, Bucket, Configuration, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Put_Bucket_Public_Access_Block;
+
+   overriding procedure Get_Bucket_Public_Access_Block
+     (Item          : in out Store;
+      Bucket        : String;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Configuration : out Bucket_Public_Access_Block_Configuration;
+      Configured    : out Boolean;
+      Result        : out Status)
+   is
+   begin
+      Configuration := (others => <>);
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Get_Bucket_Public_Access_Block
+           (Item.Catalog, Bucket, Configuration, Configured, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Configuration := (others => <>);
+         Configured := False;
+         Result := Backend_Unavailable;
+   end Get_Bucket_Public_Access_Block;
+
+   overriding procedure Delete_Bucket_Public_Access_Block
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Catalogs.Delete_Bucket_Public_Access_Block
+           (Item.Catalog, Bucket, Result);
+      end if;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         raise;
+      when others =>
+         Result := Backend_Unavailable;
+   end Delete_Bucket_Public_Access_Block;
+
    overriding procedure Put_Bucket_Versioning
      (Item          : in out Store;
       Bucket        : String;

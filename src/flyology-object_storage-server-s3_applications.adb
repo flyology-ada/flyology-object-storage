@@ -13,6 +13,7 @@ with Flyology.HTTP;
 with Flyology.IO;
 with Flyology.Object_Storage.Checksum_Engine;
 with Flyology.Object_Storage.S3.Buckets;
+with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Checksum_Policy;
 with Flyology.Object_Storage.S3.Checksums;
@@ -32,6 +33,7 @@ with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Versions;
 with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Object_Storage.S3.Wire_Core;
+with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
 
 package body Flyology.Object_Storage.Server.S3_Applications is
@@ -40,6 +42,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package US renames Ada.Strings.Unbounded;
    package Requests renames S3.Requests;
    package Buckets renames S3.Buckets;
+   package Bucket_Controls renames S3.Bucket_Controls;
    package Attributes renames S3.Attributes;
    package Checksum_Policy renames S3.Checksum_Policy;
    package Checksums renames S3.Checksums;
@@ -54,6 +57,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
    package Tagging renames S3.Tagging;
    package Versions renames S3.Versions;
    package Versioning renames S3.Versioning;
+   package XML renames S3.XML;
    use type Ada.Streams.Stream_Element_Offset;
    use type Ada.Calendar.Time;
    use type Apps.Response_State;
@@ -101,6 +105,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
      Tagging.Maximum_Bucket_Document_Bytes;
    --  Derived from the bucket-tagging codec's public document ceiling so the
    --  server and parser cannot drift; changing that source changes admission.
+   Maximum_Public_Access_Block_Body : constant Byte_Count :=
+     Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
+   --  Derived from the shared caller-overridable XML resource policy used by
+   --  the PublicAccessBlock codec; changing that source changes admission.
 
    function Decimal (Value : Byte_Count) return String is
      (Ada.Strings.Fixed.Trim
@@ -444,6 +452,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          List_Buckets,
          Create_Bucket, Get_Bucket_Location, Head_Bucket, Delete_Bucket,
          Put_Bucket_Tagging, Get_Bucket_Tagging, Delete_Bucket_Tagging,
+         Put_Public_Access_Block, Get_Public_Access_Block,
+         Delete_Public_Access_Block,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
          Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
@@ -532,6 +542,20 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Query_Text = "tagging="
         or else Query_Text = "tagging=&x-id=DeleteBucketTagging"
         or else Query_Text = "x-id=DeleteBucketTagging&tagging=";
+      Is_Public_Access_Block_Query : constant Boolean :=
+        Query_Text = "publicAccessBlock"
+        or else Query_Text = "publicAccessBlock="
+        or else Query_Text =
+          "publicAccessBlock=&x-id=" &
+            (if Method = "PUT" then "PutPublicAccessBlock"
+             elsif Method = "GET" then "GetPublicAccessBlock"
+             else "DeletePublicAccessBlock")
+        or else Query_Text =
+          "x-id=" &
+            (if Method = "PUT" then "PutPublicAccessBlock"
+             elsif Method = "GET" then "GetPublicAccessBlock"
+             else "DeletePublicAccessBlock") &
+          "&publicAccessBlock=";
       Padded_Query : constant String := '&' & Query_Text & '&';
       Has_Bucket_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging&") /= 0
@@ -550,6 +574,21 @@ package body Flyology.Object_Storage.Server.S3_Applications is
              (Padded_Query, "&x-id=DeleteBucketTagging&") /= 0);
       Looks_Like_Bucket_Tagging_Query : constant Boolean :=
         Has_Bucket_Tagging_Query or else Has_Bucket_Tagging_Operation_ID;
+      Has_Public_Access_Block_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&publicAccessBlock&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&publicAccessBlock=") /= 0;
+      Has_Public_Access_Block_Operation_ID : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutPublicAccessBlock&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetPublicAccessBlock&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeletePublicAccessBlock&") /= 0;
+      Looks_Like_Public_Access_Block_Query : constant Boolean :=
+        Has_Public_Access_Block_Query
+        or else Has_Public_Access_Block_Operation_ID;
       Has_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging") /= 0
         or else
@@ -602,6 +641,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Object_Read_Query_Invalid : Boolean := False;
       Bucket_Versioning_Query_Invalid : Boolean := False;
       Bucket_Tagging_Query_Invalid : Boolean := False;
+      Public_Access_Block_Query_Invalid : Boolean := False;
       Object_Read_Request : Object_Reads.Object_Read_Request;
       Tagging_Query_Invalid : Boolean := False;
       Tagging_Request : Tagging.Tagging_Query;
@@ -641,7 +681,39 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       function Attributes_Version_Selector return Backends.Version_Selector is
         (To_Version_Selector
            (Attributes_Request.Has_Version_ID,
-            Attributes_Request.Version_ID));
+           Attributes_Request.Version_ID));
+
+      function Storage_Optional
+        (Value : Bucket_Controls.Optional_Boolean)
+         return Optional_Configuration_Boolean is
+        (Is_Set => Value.Is_Set, Value => Value.Value);
+
+      function Storage_Public_Access_Block
+        (Value : Bucket_Controls.Public_Access_Block_Configuration)
+         return Bucket_Public_Access_Block_Configuration is
+        (Block_Public_ACLs       =>
+           Storage_Optional (Value.Block_Public_ACLs),
+         Ignore_Public_ACLs      =>
+           Storage_Optional (Value.Ignore_Public_ACLs),
+         Block_Public_Policy     =>
+           Storage_Optional (Value.Block_Public_Policy),
+         Restrict_Public_Buckets =>
+           Storage_Optional (Value.Restrict_Public_Buckets));
+
+      function Wire_Optional
+        (Value : Optional_Configuration_Boolean)
+         return Bucket_Controls.Optional_Boolean is
+        (Is_Set => Value.Is_Set, Value => Value.Value);
+
+      function Wire_Public_Access_Block
+        (Value : Bucket_Public_Access_Block_Configuration)
+         return Bucket_Controls.Public_Access_Block_Configuration is
+        (Block_Public_ACLs       => Wire_Optional (Value.Block_Public_ACLs),
+         Ignore_Public_ACLs      => Wire_Optional (Value.Ignore_Public_ACLs),
+         Block_Public_Policy     =>
+           Wire_Optional (Value.Block_Public_Policy),
+         Restrict_Public_Buckets =>
+           Wire_Optional (Value.Restrict_Public_Buckets));
 
       function Has_Encryption_Header return Boolean is
       begin
@@ -1415,6 +1487,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Bucket_Tagging_Query)
         and then not
+          (Parsed.Kind = Requests.Bucket_Target
+           and then Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Public_Access_Block_Query)
+        and then not
           (Parsed.Kind = Requests.Object_Target
            and then Method = "DELETE"
            and then Requests.Query_String (Target_Text, Parsed) =
@@ -1456,8 +1532,21 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            Method in "GET" | "PUT"
            and then Has_Bucket_Versioning_Query
            and then not Is_Bucket_Versioning_Query;
+         Public_Access_Block_Query_Invalid :=
+           Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Public_Access_Block_Query
+           and then not Is_Public_Access_Block_Query;
          Operation :=
-           (if Method = "PUT" and then Looks_Like_Bucket_Tagging_Query
+           (if Method = "PUT"
+             and then Looks_Like_Public_Access_Block_Query
+            then Put_Public_Access_Block
+            elsif Method = "GET"
+              and then Looks_Like_Public_Access_Block_Query
+            then Get_Public_Access_Block
+            elsif Method = "DELETE"
+              and then Looks_Like_Public_Access_Block_Query
+            then Delete_Public_Access_Block
+            elsif Method = "PUT" and then Looks_Like_Bucket_Tagging_Query
             then Put_Bucket_Tagging
             elsif Method = "GET" and then Looks_Like_Bucket_Tagging_Query
             then Get_Bucket_Tagging
@@ -1636,6 +1725,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Apps.Configure_Route
          (X, "s3", Target_Text,
          (if Operation in Create_Bucket | Put_Bucket_Tagging |
+         Put_Public_Access_Block |
          Put_Bucket_Versioning | Put_Object |
          Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
          Complete_Multipart
@@ -1725,6 +1815,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (X, 400, "InvalidArgument",
             "The bucket tagging request query is invalid", Target_Text);
          return;
+      elsif Public_Access_Block_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The PublicAccessBlock request query is invalid", Target_Text);
+         return;
       elsif Delete_Object_Query_Invalid then
          Send_Error
            (X, 400, "InvalidArgument",
@@ -1748,6 +1843,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       end if;
 
       if Operation not in Create_Bucket | Put_Bucket_Tagging |
+        Put_Public_Access_Block |
         Put_Bucket_Versioning | Put_Object |
         Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
@@ -2582,6 +2678,229 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (US.To_String (Auth.Principal), Owner_Accepted);
                      if Owner_Accepted then
                         Store.Delete_Bucket_Tags
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Result);
+                        if Result = Success then
+                           Apps.Respond (X, 204, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Put_Public_Access_Block =>
+               declare
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  SDK_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm");
+                  Trailer_Declaration_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-trailer");
+                  Checksum_Count : constant Natural :=
+                    Checksum_Value_Header_Count;
+                  Selected : constant
+                    Checksum_Policy.Algorithm_Parse_Result :=
+                      (if SDK_Count = 1 then
+                         Checksum_Policy.Parse_Algorithm
+                           (Apps.Request_Header
+                              (X, "x-amz-sdk-checksum-algorithm"))
+                       else (Valid => False));
+                  Owner_Accepted : Boolean;
+
+                  procedure Process
+                    (Algorithm    : Checksum_Policy.Algorithm;
+                     Check_Body   : Boolean;
+                     From_Trailer : Boolean;
+                     Expected     : String)
+                  is
+                     Source : Request_IO.Request_Source :=
+                       (Checksum_Kind => Algorithm,
+                        Length_Value  => Length,
+                        Expected_Hash => Auth.Payload_Hash,
+                        Check_Hash    =>
+                          US.To_String (Auth.Payload_Hash) /=
+                            S3.SigV4.Unsigned_Payload,
+                        Hash      => GNAT.SHA256.Initial_Context,
+                        Check_Content_MD5 => MD5_Count = 1,
+                        Expected_Content_MD5 =>
+                          (if MD5_Count = 1 then
+                             US.To_Unbounded_String
+                               (Apps.Request_Header (X, "content-md5"))
+                           else US.Null_Unbounded_String),
+                        Content_MD5_Hash => GNAT.MD5.Initial_Context,
+                        Check_Body_Checksum => Check_Body,
+                        Checksum_From_Trailer => From_Trailer,
+                        Reject_Unexpected_Trailers => True,
+                        Expected_Body_Checksum =>
+                          US.To_Unbounded_String (Expected),
+                        Observed  => 0,
+                        Maximum   => Maximum_Public_Access_Block_Body,
+                        Completed => False,
+                        others    => <>);
+                     Document : constant String := Read_Document (Source);
+                     Wire_Configuration : Bucket_Controls.
+                       Public_Access_Block_Configuration;
+                  begin
+                     Wire_Configuration := Bucket_Controls.
+                       Parse_Public_Access_Block (Document);
+                     Store.Put_Bucket_Public_Access_Block
+                       (Bucket,
+                        Storage_Public_Access_Block (Wire_Configuration),
+                        Apps.Cancellation (X), Apps.Deadline (X), Result);
+                     if Result = Success then
+                        Apps.Respond (X, 200, "", "");
+                     else
+                        Send_Backend_Error (X, Result, True, Target_Text);
+                     end if;
+                  exception
+                     when Bucket_Controls.Malformed_Configuration =>
+                        Send_Error
+                          (X, 400, "MalformedXML",
+                           "The XML provided was not well-formed or did not " &
+                           "validate against the published schema",
+                           Target_Text);
+                  end Process;
+               begin
+                  if MD5_Count > 1
+                    or else Payer_Count > 1
+                    or else SDK_Count > 1
+                    or else Trailer_Declaration_Count > 1
+                    or else Checksum_Count > 1
+                    or else Apps.Request_Header_Count (X, "content-type") > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A PutPublicAccessBlock header is duplicated",
+                        Target_Text);
+                  elsif MD5_Count = 1
+                    and then not S3.Wire_Core.Valid_Base64
+                      (Apps.Request_Header (X, "content-md5"), 16)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The Content-MD5 header is invalid", Target_Text);
+                  elsif Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "PutPublicAccessBlock does not define RequestPayer",
+                        Target_Text);
+                  elsif
+                    (SDK_Count = 0
+                     and then
+                       (Trailer_Declaration_Count /= 0
+                        or else Checksum_Count /= 0))
+                    or else (SDK_Count = 1 and then not Selected.Valid)
+                    or else
+                      (SDK_Count = 1
+                       and then Trailer_Declaration_Count = 1
+                       and then
+                         (Checksum_Count /= 0
+                          or else
+                            Ada.Characters.Handling.To_Lower
+                              (Apps.Request_Header (X, "x-amz-trailer")) /=
+                            Checksum_Header_Name
+                              (Storage_Algorithm (Selected.Value))))
+                    or else
+                      (SDK_Count = 1
+                       and then Trailer_Declaration_Count = 0
+                       and then
+                         (Checksum_Count /= 1
+                          or else Apps.Request_Header_Count
+                            (X, Checksum_Header_Name
+                               (Storage_Algorithm (Selected.Value))) /= 1))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The PutPublicAccessBlock checksum group is invalid",
+                        Target_Text);
+                  elsif Length.Kind = Backends.Known
+                    and then Length.Bytes > Maximum_Public_Access_Block_Body
+                  then
+                     Send_Error
+                       (X, 400, "EntityTooLarge",
+                        "Your proposed upload exceeds the maximum allowed " &
+                        "size", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        if SDK_Count = 0 then
+                           Process
+                             (S3.Core.CRC64NVME, False, False, "");
+                        elsif Trailer_Declaration_Count = 1 then
+                           Process (Selected.Value, True, True, "");
+                        else
+                           Process
+                             (Selected.Value, True, False,
+                              Apps.Request_Header
+                                (X, Checksum_Header_Name
+                                   (Storage_Algorithm (Selected.Value))));
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Get_Public_Access_Block =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+                  Configuration :
+                    Bucket_Public_Access_Block_Configuration;
+                  Configured : Boolean;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "GetPublicAccessBlock does not define RequestPayer",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Get_Bucket_Public_Access_Block
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Configuration, Configured, Result);
+                        if Result /= Success then
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        elsif not Configured then
+                           Send_Error
+                             (X, 404,
+                              "NoSuchPublicAccessBlockConfiguration",
+                              "The public access block configuration was " &
+                              "not found", Target_Text);
+                        else
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              Bucket_Controls.Serialize_Public_Access_Block
+                                (Wire_Public_Access_Block (Configuration)));
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Delete_Public_Access_Block =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "DeletePublicAccessBlock does not define " &
+                        "RequestPayer", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Delete_Bucket_Public_Access_Block
                           (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
                            Result);
                         if Result = Success then

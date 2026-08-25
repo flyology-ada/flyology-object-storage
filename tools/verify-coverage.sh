@@ -37,6 +37,9 @@ evidence_pattern() {
     GetBucketVersioning|PutBucketVersioning)
       printf '%s\n' 'Bucket_Versioning|bucket versioning'
       ;;
+    DeletePublicAccessBlock|GetPublicAccessBlock|PutPublicAccessBlock)
+      printf '%s\n' 'PublicAccessBlock|Public_Access_Block|public access block'
+      ;;
     *)
       ada_name=$(printf '%s' "$operation_name" |
         sed -E 's/([a-z0-9])([A-Z])/(\1_\2)/g' |

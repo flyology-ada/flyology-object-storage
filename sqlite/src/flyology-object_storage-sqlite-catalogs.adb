@@ -15,12 +15,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   --  Persisted schema 10 introduces normalized retained-generation records
-   --  and a transactional current-generation pointer. The value is the next
-   --  repository migration after metadata schema 9; older readers must reject
-   --  it because deleting a payload without seeing these references loses
-   --  versioned data. Never renumber or reuse it.
-   Schema_Version : constant Long_Long_Integer := 10;
+   --  Persisted schema 11 introduces atomic bucket PublicAccessBlock records.
+   --  The value is the next repository migration after retained-generation
+   --  schema 10; older readers must reject it because they cannot preserve
+   --  this bucket configuration. Never renumber or reuse it.
+   Schema_Version : constant Long_Long_Integer := 11;
    --  Persisted SQL BLOB spelling of the externally fixed S3 version ID
    --  "null". It identifies the sole unversioned/suspended generation; changing
    --  these bytes would make migrated and reopened objects unreachable.
@@ -119,6 +118,30 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "tag_value BLOB NOT NULL CHECK(length(tag_value) <= 1024)," &
      "PRIMARY KEY(bucket_name,tag_key)," &
      "UNIQUE(bucket_name,ordinal)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   --  Persisted schema-11 table and column spelling for the independently
+   --  optional S3 members.  Reordering or renaming fields changes catalog
+   --  compatibility and therefore requires a new migration.
+   Public_Access_Block_Schema : constant String :=
+     "CREATE TABLE bucket_public_access_blocks (" &
+     "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+     "block_public_acls_present INTEGER NOT NULL " &
+     "CHECK(block_public_acls_present IN (0,1))," &
+     "block_public_acls INTEGER NOT NULL " &
+     "CHECK(block_public_acls IN (0,1))," &
+     "ignore_public_acls_present INTEGER NOT NULL " &
+     "CHECK(ignore_public_acls_present IN (0,1))," &
+     "ignore_public_acls INTEGER NOT NULL " &
+     "CHECK(ignore_public_acls IN (0,1))," &
+     "block_public_policy_present INTEGER NOT NULL " &
+     "CHECK(block_public_policy_present IN (0,1))," &
+     "block_public_policy INTEGER NOT NULL " &
+     "CHECK(block_public_policy IN (0,1))," &
+     "restrict_public_buckets_present INTEGER NOT NULL " &
+     "CHECK(restrict_public_buckets_present IN (0,1))," &
+     "restrict_public_buckets INTEGER NOT NULL " &
+     "CHECK(restrict_public_buckets IN (0,1))," &
      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
      ") WITHOUT ROWID;";
    Versioning_Columns_Schema : constant String :=
@@ -870,6 +893,51 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         and then Has_Metadata_SQL ("withoutrowid");
    end Valid_Metadata_Schema;
 
+   function Valid_Public_Access_Block_Schema
+     (Item : in out Catalog) return Boolean
+   is
+      Normalized_SQL : constant String :=
+        "lower(replace(replace(replace(replace(sql,' ','')," &
+        "char(9),''),char(10),''),char(13),''))";
+      function Has_SQL (Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='bucket_public_access_blocks' AND instr(" &
+            Normalized_SQL & ",'" & Fragment & "')>0") = 1);
+   begin
+      return Scalar
+        (Item,
+         "SELECT count(*) FROM " &
+         "pragma_table_info('bucket_public_access_blocks')") = 9
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM " &
+           "pragma_table_info('bucket_public_access_blocks') WHERE " &
+           "name IN ('bucket_name','block_public_acls_present'," &
+           "'block_public_acls','ignore_public_acls_present'," &
+           "'ignore_public_acls','block_public_policy_present'," &
+           "'block_public_policy','restrict_public_buckets_present'," &
+           "'restrict_public_buckets')") = 9
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM " &
+           "pragma_foreign_key_list('bucket_public_access_blocks') " &
+           "WHERE ""table""='buckets' AND ""from""='bucket_name' " &
+           "AND ""to""='name' AND on_delete='CASCADE'") = 1
+        and then Has_SQL ("primarykey")
+        and then Has_SQL ("check(block_public_acls_presentin(0,1))")
+        and then Has_SQL ("check(block_public_aclsin(0,1))")
+        and then Has_SQL ("check(ignore_public_acls_presentin(0,1))")
+        and then Has_SQL ("check(ignore_public_aclsin(0,1))")
+        and then Has_SQL ("check(block_public_policy_presentin(0,1))")
+        and then Has_SQL ("check(block_public_policyin(0,1))")
+        and then Has_SQL
+          ("check(restrict_public_buckets_presentin(0,1))")
+        and then Has_SQL ("check(restrict_public_bucketsin(0,1))")
+        and then Has_SQL ("withoutrowid");
+   end Valid_Public_Access_Block_Schema;
+
    function Valid_Generation_Schema (Item : in out Catalog) return Boolean is
       Normalized_SQL : constant String :=
         "lower(replace(replace(replace(replace(sql,' ','')," &
@@ -1095,9 +1163,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          ") WITHOUT ROWID;" &
          Object_Parts_Schema_V8 &
          Bucket_Tags_Schema &
+         Public_Access_Block_Schema &
          Generation_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=10;");
+         "PRAGMA user_version=11;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -1470,6 +1539,32 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V9;
 
+   procedure Upgrade_From_V10 (Item : in out Catalog) is
+      In_Transaction : Boolean := False;
+      Existing_Table : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name='bucket_public_access_blocks'");
+   begin
+      if Existing_Table /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 10";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Public_Access_Block_Schema & "PRAGMA user_version=11;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V10;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -1510,6 +1605,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 8 => null;
             when 9 => null;
             when 10 => null;
+            when 11 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -1525,6 +1621,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          if Version = 9 then
             Upgrade_From_V9 (Item);
             Version := 10;
+         end if;
+         if Version = 10 then
+            Upgrade_From_V10 (Item);
+            Version := 11;
          end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
@@ -1542,7 +1642,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'multipart_uploads','multipart_parts','object_parts'," &
          "'bucket_tags','object_versions','current_object_versions'," &
          "'object_version_tags','object_version_metadata'," &
-         "'object_version_parts')") /= 13
+         "'object_version_parts','bucket_public_access_blocks')") /= 14
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -1558,6 +1658,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       elsif not Valid_Generation_Schema (Item)
       then
          raise Catalog_Error with "SQLite generation schema is incomplete";
+      elsif not Valid_Public_Access_Block_Schema (Item)
+      then
+         raise Catalog_Error with
+           "SQLite public access block schema is incomplete";
       elsif Scalar
         (Item,
          "SELECT count(*) FROM pragma_table_info('buckets') " &
@@ -2067,6 +2171,205 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Value.Clear;
          raise;
    end Get_Bucket_Tags;
+
+   function SQL_Boolean (Value : Boolean) return Long_Long_Integer is
+     (if Value then 1 else 0);
+
+   procedure Put_Bucket_Public_Access_Block
+     (Item          : in out Catalog;
+      Bucket        : String;
+      Configuration : Bucket_Public_Access_Block_Configuration;
+      Result        : out Status)
+   is
+      Exists         : DB.Statement;
+      Upsert         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+
+      procedure Bind_Optional
+        (Present_Index, Value_Index : Positive;
+         Value                      : Optional_Configuration_Boolean)
+      is
+      begin
+         DB.Bind (Upsert, Present_Index, SQL_Boolean (Value.Is_Set));
+         DB.Bind
+           (Upsert, Value_Index,
+            SQL_Boolean (Value.Is_Set and then Value.Value));
+      end Bind_Optional;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with
+           "public access block bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Upsert, Item.Database,
+         "INSERT INTO bucket_public_access_blocks VALUES" &
+         "(?1,?2,?3,?4,?5,?6,?7,?8,?9) " &
+         "ON CONFLICT(bucket_name) DO UPDATE SET " &
+         "block_public_acls_present=excluded.block_public_acls_present," &
+         "block_public_acls=excluded.block_public_acls," &
+         "ignore_public_acls_present=excluded.ignore_public_acls_present," &
+         "ignore_public_acls=excluded.ignore_public_acls," &
+         "block_public_policy_present=" &
+         "excluded.block_public_policy_present," &
+         "block_public_policy=excluded.block_public_policy," &
+         "restrict_public_buckets_present=" &
+         "excluded.restrict_public_buckets_present," &
+         "restrict_public_buckets=excluded.restrict_public_buckets");
+      DB.Bind (Upsert, 1, Bucket);
+      Bind_Optional (2, 3, Configuration.Block_Public_ACLs);
+      Bind_Optional (4, 5, Configuration.Ignore_Public_ACLs);
+      Bind_Optional (6, 7, Configuration.Block_Public_Policy);
+      Bind_Optional (8, 9, Configuration.Restrict_Public_Buckets);
+      if DB.Step (Upsert) /= DB.Done then
+         raise Catalog_Error with "public access block upsert returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Put_Bucket_Public_Access_Block;
+
+   procedure Get_Bucket_Public_Access_Block
+     (Item          : in out Catalog;
+      Bucket        : String;
+      Configuration : out Bucket_Public_Access_Block_Configuration;
+      Configured    : out Boolean;
+      Result        : out Status)
+   is
+      Exists : DB.Statement;
+      Query  : DB.Statement;
+      Locked : Boolean := False;
+
+      function Optional_At
+        (Present_Index, Value_Index : Natural)
+         return Optional_Configuration_Boolean is
+        (Is_Set => DB.Column (Query, Present_Index) = 1,
+         Value  => DB.Column (Query, Value_Index) = 1);
+   begin
+      Configuration := (others => <>);
+      Configured := False;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with
+           "public access block bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT block_public_acls_present,block_public_acls," &
+         "ignore_public_acls_present,ignore_public_acls," &
+         "block_public_policy_present,block_public_policy," &
+         "restrict_public_buckets_present,restrict_public_buckets " &
+         "FROM bucket_public_access_blocks WHERE bucket_name=?1");
+      DB.Bind (Query, 1, Bucket);
+      if DB.Step (Query) = DB.Row then
+         Configuration :=
+           (Block_Public_ACLs       => Optional_At (0, 1),
+            Ignore_Public_ACLs      => Optional_At (2, 3),
+            Block_Public_Policy     => Optional_At (4, 5),
+            Restrict_Public_Buckets => Optional_At (6, 7));
+         Configured := True;
+      end if;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Configuration := (others => <>);
+         Configured := False;
+         raise;
+   end Get_Bucket_Public_Access_Block;
+
+   procedure Delete_Bucket_Public_Access_Block
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status)
+   is
+      Exists         : DB.Statement;
+      Delete         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with
+           "public access block bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM bucket_public_access_blocks WHERE bucket_name=?1");
+      DB.Bind (Delete, 1, Bucket);
+      if DB.Step (Delete) /= DB.Done then
+         raise Catalog_Error with
+           "public access block deletion returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Delete_Bucket_Public_Access_Block;
 
    procedure Find_Object_Internal
      (Item    : in out Catalog;

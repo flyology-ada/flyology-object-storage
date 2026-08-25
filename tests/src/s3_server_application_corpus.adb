@@ -5390,6 +5390,175 @@ begin
    end;
 
    declare
+      Put_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("publicAccessBlock", ""),
+         SigV4.Pair ("x-id", "PutPublicAccessBlock"));
+      Get_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("publicAccessBlock", ""),
+         SigV4.Pair ("x-id", "GetPublicAccessBlock"));
+      Delete_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("publicAccessBlock", ""),
+         SigV4.Pair ("x-id", "DeletePublicAccessBlock"));
+      Empty_Document : constant String :=
+        "<PublicAccessBlockConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/""/>";
+      Full_Document : constant String :=
+        "<PublicAccessBlockConfiguration>" &
+        "<BlockPublicAcls>true</BlockPublicAcls>" &
+        "<IgnorePublicAcls>false</IgnorePublicAcls>" &
+        "<RestrictPublicBuckets>true</RestrictPublicBuckets>" &
+        "</PublicAccessBlockConfiguration>";
+   begin
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query)),
+            "<Code>NoSuchPublicAccessBlockConfiguration</Code>"),
+         "GetPublicAccessBlock did not distinguish absent configuration");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Body_Request
+                ("PUT", "/test-bucket", Put_Query, Empty_Document));
+      begin
+         Require
+           (Has (Response, "200 OK"),
+            "PutPublicAccessBlock rejected a present empty configuration: " &
+            Response);
+      end;
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "<PublicAccessBlockConfiguration")
+            and then not Has (Response, "BlockPublicAcls"),
+            "GetPublicAccessBlock lost the present empty configuration");
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_Query, Full_Document)),
+            "200 OK"),
+         "PutPublicAccessBlock rejected a valid configuration");
+      for Algorithm in Checksum_Policy.Algorithm loop
+         declare
+            Digest : constant String :=
+              Checksum_Value (Algorithm, Full_Document);
+            Response : constant String :=
+              Run
+                (Signed_Query_Body_Request
+                   ("PUT", "/test-bucket", Put_Query, Full_Document,
+                    "x-amz-sdk-checksum-algorithm: " &
+                    Checksum_Policy.Wire_Name (Algorithm) & CRLF &
+                    Checksum_Header (Algorithm) & ": " & Digest & CRLF));
+         begin
+            Require
+              (Has (Response, "200 OK"),
+               "PutPublicAccessBlock rejected checksum " &
+               Checksum_Policy.Wire_Name (Algorithm) & ": " & Response);
+         end;
+      end loop;
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Body_Request
+                ("PUT", "/test-bucket", Put_Query, Full_Document,
+                 "x-amz-sdk-checksum-algorithm: CRC32" & CRLF &
+                 "x-amz-checksum-crc32: " &
+                 Checksum_Value (Core.CRC32, Empty_Document) & CRLF));
+      begin
+         Require
+           (Has (Response, "<Code>BadDigest</Code>"),
+            "PutPublicAccessBlock accepted a checksum mismatch: " &
+            Response);
+      end;
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query));
+      begin
+         Require
+           (Has (Response, "<BlockPublicAcls>true</BlockPublicAcls>")
+            and then Has
+              (Response, "<IgnorePublicAcls>false</IgnorePublicAcls>")
+            and then Has
+              (Response,
+               "<RestrictPublicBuckets>true</RestrictPublicBuckets>")
+            and then not Has (Response, "BlockPublicPolicy"),
+            "GetPublicAccessBlock did not preserve member presence");
+      end;
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Body_Request
+                ("PUT", "/test-bucket", Put_Query,
+                 "<PublicAccessBlockConfiguration>" &
+                 "<BlockPublicAcls>yes</BlockPublicAcls>" &
+                 "</PublicAccessBlockConfiguration>"));
+      begin
+         Require
+           (Has (Response, "<Code>MalformedXML</Code>"),
+            "PutPublicAccessBlock accepted an invalid Boolean: " & Response);
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_Query, Full_Document,
+                  "content-md5: AAAAAAAAAAAAAAAAAAAAAA==" & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutPublicAccessBlock accepted a mismatched Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Get_Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetPublicAccessBlock ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("publicAccessBlock", ""),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "GetPublicAccessBlock accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket", Get_Query, "unexpected")),
+            "400 Bad Request"),
+         "GetPublicAccessBlock accepted a request body");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("DELETE", "/test-bucket", Delete_Query)),
+            "204 No Content"),
+         "DeletePublicAccessBlock failed");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query)),
+            "NoSuchPublicAccessBlockConfiguration"),
+         "DeletePublicAccessBlock left visible state");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("DELETE", "/test-bucket", Delete_Query)),
+            "204 No Content"),
+         "DeletePublicAccessBlock was not idempotent");
+      Require
+        (Has
+           (Run (Signed_Query_Request
+              ("DELETE", "/absent-bucket", Delete_Query)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeletePublicAccessBlock did not distinguish an absent bucket");
+   end;
+
+   declare
       use Flyology.Object_Storage;
       Query : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("versioning", ""));

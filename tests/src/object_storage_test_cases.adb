@@ -395,6 +395,131 @@ package body Object_Storage_Test_Cases is
       end;
    end Exercise_Bucket_Tags;
 
+   procedure Exercise_Bucket_Public_Access_Block
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      Expected : Bucket_Public_Access_Block_Configuration :=
+        (Block_Public_ACLs       => (Is_Set => True, Value => True),
+         Ignore_Public_ACLs      => (Is_Set => True, Value => False),
+         Block_Public_Policy     => (Is_Set => False, Value => False),
+         Restrict_Public_Buckets => (Is_Set => True, Value => True));
+      Observed   : Bucket_Public_Access_Block_Configuration;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Store.Get_Bucket_Public_Access_Block
+        ("missing-public-access-bucket", null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Not_Found and then not Configured
+         and then Observed = Bucket_Public_Access_Block_Configuration'
+           (others => <>),
+         "public access block get did not distinguish an absent bucket");
+
+      Store.Get_Bucket_Public_Access_Block
+        (Bucket, null, Ada.Real_Time.Time_Last, Observed, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "new bucket exposed a public access block configuration");
+
+      Store.Put_Bucket_Public_Access_Block
+        (Bucket, (others => <>), null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Public_Access_Block
+        (Bucket, null, Ada.Real_Time.Time_Last, Observed, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then Observed = Bucket_Public_Access_Block_Configuration'
+           (others => <>),
+         "present empty public access block was confused with absence");
+
+      Store.Put_Bucket_Public_Access_Block
+        (Bucket, Expected, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "public access block put failed");
+      Store.Get_Bucket_Public_Access_Block
+        (Bucket, null, Ada.Real_Time.Time_Last, Observed, Configured, Result);
+      Assert
+        (Result = Success and then Configured and then Observed = Expected,
+         "public access block snapshot did not round trip");
+
+      Expected :=
+        (Block_Public_ACLs       => (Is_Set => False, Value => True),
+         Ignore_Public_ACLs      => (Is_Set => False, Value => False),
+         Block_Public_Policy     => (Is_Set => True, Value => False),
+         Restrict_Public_Buckets => (Is_Set => False, Value => False));
+      Store.Put_Bucket_Public_Access_Block
+        (Bucket, Expected, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Public_Access_Block
+        (Bucket, null, Ada.Real_Time.Time_Last, Observed, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then not Observed.Block_Public_ACLs.Is_Set
+         and then not Observed.Block_Public_ACLs.Value
+         and then Observed.Block_Public_Policy.Is_Set
+         and then not Observed.Block_Public_Policy.Value,
+         "public access block replacement was not canonical and atomic");
+
+      Store.Delete_Bucket_Public_Access_Block
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "public access block delete failed");
+      Store.Get_Bucket_Public_Access_Block
+        (Bucket, null, Ada.Real_Time.Time_Last, Observed, Configured, Result);
+      Assert
+        (Result = Success and then not Configured,
+         "public access block delete left visible state");
+      Store.Delete_Bucket_Public_Access_Block
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "public access block delete was not idempotent");
+      Store.Delete_Bucket_Public_Access_Block
+        ("missing-public-access-bucket", null, Ada.Real_Time.Time_Last,
+         Result);
+      Assert
+        (Result = Not_Found,
+         "public access block delete did not distinguish an absent bucket");
+
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.Get_Bucket_Public_Access_Block
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last, Observed,
+               Configured, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "public access block get ignored cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Put_Bucket_Public_Access_Block
+              (Bucket, (others => <>), null, Ada.Real_Time.Time_First,
+               Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "public access block put ignored deadline");
+      end;
+
+      Expected :=
+        (Block_Public_ACLs       => (Is_Set => True, Value => True),
+         Ignore_Public_ACLs      => (Is_Set => False, Value => False),
+         Block_Public_Policy     => (Is_Set => True, Value => False),
+         Restrict_Public_Buckets => (Is_Set => True, Value => True));
+      Store.Put_Bucket_Public_Access_Block
+        (Bucket, Expected, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "public access block persistence fixture put failed");
+   end Exercise_Bucket_Public_Access_Block;
+
    procedure Exercise_Bucket_Listing
      (Store : in out Flyology.Object_Storage.Backends.Backend'Class)
    is
@@ -2203,6 +2328,7 @@ package body Object_Storage_Test_Cases is
         ("test-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Success, "head existing memory bucket");
       Exercise_Bucket_Tags (Store, "test-bucket");
+      Exercise_Bucket_Public_Access_Block (Store, "test-bucket");
       Store.Put_Object
         ("test-bucket", "../opaque/key", Source, Default_Put_Options,
          null, Ada.Real_Time.Time_Last, Info, Result);
@@ -3640,6 +3766,7 @@ package body Object_Storage_Test_Cases is
            ("file-bucket", null, Ada.Real_Time.Time_Last, Result);
          Assert (Result = Success, "head existing files bucket");
          Exercise_Bucket_Tags (Store, "file-bucket");
+         Exercise_Bucket_Public_Access_Block (Store, "file-bucket");
          Store.Put_Object
            ("file-bucket", Key, Source,
             (Entity_Tag   => US.To_Unbounded_String ("etag-1"),
@@ -3800,6 +3927,29 @@ package body Object_Storage_Test_Cases is
          Result : Status;
          Sink   : Buffer_Sink;
       begin
+         declare
+            Configuration : Bucket_Public_Access_Block_Configuration;
+            Configured    : Boolean;
+         begin
+            Store.Get_Bucket_Public_Access_Block
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Configuration, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then Configuration.Block_Public_ACLs =
+                 Optional_Configuration_Boolean'
+                   (Is_Set => True, Value => True)
+               and then Configuration.Ignore_Public_ACLs =
+                 Optional_Configuration_Boolean'
+                   (Is_Set => False, Value => False)
+               and then Configuration.Block_Public_Policy =
+                 Optional_Configuration_Boolean'
+                   (Is_Set => True, Value => False)
+               and then Configuration.Restrict_Public_Buckets =
+                 Optional_Configuration_Boolean'
+                   (Is_Set => True, Value => True),
+               "files public access block did not persist across reopen");
+         end;
          Store.Head_Object
            ("file-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);
          Assert

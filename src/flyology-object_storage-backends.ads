@@ -649,6 +649,37 @@ package Flyology.Object_Storage.Backends is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status) is abstract;
 
+   --  Atomically replace the complete PublicAccessBlock configuration of an
+   --  existing bucket.  A configuration whose four members are absent is a
+   --  present empty configuration, not a deletion.
+   procedure Put_Bucket_Public_Access_Block
+     (Item          : in out Backend;
+      Bucket        : String;
+      Configuration : Bucket_Public_Access_Block_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Status) is abstract;
+
+   --  Return one atomic PublicAccessBlock snapshot.  Configured is False for
+   --  an existing bucket with no configuration and is also reset on failure.
+   procedure Get_Bucket_Public_Access_Block
+     (Item          : in out Backend;
+      Bucket        : String;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Configuration : out Bucket_Public_Access_Block_Configuration;
+      Configured    : out Boolean;
+      Result        : out Status) is abstract;
+
+   --  Atomically remove PublicAccessBlock state.  Deletion is idempotent for
+   --  an existing unconfigured bucket.
+   procedure Delete_Bucket_Public_Access_Block
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
    --  A successful implementation consumes Source through Finished, validates
    --  its declared length, and publishes the object only after all source
    --  validation succeeds. Conditions are evaluated atomically against the

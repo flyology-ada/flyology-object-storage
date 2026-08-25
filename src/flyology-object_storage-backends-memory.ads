@@ -73,6 +73,30 @@ package Flyology.Object_Storage.Backends.Memory is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status);
 
+   overriding procedure Put_Bucket_Public_Access_Block
+     (Item          : in out Store;
+      Bucket        : String;
+      Configuration : Bucket_Public_Access_Block_Configuration;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Result        : out Status);
+
+   overriding procedure Get_Bucket_Public_Access_Block
+     (Item          : in out Store;
+      Bucket        : String;
+      Token         : access Flyology.Cancellation.Token;
+      Deadline      : Ada.Real_Time.Time;
+      Configuration : out Bucket_Public_Access_Block_Configuration;
+      Configured    : out Boolean;
+      Result        : out Status);
+
+   overriding procedure Delete_Bucket_Public_Access_Block
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
    overriding procedure Put_Bucket_Versioning
      (Item          : in out Store;
       Bucket        : String;
@@ -402,6 +426,9 @@ private
       Created : Unix_Time := 0;
       Tags    : Flyology.Object_Storage.Tags.Tag_Set;
       Versioning : Bucket_Versioning_Configuration := (others => <>);
+      Public_Access_Block_Configured : Boolean := False;
+      Public_Access_Block : Bucket_Public_Access_Block_Configuration :=
+        (others => <>);
    end record;
    type Bucket_Array is array (Positive range <>) of Bucket_Slot;
 
@@ -468,6 +495,17 @@ private
       procedure Get_Bucket_Tags
         (Name : String; Value : out Tags.Tag_Set; Result : out Status);
       procedure Delete_Bucket_Tags (Name : String; Result : out Status);
+      procedure Put_Bucket_Public_Access_Block
+        (Name          : String;
+         Configuration : Bucket_Public_Access_Block_Configuration;
+         Result        : out Status);
+      procedure Get_Bucket_Public_Access_Block
+        (Name          : String;
+         Configuration : out Bucket_Public_Access_Block_Configuration;
+         Configured    : out Boolean;
+         Result        : out Status);
+      procedure Delete_Bucket_Public_Access_Block
+        (Name : String; Result : out Status);
       procedure Reserve_Transient
         (Amount : Byte_Count; Result : out Status);
       procedure Release_Transient (Amount : Byte_Count);

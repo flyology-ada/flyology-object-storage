@@ -3,9 +3,10 @@
 This record qualifies strict bounded synchronous clients and corpora for
 `GetBucketAbac`, `GetBucketAccelerateConfiguration`, `GetBucketPolicy`,
 `GetBucketPolicyStatus`, `GetBucketRequestPayment`, and
-`GetPublicAccessBlock`. It does not claim configuration persistence in a
-Flyology backend, an authenticated Flyology server route, or external-provider
-interoperability.
+`GetPublicAccessBlock`. The client-family record itself does not manufacture
+backend or server coverage; `GetPublicAccessBlock` now has that independent
+coverage in [public-access-block.md](public-access-block.md). No external-
+provider interoperability is claimed here.
 
 ## Pinned authority and complete inventory
 
@@ -67,10 +68,11 @@ structured errors. The raw-loopback corpus performs all five high-level calls
 over sequential signed real-socket responses under both native and Flyology
 lightweight callers; the root gate repeats that corpus three times.
 
-The machine ledger records each operation as `missing / covered / missing /
-covered`. Client and corpus evidence do not manufacture backend persistence or
-a server route. Promoting either missing cell requires independent storage,
-restart/crash/concurrency behavior, authenticated routing, and black-box tests.
+The machine ledger records `GetPublicAccessBlock` as `covered / covered /
+covered / covered` using the independent backend and server evidence in the
+dedicated qualification record. The other five operations remain `missing /
+covered / missing / covered`; this client corpus does not manufacture their
+backend persistence or server routes.
 
 ## Gate evidence
 
