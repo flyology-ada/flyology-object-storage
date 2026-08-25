@@ -161,7 +161,7 @@ alr build
 The composable client resolves through the Flyology index as
 `flyology_http=0.1.3-dev`, which depends exactly on
 `flyology_quic=0.1.3-dev`. Both indexed crates resolve to reviewed source commit
-`b5cd966decfc81132b46fdc97f9cbbfa5bcdf86c`; Object Storage carries no external
+`eb09a80a7e06274e93289861c2cae1ca7e8cb1af`; Object Storage carries no external
 git pin for either dependency. Committed machine-local path pins remain
 prohibited. The indexed client provides protected bounded round-robin HTTP/2
 pump handoff and keeps synchronous settlement on the same owner-driven

@@ -33,7 +33,7 @@ operation model:
 
 The exact indexed `flyology_http=0.1.3-dev` dependency selects
 `flyology_quic=0.1.3-dev`; both resolve to reviewed source commit
-`b5cd966decfc81132b46fdc97f9cbbfa5bcdf86c`. The Object Storage implementation
+`eb09a80a7e06274e93289861c2cae1ca7e8cb1af`. The Object Storage implementation
 uses those exchanges directly; it does not simulate composition with a helper
 task or a retained borrowed source, and no committed dependency pin remains.
 
@@ -545,24 +545,24 @@ destination directly to the HTTP buffer exchange. Typed object Finish first
 consumes and releases the hidden child, then maps the body-complete response and
 restores object-level ownership invariants.
 
-The private `Prepared_Request` message remains encapsulated. A low-level scoped
-bridge should start an HTTP exchange from that prepared value; the public
-high-level child must not expose or duplicate signed request fields merely to
-cross the sibling-package privacy boundary.
+The private `Prepared_Request` message remains encapsulated. A low-level
+composable bridge should start an HTTP exchange from that prepared value; the
+public high-level child must not expose or duplicate signed request fields
+merely to cross the sibling-package privacy boundary.
 
 The consumer-approved PR #33 head
 `686094b124338e5609fd5623ea2ac6bae5e4e3f2` is included in indexed source commit
-`b5cd966decfc81132b46fdc97f9cbbfa5bcdf86c`. Its qualification includes the
+`eb09a80a7e06274e93289861c2cae1ca7e8cb1af`. Its qualification includes the
 established-child lifecycle, typed buffer restoration, admission certainty,
 and owner-driven HTTP/1.1, HTTP/2, and HTTP/3 exchange behavior required by
 this design. The revision adds protected bounded round-robin HTTP/2 pump
 handoff and a bounded owner-driven settlement probe shared by synchronous and
-scoped adapters. Three complete sync/scoped by native/lightweight h2spec
-matrices pass 684/684 assertions, alongside the full HTTP test and
-documentation gates. Ordinary clients retain zero settlement grace, and the
-probe adds no helper task, completion slot, or second protocol engine. Object
-Storage still independently gates its semantic mappings and ownership
-restoration before claiming the higher-level surface.
+composable adapters. Three complete synchronous/composable by
+native/lightweight h2spec matrices pass 684/684 assertions, alongside the full
+HTTP test and documentation gates. Ordinary clients retain zero settlement
+grace, and the probe adds no helper task, completion slot, or second protocol
+engine. Object Storage still independently gates its semantic mappings and
+ownership restoration before claiming the higher-level surface.
 
 The indexed successor also contains the qualified stale pooled-HTTP/1 repair.
 Only source-free GET/HEAD bounded-buffer or response-head exchanges with no

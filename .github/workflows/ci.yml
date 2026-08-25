@@ -91,11 +91,11 @@ jobs:
           mkdir -p obj/ci
           alr show flyology_http=0.1.3-dev --solve \
             2>&1 | tee obj/ci/http-resolution.log
-          grep -Fq 'Origin: commit b5cd966decfc81132b46fdc97f9cbbfa5bcdf86c' \
+          grep -Fq 'Origin: commit eb09a80a7e06274e93289861c2cae1ca7e8cb1af' \
             obj/ci/http-resolution.log
           alr show flyology_quic=0.1.3-dev --solve \
             2>&1 | tee obj/ci/quic-resolution.log
-          grep -Fq 'Origin: commit b5cd966decfc81132b46fdc97f9cbbfa5bcdf86c' \
+          grep -Fq 'Origin: commit eb09a80a7e06274e93289861c2cae1ca7e8cb1af' \
             obj/ci/quic-resolution.log
       - name: Run root and SQLite gates
         run: ./tools/ci/run-tests.sh
