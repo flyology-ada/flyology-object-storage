@@ -8902,7 +8902,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Parameters      : Bucket_Control_Mutation_Parameters;
       Identity        : Credentials;
       Region          : String;
-      Timestamp       : String) return Prepared_Request
+      Timestamp       : String;
+      One_Shot_Source : Boolean) return Prepared_Request
    is
       Supplied_MD5 : constant String :=
         US.To_String (Parameters.Content_MD5);
@@ -8989,9 +8990,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Result : Prepared_Request := Prepare_Object_Request
         (Bucket_Control_Mutation_Operation, Method, Origin, Style, Bucket, "",
          Query, Headers, Payload, "", Identity, Region, Timestamp,
-         Object_Resource => False)
+         Object_Resource => False,
+         Store_Payload => not One_Shot_Source)
       do
          Result.Modeled_Operation := Operation;
+         if One_Shot_Source then
+            --  Composable bucket-control mutations own the exact signed bytes
+            --  here; retaining them in Request as well would select HTTP's
+            --  conflicting replayable-body form before admission.
+            Result.Owned_Request_Payload := US.To_Unbounded_String (Payload);
+         end if;
       end return;
    end Prepare_Bucket_Control_Mutation;
 
@@ -9006,10 +9014,11 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
    begin
       return Prepare_Bucket_Control_Mutation
-        (Model.Create_Bucket_Metadata_Table_Configuration_Operation,
+         (Model.Create_Bucket_Metadata_Table_Configuration_Operation,
          "POST", "metadataTable", Origin, Style, Bucket,
          Metadata_Tables.Serialize_Create (Value, Limits), True,
-         (others => <>), False, Parameters, Identity, Region, Timestamp);
+         (others => <>), False, Parameters, Identity, Region, Timestamp,
+         One_Shot_Source => False);
    exception
       when Metadata_Tables.Malformed_Metadata_Table =>
          raise Invalid_Request with
@@ -9025,7 +9034,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
      (Prepare_Bucket_Control_Mutation
         (Model.Put_Bucket_Abac_Operation, "PUT", "abac", Origin, Style, Bucket,
          Bucket_Controls.Serialize_Abac (Value), True, (others => <>), False,
-         Parameters, Identity, Region, Timestamp));
+         Parameters, Identity, Region, Timestamp,
+         One_Shot_Source => False));
 
    function Prepare_Put_Bucket_Accelerate_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -9038,7 +9048,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          "accelerate",
          Origin, Style, Bucket, Bucket_Controls.Serialize_Accelerate (Value),
          False, (others => <>), False, Parameters, Identity, Region,
-         Timestamp));
+         Timestamp, One_Shot_Source => False));
 
    function Prepare_Put_Bucket_Request_Payment
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -9052,7 +9062,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Model.Put_Bucket_Request_Payment_Operation, "PUT", "requestPayment",
          Origin, Style, Bucket,
          Bucket_Controls.Serialize_Request_Payment (Value), True,
-         (others => <>), False, Parameters, Identity, Region, Timestamp);
+         (others => <>), False, Parameters, Identity, Region, Timestamp,
+         One_Shot_Source => False);
    exception
       when Bucket_Controls.Malformed_Configuration =>
          raise Invalid_Request with "request-payment payer is required";
@@ -9070,7 +9081,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Origin,
          Style, Bucket, Bucket_Controls.Serialize_Public_Access_Block (Value),
          True, (others => <>), False, Parameters, Identity, Region,
-         Timestamp));
+         Timestamp, One_Shot_Source => False));
 
    function Prepare_Put_Bucket_Ownership_Controls
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -9087,7 +9098,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          "ownershipControls", Origin, Style, Bucket,
          Bucket_Controls.Serialize_Ownership_Controls (Value, Limits),
          True, (others => <>), False, Parameters, Identity, Region,
-         Timestamp);
+         Timestamp, One_Shot_Source => False);
    exception
       when Bucket_Controls.Malformed_Configuration =>
          raise Invalid_Request with
@@ -9114,7 +9125,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Model.Put_Bucket_Policy_Operation, "PUT", "policy", Origin, Style,
          Bucket,
          Policy, True, Parameters.Confirm_Remove_Self_Access, True, Common,
-         Identity, Region, Timestamp);
+         Identity, Region, Timestamp, One_Shot_Source => True);
    end Prepare_Put_Bucket_Policy;
 
    function Decode_Put_Bucket_Control_Response
@@ -9155,9 +9166,14 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
+         Source : Non_Replayable_Buffer_Source :=
+           (Data => Prepared.Owned_Request_Payload, Next => 1);
          Response : Flyology.HTTP.Client.Response :=
-           Flyology.HTTP.Client.Execute
-             (Client, Prepared.Message, Timeout, Token);
+           (if US.Length (Prepared.Owned_Request_Payload) = 0
+            then Flyology.HTTP.Client.Execute
+              (Client, Prepared.Message, Timeout, Token)
+            else Flyology.HTTP.Client.Execute
+              (Client, Prepared.Message, Source, Timeout, Token));
 
          function Singleton_Header (Name : String) return String is
             Count : constant Natural :=
@@ -12903,9 +12919,52 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       Start_Sink
-        (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
-         Token, Operation);
+         (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
+          Token, Operation);
    end Get_Bucket_Policy;
+
+   procedure Put_Bucket_Policy
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /= Model.Put_Bucket_Policy_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Bucket_Policy;
+
+   procedure Delete_Bucket_Policy
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Delete_Bucket_Configuration_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Delete_Bucket_Policy_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Delete_Bucket_Configuration_Operation, Client, Prepared, Source,
+         Sink, Deadline, Token, Operation);
+   end Delete_Bucket_Policy;
 
    procedure Put_Bucket_Versioning
      (Client    : not null access Flyology.HTTP.Client.Client;

@@ -4702,6 +4702,48 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token     : access Flyology.Cancellation.Token := null;
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
+   --  Start an exact prepared PutBucketPolicy exchange with its one-shot
+   --  policy source. The prepared request must be bound to PutBucketPolicy;
+   --  another bucket-control mutation is rejected before HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable request source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Put_Bucket_Policy
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared DeleteBucketPolicy exchange with a deliberately
+   --  non-replayable empty source. A prepared request for another bucket
+   --  configuration deletion is rejected before HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable empty source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Delete_Bucket_Policy
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
    --  Start a prepared PutBucketVersioning exchange with its one-shot body.
    --  @param Client Configured origin client retained through terminal drain
    --  @param Prepared Owned signed request retained by the parent operation

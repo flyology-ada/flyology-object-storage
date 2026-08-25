@@ -135,6 +135,9 @@ procedure S3_HTTP_Socket_Corpus is
    use type Head_Bucket_Result_Kind;
    use type Get_Bucket_Location_Result_Kind;
    use type Get_Bucket_Policy_Result_Kind;
+   use type Put_Bucket_Policy_Result_Kind;
+   use type Delete_Bucket_Policy_Result_Kind;
+   use type Bucket_Policy_Mutation_Disposition;
    use type Get_Bucket_Versioning_Result_Kind;
    use type Put_Bucket_Versioning_Result_Kind;
    use type List_Objects_V2_Result_Kind;
@@ -623,8 +626,13 @@ procedure S3_HTTP_Socket_Corpus is
          Ready := True;
       end Publish;
 
-      entry Wait_Ready (Value : out Sockets.Port) when Ready is
+      entry Wait_Ready (Value : out Sockets.Port) when Ready or Done is
       begin
+         if not Ready then
+            raise Program_Error with
+              "raw S3 socket server failed before publishing its port: " &
+              US.To_String (Detail_Value);
+         end if;
          Value := Port_Value;
       end Wait_Ready;
 
@@ -4040,6 +4048,20 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/typed-delete-policy?policy",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/composed-delete-policy?policy",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-delete-policy-request" & CRLF),
+            "DELETE", "/restart-delete-policy?policy",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
             "/example-bucket?replication",
             Expected_Bucket_Owner => "123456789012");
          Serve
@@ -4499,6 +4521,30 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Content_MD5 => "*",
             Expected_Bucket_Owner => "123456789012",
             Expected_Confirm_Remove_Self_Access => "true");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/low-level-policy?policy",
+            Expected_Body_Root => "low-level-policy-document",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT", "/typed-policy?policy",
+            Expected_Body_Root => "typed-policy",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT", "/composed-policy?policy",
+            Expected_Body_Root => "composed-policy-document",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-put-policy-request" & CRLF),
+            "PUT", "/restart-put-policy?policy",
+            Expected_Body_Root => "restart-policy-document",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT",
             "/example-bucket?ownershipControls",
@@ -12527,6 +12573,119 @@ procedure S3_HTTP_Socket_Corpus is
               (HTTP, Origin, "example-bucket", Identity,
                Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
             "DeleteBucketPolicy");
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Public_Access_Block
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Delete_Bucket_Policy_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Delete_Bucket_Policy
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "DeleteBucketPolicy accepted another configuration " &
+                 "deletion";
+            end if;
+         end;
+         declare
+            Parameters : constant
+              Low_Level.Delete_Bucket_Configuration_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Result : constant Delete_Bucket_Policy_Result :=
+              Buckets.Delete_Policy
+                (HTTP,
+                 Origin,
+                 "typed-delete-policy",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Delete_Bucket_Policy_Response_Available
+              or else Result.Disposition /=
+                Bucket_Policy_Mutation_Completed
+              or else Result.Failure /= No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+              or else Result.Response.Kind /= Low_Level.Configuration_Deleted
+            then
+               raise Program_Error with
+                 "typed DeleteBucketPolicy response mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant
+              Low_Level.Delete_Bucket_Configuration_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            --  Policy parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Delete_Bucket_Policy_Result;
+         begin
+            declare
+               Operation : Delete_Bucket_Policy_Operation :=
+                 Delete_Policy
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-delete-policy",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_Policy_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Policy_Mutation_Completed
+               then
+                  raise Program_Error with
+                    "composed DeleteBucketPolicy first result mismatch";
+               end if;
+               Delete_Policy
+                 (HTTP'Access,
+                  Origin,
+                  "restart-delete-policy",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_Policy_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Policy_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Delete_Configuration_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-delete-policy-request"
+               then
+                  raise Program_Error with
+                    "composed DeleteBucketPolicy restart mismatch";
+               end if;
+            end;
+         end;
          Require_Configuration_Deletion
            (Buckets.Delete_Replication
               (HTTP, Origin, "example-bucket", Identity,
@@ -13510,6 +13669,156 @@ procedure S3_HTTP_Socket_Corpus is
             then
                raise Program_Error with "bucket-control PUT socket mismatch";
             end if;
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Bucket_Policy
+                (Origin,
+                 Low_Level.Path_Style,
+                 "low-level-policy",
+                 "low-level-policy-document",
+                 (Content_MD5 => US.Null_Unbounded_String,
+                  Checksum_Algorithm => US.Null_Unbounded_String,
+                  Confirm_Remove_Self_Access => (others => <>),
+                  Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Result : constant Low_Level.Put_Bucket_Control_Outcome :=
+              Low_Level.Execute_Put_Bucket_Policy
+                (HTTP, Prepared, Timeout => 5.0);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Updated
+              or else Result.Status /= 200
+            then
+               raise Program_Error with
+                 "low-level one-shot PutBucketPolicy mismatch";
+            end if;
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Bucket_Abac
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 Bucket_Controls.Abac_Enabled,
+                 (Content_MD5 => US.Null_Unbounded_String,
+                  Checksum_Algorithm => US.Null_Unbounded_String,
+                  Expected_Bucket_Owner => US.Null_Unbounded_String),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Put_Bucket_Policy_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Put_Bucket_Policy
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "PutBucketPolicy accepted a prepared ABAC request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Put_Bucket_Policy_Parameters :=
+              (Content_MD5 => US.Null_Unbounded_String,
+               Checksum_Algorithm => US.Null_Unbounded_String,
+               Confirm_Remove_Self_Access => (others => <>),
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Put_Bucket_Policy_Result :=
+              Buckets.Set_Policy
+                (HTTP,
+                 Origin,
+                 "typed-policy",
+                 "typed-policy",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Put_Bucket_Policy_Response_Available
+              or else Result.Disposition /=
+                Bucket_Policy_Mutation_Completed
+              or else Result.Failure /= No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+              or else Result.Response.Kind /=
+                Low_Level.Bucket_Control_Updated
+            then
+               raise Program_Error with
+                 "typed PutBucketPolicy response mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Put_Bucket_Policy_Parameters :=
+              (Content_MD5 => US.Null_Unbounded_String,
+               Checksum_Algorithm => US.Null_Unbounded_String,
+               Confirm_Remove_Self_Access => (others => <>),
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            --  Policy parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Put_Bucket_Policy_Result;
+            Policy : String := "composed-policy-document";
+         begin
+            declare
+               Operation : Put_Bucket_Policy_Operation :=
+                 Set_Policy
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-policy",
+                    Policy,
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Policy := (others => 'x');
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Policy_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Policy_Mutation_Completed
+               then
+                  raise Program_Error with
+                    "composed PutBucketPolicy first result mismatch";
+               end if;
+               Set_Policy
+                 (HTTP'Access,
+                  Origin,
+                  "restart-put-policy",
+                  "restart-policy-document",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Policy_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Policy_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Put_Bucket_Control_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-put-policy-request"
+               then
+                  raise Program_Error with
+                    "composed PutBucketPolicy restart mismatch";
+               end if;
+            end;
          end;
          declare
             function Configuration
@@ -14796,6 +15105,7 @@ begin
    Buckets_Testing.Check_Head_Bucket_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Location_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Policy_Result_Corpus;
+   Buckets_Testing.Check_Bucket_Policy_Certainty_Corpus;
    Buckets_Testing.Check_Get_Bucket_Versioning_Result_Corpus;
    Buckets_Testing.Check_Put_Bucket_Versioning_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;

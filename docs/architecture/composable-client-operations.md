@@ -8,7 +8,7 @@ bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
 ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
 bounded GetBucketLocation, bounded GetBucketPolicy, non-replaying
-Put/GetBucketVersioning, and bucket tagging
+Put/DeleteBucketPolicy, non-replaying Put/GetBucketVersioning, and bucket tagging
 Put/Get/Delete, plus object tagging Put/Get/Delete. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
@@ -211,6 +211,16 @@ operation-last restart, typed Finish, and typed synchronous wait use the same
 provider state machine and caller-selected `Parse_Limits`. The read retains
 admission information for diagnostics but does not select retry policy or imply
 policy evaluation.
+PutBucketPolicy copies the caller's exact bounded raw document into the signed
+prepared request and exposes those owned bytes once through a non-rewindable
+source. DeleteBucketPolicy uses the same provider-owned mutation discipline
+with a known-empty non-rewindable source. Neither mutation is automatically
+replayed after possible admission. Typed Finish distinguishes completion,
+conclusive non-application, pre-admission cancellation, and outcome-unknown;
+the last case requires caller-selected GetBucketPolicy reconciliation before
+any retry. Their parameter-record synchronous overloads wait on these same
+state machines, and restart retains only the established HTTP client and
+cancellation owner.
 PutBucketTagging likewise serializes and owns its complete validated tag set
 once, and DeleteBucketTagging supplies a non-rewindable known-empty source.
 Neither mutation is replayed after possible admission. Their typed results

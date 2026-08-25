@@ -117,17 +117,17 @@ or a bounded structured S3 rejection. This client-only boundary does not imply
 that Flyology backends store CORS configuration or that the authenticated
 server routes the operation.
 
-The same private synchronous state machine serves the thirteen other bodyless
+The same private synchronous state machine serves the twelve other bodyless
 bucket-configuration deletes: analytics, encryption, intelligent tiering,
 inventory, lifecycle, metadata, metadata table, metrics, ownership controls,
-policy, replication, website, and public access block. Analytics, intelligent
-tiering, inventory, and metrics require a caller-supplied configuration
-identifier; every operation preserves the optional expected-owner
-precondition. The public functions and low-level preparer/executor pairs
-remain operation-specific, so sharing transport and response logic does not
-allow a prepared request to be executed as another operation. These are
-client-only wire boundaries and make no backend, Flyology server, or external
-provider interoperability claim.
+replication, website, and public access block. Analytics, intelligent tiering,
+inventory, and metrics require a caller-supplied configuration identifier;
+every operation preserves the optional expected-owner precondition. The
+public functions and low-level preparer/executor pairs remain
+operation-specific, so sharing transport and response logic does not allow a
+prepared request to be executed as another operation. These are client-only
+wire boundaries and make no backend, Flyology server, or external provider
+interoperability claim.
 
 Six small bucket-control reads share low-level request and response machinery:
 ABAC, transfer acceleration, raw bucket policy, policy status, requester-pays,
@@ -155,5 +155,17 @@ algorithms. Policy also preserves the optional modeled
 `x-amz-confirm-remove-self-bucket-access` Boolean. Acceleration rejects a
 supplied Content-MD5 because that member is absent from its pinned request
 shape. Exact operation binding is checked again before HTTP, and 200 success
-must contain only an empty or whitespace body. These remain client-only
-configuration calls with no backend or authenticated-server claim.
+must contain only an empty or whitespace body. Except for raw bucket policy,
+these remain client-only configuration calls with no backend or
+authenticated-server claim.
+
+Raw policy replacement and deletion additionally have provider-owned
+composable forms. `Set_Policy` owns the exact caller policy copied during
+bounded preparation and exposes it once through a non-rewindable source;
+`Delete_Policy` uses a non-rewindable known-empty source. Both typed results
+retain HTTP admission certainty and distinguish completion, conclusive
+non-application, pre-admission cancellation, and an outcome that requires a
+caller-selected `Get_Policy` reconciliation before any retry. Their
+parameter-record synchronous overloads wait on those same state machines, and
+operation-last restart retains only the established HTTP client and optional
+cancellation owner.

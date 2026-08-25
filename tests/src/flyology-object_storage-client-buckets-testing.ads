@@ -13,6 +13,8 @@ package Flyology.Object_Storage.Client.Buckets.Testing is
 
    procedure Check_Get_Bucket_Policy_Result_Corpus;
 
+   procedure Check_Bucket_Policy_Certainty_Corpus;
+
    procedure Check_Get_Bucket_Versioning_Result_Corpus;
 
    procedure Check_Put_Bucket_Versioning_Certainty_Corpus;

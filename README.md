@@ -76,9 +76,9 @@ The core crate includes:
   multipart initiation, one-shot UploadPart, and one-shot multipart completion
   operations, plus service-level ListBuckets, CreateBucket, DeleteBucket,
   HeadBucket, bounded GetBucketLocation, bounded GetBucketPolicy, and bounded
-  non-replaying Put/GetBucketVersioning, with typed synchronous overloads that
-  wait on the same owner-driven state machines and never create a per-operation
-  helper task;
+  non-replaying Put/DeleteBucketPolicy and Put/GetBucketVersioning, with typed
+  synchronous overloads that wait on the same owner-driven state machines and
+  never create a per-operation helper task;
 - a bounded ordered DeleteObjects backend batch, with process-atomic memory,
   transactional SQLite, and explicitly scoped per-file durability semantics
   (see [DeleteObjects qualification](docs/qualification/delete-objects.md));
