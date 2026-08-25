@@ -1716,6 +1716,156 @@ package Flyology.Object_Storage.Client.Buckets is
         Flyology.Object_Storage.S3.XML.Default_Limits)
       return Put_Bucket_Ownership_Controls_Result;
 
+   --  Shape of a terminal DeleteBucketOwnershipControls mutation.
+   --  @enum Delete_Ownership_Controls_Response_Available Modeled response
+   --     exists
+   --  @enum Delete_Ownership_Controls_Exchange_Failed No complete response
+   --     exists
+   type Delete_Ownership_Controls_Result_Kind is
+     (Delete_Ownership_Controls_Response_Available,
+      Delete_Ownership_Controls_Exchange_Failed);
+
+   --  Typed DeleteBucketOwnershipControls certainty and response or HTTP
+   --  failure.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Delete_Ownership_Controls_Result
+     (Kind : Delete_Ownership_Controls_Result_Kind :=
+        Delete_Ownership_Controls_Exchange_Failed)
+   is record
+      Disposition : Bucket_Ownership_Controls_Mutation_Disposition :=
+        Bucket_Ownership_Controls_Mutation_Outcome_Unknown;
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Delete_Ownership_Controls_Response_Available =>
+            Response : Low_Level.Delete_Bucket_Configuration_Outcome;
+         when Delete_Ownership_Controls_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot DeleteBucketOwnershipControls parent. Its signed request and
+   --  empty nonreplayable source remain owned through terminal Finish.
+   type Delete_Ownership_Controls_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Existing provider contract: these overloads retain the synchronous
+   --  Delete_Ownership_Controls defaults (us-east-1, path-style addressing,
+   --  shared XML limits, and no cancellation source). They preserve source
+   --  compatibility and request signing rather than introducing new policy.
+   --  Start or restart one nonreplaying DeleteBucketOwnershipControls
+   --  mutation.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose complete configuration is removed
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected error-response XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established configuration mutation
+   procedure Delete_Ownership_Controls
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Delete_Ownership_Controls_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying DeleteBucketOwnershipControls mutation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose complete configuration is removed
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected error-response XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven configuration deletion
+   function Delete_Ownership_Controls
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Delete_Ownership_Controls_Operation;
+
+   --  Consume one terminal DeleteBucketOwnershipControls operation.
+   --  @param Operation Terminal ownership-controls deletion
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Delete_Ownership_Controls_Operation;
+      Result    : out Delete_Ownership_Controls_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Delete the ownership-controls configuration by waiting on the same
+   --  nonreplaying provider-owned operation used by composable callers. The
+   --  established region, addressing, 30-second timeout, shared XML-limit,
+   --  and null-cancellation defaults are preserved.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose complete configuration is removed
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Delete_Ownership_Controls
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Delete_Ownership_Controls_Result;
+
    --  What is known about a public-access-block mutation after terminal
    --  drain. Outcome unknown requires caller-selected read reconciliation
    --  before any retry.
@@ -3450,6 +3600,27 @@ private
    end record;
 
    --  @exclude
+   type Delete_Ownership_Controls_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural := 0;
+      Final_Result     : Delete_Ownership_Controls_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error  : Boolean := False;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
    type Put_Bucket_Ownership_Controls_Operation
      (Set          : not null access Flyology.Operations.Completion_Set'Class;
       HTTP         : not null access Flyology.HTTP.Client.Client;
@@ -3984,6 +4155,31 @@ private
      (Item : in out Put_Bucket_Ownership_Controls_Operation);
    overriding procedure Finalize
      (Item : in out Put_Bucket_Ownership_Controls_Operation);
+   overriding function Declared_Length
+     (Item : Delete_Ownership_Controls_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   overriding procedure Read_Now
+     (Item   : in out Delete_Ownership_Controls_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   overriding procedure Source_Wait_Source
+     (Item       : in out Delete_Ownership_Controls_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   overriding procedure Release_Source
+     (Item : in out Delete_Ownership_Controls_Operation);
+   overriding procedure Write
+     (Item : in out Delete_Ownership_Controls_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Delete_Ownership_Controls_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Delete_Ownership_Controls_Operation);
+   overriding procedure Finalize
+     (Item : in out Delete_Ownership_Controls_Operation);
    overriding procedure Write
      (Item : in out Get_Public_Access_Block_Operation;
       Data : Ada.Streams.Stream_Element_Array);
@@ -4221,6 +4417,15 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Bucket_Ownership_Controls_Result;
+   function Normalize_Delete_Ownership_Controls_Response
+     (Value     : Low_Level.Delete_Bucket_Configuration_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Delete_Ownership_Controls_Result;
+   function Normalize_Delete_Ownership_Controls_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Delete_Ownership_Controls_Result;
    function Normalize_Put_Public_Access_Block_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)

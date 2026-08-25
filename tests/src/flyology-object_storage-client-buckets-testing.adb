@@ -1501,6 +1501,32 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
               "PutBucketOwnershipControls response normalization mismatch";
          end if;
       end Check_Response;
+
+      procedure Check_Delete_Response
+        (Status      : Flyology.HTTP.Status_Code;
+         Code        : String;
+         Disposition : Bucket_Ownership_Controls_Mutation_Disposition;
+         Failure     : Failure_Reason)
+      is
+         Value : constant Low_Level.Delete_Bucket_Configuration_Outcome :=
+           (if Status = 204
+            then (Kind => Low_Level.Configuration_Deleted, Status => Status)
+            else (Kind => Low_Level.Delete_Configuration_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant Delete_Ownership_Controls_Result :=
+           Normalize_Delete_Ownership_Controls_Response
+             (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Delete_Ownership_Controls_Response_Available
+           or else Result.Disposition /= Disposition
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "DeleteBucketOwnershipControls response normalization mismatch";
+         end if;
+      end Check_Delete_Response;
    begin
       Check_Get_Response (200, "", No_Failure);
       Check_Get_Response
@@ -1522,6 +1548,16 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       Check_Response
         (500, "Unknown", Bucket_Ownership_Controls_Mutation_Outcome_Unknown,
          Corrupt_Or_Invalid_Response);
+      Check_Delete_Response
+        (204, "", Bucket_Ownership_Controls_Mutation_Completed, No_Failure);
+      Check_Delete_Response
+        (404, "NoSuchBucket",
+         Bucket_Ownership_Controls_Mutation_Definitely_Not_Applied,
+         Not_Found);
+      Check_Delete_Response
+        (500, "InternalError",
+         Bucket_Ownership_Controls_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
 
       for Admission in
         HTTP_Client.Not_Admitted .. HTTP_Client.Possibly_Admitted
@@ -1552,6 +1588,9 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
                Get_Result : constant Get_Bucket_Ownership_Controls_Result :=
                  Normalize_Get_Bucket_Ownership_Controls_Failure
                    (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+               Delete_Result : constant Delete_Ownership_Controls_Result :=
+                 Normalize_Delete_Ownership_Controls_Failure
+                   (Kind, Admission, HTTP_Client.Waiting_Response_Head);
                Disposition : constant
                  Bucket_Ownership_Controls_Mutation_Disposition :=
                    Expected_Disposition (Kind, Admission);
@@ -1567,6 +1606,12 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
                  or else Get_Result.Failure /= Expected_Failure (Kind)
                  or else Get_Result.Admission /= Admission
                  or else Get_Result.HTTP_Result /= Kind
+                 or else Delete_Result.Kind /=
+                   Delete_Ownership_Controls_Exchange_Failed
+                 or else Delete_Result.Disposition /= Disposition
+                 or else Delete_Result.Failure /= Expected_Failure (Kind)
+                 or else Delete_Result.Admission /= Admission
+                 or else Delete_Result.HTTP_Result /= Kind
                then
                   raise Program_Error with
                     "ownership-controls exchange certainty mismatch";

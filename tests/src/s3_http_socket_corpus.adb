@@ -142,6 +142,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Bucket_Ownership_Controls_Result_Kind;
    use type Put_Bucket_Ownership_Controls_Result_Kind;
    use type Bucket_Ownership_Controls_Mutation_Disposition;
+   use type Delete_Ownership_Controls_Result_Kind;
    use type Put_Public_Access_Block_Result_Kind;
    use type Delete_Public_Access_Block_Result_Kind;
    use type Public_Access_Block_Mutation_Disposition;
@@ -4048,6 +4049,16 @@ procedure S3_HTTP_Socket_Corpus is
          Serve
            (HTTP_Response ("204 No Content", ""), "DELETE",
             "/example-bucket?ownershipControls",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/composed-delete-ownership?ownershipControls",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-delete-ownership" & CRLF),
+            "DELETE", "/restart-delete-ownership?ownershipControls",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response ("204 No Content", ""), "DELETE",
@@ -12642,6 +12653,86 @@ procedure S3_HTTP_Socket_Corpus is
               (HTTP, Origin, "example-bucket", Identity,
                Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
             "DeleteBucketOwnershipControls");
+         declare
+            Parameters : constant
+              Low_Level.Delete_Bucket_Configuration_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Public_Access_Block
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 Parameters,
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Delete_Ownership_Controls_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+            Result : Delete_Ownership_Controls_Result;
+         begin
+            begin
+               Low_Level.Delete_Bucket_Ownership_Controls
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "DeleteBucketOwnershipControls accepted a public-access " &
+                 "request";
+            end if;
+
+            declare
+               Operation : Delete_Ownership_Controls_Operation :=
+                 Delete_Ownership_Controls
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-delete-ownership",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Ownership_Controls_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Ownership_Controls_Mutation_Completed
+               then
+                  raise Program_Error with
+                    "composed DeleteBucketOwnershipControls mismatch";
+               end if;
+               Delete_Ownership_Controls
+                 (HTTP'Access,
+                  Origin,
+                  "restart-delete-ownership",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Ownership_Controls_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Ownership_Controls_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-delete-ownership"
+               then
+                  raise Program_Error with
+                    "restarted DeleteBucketOwnershipControls mismatch";
+               end if;
+            end;
+         end;
          Require_Configuration_Deletion
            (Buckets.Delete_Policy
               (HTTP, Origin, "example-bucket", Identity,
