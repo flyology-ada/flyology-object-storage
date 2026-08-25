@@ -1250,6 +1250,473 @@ package Flyology.Object_Storage.Client.Buckets is
       Token : access Flyology.Cancellation.Token := null)
       return Delete_Outcome;
 
+   --  Shape of a terminal GetPublicAccessBlock read.
+   --  @enum Get_Public_Access_Block_Response_Available Modeled response exists
+   --  @enum Get_Public_Access_Block_Exchange_Failed No complete response
+   --     exists
+   type Get_Public_Access_Block_Result_Kind is
+     (Get_Public_Access_Block_Response_Available,
+      Get_Public_Access_Block_Exchange_Failed);
+
+   --  Typed GetPublicAccessBlock response or composable HTTP failure.
+   --  Admission is retained for diagnostics; this operation is read-only.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Get_Public_Access_Block_Result
+     (Kind : Get_Public_Access_Block_Result_Kind :=
+        Get_Public_Access_Block_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Get_Public_Access_Block_Response_Available =>
+            Response : Low_Level.Get_Public_Access_Block_Outcome;
+         when Get_Public_Access_Block_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase  : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail      : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded GetPublicAccessBlock parent with one hidden HTTP child. The
+   --  operation owns its signed request and retained response bytes through
+   --  terminal Finish, with no borrowed request input after signing.
+   type Get_Public_Access_Block_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Existing provider contract: these overloads retain the synchronous
+   --  Get_Public_Access_Block defaults (us-east-1, path-style addressing,
+   --  shared XML limits, and no cancellation source). They preserve source
+   --  compatibility and request signing rather than introducing new policy.
+   --  Start or restart one bounded GetPublicAccessBlock read.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose configuration is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established configuration read
+   procedure Get_Public_Access_Block
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Get_Public_Access_Block_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded GetPublicAccessBlock read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose configuration is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven configuration read
+   function Get_Public_Access_Block
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Public_Access_Block_Operation;
+
+   --  Consume one terminal GetPublicAccessBlock operation.
+   --  @param Operation Terminal public-access-block read
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out Get_Public_Access_Block_Operation;
+      Result    : out Get_Public_Access_Block_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Read one public-access-block snapshot by waiting on the provider-owned
+   --  composable operation. The established region, addressing, 30-second
+   --  timeout, shared XML-limit, and null-cancellation defaults are preserved.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose configuration is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled response or bounded exchange failure
+   function Get_Public_Access_Block
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Get_Public_Access_Block_Result;
+
+   --  What is known about a public-access-block mutation after terminal
+   --  drain. Outcome unknown requires caller-selected read reconciliation
+   --  before any retry.
+   --  @enum Public_Access_Block_Mutation_Completed Complete response proves
+   --     the requested mutation completed
+   --  @enum Public_Access_Block_Mutation_Definitely_Not_Applied Exact
+   --     rejection or non-admission proves no mutation occurred
+   --  @enum Public_Access_Block_Mutation_Outcome_Unknown State requires
+   --     caller-selected read reconciliation
+   --  @enum Public_Access_Block_Mutation_Cancelled_Before_Admission
+   --     Cancellation preceded possible server admission
+   type Public_Access_Block_Mutation_Disposition is
+     (Public_Access_Block_Mutation_Completed,
+      Public_Access_Block_Mutation_Definitely_Not_Applied,
+      Public_Access_Block_Mutation_Outcome_Unknown,
+      Public_Access_Block_Mutation_Cancelled_Before_Admission);
+
+   --  Shape of a terminal PutPublicAccessBlock mutation.
+   --  @enum Put_Public_Access_Block_Response_Available Modeled response
+   --     exists
+   --  @enum Put_Public_Access_Block_Exchange_Failed No complete response
+   --     exists
+   type Put_Public_Access_Block_Result_Kind is
+     (Put_Public_Access_Block_Response_Available,
+      Put_Public_Access_Block_Exchange_Failed);
+
+   --  Typed PutPublicAccessBlock certainty and response or HTTP failure.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Put_Public_Access_Block_Result
+     (Kind : Put_Public_Access_Block_Result_Kind :=
+        Put_Public_Access_Block_Exchange_Failed)
+   is record
+      Disposition : Public_Access_Block_Mutation_Disposition :=
+        Public_Access_Block_Mutation_Outcome_Unknown;
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Put_Public_Access_Block_Response_Available =>
+            Response : Low_Level.Put_Bucket_Control_Outcome;
+         when Put_Public_Access_Block_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot PutPublicAccessBlock parent. The prepared request owns the
+   --  exact serialized configuration and signing inputs through Finish. The
+   --  operation never rewinds or replays its body.
+   type Put_Public_Access_Block_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Existing provider contract: these overloads retain the synchronous
+   --  Set_Public_Access_Block defaults (us-east-1, path-style addressing,
+   --  shared XML limits, and no cancellation source). They preserve source
+   --  compatibility and request signing rather than introducing new policy.
+   --  Start or restart one nonreplaying PutPublicAccessBlock mutation.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose complete configuration is replaced
+   --  @param Value Complete presence-sensitive configuration copied at start
+   --  @param Parameters Complete modeled mutation controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established configuration mutation
+   procedure Set_Public_Access_Block
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Bucket_Controls.
+        Public_Access_Block_Configuration;
+      Parameters : Low_Level.Put_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Put_Public_Access_Block_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying PutPublicAccessBlock mutation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose complete configuration is replaced
+   --  @param Value Complete presence-sensitive configuration copied at start
+   --  @param Parameters Complete modeled mutation controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven configuration mutation
+   function Set_Public_Access_Block
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Bucket_Controls.
+        Public_Access_Block_Configuration;
+      Parameters : Low_Level.Put_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Put_Public_Access_Block_Operation;
+
+   --  Consume one terminal PutPublicAccessBlock operation.
+   --  @param Operation Terminal public-access-block mutation
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Put_Public_Access_Block_Operation;
+      Result    : out Put_Public_Access_Block_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Replace the public-access-block document by waiting on the same
+   --  nonreplaying provider-owned operation used by composable callers. The
+   --  established region, addressing, 30-second timeout, shared XML-limit,
+   --  and null-cancellation defaults are preserved.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose complete configuration is replaced
+   --  @param Value Complete presence-sensitive configuration
+   --  @param Parameters Complete modeled mutation controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Set_Public_Access_Block
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Bucket_Controls.
+        Public_Access_Block_Configuration;
+      Parameters : Low_Level.Put_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Put_Public_Access_Block_Result;
+
+   --  Shape of a terminal DeletePublicAccessBlock mutation.
+   --  @enum Delete_Public_Access_Block_Response_Available Modeled response
+   --     exists
+   --  @enum Delete_Public_Access_Block_Exchange_Failed No complete response
+   --     exists
+   type Delete_Public_Access_Block_Result_Kind is
+     (Delete_Public_Access_Block_Response_Available,
+      Delete_Public_Access_Block_Exchange_Failed);
+
+   --  Typed DeletePublicAccessBlock certainty and response or HTTP failure.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Delete_Public_Access_Block_Result
+     (Kind : Delete_Public_Access_Block_Result_Kind :=
+        Delete_Public_Access_Block_Exchange_Failed)
+   is record
+      Disposition : Public_Access_Block_Mutation_Disposition :=
+        Public_Access_Block_Mutation_Outcome_Unknown;
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Delete_Public_Access_Block_Response_Available =>
+            Response : Low_Level.Delete_Bucket_Configuration_Outcome;
+         when Delete_Public_Access_Block_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot DeletePublicAccessBlock parent. Its signed request and empty
+   --  nonreplayable source remain owned through terminal Finish.
+   type Delete_Public_Access_Block_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Existing provider contract: these overloads retain the synchronous
+   --  Delete_Public_Access_Block defaults (us-east-1, path-style addressing,
+   --  shared XML limits, and no cancellation source). They preserve source
+   --  compatibility and request signing rather than introducing new policy.
+   --  Start or restart one nonreplaying DeletePublicAccessBlock mutation.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose complete configuration is removed
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected error-response XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established configuration mutation
+   procedure Delete_Public_Access_Block
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Delete_Public_Access_Block_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying DeletePublicAccessBlock mutation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose complete configuration is removed
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected error-response XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven configuration deletion
+   function Delete_Public_Access_Block
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Delete_Public_Access_Block_Operation;
+
+   --  Consume one terminal DeletePublicAccessBlock operation.
+   --  @param Operation Terminal public-access-block deletion
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Delete_Public_Access_Block_Operation;
+      Result    : out Delete_Public_Access_Block_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Delete the public-access-block configuration by waiting on the same
+   --  nonreplaying provider-owned operation used by composable callers. The
+   --  established region, addressing, 30-second timeout, shared XML-limit,
+   --  and null-cancellation defaults are preserved.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose complete configuration is removed
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Delete_Public_Access_Block
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Delete_Public_Access_Block_Result;
+
    --  Remove the complete public-access-block configuration.
    function Delete_Public_Access_Block
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -2641,6 +3108,69 @@ package Flyology.Object_Storage.Client.Buckets is
 private
 
    --  @exclude
+   type Get_Public_Access_Block_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural := 0;
+      Final_Result     : Get_Public_Access_Block_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error  : Boolean := False;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Put_Public_Access_Block_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Source_Position  : Natural := 0;
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural := 0;
+      Final_Result     : Put_Public_Access_Block_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error  : Boolean := False;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Delete_Public_Access_Block_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural := 0;
+      Final_Result     : Delete_Public_Access_Block_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error  : Boolean := False;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
    type Get_Bucket_Policy_Operation
      (Set          : not null access Flyology.Operations.Completion_Set'Class;
       HTTP         : not null access Flyology.HTTP.Client.Client;
@@ -3056,6 +3586,66 @@ private
    overriding procedure Finalize
      (Item : in out Head_Bucket_Operation);
    overriding procedure Write
+     (Item : in out Get_Public_Access_Block_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Get_Public_Access_Block_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Public_Access_Block_Operation);
+   overriding procedure Finalize
+     (Item : in out Get_Public_Access_Block_Operation);
+   overriding function Declared_Length
+     (Item : Put_Public_Access_Block_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   overriding procedure Read_Now
+     (Item   : in out Put_Public_Access_Block_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   overriding procedure Source_Wait_Source
+     (Item       : in out Put_Public_Access_Block_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   overriding procedure Release_Source
+     (Item : in out Put_Public_Access_Block_Operation);
+   overriding procedure Write
+     (Item : in out Put_Public_Access_Block_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Put_Public_Access_Block_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Put_Public_Access_Block_Operation);
+   overriding procedure Finalize
+     (Item : in out Put_Public_Access_Block_Operation);
+   overriding function Declared_Length
+     (Item : Delete_Public_Access_Block_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   overriding procedure Read_Now
+     (Item   : in out Delete_Public_Access_Block_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   overriding procedure Source_Wait_Source
+     (Item       : in out Delete_Public_Access_Block_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   overriding procedure Release_Source
+     (Item : in out Delete_Public_Access_Block_Operation);
+   overriding procedure Write
+     (Item : in out Delete_Public_Access_Block_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Delete_Public_Access_Block_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Delete_Public_Access_Block_Operation);
+   overriding procedure Finalize
+     (Item : in out Delete_Public_Access_Block_Operation);
+   overriding procedure Write
      (Item : in out Get_Bucket_Policy_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    overriding procedure Drive
@@ -3205,6 +3795,33 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Bucket_Location_Result;
+   function Normalize_Get_Public_Access_Block_Response
+     (Value     : Low_Level.Get_Public_Access_Block_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Get_Public_Access_Block_Result;
+   function Normalize_Get_Public_Access_Block_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Get_Public_Access_Block_Result;
+   function Normalize_Put_Public_Access_Block_Response
+     (Value     : Low_Level.Put_Bucket_Control_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Put_Public_Access_Block_Result;
+   function Normalize_Put_Public_Access_Block_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Put_Public_Access_Block_Result;
+   function Normalize_Delete_Public_Access_Block_Response
+     (Value     : Low_Level.Delete_Bucket_Configuration_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Delete_Public_Access_Block_Result;
+   function Normalize_Delete_Public_Access_Block_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Delete_Public_Access_Block_Result;
    function Normalize_Get_Bucket_Policy_Response
      (Value     : Low_Level.Get_Bucket_Policy_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)

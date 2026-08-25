@@ -1397,6 +1397,245 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       end loop;
    end Check_Bucket_Policy_Certainty_Corpus;
 
+   procedure Check_Public_Access_Block_Certainty_Corpus is
+      type Failure_Kind_Array is array (Positive range <>) of
+        HTTP_Client.Exchange_Result_Kind;
+      Failure_Kinds : constant Failure_Kind_Array :=
+        (HTTP_Client.Pre_Admission_Rejected,
+         HTTP_Client.Cancelled,
+         HTTP_Client.Timed_Out,
+         HTTP_Client.Client_Unavailable,
+         HTTP_Client.Connection_Failed,
+         HTTP_Client.Transport_Failed,
+         HTTP_Client.Request_Source_Failed,
+         HTTP_Client.Response_Invalid,
+         HTTP_Client.Response_Body_Too_Large,
+         HTTP_Client.Response_Sink_Failed);
+
+      function Error_Response (Code : String) return S3.Errors.Error_Response
+      is
+        ((Code       => US.To_Unbounded_String (Code),
+          Message    => US.Null_Unbounded_String,
+          Resource   => US.Null_Unbounded_String,
+          Request_ID => US.Null_Unbounded_String,
+          Host_ID    => US.Null_Unbounded_String));
+
+      function Expected_Failure
+        (Kind : HTTP_Client.Exchange_Result_Kind) return Failure_Reason is
+        (case Kind is
+            when HTTP_Client.Pre_Admission_Rejected => Invalid_Request,
+            when HTTP_Client.Cancelled => Cancelled,
+            when HTTP_Client.Timed_Out => Timed_Out,
+            when HTTP_Client.Client_Unavailable => Client_Unavailable,
+            when HTTP_Client.Connection_Failed => Connection_Failed,
+            when HTTP_Client.Transport_Failed => Transport_Failed,
+            when HTTP_Client.Request_Source_Failed => Request_Source_Failed,
+            when HTTP_Client.Response_Body_Too_Large |
+                 HTTP_Client.Response_Invalid |
+                 HTTP_Client.Response_Sink_Failed =>
+              Corrupt_Or_Invalid_Response,
+            when HTTP_Client.Response_Complete =>
+              raise Program_Error with "complete response is not a failure");
+
+      function Expected_Disposition
+        (Kind      : HTTP_Client.Exchange_Result_Kind;
+         Admission : HTTP_Client.Admission_Certainty)
+         return Public_Access_Block_Mutation_Disposition is
+        (if Kind = HTTP_Client.Cancelled
+           and then Admission = HTTP_Client.Not_Admitted
+         then Public_Access_Block_Mutation_Cancelled_Before_Admission
+         elsif Admission = HTTP_Client.Not_Admitted
+         then Public_Access_Block_Mutation_Definitely_Not_Applied
+         else Public_Access_Block_Mutation_Outcome_Unknown);
+
+      procedure Check_Get
+        (Status : Flyology.HTTP.Status_Code;
+         Code : String;
+         Failure : Failure_Reason)
+      is
+         Value : constant Low_Level.Get_Public_Access_Block_Outcome :=
+           (if Status = 200
+            then (Kind => Low_Level.Bucket_Control_Found,
+                  Status => Status,
+                  Configuration => (others => <>))
+            else (Kind => Low_Level.Get_Bucket_Control_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant Get_Public_Access_Block_Result :=
+           Normalize_Get_Public_Access_Block_Response
+             (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Get_Public_Access_Block_Response_Available
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "GetPublicAccessBlock response normalization mismatch";
+         end if;
+      end Check_Get;
+
+      procedure Check_Put
+        (Status : Flyology.HTTP.Status_Code;
+         Code : String;
+         Disposition : Public_Access_Block_Mutation_Disposition;
+         Failure : Failure_Reason)
+      is
+         Value : constant Low_Level.Put_Bucket_Control_Outcome :=
+           (if Status = 200
+            then (Kind => Low_Level.Bucket_Control_Updated, Status => Status)
+            else (Kind => Low_Level.Put_Bucket_Control_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant Put_Public_Access_Block_Result :=
+           Normalize_Put_Public_Access_Block_Response
+             (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Put_Public_Access_Block_Response_Available
+           or else Result.Disposition /= Disposition
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "PutPublicAccessBlock response normalization mismatch";
+         end if;
+      end Check_Put;
+
+      procedure Check_Delete
+        (Status : Flyology.HTTP.Status_Code;
+         Code : String;
+         Disposition : Public_Access_Block_Mutation_Disposition;
+         Failure : Failure_Reason)
+      is
+         Value : constant Low_Level.Delete_Bucket_Configuration_Outcome :=
+           (if Status = 204
+            then (Kind => Low_Level.Configuration_Deleted, Status => Status)
+            else (Kind => Low_Level.Delete_Configuration_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant Delete_Public_Access_Block_Result :=
+           Normalize_Delete_Public_Access_Block_Response
+             (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Delete_Public_Access_Block_Response_Available
+           or else Result.Disposition /= Disposition
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "DeletePublicAccessBlock response normalization mismatch";
+         end if;
+      end Check_Delete;
+   begin
+      Check_Get (200, "", No_Failure);
+      Check_Get (403, "AccessDenied", Authorization_Failed);
+      Check_Get
+        (404, "NoSuchPublicAccessBlockConfiguration", Not_Found);
+      Check_Get (503, "SlowDown", Unavailable_Or_Retryable);
+      Check_Get (409, "", Corrupt_Or_Invalid_Response);
+
+      Check_Put
+        (200, "", Public_Access_Block_Mutation_Completed, No_Failure);
+      Check_Put
+        (400, "MalformedXML",
+         Public_Access_Block_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Put
+        (409, "OperationAborted",
+         Public_Access_Block_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Put
+        (500, "Unknown", Public_Access_Block_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+
+      Check_Delete
+        (204, "", Public_Access_Block_Mutation_Completed, No_Failure);
+      Check_Delete
+        (404, "NoSuchBucket",
+         Public_Access_Block_Mutation_Definitely_Not_Applied, Not_Found);
+      Check_Delete
+        (500, "InternalError",
+         Public_Access_Block_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+
+      for Admission in
+        HTTP_Client.Not_Admitted .. HTTP_Client.Possibly_Admitted
+      loop
+         declare
+            Put_Value : constant Low_Level.Put_Bucket_Control_Outcome :=
+              (Kind => Low_Level.Bucket_Control_Updated, Status => 200);
+            Delete_Value : constant
+              Low_Level.Delete_Bucket_Configuration_Outcome :=
+                (Kind => Low_Level.Configuration_Deleted, Status => 204);
+            Get_Value : constant Low_Level.Get_Public_Access_Block_Outcome :=
+              (Kind => Low_Level.Bucket_Control_Found,
+               Status => 200,
+               Configuration => (others => <>));
+            Put_Result : constant Put_Public_Access_Block_Result :=
+              Normalize_Put_Public_Access_Block_Response
+                (Put_Value, Admission);
+            Delete_Result : constant Delete_Public_Access_Block_Result :=
+              Normalize_Delete_Public_Access_Block_Response
+                (Delete_Value, Admission);
+            Get_Result : constant Get_Public_Access_Block_Result :=
+              Normalize_Get_Public_Access_Block_Response
+                (Get_Value, Admission);
+         begin
+            if Put_Result.Disposition /=
+                Public_Access_Block_Mutation_Outcome_Unknown
+              or else Put_Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Delete_Result.Disposition /=
+                Public_Access_Block_Mutation_Outcome_Unknown
+              or else Delete_Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Get_Result.Failure /= Corrupt_Or_Invalid_Response
+            then
+               raise Program_Error with
+                 "inconsistent PublicAccessBlock certainty was accepted";
+            end if;
+         end;
+      end loop;
+
+      for Kind of Failure_Kinds loop
+         for Admission in HTTP_Client.Admission_Certainty loop
+            declare
+               Put_Result : constant Put_Public_Access_Block_Result :=
+                 Normalize_Put_Public_Access_Block_Failure
+                   (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+               Delete_Result : constant Delete_Public_Access_Block_Result :=
+                 Normalize_Delete_Public_Access_Block_Failure
+                   (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+               Get_Result : constant Get_Public_Access_Block_Result :=
+                 Normalize_Get_Public_Access_Block_Failure
+                   (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+               Disposition : constant
+                 Public_Access_Block_Mutation_Disposition :=
+                   Expected_Disposition (Kind, Admission);
+               Failure : constant Failure_Reason := Expected_Failure (Kind);
+            begin
+               if Put_Result.Kind /= Put_Public_Access_Block_Exchange_Failed
+                 or else Put_Result.Disposition /= Disposition
+                 or else Put_Result.Failure /= Failure
+                 or else Put_Result.Admission /= Admission
+                 or else Put_Result.HTTP_Result /= Kind
+                 or else Delete_Result.Kind /=
+                   Delete_Public_Access_Block_Exchange_Failed
+                 or else Delete_Result.Disposition /= Disposition
+                 or else Delete_Result.Failure /= Failure
+                 or else Delete_Result.Admission /= Admission
+                 or else Delete_Result.HTTP_Result /= Kind
+                 or else Get_Result.Kind /=
+                   Get_Public_Access_Block_Exchange_Failed
+                 or else Get_Result.Failure /= Failure
+                 or else Get_Result.Admission /= Admission
+                 or else Get_Result.HTTP_Result /= Kind
+               then
+                  raise Program_Error with
+                    "PublicAccessBlock exchange certainty mismatch";
+               end if;
+            end;
+         end loop;
+      end loop;
+   end Check_Public_Access_Block_Certainty_Corpus;
+
    procedure Check_Bucket_Tagging_Certainty_Corpus is
       type Failure_Kind_Array is array (Positive range <>) of
         HTTP_Client.Exchange_Result_Kind;

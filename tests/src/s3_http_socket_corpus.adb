@@ -138,6 +138,10 @@ procedure S3_HTTP_Socket_Corpus is
    use type Put_Bucket_Policy_Result_Kind;
    use type Delete_Bucket_Policy_Result_Kind;
    use type Bucket_Policy_Mutation_Disposition;
+   use type Get_Public_Access_Block_Result_Kind;
+   use type Put_Public_Access_Block_Result_Kind;
+   use type Delete_Public_Access_Block_Result_Kind;
+   use type Public_Access_Block_Mutation_Disposition;
    use type Get_Bucket_Versioning_Result_Kind;
    use type Put_Bucket_Versioning_Result_Kind;
    use type List_Objects_V2_Result_Kind;
@@ -4072,6 +4076,16 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response ("204 No Content", ""), "DELETE",
             "/example-bucket?publicAccessBlock",
             Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/composed-delete-public-access?publicAccessBlock",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-delete-public-access" & CRLF),
+            "DELETE", "/restart-delete-public-access?publicAccessBlock",
+            Expected_Bucket_Owner => "123456789012");
          --  Pinned-model reference fixtures for the five qualified GETs.
          --  Spellings and values cover every public result field; changing
          --  them requires paired client assertions and has no product-policy
@@ -4121,6 +4135,22 @@ procedure S3_HTTP_Socket_Corpus is
                "<RestrictPublicBuckets>false</RestrictPublicBuckets>" &
                "</PublicAccessBlockConfiguration>"),
             "GET", "/example-bucket?publicAccessBlock",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<PublicAccessBlockConfiguration>" &
+               "<BlockPublicAcls>false</BlockPublicAcls>" &
+               "<IgnorePublicAcls>true</IgnorePublicAcls>" &
+               "<BlockPublicPolicy>false</BlockPublicPolicy>" &
+               "<RestrictPublicBuckets>true</RestrictPublicBuckets>" &
+               "</PublicAccessBlockConfiguration>"),
+            "GET", "/composed-public-access?publicAccessBlock",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-get-public-access" & CRLF),
+            "GET", "/restart-public-access?publicAccessBlock",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
@@ -4521,6 +4551,20 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Content_MD5 => "*",
             Expected_Bucket_Owner => "123456789012",
             Expected_Confirm_Remove_Self_Access => "true");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/composed-public-access?publicAccessBlock",
+            Expected_Body_Root => "<PublicAccessBlockConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-put-public-access" & CRLF),
+            "PUT", "/restart-public-access?publicAccessBlock",
+            Expected_Body_Root => "<PublicAccessBlockConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT",
             "/low-level-policy?policy",
@@ -12701,6 +12745,94 @@ procedure S3_HTTP_Socket_Corpus is
               (HTTP, Origin, "example-bucket", Identity,
                Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
             "DeletePublicAccessBlock");
+         declare
+            Parameters : constant
+              Low_Level.Delete_Bucket_Configuration_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            --  Parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Delete_Public_Access_Block_Result;
+         begin
+            declare
+               Operation : Delete_Public_Access_Block_Operation :=
+                 Delete_Public_Access_Block
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-delete-public-access",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Delete_Public_Access_Block_Response_Available
+                 or else Result.Disposition /=
+                   Public_Access_Block_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+               then
+                  raise Program_Error with
+                    "composed DeletePublicAccessBlock result mismatch";
+               end if;
+               Delete_Public_Access_Block
+                 (HTTP'Access,
+                  Origin,
+                  "restart-delete-public-access",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Delete_Public_Access_Block_Response_Available
+                 or else Result.Disposition /=
+                   Public_Access_Block_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-delete-public-access"
+               then
+                  raise Program_Error with
+                    "restarted DeletePublicAccessBlock result mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Bucket_Policy
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Delete_Public_Access_Block_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Delete_Public_Access_Block
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "DeletePublicAccessBlock accepted a policy request";
+            end if;
+         end;
          --  These paired assertions are the native/lightweight transport
          --  oracle for the five reference responses served above.
          declare
@@ -12872,6 +13004,104 @@ procedure S3_HTTP_Socket_Corpus is
                raise Program_Error with
                  "GetPublicAccessBlock socket mismatch";
             end if;
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Abac
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Public_Access_Block_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Get_Public_Access_Block
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "GetPublicAccessBlock accepted a prepared ABAC request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            --  Parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Public_Access_Block_Result;
+         begin
+            declare
+               Operation : Get_Public_Access_Block_Operation :=
+                 Get_Public_Access_Block
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-public-access",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Get_Public_Access_Block_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else not
+                   Result.Response.Configuration.Block_Public_ACLs.Is_Set
+                 or else
+                   Result.Response.Configuration.Block_Public_ACLs.Value
+                 or else not
+                   Result.Response.Configuration.Ignore_Public_ACLs.Is_Set
+                 or else not
+                   Result.Response.Configuration.Ignore_Public_ACLs.Value
+                 or else not
+                   Result.Response.Configuration.Block_Public_Policy.Is_Set
+                 or else
+                   Result.Response.Configuration.Block_Public_Policy.Value
+                 or else not Result.Response.Configuration.
+                   Restrict_Public_Buckets.Is_Set
+                 or else not Result.Response.Configuration.
+                   Restrict_Public_Buckets.Value
+               then
+                  raise Program_Error with
+                    "composed GetPublicAccessBlock result mismatch";
+               end if;
+               Get_Public_Access_Block
+                 (HTTP'Access,
+                  Origin,
+                  "restart-public-access",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Get_Public_Access_Block_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-get-public-access"
+               then
+                  raise Program_Error with
+                    "restarted GetPublicAccessBlock result mismatch";
+               end if;
+            end;
          end;
          declare
             Result : constant Low_Level.Get_Bucket_Abac_Outcome :=
@@ -13668,6 +13898,105 @@ procedure S3_HTTP_Socket_Corpus is
               or else Policy.Kind /= Low_Level.Bucket_Control_Updated
             then
                raise Program_Error with "bucket-control PUT socket mismatch";
+            end if;
+         end;
+         declare
+            Value : constant
+              Bucket_Controls.Public_Access_Block_Configuration :=
+                (Block_Public_ACLs => (Is_Set => True, Value => True),
+                 Ignore_Public_ACLs => (Is_Set => True, Value => True),
+                 Block_Public_Policy => (Is_Set => True, Value => False),
+                 Restrict_Public_Buckets =>
+                   (Is_Set => True, Value => False));
+            Parameters : constant Low_Level.Put_Bucket_Control_Parameters :=
+              (Content_MD5 => US.Null_Unbounded_String,
+               Checksum_Algorithm => US.Null_Unbounded_String,
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Set : aliased Operations.Completion_Set (3);
+            Result : Put_Public_Access_Block_Result;
+         begin
+            declare
+               Operation : Put_Public_Access_Block_Operation :=
+                 Set_Public_Access_Block
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-public-access",
+                    Value,
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Put_Public_Access_Block_Response_Available
+                 or else Result.Disposition /=
+                   Public_Access_Block_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+               then
+                  raise Program_Error with
+                    "composed PutPublicAccessBlock result mismatch";
+               end if;
+               Set_Public_Access_Block
+                 (HTTP'Access,
+                  Origin,
+                  "restart-public-access",
+                  Value,
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Put_Public_Access_Block_Response_Available
+                 or else Result.Disposition /=
+                   Public_Access_Block_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-put-public-access"
+               then
+                  raise Program_Error with
+                    "restarted PutPublicAccessBlock result mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Bucket_Abac
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 Bucket_Controls.Abac_Enabled,
+                 (Content_MD5 => US.Null_Unbounded_String,
+                  Checksum_Algorithm => US.Null_Unbounded_String,
+                  Expected_Bucket_Owner => US.Null_Unbounded_String),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Put_Public_Access_Block_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Put_Public_Access_Block
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "PutPublicAccessBlock accepted a prepared ABAC request";
             end if;
          end;
          declare
@@ -15106,6 +15435,7 @@ begin
    Buckets_Testing.Check_Get_Bucket_Location_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Policy_Result_Corpus;
    Buckets_Testing.Check_Bucket_Policy_Certainty_Corpus;
+   Buckets_Testing.Check_Public_Access_Block_Certainty_Corpus;
    Buckets_Testing.Check_Get_Bucket_Versioning_Result_Corpus;
    Buckets_Testing.Check_Put_Bucket_Versioning_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;

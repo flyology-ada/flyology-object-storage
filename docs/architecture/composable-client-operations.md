@@ -8,8 +8,9 @@ bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
 ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
 bounded GetBucketLocation, bounded GetBucketPolicy, non-replaying
-Put/DeleteBucketPolicy, non-replaying Put/GetBucketVersioning, and bucket tagging
-Put/Get/Delete, plus object tagging Put/Get/Delete. The
+Put/DeleteBucketPolicy, non-replaying Put/GetBucketVersioning, non-replaying
+Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
+tagging Put/Get/Delete, plus object tagging Put/Get/Delete. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -85,14 +86,16 @@ The implemented operation order is:
 23. non-replaying `Put_Bucket_Versioning` and bounded
     `Get_Bucket_Versioning`;
 24. bounded `Get_Bucket_Policy`;
-25. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
+25. `Set_Public_Access_Block`, `Get_Public_Access_Block`, and
+    `Delete_Public_Access_Block`;
+26. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
-26. `Put_Object_Tagging`, `Get_Object_Tagging`, and
+27. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
 
-The provider surface contains 34 domain operations: 15 in `Client.Objects`,
-eleven in `Client.Buckets`, and eight in `Client.Transfers`. Those operations
-map to 31 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 37 domain operations: 15 in `Client.Objects`,
+14 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations
+map to 34 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object` prepared-request
@@ -221,6 +224,17 @@ the last case requires caller-selected GetBucketPolicy reconciliation before
 any retry. Their parameter-record synchronous overloads wait on these same
 state machines, and restart retains only the established HTTP client and
 cancellation owner.
+SetPublicAccessBlock owns the exact serialized four-field configuration in a
+non-rewindable source, while DeletePublicAccessBlock supplies a non-rewindable
+known-empty source. Neither mutation is replayed after possible admission.
+Typed Finish distinguishes completion, conclusive non-application,
+pre-admission cancellation, and outcome-unknown; the last case requires a
+caller-selected GetPublicAccessBlock reconciliation before any retry. The Get
+operation retains one same-response configuration bounded by the caller's
+shared XML parse limit and preserves absent configuration separately from a
+present configuration with absent members. Parameter-record synchronous
+overloads wait on the same owner-driven operations, and restart retains only
+the established HTTP client and cancellation owner.
 PutBucketTagging likewise serializes and owns its complete validated tag set
 once, and DeleteBucketTagging supplies a non-rewindable known-empty source.
 Neither mutation is replayed after possible admission. Their typed results
