@@ -4166,11 +4166,22 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end if;
       Add_Header ("x-amz-object-ownership", Ownership);
       Add_Header ("x-amz-bucket-namespace", Namespace);
-      return Prepare_Object_Request
-        (Create_Bucket_Operation, "PUT", Origin, Style, Bucket, "",
-         No_Query, Headers,
-         S3.Buckets.Serialize_Create_Configuration (Parameters.Configuration),
-         "", Identity, Region, Timestamp, Object_Resource => False);
+      declare
+         Payload : constant String :=
+           S3.Buckets.Serialize_Create_Configuration
+             (Parameters.Configuration);
+      begin
+         return Result : Prepared_Request := Prepare_Object_Request
+           (Create_Bucket_Operation, "PUT", Origin, Style, Bucket, "",
+            No_Query, Headers, Payload, "", Identity, Region, Timestamp,
+            Object_Resource => False, Store_Payload => False)
+         do
+            --  The one-shot source owns the exact serialized and signed body.
+            --  Retaining it in Request as well would select HTTP's conflicting
+            --  retained-body form and reject the exchange pre-admission.
+            Result.Owned_Request_Payload := US.To_Unbounded_String (Payload);
+         end return;
+      end;
    exception
       when S3.Buckets.Invalid_Bucket_Configuration =>
          raise Invalid_Request with "invalid CreateBucket configuration";
@@ -4225,6 +4236,61 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with "malformed CreateBucket response";
    end Decode_Create_Bucket_Response;
 
+   --  Derived from the established bounded S3 response-header field policy;
+   --  changing it changes accepted wire input and retained diagnostic size.
+   Maximum_Create_Bucket_Response_Header_Bytes : constant Positive :=
+     Maximum_Create_Multipart_Response_Header_Bytes;
+
+   function Decode_Create_Bucket_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Create_Bucket_Outcome
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "duplicate CreateBucket response header";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else Value'Length >
+                Maximum_Create_Bucket_Response_Header_Bytes
+            then
+               raise Invalid_Response with
+                 "invalid CreateBucket response header";
+            end if;
+            for Character_Value of Value loop
+               if Character'Pos (Character_Value) < 32
+                 or else Character'Pos (Character_Value) = 127
+               then
+                  raise Invalid_Response with
+                    "invalid CreateBucket response header";
+               end if;
+            end loop;
+            return Value;
+         end;
+      end Singleton_Header;
+
+      Headers : constant Create_Bucket_Result :=
+        (Location => US.To_Unbounded_String (Singleton_Header ("location")),
+         Bucket_ARN => US.To_Unbounded_String
+           (Singleton_Header ("x-amz-bucket-arn")));
+   begin
+      return Decode_Create_Bucket_Response
+        (Flyology.HTTP.Client.Status (Response), Payload, Headers,
+         Singleton_Header ("x-amz-request-id"),
+         Singleton_Header ("x-amz-id-2"), Limits);
+   end Decode_Create_Bucket_Complete_Response;
+
    function Execute_Create_Bucket
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -4238,27 +4304,17 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
+         Source : Non_Replayable_Buffer_Source :=
+           (Data => Prepared.Owned_Request_Payload, Next => 1);
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
-             (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         Headers : constant Create_Bucket_Result :=
-           (Location => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header (Response, "location")),
-            Bucket_ARN => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header (Response, "x-amz-bucket-arn")));
+             (Client, Prepared.Message, Source, Timeout, Token);
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_Create_Bucket_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-            Request_ID, Host_ID, Limits);
+         return Decode_Create_Bucket_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload), Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

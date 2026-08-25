@@ -6,7 +6,7 @@ single-range Get, bodyless Head, non-replaying Delete, non-replaying multipart
 initiation, one-shot UploadPart, one-shot multipart completion and abort,
 bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
-ListBuckets and bodyless HeadBucket. The
+ListBuckets, CreateBucket, and bodyless HeadBucket. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -61,7 +61,8 @@ The implemented operation order is:
 16. `Upload_Part_Copy`;
 17. `List_Objects` (v1); and
 18. service-level `List_Buckets`; and
-19. bodyless `Head_Bucket`.
+19. bodyless `Head_Bucket`; and
+20. non-replaying `Create_Bucket`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -120,6 +121,19 @@ when a compatible success omits the optional bucket-region header. Restart is
 limited to the same HTTP client and cancellation owner. No credentials,
 bucket name, owner precondition, or other borrowed request input survives
 signing.
+CreateBucket serializes the complete modeled configuration once during
+initiation and owns those exact signed bytes through terminal drain. Its
+non-rewindable source is never replayed, and neither the composable operation
+nor the synchronous overload retries a possibly admitted mutation. Typed
+Finish distinguishes a validated creation, modeled definite non-creation, a
+pre-admission cancellation, and an outcome that requires caller-selected
+HeadBucket reconciliation before any retry. Complete decoding rejects physical
+duplicates, present-empty singleton metadata, invalid header text, nonempty
+success bodies, and malformed or oversized error bodies. The parameter-record
+synchronous overload waits on the same owner-driven operation; the convenience
+overload preserves its established raising transport contract. Restart is
+limited to the same HTTP client and cancellation owner, and no caller request
+input remains borrowed after signing.
 ListObjectsV2 retains a bounded response no larger than the shared XML parser
 limit and binds the bucket, prefix, delimiter, opaque continuation token,
 start-after key, maximum, encoding mode, and requester-pays response to the

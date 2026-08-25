@@ -12,6 +12,7 @@ package body Flyology.Object_Storage.Client.Buckets is
    use type Low_Level.List_Buckets_Outcome_Kind;
    use type Scoped.List_Buckets_Result_Kind;
    use type Low_Level.Create_Bucket_Outcome_Kind;
+   use type Scoped.Create_Bucket_Result_Kind;
    use type Low_Level.Delete_Bucket_Outcome_Kind;
    use type Low_Level.Delete_Bucket_Configuration_Outcome_Kind;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
@@ -146,6 +147,65 @@ package body Flyology.Object_Storage.Client.Buckets is
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;
       Bucket   : String;
+      Parameters : Low_Level.Create_Bucket_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Create_Bucket_Result
+   is
+      --  The CreateBucket parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Create_Bucket_Operation :=
+           Scoped.Create_Bucket
+             (Set'Access, Client'Access, Origin, Bucket, Parameters, Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+              Token);
+         Result : Scoped.Create_Bucket_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Create;
+
+   procedure Raise_Create_Bucket_Exchange_Failure
+     (Result : Scoped.Create_Bucket_Result) is
+   begin
+      case Result.HTTP_Result is
+         when Flyology.HTTP.Client.Response_Complete =>
+            raise Program_Error with
+              "unreachable complete CreateBucket exchange failure";
+         when Flyology.HTTP.Client.Pre_Admission_Rejected =>
+            raise Constraint_Error with "HTTP request was rejected";
+         when Flyology.HTTP.Client.Cancelled =>
+            raise Flyology.Cancellation.Operation_Cancelled;
+         when Flyology.HTTP.Client.Timed_Out =>
+            raise Flyology.IO.Timeout_Error;
+         when Flyology.HTTP.Client.Client_Unavailable =>
+            raise Flyology.HTTP.Client.Client_Closed;
+         when Flyology.HTTP.Client.Connection_Failed =>
+            raise Flyology.HTTP.Client.Connection_Error;
+         when Flyology.HTTP.Client.Transport_Failed =>
+            raise Flyology.IO.Device_Error;
+         when Flyology.HTTP.Client.Request_Source_Failed =>
+            raise Flyology.HTTP.Client.Request_Body_Error;
+         when Flyology.HTTP.Client.Response_Invalid |
+              Flyology.HTTP.Client.Response_Body_Too_Large |
+              Flyology.HTTP.Client.Response_Sink_Failed =>
+            raise Low_Level.Invalid_Response with
+              "CreateBucket response is invalid or exceeds the XML limit";
+      end case;
+   end Raise_Create_Bucket_Exchange_Failure;
+
+   function Create
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
       Identity : Low_Level.Credentials;
       Region   : String := "us-east-1";
       Location_Constraint : String := "";
@@ -162,23 +222,28 @@ package body Flyology.Object_Storage.Client.Buckets is
            elsif Region /= "us-east-1" then Region
            else "");
       declare
-         Prepared : constant Low_Level.Prepared_Request :=
-           Low_Level.Prepare_Create_Bucket
-             (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
-         Outcome : constant Low_Level.Create_Bucket_Outcome :=
-           Low_Level.Execute_Create_Bucket
-             (Client, Prepared, Timeout, Token);
+         Result : constant Scoped.Create_Bucket_Result :=
+           Create
+             (Client, Origin, Bucket, Parameters, Identity, Region, Style,
+              Timeout, Token);
       begin
-         if Outcome.Kind = Low_Level.Create_Bucket_Rejected then
-            return
-              (Kind => Create_Rejected, Status => Outcome.Status,
-               Error => Outcome.Error);
+         if Result.Kind = Scoped.Create_Bucket_Exchange_Failed then
+            Raise_Create_Bucket_Exchange_Failure (Result);
          end if;
-         return
-           (Kind       => Creation_Completed,
-            Status     => Outcome.Status,
-            Location   => Outcome.Result.Location,
-            Bucket_ARN => Outcome.Result.Bucket_ARN);
+         declare
+            Outcome : Low_Level.Create_Bucket_Outcome renames Result.Response;
+         begin
+            if Outcome.Kind = Low_Level.Create_Bucket_Rejected then
+               return
+                 (Kind => Create_Rejected, Status => Outcome.Status,
+                  Error => Outcome.Error);
+            end if;
+            return
+              (Kind       => Creation_Completed,
+               Status     => Outcome.Status,
+               Location   => Outcome.Result.Location,
+               Bucket_ARN => Outcome.Result.Bucket_ARN);
+         end;
       end;
    end Create;
 

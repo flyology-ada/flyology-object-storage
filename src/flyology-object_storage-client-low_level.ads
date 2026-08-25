@@ -545,6 +545,20 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Create_Bucket_Outcome;
 
+   --  Decode one fully received CreateBucket exchange. Physical singleton
+   --  response headers are validated identically for synchronous and
+   --  composable callers.
+   --  @param Response Complete HTTP response metadata
+   --  @param Payload Complete bounded response body
+   --  @param Limits Bounded XML parser limits
+   --  @return Modeled creation response or S3 rejection
+   --  @exception Invalid_Response Response headers or payload are invalid
+   function Decode_Create_Bucket_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String;
+      Limits   : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Create_Bucket_Outcome;
+
    function Execute_Create_Bucket
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;

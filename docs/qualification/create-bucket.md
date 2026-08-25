@@ -43,9 +43,28 @@ Native and lightweight typed and convenience clients create and independently
 observe buckets through RustFS, SeaweedFS, supplemental MinIO, and Flyology
 memory, files, and SQLite in three repeated lifecycle runs.
 
-The qualified source passes the 40/40 AUnit root suite, 88 abrupt files-crash
+## Composable client boundary
+
+The additive `Client.Scoped.Create_Bucket` operation owns the exact serialized
+configuration and supplies it as a one-shot non-rewindable source. The blocking
+typed and convenience overloads wait on that same operation. No helper task,
+second protocol engine, retained borrowed input, or automatic mutation retry is
+introduced. Typed Finish preserves HTTP admission certainty and distinguishes
+validated creation, modeled definite non-creation, cancellation before
+admission, and an unknown outcome that requires caller-selected HeadBucket
+reconciliation before retry.
+
+The signed socket corpus covers fragmented success metadata, the convenience
+wait-through path, duplicate physical singleton headers, same-owner restart
+through a modeled conflict, cancellation, and an expired deadline on native and
+lightweight tasks. The normalization corpus covers every HTTP terminal kind in
+every admission-certainty state and the maintained conclusive, retryable, and
+unknown S3 status/code classes.
+
+The qualified source passes the 41/41 AUnit root suite, 126 abrupt files-crash
 cases, 320 checksum vectors, 210 chunk boundaries, the 64-GiB CRC linearization
-oracle, signed server/application/socket/TLS corpora, the SQLite backend suite,
-the 116-operation coverage verifier and negative oracle, and GNATdoc generation.
-The admission repair is outside the SPARK manifest and changes no public API,
-backend state model, pagination algorithm, or scheduling boundary.
+oracle, signed server/application/socket/TLS corpora, the 116-operation coverage
+verifier and negative oracle, GNATdoc generation, the repository integrity
+gate, and the warning-strict 936/936 GNATprove campaign. The composable change
+does not alter the backend state model, server admission policy, pagination
+algorithm, or scheduling engine.

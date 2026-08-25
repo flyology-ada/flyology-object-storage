@@ -35,6 +35,7 @@ package body Flyology.Object_Storage.Client.Scoped is
    use type Low_Level.Abort_Multipart_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.List_Buckets_Outcome_Kind;
+   use type Low_Level.Create_Bucket_Outcome_Kind;
    use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.Get_Object_Attributes_Outcome_Kind;
    use type Low_Level.List_Parts_Outcome_Kind;
@@ -4579,6 +4580,352 @@ package body Flyology.Object_Storage.Client.Scoped is
             Ada.Exceptions.Exception_Message (Operation.Saved_Error));
       elsif not Operation.Has_Final_Result then
          raise Program_Error with "ListBuckets has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   --  Exact status/code pairs are S3 wire authority. A complete response is
+   --  conclusive only when it proves success or a rejection that could not
+   --  have created the requested bucket. No classification authorizes retry.
+   function Normalize_Create_Bucket_Response
+     (Value     : Low_Level.Create_Bucket_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Create_Bucket_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Create_Bucket_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Conclusive_Rejection : constant Boolean :=
+        (Value.Status = 400
+         and then Code in "IllegalLocationConstraintException" |
+           "InvalidArgument" | "InvalidBucketName" |
+           "InvalidLocationConstraint" | "InvalidRequest" | "MalformedXML")
+        or else (Value.Status = 401 and then Code = "InvalidAccessKeyId")
+        or else (Value.Status = 403 and then Code = "AccessDenied")
+        or else
+          (Value.Status = 409
+           and then Code in "BucketAlreadyExists" |
+             "BucketAlreadyOwnedByYou" | "TooManyBuckets")
+        or else (Value.Status = 501 and then Code = "NotImplemented");
+      Retryable_Response : constant Boolean :=
+        (Value.Status = 409 and then Code = "OperationAborted")
+        or else (Value.Status = 429 and then Code = "SlowDown")
+        or else (Value.Status = 500 and then Code = "InternalError")
+        or else (Value.Status = 502 and then Code = "BadGateway")
+        or else (Value.Status = 503 and then Code = "SlowDown")
+        or else (Value.Status = 504 and then Code = "RequestTimeout");
+      Failure : constant Failure_Reason :=
+        (if Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Conclusive_Rejection
+         then Invalid_Request
+         elsif Retryable_Response
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => Create_Bucket_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Bucket_Creation_Outcome_Unknown
+            elsif Value.Kind = Low_Level.Bucket_Created
+            then Bucket_Creation_Completed
+            elsif Conclusive_Rejection
+            then Bucket_Definitely_Not_Created
+            else Bucket_Creation_Outcome_Unknown),
+         Failure     =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Bucket_Created
+            then No_Failure
+            else Failure),
+         Admission   => Admission,
+         Response    => Value);
+   end Normalize_Create_Bucket_Response;
+
+   function Normalize_Create_Bucket_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Create_Bucket_Result is
+   begin
+      return
+        (Kind        => Create_Bucket_Exchange_Failed,
+         Disposition =>
+           (if Kind = HTTP_Client.Cancelled
+              and then Admission = HTTP_Client.Not_Admitted
+            then Bucket_Creation_Cancelled_Before_Admission
+            elsif Admission = HTTP_Client.Not_Admitted
+            then Bucket_Definitely_Not_Created
+            else Bucket_Creation_Outcome_Unknown),
+         Failure     =>
+           (if Kind in HTTP_Client.Response_Invalid |
+                         HTTP_Client.Response_Body_Too_Large |
+                         HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Create_Bucket_Failure;
+
+   overriding function Declared_Length
+     (Item : Create_Bucket_Operation) return HTTP_Client.Body_Length is
+   begin
+      return HTTP_Client.Known_Length
+        (HTTP_Client.Body_Size
+           (Low_Scoped.Owned_Payload_Length (Item.Prepared)));
+   end Declared_Length;
+
+   overriding procedure Read_Now
+     (Item   : in out Create_Bucket_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind)
+   is
+      Length : constant Natural :=
+        Low_Scoped.Owned_Payload_Length (Item.Prepared);
+      Count : constant Natural :=
+        Natural'Min (Natural (Data'Length), Length - Item.Source_Position);
+   begin
+      Data := (others => 0);
+      Last := Data'First - 1;
+      if Count = 0 then
+         Result := HTTP_Client.Source_Finished;
+         return;
+      end if;
+      for Offset in 0 .. Count - 1 loop
+         Data (Data'First + Ada.Streams.Stream_Element_Offset (Offset)) :=
+           Ada.Streams.Stream_Element
+             (Character'Pos
+                (Low_Scoped.Owned_Payload_Element
+                   (Item.Prepared, Item.Source_Position + Offset + 1)));
+      end loop;
+      Item.Source_Position := Item.Source_Position + Count;
+      Last := Data'First + Ada.Streams.Stream_Element_Offset (Count) - 1;
+      Result := HTTP_Client.Source_Progress;
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Create_Bucket_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      pragma Unreferenced (Item, Required);
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Create_Bucket_Operation) is
+   begin
+      pragma Unreferenced (Item);
+      null;
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Create_Bucket_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "CreateBucket response exceeds the S3 XML limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Create_Bucket_Child
+     (Item : in out Create_Bucket_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Scoped.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Scoped.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_Create_Bucket_Failure
+              (HTTP_Client.Response_Sink_Failed, Admission,
+               HTTP_Client.Receiving_Response_Body);
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Create_Bucket_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Create_Bucket_Response
+              (Low_Level.Decode_Create_Bucket_Complete_Response
+                 (Response,
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data)),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_Create_Bucket_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Create_Bucket_Child;
+
+   overriding procedure Drive
+     (Item : in out Create_Bucket_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low_Scoped.Start_Create_Bucket
+           (Item.Child, Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item'Access, Item.Deadline, Item.Cancellation);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Create_Bucket_Child (Item);
+      else
+         raise Program_Error with "invalid CreateBucket driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Create_Bucket_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Create_Bucket_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low_Scoped.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Create_Bucket
+     (Operation : in out Create_Bucket_Operation;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.Create_Bucket_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "CreateBucket restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Create_Bucket
+        (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Source_Position := 0;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        --  Derived bound: retained response bytes use the maintained limit of
+        --  the S3 XML decoder that consumes the response.
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Create_Bucket;
+
+   function Create_Bucket
+     (Set      : not null access Operations.Completion_Set'Class;
+      Client   : not null access HTTP_Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.Create_Bucket_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : HTTP_Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Create_Bucket_Operation is
+   begin
+      return Result : Create_Bucket_Operation (Set, Client, Token) do
+         Start_Create_Bucket
+           (Result, Client, Origin, Bucket, Parameters, Identity, Deadline,
+            Region, Style, Token);
+      end return;
+   end Create_Bucket;
+
+   procedure Finish
+     (Operation : in out Create_Bucket_Operation;
+      Result    : out Create_Bucket_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low_Scoped.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "CreateBucket has no terminal result";
       end if;
       Result := Operation.Final_Result;
    end Finish;

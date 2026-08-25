@@ -96,6 +96,33 @@ package Flyology.Object_Storage.Client.Buckets is
       end case;
    end record;
 
+   --  Create one bucket by waiting on the composable non-replaying operation.
+   --  This parameter-record overload preserves mutation certainty, exact HTTP
+   --  admission state, and every modeled request member.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket New bucket name
+   --  @param Parameters Complete modeled CreateBucket controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region Region used to sign the CreateBucket request
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded ambiguous exchange failure
+   --  Region, addressing, and timeout defaults mirror the established
+   --  convenience overload; changing them changes source-visible policy.
+   function Create
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.Create_Bucket_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Create_Bucket_Result;
+
    --  Create a general-purpose bucket. Unless explicitly supplied,
    --  Location_Constraint follows Region and is omitted for us-east-1.
    --  Advanced ACL, Object Lock, tagging, namespace, and directory-bucket

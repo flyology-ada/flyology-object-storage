@@ -70,6 +70,7 @@ procedure S3_HTTP_Socket_Corpus is
    use Ada.Streams;
    use type Ada.Containers.Count_Type;
    use type Low_Level.List_Buckets_Outcome_Kind;
+   use type Low_Level.Create_Bucket_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Objects.List_Outcome_Kind;
    use type Low_Level.Create_Multipart_Outcome_Kind;
@@ -91,6 +92,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
    use type Client_Buckets.Set_Versioning_Outcome_Kind;
    use type Client_Buckets.Get_Versioning_Outcome_Kind;
+   use type Client_Buckets.Create_Outcome_Kind;
    use type Client_Buckets.Head_Outcome_Kind;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type Low_Level.Head_Object_Outcome_Kind;
@@ -106,6 +108,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Part_Upload_Disposition;
    use type Scoped.List_Objects_Result_Kind;
    use type Scoped.List_Buckets_Result_Kind;
+   use type Scoped.Create_Bucket_Result_Kind;
+   use type Scoped.Bucket_Creation_Disposition;
    use type Scoped.Head_Bucket_Result_Kind;
    use type Scoped.List_Objects_V2_Result_Kind;
    use type Scoped.List_Object_Versions_Result_Kind;
@@ -1865,6 +1869,39 @@ procedure S3_HTTP_Socket_Corpus is
                  "last-modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF,
                Omit_Content_Length => True),
             "HEAD", "/example-bucket/scoped-head-duplicate");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "location: /typed-created" & CRLF &
+                 "x-amz-bucket-arn: arn:aws:s3:::typed-created" & CRLF),
+            "PUT", "/typed-created",
+            Expected_Body_Root => "<CreateBucketConfiguration",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "location: /convenience-created" & CRLF),
+            "PUT", "/convenience-created",
+            Expected_Body_Root => "<CreateBucketConfiguration");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "location: /duplicate-create-a" & CRLF &
+                 "location: /duplicate-create-b" & CRLF),
+            "PUT", "/duplicate-create",
+            Expected_Body_Root => "<CreateBucketConfiguration");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "location: /restart-created" & CRLF),
+            "PUT", "/restart-created",
+            Expected_Body_Root => "<CreateBucketConfiguration");
+         Serve
+           (HTTP_Response
+              ("409 Conflict",
+               "<Error><Code>BucketAlreadyOwnedByYou</Code>" &
+                 "<Message>already owned</Message></Error>",
+               "x-amz-request-id: restarted-create-request" & CRLF),
+            "PUT", "/restart-existing",
+            Expected_Body_Root => "<CreateBucketConfiguration");
          Serve
            (HTTP_Response
               ("200 OK", "",
@@ -6027,6 +6064,200 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "HeadObject accepted duplicate singleton metadata";
+               end if;
+            end;
+
+            declare
+               Parameters : Low_Level.Create_Bucket_Parameters :=
+                 (others => <>);
+            begin
+               Parameters.Configuration.Location_Constraint :=
+                 US.To_Unbounded_String ("us-west-2");
+               declare
+                  Result : constant Scoped.Create_Bucket_Result :=
+                    Buckets.Create
+                      (HTTP, Origin, "typed-created", Parameters, Identity,
+                       Region => "us-west-2", Timeout => 5.0);
+               begin
+                  if Result.Kind /= Scoped.Create_Bucket_Response_Available
+                    or else Result.Disposition /=
+                      Scoped.Bucket_Creation_Completed
+                    or else Result.Failure /= Scoped.No_Failure
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                    or else Result.Response.Kind /= Low_Level.Bucket_Created
+                    or else US.To_String (Result.Response.Result.Location) /=
+                      "/typed-created"
+                    or else US.To_String
+                      (Result.Response.Result.Bucket_ARN) /=
+                        "arn:aws:s3:::typed-created"
+                  then
+                     if Result.Kind = Scoped.Create_Bucket_Exchange_Failed
+                     then
+                        Ada.Text_IO.Put_Line
+                          (Ada.Text_IO.Standard_Error,
+                           "CreateBucket HTTP failure: " &
+                           HTTP_Client.Exchange_Result_Kind'Image
+                             (Result.HTTP_Result) & " / " &
+                           HTTP_Client.Exchange_Phase'Image
+                             (Result.HTTP_Phase) & " / " &
+                           US.To_String (Result.Detail));
+                     end if;
+                     raise Program_Error with
+                       "composable CreateBucket response mismatch: kind=" &
+                       Scoped.Create_Bucket_Result_Kind'Image
+                         (Result.Kind) & " disposition=" &
+                       Scoped.Bucket_Creation_Disposition'Image
+                         (Result.Disposition) & " failure=" &
+                       Scoped.Failure_Reason'Image (Result.Failure) &
+                       " admission=" &
+                       HTTP_Client.Admission_Certainty'Image
+                         (Result.Admission) &
+                       (if Result.Kind =
+                           Scoped.Create_Bucket_Response_Available
+                        then " response=" &
+                          Low_Level.Create_Bucket_Outcome_Kind'Image
+                            (Result.Response.Kind) & " status=" &
+                          Natural'Image (Result.Response.Status) &
+                          (if Result.Response.Kind = Low_Level.Bucket_Created
+                           then " location=" &
+                             US.To_String
+                               (Result.Response.Result.Location) &
+                             " arn=" &
+                             US.To_String
+                               (Result.Response.Result.Bucket_ARN)
+                           else "")
+                        else " http=" &
+                          HTTP_Client.Exchange_Result_Kind'Image
+                            (Result.HTTP_Result) & " phase=" &
+                          HTTP_Client.Exchange_Phase'Image
+                            (Result.HTTP_Phase) & " detail=" &
+                          US.To_String (Result.Detail));
+                  end if;
+               end;
+            end;
+
+            declare
+               Result : constant Buckets.Create_Outcome :=
+                 Buckets.Create
+                   (HTTP, Origin, "convenience-created", Identity,
+                    Region => "us-west-2", Timeout => 5.0);
+            begin
+               if Result.Kind /= Buckets.Creation_Completed
+                 or else US.To_String (Result.Location) /=
+                   "/convenience-created"
+               then
+                  raise Program_Error with
+                    "synchronous CreateBucket response mismatch";
+               end if;
+            end;
+
+            declare
+               Parameters : Low_Level.Create_Bucket_Parameters :=
+                 (others => <>);
+            begin
+               Parameters.Configuration.Location_Constraint :=
+                 US.To_Unbounded_String ("us-west-2");
+               declare
+                  Result : constant Scoped.Create_Bucket_Result :=
+                    Buckets.Create
+                      (HTTP, Origin, "duplicate-create", Parameters, Identity,
+                       Region => "us-west-2", Timeout => 5.0);
+               begin
+                  if Result.Kind /= Scoped.Create_Bucket_Exchange_Failed
+                    or else Result.Disposition /=
+                      Scoped.Bucket_Creation_Outcome_Unknown
+                    or else Result.Failure /=
+                      Scoped.Corrupt_Or_Invalid_Response
+                  then
+                     raise Program_Error with
+                       "CreateBucket accepted duplicate response metadata";
+                  end if;
+               end;
+            end;
+
+            declare
+               Parameters : Low_Level.Create_Bucket_Parameters :=
+                 (others => <>);
+               --  CreateBucket parent, HTTP exchange, and transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Result : Scoped.Create_Bucket_Result;
+            begin
+               Parameters.Configuration.Location_Constraint :=
+                 US.To_Unbounded_String ("us-west-2");
+               declare
+                  Operation : Scoped.Create_Bucket_Operation :=
+                    Scoped.Create_Bucket
+                      (Set'Access, HTTP'Access, Origin, "restart-created",
+                       Parameters, Identity,
+                       HTTP_Client.Deadline_After (5.0), "us-west-2");
+               begin
+                  Operations.Wait_All (Set);
+                  Scoped.Finish (Operation, Result);
+                  if Result.Disposition /=
+                    Scoped.Bucket_Creation_Completed
+                  then
+                     raise Program_Error with
+                       "composed CreateBucket first result mismatch";
+                  end if;
+                  Scoped.Start_Create_Bucket
+                    (Operation, HTTP'Access, Origin, "restart-existing",
+                     Parameters, Identity, HTTP_Client.Deadline_After (5.0),
+                     "us-west-2");
+                  Operations.Wait_All (Set);
+                  Scoped.Finish (Operation, Result);
+                  if Result.Kind /= Scoped.Create_Bucket_Response_Available
+                    or else Result.Disposition /=
+                      Scoped.Bucket_Definitely_Not_Created
+                    or else Result.Failure /= Scoped.Invalid_Request
+                    or else Result.Response.Kind /=
+                      Low_Level.Create_Bucket_Rejected
+                    or else US.To_String (Result.Response.Error.Request_ID) /=
+                      "restarted-create-request"
+                  then
+                     raise Program_Error with
+                       "composed CreateBucket restart mismatch";
+                  end if;
+               end;
+            end;
+
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+               Cancelled : Boolean := False;
+               Timed_Out : Boolean := False;
+            begin
+               Stop.Request;
+               begin
+                  declare
+                     Ignored : constant Buckets.Create_Outcome :=
+                       Buckets.Create
+                         (HTTP, Origin, "cancelled-create", Identity,
+                          Region => "us-west-2", Timeout => 5.0,
+                          Token => Stop'Access);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled =>
+                     Cancelled := True;
+               end;
+               begin
+                  declare
+                     Ignored : constant Buckets.Create_Outcome :=
+                       Buckets.Create
+                         (HTTP, Origin, "timed-out-create", Identity,
+                          Region => "us-west-2", Timeout => 0.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.IO.Timeout_Error =>
+                     Timed_Out := True;
+               end;
+               if not Cancelled or else not Timed_Out then
+                  raise Program_Error with
+                    "high-level CreateBucket ignored cancellation/deadline";
                end if;
             end;
 
@@ -13611,6 +13842,8 @@ begin
      Check_List_Objects_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_List_Buckets_Result_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_Create_Bucket_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_Head_Bucket_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.

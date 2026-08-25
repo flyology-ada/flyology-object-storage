@@ -107,6 +107,28 @@ package Flyology.Object_Storage.Client.Low_Level.Scoped is
       Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
       Token     : access Flyology.Cancellation.Token := null);
 
+   --  Start a prepared CreateBucket exchange with a nonblocking one-shot XML
+   --  source and bounded response sink. Prepared, Source, Sink, Client, Token,
+   --  and their owners must outlive terminal typed Finish of Operation.
+   --  @param Operation Established HTTP child operation
+   --  @param Client Configured origin client
+   --  @param Prepared Prepared CreateBucket request
+   --  @param Source Nonblocking one-shot serialized configuration source
+   --  @param Sink Bounded complete-response sink
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source
+   --  @exception Invalid_Request Prepared is not CreateBucket
+   procedure Start_Create_Bucket
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null);
+
    --  Start a prepared bodyless HeadBucket exchange into a response sink.
    --  Prepared, Sink, Client, Token, and their owners must outlive terminal
    --  typed Finish of Operation.
