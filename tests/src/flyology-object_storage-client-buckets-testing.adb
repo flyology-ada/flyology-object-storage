@@ -1437,6 +1437,17 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
             when HTTP_Client.Response_Complete =>
               raise Program_Error with "complete response is not a failure");
 
+      function Expected_Disposition
+        (Kind      : HTTP_Client.Exchange_Result_Kind;
+         Admission : HTTP_Client.Admission_Certainty)
+         return Bucket_Encryption_Mutation_Disposition is
+        (if Kind = HTTP_Client.Cancelled
+           and then Admission = HTTP_Client.Not_Admitted
+         then Bucket_Encryption_Mutation_Cancelled_Before_Admission
+         elsif Admission = HTTP_Client.Not_Admitted
+         then Bucket_Encryption_Mutation_Definitely_Not_Applied
+         else Bucket_Encryption_Mutation_Outcome_Unknown);
+
       procedure Check_Response
         (Status  : Flyology.HTTP.Status_Code;
          Code    : String;
@@ -1462,6 +1473,32 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
               "GetBucketEncryption response normalization mismatch";
          end if;
       end Check_Response;
+
+      procedure Check_Delete
+        (Status      : Flyology.HTTP.Status_Code;
+         Code        : String;
+         Disposition : Bucket_Encryption_Mutation_Disposition;
+         Failure     : Failure_Reason)
+      is
+         Value : constant Low_Level.Delete_Bucket_Configuration_Outcome :=
+           (if Status = 204
+            then (Kind => Low_Level.Configuration_Deleted, Status => Status)
+            else (Kind => Low_Level.Delete_Configuration_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant Delete_Bucket_Encryption_Result :=
+           Normalize_Delete_Bucket_Encryption_Response
+             (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Delete_Bucket_Encryption_Response_Available
+           or else Result.Disposition /= Disposition
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "DeleteBucketEncryption response normalization mismatch";
+         end if;
+      end Check_Delete;
    begin
       Check_Response (200, "", No_Failure);
       Check_Response (400, "InvalidBucketName", Invalid_Request);
@@ -1480,6 +1517,65 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       Check_Response (501, "NotImplemented", Invalid_Request);
       Check_Response (409, "", Corrupt_Or_Invalid_Response);
 
+      Check_Delete
+        (204, "", Bucket_Encryption_Mutation_Completed, No_Failure);
+      Check_Delete
+        (400, "InvalidBucketName",
+         Bucket_Encryption_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Delete
+        (400, "InvalidArgument",
+         Bucket_Encryption_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Delete
+        (400, "InvalidRequest",
+         Bucket_Encryption_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Delete
+        (401, "InvalidAccessKeyId",
+         Bucket_Encryption_Mutation_Definitely_Not_Applied,
+         Authentication_Failed);
+      Check_Delete
+        (403, "AccessDenied",
+         Bucket_Encryption_Mutation_Definitely_Not_Applied,
+         Authorization_Failed);
+      Check_Delete
+        (404, "NoSuchBucket",
+         Bucket_Encryption_Mutation_Definitely_Not_Applied,
+         Not_Found);
+      Check_Delete
+        (409, "OperationAborted",
+         Bucket_Encryption_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete
+        (429, "SlowDown",
+         Bucket_Encryption_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete
+        (500, "InternalError",
+         Bucket_Encryption_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete
+        (502, "BadGateway",
+         Bucket_Encryption_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete
+        (503, "SlowDown",
+         Bucket_Encryption_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete
+        (504, "RequestTimeout",
+         Bucket_Encryption_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete
+        (501, "NotImplemented",
+         Bucket_Encryption_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Delete
+        (500, "Unknown",
+         Bucket_Encryption_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+
       for Admission in
         HTTP_Client.Not_Admitted .. HTTP_Client.Possibly_Admitted
       loop
@@ -1490,10 +1586,20 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
                Configuration => (others => <>));
             Result : constant Get_Bucket_Encryption_Result :=
               Normalize_Get_Bucket_Encryption_Response (Value, Admission);
+            Delete_Value : constant
+              Low_Level.Delete_Bucket_Configuration_Outcome :=
+                (Kind => Low_Level.Configuration_Deleted, Status => 204);
+            Delete_Result : constant Delete_Bucket_Encryption_Result :=
+              Normalize_Delete_Bucket_Encryption_Response
+                (Delete_Value, Admission);
          begin
-            if Result.Failure /= Corrupt_Or_Invalid_Response then
+            if Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Delete_Result.Disposition /=
+                Bucket_Encryption_Mutation_Outcome_Unknown
+              or else Delete_Result.Failure /= Corrupt_Or_Invalid_Response
+            then
                raise Program_Error with
-                 "inconsistent GetBucketEncryption certainty was accepted";
+                 "inconsistent bucket-encryption certainty was accepted";
             end if;
          end;
       end loop;
@@ -1504,14 +1610,24 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
                Result : constant Get_Bucket_Encryption_Result :=
                  Normalize_Get_Bucket_Encryption_Failure
                    (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+               Delete_Result : constant Delete_Bucket_Encryption_Result :=
+                 Normalize_Delete_Bucket_Encryption_Failure
+                   (Kind, Admission, HTTP_Client.Waiting_Response_Head);
             begin
                if Result.Kind /= Get_Bucket_Encryption_Exchange_Failed
                  or else Result.Failure /= Expected_Failure (Kind)
                  or else Result.Admission /= Admission
                  or else Result.HTTP_Result /= Kind
+                 or else Delete_Result.Kind /=
+                   Delete_Bucket_Encryption_Exchange_Failed
+                 or else Delete_Result.Disposition /=
+                   Expected_Disposition (Kind, Admission)
+                 or else Delete_Result.Failure /= Expected_Failure (Kind)
+                 or else Delete_Result.Admission /= Admission
+                 or else Delete_Result.HTTP_Result /= Kind
                then
                   raise Program_Error with
-                    "GetBucketEncryption exchange certainty mismatch";
+                    "bucket-encryption exchange certainty mismatch";
                end if;
             end;
          end loop;

@@ -141,6 +141,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Public_Access_Block_Result_Kind;
    use type Get_Bucket_Ownership_Controls_Result_Kind;
    use type Get_Bucket_Encryption_Result_Kind;
+   use type Delete_Bucket_Encryption_Result_Kind;
+   use type Bucket_Encryption_Mutation_Disposition;
    use type Put_Bucket_Ownership_Controls_Result_Kind;
    use type Bucket_Ownership_Controls_Mutation_Disposition;
    use type Delete_Ownership_Controls_Result_Kind;
@@ -4022,6 +4024,20 @@ procedure S3_HTTP_Socket_Corpus is
          Serve
            (HTTP_Response ("204 No Content", ""), "DELETE",
             "/example-bucket?encryption",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/typed-delete-encryption?encryption",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/composed-delete-encryption?encryption",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-delete-encryption" & CRLF),
+            "DELETE", "/restart-delete-encryption?encryption",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response ("204 No Content", ""), "DELETE",
@@ -12634,6 +12650,110 @@ procedure S3_HTTP_Socket_Corpus is
               (HTTP, Origin, "example-bucket", Identity,
                Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
             "DeleteBucketEncryption");
+         declare
+            Parameters : constant
+              Low_Level.Delete_Bucket_Configuration_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Bucket_Ownership_Controls
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 Parameters,
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Delete_Bucket_Encryption_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+            Result : Delete_Bucket_Encryption_Result;
+         begin
+            declare
+               Typed_Result : constant Delete_Bucket_Encryption_Result :=
+                 Buckets.Delete_Encryption
+                   (HTTP,
+                    Origin,
+                    "typed-delete-encryption",
+                    Parameters,
+                    Identity,
+                    Timeout => 5.0);
+            begin
+               if Typed_Result.Kind /=
+                    Delete_Bucket_Encryption_Response_Available
+                 or else Typed_Result.Disposition /=
+                   Bucket_Encryption_Mutation_Completed
+                 or else Typed_Result.Failure /= No_Failure
+                 or else Typed_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Typed_Result.Response.Kind /=
+                   Low_Level.Configuration_Deleted
+               then
+                  raise Program_Error with
+                    "typed DeleteBucketEncryption response mismatch";
+               end if;
+            end;
+            begin
+               Low_Level.Delete_Bucket_Encryption
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "DeleteBucketEncryption accepted an ownership-controls " &
+                 "request";
+            end if;
+
+            declare
+               Operation : Delete_Bucket_Encryption_Operation :=
+                 Delete_Encryption
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-delete-encryption",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_Encryption_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Encryption_Mutation_Completed
+               then
+                  raise Program_Error with
+                    "composed DeleteBucketEncryption mismatch";
+               end if;
+               Delete_Encryption
+                 (HTTP'Access,
+                  Origin,
+                  "restart-delete-encryption",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_Encryption_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Encryption_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-delete-encryption"
+               then
+                  raise Program_Error with
+                    "restarted DeleteBucketEncryption mismatch";
+               end if;
+            end;
+         end;
          Require_Configuration_Deletion
            (Buckets.Delete_Intelligent_Tiering_Configuration
               (HTTP, Origin, "example-bucket", "config id", Identity,
