@@ -1713,6 +1713,107 @@ package Flyology.Object_Storage.Client.Scoped is
       Result    : out List_Buckets_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  Shape of a terminal bodyless HeadBucket read.
+   --  @enum Head_Bucket_Response_Available Modeled S3 response exists
+   --  @enum Head_Bucket_Exchange_Failed No complete response exists
+   type Head_Bucket_Result_Kind is
+     (Head_Bucket_Response_Available, Head_Bucket_Exchange_Failed);
+
+   --  Typed bodyless HeadBucket response or composable HTTP failure.
+   --  Admission is retained for diagnostics; this operation is read-only.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Head_Bucket_Result
+     (Kind : Head_Bucket_Result_Kind := Head_Bucket_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Head_Bucket_Response_Available =>
+            Response : Low_Level.Head_Bucket_Outcome;
+         when Head_Bucket_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bodyless HeadBucket parent with one hidden HTTP child. The operation
+   --  owns its signed request through terminal Finish and retains no borrowed
+   --  request input.
+   type Head_Bucket_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one bodyless HeadBucket operation.
+   --  @param Operation Fresh or consumed established HeadBucket operation
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose availability is probed
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   procedure Start_Head_Bucket
+     (Operation : in out Head_Bucket_Operation;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.Head_Bucket_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bodyless HeadBucket operation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose availability is probed
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven HeadBucket operation
+   function Head_Bucket
+     (Set      : not null access Flyology.Operations.Completion_Set'Class;
+      Client   : not null access Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.Head_Bucket_Parameters;
+      Identity : Low_Level.Credentials;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Head_Bucket_Operation;
+
+   --  Consume one terminal HeadBucket operation.
+   --  @param Operation Terminal bodyless bucket probe
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out Head_Bucket_Operation;
+      Result    : out Head_Bucket_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
    --  Shape of a terminal ListObjectsV2 read.
    --  @enum List_Objects_V2_Response_Available Modeled S3 response exists
    --  @enum List_Objects_V2_Exchange_Failed No complete response exists
@@ -2535,6 +2636,23 @@ private
    end record;
 
    --  @exclude
+   type Head_Bucket_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Final_Result : Head_Bucket_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
    type Upload_Part_Copy_Operation
      (Set : not null access Flyology.Operations.Completion_Set'Class;
       HTTP : not null access Flyology.HTTP.Client.Client;
@@ -3292,6 +3410,27 @@ private
      (Item : in out List_Buckets_Operation);
 
    --  @exclude
+   --  @param Item Internal bodyless HeadBucket response sink
+   --  @param Data Complete-response fragment
+   overriding procedure Write
+     (Item : in out Head_Bucket_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   --  @param Item Internal HeadBucket parent
+   --  @param Event Owner-driver event
+   overriding procedure Drive
+     (Item : in out Head_Bucket_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   --  @param Item Internal HeadBucket parent
+   overriding procedure Request_Cancellation
+     (Item : in out Head_Bucket_Operation);
+   --  @exclude
+   --  @param Item Internal HeadBucket parent
+   overriding procedure Finalize
+     (Item : in out Head_Bucket_Operation);
+
+   --  @exclude
    --  @param Item Internal bounded ListObjectsV2 response sink
    --  @param Data Complete-response fragment
    overriding procedure Write
@@ -3507,6 +3646,20 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return List_Buckets_Result;
+
+   --  Private normalization boundary shared with the strict test child.
+   --  @exclude
+   function Normalize_Head_Bucket_Response
+     (Value     : Low_Level.Head_Bucket_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Head_Bucket_Result;
+
+   --  @exclude
+   function Normalize_Head_Bucket_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Head_Bucket_Result;
 
    --  Private normalization boundary shared with the strict test child.
    --  @exclude

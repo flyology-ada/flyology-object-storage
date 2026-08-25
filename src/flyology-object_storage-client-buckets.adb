@@ -16,6 +16,7 @@ package body Flyology.Object_Storage.Client.Buckets is
    use type Low_Level.Delete_Bucket_Configuration_Outcome_Kind;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
    use type Low_Level.Head_Bucket_Outcome_Kind;
+   use type Scoped.Head_Bucket_Result_Kind;
    use type Low_Level.Put_Bucket_Tagging_Outcome_Kind;
    use type Low_Level.Get_Bucket_Tagging_Outcome_Kind;
    use type Low_Level.Delete_Bucket_Tagging_Outcome_Kind;
@@ -821,6 +822,65 @@ package body Flyology.Object_Storage.Client.Buckets is
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;
       Bucket   : String;
+      Parameters : Low_Level.Head_Bucket_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Head_Bucket_Result
+   is
+      --  The HeadBucket parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.Head_Bucket_Operation :=
+           Scoped.Head_Bucket
+             (Set'Access, Client'Access, Origin, Bucket, Parameters, Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+              Token);
+         Result : Scoped.Head_Bucket_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end Head;
+
+   procedure Raise_Head_Bucket_Exchange_Failure
+     (Result : Scoped.Head_Bucket_Result) is
+   begin
+      case Result.HTTP_Result is
+         when Flyology.HTTP.Client.Response_Complete =>
+            raise Program_Error with
+              "unreachable complete HeadBucket exchange failure";
+         when Flyology.HTTP.Client.Pre_Admission_Rejected =>
+            raise Constraint_Error with "HTTP request was rejected";
+         when Flyology.HTTP.Client.Cancelled =>
+            raise Flyology.Cancellation.Operation_Cancelled;
+         when Flyology.HTTP.Client.Timed_Out =>
+            raise Flyology.IO.Timeout_Error;
+         when Flyology.HTTP.Client.Client_Unavailable =>
+            raise Flyology.HTTP.Client.Client_Closed;
+         when Flyology.HTTP.Client.Connection_Failed =>
+            raise Flyology.HTTP.Client.Connection_Error;
+         when Flyology.HTTP.Client.Transport_Failed =>
+            raise Flyology.IO.Device_Error;
+         when Flyology.HTTP.Client.Request_Source_Failed =>
+            raise Flyology.HTTP.Client.Request_Body_Error;
+         when Flyology.HTTP.Client.Response_Invalid |
+              Flyology.HTTP.Client.Response_Body_Too_Large |
+              Flyology.HTTP.Client.Response_Sink_Failed =>
+            raise Low_Level.Invalid_Response with
+              "HeadBucket response is invalid";
+      end case;
+   end Raise_Head_Bucket_Exchange_Failure;
+
+   function Head
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
       Identity : Low_Level.Credentials;
       Region   : String := "us-east-1";
       Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
@@ -829,31 +889,39 @@ package body Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Head_Outcome
    is
-      Prepared : constant Low_Level.Prepared_Request :=
-        Low_Level.Prepare_Head_Bucket
-          (Origin, Style, Bucket,
-           (Expected_Bucket_Owner =>
-              US.To_Unbounded_String (Expected_Bucket_Owner)),
-           Identity, Region, Timestamp);
-      Outcome : constant Low_Level.Head_Bucket_Outcome :=
-        Low_Level.Execute_Head_Bucket (Client, Prepared, Timeout, Token);
    begin
-      if Outcome.Kind = Low_Level.Head_Bucket_Rejected then
-         return
-           (Kind => Head_Rejected, Status => Outcome.Status,
-            Error => Outcome.Error);
-      end if;
-      return
-        (Kind                 => Bucket_Available,
-         Status               => Outcome.Status,
-         Bucket_ARN           => Outcome.Result.Bucket_ARN,
-         Bucket_Location_Type => Outcome.Result.Bucket_Location_Type,
-         Bucket_Location_Name => Outcome.Result.Bucket_Location_Name,
-         Region               =>
-           (if US.Length (Outcome.Result.Bucket_Region) = 0
-            then US.To_Unbounded_String (Region)
-            else Outcome.Result.Bucket_Region),
-         Access_Point_Alias   => Outcome.Result.Access_Point_Alias);
+      declare
+         Result : constant Scoped.Head_Bucket_Result :=
+           Head
+             (Client, Origin, Bucket,
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String (Expected_Bucket_Owner)),
+              Identity, Region, Style, Timeout, Token);
+      begin
+         if Result.Kind = Scoped.Head_Bucket_Exchange_Failed then
+            Raise_Head_Bucket_Exchange_Failure (Result);
+         end if;
+         declare
+            Outcome : Low_Level.Head_Bucket_Outcome renames Result.Response;
+         begin
+            if Outcome.Kind = Low_Level.Head_Bucket_Rejected then
+               return
+                 (Kind => Head_Rejected, Status => Outcome.Status,
+                  Error => Outcome.Error);
+            end if;
+            return
+              (Kind                 => Bucket_Available,
+               Status               => Outcome.Status,
+               Bucket_ARN           => Outcome.Result.Bucket_ARN,
+               Bucket_Location_Type => Outcome.Result.Bucket_Location_Type,
+               Bucket_Location_Name => Outcome.Result.Bucket_Location_Name,
+               Region               =>
+                 (if US.Length (Outcome.Result.Bucket_Region) = 0
+                  then US.To_Unbounded_String (Region)
+                  else Outcome.Result.Bucket_Region),
+               Access_Point_Alias   => Outcome.Result.Access_Point_Alias);
+         end;
+      end;
    end Head;
 
    function Get_Location

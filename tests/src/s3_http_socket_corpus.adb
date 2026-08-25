@@ -91,8 +91,10 @@ procedure S3_HTTP_Socket_Corpus is
    use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
    use type Client_Buckets.Set_Versioning_Outcome_Kind;
    use type Client_Buckets.Get_Versioning_Outcome_Kind;
+   use type Client_Buckets.Head_Outcome_Kind;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
    use type Low_Level.Head_Object_Outcome_Kind;
+   use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Low_Level.Copy_Object_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
@@ -104,6 +106,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Part_Upload_Disposition;
    use type Scoped.List_Objects_Result_Kind;
    use type Scoped.List_Buckets_Result_Kind;
+   use type Scoped.Head_Bucket_Result_Kind;
    use type Scoped.List_Objects_V2_Result_Kind;
    use type Scoped.List_Object_Versions_Result_Kind;
    use type Scoped.Get_Object_Attributes_Result_Kind;
@@ -1862,6 +1865,49 @@ procedure S3_HTTP_Socket_Corpus is
                  "last-modified: Fri, 21 Aug 2026 17:00:00 GMT" & CRLF,
                Omit_Content_Length => True),
             "HEAD", "/example-bucket/scoped-head-duplicate");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-bucket-arn: arn:aws:s3:::example-bucket" & CRLF &
+                 "x-amz-bucket-location-type: AvailabilityZone" & CRLF &
+                 "x-amz-bucket-location-name: use1-az1" & CRLF &
+                 "x-amz-bucket-region: us-east-1" & CRLF &
+                 "x-amz-access-point-alias: false" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/example-bucket",
+            Expected_Bucket_Owner => "123456789012",
+            Fragmented => True);
+         Serve
+           (HTTP_Response
+              ("404 Not Found", "",
+               "x-amz-request-id: head-bucket-request" & CRLF &
+                 "x-amz-id-2: head-bucket-host" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/missing-bucket",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-bucket-region: us-east-1" & CRLF &
+                 "x-amz-bucket-region: us-west-2" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/duplicate-bucket",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-bucket-region: us-east-1" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/restart-bucket",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", "",
+               "x-amz-request-id: restarted-head-bucket-request" & CRLF &
+                 "x-amz-id-2: restarted-head-bucket-host" & CRLF,
+               Omit_Content_Length => True),
+            "HEAD", "/restarted-bucket",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
               ("204 No Content", "",
@@ -5981,6 +6027,147 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "HeadObject accepted duplicate singleton metadata";
+               end if;
+            end;
+
+            declare
+               Parameters : constant Low_Level.Head_Bucket_Parameters :=
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012"));
+               Result : constant Scoped.Head_Bucket_Result :=
+                 Buckets.Head
+                   (HTTP, Origin, "example-bucket", Parameters, Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Head_Bucket_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /= Low_Level.Bucket_Found
+                 or else US.To_String
+                   (Result.Response.Result.Bucket_ARN) /=
+                     "arn:aws:s3:::example-bucket"
+                 or else US.To_String
+                   (Result.Response.Result.Bucket_Region) /= "us-east-1"
+                 or else not Result.Response.Result.Access_Point_Alias.Is_Set
+                 or else Result.Response.Result.Access_Point_Alias.Value
+               then
+                  raise Program_Error with
+                    "composable HeadBucket response mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Buckets.Head_Outcome :=
+                 Buckets.Head
+                   (HTTP, Origin, "missing-bucket", Identity,
+                    Expected_Bucket_Owner => "123456789012",
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Buckets.Head_Rejected
+                 or else Result.Status /= 404
+                 or else US.To_String (Result.Error.Request_ID) /=
+                   "head-bucket-request"
+                 or else US.To_String (Result.Error.Host_ID) /=
+                   "head-bucket-host"
+               then
+                  raise Program_Error with
+                    "synchronous HeadBucket rejection mismatch";
+               end if;
+            end;
+
+            declare
+               Parameters : constant Low_Level.Head_Bucket_Parameters :=
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012"));
+               Result : constant Scoped.Head_Bucket_Result :=
+                 Buckets.Head
+                   (HTTP, Origin, "duplicate-bucket", Parameters, Identity,
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.Head_Bucket_Exchange_Failed
+                 or else Result.Failure /=
+                   Scoped.Corrupt_Or_Invalid_Response
+               then
+                  raise Program_Error with
+                    "HeadBucket accepted duplicate singleton metadata";
+               end if;
+            end;
+
+            declare
+               Parameters : constant Low_Level.Head_Bucket_Parameters :=
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012"));
+               --  HeadBucket parent, HTTP exchange, and one transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Scoped.Head_Bucket_Operation :=
+                 Scoped.Head_Bucket
+                   (Set'Access, HTTP'Access, Origin, "restart-bucket",
+                    Parameters, Identity, HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.Head_Bucket_Result;
+            begin
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.Head_Bucket_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Bucket_Found
+               then
+                  raise Program_Error with
+                    "composed HeadBucket first result mismatch";
+               end if;
+               Scoped.Start_Head_Bucket
+                 (Operation, HTTP'Access, Origin, "restarted-bucket",
+                  Parameters, Identity, HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.Head_Bucket_Response_Available
+                 or else Result.Failure /= Scoped.Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Head_Bucket_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-head-bucket-request"
+               then
+                  raise Program_Error with
+                    "composed HeadBucket restart mismatch";
+               end if;
+            end;
+
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+               Cancelled : Boolean := False;
+               Timed_Out : Boolean := False;
+            begin
+               Stop.Request;
+               begin
+                  declare
+                     Ignored : constant Buckets.Head_Outcome :=
+                       Buckets.Head
+                         (HTTP, Origin, "cancelled-bucket", Identity,
+                          Timeout => 5.0, Token => Stop'Access);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.Cancellation.Operation_Cancelled =>
+                     Cancelled := True;
+               end;
+               begin
+                  declare
+                     Ignored : constant Buckets.Head_Outcome :=
+                       Buckets.Head
+                         (HTTP, Origin, "timed-out-bucket", Identity,
+                          Timeout => 0.0);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Flyology.IO.Timeout_Error =>
+                     Timed_Out := True;
+               end;
+               if not Cancelled or else not Timed_Out then
+                  raise Program_Error with
+                    "high-level HeadBucket ignored cancellation/deadline";
                end if;
             end;
 
@@ -13424,6 +13611,8 @@ begin
      Check_List_Objects_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_List_Buckets_Result_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_Head_Bucket_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_List_Parts_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.

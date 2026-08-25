@@ -6,7 +6,7 @@ single-range Get, bodyless Head, non-replaying Delete, non-replaying multipart
 initiation, one-shot UploadPart, one-shot multipart completion and abort,
 bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
-ListBuckets. The
+ListBuckets and bodyless HeadBucket. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -60,7 +60,8 @@ The implemented operation order is:
 15. `Get_Object_Attributes`; and
 16. `Upload_Part_Copy`;
 17. `List_Objects` (v1); and
-18. service-level `List_Buckets`.
+18. service-level `List_Buckets`; and
+19. bodyless `Head_Bucket`.
 
 Each implemented operation has both a limited constructor taking a completion
 set and an established-operation `Start` overload suitable for a reusable
@@ -109,6 +110,16 @@ signed request and never interpreted. Its parameter-record synchronous
 overload waits on that same operation; the convenience overload retains its
 established raising transport contract. Each bucket page is an independent
 read-only service snapshot.
+HeadBucket uses one owner-driven bodyless exchange and preserves every modeled
+response header, HTTP admission state, and bounded failure reason. Complete
+decoding rejects physical duplicates of modeled singleton headers and transfer
+coding before reporting success or a bodyless rejection. Its parameter-record
+synchronous overload waits on the same operation; the established convenience
+overload retains its raising transport contract and signing-region fallback
+when a compatible success omits the optional bucket-region header. Restart is
+limited to the same HTTP client and cancellation owner. No credentials,
+bucket name, owner precondition, or other borrowed request input survives
+signing.
 ListObjectsV2 retains a bounded response no larger than the shared XML parser
 limit and binds the bucket, prefix, delimiter, opaque continuation token,
 start-after key, maximum, encoding mode, and requester-pays response to the
@@ -208,10 +219,16 @@ the validated resolved interval and total representation length; unsolicited,
 multipart, inverted, length-inconsistent, or otherwise malformed ranges are
 invalid responses. No listing operation participates in recovery.
 
-Head returns the same generation and metadata vocabulary without a body. Its
+Object Head returns the same generation and metadata vocabulary without a body. Its
 ambiguous transport outcome is not treated as proof of absence. All ordinary
 service rejections are typed, and bounded diagnostic text preserves request
 identifiers without retaining arbitrary response data.
+
+Bucket Head is likewise read-only and bodyless. A complete 404 is typed as
+not found, while redirect/request, authentication, authorization, and transient
+service statuses retain separate bounded failure reasons. Transport failure is
+not proof that the bucket is absent, and the operation never retries or changes
+mutation certainty.
 
 DeleteObject uses a deliberately non-replayable known-empty operation source.
 A complete validated 204 reports `Deletion_Completed`. Exact modeled request,

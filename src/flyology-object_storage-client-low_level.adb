@@ -4717,6 +4717,62 @@ package body Flyology.Object_Storage.Client.Low_Level is
       end if;
    end Decode_Head_Bucket_Response;
 
+   function Decode_Head_Bucket_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String) return Head_Bucket_Outcome
+   is
+      function Is_Head_Singleton_Header (Name : String) return Boolean is
+        (Name = "content-length"
+         or else Name = "x-amz-access-point-alias"
+         or else Name = "x-amz-bucket-arn"
+         or else Name = "x-amz-bucket-location-name"
+         or else Name = "x-amz-bucket-location-type"
+         or else Name = "x-amz-bucket-region"
+         or else Name = "x-amz-id-2"
+         or else Name = "x-amz-request-id");
+   begin
+      for Index in 1 .. Flyology.HTTP.Client.Header_Count (Response) loop
+         declare
+            Name : constant String := Ada.Characters.Handling.To_Lower
+              (Flyology.HTTP.Client.Header_Name (Response, Index));
+         begin
+            if Name = "transfer-encoding" then
+               raise Invalid_Response with
+                 "HeadBucket response uses transfer coding";
+            elsif Is_Head_Singleton_Header (Name) then
+               for Previous in 1 .. Index - 1 loop
+                  if Ada.Characters.Handling.To_Lower
+                    (Flyology.HTTP.Client.Header_Name
+                       (Response, Previous)) = Name
+                  then
+                     raise Invalid_Response with
+                       "HeadBucket response duplicates a singleton header";
+                  end if;
+               end loop;
+            end if;
+         end;
+      end loop;
+      declare
+         function H (Name : String) return US.Unbounded_String is
+           (US.To_Unbounded_String
+              (Flyology.HTTP.Client.Header (Response, Name)));
+
+         Headers : constant Head_Bucket_Result :=
+           (Bucket_ARN           => H ("x-amz-bucket-arn"),
+            Bucket_Location_Type => H ("x-amz-bucket-location-type"),
+            Bucket_Location_Name => H ("x-amz-bucket-location-name"),
+            Bucket_Region        => H ("x-amz-bucket-region"),
+            Access_Point_Alias   => Optional_Boolean_Header
+              (Flyology.HTTP.Client.Header
+                 (Response, "x-amz-access-point-alias")));
+      begin
+         return Decode_Head_Bucket_Response
+           (Flyology.HTTP.Client.Status (Response), Payload, Headers,
+            Flyology.HTTP.Client.Header (Response, "x-amz-request-id"),
+            Flyology.HTTP.Client.Header (Response, "x-amz-id-2"));
+      end;
+   end Decode_Head_Bucket_Complete_Response;
+
    function Execute_Head_Bucket
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -4732,32 +4788,11 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
              (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-         Request_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-request-id");
-         Host_ID : constant String :=
-           Flyology.HTTP.Client.Header (Response, "x-amz-id-2");
-         Headers : constant Head_Bucket_Result :=
-           (Bucket_ARN => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header (Response, "x-amz-bucket-arn")),
-            Bucket_Location_Type => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-bucket-location-type")),
-            Bucket_Location_Name => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-bucket-location-name")),
-            Bucket_Region => US.To_Unbounded_String
-              (Flyology.HTTP.Client.Header (Response, "x-amz-bucket-region")),
-            Access_Point_Alias => Optional_Boolean_Header
-              (Flyology.HTTP.Client.Header
-                 (Response, "x-amz-access-point-alias")));
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All (Response, 1, Token);
       begin
-         return Decode_Head_Bucket_Response
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers,
-            Request_ID, Host_ID);
+         return Decode_Head_Bucket_Complete_Response
+           (Response, Flyology.Bytes.To_Byte_String (Payload));
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>

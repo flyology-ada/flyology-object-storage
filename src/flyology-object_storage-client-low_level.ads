@@ -903,6 +903,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String := "";
       Host_ID    : String := "") return Head_Bucket_Outcome;
 
+   --  Decode a fully received HeadBucket exchange. Physical singleton and
+   --  transfer-framing checks are identical for blocking and composable
+   --  callers; Payload must contain every received response-body octet.
+   --  @param Response Complete HTTP response metadata
+   --  @param Payload Every response-body octet retained by the caller
+   --  @return Modeled HeadBucket success or bodyless rejection
+   function Decode_Head_Bucket_Complete_Response
+     (Response : Flyology.HTTP.Client.Response;
+      Payload  : String) return Head_Bucket_Outcome;
+
    function Execute_Head_Bucket
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;

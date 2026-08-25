@@ -1,0 +1,13 @@
+case	layer	input	oracle
+success	response	200 plus complete modeled singleton headers	Response_Available, No_Failure, Response_Observed
+redirect	response	301 or 307 bodyless response	Response_Available, Invalid_Request
+invalid	response	400 or 501 bodyless response	Response_Available, Invalid_Request
+authentication	response	401 bodyless response	Response_Available, Authentication_Failed
+authorization	response	403 bodyless response	Response_Available, Authorization_Failed
+missing	response	404 bodyless response	Response_Available, Not_Found
+transient	response	409, 429, 500, 502, 503, or 504	Response_Available, Unavailable_Or_Retryable
+unsupported	response	unclassified complete status	Response_Available, Corrupt_Or_Invalid_Response
+certainty	response	200 with Not_Admitted or Possibly_Admitted	Corrupt_Or_Invalid_Response
+transport	operation	each expected HTTP terminal kind times every admission certainty	exact failure, admission, phase, and detail
+singleton	wire	duplicate modeled response header	Response_Invalid
+restart	operation	Finish then Start with same retained owners	second exact signed request and independent typed result

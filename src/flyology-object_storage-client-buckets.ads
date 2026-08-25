@@ -486,6 +486,34 @@ package Flyology.Object_Storage.Client.Buckets is
       end case;
    end record;
 
+   --  Probe one bucket by waiting on the composable owner-driven HeadBucket
+   --  operation. This parameter-record overload preserves typed HTTP failure
+   --  and admission information.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose availability is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region Region used to sign the HeadBucket request
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   --  Region, addressing, and timeout defaults mirror the established
+   --  convenience overload; changing them changes source-visible client
+   --  request policy and compatibility.
+   function Head
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
+      Parameters : Low_Level.Head_Bucket_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.Head_Bucket_Result;
+
    --  Probe one bucket without downloading a response body. Successful
    --  results preserve every modeled HeadBucket response header and expose
    --  the bucket region under the convenience-level Region name. If a
