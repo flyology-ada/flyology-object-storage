@@ -95,6 +95,16 @@ its raising transport behavior. No request text or credential remains borrowed
 after signing, and this read-only operation does not select mutation retry
 policy.
 
+The complete-configuration `Set_Versioning_Configuration` overload likewise
+waits on a provider-owned limited mutation. Directly composed callers use its
+same-name constructor or operation-last procedure and typed `Finish`. The
+prepared request owns the serialized configuration and every signed header;
+both synchronous and composable forms expose those exact bytes through one
+non-rewindable source. A complete success or exact conclusive rejection can
+settle mutation certainty. Every failure after possible admission remains
+outcome-unknown and requires caller-directed `Get_Versioning` reconciliation
+before any retry. No request input remains borrowed after signing.
+
 These operations are deliberately individual. Parallel work across many
 buckets or objects belongs in an application-owned joined scope, while
 multi-file data transfer uses `Client.Transfers.Transfer_Many` and its explicit

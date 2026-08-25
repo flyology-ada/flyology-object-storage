@@ -135,6 +135,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Head_Bucket_Result_Kind;
    use type Get_Bucket_Location_Result_Kind;
    use type Get_Bucket_Versioning_Result_Kind;
+   use type Put_Bucket_Versioning_Result_Kind;
    use type List_Objects_V2_Result_Kind;
    use type List_Object_Versions_Result_Kind;
    use type Get_Object_Attributes_Result_Kind;
@@ -2468,6 +2469,28 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-id: restarted-versioning-request" & CRLF),
             "GET", "/restart-versioning?versioning",
             Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "PUT", "/typed-put-versioning?versioning",
+            Expected_Body_Root => "<Status>Enabled</Status>",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "PUT", "/composed-put-versioning?versioning",
+            Expected_Body_Root => "<Status>Suspended</Status>",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden",
+               "<Error><Code>AccessDenied</Code>" &
+                 "<Message>denied</Message></Error>",
+               "x-amz-request-id: restarted-put-versioning-request" & CRLF),
+            "PUT", "/restart-put-versioning?versioning",
+            Expected_Body_Root => "<Status>Enabled</Status>",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Content_MD5 => "*");
          Serve
            (HTTP_Response
               ("200 OK", "", Omit_Content_Length => True),
@@ -8264,6 +8287,102 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "composed GetBucketVersioning restart mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : constant
+              Low_Level.Put_Bucket_Versioning_Parameters :=
+                (Content_MD5        => US.Null_Unbounded_String,
+                 Checksum_Algorithm => US.Null_Unbounded_String,
+                 MFA                => US.Null_Unbounded_String,
+                 Configuration      =>
+                   (Status     =>
+                      Flyology.Object_Storage.Versioning_Enabled,
+                    MFA_Delete =>
+                      Flyology.Object_Storage.MFA_Delete_Unconfigured),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Result : constant Put_Bucket_Versioning_Result :=
+              Client_Buckets.Set_Versioning_Configuration
+                (HTTP,
+                 Origin,
+                 "typed-put-versioning",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Put_Bucket_Versioning_Response_Available
+              or else Result.Disposition /=
+                Bucket_Versioning_Mutation_Completed
+              or else Result.Failure /= No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+              or else Result.Response.Kind /=
+                Low_Level.Bucket_Versioning_Updated
+            then
+               raise Program_Error with
+                 "typed PutBucketVersioning response mismatch";
+            end if;
+         end;
+         declare
+            Parameters : Low_Level.Put_Bucket_Versioning_Parameters :=
+              (Content_MD5        => US.Null_Unbounded_String,
+               Checksum_Algorithm => US.Null_Unbounded_String,
+               MFA                => US.Null_Unbounded_String,
+               Configuration      =>
+                 (Status     =>
+                    Flyology.Object_Storage.Versioning_Suspended,
+                  MFA_Delete =>
+                    Flyology.Object_Storage.MFA_Delete_Unconfigured),
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            --  Versioning parent, HTTP exchange, and transport child.
+            Set    : aliased Operations.Completion_Set (3);
+            Result : Put_Bucket_Versioning_Result;
+         begin
+            declare
+               Operation : Put_Bucket_Versioning_Operation :=
+                 Set_Versioning_Configuration
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-put-versioning",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Versioning_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Versioning_Mutation_Completed
+               then
+                  raise Program_Error with
+                    "composed PutBucketVersioning first result mismatch";
+               end if;
+               Parameters.Configuration.Status :=
+                 Flyology.Object_Storage.Versioning_Enabled;
+               Set_Versioning_Configuration
+                 (HTTP'Access,
+                  Origin,
+                  "restart-put-versioning",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Versioning_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Versioning_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Put_Bucket_Versioning_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-put-versioning-request"
+               then
+                  raise Program_Error with
+                    "composed PutBucketVersioning restart mismatch";
                end if;
             end;
          end;
@@ -14573,6 +14692,7 @@ begin
    Buckets_Testing.Check_Head_Bucket_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Location_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Versioning_Result_Corpus;
+   Buckets_Testing.Check_Put_Bucket_Versioning_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;
    Objects_Testing.Check_Object_Tagging_Certainty_Corpus;
    Transfers_Testing.Check_List_Parts_Result_Corpus;

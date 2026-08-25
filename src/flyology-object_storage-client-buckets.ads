@@ -1884,6 +1884,154 @@ package Flyology.Object_Storage.Client.Buckets is
       Token      : access Flyology.Cancellation.Token := null)
       return Get_Bucket_Versioning_Result;
 
+   --  What is known about one bucket-versioning mutation after terminal
+   --  drain. An unknown outcome requires caller-selected Get_Versioning
+   --  reconciliation before any retry.
+   --  @enum Bucket_Versioning_Mutation_Completed Complete response proves it
+   --  @enum Bucket_Versioning_Mutation_Definitely_Not_Applied Exact evidence
+   --     proves the requested configuration was not applied
+   --  @enum Bucket_Versioning_Mutation_Outcome_Unknown State needs a read
+   --  @enum Bucket_Versioning_Mutation_Cancelled_Before_Admission Cancellation
+   --     preceded possible server admission
+   type Bucket_Versioning_Mutation_Disposition is
+     (Bucket_Versioning_Mutation_Completed,
+      Bucket_Versioning_Mutation_Definitely_Not_Applied,
+      Bucket_Versioning_Mutation_Outcome_Unknown,
+      Bucket_Versioning_Mutation_Cancelled_Before_Admission);
+
+   --  Shape of a terminal PutBucketVersioning mutation.
+   --  @enum Put_Bucket_Versioning_Response_Available Modeled response exists
+   --  @enum Put_Bucket_Versioning_Exchange_Failed No complete response exists
+   type Put_Bucket_Versioning_Result_Kind is
+     (Put_Bucket_Versioning_Response_Available,
+      Put_Bucket_Versioning_Exchange_Failed);
+
+   --  Typed PutBucketVersioning certainty and response or HTTP failure.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Put_Bucket_Versioning_Result
+     (Kind : Put_Bucket_Versioning_Result_Kind :=
+        Put_Bucket_Versioning_Exchange_Failed)
+   is record
+      Disposition : Bucket_Versioning_Mutation_Disposition :=
+        Bucket_Versioning_Mutation_Outcome_Unknown;
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Put_Bucket_Versioning_Response_Available =>
+            Response : Low_Level.Put_Bucket_Versioning_Outcome;
+         when Put_Bucket_Versioning_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase  : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail      : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot PutBucketVersioning parent. The prepared request owns its
+   --  serialized configuration, headers, and signing inputs through terminal
+   --  Finish. The operation never rewinds or replays its body.
+   type Put_Bucket_Versioning_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one nonreplaying PutBucketVersioning mutation.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose configuration is replaced
+   --  @param Parameters Complete modeled configuration and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established versioning mutation
+   procedure Set_Versioning_Configuration
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Put_Bucket_Versioning_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Put_Bucket_Versioning_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying PutBucketVersioning mutation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose configuration is replaced
+   --  @param Parameters Complete modeled configuration and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven versioning mutation
+   function Set_Versioning_Configuration
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Put_Bucket_Versioning_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Put_Bucket_Versioning_Operation;
+
+   --  Consume one terminal PutBucketVersioning operation.
+   --  @param Operation Terminal bucket-versioning mutation
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Put_Bucket_Versioning_Operation;
+      Result    : out Put_Bucket_Versioning_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Replace one complete bucket-versioning configuration by waiting on the
+   --  provider-owned composable mutation. Compatibility contract: region,
+   --  addressing, and 30-second timeout defaults are inherited unchanged.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose configuration is replaced
+   --  @param Parameters Complete modeled configuration and request controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Set_Versioning_Configuration
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Put_Bucket_Versioning_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Put_Bucket_Versioning_Result;
+
    subtype Configurable_Versioning_Status is Bucket_Versioning_Status range
      Versioning_Enabled .. Versioning_Suspended;
 
@@ -2074,6 +2222,27 @@ private
       Response_Data    : Flyology.Bytes.Unbounded_Bytes;
       Response_Limit   : Natural := 0;
       Final_Result     : Get_Bucket_Location_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error  : Boolean := False;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   type Put_Bucket_Versioning_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Source_Position  : Natural := 0;
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural := 0;
+      Final_Result     : Put_Bucket_Versioning_Result;
       Has_Final_Result : Boolean := False;
       Has_Saved_Error  : Boolean := False;
       Saved_Error      : Ada.Exceptions.Exception_Occurrence;
@@ -2391,6 +2560,31 @@ private
      (Item : in out Get_Bucket_Versioning_Operation);
    overriding procedure Finalize
      (Item : in out Get_Bucket_Versioning_Operation);
+   overriding function Declared_Length
+     (Item : Put_Bucket_Versioning_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   overriding procedure Read_Now
+     (Item   : in out Put_Bucket_Versioning_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   overriding procedure Source_Wait_Source
+     (Item       : in out Put_Bucket_Versioning_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   overriding procedure Release_Source
+     (Item : in out Put_Bucket_Versioning_Operation);
+   overriding procedure Write
+     (Item : in out Put_Bucket_Versioning_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   overriding procedure Drive
+     (Item : in out Put_Bucket_Versioning_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   overriding procedure Request_Cancellation
+     (Item : in out Put_Bucket_Versioning_Operation);
+   overriding procedure Finalize
+     (Item : in out Put_Bucket_Versioning_Operation);
    function Normalize_List_Buckets_Response
      (Value     : Low_Level.List_Buckets_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
@@ -2445,6 +2639,15 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Bucket_Versioning_Result;
+   function Normalize_Put_Bucket_Versioning_Response
+     (Value     : Low_Level.Put_Bucket_Versioning_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Put_Bucket_Versioning_Result;
+   function Normalize_Put_Bucket_Versioning_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Put_Bucket_Versioning_Result;
    function Normalize_Put_Bucket_Tagging_Response
      (Value     : Low_Level.Put_Bucket_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)

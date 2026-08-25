@@ -4522,9 +4522,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Result : Prepared_Request := Prepare_Object_Request
         (Put_Bucket_Versioning_Operation, "PUT", Origin, Style, Bucket, "",
          Query, Headers, Payload, "", Identity, Region, Timestamp,
-         Object_Resource => False)
+         Object_Resource => False, Store_Payload => False)
       do
          Result.Operation := Put_Bucket_Versioning_Operation;
+         --  Both synchronous and composable forms use this one-shot owned
+         --  source. Retaining the bytes in Request would select HTTP's
+         --  conflicting replayable retained-body form.
+         Result.Owned_Request_Payload := US.To_Unbounded_String (Payload);
       end return;
    end Prepare_Put_Bucket_Versioning;
 
@@ -4569,9 +4573,11 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with "prepared request operation mismatch";
       end if;
       declare
+         Source : Non_Replayable_Buffer_Source :=
+           (Data => Prepared.Owned_Request_Payload, Next => 1);
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
-             (Client, Prepared.Message, Timeout, Token);
+             (Client, Prepared.Message, Source, Timeout, Token);
          Status : constant Flyology.HTTP.Status_Code :=
            Flyology.HTTP.Client.Status (Response);
          Request_ID : constant String :=
@@ -12881,6 +12887,22 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Get_Bucket_Versioning_Operation, Client, Prepared, Sink, Deadline,
          Token, Operation);
    end Get_Bucket_Versioning;
+
+   procedure Put_Bucket_Versioning
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Source_Sink
+        (Put_Bucket_Versioning_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Bucket_Versioning;
 
    procedure Delete_Bucket
      (Client    : not null access Flyology.HTTP.Client.Client;

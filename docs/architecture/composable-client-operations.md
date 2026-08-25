@@ -7,7 +7,7 @@ initiation, one-shot UploadPart, one-shot multipart completion and abort,
 bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
 ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
-bounded GetBucketLocation and GetBucketVersioning, and bucket tagging
+bounded GetBucketLocation, non-replaying Put/GetBucketVersioning, and bucket tagging
 Put/Get/Delete, plus object tagging Put/Get/Delete. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
@@ -81,15 +81,16 @@ The implemented operation order is:
 20. non-replaying `Create_Bucket`;
 21. non-replaying `Delete_Bucket`;
 22. bounded `Get_Bucket_Location`;
-23. bounded `Get_Bucket_Versioning`;
+23. non-replaying `Put_Bucket_Versioning` and bounded
+    `Get_Bucket_Versioning`;
 24. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
 25. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
 
-The provider surface contains 32 domain operations: 15 in `Client.Objects`,
-nine in `Client.Buckets`, and eight in `Client.Transfers`. Those operations
-map to 29 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 33 domain operations: 15 in `Client.Objects`,
+ten in `Client.Buckets`, and eight in `Client.Transfers`. Those operations
+map to 30 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object` prepared-request
@@ -194,6 +195,14 @@ raising transport contract. Restart requires the same HTTP client and
 cancellation owner, and no bucket name, owner precondition, credentials, or
 other request input remains borrowed after signing. This read does not imply
 that a later PutBucketVersioning mutation is safe to replay.
+PutBucketVersioning owns the exact serialized configuration, checksum/MFA and
+owner headers, and signed request through terminal drain. Its synchronous and
+composable forms drive the same non-rewindable source and state machine. Typed
+Finish preserves admission certainty: failures after possible admission are
+outcome-unknown, and no automatic mutation replay occurs. A caller may use the
+paired composable GetBucketVersioning read to reconcile before selecting any
+later retry. Restart is allowed only after Finish with the same HTTP client and
+cancellation owner; all newly supplied inputs are copied during preparation.
 PutBucketTagging likewise serializes and owns its complete validated tag set
 once, and DeleteBucketTagging supplies a non-rewindable known-empty source.
 Neither mutation is replayed after possible admission. Their typed results

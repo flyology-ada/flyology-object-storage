@@ -18,6 +18,7 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
    use type Low_Level.Head_Bucket_Outcome_Kind;
    use type Low_Level.Get_Bucket_Location_Outcome_Kind;
    use type Low_Level.Get_Bucket_Versioning_Outcome_Kind;
+   use type Low_Level.Put_Bucket_Versioning_Outcome_Kind;
    use type Low_Level.Put_Bucket_Tagging_Outcome_Kind;
    use type Low_Level.Get_Bucket_Tagging_Outcome_Kind;
    use type Low_Level.Delete_Bucket_Tagging_Outcome_Kind;
@@ -870,6 +871,202 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
          end loop;
       end loop;
    end Check_Get_Bucket_Versioning_Result_Corpus;
+
+   procedure Check_Put_Bucket_Versioning_Response
+     (Status      : Flyology.HTTP.Status_Code;
+      Code        : String;
+      Disposition : Bucket_Versioning_Mutation_Disposition;
+      Failure     : Failure_Reason)
+   is
+      Value  : constant Low_Level.Put_Bucket_Versioning_Outcome :=
+        (if Status = 200
+         then
+           (Kind   => Low_Level.Bucket_Versioning_Updated,
+            Status => Status)
+         else
+           (Kind   => Low_Level.Put_Bucket_Versioning_Rejected,
+            Status => Status,
+            Error  =>
+              (Code       => US.To_Unbounded_String (Code),
+               Message    => US.Null_Unbounded_String,
+               Resource   => US.Null_Unbounded_String,
+               Request_ID => US.Null_Unbounded_String,
+               Host_ID    => US.Null_Unbounded_String)));
+      Result : constant Put_Bucket_Versioning_Result :=
+        Normalize_Put_Bucket_Versioning_Response
+          (Value, HTTP_Client.Response_Observed);
+   begin
+      if Result.Kind /= Put_Bucket_Versioning_Response_Available
+        or else Result.Disposition /= Disposition
+        or else Result.Failure /= Failure
+        or else Result.Admission /= HTTP_Client.Response_Observed
+      then
+         raise Program_Error with
+           "PutBucketVersioning response certainty corpus mismatch";
+      end if;
+   end Check_Put_Bucket_Versioning_Response;
+
+   procedure Check_Put_Bucket_Versioning_Certainty_Corpus is
+      type Failure_Kind_Array is
+        array (Positive range <>) of HTTP_Client.Exchange_Result_Kind;
+      type Response_Pair is record
+         Status : Flyology.HTTP.Status_Code;
+         Code   : US.Unbounded_String;
+      end record;
+      type Response_Pair_Array is
+        array (Positive range <>) of Response_Pair;
+      Failure_Kinds : constant Failure_Kind_Array :=
+        (HTTP_Client.Pre_Admission_Rejected,
+         HTTP_Client.Cancelled,
+         HTTP_Client.Timed_Out,
+         HTTP_Client.Client_Unavailable,
+         HTTP_Client.Connection_Failed,
+         HTTP_Client.Transport_Failed,
+         HTTP_Client.Request_Source_Failed,
+         HTTP_Client.Response_Invalid,
+         HTTP_Client.Response_Body_Too_Large,
+         HTTP_Client.Response_Sink_Failed);
+      Conclusive_Pairs : constant Response_Pair_Array :=
+        (1 => (400, US.To_Unbounded_String ("BadDigest")),
+         2 => (400, US.To_Unbounded_String ("InvalidArgument")),
+         3 => (400, US.To_Unbounded_String ("InvalidDigest")),
+         4 => (400, US.To_Unbounded_String ("InvalidRequest")),
+         5 => (400, US.To_Unbounded_String ("MalformedXML")),
+         6 => (400, US.To_Unbounded_String ("XAmzContentSHA256Mismatch")),
+         7 => (501, US.To_Unbounded_String ("NotImplemented")));
+      Retryable_Pairs : constant Response_Pair_Array :=
+        (1 => (409, US.To_Unbounded_String ("OperationAborted")),
+         2 => (429, US.To_Unbounded_String ("SlowDown")),
+         3 => (500, US.To_Unbounded_String ("InternalError")),
+         4 => (502, US.To_Unbounded_String ("BadGateway")),
+         5 => (503, US.To_Unbounded_String ("SlowDown")),
+         6 => (504, US.To_Unbounded_String ("RequestTimeout")));
+   begin
+      Check_Put_Bucket_Versioning_Response
+        (200,
+         "",
+         Bucket_Versioning_Mutation_Completed,
+         No_Failure);
+      for Pair of Conclusive_Pairs loop
+         Check_Put_Bucket_Versioning_Response
+           (Pair.Status,
+            US.To_String (Pair.Code),
+            Bucket_Versioning_Mutation_Definitely_Not_Applied,
+            Invalid_Request);
+      end loop;
+      Check_Put_Bucket_Versioning_Response
+        (401,
+         "InvalidAccessKeyId",
+         Bucket_Versioning_Mutation_Definitely_Not_Applied,
+         Authentication_Failed);
+      Check_Put_Bucket_Versioning_Response
+        (403,
+         "AccessDenied",
+         Bucket_Versioning_Mutation_Definitely_Not_Applied,
+         Authorization_Failed);
+      Check_Put_Bucket_Versioning_Response
+        (404,
+         "NoSuchBucket",
+         Bucket_Versioning_Mutation_Definitely_Not_Applied,
+         Not_Found);
+      for Pair of Retryable_Pairs loop
+         Check_Put_Bucket_Versioning_Response
+           (Pair.Status,
+            US.To_String (Pair.Code),
+            Bucket_Versioning_Mutation_Outcome_Unknown,
+            Unavailable_Or_Retryable);
+      end loop;
+      Check_Put_Bucket_Versioning_Response
+        (409,
+         "",
+         Bucket_Versioning_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+
+      for Admission in
+        HTTP_Client.Not_Admitted .. HTTP_Client.Possibly_Admitted
+      loop
+         declare
+            Success : constant Low_Level.Put_Bucket_Versioning_Outcome :=
+              (Kind   => Low_Level.Bucket_Versioning_Updated,
+               Status => 200);
+            Rejection : constant Low_Level.Put_Bucket_Versioning_Outcome :=
+              (Kind   => Low_Level.Put_Bucket_Versioning_Rejected,
+               Status => 403,
+               Error  =>
+                 (Code       => US.To_Unbounded_String ("AccessDenied"),
+                  Message    => US.Null_Unbounded_String,
+                  Resource   => US.Null_Unbounded_String,
+                  Request_ID => US.Null_Unbounded_String,
+                  Host_ID    => US.Null_Unbounded_String));
+            Success_Result : constant Put_Bucket_Versioning_Result :=
+              Normalize_Put_Bucket_Versioning_Response
+                (Success, Admission);
+            Rejection_Result : constant Put_Bucket_Versioning_Result :=
+              Normalize_Put_Bucket_Versioning_Response
+                (Rejection, Admission);
+         begin
+            if Success_Result.Disposition /=
+              Bucket_Versioning_Mutation_Outcome_Unknown
+              or else Success_Result.Failure /=
+                Corrupt_Or_Invalid_Response
+              or else Rejection_Result.Disposition /=
+                Bucket_Versioning_Mutation_Outcome_Unknown
+              or else Rejection_Result.Failure /=
+                Corrupt_Or_Invalid_Response
+            then
+               raise Program_Error with
+                 "PutBucketVersioning accepted inconsistent certainty";
+            end if;
+         end;
+      end loop;
+
+      for Kind of Failure_Kinds loop
+         for Admission in HTTP_Client.Admission_Certainty loop
+            declare
+               Result : constant Put_Bucket_Versioning_Result :=
+                 Normalize_Put_Bucket_Versioning_Failure
+                   (Kind, Admission, HTTP_Client.Sending_Request_Body);
+               Expected : constant Bucket_Versioning_Mutation_Disposition :=
+                 (if Kind = HTTP_Client.Cancelled
+                    and then Admission = HTTP_Client.Not_Admitted
+                  then Bucket_Versioning_Mutation_Cancelled_Before_Admission
+                  elsif Admission = HTTP_Client.Not_Admitted
+                  then Bucket_Versioning_Mutation_Definitely_Not_Applied
+                  else Bucket_Versioning_Mutation_Outcome_Unknown);
+               Expected_Failure : constant Failure_Reason :=
+                 (case Kind is
+                    when HTTP_Client.Pre_Admission_Rejected =>
+                      Invalid_Request,
+                    when HTTP_Client.Cancelled => Cancelled,
+                    when HTTP_Client.Timed_Out => Timed_Out,
+                    when HTTP_Client.Client_Unavailable =>
+                      Client_Unavailable,
+                    when HTTP_Client.Connection_Failed =>
+                      Connection_Failed,
+                    when HTTP_Client.Transport_Failed => Transport_Failed,
+                    when HTTP_Client.Request_Source_Failed =>
+                      Request_Source_Failed,
+                    when HTTP_Client.Response_Body_Too_Large
+                       | HTTP_Client.Response_Invalid
+                       | HTTP_Client.Response_Sink_Failed =>
+                      Corrupt_Or_Invalid_Response,
+                    when HTTP_Client.Response_Complete =>
+                      raise Program_Error with
+                        "complete response is not a failure");
+            begin
+               if Result.Kind /= Put_Bucket_Versioning_Exchange_Failed
+                 or else Result.Disposition /= Expected
+                 or else Result.Failure /= Expected_Failure
+                 or else Result.Admission /= Admission
+                 or else Result.HTTP_Result /= Kind
+               then
+                  raise Program_Error with
+                    "PutBucketVersioning exchange certainty mismatch";
+               end if;
+            end;
+         end loop;
+      end loop;
+   end Check_Put_Bucket_Versioning_Certainty_Corpus;
 
    procedure Check_Bucket_Tagging_Certainty_Corpus is
       type Failure_Kind_Array is array (Positive range <>) of
