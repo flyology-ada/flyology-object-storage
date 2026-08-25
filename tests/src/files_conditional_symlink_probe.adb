@@ -201,6 +201,8 @@ procedure Files_Conditional_Symlink_Probe is
    Public_Access_Block_Path : constant String :=
      Ada.Directories.Compose
        (Configuration_Path, "public-access-block.fos");
+   Policy_Path : constant String :=
+     Ada.Directories.Compose (Configuration_Path, "policy.fos");
    Bucket_Link_Path : constant String :=
      Ada.Directories.Compose
        (Ada.Directories.Compose (Root, "buckets"), "root-link-bucket");
@@ -700,6 +702,48 @@ begin
       Require
         (not Ada.Directories.Exists (Missing),
          "public access block operations created a dangling file target");
+   end if;
+
+   Ada.Directories.Delete_File (Public_Access_Block_Path);
+   Create_Symlink (Link_Target, Policy_Path, "bucket-policy-file");
+   Store.Put_Bucket_Policy
+     ("symlink-bucket", "policy", null, Ada.Real_Time.Time_Last, Result);
+   Require
+     (Result = Storage.Backend_Unavailable,
+      "Put_Bucket_Policy accepted a file symlink");
+   declare
+      Policy     : US.Unbounded_String;
+      Configured : Boolean;
+   begin
+      Store.Get_Bucket_Policy
+        ("symlink-bucket", null, Ada.Real_Time.Time_Last,
+         Policy, Configured, Result);
+      Require
+        (Result = Storage.Backend_Unavailable,
+         "Get_Bucket_Policy accepted a file symlink");
+      Store.Delete_Bucket_Policy
+        ("symlink-bucket", null, Ada.Real_Time.Time_Last, Result);
+      Require
+        (Result = Storage.Backend_Unavailable,
+         "Delete_Bucket_Policy accepted a file symlink");
+   end;
+   Require
+     (GNAT.OS_Lib.Is_Symbolic_Link (Policy_Path),
+      "bucket policy operations replaced the file symlink");
+   if Mode = "live" then
+      declare
+         File : Ada.Text_IO.File_Type;
+      begin
+         Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Sentinel);
+         Require
+           (Ada.Text_IO.Get_Line (File) = "outside-sentinel",
+            "bucket policy operations modified the external file");
+         Ada.Text_IO.Close (File);
+      end;
+   else
+      Require
+        (not Ada.Directories.Exists (Missing),
+         "bucket policy operations created a dangling file target");
    end if;
 
    --  A fresh long key spans multiple encoded directories. It must remain a

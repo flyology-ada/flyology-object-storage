@@ -1,5 +1,8 @@
 package body Flyology.Object_Storage.Backends is
 
+   function Valid_Bucket_Policy (Policy : String) return Boolean is
+     (Byte_Count (Policy'Length) <= Maximum_Bucket_Policy_Bytes);
+
    procedure Put_Object
      (Item     : in out Backend'Class;
       Bucket   : String;

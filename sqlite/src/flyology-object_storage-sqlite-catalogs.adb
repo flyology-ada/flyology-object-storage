@@ -15,11 +15,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   --  Persisted schema 11 introduces atomic bucket PublicAccessBlock records.
-   --  The value is the next repository migration after retained-generation
-   --  schema 10; older readers must reject it because they cannot preserve
-   --  this bucket configuration. Never renumber or reuse it.
-   Schema_Version : constant Long_Long_Integer := 11;
+   --  Persisted schema 12 introduces atomic raw bucket-policy records. The
+   --  value follows PublicAccessBlock schema 11; older readers must reject it
+   --  because they cannot preserve this bucket configuration. Never renumber
+   --  or reuse it.
+   Schema_Version : constant Long_Long_Integer := 12;
    --  Persisted SQL BLOB spelling of the externally fixed S3 version ID
    --  "null". It identifies the sole unversioned/suspended generation; changing
    --  these bytes would make migrated and reopened objects unreachable.
@@ -142,6 +142,15 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "CHECK(restrict_public_buckets_present IN (0,1))," &
      "restrict_public_buckets INTEGER NOT NULL " &
      "CHECK(restrict_public_buckets IN (0,1))," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   --  Persisted schema-12 table for one exact raw policy per bucket. The BLOB
+   --  preserves arbitrary bytes; its check mirrors the backend-private policy
+   --  ceiling, and changing either shape affects catalog compatibility.
+   Bucket_Policy_Schema : constant String :=
+     "CREATE TABLE bucket_policies (" &
+     "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+     "policy BLOB NOT NULL CHECK(length(policy) <= 16777216)," &
      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
      ") WITHOUT ROWID;";
    Versioning_Columns_Schema : constant String :=
@@ -938,6 +947,43 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         and then Has_SQL ("withoutrowid");
    end Valid_Public_Access_Block_Schema;
 
+   function Valid_Bucket_Policy_Schema
+     (Item : in out Catalog) return Boolean
+   is
+      Normalized_SQL : constant String :=
+        "lower(replace(replace(replace(replace(sql,' ','')," &
+        "char(9),''),char(10),''),char(13),''))";
+      function Has_SQL (Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='bucket_policies' AND instr(" & Normalized_SQL &
+            ",'" & Fragment & "')>0") = 1);
+   begin
+      return Scalar
+        (Item,
+         "SELECT count(*) FROM pragma_table_info('bucket_policies')") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('bucket_policies') " &
+           "WHERE name IN ('bucket_name','policy')") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_table_info('bucket_policies') " &
+           "WHERE (name='bucket_name' AND lower(type)='text' " &
+           "AND ""notnull""=1 AND pk=1) OR " &
+           "(name='policy' AND lower(type)='blob' " &
+           "AND ""notnull""=1 AND pk=0)") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM pragma_foreign_key_list('bucket_policies') " &
+           "WHERE ""table""='buckets' AND ""from""='bucket_name' " &
+           "AND ""to""='name' AND on_delete='CASCADE'") = 1
+        and then Has_SQL ("primarykey")
+        and then Has_SQL ("check(length(policy)<=16777216)")
+        and then Has_SQL ("withoutrowid");
+   end Valid_Bucket_Policy_Schema;
+
    function Valid_Generation_Schema (Item : in out Catalog) return Boolean is
       Normalized_SQL : constant String :=
         "lower(replace(replace(replace(replace(sql,' ','')," &
@@ -1164,9 +1210,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Object_Parts_Schema_V8 &
          Bucket_Tags_Schema &
          Public_Access_Block_Schema &
+         Bucket_Policy_Schema &
          Generation_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=11;");
+         "PRAGMA user_version=12;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -1565,6 +1612,32 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V10;
 
+   procedure Upgrade_From_V11 (Item : in out Catalog) is
+      In_Transaction : Boolean := False;
+      Existing_Table : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name='bucket_policies'");
+   begin
+      if Existing_Table /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 11";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Bucket_Policy_Schema & "PRAGMA user_version=12;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V11;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -1606,6 +1679,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 9 => null;
             when 10 => null;
             when 11 => null;
+            when 12 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -1626,6 +1700,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Upgrade_From_V10 (Item);
             Version := 11;
          end if;
+         if Version = 11 then
+            Upgrade_From_V11 (Item);
+            Version := 12;
+         end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
       if Text_Scalar (Item, "PRAGMA journal_mode") /= "wal" then
@@ -1642,7 +1720,8 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'multipart_uploads','multipart_parts','object_parts'," &
          "'bucket_tags','object_versions','current_object_versions'," &
          "'object_version_tags','object_version_metadata'," &
-         "'object_version_parts','bucket_public_access_blocks')") /= 14
+         "'object_version_parts','bucket_public_access_blocks'," &
+         "'bucket_policies')") /= 15
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -1662,6 +1741,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       then
          raise Catalog_Error with
            "SQLite public access block schema is incomplete";
+      elsif not Valid_Bucket_Policy_Schema (Item)
+      then
+         raise Catalog_Error with "SQLite bucket policy schema is incomplete";
       elsif Scalar
         (Item,
          "SELECT count(*) FROM pragma_table_info('buckets') " &
@@ -2370,6 +2452,170 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Delete_Bucket_Public_Access_Block;
+
+   procedure Put_Bucket_Policy
+     (Item   : in out Catalog;
+      Bucket : String;
+      Policy : String;
+      Result : out Status)
+   is
+      Exists         : DB.Statement;
+      Upsert         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      if not Backends.Valid_Bucket_Policy (Policy) then
+         Result := Entity_Too_Large;
+         return;
+      end if;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with "bucket policy bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Upsert, Item.Database,
+         "INSERT INTO bucket_policies VALUES(?1,?2) " &
+         "ON CONFLICT(bucket_name) DO UPDATE SET policy=excluded.policy");
+      DB.Bind (Upsert, 1, Bucket);
+      DB.Bind_Bytes (Upsert, 2, Policy);
+      if DB.Step (Upsert) /= DB.Done then
+         raise Catalog_Error with "bucket policy upsert returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Put_Bucket_Policy;
+
+   procedure Get_Bucket_Policy
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Policy     : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Exists : DB.Statement;
+      Query  : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      Policy := US.Null_Unbounded_String;
+      Configured := False;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with "bucket policy bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT policy FROM bucket_policies WHERE bucket_name=?1");
+      DB.Bind (Query, 1, Bucket);
+      if DB.Step (Query) = DB.Row then
+         declare
+            Value : constant String := DB.Column_Bytes (Query, 0);
+         begin
+            if not Backends.Valid_Bucket_Policy (Value) then
+               raise Catalog_Error with "invalid bucket policy catalog data";
+            end if;
+            Policy := US.To_Unbounded_String (Value);
+            Configured := True;
+         end;
+      end if;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Policy := US.Null_Unbounded_String;
+         Configured := False;
+         raise;
+   end Get_Bucket_Policy;
+
+   procedure Delete_Bucket_Policy
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status)
+   is
+      Exists         : DB.Statement;
+      Delete         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with "bucket policy bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM bucket_policies WHERE bucket_name=?1");
+      DB.Bind (Delete, 1, Bucket);
+      if DB.Step (Delete) /= DB.Done then
+         raise Catalog_Error with "bucket policy deletion returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Delete_Bucket_Policy;
 
    procedure Find_Object_Internal
      (Item    : in out Catalog;

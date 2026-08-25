@@ -92,6 +92,16 @@ Get rejects symlinked configuration or tag paths and returns one validated
 snapshot. The three publication barriers have deterministic device-error and
 abrupt-process old-or-new coverage.
 
+Bucket policy uses a separate `configuration/policy.fos` record with the
+`FOSPOL01` discriminator and one bounded, length-prefixed opaque byte string.
+Put synchronizes a temporary record before rename and then synchronizes the
+configuration and staging directories. A failure after rename is therefore
+publication-ambiguous, as for other files mutations. Get distinguishes a
+present empty policy from no policy and rejects malformed, trailing, symlinked,
+and nonordinary records. Delete synchronizes the configuration directory after
+unlink; a later synchronization failure can likewise report failure after the
+policy was removed.
+
 Bucket versioning configuration is a separate fixed-size
 `configuration/versioning.fos` record alongside the tag record. Updates merge
 independently supplied status and MFA-delete fields while holding the same

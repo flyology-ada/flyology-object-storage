@@ -8,11 +8,12 @@ with Flyology.Object_Storage.Tags;
 --  Provides a bounded concurrent in-memory backend. Object_Capacity
 --  independently bounds retained object generations (including markers),
 --  uploads, and parts; retaining history therefore consumes object slots.
---  Byte_Capacity covers retained committed, staged, and in-progress payload
---  buffer capacity; atomic overwrite and multipart assembly therefore require
---  coexistence headroom. It implements the same contract as durable backends
---  and is the reference oracle for conformance tests; capacity exhaustion is
---  an ordinary reported outcome.
+--  Byte_Capacity covers retained committed, staged, and in-progress object
+--  payload buffers plus retained opaque bucket-policy bytes; atomic
+--  replacement and multipart assembly therefore require coexistence headroom.
+--  It implements the same contract as durable backends and is the reference
+--  oracle for conformance tests; capacity exhaustion is an ordinary reported
+--  outcome.
 package Flyology.Object_Storage.Backends.Memory is
 
    type Store
@@ -91,6 +92,30 @@ package Flyology.Object_Storage.Backends.Memory is
       Result        : out Status);
 
    overriding procedure Delete_Bucket_Public_Access_Block
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   overriding procedure Put_Bucket_Policy
+     (Item     : in out Store;
+      Bucket   : String;
+      Policy   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   overriding procedure Get_Bucket_Policy
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Policy     : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   overriding procedure Delete_Bucket_Policy
      (Item     : in out Store;
       Bucket   : String;
       Token    : access Flyology.Cancellation.Token;
@@ -394,8 +419,8 @@ package Flyology.Object_Storage.Backends.Memory is
       Result    : out Status);
 
    --  Return the current retained byte total, including committed objects,
-   --  staged multipart parts, and reserved in-progress input and immutable
-   --  outbound snapshot buffer capacity.
+   --  bucket policies, staged multipart parts, and reserved in-progress input
+   --  and immutable outbound snapshot buffer capacity.
    function Bytes_Used (Item : Store) return Byte_Count;
 
 private
@@ -429,6 +454,8 @@ private
       Public_Access_Block_Configured : Boolean := False;
       Public_Access_Block : Bucket_Public_Access_Block_Configuration :=
         (others => <>);
+      Policy_Configured : Boolean := False;
+      Policy : Ada.Strings.Unbounded.Unbounded_String;
    end record;
    type Bucket_Array is array (Positive range <>) of Bucket_Slot;
 
@@ -505,6 +532,15 @@ private
          Configured    : out Boolean;
          Result        : out Status);
       procedure Delete_Bucket_Public_Access_Block
+        (Name : String; Result : out Status);
+      procedure Put_Bucket_Policy
+        (Name : String; Policy : String; Result : out Status);
+      procedure Get_Bucket_Policy
+        (Name       : String;
+         Policy     : out Ada.Strings.Unbounded.Unbounded_String;
+         Configured : out Boolean;
+         Result     : out Status);
+      procedure Delete_Bucket_Policy
         (Name : String; Result : out Status);
       procedure Reserve_Transient
         (Amount : Byte_Count; Result : out Status);

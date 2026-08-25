@@ -109,6 +109,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
      Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
    --  Derived from the shared caller-overridable XML resource policy used by
    --  the PublicAccessBlock codec; changing that source changes admission.
+   Maximum_Bucket_Policy_Body : constant Byte_Count :=
+     Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
+   --  Derived from the established caller-overridable document resource
+   --  policy already used by Put/GetBucketPolicy; changing that source changes
+   --  server admission and backend persistence compatibility together.
 
    function Decimal (Value : Byte_Count) return String is
      (Ada.Strings.Fixed.Trim
@@ -454,6 +459,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Tagging, Get_Bucket_Tagging, Delete_Bucket_Tagging,
          Put_Public_Access_Block, Get_Public_Access_Block,
          Delete_Public_Access_Block,
+         Put_Bucket_Policy, Get_Bucket_Policy, Delete_Bucket_Policy,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
          Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
@@ -556,6 +562,20 @@ package body Flyology.Object_Storage.Server.S3_Applications is
              elsif Method = "GET" then "GetPublicAccessBlock"
              else "DeletePublicAccessBlock") &
           "&publicAccessBlock=";
+      Is_Bucket_Policy_Query : constant Boolean :=
+        Query_Text = "policy"
+        or else Query_Text = "policy="
+        or else Query_Text =
+          "policy=&x-id=" &
+            (if Method = "PUT" then "PutBucketPolicy"
+             elsif Method = "GET" then "GetBucketPolicy"
+             else "DeleteBucketPolicy")
+        or else Query_Text =
+          "x-id=" &
+            (if Method = "PUT" then "PutBucketPolicy"
+             elsif Method = "GET" then "GetBucketPolicy"
+             else "DeleteBucketPolicy") &
+          "&policy=";
       Padded_Query : constant String := '&' & Query_Text & '&';
       Has_Bucket_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging&") /= 0
@@ -589,6 +609,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Looks_Like_Public_Access_Block_Query : constant Boolean :=
         Has_Public_Access_Block_Query
         or else Has_Public_Access_Block_Operation_ID;
+      Has_Bucket_Policy_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&policy&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&policy=") /= 0;
+      Has_Bucket_Policy_Operation_ID : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketPolicy&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketPolicy&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeleteBucketPolicy&") /= 0;
+      Looks_Like_Bucket_Policy_Query : constant Boolean :=
+        Has_Bucket_Policy_Query or else Has_Bucket_Policy_Operation_ID;
       Has_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging") /= 0
         or else
@@ -642,6 +674,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Bucket_Versioning_Query_Invalid : Boolean := False;
       Bucket_Tagging_Query_Invalid : Boolean := False;
       Public_Access_Block_Query_Invalid : Boolean := False;
+      Bucket_Policy_Query_Invalid : Boolean := False;
       Object_Read_Request : Object_Reads.Object_Read_Request;
       Tagging_Query_Invalid : Boolean := False;
       Tagging_Request : Tagging.Tagging_Query;
@@ -1491,6 +1524,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Public_Access_Block_Query)
         and then not
+          (Parsed.Kind = Requests.Bucket_Target
+           and then Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Bucket_Policy_Query)
+        and then not
           (Parsed.Kind = Requests.Object_Target
            and then Method = "DELETE"
            and then Requests.Query_String (Target_Text, Parsed) =
@@ -1536,8 +1573,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Public_Access_Block_Query
            and then not Is_Public_Access_Block_Query;
+         Bucket_Policy_Query_Invalid :=
+           Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Bucket_Policy_Query
+           and then not Is_Bucket_Policy_Query;
          Operation :=
-           (if Method = "PUT"
+           (if Method = "PUT" and then Looks_Like_Bucket_Policy_Query
+            then Put_Bucket_Policy
+            elsif Method = "GET" and then Looks_Like_Bucket_Policy_Query
+            then Get_Bucket_Policy
+            elsif Method = "DELETE" and then Looks_Like_Bucket_Policy_Query
+            then Delete_Bucket_Policy
+            elsif Method = "PUT"
              and then Looks_Like_Public_Access_Block_Query
             then Put_Public_Access_Block
             elsif Method = "GET"
@@ -1725,7 +1772,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Apps.Configure_Route
          (X, "s3", Target_Text,
          (if Operation in Create_Bucket | Put_Bucket_Tagging |
-         Put_Public_Access_Block |
+         Put_Public_Access_Block | Put_Bucket_Policy |
          Put_Bucket_Versioning | Put_Object |
          Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
          Complete_Multipart
@@ -1820,6 +1867,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (X, 400, "InvalidArgument",
             "The PublicAccessBlock request query is invalid", Target_Text);
          return;
+      elsif Bucket_Policy_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The bucket policy request query is invalid", Target_Text);
+         return;
       elsif Delete_Object_Query_Invalid then
          Send_Error
            (X, 400, "InvalidArgument",
@@ -1843,7 +1895,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       end if;
 
       if Operation not in Create_Bucket | Put_Bucket_Tagging |
-        Put_Public_Access_Block |
+        Put_Public_Access_Block | Put_Bucket_Policy |
         Put_Bucket_Versioning | Put_Object |
         Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
@@ -2901,6 +2953,190 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                        (US.To_String (Auth.Principal), Owner_Accepted);
                      if Owner_Accepted then
                         Store.Delete_Bucket_Public_Access_Block
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Result);
+                        if Result = Success then
+                           Apps.Respond (X, 204, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Put_Bucket_Policy =>
+               declare
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  Confirm_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-confirm-remove-self-bucket-access");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Confirm_Value : constant String :=
+                    (if Confirm_Count = 1 then
+                       Apps.Request_Header
+                         (X, "x-amz-confirm-remove-self-bucket-access")
+                     else "");
+                  Owner_Accepted : Boolean;
+               begin
+                  if MD5_Count /= 1
+                    or else not S3.Wire_Core.Valid_Base64
+                      ((if MD5_Count = 1
+                        then Apps.Request_Header (X, "content-md5") else ""),
+                       16)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "PutBucketPolicy requires one valid Content-MD5 " &
+                        "header", Target_Text);
+                  elsif Confirm_Count > 1
+                    or else Apps.Request_Header_Count (X, "content-type") > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A PutBucketPolicy control header is duplicated",
+                        Target_Text);
+                  elsif Confirm_Count = 1
+                    and then Confirm_Value not in "true" | "false"
+                  then
+                     Send_Error
+                       (X, 400, "InvalidArgument",
+                        "The self-access confirmation is invalid",
+                        Target_Text);
+                  elsif Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "PutBucketPolicy does not define RequestPayer",
+                        Target_Text);
+                  elsif Length.Kind = Backends.Known
+                    and then Length.Bytes > Maximum_Bucket_Policy_Body
+                  then
+                     Send_Error
+                       (X, 400, "EntityTooLarge",
+                        "Your proposed upload exceeds the maximum allowed " &
+                        "size", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        declare
+                           Source : Request_IO.Request_Source :=
+                             (Checksum_Kind => S3.Core.CRC64NVME,
+                              Length_Value  => Length,
+                              Expected_Hash => Auth.Payload_Hash,
+                              Check_Hash    =>
+                                US.To_String (Auth.Payload_Hash) /=
+                                  S3.SigV4.Unsigned_Payload,
+                              Hash      => GNAT.SHA256.Initial_Context,
+                              Observed  => 0,
+                              Maximum   => Maximum_Bucket_Policy_Body,
+                              Completed => False,
+                              others    => <>);
+                           Document : constant String :=
+                             Read_Document (Source);
+                           Checksum_Status : constant
+                             Document_Checksum_Status :=
+                               Verify_Document_Checksum (Document);
+                        begin
+                           if Apps.Request_Header (X, "content-md5") /=
+                             Content_MD5 (Document)
+                           then
+                              Send_Error
+                                (X, 400, "BadDigest",
+                                 "The Content-MD5 you specified did not " &
+                                 "match", Target_Text);
+                           elsif Checksum_Status in
+                             Document_Checksum_Group_Invalid |
+                             Document_Checksum_Value_Invalid
+                           then
+                              Send_Error
+                                (X, 400, "InvalidRequest",
+                                 "The PutBucketPolicy checksum group is " &
+                                 "invalid", Target_Text);
+                           elsif Checksum_Status =
+                             Document_Checksum_Mismatch
+                           then
+                              Send_Error
+                                (X, 400, "BadDigest",
+                                 "The optional checksum does not match the " &
+                                 "request body", Target_Text);
+                           elsif not Backends.Valid_Bucket_Policy (Document)
+                           then
+                              Send_Error
+                                (X, 400, "EntityTooLarge",
+                                 "Your proposed upload exceeds the maximum " &
+                                 "allowed size", Target_Text);
+                           else
+                              Store.Put_Bucket_Policy
+                                (Bucket, Document, Apps.Cancellation (X),
+                                 Apps.Deadline (X), Result);
+                              if Result = Success then
+                                 Apps.Respond (X, 200, "", "");
+                              else
+                                 Send_Backend_Error
+                                   (X, Result, True, Target_Text);
+                              end if;
+                           end if;
+                        end;
+                     end if;
+                  end if;
+               end;
+
+            when Get_Bucket_Policy =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+                  Policy : US.Unbounded_String;
+                  Configured : Boolean;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "GetBucketPolicy does not define RequestPayer",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Get_Bucket_Policy
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Policy, Configured, Result);
+                        if Result /= Success then
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        elsif not Configured then
+                           Send_Error
+                             (X, 404, "NoSuchBucketPolicy",
+                              "The bucket policy does not exist",
+                              Target_Text);
+                        else
+                           Apps.Respond
+                             (X, 200, "application/json",
+                              US.To_String (Policy));
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Delete_Bucket_Policy =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "DeleteBucketPolicy does not define RequestPayer",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Delete_Bucket_Policy
                           (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
                            Result);
                         if Result = Success then

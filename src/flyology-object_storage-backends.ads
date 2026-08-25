@@ -680,6 +680,46 @@ package Flyology.Object_Storage.Backends is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status) is abstract;
 
+   --  Check the repository's established bounded raw bucket-policy contract.
+   --  The exact ceiling remains private so the backend API does not create a
+   --  caller-visible resource-policy constant.
+   --  @param Policy Exact raw policy bytes
+   --  @return True when the policy can be persisted by every backend
+   function Valid_Bucket_Policy (Policy : String) return Boolean;
+
+   --  Atomically replace the exact raw policy document of an existing bucket.
+   --  Policy bytes are opaque at this HTTP-independent boundary; the S3
+   --  adapter owns wire admission, while policy interpretation remains a
+   --  separate capability.
+   procedure Put_Bucket_Policy
+     (Item     : in out Backend;
+      Bucket   : String;
+      Policy   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic raw-policy snapshot. Configured is False for an
+   --  existing bucket with no policy and is reset together with Policy on
+   --  every failure.
+   procedure Get_Bucket_Policy
+     (Item       : in out Backend;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Policy     : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically remove bucket-policy state. Deletion is idempotent for an
+   --  existing bucket with no policy.
+   procedure Delete_Bucket_Policy
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
    --  A successful implementation consumes Source through Finished, validates
    --  its declared length, and publishes the object only after all source
    --  validation succeeds. Conditions are evaluated atomically against the
@@ -1256,6 +1296,13 @@ package Flyology.Object_Storage.Backends is
       Result    : out Status) is abstract;
 
 private
+   Maximum_Bucket_Policy_Bytes : constant Byte_Count := 16 * 1_024 * 1_024;
+   --  Private project-policy ceiling shared by backend persistence paths. It
+   --  preserves the established S3.XML.Default_Limits document admission
+   --  budget without exposing a new caller-visible constant or coupling the
+   --  HTTP-independent backend boundary to the S3 wire package. Changing it
+   --  changes accepted and persisted bucket-policy compatibility.
+
    --  Monotonic publication order is backend-private metadata, not a wire or
    --  caller-visible value.  It disambiguates generations that share a
    --  one-second timestamp without expanding the listing API.

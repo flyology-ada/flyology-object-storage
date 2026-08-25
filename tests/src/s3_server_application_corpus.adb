@@ -5559,6 +5559,156 @@ begin
    end;
 
    declare
+      Put_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("policy", ""),
+         SigV4.Pair ("x-id", "PutBucketPolicy"));
+      Get_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("policy", ""),
+         SigV4.Pair ("x-id", "GetBucketPolicy"));
+      Delete_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("policy", ""),
+         SigV4.Pair ("x-id", "DeleteBucketPolicy"));
+      First : constant String :=
+        "{""Version"":""2012-10-17"",""Statement"":[]}";
+      Second : constant String := "{""Statement"":[]}";
+
+      function Put
+        (Document : String; Extra : String := "") return String is
+        (Run
+           (Signed_Query_Body_Request
+              ("PUT", "/test-bucket", Put_Query, Document,
+               "content-md5: " & Content_MD5 (Document) & CRLF & Extra)));
+   begin
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query)),
+            "<Code>NoSuchBucketPolicy</Code>"),
+         "GetBucketPolicy did not distinguish an absent policy");
+      Require
+        (Has (Put (""), "200 OK"),
+         "PutBucketPolicy rejected a present empty policy");
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "Content-Type: application/json")
+            and then Response_Body (Response) = "",
+            "GetBucketPolicy lost a present empty policy");
+      end;
+      Require
+        (Has
+           (Put
+              (First,
+               "x-amz-confirm-remove-self-bucket-access: true" & CRLF),
+            "200 OK"),
+         "PutBucketPolicy rejected a valid policy");
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Response_Body (Response) = First,
+            "GetBucketPolicy did not preserve exact policy bytes");
+      end;
+      for Algorithm in Checksum_Policy.Algorithm loop
+         declare
+            Response : constant String :=
+              Put
+                (Second,
+                 "x-amz-sdk-checksum-algorithm: " &
+                 Checksum_Policy.Wire_Name (Algorithm) & CRLF &
+                 Checksum_Header (Algorithm) & ": " &
+                 Checksum_Value (Algorithm, Second) & CRLF);
+         begin
+            Require
+              (Has (Response, "200 OK"),
+               "PutBucketPolicy rejected checksum " &
+               Checksum_Policy.Wire_Name (Algorithm) & ": " & Response);
+         end;
+      end loop;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_Query, First)),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketPolicy accepted a missing Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_Query, First,
+                  "content-md5: AAAAAAAAAAAAAAAAAAAAAA==" & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutBucketPolicy accepted a mismatched Content-MD5");
+      Require
+        (Has
+           (Put
+              (First,
+               "x-amz-confirm-remove-self-bucket-access: yes" & CRLF),
+            "<Code>InvalidArgument</Code>"),
+         "PutBucketPolicy accepted an invalid self-access confirmation");
+      Require
+        (Has
+           (Put (First, "x-amz-request-payer: requester" & CRLF),
+            "<Code>InvalidRequest</Code>"),
+         "PutBucketPolicy accepted non-modeled RequestPayer");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Get_Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketPolicy ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("policy", ""),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "GetBucketPolicy accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket", Get_Query, "unexpected")),
+            "400 Bad Request"),
+         "GetBucketPolicy accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Delete_Query)),
+            "204 No Content"),
+         "DeleteBucketPolicy failed");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query)),
+            "NoSuchBucketPolicy"),
+         "DeleteBucketPolicy left a visible policy");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Delete_Query)),
+            "204 No Content"),
+         "DeleteBucketPolicy was not idempotent");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/absent-bucket", Delete_Query)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteBucketPolicy did not distinguish an absent bucket");
+   end;
+
+   declare
       use Flyology.Object_Storage;
       Query : constant SigV4.Name_Value_Array :=
         (1 => SigV4.Pair ("versioning", ""));

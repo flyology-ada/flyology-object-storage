@@ -82,6 +82,24 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket : String;
       Result : out Status);
 
+   procedure Put_Bucket_Policy
+     (Item   : in out Catalog;
+      Bucket : String;
+      Policy : String;
+      Result : out Status);
+
+   procedure Get_Bucket_Policy
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Policy     : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   procedure Delete_Bucket_Policy
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status);
+
    --  Commit object state, retained-generation state, and Identity in one
    --  transaction. Identity has its default value on every non-success path.
    --  @param Item Catalog transaction owner

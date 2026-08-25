@@ -1,15 +1,16 @@
 # Memory backend capacity
 
-The memory backend's `Byte_Capacity` is a hard bound on retained payload
-buffer capacity, not a sum of logical S3 object sizes. It covers committed
-objects, staged multipart parts, allocator slack in unknown-length objects,
-buffers reserved by in-progress PutObject and UploadPart calls, and immutable
-snapshots held while GetObject calls invoke caller sinks. Bucket, key, and
-control metadata are bounded separately by the bucket/object slot limits and
-are not charged to this byte counter. A completed object slot also retains at
-most 10,000 selected multipart part numbers and sizes. GetObjectAttributes
-copies only its requested page while holding the protected state, so its
-object metadata and part page always describe the same generation.
+The memory backend's `Byte_Capacity` is a hard bound on retained object-body
+buffer capacity and opaque bucket-policy bytes, not a sum of logical S3 object
+sizes. It covers committed objects, staged multipart parts, allocator slack in
+unknown-length objects, buffers reserved by in-progress PutObject and
+UploadPart calls, immutable snapshots held while GetObject calls invoke caller
+sinks, and stored bucket-policy documents. Other bucket, key, and control
+metadata are bounded separately by the bucket/object slot limits and are not
+charged to this byte counter. A completed object slot also retains at most
+10,000 selected multipart part numbers and sizes. GetObjectAttributes copies
+only its requested page while holding the protected state, so its object
+metadata and part page always describe the same generation.
 
 Known-length sources reserve their exact declared length before the first
 source read. Unknown-length sources reserve before every allocation growth;
@@ -76,6 +77,12 @@ entering the protected state and replaces the complete vector in one protected
 operation; Get returns a copied snapshot, so caller mutation cannot alias store
 state. Tags consume bounded configuration memory, do not make a bucket
 nonempty, and disappear with bucket deletion.
+
+Each bucket slot also stores one optional opaque bucket-policy byte string.
+Put replaces the configured bit and exact bytes in one protected action; Get
+returns one copied snapshot and distinguishes a present empty policy from no
+policy. Policy bytes count against `Byte_Capacity`, including replacement
+coexistence, and are released by policy or bucket deletion.
 
 Each bucket slot also holds presence-preserving versioning configuration.
 Status and MFA-delete fields can be updated independently inside the same

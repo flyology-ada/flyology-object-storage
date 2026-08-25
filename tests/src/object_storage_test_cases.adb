@@ -520,6 +520,118 @@ package body Object_Storage_Test_Cases is
          "public access block persistence fixture put failed");
    end Exercise_Bucket_Public_Access_Block;
 
+   procedure Exercise_Bucket_Policy
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      package US renames Ada.Strings.Unbounded;
+      First : constant String :=
+        "{""Version"":""2012-10-17"",""Statement"":[]}";
+      Second : constant String :=
+        Character'Val (0) & "raw" & Character'Val (255);
+      Observed   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Store.Get_Bucket_Policy
+        ("missing-policy-bucket", null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Not_Found and then not Configured
+         and then US.Length (Observed) = 0,
+         "bucket policy get did not distinguish an absent bucket");
+
+      Store.Get_Bucket_Policy
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Observed) = 0,
+         "new bucket exposed a policy");
+
+      Store.Put_Bucket_Policy
+        (Bucket, "", null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Policy
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.Length (Observed) = 0,
+         "present empty bucket policy was confused with absence");
+
+      Store.Put_Bucket_Policy
+        (Bucket, First, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "bucket policy put failed");
+      Store.Get_Bucket_Policy
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Observed) = First,
+         "bucket policy snapshot did not round trip");
+
+      Store.Put_Bucket_Policy
+        (Bucket, Second, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Policy
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Observed) = Second,
+         "bucket policy replacement did not preserve exact bytes");
+
+      Store.Delete_Bucket_Policy
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_Policy
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Observed) = 0,
+         "bucket policy delete left visible state");
+      Store.Delete_Bucket_Policy
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "bucket policy delete was not idempotent");
+      Store.Delete_Bucket_Policy
+        ("missing-policy-bucket", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Not_Found,
+         "bucket policy delete did not distinguish an absent bucket");
+
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.Get_Bucket_Policy
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last,
+               Observed, Configured, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "bucket policy get ignored cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Put_Bucket_Policy
+              (Bucket, First, null, Ada.Real_Time.Time_First, Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "bucket policy put ignored deadline");
+      end;
+      Store.Put_Bucket_Policy
+        (Bucket, First, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "bucket policy persistence fixture put failed");
+   end Exercise_Bucket_Policy;
+
    procedure Exercise_Bucket_Listing
      (Store : in out Flyology.Object_Storage.Backends.Backend'Class)
    is
@@ -2329,6 +2441,25 @@ package body Object_Storage_Test_Cases is
       Assert (Result = Success, "head existing memory bucket");
       Exercise_Bucket_Tags (Store, "test-bucket");
       Exercise_Bucket_Public_Access_Block (Store, "test-bucket");
+      Exercise_Bucket_Policy (Store, "test-bucket");
+      declare
+         Policy     : Ada.Strings.Unbounded.Unbounded_String;
+         Configured : Boolean;
+      begin
+         Store.Get_Bucket_Policy
+           ("test-bucket", null, Ada.Real_Time.Time_Last,
+            Policy, Configured, Result);
+         Assert
+           (Configured
+            and then Store.Bytes_Used = Byte_Count
+              (Ada.Strings.Unbounded.Length (Policy)),
+            "memory bucket policy was not charged to byte capacity");
+      end;
+      Store.Delete_Bucket_Policy
+        ("test-bucket", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success and then Store.Bytes_Used = 0,
+         "memory policy fixture cleanup did not release byte capacity");
       Store.Put_Object
         ("test-bucket", "../opaque/key", Source, Default_Put_Options,
          null, Ada.Real_Time.Time_Last, Info, Result);
@@ -2457,6 +2588,32 @@ package body Object_Storage_Test_Cases is
       Store.Head_Bucket
         ("test-bucket", null, Ada.Real_Time.Time_Last, Result);
       Assert (Result = Not_Found, "head deleted memory bucket");
+      declare
+         Small      : Memory.Store (1, 1, 5);
+         Policy     : Ada.Strings.Unbounded.Unbounded_String;
+         Configured : Boolean;
+      begin
+         Small.Create_Bucket
+           ("small", null, Ada.Real_Time.Time_Last, Result);
+         Small.Put_Bucket_Policy
+           ("small", "1234", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success and then Small.Bytes_Used = 4,
+            "memory bucket policy initial capacity accounting failed");
+         Small.Put_Bucket_Policy
+           ("small", "12", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Capacity_Exceeded,
+            "memory policy replacement ignored coexistence capacity");
+         Small.Get_Bucket_Policy
+           ("small", null, Ada.Real_Time.Time_Last,
+            Policy, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then Ada.Strings.Unbounded.To_String (Policy) = "1234"
+            and then Small.Bytes_Used = 4,
+            "memory policy replacement bypassed coexistence capacity");
+      end;
    end Check_Memory_Lifecycle;
 
    procedure Check_Memory_Multipart (Unused : in out Fixture) is
@@ -3767,6 +3924,7 @@ package body Object_Storage_Test_Cases is
          Assert (Result = Success, "head existing files bucket");
          Exercise_Bucket_Tags (Store, "file-bucket");
          Exercise_Bucket_Public_Access_Block (Store, "file-bucket");
+         Exercise_Bucket_Policy (Store, "file-bucket");
          Store.Put_Object
            ("file-bucket", Key, Source,
             (Entity_Tag   => US.To_Unbounded_String ("etag-1"),
@@ -3949,6 +4107,19 @@ package body Object_Storage_Test_Cases is
                  Optional_Configuration_Boolean'
                    (Is_Set => True, Value => True),
                "files public access block did not persist across reopen");
+         end;
+         declare
+            Policy     : US.Unbounded_String;
+            Configured : Boolean;
+         begin
+            Store.Get_Bucket_Policy
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Policy, Configured, Result);
+            Assert
+              (Result = Success and then Configured
+               and then US.To_String (Policy) =
+                 "{""Version"":""2012-10-17"",""Statement"":[]}",
+               "files bucket policy did not persist across reopen");
          end;
          Store.Head_Object
            ("file-bucket", Key, null, Ada.Real_Time.Time_Last, Info, Result);

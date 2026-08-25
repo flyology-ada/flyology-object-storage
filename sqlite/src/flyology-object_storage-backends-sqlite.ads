@@ -95,6 +95,30 @@ package Flyology.Object_Storage.Backends.SQLite is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status);
 
+   overriding procedure Put_Bucket_Policy
+     (Item     : in out Store;
+      Bucket   : String;
+      Policy   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   overriding procedure Get_Bucket_Policy
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Policy     : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   overriding procedure Delete_Bucket_Policy
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
    overriding procedure Put_Bucket_Versioning
      (Item          : in out Store;
       Bucket        : String;

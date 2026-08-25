@@ -18,7 +18,7 @@ DeleteBucketMetadataConfiguration	extended	missing	covered	missing	covered
 DeleteBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 DeleteBucketMetricsConfiguration	extended	missing	covered	missing	covered
 DeleteBucketOwnershipControls	extended	missing	covered	missing	covered
-DeleteBucketPolicy	extended	missing	covered	missing	covered
+DeleteBucketPolicy	extended	covered	covered	covered	covered
 DeleteBucketReplication	extended	missing	covered	missing	covered
 DeleteBucketTagging	extended	covered	covered	covered	covered
 DeleteBucketWebsite	extended	missing	covered	missing	covered
@@ -45,7 +45,7 @@ GetBucketMetricsConfiguration	extended	missing	partial	missing	missing
 GetBucketNotification	extended	missing	partial	missing	missing
 GetBucketNotificationConfiguration	extended	missing	partial	missing	missing
 GetBucketOwnershipControls	extended	missing	covered	missing	covered
-GetBucketPolicy	extended	missing	covered	missing	covered
+GetBucketPolicy	extended	covered	covered	covered	covered
 GetBucketPolicyStatus	extended	missing	covered	missing	covered
 GetBucketReplication	extended	missing	partial	missing	missing
 GetBucketRequestPayment	extended	missing	covered	missing	covered
@@ -91,7 +91,7 @@ PutBucketMetricsConfiguration	extended	missing	partial	missing	missing
 PutBucketNotification	extended	missing	partial	missing	missing
 PutBucketNotificationConfiguration	extended	missing	partial	missing	missing
 PutBucketOwnershipControls	extended	missing	covered	missing	covered
-PutBucketPolicy	extended	missing	covered	missing	covered
+PutBucketPolicy	extended	covered	covered	covered	covered
 PutBucketReplication	extended	missing	partial	missing	missing
 PutBucketRequestPayment	extended	missing	covered	missing	covered
 PutBucketTagging	core	covered	covered	covered	covered

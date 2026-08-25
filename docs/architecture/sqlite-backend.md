@@ -45,6 +45,13 @@ publishes the replacement payload. Tag reads and object-existence classification
 remain under the catalog operation gate, so a reader cannot combine tags from
 one version with the body identity of another.
 
+Schema version 12 adds `bucket_policies`, with one bounded BLOB row per
+configured bucket and a cascading foreign key. The BLOB path preserves exact
+bytes, including NUL and a present empty policy. Put and delete publish in one
+catalog transaction; Get returns one gated snapshot. Schema 11 migrates by
+creating the empty table and does not invent policy state for existing
+buckets.
+
 Schema version 10 adds the durable retained-generation foundation without
 moving bodies into SQLite. `object_versions` stores one bounded metadata row
 per opaque version identity and assigns a monotonically increasing publication

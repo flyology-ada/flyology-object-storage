@@ -423,6 +423,8 @@ package body Flyology.Object_Storage.Backends.Memory is
                return;
             end if;
          end loop;
+         Bytes := Bytes - Byte_Count
+           (Ada.Strings.Unbounded.Length (Buckets (Index).Policy));
          Buckets (Index) := (others => <>);
          Result := Success;
       end Delete_Bucket;
@@ -517,6 +519,71 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Success;
          end if;
       end Delete_Bucket_Public_Access_Block;
+
+      procedure Put_Bucket_Policy
+        (Name : String; Policy : String; Result : out Status)
+      is
+         Index    : constant Natural := Bucket_Index (Name);
+         Incoming : constant Byte_Count := Byte_Count (Policy'Length);
+         Existing : Byte_Count := 0;
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+            return;
+         elsif not Valid_Bucket_Policy (Policy) then
+            Result := Entity_Too_Large;
+            return;
+         end if;
+         Existing := Byte_Count
+           (Ada.Strings.Unbounded.Length (Buckets (Index).Policy));
+         if Incoming > Byte_Limit - Bytes
+           or else Reserved_Bytes > Byte_Limit - Bytes - Incoming
+         then
+            Result := Capacity_Exceeded;
+         else
+            Buckets (Index).Policy :=
+              Ada.Strings.Unbounded.To_Unbounded_String (Policy);
+            Buckets (Index).Policy_Configured := True;
+            Bytes := Bytes - Existing + Incoming;
+            Result := Success;
+         end if;
+      end Put_Bucket_Policy;
+
+      procedure Get_Bucket_Policy
+        (Name       : String;
+         Policy     : out Ada.Strings.Unbounded.Unbounded_String;
+         Configured : out Boolean;
+         Result     : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Policy := Ada.Strings.Unbounded.Null_Unbounded_String;
+         Configured := False;
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Policy := Buckets (Index).Policy;
+            Configured := Buckets (Index).Policy_Configured;
+            Result := Success;
+         end if;
+      end Get_Bucket_Policy;
+
+      procedure Delete_Bucket_Policy
+        (Name : String; Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Bytes := Bytes - Byte_Count
+              (Ada.Strings.Unbounded.Length (Buckets (Index).Policy));
+            Buckets (Index).Policy :=
+              Ada.Strings.Unbounded.Null_Unbounded_String;
+            Buckets (Index).Policy_Configured := False;
+            Result := Success;
+         end if;
+      end Delete_Bucket_Policy;
 
       procedure Reserve_Transient
         (Amount : Byte_Count; Result : out Status) is
@@ -2272,6 +2339,60 @@ package body Flyology.Object_Storage.Backends.Memory is
          Item.State.Delete_Bucket_Public_Access_Block (Bucket, Result);
       end if;
    end Delete_Bucket_Public_Access_Block;
+
+   overriding procedure Put_Bucket_Policy
+     (Item     : in out Store;
+      Bucket   : String;
+      Policy   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Put_Bucket_Policy (Bucket, Policy, Result);
+      end if;
+   end Put_Bucket_Policy;
+
+   overriding procedure Get_Bucket_Policy
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Policy     : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Policy := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_Policy
+           (Bucket, Policy, Configured, Result);
+      end if;
+   end Get_Bucket_Policy;
+
+   overriding procedure Delete_Bucket_Policy
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Bucket_Policy (Bucket, Result);
+      end if;
+   end Delete_Bucket_Policy;
 
    overriding procedure Put_Bucket_Versioning
      (Item          : in out Store;
