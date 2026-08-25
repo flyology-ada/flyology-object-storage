@@ -26,6 +26,10 @@ PROOF_PROJECT="tools/flyology_object_storage_proof.gpr"
 PROOF_LOG_DIR="$PROJECT_DIR/obj/proof/logs"
 
 cd "$PROJECT_DIR"
+#  A proof-only checkout has not run the Alire build stages that materialize
+#  dependency project roots and generated configuration. Stop before
+#  compilation; GNATprove remains the sole analyzer for the selected units.
+alr -n build --stop-after=pre-build
 alr -n exec -- "$PROVE" -P "$PROOF_PROJECT" --clean
 mkdir -p "$PROOF_LOG_DIR"
 alr -n exec -- "$PROVE" -P "$PROOF_PROJECT" -j0 --level=0 \
