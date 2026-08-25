@@ -158,12 +158,15 @@ alr build
 The composable client resolves through the Flyology index as
 `flyology_http=0.1.3-dev`, which depends exactly on
 `flyology_quic=0.1.3-dev`. Both indexed crates resolve to reviewed source commit
-`a65f24f473bd771356a4fcb355fc10f961202534`; Object Storage carries no external
+`537edbc5a26f701cde3369c5adfbc3236303e6bc`; Object Storage carries no external
 git pin for either dependency. Committed machine-local path pins remain
 prohibited. The indexed client provides protected bounded round-robin HTTP/2
 pump handoff and keeps synchronous settlement on the same owner-driven
 composable pump, with no helper task, extra completion slot, or second protocol
-engine. Ordinary clients retain zero settlement grace.
+engine. It also provides one guarded stale pooled-HTTP/1 recovery for safe
+bounded-buffer GET/HEAD exchanges only when no source or response bytes exist;
+mutation and source-bearing calls are never replayed. Ordinary clients retain
+zero settlement grace.
 
 The independent S3 interoperability matrix uses digest-pinned RustFS and
 SeaweedFS servers as its permissively licensed primary targets, MinIO as an
