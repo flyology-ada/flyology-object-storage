@@ -17,6 +17,15 @@ decoded before publication, so passing it to the next call cannot
 double-encode the cursor. FetchOwner is not a ListObjects v1 input; owner is
 an optional member of each returned object.
 
+The parameter-record overload waits on the public owner-driven
+`Client.Scoped.List_Objects` operation and returns its typed HTTP failure and
+admission state. The convenience overload drives that same state machine,
+then applies the v1 marker fallback. The operation bounds retained XML by the
+shared decoder limit, supports cancellation and restart after Finish, and
+rejects a response whose singleton headers, bucket, echoed scope, marker,
+maximum, encoding mode, or requester-pays charge do not match the signed
+request. No later page is treated as sharing the prior page's snapshot.
+
 `List_Page` exposes one bounded ListObjectsV2 page without requiring callers
 to assemble modeled parameters or decode XML. It carries prefix and delimiter
 scope, an exclusive `Start_After` for the initial page, and an opaque

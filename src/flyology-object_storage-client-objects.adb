@@ -1,5 +1,6 @@
 with Ada.Calendar;
 with Ada.Calendar.Formatting;
+with Flyology.IO;
 with Flyology.Object_Storage.S3.Checksum_Policy;
 with Flyology.Object_Storage.S3.IMF_Dates;
 with Flyology.Object_Storage.S3.Tagging;
@@ -12,6 +13,7 @@ package body Flyology.Object_Storage.Client.Objects is
    use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
+   use type Scoped.List_Objects_Result_Kind;
 
    function Timestamp return String is
       Image : constant String := Ada.Calendar.Formatting.Image
@@ -50,6 +52,35 @@ package body Flyology.Object_Storage.Client.Objects is
       end loop;
       return True;
    end Valid_Exact_Entity_Tag;
+
+   procedure Raise_List_Objects_Exchange_Failure
+     (Result : Scoped.List_Objects_Result) is
+   begin
+      case Result.HTTP_Result is
+         when Flyology.HTTP.Client.Response_Complete =>
+            raise Program_Error with
+              "unreachable complete ListObjects exchange failure";
+         when Flyology.HTTP.Client.Pre_Admission_Rejected =>
+            raise Constraint_Error with "HTTP request was rejected";
+         when Flyology.HTTP.Client.Cancelled =>
+            raise Flyology.Cancellation.Operation_Cancelled;
+         when Flyology.HTTP.Client.Timed_Out =>
+            raise Flyology.IO.Timeout_Error;
+         when Flyology.HTTP.Client.Client_Unavailable =>
+            raise Flyology.HTTP.Client.Client_Closed;
+         when Flyology.HTTP.Client.Connection_Failed =>
+            raise Flyology.HTTP.Client.Connection_Error;
+         when Flyology.HTTP.Client.Transport_Failed =>
+            raise Flyology.IO.Device_Error;
+         when Flyology.HTTP.Client.Request_Source_Failed =>
+            raise Flyology.HTTP.Client.Request_Body_Error;
+         when Flyology.HTTP.Client.Response_Invalid |
+              Flyology.HTTP.Client.Response_Body_Too_Large |
+              Flyology.HTTP.Client.Response_Sink_Failed =>
+            raise Low_Level.Invalid_Response with
+              "ListObjects response is invalid or exceeds the XML limit";
+      end case;
+   end Raise_List_Objects_Exchange_Failure;
 
    function List_Page
      (Client   : aliased in out Flyology.HTTP.Client.Client;
@@ -144,6 +175,36 @@ package body Flyology.Object_Storage.Client.Objects is
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Origin   : Flyology.HTTP.Origin;
       Bucket   : String;
+      Parameters : Low_Level.List_Objects_Parameters;
+      Identity : Low_Level.Credentials;
+      Region   : String := "us-east-1";
+      Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout  : Duration := 30.0;
+      Token    : access Flyology.Cancellation.Token := null)
+      return Scoped.List_Objects_Result
+   is
+      --  The listing parent, HTTP exchange, and HTTP's single active
+      --  transport child determine this capacity; it is a derived bound.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Scoped.List_Objects_Operation :=
+           Scoped.List_Objects
+             (Set'Access, Client'Access, Origin, Bucket, Parameters, Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+              Token);
+         Result : Scoped.List_Objects_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Scoped.Finish (Operation, Result);
+         return Result;
+      end;
+   end List_V1_Page;
+
+   function List_V1_Page
+     (Client   : aliased in out Flyology.HTTP.Client.Client;
+      Origin   : Flyology.HTTP.Origin;
+      Bucket   : String;
       Identity : Low_Level.Credentials;
       Region   : String := "us-east-1";
       Style    : Low_Level.Addressing_Style := Low_Level.Path_Style;
@@ -162,65 +223,74 @@ package body Flyology.Object_Storage.Client.Objects is
       Parameters : Low_Level.List_Objects_Parameters;
    begin
       Parameters.Prefix := US.To_Unbounded_String (Prefix);
+      Parameters.Has_Prefix := Prefix'Length > 0;
       Parameters.Delimiter := US.To_Unbounded_String (Delimiter);
+      Parameters.Has_Delimiter := Delimiter'Length > 0;
       Parameters.Marker := US.To_Unbounded_String (Marker);
+      Parameters.Has_Marker := Marker'Length > 0;
       Parameters.Max_Keys := Maximum;
+      Parameters.Has_Max_Keys := True;
       Parameters.URL_Encoding := URL_Encoding;
       Parameters.Request_Payer := US.To_Unbounded_String (Request_Payer);
       Parameters.Expected_Bucket_Owner :=
         US.To_Unbounded_String (Expected_Bucket_Owner);
       Parameters.Include_Restore_Status := Include_Restore_Status;
       declare
-         Prepared : constant Low_Level.Prepared_Request :=
-           Low_Level.Prepare_List_Objects
-             (Origin, Style, Bucket, Parameters, Identity, Region,
-              Timestamp);
-         Outcome : constant Low_Level.List_Objects_Outcome :=
-           Low_Level.Execute_List_Objects
-             (Client, Prepared, Timeout, Token);
+         Result : constant Scoped.List_Objects_Result :=
+           List_V1_Page
+             (Client, Origin, Bucket, Parameters, Identity, Region, Style,
+              Timeout, Token);
       begin
-         if Outcome.Kind = Low_Level.Rejected then
-            return
-              (Kind => List_Rejected, Status => Outcome.Status,
-               Error => Outcome.Error);
+         if Result.Kind = Scoped.List_Objects_Exchange_Failed then
+            Raise_List_Objects_Exchange_Failure (Result);
          end if;
          declare
-            Page : S3.Listings.List_Objects_Result renames
-              Outcome.Result.Listing;
-            Next : US.Unbounded_String;
-
-            function Logical_Marker (Value : String) return String is
-            begin
-               if Page.Has_Encoding_Type then
-                  return S3.Listings.Decode_URL_Value (Value);
-               end if;
-               return Value;
-            exception
-               when S3.Listings.Malformed_Listing =>
-                  raise Low_Level.Invalid_Response with
-                    "malformed encoded ListObjects marker";
-            end Logical_Marker;
+            Outcome : Low_Level.List_Objects_Outcome renames Result.Response;
          begin
-            if Page.Is_Truncated then
-               if Page.Has_Next_Marker then
-                  Next := US.To_Unbounded_String
-                    (Logical_Marker (US.To_String (Page.Next_Marker)));
-               elsif not Page.Contents.Is_Empty then
-                  Next := US.To_Unbounded_String
-                    (Logical_Marker
-                       (US.To_String (Page.Contents.Last_Element.Key)));
-               else
-                  raise Low_Level.Invalid_Response with
-                    "truncated ListObjects page lacks a continuation marker";
-               end if;
+            if Outcome.Kind = Low_Level.Rejected then
+               return
+                 (Kind => List_Rejected, Status => Outcome.Status,
+                  Error => Outcome.Error);
             end if;
-            return
-              (Kind            => Page_Available,
-               Status          => Outcome.Status,
-               Page            => Page,
-               Next_Marker     => Next,
-               Has_Next_Marker => Page.Is_Truncated,
-               Request_Charged => Outcome.Result.Request_Charged);
+            declare
+               Page : S3.Listings.List_Objects_Result renames
+                 Outcome.Result.Listing;
+               Next : US.Unbounded_String;
+
+               function Logical_Marker (Value : String) return String is
+               begin
+                  if Page.Has_Encoding_Type then
+                     return S3.Listings.Decode_URL_Value (Value);
+                  end if;
+                  return Value;
+               exception
+                  when S3.Listings.Malformed_Listing =>
+                     raise Low_Level.Invalid_Response with
+                       "malformed encoded ListObjects marker";
+               end Logical_Marker;
+            begin
+               if Page.Is_Truncated then
+                  if Page.Has_Next_Marker then
+                     Next := US.To_Unbounded_String
+                       (Logical_Marker (US.To_String (Page.Next_Marker)));
+                  elsif not Page.Contents.Is_Empty then
+                     Next := US.To_Unbounded_String
+                       (Logical_Marker
+                          (US.To_String (Page.Contents.Last_Element.Key)));
+                  else
+                     raise Low_Level.Invalid_Response with
+                       "truncated ListObjects page lacks a continuation " &
+                       "marker";
+                  end if;
+               end if;
+               return
+                 (Kind            => Page_Available,
+                  Status          => Outcome.Status,
+                  Page            => Page,
+                  Next_Marker     => Next,
+                  Has_Next_Marker => Page.Is_Truncated,
+                  Request_Charged => Outcome.Result.Request_Charged);
+            end;
          end;
       end;
    end List_V1_Page;

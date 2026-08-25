@@ -69,6 +69,25 @@ package Flyology.Object_Storage.Client.Low_Level.Scoped is
       Token       : access Flyology.Cancellation.Token := null)
      with Pre => Flyology.Buffers.Has_Buffer (Destination);
 
+   --  Start a prepared ListObjects v1 exchange into a bounded response sink.
+   --  Prepared, Sink, Client, Token, and their owners must outlive terminal
+   --  typed Finish of Operation.
+   --  @param Operation Established HTTP child operation
+   --  @param Client Configured origin client
+   --  @param Prepared Prepared ListObjects v1 request
+   --  @param Sink Bounded complete-response sink
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source
+   --  @exception Invalid_Request Prepared is not ListObjects v1
+   procedure Start_List_Objects
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null);
+
    --  Start a prepared ListObjectsV2 exchange into a bounded response sink.
    --  Prepared, Sink, Client, Token, and their owners must outlive terminal
    --  typed Finish of Operation.

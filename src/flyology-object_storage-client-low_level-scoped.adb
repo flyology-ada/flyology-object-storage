@@ -53,6 +53,22 @@ package body Flyology.Object_Storage.Client.Low_Level.Scoped is
          Token);
    end Start_Get_Object;
 
+   procedure Start_List_Objects
+     (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null) is
+   begin
+      if Prepared.Operation /= List_Objects_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Flyology.HTTP.Client.Scoped.Start
+        (Operation, Client, Prepared.Message'Access, Sink, Deadline, Token);
+   end Start_List_Objects;
+
    procedure Start_List_Objects_V2
      (Operation : in out Flyology.HTTP.Client.Exchange_Operation;
       Client    : not null access Flyology.HTTP.Client.Client;

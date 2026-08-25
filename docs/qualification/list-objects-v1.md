@@ -25,6 +25,18 @@ before the next request signs and percent-encodes it. Tests cover slash, space,
 literal percent, non-ASCII bytes, malformed escapes, multiple-character
 delimiters, mutation between pages, cancellation, and deadline propagation.
 
+The public `Client.Scoped.List_Objects` operation owns the prepared request
+and bounded response bytes until typed Finish. It can restart after Finish on
+the same retained HTTP client and cancellation token, without a helper task or
+automatic retry. Complete-response decoding enforces physical singleton
+headers and binds the bucket, optional echoed prefix/delimiter/marker,
+requested or default maximum, URL-encoding mode, and requester-pays charge to
+the signed request. The parameter-record synchronous overload waits on this
+operation; the convenience overload preserves its raising transport contract
+and applies marker fallback afterward. The socket corpus covers success,
+modeled error normalization, wrong echoes, duplicate headers, unrequested
+payer charges, pre-admission cancellation, and direct-operation restart.
+
 The authenticated general-purpose path-style server projects its static
 principal as the bucket and object owner. It enforces expected-owner and
 accepts syntactically valid Requester Pays input as an owner request without

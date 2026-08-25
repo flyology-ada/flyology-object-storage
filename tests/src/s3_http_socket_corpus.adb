@@ -102,6 +102,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Scoped.Failure_Reason;
    use type Scoped.Publication_Disposition;
    use type Scoped.Part_Upload_Disposition;
+   use type Scoped.List_Objects_Result_Kind;
    use type Scoped.List_Objects_V2_Result_Kind;
    use type Scoped.List_Object_Versions_Result_Kind;
    use type Scoped.Get_Object_Attributes_Result_Kind;
@@ -1424,6 +1425,13 @@ procedure S3_HTTP_Socket_Corpus is
         "<Delimiter>/</Delimiter><MaxKeys>2</MaxKeys>" &
         "<EncodingType>url</EncodingType>" &
         "<IsTruncated>false</IsTruncated></ListBucketResult>";
+      Wrong_V1_Bucket_XML : constant String :=
+        "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><Name>wrong-bucket</Name>" &
+        "<Prefix>socket/</Prefix><Marker>before</Marker>" &
+        "<Delimiter>/</Delimiter><MaxKeys>2</MaxKeys>" &
+        "<EncodingType>url</EncodingType>" &
+        "<IsTruncated>false</IsTruncated></ListBucketResult>";
       V1_First_Page_XML : constant String :=
         "<ListBucketResult xmlns=""http://s3.amazonaws.com/doc/" &
         "2006-03-01/""><Name>example-bucket</Name>" &
@@ -1878,6 +1886,59 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Request_Payer => "requester",
             Expected_Bucket_Owner => "123456789012",
             Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("200 OK", V1_Success_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: v1-scoped-request" & CRLF &
+               "x-amz-id-2: v1-scoped-host" & CRLF),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response ("200 OK", Wrong_V1_Bucket_XML),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("200 OK", V1_Success_XML,
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response
+              ("200 OK", V1_Success_XML,
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/example-bucket?delimiter=%2F&encoding-type=url&" &
+              "marker=before&max-keys=2&prefix=socket%2F",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Attributes => "RestoreStatus");
+         Serve
+           (HTTP_Response ("200 OK", V1_First_Page_XML), "GET",
+            "/example-bucket?encoding-type=url&max-keys=1&" &
+              "prefix=socket-v1%2F");
+         Serve
+           (HTTP_Response ("200 OK", V1_Second_Page_XML), "GET",
+            "/example-bucket?encoding-type=url&" &
+              "marker=socket-v1%2Fa%20%2F%25%C3%A9&max-keys=1&" &
+              "prefix=socket-v1%2F");
          Serve
            (HTTP_Response ("200 OK", V1_First_Page_XML), "GET",
             "/example-bucket?encoding-type=url&max-keys=1&" &
@@ -6211,6 +6272,154 @@ procedure S3_HTTP_Socket_Corpus is
                then
                   raise Program_Error with
                     "typed ListObjects socket error mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Scoped.List_Objects_Result :=
+                 Objects.List_V1_Page
+                   (HTTP, Origin, "example-bucket", V1_Parameters,
+                    Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.List_Objects_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Listed
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /= "requester"
+               then
+                  raise Program_Error with
+                    "composable ListObjects socket success mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Scoped.List_Objects_Result :=
+                 Objects.List_V1_Page
+                   (HTTP, Origin, "example-bucket", V1_Parameters,
+                    Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Scoped.List_Objects_Response_Available
+                 or else Result.Failure /= Scoped.Authorization_Failed
+                 or else Result.Response.Kind /= Low_Level.Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "v1-scoped-request"
+                 or else US.To_String (Result.Response.Error.Host_ID) /=
+                   "v1-scoped-host"
+               then
+                  raise Program_Error with
+                    "composable ListObjects socket error mismatch";
+               end if;
+            end;
+            declare
+               procedure Require_Invalid_List_Objects
+                 (Parameters : Low_Level.List_Objects_Parameters;
+                  Message    : String)
+               is
+                  --  Listing parent, HTTP exchange, and one transport child.
+                  Set : aliased Operations.Completion_Set (3);
+                  Operation : Scoped.List_Objects_Operation :=
+                    Scoped.List_Objects
+                      (Set'Access, HTTP'Access, Origin, "example-bucket",
+                       Parameters, Identity,
+                       HTTP_Client.Deadline_After (5.0));
+                  Result : Scoped.List_Objects_Result;
+               begin
+                  Operations.Wait_All (Set);
+                  Scoped.Finish (Operation, Result);
+                  if Result.Kind /= Scoped.List_Objects_Exchange_Failed
+                    or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                  then
+                     raise Program_Error with Message;
+                  end if;
+               end Require_Invalid_List_Objects;
+            begin
+               Require_Invalid_List_Objects
+                 (V1_Parameters,
+                  "ListObjects accepted a wrong echoed bucket");
+               Require_Invalid_List_Objects
+                 (V1_Parameters,
+                  "ListObjects accepted a duplicate singleton header");
+               declare
+                  No_Payer : Low_Level.List_Objects_Parameters :=
+                    V1_Parameters;
+               begin
+                  No_Payer.Request_Payer := US.Null_Unbounded_String;
+                  Require_Invalid_List_Objects
+                    (No_Payer,
+                     "ListObjects accepted an unrequested payer charge");
+               end;
+            end;
+            declare
+               Stop : aliased Flyology.Cancellation.Token;
+            begin
+               Stop.Request;
+               declare
+                  Result : constant Scoped.List_Objects_Result :=
+                    Objects.List_V1_Page
+                      (HTTP, Origin, "example-bucket", V1_Parameters,
+                       Identity, Timeout => 5.0, Token => Stop'Access);
+               begin
+                  if Result.Kind /= Scoped.List_Objects_Exchange_Failed
+                    or else Result.Failure /= Scoped.Cancelled
+                    or else Result.Admission /= HTTP_Client.Not_Admitted
+                  then
+                     raise Program_Error with
+                       "pre-admission ListObjects cancellation mismatch";
+                  end if;
+               end;
+            end;
+            declare
+               Special_Key : constant String :=
+                 "socket-v1/a /%" & Character'Val (16#C3#) &
+                 Character'Val (16#A9#);
+               Page_Parameters : Low_Level.List_Objects_Parameters :=
+                 (Prefix       => US.To_Unbounded_String ("socket-v1/"),
+                  Has_Prefix   => True,
+                  Max_Keys     => 1,
+                  Has_Max_Keys => True,
+                  URL_Encoding => True,
+                  others       => <>);
+               --  Listing parent, HTTP exchange, and one transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Scoped.List_Objects_Operation :=
+                 Scoped.List_Objects
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    Page_Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Scoped.List_Objects_Result;
+            begin
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.List_Objects_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Listed
+                 or else not Result.Response.Result.Listing.Is_Truncated
+                 or else Natural
+                   (Result.Response.Result.Listing.Contents.Length) /= 1
+               then
+                  raise Program_Error with
+                    "composed ListObjects first page mismatch";
+               end if;
+               Page_Parameters.Marker :=
+                 US.To_Unbounded_String (Special_Key);
+               Page_Parameters.Has_Marker := True;
+               Scoped.Start_List_Objects
+                 (Operation, HTTP'Access, Origin, "example-bucket",
+                  Page_Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0));
+               Operations.Wait_All (Set);
+               Scoped.Finish (Operation, Result);
+               if Result.Kind /= Scoped.List_Objects_Response_Available
+                 or else Result.Failure /= Scoped.No_Failure
+                 or else Result.Response.Kind /= Low_Level.Listed
+                 or else Result.Response.Result.Listing.Is_Truncated
+                 or else Natural
+                   (Result.Response.Result.Listing.Contents.Length) /= 1
+                 or else US.To_String
+                   (Result.Response.Result.Listing.Contents.First_Element.Key)
+                     /= "socket-v1/b"
+               then
+                  raise Program_Error with
+                    "composed ListObjects restart mismatch";
                end if;
             end;
          end;
@@ -12964,6 +13173,8 @@ begin
      Check_Complete_Multipart_Certainty_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_Abort_Multipart_Certainty_Corpus;
+   Flyology.Object_Storage.Client.Scoped.Testing.
+     Check_List_Objects_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
      Check_List_Parts_Result_Corpus;
    Flyology.Object_Storage.Client.Scoped.Testing.
