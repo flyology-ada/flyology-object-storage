@@ -9126,6 +9126,26 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "invalid PutBucketEncryption configuration";
    end Prepare_Put_Bucket_Encryption;
 
+   function Prepare_Put_Bucket_CORS
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : Bucket_Controls.CORS_Configuration;
+      Parameters : Put_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request
+   is
+   begin
+      return Prepare_Bucket_Control_Mutation
+        (Model.Put_Bucket_Cors_Operation, "PUT", "cors", Origin, Style,
+         Bucket, Bucket_Controls.Serialize_CORS (Value, Limits), True,
+         (others => <>), False, Parameters, Identity, Region, Timestamp,
+         One_Shot_Source => True);
+   exception
+      when Bucket_Controls.Malformed_Configuration =>
+         raise Invalid_Request with "invalid PutBucketCors configuration";
+   end Prepare_Put_Bucket_CORS;
+
    function Prepare_Put_Bucket_Policy
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Policy : String;
@@ -9305,6 +9325,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Put_Bucket_Control_Outcome is
      (Execute_Bucket_Control_Mutation
         (Client, Prepared, Model.Put_Bucket_Encryption_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Put_Bucket_CORS
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome is
+     (Execute_Bucket_Control_Mutation
+        (Client, Prepared, Model.Put_Bucket_Cors_Operation,
          Timeout, Token, Limits));
 
    function Execute_Put_Bucket_Policy
@@ -13037,6 +13067,25 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Token, Operation);
    end Get_Bucket_Ownership_Controls;
 
+   procedure Get_Bucket_CORS
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Get_Bucket_Control_Operation
+        or else Prepared.Modeled_Operation /= Model.Get_Bucket_Cors_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Sink
+        (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
+         Token, Operation);
+   end Get_Bucket_CORS;
+
    procedure Get_Bucket_Encryption
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -13123,6 +13172,27 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Deadline, Token, Operation);
    end Put_Bucket_Encryption;
 
+   procedure Put_Bucket_CORS
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /= Model.Put_Bucket_Cors_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Bucket_CORS;
+
    procedure Delete_Public_Access_Block
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -13144,6 +13214,28 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Delete_Bucket_Configuration_Operation, Client, Prepared, Source,
          Sink, Deadline, Token, Operation);
    end Delete_Public_Access_Block;
+
+   procedure Delete_Bucket_CORS
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Delete_Bucket_Configuration_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Delete_Bucket_Cors_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Delete_Bucket_Configuration_Operation, Client, Prepared, Source,
+         Sink, Deadline, Token, Operation);
+   end Delete_Bucket_CORS;
 
    procedure Delete_Bucket_Encryption
      (Client    : not null access Flyology.HTTP.Client.Client;
@@ -13524,5 +13616,95 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (S3.Model.Delete_Object_Tagging_Operation, Client, Prepared, Source,
          Sink, Deadline, Token, Operation);
    end Delete_Object_Tagging;
+
+   procedure Get_Object_Legal_Hold
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Sink
+        (Get_Object_Legal_Hold_Operation, Client, Prepared, Sink, Deadline,
+         Token, Operation);
+   end Get_Object_Legal_Hold;
+
+   procedure Put_Object_Legal_Hold
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Source_Sink
+        (Put_Object_Legal_Hold_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Object_Legal_Hold;
+
+   procedure Get_Object_Retention
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Sink
+        (Get_Object_Retention_Operation, Client, Prepared, Sink, Deadline,
+         Token, Operation);
+   end Get_Object_Retention;
+
+   procedure Put_Object_Retention
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Source_Sink
+        (Put_Object_Retention_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Object_Retention;
+
+   procedure Get_Object_Lock_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Sink
+        (Get_Object_Lock_Configuration_Operation, Client, Prepared, Sink,
+         Deadline, Token, Operation);
+   end Get_Object_Lock_Configuration;
+
+   procedure Put_Object_Lock_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Source_Sink
+        (Put_Object_Lock_Configuration_Operation, Client, Prepared, Source,
+         Sink, Deadline, Token, Operation);
+   end Put_Object_Lock_Configuration;
 
 end Flyology.Object_Storage.Client.Low_Level;

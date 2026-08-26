@@ -81,6 +81,7 @@ do
       "$PROJECT_DIR/tests/src/s3_get_object_lock_configuration_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_ownership_controls_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_encryption_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_cors_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_object_torrent_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_object_torrent_socket_corpus.adb"
   fi
@@ -98,6 +99,7 @@ do
       "$PROJECT_DIR/tests/src/s3_get_object_lock_configuration_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_ownership_controls_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_encryption_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_cors_corpus.adb" \
       "$PROJECT_DIR/tests/scripts"
   fi
 done

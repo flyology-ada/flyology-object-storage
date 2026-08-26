@@ -783,6 +783,111 @@ package body Flyology.Object_Storage.S3.Bucket_Controls is
          raise Malformed_Configuration with "malformed CORS XML";
    end Parse_CORS;
 
+   function Serialize_CORS
+     (Value  : CORS_Configuration;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String
+   is
+      Result     : US.Unbounded_String;
+      --  Pinned shape derivation: CORSConfiguration / CORSRule / field is
+      --  exactly three elements deep and the document begins with one root.
+      --  Changing either value changes caller-limit compatibility.
+      Required_Depth : constant Positive := 3;
+      Root_Elements  : constant Positive := 1;
+      Elements   : Natural := Root_Elements;
+      Text_Bytes : Natural := 0;
+
+      --  Pinned PutBucketCors REST/XML namespace and member spellings.
+      --  Changing them changes provider compatibility and request signatures.
+      Prefix : constant String :=
+        "<CORSConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">";
+      Suffix : constant String := "</CORSConfiguration>";
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Configuration with
+              "CORS document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+
+      procedure Add_Element is
+      begin
+         if Elements = Limits.Maximum_Elements then
+            raise Malformed_Configuration with
+              "CORS elements exceed caller limit";
+         end if;
+         Elements := Elements + 1;
+      end Add_Element;
+
+      procedure Add_Text (Text : String) is
+      begin
+         if Text'Length > Limits.Maximum_Text_Bytes - Text_Bytes then
+            raise Malformed_Configuration with
+              "CORS text exceeds caller limit";
+         end if;
+         Text_Bytes := Text_Bytes + Text'Length;
+         Append_Bounded (XML.Escape_Text (Text));
+      end Add_Text;
+
+      procedure Add_Field (Name : String; Text : String) is
+      begin
+         Add_Element;
+         Append_Bounded ("<" & Name & ">");
+         Add_Text (Text);
+         Append_Bounded ("</" & Name & ">");
+      end Add_Field;
+   begin
+      if not Value.Is_Set or else Value.Rules.Is_Empty then
+         raise Malformed_Configuration with "CORS rules are required";
+      elsif Limits.Maximum_Depth < Required_Depth then
+         raise Malformed_Configuration with
+           "CORS depth exceeds caller limit";
+      end if;
+
+      Append_Bounded (Prefix);
+      for Rule of Value.Rules loop
+         if Rule.Allowed_Methods.Is_Empty
+           or else Rule.Allowed_Origins.Is_Empty
+         then
+            raise Malformed_Configuration with
+              "CORS methods and origins are required";
+         elsif Rule.Max_Age_Seconds.Is_Set
+           and then not Valid_Integer_Text
+             (US.To_String (Rule.Max_Age_Seconds.Text))
+         then
+            raise Malformed_Configuration with "invalid CORS MaxAgeSeconds";
+         end if;
+
+         Add_Element;
+         Append_Bounded ("<CORSRule>");
+         if Rule.ID.Is_Set then
+            Add_Field ("ID", US.To_String (Rule.ID.Value));
+         end if;
+         for Item of Rule.Allowed_Headers loop
+            Add_Field ("AllowedHeader", Item);
+         end loop;
+         for Item of Rule.Allowed_Methods loop
+            Add_Field ("AllowedMethod", Item);
+         end loop;
+         for Item of Rule.Allowed_Origins loop
+            Add_Field ("AllowedOrigin", Item);
+         end loop;
+         for Item of Rule.Expose_Headers loop
+            Add_Field ("ExposeHeader", Item);
+         end loop;
+         if Rule.Max_Age_Seconds.Is_Set then
+            Add_Field
+              ("MaxAgeSeconds", US.To_String (Rule.Max_Age_Seconds.Text));
+         end if;
+         Append_Bounded ("</CORSRule>");
+      end loop;
+      Append_Bounded (Suffix);
+      return US.To_String (Result);
+   end Serialize_CORS;
+
    function Serialize_Abac (Value : Abac_Status) return String is
       Status : constant String :=
         (case Value is

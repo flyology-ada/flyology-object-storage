@@ -1,0 +1,13 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	527	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind it into the exact signed cors target.	PBC-RQ-001,PBC-RQ-005,PBC-RQ-006
+request	527	2	CORSConfiguration	70	body	true	encoded	Require and encode one caller-bounded exact CORS document.	PBC-RQ-002,PBC-RQ-004,PBC-RQ-005,PBC-RQ-006,PBC-TR-001,PBC-TR-002
+request	527	3	ContentMD5	111	header	false	projected	Generate the exact payload MD5 when omitted or validate and sign one exact 16-byte base64 override.	PBC-RQ-003,PBC-RQ-004,PBC-RQ-005,PBC-RQ-006
+request	527	4	ChecksumAlgorithm	77	header	false	projected	Preserve omission or sign one exact modeled algorithm and matching payload digest header.	PBC-RQ-003,PBC-RQ-004,PBC-RQ-005,PBC-RQ-006
+request	527	5	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded nonempty owner precondition exactly once.	PBC-RQ-003,PBC-RQ-005,PBC-RQ-006
+nested	70	1	CORSRules	72	body	true	encoded	Require a nonempty flattened CORSRule list and preserve caller order without inventing a list ceiling.	PBC-RQ-002,PBC-RQ-004,PBC-RQ-005,PBC-TR-001,PBC-TR-002
+nested	71	1	ID	308	body	false	encoded	Preserve ID absence independently from a present empty or escaped string.	PBC-RQ-002,PBC-RQ-005,PBC-TR-001,PBC-TR-002
+nested	71	2	AllowedHeaders	18	body	false	encoded	Encode every flattened AllowedHeader in caller order within shared XML limits.	PBC-RQ-002,PBC-RQ-005,PBC-TR-001,PBC-TR-002
+nested	71	3	AllowedMethods	20	body	true	encoded	Require at least one flattened AllowedMethod and preserve each exact string value.	PBC-RQ-002,PBC-RQ-005,PBC-TR-001,PBC-TR-002
+nested	71	4	AllowedOrigins	22	body	true	encoded	Require at least one flattened AllowedOrigin and preserve each exact string value.	PBC-RQ-002,PBC-RQ-005,PBC-TR-001,PBC-TR-002
+nested	71	5	ExposeHeaders	211	body	false	encoded	Encode every flattened ExposeHeader in caller order within shared XML limits.	PBC-RQ-002,PBC-RQ-005,PBC-TR-001,PBC-TR-002
+nested	71	6	MaxAgeSeconds	412	body	false	encoded	Preserve optional validated signed-decimal text without imposing a machine-integer ceiling.	PBC-RQ-002,PBC-RQ-005,PBC-TR-001,PBC-TR-002

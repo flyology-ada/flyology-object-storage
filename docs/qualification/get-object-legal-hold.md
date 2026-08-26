@@ -1,8 +1,8 @@
 # GetObjectLegalHold client qualification
 
-This record qualifies the strict bounded synchronous client and corpus for
-`GetObjectLegalHold`. It does not claim Object Lock persistence in a Flyology
-backend, an authenticated Flyology server route, or external-server
+This record qualifies the strict bounded composable and synchronous client and
+corpus for `GetObjectLegalHold`. It does not claim Object Lock persistence in
+a Flyology backend, an authenticated Flyology server route, or external-server
 interoperability.
 
 ## Pinned authority and inventory
@@ -28,7 +28,7 @@ vector IDs; and both directions of every member/vector reference:
 python3 tools/verify-get-object-legal-hold-preparation.py
 ```
 
-## Synchronous API and response contract
+## Provider-owned API and response contract
 
 `Client.Low_Level.Prepare_Get_Object_Legal_Hold` validates the bucket, key,
 opaque bounded version selector, exact requester-pays value, and bounded owner
@@ -36,11 +36,16 @@ precondition before transport. It projects only the five generated-model
 inputs, signs an empty payload, and supports path and virtual-hosted
 addressing.
 
-`Execute_Get_Object_Legal_Hold` admits only a prepared request for this exact
-operation. It consumes one bounded whole response body and returns either the
-typed legal-hold value or a strict typed S3 rejection. There is no transparent
-retry, helper task, retained request input, or operation-specific XML limit;
-the caller supplies the shared `S3.XML.Parse_Limits` policy.
+`Client.Objects.Get_Legal_Hold` provides a limited constructor, an
+operation-last reusable procedure, typed `Finish`, and a synchronous overload
+that waits on that same state machine. The operation admits only an exact
+GetObjectLegalHold prepared request, owns it through terminal drain, and
+consumes one bounded whole response body. Typed Finish preserves the modeled
+legal-hold value or strict S3 rejection together with HTTP admission, phase,
+and bounded failure classification. There is no transparent retry, helper
+task, or retained request input. The composable form uses the established
+shared XML document limit; the low-level decoder and executor continue to
+accept caller-selected `S3.XML.Parse_Limits`.
 
 An empty successful body preserves absence of the modeled `LegalHold` payload.
 `<LegalHold/>` preserves a present payload with absent `Status`. An explicit
@@ -61,10 +66,14 @@ and exact/one-past document, depth, element, and text limits. Cross-operation
 execution is rejected before HTTP.
 
 The consolidated raw-loopback corpus adds signed success and rejection
-exchanges, physical identifier multiplicity and emptiness, malformed and
-transport-oversized success bodies, and identical execution under native and
-Flyology lightweight task owners. The root gate repeats the deterministic and
-socket paths three times.
+exchanges, limited construction, typed Finish, operation-last restart, the
+typed synchronous wait, physical identifier multiplicity and emptiness,
+malformed and low-level decoder-limit success bodies, and an actual
+owner-driven response-sink failure at one byte above its test ceiling. It runs
+identically under native and Flyology lightweight task owners. The
+normalization corpus crosses every HTTP failure kind with every
+admission-certainty state. The root gate repeats the deterministic and socket
+paths three times.
 
 The machine ledger records `GetObjectLegalHold` as `missing / covered / missing
 / covered`. Client and corpus evidence do not manufacture backend Object Lock
@@ -81,8 +90,8 @@ required for this client-only closure.
 
 ## Gate evidence
 
-The final warning-strict root gate passed 40/40 AUnit tests with zero failed
-assertions or unexpected errors, the 88-case files crash matrix, 320 checksum
+The final warning-strict root gate passed 41/41 AUnit tests with zero failed
+assertions or unexpected errors, the 126-case files crash matrix, 320 checksum
 oracle vectors, 210 chunk boundaries, the strict server application corpus,
 and three repetitions of the deterministic legal-hold corpus and consolidated
 native/lightweight signed socket corpus. The SQLite wrapper, catalog, and
@@ -92,8 +101,11 @@ specification.
 The inventory verifier reported five request members, one top-level output
 member, one nested member, two exact enum domains, and 13 reciprocal vectors;
 the 116-operation coverage verifier and its negative oracle also passed.
-GNATdoc 26 completed with a nonempty object-storage API index containing every
-new legal-hold type, field, enum value, parameter, exception, and return value.
+GNATdoc 26 completed with a nonempty object-storage API index and a
+43,576-line diagnostic log. The index contains every new legal-hold type,
+field, enum value, parameter, exception, and return value; the new declaration
+ranges emitted no targeted warning, and the log contains no internal error,
+`LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or bounded-channel diagnostic.
 
 The latest serialized proof campaign remains the 2026-08-24 936/936 result:
 180 flow checks and 756 prover checks across all nine manifest units, with zero

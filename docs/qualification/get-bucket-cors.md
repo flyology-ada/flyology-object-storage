@@ -1,7 +1,8 @@
 # GetBucketCors client qualification
 
-This record qualifies the strict bounded synchronous client and corpus for
-`GetBucketCors`. It does not claim CORS persistence in a Flyology backend, an
+This record qualifies the strict bounded provider-owned composable and typed
+synchronous clients and corpus for `GetBucketCors`. It does not claim CORS
+persistence in a Flyology backend, an
 authenticated Flyology server route, or external-server interoperability.
 
 ## Pinned authority and inventory
@@ -27,18 +28,21 @@ unbounded integer shape:
 python3 tools/verify-get-bucket-cors-preparation.py
 ```
 
-## Synchronous API and response contract
+## Provider API and response contract
 
 `Client.Low_Level.Prepare_Get_Bucket_CORS` reuses the common bucket-control
 request projector. It validates the bucket and bounded owner precondition
 before transport, projects only the two modeled inputs, signs an empty
 payload, and supports path and virtual-hosted addressing.
 
-`Execute_Get_Bucket_CORS` drives the same common synchronous response state
-machine as the qualified bucket-control reads. It admits only the exact
-modeled operation, consumes one bounded whole body, and returns either a typed
-configuration or strict S3 rejection. There is no retry, helper task, retained
-input, or second transport engine.
+The prepared-request `Client.Low_Level.Get_Bucket_CORS` initiator admits only
+the exact modeled operation and drives one caller-provided bounded sink.
+`Client.Buckets.Get_CORS` owns the limited constructor, operation-last reusable
+procedure, operation state, and typed `Finish`. The typed synchronous overload
+is a literal wait on that same provider-owned state machine. It consumes one
+bounded whole body and returns either a typed configuration or strict S3
+rejection. There is no retry, helper task, retained input, or second transport
+engine.
 
 An empty successful body preserves absence of the optional output. A present
 empty `CORSConfiguration` is preserved separately. Every present rule requires
@@ -66,8 +70,11 @@ exact/one-past byte, depth, element, and text limits.
 
 The consolidated raw-loopback corpus adds signed success, absent response,
 strict rejection, duplicate and empty diagnostic headers, malformed XML, and
-transport-oversized bodies. The root gate runs that sequence identically under
-native and Flyology lightweight task owners and repeats both paths three times.
+transport-oversized bodies. It also exercises the typed synchronous call,
+limited constructor, operation-last restart, exact prepared-operation
+rejection, and a caller-bounded response-sink failure. The root gate runs that
+sequence identically under native and Flyology lightweight task owners and
+repeats both paths three times.
 
 The machine ledger records `GetBucketCors` as `missing / covered / missing /
 covered`. Client and corpus evidence do not manufacture backend state or a
@@ -76,13 +83,13 @@ persistence contract, authenticated routing, and independent black-box tests.
 
 ## Formal boundary
 
-This slice changes only non-SPARK client, parser, corpus, and documentation
-units. None of the nine `tools/prove.sh` manifest units changes, so the latest
-serialized 2026-08-24 proof result remains applicable: 936/936 checks, 180
-flow and 756 prover, with zero warnings, unproved or justified checks, or
-`pragma Assume` statements.
+The provider-owned scheduling path requires a fresh serialized exact-tree
+`tools/prove.sh` campaign before publication even though its implementation is
+outside the nine SPARK manifest units. Proof evidence is recorded only after
+the shared formal lane is granted and the maintained wrapper and post-run host
+audit both complete cleanly.
 
-The warning-strict root gate passed 40/40 AUnit tests, the 88-case files crash
+The warning-strict root gate passed 41/41 AUnit tests, the 126-case files crash
 matrix, 320 checksum vectors, 210 chunk boundaries, and three deterministic
 and native/lightweight socket repetitions. The SQLite wrapper, catalog, and
 backend gate passed after rebuilding against the public specification. The

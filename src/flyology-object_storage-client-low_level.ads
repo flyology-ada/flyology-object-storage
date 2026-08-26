@@ -3164,6 +3164,26 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Prepared_Request;
 
+   --  Prepare one exact PutBucketCors request.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Value Required nonempty CORS-rule configuration
+   --  @param Parameters Optional MD5, SDK checksum, and owner controls
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Fully signed request bound to PutBucketCors
+   function Prepare_Put_Bucket_CORS
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Bucket_Controls.CORS_Configuration;
+      Parameters : Put_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request;
+
    type Put_Bucket_Control_Outcome_Kind is
      (Bucket_Control_Updated, Put_Bucket_Control_Rejected);
 
@@ -3267,6 +3287,23 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Limits Caller-selected error-response XML limits
    --  @return Typed update success or strict S3 rejection
    function Execute_Put_Bucket_Encryption
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome;
+
+   --  Execute one exact prepared PutBucketCors request. The 30-second default
+   --  is the established low-level synchronous-client compatibility budget;
+   --  callers may select a different absolute budget. No request is replayed
+   --  after possible admission.
+   --  @param Client Caller-owned synchronous HTTP client
+   --  @param Prepared Request from Prepare_Put_Bucket_CORS
+   --  @param Timeout Caller-selected absolute operation budget
+   --  @param Token Optional cooperative cancellation token
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Typed update success or strict S3 rejection
+   function Execute_Put_Bucket_CORS
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null;
@@ -4817,6 +4854,24 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token     : access Flyology.Cancellation.Token := null;
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
+   --  Start an exact prepared GetBucketCors exchange into a bounded sink.
+   --  A prepared request for another bucket-control read is rejected before
+   --  HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Get_Bucket_CORS
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
    --  Start an exact prepared GetBucketEncryption exchange into a bounded
    --  sink. A prepared request for another bucket-control read is rejected
    --  before HTTP admission.
@@ -4898,6 +4953,27 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token     : access Flyology.Cancellation.Token := null;
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
+   --  Start an exact prepared PutBucketCors exchange with its one-shot
+   --  configuration source. Another bucket-control mutation is rejected
+   --  before HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable request source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Put_Bucket_CORS
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
    --  Start an exact prepared DeletePublicAccessBlock exchange with a
    --  deliberately non-replayable empty source. Another configuration
    --  deletion is rejected before HTTP admission.
@@ -4909,6 +4985,27 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Token Optional cancellation source retained through drain
    --  @param Operation Fresh or consumed established HTTP exchange
    procedure Delete_Public_Access_Block
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared DeleteBucketCors exchange with a deliberately
+   --  non-replayable empty source. Another configuration deletion is rejected
+   --  before HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable empty source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Delete_Bucket_CORS
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Source    : not null access
@@ -5208,6 +5305,123 @@ package Flyology.Object_Storage.Client.Low_Level is
 
    --  Start a prepared DeleteObjectTagging exchange.
    procedure Delete_Object_Tagging
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared GetObjectLegalHold exchange into a bounded
+   --  response sink. Another prepared operation is rejected before HTTP
+   --  admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Get_Object_Legal_Hold
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared PutObjectLegalHold exchange with its owned,
+   --  one-shot request body. Another prepared operation is rejected before
+   --  HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable request source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Put_Object_Legal_Hold
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared GetObjectRetention exchange into a bounded
+   --  response sink. Another prepared operation is rejected before HTTP
+   --  admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Get_Object_Retention
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared PutObjectRetention exchange with its owned,
+   --  one-shot request body. Another prepared operation is rejected before
+   --  HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable request source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Put_Object_Retention
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared GetObjectLockConfiguration exchange into a
+   --  bounded response sink. Another prepared operation is rejected before
+   --  HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Get_Object_Lock_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared PutObjectLockConfiguration exchange with its
+   --  owned one-shot request body. Another prepared operation is rejected
+   --  before HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable request source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Put_Object_Lock_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Source    : not null access

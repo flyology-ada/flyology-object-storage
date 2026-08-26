@@ -10,7 +10,11 @@ ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
 bounded GetBucketLocation, bounded GetBucketPolicy, non-replaying
 Put/DeleteBucketPolicy, non-replaying Put/GetBucketVersioning, non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
-tagging Put/Get/Delete, plus object tagging Put/Get/Delete. The
+tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
+object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
+non-replaying PutObjectLegalHold, plus bounded GetObjectRetention with
+non-replaying PutObjectRetention, and bounded GetObjectLockConfiguration with
+non-replaying PutObjectLockConfiguration. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -93,14 +97,20 @@ The implemented operation order is:
     `Delete_Ownership_Controls`;
 27. bounded `Get_Encryption`, non-replaying `Set_Encryption`, and
     non-replaying `Delete_Encryption`;
-28. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
+28. bounded `Get_CORS`, non-replaying `Set_CORS`, and non-replaying
+    `Delete_CORS`;
+29. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
-29. `Put_Object_Tagging`, `Get_Object_Tagging`, and
-    `Delete_Object_Tagging`.
+30. `Put_Object_Tagging`, `Get_Object_Tagging`, and
+    `Delete_Object_Tagging`;
+31. bounded `Get_Legal_Hold` and non-replaying `Put_Legal_Hold`;
+32. bounded `Get_Retention` and non-replaying `Put_Retention`;
+33. bounded `Get_Object_Lock_Configuration` and non-replaying
+    `Put_Object_Lock_Configuration`.
 
-The provider surface contains 43 domain operations: 15 in `Client.Objects`,
-20 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 40 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 52 domain operations: 19 in `Client.Objects`,
+25 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 49 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -230,6 +240,40 @@ the last case requires caller-selected GetBucketPolicy reconciliation before
 any retry. Their parameter-record synchronous overloads wait on these same
 state machines, and restart retains only the established HTTP client and
 cancellation owner.
+GetObjectLegalHold owns the exact signed generation selector and retains its
+same-response XML under the shared S3 document limit. PutObjectLegalHold owns
+the presence-preserving serialized XML and exposes it once through a
+non-rewindable source. Both operations provide a limited constructor,
+operation-last reusable initiation, typed Finish, and a synchronous overload
+that waits on the same provider-owned state machine. Put typed Finish keeps
+admission certainty separate from failure classification: exact modeled
+rejections can prove non-application, while retryable, malformed, or lost
+post-admission results remain outcome-unknown and require a caller-selected
+generation-bound GetObjectLegalHold reconciliation. Neither form retains a
+caller body borrow, creates a helper task, or retries the mutation.
+GetObjectRetention and PutObjectRetention use the same provider-owned shape
+for the selected object generation. The Get parent retains one bounded
+same-response XML document and returns the exact optional mode and ISO-8601
+date. The Put parent owns its presence-preserving serialized XML, exposes it
+through a non-rewindable source, and never replays after possible admission.
+Both provide a limited constructor, operation-last reusable initiation, typed
+Finish, and a synchronous overload that waits on the identical state machine.
+Put certainty distinguishes exact modeled non-application from ambiguous
+post-admission failure; an unknown result requires caller-selected,
+generation-bound GetObjectRetention reconciliation before any retry. Neither
+operation retains request inputs or starts a helper task.
+GetObjectLockConfiguration and PutObjectLockConfiguration are colocated in
+`Client.Buckets` because the exact S3 resource is the bucket-only
+`/{Bucket}?object-lock` target. The Get parent retains one bounded same-response
+XML document and preserves every optional configuration layer. The Put parent
+owns its presence-preserving serialized XML and exposes it once through a
+non-rewindable source. Both provide a limited constructor, operation-last
+reusable initiation, typed Finish, and a synchronous overload that waits on
+the identical state machine. Put certainty distinguishes exact modeled
+non-application from ambiguous post-admission failure; an unknown result
+requires caller-selected GetObjectLockConfiguration reconciliation before any
+retry. Neither form retains caller inputs, starts a helper task, or retries the
+mutation.
 SetPublicAccessBlock owns the exact serialized four-field configuration in a
 non-rewindable source, while DeletePublicAccessBlock supplies a non-rewindable
 known-empty source. Neither mutation is replayed after possible admission.
@@ -468,10 +512,12 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `List_Multipart_Uploads_Page` overloads, plus the typed-result `Copy_Object`,
 `Get_Public_Access_Block`, `Get_Ownership_Controls`, and
 `Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`,
-`Set_Encryption`, and `Delete_Encryption` overloads are literal waits on the
-same provider-owned
-state machines and retain their typed certainty, capacity,
-metadata, and ownership results. The established raising `Delete_Outcome` and
+`Set_Encryption`, `Delete_Encryption`, `Get_CORS`, `Set_CORS`, and
+`Delete_CORS` overloads, and the `Get_Object_Lock_Configuration` and
+`Put_Object_Lock_Configuration` overloads,
+are literal waits on the same provider-owned state machines and retain their
+typed certainty, capacity, metadata, and ownership results. The established
+raising `Delete_Outcome` and
 `Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer
 overloads remain source compatible.
 Because they do not expose transport admission certainty, a caller treats

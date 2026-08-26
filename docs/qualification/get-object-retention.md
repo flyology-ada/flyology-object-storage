@@ -1,9 +1,9 @@
 # GetObjectRetention client qualification
 
-This record qualifies the strict bounded synchronous client and corpus for
-`GetObjectRetention`. It does not claim Object Lock persistence in a Flyology
-backend, an authenticated Flyology server route, or external-server
-interoperability.
+This record qualifies the strict bounded provider-owned composable and
+synchronous client plus corpus for `GetObjectRetention`. It does not claim
+Object Lock persistence in a Flyology backend, an authenticated Flyology
+server route, or external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -30,7 +30,7 @@ member/vector reference:
 python3 tools/verify-get-object-retention-preparation.py
 ```
 
-## Synchronous API and response contract
+## Provider-owned API and response contract
 
 `Client.Low_Level.Prepare_Get_Object_Retention` validates the bucket, key,
 opaque bounded version selector, exact requester-pays value, and bounded owner
@@ -38,11 +38,19 @@ precondition before transport. It projects only the five generated-model
 inputs, signs an empty payload, and supports path and virtual-hosted
 addressing.
 
-`Execute_Get_Object_Retention` admits only a prepared request for this exact
-operation. It consumes one bounded whole response body and returns either the
-typed retention value or a strict typed S3 rejection. There is no transparent
-retry, helper task, retained request input, or operation-specific XML limit;
-the caller supplies the shared `S3.XML.Parse_Limits` policy.
+`Client.Low_Level.Get_Object_Retention` starts only a prepared request for this
+exact operation into a caller-owned bounded sink. `Client.Objects` owns the
+limited parent, signed request, same-response XML, HTTP child, cancellation,
+and terminal drain. Its limited constructor, same-name operation-last
+procedure, and typed `Finish` expose composition directly from the Objects
+provider. The parameter-record synchronous overload waits on that same state
+machine. `Execute_Get_Object_Retention` remains the established blocking
+low-level form and returns the same modeled response.
+
+There is no transparent retry, helper task, retained request input, or
+operation-specific XML limit. Both paths use the shared `S3.XML.Parse_Limits`
+policy, and the composable parent applies that same document-byte ceiling to
+the response sink before decoding.
 
 An empty successful body preserves absence of the modeled `Retention` payload.
 `<Retention/>` preserves a present payload with both children absent. `Mode`
@@ -71,9 +79,13 @@ is rejected before HTTP.
 
 The consolidated raw-loopback corpus adds signed success and rejection
 exchanges, physical identifier multiplicity and emptiness, malformed and
-transport-oversized success bodies, and identical execution under native and
-Flyology lightweight task owners. The root gate repeats the deterministic and
-socket paths three times.
+transport-oversized success bodies, exact prepared-operation rejection before
+admission, limited construction, operation-last restart, typed Finish,
+synchronous parity, an actual one-past composable sink failure, and identical
+execution under native and Flyology lightweight task owners. The direct
+normalization oracle crosses every terminal HTTP failure with every admission
+certainty. The root gate repeats the deterministic and socket paths three
+times.
 
 The machine ledger records `GetObjectRetention` as `missing / covered / missing
 / covered`. Client and corpus evidence do not manufacture backend Object Lock
@@ -90,8 +102,8 @@ required for this client-only closure.
 
 ## Gate evidence
 
-The final warning-strict root gate passed 40/40 AUnit tests with zero failed
-assertions or unexpected errors, the 88-case files crash matrix, 320 checksum
+The final warning-strict root gate passed 41/41 AUnit tests with zero failed
+assertions or unexpected errors, the 126-case files crash matrix, 320 checksum
 oracle vectors, 210 chunk boundaries, the strict server application corpus,
 and three repetitions of the deterministic retention corpus and consolidated
 native/lightweight signed socket corpus. The SQLite wrapper, catalog, and
@@ -101,9 +113,10 @@ specification.
 The inventory verifier reported five request members, one top-level output
 member, two nested members, both exact enum domains, the ISO-8601 timestamp
 format, and 13 reciprocal vectors; the 116-operation coverage verifier and its
-negative oracle also passed. GNATdoc 26 completed with a nonempty
-object-storage API index containing every new retention type, field, enum
-value, parameter, exception, and return value.
+negative oracle also passed. GNATdoc 26 completed a 43,629-line run with a
+nonempty 430-file object-storage API index containing every new retention type,
+field, enum value, parameter, exception, and return value, with no warning on
+the new declarations or internal documentation error.
 
 The latest serialized proof campaign remains the 2026-08-24 936/936 result:
 180 flow checks and 756 prover checks across all nine manifest units, with zero

@@ -142,6 +142,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Bucket_Ownership_Controls_Result_Kind;
    use type Get_Bucket_Encryption_Result_Kind;
    use type Put_Bucket_Encryption_Result_Kind;
+   use type Put_Bucket_CORS_Result_Kind;
+   use type Bucket_CORS_Mutation_Disposition;
    use type Delete_Bucket_Encryption_Result_Kind;
    use type Bucket_Encryption_Mutation_Disposition;
    use type Put_Bucket_Ownership_Controls_Result_Kind;
@@ -175,6 +177,15 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Object_Tagging_Result_Kind;
    use type Delete_Object_Tagging_Result_Kind;
    use type Object_Tag_Mutation_Disposition;
+   use type Get_Legal_Hold_Result_Kind;
+   use type Put_Legal_Hold_Result_Kind;
+   use type Legal_Hold_Mutation_Disposition;
+   use type Get_Retention_Result_Kind;
+   use type Put_Retention_Result_Kind;
+   use type Retention_Mutation_Disposition;
+   use type Get_Object_Lock_Configuration_Result_Kind;
+   use type Put_Object_Lock_Configuration_Result_Kind;
+   use type Object_Lock_Configuration_Mutation_Disposition;
    use type Create_Multipart_Result_Kind;
    use type Multipart_Creation_Disposition;
    use type HTTP_Client.Admission_Certainty;
@@ -4019,6 +4030,27 @@ procedure S3_HTTP_Socket_Corpus is
             "DELETE", "/example-bucket?cors",
             Expected_Bucket_Owner => "123456789012");
          Serve
+           (HTTP_Response ("204 No Content", ""),
+            "DELETE", "/typed-delete-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""),
+            "DELETE", "/composed-delete-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-delete-cors" & CRLF),
+            "DELETE", "/restart-delete-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("500 Internal Server Error",
+               "<Error><Code>InternalError</Code><Message>" &
+               String'(1 .. 256 => 'x') & "</Message></Error>"),
+            "DELETE", "/bounded-delete-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
            (HTTP_Response ("204 No Content", ""), "DELETE",
             "/example-bucket?analytics&id=config%20id",
             Expected_Bucket_Owner => "123456789012");
@@ -4190,6 +4222,34 @@ procedure S3_HTTP_Socket_Corpus is
             "GET", "/example-bucket?abac",
             Expected_Bucket_Owner => "123456789012");
          Serve
+           (HTTP_Response ("200 OK", ""), "PUT", "/example-bucket?cors",
+            Expected_Body_Root => "<CORSConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: typed-put-cors" & CRLF),
+            "PUT", "/typed-put-cors?cors",
+            Expected_Body_Root => "<CORSConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT", "/composed-cors?cors",
+            Expected_Body_Root => "<CORSConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-put-cors" & CRLF),
+            "PUT", "/restart-put-cors?cors",
+            Expected_Body_Root => "<CORSConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
            (HTTP_Response
               ("200 OK", "<OwnershipControls><Rule><ObjectOwnership>" &
                  "BucketOwnerPreferred</ObjectOwnership></Rule><Rule>" &
@@ -4305,6 +4365,34 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "<CORSConfiguration>" &
                  String'(1 .. 64 => ' ') & "</CORSConfiguration>"),
             "GET", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<CORSConfiguration><CORSRule>" &
+                 "<AllowedMethod>GET</AllowedMethod>" &
+                 "<AllowedOrigin>https://typed.example</AllowedOrigin>" &
+                 "</CORSRule></CORSConfiguration>"),
+            "GET", "/typed-get-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<CORSConfiguration><CORSRule>" &
+                 "<AllowedMethod>PUT</AllowedMethod>" &
+                 "<AllowedOrigin>https://composed.example</AllowedOrigin>" &
+                 "</CORSRule></CORSConfiguration>"),
+            "GET", "/composed-get-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-get-cors" & CRLF),
+            "GET", "/restart-get-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<CORSConfiguration>" &
+                 String'(1 .. 64 => ' ') & "</CORSConfiguration>"),
+            "GET", "/bounded-get-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
               ("200 OK", "<ServerSideEncryptionConfiguration><Rule>" &
@@ -4925,6 +5013,34 @@ procedure S3_HTTP_Socket_Corpus is
             "/example-bucket/object%20key?legal-hold&versionId=lost",
             Expected_Body_Root => "<LegalHold",
             Expected_Content_MD5 => "*", Keep_Open => False);
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT",
+            "/example-bucket/composable-legal?legal-hold&" &
+              "versionId=typed%20one",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*",
+            Expected_Request_Payer => "requester");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "PUT", "/example-bucket/composable-legal?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "PUT", "/example-bucket/sync-legal?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              --  Test-only whitespace body is semantically bodyless but one
+              --  byte above the paired 64-byte operation sink ceiling.
+              ("200 OK", String'(1 .. 65 => ' ')),
+            "PUT", "/example-bucket/bounded-legal?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
          --  Pinned PutObjectRetention fixtures cover the owned body, every
          --  physical control, sole output, and a lost-response ambiguity lane.
          Serve
@@ -4994,6 +5110,34 @@ procedure S3_HTTP_Socket_Corpus is
             "/example-bucket/object%20key?retention&versionId=lost",
             Expected_Body_Root => "<Retention",
             Expected_Content_MD5 => "*", Keep_Open => False);
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT",
+            "/example-bucket/composable-retention?retention&" &
+              "versionId=typed%20one",
+            Expected_Body_Root => "<Retention",
+            Expected_Content_MD5 => "*",
+            Expected_Request_Payer => "requester");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "PUT", "/example-bucket/composable-retention?retention",
+            Expected_Body_Root => "<Retention",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "PUT", "/example-bucket/sync-retention?retention",
+            Expected_Body_Root => "<Retention",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              --  Test-only whitespace body is semantically bodyless but one
+              --  byte above the paired 64-byte operation sink ceiling.
+              ("200 OK", String'(1 .. 65 => ' ')),
+            "PUT", "/example-bucket/bounded-retention?retention",
+            Expected_Body_Root => "<Retention",
+            Expected_Content_MD5 => "*");
          --  Pinned PutObjectLockConfiguration fixtures cover exact owned XML,
          --  token and checksum projection, strict singleton output handling,
          --  and the post-admission lost-response ambiguity boundary.
@@ -5065,6 +5209,32 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Content_MD5 => "*", Keep_Open => False);
          Serve
            (HTTP_Response
+              ("200 OK", "",
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT", "/composable-lock?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Request_Payer => "requester");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "PUT", "/composable-lock?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "PUT", "/sync-lock?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              --  Test-only whitespace body is semantically bodyless but one
+              --  byte above the paired 64-byte operation sink ceiling.
+              ("200 OK", String'(1 .. 65 => ' ')),
+            "PUT", "/bounded-lock?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
               ("200 OK", "<AccelerateConfiguration/>",
                "x-amz-request-charged: requester" & CRLF &
                "x-amz-request-charged: requester" & CRLF),
@@ -5115,6 +5285,26 @@ procedure S3_HTTP_Socket_Corpus is
             "GET", "/example-bucket/object?legal-hold");
          Serve
            (HTTP_Response
+              ("200 OK", "<LegalHold><Status>ON</Status></LegalHold>"),
+            "GET",
+            "/example-bucket/composable-legal?legal-hold&" &
+              "versionId=typed%20one");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "GET", "/example-bucket/composable-legal?legal-hold");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<LegalHold><Status>OFF</Status></LegalHold>"),
+            "GET", "/example-bucket/sync-legal?legal-hold");
+         Serve
+           (HTTP_Response
+              --  42 text bytes plus 23 markup bytes are one past the paired
+              --  64-byte operation sink ceiling.
+              ("200 OK", "<LegalHold>" & String'(1 .. 42 => ' ') &
+               "</LegalHold>"),
+            "GET", "/example-bucket/bounded-legal?legal-hold");
+         Serve
+           (HTTP_Response
               ("200 OK", "<Retention><Mode>GOVERNANCE</Mode>" &
                "<RetainUntilDate>2027-01-02T03:04:05Z" &
                "</RetainUntilDate></Retention>",
@@ -5159,6 +5349,30 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "<Retention>" & String'(1 .. 42 => ' ') &
                "</Retention>"),
             "GET", "/example-bucket/object?retention");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<Retention><Mode>GOVERNANCE</Mode>" &
+               "<RetainUntilDate>2028-02-29T23:59:59Z" &
+               "</RetainUntilDate></Retention>"),
+            "GET",
+            "/example-bucket/composable-retention?retention&" &
+              "versionId=typed%20one");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "GET", "/example-bucket/composable-retention?retention");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<Retention><Mode>COMPLIANCE</Mode>" &
+               "<RetainUntilDate>2029-01-02T03:04:05Z" &
+               "</RetainUntilDate></Retention>"),
+            "GET", "/example-bucket/sync-retention?retention");
+         Serve
+           (HTTP_Response
+              --  42 text bytes plus 23 markup bytes are one past the paired
+              --  64-byte operation sink ceiling.
+              ("200 OK", "<Retention>" & String'(1 .. 42 => ' ') &
+               "</Retention>"),
+            "GET", "/example-bucket/bounded-retention?retention");
          Serve
            (HTTP_Response
               ("200 OK", "<ObjectLockConfiguration>" &
@@ -5211,6 +5425,24 @@ procedure S3_HTTP_Socket_Corpus is
                  String'(1 .. 14 => ' ') &
                  "</ObjectLockConfiguration>"),
             "GET", "/example-bucket?object-lock");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ObjectLockConfiguration>" &
+                 "<ObjectLockEnabled>Enabled</ObjectLockEnabled>" &
+                 "</ObjectLockConfiguration>"),
+            "GET", "/composable-lock?object-lock");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "GET", "/composable-lock?object-lock");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ObjectLockConfiguration>" &
+                 "<ObjectLockEnabled>Enabled</ObjectLockEnabled>" &
+                 "</ObjectLockConfiguration>"),
+            "GET", "/sync-lock?object-lock");
+         Serve
+           (HTTP_Response ("200 OK", String'(1 .. 65 => ' ')),
+            "GET", "/bounded-lock?object-lock");
          Serve
            (HTTP_Response
               ("403 Forbidden", Error_XML,
@@ -12671,6 +12903,136 @@ procedure S3_HTTP_Socket_Corpus is
                  "DeleteBucketCors convenience success mismatch";
             end if;
          end;
+         declare
+            Parameters : constant
+              Low_Level.Delete_Bucket_Configuration_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Bucket_Encryption
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 Parameters,
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            --  Parent, HTTP exchange, and HTTP's one active transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Delete_Bucket_CORS_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+            Result : Delete_Bucket_CORS_Result;
+         begin
+            declare
+               Typed_Result : constant Delete_Bucket_CORS_Result :=
+                 Buckets.Delete_CORS
+                   (HTTP,
+                    Origin,
+                    "typed-delete-cors",
+                    Parameters,
+                    Identity,
+                    Timeout => 5.0);
+            begin
+               if Typed_Result.Kind /=
+                    Delete_Bucket_CORS_Response_Available
+                 or else Typed_Result.Disposition /=
+                   Bucket_CORS_Mutation_Completed
+                 or else Typed_Result.Failure /= No_Failure
+                 or else Typed_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Typed_Result.Response.Kind /=
+                   Low_Level.Bucket_CORS_Deleted
+               then
+                  raise Program_Error with
+                    "typed DeleteBucketCors response mismatch";
+               end if;
+            end;
+            begin
+               Low_Level.Delete_Bucket_CORS
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "DeleteBucketCors accepted an encryption request";
+            end if;
+
+            declare
+               Operation : Delete_Bucket_CORS_Operation :=
+                 Delete_CORS
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-delete-cors",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_CORS_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_CORS_Mutation_Completed
+               then
+                  raise Program_Error with
+                    "composed DeleteBucketCors mismatch";
+               end if;
+               Delete_CORS
+                 (HTTP'Access,
+                  Origin,
+                  "restart-delete-cors",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_CORS_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_CORS_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-delete-cors"
+               then
+                  raise Program_Error with
+                    "restarted DeleteBucketCors mismatch";
+               end if;
+               Delete_CORS
+                 (HTTP'Access,
+                  Origin,
+                  "bounded-delete-cors",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Limits =>
+                    --  Test-only caller policy paired with the oversized
+                    --  server fixture above.
+                    (Maximum_Document_Bytes => 64,
+                     Maximum_Depth          => 8,
+                     Maximum_Elements       => 32,
+                     Maximum_Text_Bytes     => 64),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_CORS_Exchange_Failed
+                 or else Result.Disposition /=
+                   Bucket_CORS_Mutation_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded DeleteBucketCors response mismatch";
+               end if;
+            end;
+         end;
          Require_Configuration_Deletion
            (Buckets.Delete_Analytics_Configuration
               (HTTP, Origin, "example-bucket", "config id", Identity,
@@ -13404,6 +13766,149 @@ procedure S3_HTTP_Socket_Corpus is
             end if;
          end;
          declare
+            function Configuration return Bucket_Controls.CORS_Configuration
+            is
+            begin
+               return Value : Bucket_Controls.CORS_Configuration :=
+                 (Is_Set => True, others => <>)
+               do
+                  declare
+                     Rule : Bucket_Controls.CORS_Rule := (others => <>);
+                  begin
+                     Rule.ID :=
+                       (Is_Set => True,
+                        Value => US.To_Unbounded_String ("socket-rule"));
+                     Rule.Allowed_Headers.Append ("x-test");
+                     Rule.Allowed_Methods.Append ("GET");
+                     Rule.Allowed_Origins.Append ("https://example.test");
+                     Rule.Expose_Headers.Append ("etag");
+                     Rule.Max_Age_Seconds :=
+                       (Is_Set => True,
+                        Text => US.To_Unbounded_String ("3600"));
+                     Value.Rules.Append (Rule);
+                  end;
+               end return;
+            end Configuration;
+
+            Parameters : constant Low_Level.Put_Bucket_Control_Parameters :=
+              (Content_MD5 => US.Null_Unbounded_String,
+               Checksum_Algorithm => US.Null_Unbounded_String,
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+         begin
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_CORS
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Configuration,
+                    (Content_MD5 => US.Null_Unbounded_String,
+                     Checksum_Algorithm => US.To_Unbounded_String ("CRC32"),
+                     Expected_Bucket_Owner =>
+                       US.To_Unbounded_String ("123456789012")),
+                    Identity, "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.Put_Bucket_Control_Outcome :=
+                 Low_Level.Execute_Put_Bucket_CORS
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Bucket_Control_Updated
+                 or else Result.Status /= 200
+               then
+                  raise Program_Error with
+                    "low-level one-shot PutBucketCors mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Put_Bucket_CORS_Result :=
+                 Buckets.Set_CORS
+                   (HTTP, Origin, "typed-put-cors", Configuration,
+                    Parameters, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Put_Bucket_CORS_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_CORS_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "typed-put-cors"
+               then
+                  raise Program_Error with
+                    "typed PutBucketCors response mismatch";
+               end if;
+            end;
+            declare
+               Set : aliased Operations.Completion_Set (3);
+               Result : Put_Bucket_CORS_Result;
+               Value : Bucket_Controls.CORS_Configuration := Configuration;
+               Operation : Put_Bucket_CORS_Operation :=
+                 Set_CORS
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-cors",
+                    Value,
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Value.Rules.Clear;
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_CORS_Response_Available
+                 or else Result.Disposition /= Bucket_CORS_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+               then
+                  raise Program_Error with
+                    "composed PutBucketCors result mismatch";
+               end if;
+               Set_CORS
+                 (HTTP'Access,
+                  Origin,
+                  "restart-put-cors",
+                  Configuration,
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_CORS_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_CORS_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-put-cors"
+               then
+                  raise Program_Error with
+                    "restarted PutBucketCors result mismatch";
+               end if;
+            end;
+            declare
+               Prepared : aliased Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Abac
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Bucket_Controls.Abac_Enabled, (others => <>), Identity,
+                    "us-east-1", "20130524T000000Z");
+               Set : aliased Operations.Completion_Set (3);
+               Parent : aliased Put_Bucket_CORS_Operation
+                 (Set'Access, HTTP'Access, null);
+               Child : HTTP_Client.Exchange_Operation (Set'Access);
+               Rejected : Boolean := False;
+            begin
+               begin
+                  Low_Level.Put_Bucket_CORS
+                    (HTTP'Access, Prepared'Access, Parent'Access,
+                     Parent'Access, HTTP_Client.Deadline_After (5.0),
+                     Operation => Child);
+               exception
+                  when Low_Level.Invalid_Request => Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "PutBucketCors accepted a prepared ABAC request";
+               end if;
+            end;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Get_Bucket_Ownership_Controls
                 (Origin, Low_Level.Path_Style, "example-bucket",
@@ -13724,6 +14229,135 @@ procedure S3_HTTP_Socket_Corpus is
             Must_Reject_CORS
               ("GetBucketCors accepted oversized success XML",
                Small_Limits => True);
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Encryption
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (others => <>),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            --  Parent, HTTP exchange, and HTTP's one active transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Bucket_CORS_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Get_Bucket_CORS
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "GetBucketCors accepted an encryption request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            --  Parent, HTTP exchange, and HTTP's one active transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_CORS_Result;
+         begin
+            declare
+               Typed_Result : constant Get_Bucket_CORS_Result :=
+                 Buckets.Get_CORS
+                   (HTTP,
+                    Origin,
+                    "typed-get-cors",
+                    Parameters,
+                    Identity,
+                    Timeout => 5.0);
+            begin
+               if Typed_Result.Kind /= Get_Bucket_CORS_Response_Available
+                 or else Typed_Result.Failure /= No_Failure
+                 or else not Typed_Result.Response.Configuration.Is_Set
+                 or else Typed_Result.Response.Configuration.Rules.Length /= 1
+                 or else Typed_Result.Response.Configuration.Rules.Element
+                   (1).Allowed_Origins.Element (1) /=
+                     "https://typed.example"
+               then
+                  raise Program_Error with
+                    "typed GetBucketCors result mismatch";
+               end if;
+            end;
+            declare
+               Operation : Get_Bucket_CORS_Operation :=
+                 Get_CORS
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-get-cors",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_CORS_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else not Result.Response.Configuration.Is_Set
+                 or else Result.Response.Configuration.Rules.Length /= 1
+                 or else Result.Response.Configuration.Rules.Element
+                   (1).Allowed_Methods.Element (1) /= "PUT"
+               then
+                  raise Program_Error with
+                    "composed GetBucketCors result mismatch";
+               end if;
+               Get_CORS
+                 (HTTP'Access,
+                  Origin,
+                  "restart-get-cors",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_CORS_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-get-cors"
+               then
+                  raise Program_Error with
+                    "restarted GetBucketCors result mismatch";
+               end if;
+               Get_CORS
+                 (HTTP'Access,
+                  Origin,
+                  "bounded-get-cors",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Limits =>
+                    --  Test-only caller policy paired with the oversized
+                    --  server fixture above.
+                    (Maximum_Document_Bytes => 64,
+                     Maximum_Depth          => 8,
+                     Maximum_Elements       => 32,
+                     Maximum_Text_Bytes     => 64),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_CORS_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded GetBucketCors response mismatch";
+               end if;
+            end;
          end;
          declare
             Prepared : constant Low_Level.Prepared_Request :=
@@ -15234,6 +15868,10 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end Must_Reject_Put_Legal_Hold;
          begin
+            Objects_Testing.Check_Legal_Hold_Pre_Admission_Rejection
+              (HTTP'Access, Prepared,
+               --  Test/reference loopback budget, not production policy.
+               HTTP_Client.Deadline_After (5.0));
             declare
                Result : constant Low_Level.Put_Object_Legal_Hold_Outcome :=
                  Low_Level.Execute_Put_Object_Legal_Hold
@@ -15318,6 +15956,106 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
+            Parameters : Low_Level.Put_Object_Legal_Hold_Parameters;
+            Value : constant Object_Lock.Legal_Hold :=
+              (Is_Set => True, Status => Object_Lock.Legal_Hold_On);
+            --  Derived capacity: the legal-hold parent, HTTP exchange, and
+            --  HTTP's one active transport child are the only simultaneous
+            --  operations in this test/reference composition.
+            Set : aliased Flyology.Operations.Completion_Set (3);
+         begin
+            Parameters.Version_ID := US.To_Unbounded_String ("typed one");
+            Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+            declare
+               Operation : Put_Legal_Hold_Operation :=
+                 Put_Legal_Hold
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "composable-legal", Value, Parameters, Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Put_Legal_Hold_Result;
+            begin
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Legal_Hold_Response_Available
+                 or else Result.Disposition /= Legal_Hold_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Legal_Hold_Updated
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /= "requester"
+               then
+                  raise Program_Error with
+                    "composable PutObjectLegalHold result mismatch";
+               end if;
+
+               Parameters := (others => <>);
+               Put_Legal_Hold
+                 (HTTP'Access, Origin, "example-bucket", "composable-legal",
+                  Value, Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Legal_Hold_Response_Available
+                 or else Result.Disposition /=
+                   Legal_Hold_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Put_Object_Legal_Hold_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "established PutObjectLegalHold restart mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Put_Legal_Hold_Result :=
+                 Put_Legal_Hold
+                   (HTTP, Origin, "example-bucket", "sync-legal", Value,
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Put_Legal_Hold_Response_Available
+                 or else Result.Disposition /= Legal_Hold_Mutation_Completed
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Legal_Hold_Updated
+               then
+                  raise Program_Error with
+                    "typed synchronous PutObjectLegalHold mismatch";
+               end if;
+            end;
+
+            declare
+               Operation : Put_Legal_Hold_Operation :=
+                 Put_Legal_Hold
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "bounded-legal", Value, (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Put_Legal_Hold_Result;
+            begin
+               --  Test-only ceiling forces the composable sink failure path;
+               --  production retains the shared S3 XML document limit.
+               Objects_Testing.Set_Response_Limit (Operation, 64);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Legal_Hold_Exchange_Failed
+                 or else Result.Disposition /=
+                   Legal_Hold_Mutation_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded composable PutObjectLegalHold mismatch";
+               end if;
+            end;
+         end;
+         declare
             function Prepare
               (Version : String := ""; Full_Controls : Boolean := False;
                Present : Boolean := True; Bypass_Set : Boolean := False;
@@ -15388,6 +16126,10 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end Must_Reject_Put_Retention;
          begin
+            Objects_Testing.Check_Retention_Pre_Admission_Rejection
+              (HTTP'Access, Prepared,
+               --  Test/reference loopback budget, not production policy.
+               HTTP_Client.Deadline_After (5.0));
             declare
                Result : constant Low_Level.Put_Object_Retention_Outcome :=
                  Low_Level.Execute_Put_Object_Retention
@@ -15477,6 +16219,109 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
+            Parameters : Low_Level.Put_Object_Retention_Parameters;
+            Value : constant Object_Lock.Retention :=
+              (Is_Set => True,
+               Mode => Object_Lock.Governance_Retention,
+               Retain_Until_Date =>
+                 US.To_Unbounded_String ("2028-02-29T23:59:59Z"));
+            --  Derived capacity: the retention parent, HTTP exchange, and
+            --  HTTP's one active transport child are the only simultaneous
+            --  operations in this test/reference composition.
+            Set : aliased Flyology.Operations.Completion_Set (3);
+         begin
+            Parameters.Version_ID := US.To_Unbounded_String ("typed one");
+            Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+            declare
+               Operation : Put_Retention_Operation :=
+                 Put_Retention
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "composable-retention", Value, Parameters, Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Put_Retention_Result;
+            begin
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Retention_Response_Available
+                 or else Result.Disposition /= Retention_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Retention_Updated
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /= "requester"
+               then
+                  raise Program_Error with
+                    "composable PutObjectRetention result mismatch";
+               end if;
+
+               Parameters := (others => <>);
+               Put_Retention
+                 (HTTP'Access, Origin, "example-bucket",
+                  "composable-retention", Value, Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Retention_Response_Available
+                 or else Result.Disposition /=
+                   Retention_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Put_Object_Retention_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "established PutObjectRetention restart mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Put_Retention_Result :=
+                 Put_Retention
+                   (HTTP, Origin, "example-bucket", "sync-retention", Value,
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Put_Retention_Response_Available
+                 or else Result.Disposition /= Retention_Mutation_Completed
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Retention_Updated
+               then
+                  raise Program_Error with
+                    "typed synchronous PutObjectRetention mismatch";
+               end if;
+            end;
+
+            declare
+               Operation : Put_Retention_Operation :=
+                 Put_Retention
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "bounded-retention", Value, (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Put_Retention_Result;
+            begin
+               --  Test-only ceiling forces the composable sink failure path;
+               --  production retains the shared S3 XML document limit.
+               Objects_Testing.Set_Response_Limit (Operation, 64);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Retention_Exchange_Failed
+                 or else Result.Disposition /=
+                   Retention_Mutation_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded composable PutObjectRetention mismatch";
+               end if;
+            end;
+         end;
+         declare
             function Prepare
               (Full_Controls : Boolean := False;
                Present : Boolean := True)
@@ -15558,6 +16403,11 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end Must_Reject_Put_Lock_Configuration;
          begin
+            Buckets_Testing.
+              Check_Object_Lock_Configuration_Pre_Admission_Rejection
+                (HTTP'Access, Prepared,
+                 --  Test/reference loopback budget, not production policy.
+                 HTTP_Client.Deadline_After (5.0));
             declare
                Result : constant
                  Low_Level.Put_Object_Lock_Configuration_Outcome :=
@@ -15643,6 +16493,121 @@ procedure S3_HTTP_Socket_Corpus is
                if not Ambiguous then
                   raise Program_Error with
                     "lost PutObjectLockConfiguration was not ambiguous";
+               end if;
+            end;
+         end;
+         declare
+            --  Test/reference payload mirrors the maintained low-level wire
+            --  fixture; 30 days is not a production retention policy.
+            Value : constant Object_Lock.Object_Lock_Configuration :=
+              (Is_Set  => True,
+               Enabled => Object_Lock.Object_Lock_Enabled,
+               Rule    =>
+                 (Is_Set => True,
+                  Default_Value =>
+                    (Is_Set => True,
+                     Mode   => Object_Lock.Governance_Retention,
+                     Days   =>
+                       (Is_Set => True,
+                        Text => US.To_Unbounded_String ("30")),
+                     Years  => (others => <>))));
+            Parameters : Low_Level.Put_Object_Lock_Configuration_Parameters :=
+              (Request_Payer => US.To_Unbounded_String ("requester"),
+               others => <>);
+            --  Derived capacity: provider parent, HTTP exchange, and HTTP's
+            --  one active transport child are the only simultaneous items.
+            Set : aliased Flyology.Operations.Completion_Set (3);
+         begin
+            declare
+               Operation : Put_Object_Lock_Configuration_Operation :=
+                 Put_Object_Lock_Configuration
+                   (Set'Access, HTTP'Access, Origin, "composable-lock", Value,
+                    Parameters, Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Put_Object_Lock_Configuration_Result;
+            begin
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                   Put_Object_Lock_Configuration_Response_Available
+                 or else Result.Disposition /=
+                   Object_Lock_Configuration_Mutation_Completed
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Lock_Configuration_Updated
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /= "requester"
+               then
+                  raise Program_Error with
+                    "composable PutObjectLockConfiguration mismatch";
+               end if;
+
+               Parameters := (others => <>);
+               Put_Object_Lock_Configuration
+                 (HTTP'Access, Origin, "composable-lock", Value, Parameters,
+                  Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                   Put_Object_Lock_Configuration_Response_Available
+                 or else Result.Disposition /=
+                   Object_Lock_Configuration_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Put_Object_Lock_Configuration_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "established PutObjectLockConfiguration restart mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Put_Object_Lock_Configuration_Result :=
+                 Put_Object_Lock_Configuration
+                   (HTTP, Origin, "sync-lock", Value, (others => <>),
+                    Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                   Put_Object_Lock_Configuration_Response_Available
+                 or else Result.Disposition /=
+                   Object_Lock_Configuration_Mutation_Completed
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Lock_Configuration_Updated
+               then
+                  raise Program_Error with
+                    "typed synchronous PutObjectLockConfiguration mismatch";
+               end if;
+            end;
+
+            declare
+               Operation : Put_Object_Lock_Configuration_Operation :=
+                 Put_Object_Lock_Configuration
+                   (Set'Access, HTTP'Access, Origin, "bounded-lock", Value,
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Put_Object_Lock_Configuration_Result;
+            begin
+               --  Test-only ceiling forces the composable sink failure path;
+               --  production retains the shared S3 XML document limit.
+               Buckets_Testing.Set_Response_Limit (Operation, 64);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Object_Lock_Configuration_Exchange_Failed
+                 or else Result.Disposition /=
+                   Object_Lock_Configuration_Mutation_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded composable PutObjectLockConfiguration mismatch";
                end if;
             end;
          end;
@@ -15782,6 +16747,101 @@ procedure S3_HTTP_Socket_Corpus is
                Small_Limits => True);
          end;
          declare
+            Parameters : Low_Level.Get_Object_Legal_Hold_Parameters;
+            --  Derived capacity: the legal-hold parent, HTTP exchange, and
+            --  HTTP's one active transport child are the only simultaneous
+            --  operations in this test/reference composition.
+            Set : aliased Flyology.Operations.Completion_Set (3);
+         begin
+            Parameters.Version_ID := US.To_Unbounded_String ("typed one");
+            declare
+               Operation : Get_Legal_Hold_Operation :=
+                 Get_Legal_Hold
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "composable-legal", Parameters, Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Get_Legal_Hold_Result;
+            begin
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Legal_Hold_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Legal_Hold_Found
+                 or else not Result.Response.Legal_Hold.Is_Set
+                 or else Result.Response.Legal_Hold.Status /=
+                   Object_Lock.Legal_Hold_On
+               then
+                  raise Program_Error with
+                    "composable GetObjectLegalHold result mismatch";
+               end if;
+
+               Parameters := (others => <>);
+               Get_Legal_Hold
+                 (HTTP'Access, Origin, "example-bucket", "composable-legal",
+                  Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Legal_Hold_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Object_Legal_Hold_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "established GetObjectLegalHold restart mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Get_Legal_Hold_Result :=
+                 Get_Legal_Hold
+                   (HTTP, Origin, "example-bucket", "sync-legal",
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Get_Legal_Hold_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Legal_Hold_Found
+                 or else Result.Response.Legal_Hold.Status /=
+                   Object_Lock.Legal_Hold_Off
+               then
+                  raise Program_Error with
+                    "typed synchronous GetObjectLegalHold mismatch";
+               end if;
+            end;
+
+            declare
+               Operation : Get_Legal_Hold_Operation :=
+                 Get_Legal_Hold
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "bounded-legal", (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Get_Legal_Hold_Result;
+            begin
+               --  Test-only ceiling forces the composable sink failure path;
+               --  production retains the shared S3 XML document limit.
+               Objects_Testing.Set_Response_Limit (Operation, 64);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Legal_Hold_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded composable GetObjectLegalHold mismatch";
+               end if;
+            end;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Get_Object_Retention
                 (Origin, Low_Level.Path_Style, "example-bucket", "object",
@@ -15896,6 +16956,104 @@ procedure S3_HTTP_Socket_Corpus is
             Must_Reject_Retention
               ("GetObjectRetention accepted oversized success XML",
                Small_Limits => True);
+         end;
+         declare
+            Parameters : Low_Level.Get_Object_Retention_Parameters;
+            --  Derived capacity: the retention parent, HTTP exchange, and
+            --  HTTP's one active transport child are the only simultaneous
+            --  operations in this test/reference composition.
+            Set : aliased Flyology.Operations.Completion_Set (3);
+         begin
+            Parameters.Version_ID := US.To_Unbounded_String ("typed one");
+            declare
+               Operation : Get_Retention_Operation :=
+                 Get_Retention
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "composable-retention", Parameters, Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Get_Retention_Result;
+            begin
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Retention_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Retention_Found
+                 or else not Result.Response.Retention.Is_Set
+                 or else Result.Response.Retention.Mode /=
+                   Object_Lock.Governance_Retention
+                 or else US.To_String
+                   (Result.Response.Retention.Retain_Until_Date) /=
+                   "2028-02-29T23:59:59Z"
+               then
+                  raise Program_Error with
+                    "composable GetObjectRetention result mismatch";
+               end if;
+
+               Parameters := (others => <>);
+               Get_Retention
+                 (HTTP'Access, Origin, "example-bucket",
+                  "composable-retention", Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Retention_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Object_Retention_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "established GetObjectRetention restart mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Get_Retention_Result :=
+                 Get_Retention
+                   (HTTP, Origin, "example-bucket", "sync-retention",
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Get_Retention_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Retention_Found
+                 or else Result.Response.Retention.Mode /=
+                   Object_Lock.Compliance_Retention
+               then
+                  raise Program_Error with
+                    "typed synchronous GetObjectRetention mismatch";
+               end if;
+            end;
+
+            declare
+               Operation : Get_Retention_Operation :=
+                 Get_Retention
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "bounded-retention", (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Get_Retention_Result;
+            begin
+               --  Test-only ceiling forces the composable sink failure path;
+               --  production retains the shared S3 XML document limit.
+               Objects_Testing.Set_Response_Limit (Operation, 64);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Retention_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded composable GetObjectRetention mismatch";
+               end if;
+            end;
          end;
          declare
             Prepared : constant Low_Level.Prepared_Request :=
@@ -16029,6 +17187,98 @@ procedure S3_HTTP_Socket_Corpus is
                Small_Limits => True);
          end;
          declare
+            --  Derived capacity: provider parent, HTTP exchange, and HTTP's
+            --  one active transport child are the only simultaneous items.
+            Set : aliased Flyology.Operations.Completion_Set (3);
+         begin
+            declare
+               Operation : Get_Object_Lock_Configuration_Operation :=
+                 Get_Object_Lock_Configuration
+                   (Set'Access, HTTP'Access, Origin, "composable-lock",
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Get_Object_Lock_Configuration_Result;
+            begin
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                   Get_Object_Lock_Configuration_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Lock_Configuration_Found
+                 or else Result.Response.Configuration.Enabled /=
+                   Object_Lock.Object_Lock_Enabled
+               then
+                  raise Program_Error with
+                    "composable GetObjectLockConfiguration mismatch";
+               end if;
+
+               Get_Object_Lock_Configuration
+                 (HTTP'Access, Origin, "composable-lock", (others => <>),
+                  Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                   Get_Object_Lock_Configuration_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Object_Lock_Configuration_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "established GetObjectLockConfiguration restart mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Get_Object_Lock_Configuration_Result :=
+                 Get_Object_Lock_Configuration
+                   (HTTP, Origin, "sync-lock", (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                   Get_Object_Lock_Configuration_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Lock_Configuration_Found
+                 or else Result.Response.Configuration.Enabled /=
+                   Object_Lock.Object_Lock_Enabled
+               then
+                  raise Program_Error with
+                    "typed synchronous GetObjectLockConfiguration mismatch";
+               end if;
+            end;
+
+            declare
+               Operation : Get_Object_Lock_Configuration_Operation :=
+                 Get_Object_Lock_Configuration
+                   (Set'Access, HTTP'Access, Origin, "bounded-lock",
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Get_Object_Lock_Configuration_Result;
+            begin
+               --  Test-only ceiling forces the composable sink failure path;
+               --  production retains the shared S3 XML document limit.
+               Buckets_Testing.Set_Response_Limit (Operation, 64);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Object_Lock_Configuration_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded composable GetObjectLockConfiguration mismatch";
+               end if;
+            end;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Delete_Bucket_CORS
                 (Origin, Low_Level.Path_Style, "example-bucket",
@@ -16138,10 +17388,14 @@ begin
    Buckets_Testing.Check_Public_Access_Block_Certainty_Corpus;
    Buckets_Testing.Check_Ownership_Controls_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Encryption_Result_Corpus;
+   Buckets_Testing.Check_Bucket_CORS_Result_Corpus;
+   Buckets_Testing.Check_Object_Lock_Configuration_Certainty_Corpus;
    Buckets_Testing.Check_Get_Bucket_Versioning_Result_Corpus;
    Buckets_Testing.Check_Put_Bucket_Versioning_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;
    Objects_Testing.Check_Object_Tagging_Certainty_Corpus;
+   Objects_Testing.Check_Legal_Hold_Certainty_Corpus;
+   Objects_Testing.Check_Retention_Certainty_Corpus;
    Transfers_Testing.Check_List_Parts_Result_Corpus;
    Transfers_Testing.Check_List_Multipart_Uploads_Result_Corpus;
    Transfers_Testing.Check_Copy_Result_Corpus;

@@ -224,6 +224,20 @@ package Flyology.Object_Storage.S3.Bucket_Controls is
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return CORS_Configuration;
 
+   --  Serialize one exact required PutBucketCors payload within the
+   --  caller-selected shared XML resource limits. The required flattened
+   --  CORSRule list and each rule's AllowedMethod and AllowedOrigin lists
+   --  must contain at least one element because an empty flattened list has
+   --  no distinct REST/XML representation.
+   --  @param Value Present configuration with one or more complete rules
+   --  @param Limits Caller-selected document, depth, element, and text limits
+   --  @return Exact S3 CORSConfiguration XML document
+   --  @exception Malformed_Configuration Value or encoded document violates
+   --   the pinned schema or caller-selected limits
+   function Serialize_CORS
+     (Value  : CORS_Configuration;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String;
+
    --  Serialize one exact PutBucketAbac request document.
    function Serialize_Abac (Value : Abac_Status) return String;
 
