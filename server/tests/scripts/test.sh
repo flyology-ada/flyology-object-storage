@@ -343,7 +343,10 @@ verify_persisted_admin() {
 expect_startup_failure() {
   local name=$1
   shift
-  if env -i PATH="$PATH" "$@" "$SERVER" >"$RUN_ROOT/$name.log" 2>&1; then
+  if env -i PATH="$PATH" \
+    FLYOLOGY_ADMIN_CREDENTIALS_FILE="$RUN_ROOT/$name-admin.credentials" \
+    "$@" "$SERVER" >"$RUN_ROOT/$name.log" 2>&1
+  then
     echo "server unexpectedly accepted invalid configuration: $name" >&2
     exit 1
   fi
