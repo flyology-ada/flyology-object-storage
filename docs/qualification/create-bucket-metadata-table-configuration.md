@@ -1,6 +1,7 @@
 # CreateBucketMetadataTableConfiguration client qualification
 
-This record qualifies the strict bounded synchronous client and corpus for
+This record qualifies the strict bounded provider-owned composable and typed
+synchronous clients and corpus for
 `CreateBucketMetadataTableConfiguration`. It does not claim metadata-table
 persistence in a Flyology backend, an authenticated Flyology server route, or
 external provider interoperability.
@@ -46,7 +47,7 @@ budgets are in the deterministic corpus. Escaping is incremental, so expansion
 cannot first allocate an unbounded encoded document outside the caller's
 document budget.
 
-## Synchronous API and checksum contract
+## Provider-owned API and checksum contract
 
 `Client.Low_Level.Prepare_Create_Bucket_Metadata_Table_Configuration` reuses
 the shared bucket-control mutation engine. It validates the bucket and bounded
@@ -61,8 +62,17 @@ Content-MD5 override computes the exact 16-byte MD5 over the serialized body. A
 caller override must be exact base64 for 16 bytes. An optional SDK algorithm
 must be one of all ten pinned values and adds both the exact
 `x-amz-sdk-checksum-algorithm` value and corresponding digest header over the
-same bytes. There is no body replay, retained borrowed input, helper task, or
-second protocol engine.
+same bytes. The prepared request owns those exact serialized bytes for a
+one-shot source; there is no body replay, retained borrowed input, helper task,
+or second protocol engine.
+
+`Client.Low_Level.Create_Bucket_Metadata_Table_Configuration` accepts only the
+exact matching prepared operation before entering HTTP. In `Client.Buckets`,
+`Create_Metadata_Table_Configuration` colocates the limited constructor,
+operation-last reusable initiation, typed `Finish`, and typed synchronous wait.
+All forms drive the same owner-owned state machine. Starting copies the
+destination through bounded serialization, so the caller's record may change
+or leave scope immediately after initiation.
 
 `Execute_Create_Bucket_Metadata_Table_Configuration` accepts only a request
 prepared for that exact modeled operation and drives the caller-owned
@@ -70,10 +80,12 @@ synchronous Flyology.HTTP client. Exact 200 with an empty or XML-whitespace
 body is update success; non-whitespace success content fails closed. Every
 other status returns a strict bounded S3 error.
 
-An exception after entering the blocking provider call does not provide typed
-admission certainty. Callers must classify publication as unknown, reconcile
-read-only through `GetBucketMetadataTableConfiguration`, and must not
-automatically retry the mutation.
+The typed provider result reports completed, definitely-not-applied,
+cancelled-before-admission, or outcome-unknown certainty. Any exception or
+failure after possible admission, retryable service response, unknown response,
+or certainty mismatch remains outcome-unknown. Callers reconcile read-only
+through `GetBucketMetadataTableConfiguration`; no form automatically retries
+the mutation.
 
 ## Corpus and coverage boundary
 
@@ -87,8 +99,13 @@ boundaries, and cross-operation execution rejection.
 The raw loopback corpus adds exact signed POST method, target, root, automatic
 MD5, CRC32, and owner projection; structured rejection; non-whitespace success;
 duplicate and empty diagnostics; and a semantically bodyless response one byte
-above the caller's response ceiling. The common root gate runs the entire
-sequence under native and Flyology lightweight task owners.
+above the caller's response ceiling. It also gates the typed synchronous wait,
+limited constructor, operation-last restart, copied caller input,
+caller-selected response bound, exact prepared-operation rejection, every
+typed HTTP failure under all three admission certainties, and the conclusive,
+retryable, and unknown service-response families. The
+common root gate runs the entire sequence under native and Flyology lightweight
+task owners.
 
 The machine ledger records the operation as `missing / covered / missing /
 covered`. Client and corpus qualification do not manufacture backend state or
@@ -99,13 +116,13 @@ black-box evidence.
 
 This slice changes only non-SPARK client, metadata-table codec, corpus, and
 documentation units. None of the nine `tools/prove.sh` manifest units changes,
-so the latest serialized 2026-08-24 result remains applicable: 936/936 checks,
+so the latest serialized 2026-08-26 result remains applicable: 936/936 checks,
 180 flow and 756 prover, with zero warnings, unproved or justified checks, or
 `pragma Assume` statements.
 
 ## Gate evidence
 
-The root test gate passed all 40 AUnit cases, the 88-case crash corpus, the
+The root test gate passed all 41 AUnit cases, the 132-case crash corpus, the
 320-vector checksum corpus with 210 chunk boundaries, and three complete
 native/lightweight deterministic, signed raw-socket, and TLS repetitions. The
 SQLite wrapper, catalog, and backend gate also passed.
@@ -114,8 +131,10 @@ The pinned operation verifier reported all eight modeled members, all ten
 checksum values, and all 13 reciprocal vectors. The 116-operation coverage
 verifier and its negative oracle were green.
 
-GNATdoc produced a nonempty API index and a 12,461-line diagnostic log. The
-index contains the destination type, serializer, and public prepare/execute
-declarations; those declarations emitted no targeted warning, and the log
-contains no internal error, `LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or
-bounded-channel diagnostic.
+GNATdoc produced a nonempty API index and a 43,997-line diagnostic log. The
+index contains the destination type, serializer, public prepare/execute
+declarations, limited operation, and provider overloads; those declarations
+emitted no targeted warning. The sole exact-operation-name warning belongs to
+the preexisting generated model enumeration, and the log contains no internal
+error, `LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or bounded-channel
+diagnostic.

@@ -301,7 +301,9 @@ They cover conditional Put, whole and exact-range Get, Head, Delete,
 CreateMultipartUpload, UploadPart, CompleteMultipartUpload,
 AbortMultipartUpload, bounded ListParts and ListMultipartUploads, and
 CopyObject, together with service-level ListBuckets and non-replaying
-CreateBucket, DeleteBucket, and DeleteBucketLifecycle. The typed synchronous
+CreateBucket, DeleteBucket, DeleteBucketLifecycle, and
+CreateBucketMetadataTableConfiguration, paired with bounded
+GetBucketMetadataTableConfiguration reconciliation. The typed synchronous
 overloads wait on those same owner-driven state machines.
 Multipart initiation and abort use one-shot empty sources, UploadPart moves one
 owned bounded buffer, and completion owns the exact serialized XML behind a

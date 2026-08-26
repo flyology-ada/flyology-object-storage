@@ -37,7 +37,7 @@ package Flyology.Object_Storage.Client.Buckets.Testing is
 
    procedure Check_Get_Bucket_ACL_Result_Corpus;
 
-   procedure Check_Get_Bucket_Metadata_Table_Configuration_Result_Corpus;
+   procedure Check_Metadata_Table_Configuration_Result_Corpus;
 
    procedure Check_Delete_Bucket_Lifecycle_Certainty_Corpus;
 

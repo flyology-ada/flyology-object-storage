@@ -12,6 +12,7 @@ with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Errors;
+with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Object_Lock;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
@@ -2442,6 +2443,182 @@ package Flyology.Object_Storage.Client.Buckets is
       Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
         Flyology.Object_Storage.S3.XML.Default_Limits)
       return Get_Bucket_Metadata_Table_Configuration_Result;
+
+   --  What is known about a CreateBucketMetadataTableConfiguration mutation
+   --  after terminal drain. Outcome unknown requires caller-selected
+   --  read-only reconciliation before any retry.
+   --  @enum Metadata_Table_Configuration_Mutation_Completed Complete
+   --     response proves the requested mutation completed
+   --  @enum Metadata_Table_Configuration_Mutation_Definitely_Not_Applied
+   --     Exact rejection or non-admission proves no mutation occurred
+   --  @enum Metadata_Table_Configuration_Mutation_Outcome_Unknown State
+   --     requires caller-selected read reconciliation
+   --  @enum Metadata_Table_Configuration_Mutation_Cancelled_Before_Admission
+   --     Cancellation preceded possible server admission
+   type Metadata_Table_Configuration_Mutation_Disposition is
+     (Metadata_Table_Configuration_Mutation_Completed,
+      Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+      Metadata_Table_Configuration_Mutation_Outcome_Unknown,
+      Metadata_Table_Configuration_Mutation_Cancelled_Before_Admission);
+
+   --  Shape of a terminal CreateBucketMetadataTableConfiguration mutation.
+   --  @enum Create_Bucket_Metadata_Table_Configuration_Response_Available
+   --     Modeled response exists
+   --  @enum Create_Bucket_Metadata_Table_Configuration_Exchange_Failed
+   --     No complete response exists
+   type Create_Bucket_Metadata_Table_Configuration_Result_Kind is
+     (Create_Bucket_Metadata_Table_Configuration_Response_Available,
+      Create_Bucket_Metadata_Table_Configuration_Exchange_Failed);
+
+   --  Typed CreateBucketMetadataTableConfiguration certainty and response or
+   --  HTTP failure. Default initialization is the conservative unknown
+   --  failure shape used before terminal assignment.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Create_Bucket_Metadata_Table_Configuration_Result
+     (Kind : Create_Bucket_Metadata_Table_Configuration_Result_Kind :=
+       Create_Bucket_Metadata_Table_Configuration_Exchange_Failed)
+   is record
+      Disposition : Metadata_Table_Configuration_Mutation_Disposition :=
+        Metadata_Table_Configuration_Mutation_Outcome_Unknown;
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Create_Bucket_Metadata_Table_Configuration_Response_Available =>
+            Response : Low_Level.Put_Bucket_Control_Outcome;
+         when Create_Bucket_Metadata_Table_Configuration_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot CreateBucketMetadataTableConfiguration parent. The prepared
+   --  request owns the exact serialized destination and signing inputs
+   --  through Finish. The operation never rewinds or replays its body.
+   type Create_Bucket_Metadata_Table_Configuration_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one nonreplaying metadata-table configuration create.
+   --  Established region, addressing, XML-limit, and cancellation defaults
+   --  are preserved unchanged.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose metadata-table destination is created
+   --  @param Value Complete destination configuration copied at start
+   --  @param Parameters Complete modeled mutation controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected request, response, and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established mutation
+   procedure Create_Metadata_Table_Configuration
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Metadata_Tables.
+        S3_Tables_Destination;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out
+        Create_Bucket_Metadata_Table_Configuration_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying metadata-table configuration create.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose metadata-table destination is created
+   --  @param Value Complete destination configuration copied at start
+   --  @param Parameters Complete modeled mutation controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected request, response, and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven metadata-table mutation
+   function Create_Metadata_Table_Configuration
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Metadata_Tables.
+        S3_Tables_Destination;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Create_Bucket_Metadata_Table_Configuration_Operation;
+
+   --  Consume one terminal metadata-table configuration mutation.
+   --  @param Operation Terminal metadata-table mutation
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out
+        Create_Bucket_Metadata_Table_Configuration_Operation;
+      Result    : out Create_Bucket_Metadata_Table_Configuration_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Create one metadata-table configuration by waiting on the same
+   --  nonreplaying provider-owned operation used by composable callers.
+   --  Existing defaults are preserved unchanged.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose metadata-table destination is created
+   --  @param Value Complete destination configuration
+   --  @param Parameters Complete modeled mutation controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected request, response, and error XML limits
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Create_Metadata_Table_Configuration
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Metadata_Tables.
+        S3_Tables_Destination;
+      Parameters : Low_Level.Bucket_Control_Mutation_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Create_Bucket_Metadata_Table_Configuration_Result;
 
    --  What is known about a bucket-encryption mutation after terminal drain.
    --  Outcome unknown requires caller-selected read reconciliation before
@@ -6423,6 +6600,29 @@ private
    end record;
 
    --  @exclude
+   type Create_Bucket_Metadata_Table_Configuration_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Source_Position  : Natural := 0;
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural := 0;
+      Final_Result     :
+        Create_Bucket_Metadata_Table_Configuration_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error  : Boolean := False;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
    type Delete_Bucket_Lifecycle_Operation
      (Set          : not null access Flyology.Operations.Completion_Set'Class;
       HTTP         : not null access Flyology.HTTP.Client.Client;
@@ -7383,6 +7583,40 @@ private
    overriding procedure Finalize
      (Item : in out Get_Bucket_Metadata_Table_Configuration_Operation);
    --  @exclude
+   overriding function Declared_Length
+     (Item : Create_Bucket_Metadata_Table_Configuration_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Create_Bucket_Metadata_Table_Configuration_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out
+        Create_Bucket_Metadata_Table_Configuration_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Create_Bucket_Metadata_Table_Configuration_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Create_Bucket_Metadata_Table_Configuration_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item  : in out Create_Bucket_Metadata_Table_Configuration_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Create_Bucket_Metadata_Table_Configuration_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Create_Bucket_Metadata_Table_Configuration_Operation);
+   --  @exclude
    --  @param Item Internal nonreplaying encryption mutation
    --  @return Exact serialized request-body length
    overriding function Declared_Length
@@ -7990,6 +8224,18 @@ private
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "")
       return Get_Bucket_Metadata_Table_Configuration_Result;
+   --  @exclude
+   function Normalize_Create_Metadata_Table_Response
+     (Value     : Low_Level.Put_Bucket_Control_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Create_Bucket_Metadata_Table_Configuration_Result;
+   --  @exclude
+   function Normalize_Create_Metadata_Table_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "")
+      return Create_Bucket_Metadata_Table_Configuration_Result;
    --  @exclude
    --  @param Value Complete decoded PutBucketEncryption response
    --  @param Admission HTTP admission certainty for that response

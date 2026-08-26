@@ -11,7 +11,7 @@ bounded GetBucketLocation, bounded GetBucketPolicy, GetBucketPolicyStatus, and
 GetBucketRequestPayment, bounded GetBucketAbac and
 GetBucketAccelerateConfiguration, bounded GetBucketAcl and GetObjectAcl,
 bounded GetBucketMetadataTableConfiguration, non-replaying
-Put/DeleteBucketPolicy, non-replaying
+CreateBucketMetadataTableConfiguration, Put/DeleteBucketPolicy, non-replaying
 PutBucketAbac, PutBucketAccelerateConfiguration, and
 PutBucketRequestPayment,
 Put/GetBucketVersioning,
@@ -121,11 +121,12 @@ The implemented operation order is:
     `Put_Object_Lock_Configuration`.
 35. bounded `Get_ACL` for a bucket access-control policy.
 36. bounded `Get_ACL` for an object access-control policy.
-37. bounded `Get_Metadata_Table_Configuration`.
+37. bounded `Get_Metadata_Table_Configuration` and non-replaying
+    `Create_Metadata_Table_Configuration`.
 
-The provider surface contains 63 domain operations: 20 in `Client.Objects`,
-35 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 60 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 64 domain operations: 20 in `Client.Objects`,
+36 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 61 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -155,6 +156,15 @@ Finish, and typed synchronous wait retain the signed request and one bounded
 response snapshot through terminal drain. The caller's XML limits bound the
 configuration and structured error; opaque provider status remains text. The
 operation performs no retry and introduces no metadata lifecycle policy.
+
+CreateBucketMetadataTableConfiguration is colocated with that read in
+`Client.Buckets`. Its exact prepared initiator, limited constructor,
+operation-last restart, typed Finish, and typed synchronous wait all drive one
+non-replaying state machine. The prepared request owns the exact bounded XML
+and signing inputs; caller destination values are not borrowed after signing.
+A complete response exposes typed admission and mutation certainty. Anything
+unknown after possible admission requires caller-selected read-only
+`Get_Metadata_Table_Configuration` reconciliation before any retry.
 
 Each implemented operation has both a limited constructor taking a completion
 set and a same-name, operation-last procedure suitable for a reusable component

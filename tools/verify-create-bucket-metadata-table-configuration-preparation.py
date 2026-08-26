@@ -15,6 +15,8 @@ LOCK = ROOT / "coverage/corpora.lock.toml"
 SOURCES = (
     ROOT / "src/flyology-object_storage-client-low_level.ads",
     ROOT / "src/flyology-object_storage-client-low_level.adb",
+    ROOT / "src/flyology-object_storage-client-buckets.ads",
+    ROOT / "src/flyology-object_storage-client-buckets.adb",
     ROOT / "src/flyology-object_storage-s3-metadata_tables.ads",
     ROOT / "src/flyology-object_storage-s3-metadata_tables.adb",
 )
@@ -192,7 +194,13 @@ def main() -> int:
     for token in ("Serialize_Create",
                   "Prepare_Create_Bucket_Metadata_Table_Configuration",
                   "Execute_Create_Bucket_Metadata_Table_Configuration",
+                  "procedure Create_Bucket_Metadata_Table_Configuration",
                   "Create_Bucket_Metadata_Table_Configuration_Operation",
+                  "Create_Bucket_Metadata_Table_Configuration_Result",
+                  "Create_Metadata_Table_Configuration",
+                  "Normalize_Create_Metadata_Table_Response",
+                  "Normalize_Create_Metadata_Table_Failure",
+                  "Low.Create_Bucket_Metadata_Table_Configuration",
                   "<S3TablesDestination>", "<TableBucketArn>",
                   "<TableName>", "content-md5",
                   "x-amz-sdk-checksum-algorithm"):

@@ -9018,7 +9018,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          "POST", "metadataTable", Origin, Style, Bucket,
          Metadata_Tables.Serialize_Create (Value, Limits), True,
          (others => <>), False, Parameters, Identity, Region, Timestamp,
-         One_Shot_Source => False);
+         One_Shot_Source => True);
    exception
       when Metadata_Tables.Malformed_Metadata_Table =>
          raise Invalid_Request with
@@ -13223,6 +13223,28 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
          Token, Operation);
    end Get_Bucket_Encryption;
+
+   procedure Create_Bucket_Metadata_Table_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Create_Bucket_Metadata_Table_Configuration_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Create_Bucket_Metadata_Table_Configuration;
 
    procedure Put_Bucket_Request_Payment
      (Client    : not null access Flyology.HTTP.Client.Client;

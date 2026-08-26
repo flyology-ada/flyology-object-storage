@@ -79,6 +79,22 @@ procedure S3_HTTP_Socket_Corpus is
    package Sockets renames Flyology.IO.Sockets;
    package US renames Ada.Strings.Unbounded;
 
+   --  Test-only readable aliases of the public enum identities. They avoid
+   --  obscuring the corpus with the long exact S3 operation stem and do not
+   --  select a production state encoding or policy value.
+   Metadata_Create_Response : constant
+     Create_Bucket_Metadata_Table_Configuration_Result_Kind :=
+       Create_Bucket_Metadata_Table_Configuration_Response_Available;
+   Metadata_Create_Exchange_Failed : constant
+     Create_Bucket_Metadata_Table_Configuration_Result_Kind :=
+       Create_Bucket_Metadata_Table_Configuration_Exchange_Failed;
+   Metadata_Create_Rejected : constant
+     Metadata_Table_Configuration_Mutation_Disposition :=
+       Metadata_Table_Configuration_Mutation_Definitely_Not_Applied;
+   Metadata_Create_Outcome_Unknown : constant
+     Metadata_Table_Configuration_Mutation_Disposition :=
+       Metadata_Table_Configuration_Mutation_Outcome_Unknown;
+
    use Ada.Streams;
    use type Ada.Containers.Count_Type;
    use type Low_Level.List_Buckets_Outcome_Kind;
@@ -5329,6 +5345,38 @@ procedure S3_HTTP_Socket_Corpus is
             "POST", "/example-bucket?metadataTable",
             Expected_Body_Root => "<MetadataTableConfiguration",
             Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: typed-create-metadata-table" & CRLF),
+            "POST", "/typed-create-metadata?metadataTable",
+            Expected_Body_Root => "<MetadataTableConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "POST",
+            "/composed-create-metadata?metadataTable",
+            Expected_Body_Root => "<MetadataTableConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-create-metadata-table" & CRLF),
+            "POST", "/restart-create-metadata?metadataTable",
+            Expected_Body_Root => "<MetadataTableConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              --  Test-only whitespace body is one byte above the paired
+              --  caller-selected response ceiling while that same ceiling
+              --  still admits the serialized request document.
+              ("200 OK", String'(1 .. 513 => ' ')),
+            "POST", "/bounded-create-metadata?metadataTable",
+            Expected_Body_Root => "<MetadataTableConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
               ("204 No Content", "",
@@ -17950,6 +17998,141 @@ procedure S3_HTTP_Socket_Corpus is
                Small_Limits => True);
          end;
          declare
+            function Destination
+              return Metadata_Tables.S3_Tables_Destination is
+              ((Table_Bucket_ARN =>
+                  US.To_Unbounded_String ("socket-table-bucket"),
+                Table_Name => US.To_Unbounded_String ("socket-table")));
+
+            Parameters : constant
+              Low_Level.Bucket_Control_Mutation_Parameters :=
+                (Content_MD5 => US.Null_Unbounded_String,
+                 Checksum_Algorithm => US.Null_Unbounded_String,
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+         begin
+            declare
+               Result : constant
+                 Create_Bucket_Metadata_Table_Configuration_Result :=
+                   Buckets.Create_Metadata_Table_Configuration
+                     (HTTP, Origin, "typed-create-metadata", Destination,
+                      Parameters, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Metadata_Create_Response
+                 or else Result.Disposition /= Metadata_Create_Rejected
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "typed-create-metadata-table"
+               then
+                  raise Program_Error with
+                    "typed metadata-table create result mismatch";
+               end if;
+            end;
+            declare
+               --  Parent, HTTP exchange, and transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Result : Create_Bucket_Metadata_Table_Configuration_Result;
+               Value : Metadata_Tables.S3_Tables_Destination := Destination;
+               Operation :
+                 Create_Bucket_Metadata_Table_Configuration_Operation :=
+                   Create_Metadata_Table_Configuration
+                     (Set'Access,
+                      HTTP'Access,
+                      Origin,
+                      "composed-create-metadata",
+                      Value,
+                      Parameters,
+                      Identity,
+                      HTTP_Client.Deadline_After (5.0));
+            begin
+               Value.Table_Bucket_ARN :=
+                 US.To_Unbounded_String ("caller-mutated-bucket");
+               Value.Table_Name := US.To_Unbounded_String ("caller-mutated");
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Metadata_Create_Response
+                 or else Result.Disposition /=
+                   Metadata_Table_Configuration_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+               then
+                  raise Program_Error with
+                    "composed metadata-table create result mismatch";
+               end if;
+               Create_Metadata_Table_Configuration
+                 (HTTP'Access,
+                  Origin,
+                  "restart-create-metadata",
+                  Destination,
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Metadata_Create_Response
+                 or else Result.Disposition /= Metadata_Create_Rejected
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-create-metadata-table"
+               then
+                  raise Program_Error with
+                    "restarted metadata-table create result mismatch";
+               end if;
+            end;
+            declare
+               Result : constant
+                 Create_Bucket_Metadata_Table_Configuration_Result :=
+                   Buckets.Create_Metadata_Table_Configuration
+                     (HTTP, Origin, "bounded-create-metadata", Destination,
+                      Parameters, Identity, Timeout => 5.0,
+                      Limits =>
+                        --  Test-only caller response ceiling paired with the
+                        --  513-byte server fixture above.
+                        (Maximum_Document_Bytes => 512,
+                         Maximum_Depth          => 8,
+                         Maximum_Elements       => 32,
+                         Maximum_Text_Bytes     => 512));
+            begin
+               if Result.Kind /= Metadata_Create_Exchange_Failed
+                 or else Result.Disposition /=
+                   Metadata_Create_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /=
+                   HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "metadata-table create response limit was not enforced";
+               end if;
+            end;
+            declare
+               Prepared : aliased Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Abac
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Bucket_Controls.Abac_Enabled, (others => <>), Identity,
+                    "us-east-1", "20130524T000000Z");
+               Set : aliased Operations.Completion_Set (3);
+               Parent : aliased
+                 Create_Bucket_Metadata_Table_Configuration_Operation
+                   (Set'Access, HTTP'Access, null);
+               Child : HTTP_Client.Exchange_Operation (Set'Access);
+               Rejected : Boolean := False;
+            begin
+               begin
+                  Low_Level.Create_Bucket_Metadata_Table_Configuration
+                    (HTTP'Access, Prepared'Access, Parent'Access,
+                     Parent'Access, HTTP_Client.Deadline_After (5.0),
+                     Operation => Child);
+               exception
+                  when Low_Level.Invalid_Request => Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "metadata-table create accepted a prepared ABAC request";
+               end if;
+            end;
+         end;
+         declare
             function Prepare
               (Annotation : String;
                Full_Conditions : Boolean := False)
@@ -19660,8 +19843,7 @@ begin
    Buckets_Testing.Check_Ownership_Controls_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Encryption_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_ACL_Result_Corpus;
-   Buckets_Testing.
-     Check_Get_Bucket_Metadata_Table_Configuration_Result_Corpus;
+   Buckets_Testing.Check_Metadata_Table_Configuration_Result_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Lifecycle_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_CORS_Result_Corpus;
    Buckets_Testing.Check_Object_Lock_Configuration_Certainty_Corpus;

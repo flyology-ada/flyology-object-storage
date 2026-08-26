@@ -13,6 +13,15 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
    package Bucket_Controls renames
      Flyology.Object_Storage.S3.Bucket_Controls;
 
+   --  Test-only readable aliases for the exact public result identities.
+   --  They do not select production state encodings or policy values.
+   Metadata_Create_Response : constant
+     Create_Bucket_Metadata_Table_Configuration_Result_Kind :=
+       Create_Bucket_Metadata_Table_Configuration_Response_Available;
+   Metadata_Create_Exchange_Failed : constant
+     Create_Bucket_Metadata_Table_Configuration_Result_Kind :=
+       Create_Bucket_Metadata_Table_Configuration_Exchange_Failed;
+
    use type HTTP_Client.Admission_Certainty;
    use type HTTP_Client.Exchange_Result_Kind;
    use type Low_Level.List_Buckets_Outcome_Kind;
@@ -2372,7 +2381,7 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       end loop;
    end Check_Get_Bucket_ACL_Result_Corpus;
 
-   procedure Check_Get_Bucket_Metadata_Table_Configuration_Result_Corpus is
+   procedure Check_Metadata_Table_Configuration_Result_Corpus is
       type Failure_Kind_Array is
         array (Positive range <>) of HTTP_Client.Exchange_Result_Kind;
       Failure_Kinds : constant Failure_Kind_Array :=
@@ -2412,6 +2421,17 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
            when HTTP_Client.Response_Complete      =>
              raise Program_Error with "complete response is not a failure");
 
+      function Expected_Create_Disposition
+        (Kind      : HTTP_Client.Exchange_Result_Kind;
+         Admission : HTTP_Client.Admission_Certainty)
+         return Metadata_Table_Configuration_Mutation_Disposition is
+        (if Kind = HTTP_Client.Cancelled
+           and then Admission = HTTP_Client.Not_Admitted
+         then Metadata_Table_Configuration_Mutation_Cancelled_Before_Admission
+         elsif Admission = HTTP_Client.Not_Admitted
+         then Metadata_Table_Configuration_Mutation_Definitely_Not_Applied
+         else Metadata_Table_Configuration_Mutation_Outcome_Unknown);
+
       procedure Check_Response
         (Status  : Flyology.HTTP.Status_Code;
          Code    : String;
@@ -2441,6 +2461,33 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
               "metadata-table response normalization mismatch";
          end if;
       end Check_Response;
+
+      procedure Check_Create_Response
+        (Status      : Flyology.HTTP.Status_Code;
+         Code        : String;
+         Disposition : Metadata_Table_Configuration_Mutation_Disposition;
+         Failure     : Failure_Reason)
+      is
+         Value : constant Low_Level.Put_Bucket_Control_Outcome :=
+           (if Status = 200
+            then (Kind => Low_Level.Bucket_Control_Updated, Status => Status)
+            else (Kind => Low_Level.Put_Bucket_Control_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant
+           Create_Bucket_Metadata_Table_Configuration_Result :=
+             Normalize_Create_Metadata_Table_Response
+               (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Metadata_Create_Response
+           or else Result.Disposition /= Disposition
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "metadata-table create response normalization mismatch";
+         end if;
+      end Check_Create_Response;
    begin
       Check_Response (200, "", No_Failure);
       Check_Response (400, "InvalidBucketName", Invalid_Request);
@@ -2457,6 +2504,82 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       Check_Response (501, "NotImplemented", Invalid_Request);
       Check_Response (409, "", Corrupt_Or_Invalid_Response);
 
+      Check_Create_Response
+        (200, "", Metadata_Table_Configuration_Mutation_Completed,
+         No_Failure);
+      Check_Create_Response
+        (400, "BadDigest",
+         Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Create_Response
+        (400, "InvalidArgument",
+         Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Create_Response
+        (400, "InvalidBucketName",
+         Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Create_Response
+        (400, "InvalidDigest",
+         Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Create_Response
+        (400, "InvalidRequest",
+         Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Create_Response
+        (400, "MalformedXML",
+         Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Create_Response
+        (400, "XAmzContentSHA256Mismatch",
+         Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Create_Response
+        (401, "InvalidAccessKeyId",
+         Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+         Authentication_Failed);
+      Check_Create_Response
+        (403, "AccessDenied",
+         Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+         Authorization_Failed);
+      Check_Create_Response
+        (404, "NoSuchBucket",
+         Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+         Not_Found);
+      Check_Create_Response
+        (409, "OperationAborted",
+         Metadata_Table_Configuration_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Create_Response
+        (429, "SlowDown",
+         Metadata_Table_Configuration_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Create_Response
+        (500, "InternalError",
+         Metadata_Table_Configuration_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Create_Response
+        (502, "BadGateway",
+         Metadata_Table_Configuration_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Create_Response
+        (503, "SlowDown",
+         Metadata_Table_Configuration_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Create_Response
+        (504, "RequestTimeout",
+         Metadata_Table_Configuration_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Create_Response
+        (501, "NotImplemented",
+         Metadata_Table_Configuration_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Create_Response
+        (500, "Unknown",
+         Metadata_Table_Configuration_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+
       for Admission in
         HTTP_Client.Not_Admitted .. HTTP_Client.Possibly_Admitted
       loop
@@ -2468,8 +2591,18 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
                  Configuration => (others => <>));
             Result : constant Get_Bucket_Metadata_Table_Configuration_Result :=
               Normalize_Get_Metadata_Table_Response (Value, Admission);
+            Create_Value : constant Low_Level.Put_Bucket_Control_Outcome :=
+              (Kind => Low_Level.Bucket_Control_Updated, Status => 200);
+            Create_Result : constant
+              Create_Bucket_Metadata_Table_Configuration_Result :=
+                Normalize_Create_Metadata_Table_Response
+                  (Create_Value, Admission);
          begin
-            if Result.Failure /= Corrupt_Or_Invalid_Response then
+            if Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Create_Result.Disposition /=
+                Metadata_Table_Configuration_Mutation_Outcome_Unknown
+              or else Create_Result.Failure /= Corrupt_Or_Invalid_Response
+            then
                raise Program_Error with
                  "inconsistent metadata-table certainty was accepted";
             end if;
@@ -2483,12 +2616,23 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
                  Get_Bucket_Metadata_Table_Configuration_Result :=
                    Normalize_Get_Metadata_Table_Failure
                      (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+               Create_Result : constant
+                 Create_Bucket_Metadata_Table_Configuration_Result :=
+                   Normalize_Create_Metadata_Table_Failure
+                     (Kind, Admission, HTTP_Client.Waiting_Response_Head);
             begin
                if Result.Kind /=
                  Get_Bucket_Metadata_Table_Configuration_Exchange_Failed
                  or else Result.Failure /= Expected_Failure (Kind)
                  or else Result.Admission /= Admission
                  or else Result.HTTP_Result /= Kind
+                 or else Create_Result.Kind /=
+                   Metadata_Create_Exchange_Failed
+                 or else Create_Result.Disposition /=
+                   Expected_Create_Disposition (Kind, Admission)
+                 or else Create_Result.Failure /= Expected_Failure (Kind)
+                 or else Create_Result.Admission /= Admission
+                 or else Create_Result.HTTP_Result /= Kind
                then
                   raise Program_Error with
                     "metadata-table exchange normalization mismatch";
@@ -2496,7 +2640,7 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
             end;
          end loop;
       end loop;
-   end Check_Get_Bucket_Metadata_Table_Configuration_Result_Corpus;
+   end Check_Metadata_Table_Configuration_Result_Corpus;
 
    procedure Check_Delete_Bucket_Lifecycle_Certainty_Corpus is
       type Failure_Kind_Array is array (Positive range <>) of
