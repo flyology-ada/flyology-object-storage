@@ -11,6 +11,9 @@ backend and server coverage in [bucket-policy.md](bucket-policy.md).
 `GetBucketPolicyStatus` additionally has a provider-owned limited constructor,
 operation-last reusable initiation, typed Finish, and typed synchronous wait;
 its established convenience overload waits on that same state machine.
+`GetBucketRequestPayment` now has the same provider-owned forms and uses its
+exact prepared operation and strict payer decoder without interpreting billing
+policy locally.
 
 ## Pinned authority and complete inventory
 
@@ -40,8 +43,8 @@ signs an empty body, and binds the exact generated operation. Only the
 accelerate request projects `x-amz-request-payer`, whose sole modeled value is
 the exact lowercase `requester`. Each executor rejects a request prepared for
 another member of the family before entering HTTP. The composable
-`GetBucketPolicyStatus` low-level initiator preserves this exact operation
-binding.
+`GetBucketPolicyStatus` and `GetBucketRequestPayment` low-level initiators
+preserve their exact operation binding.
 
 ABAC status preserves absent, `Enabled`, and `Disabled`. Accelerate status
 preserves absent, `Enabled`, and `Suspended`. Request payment
@@ -61,10 +64,11 @@ same-response payload, including an empty payload, and applies the caller's
 document-byte ceiling without inventing an independent policy limit.
 
 Non-200 responses require one strict bounded S3 error. The composable
-policy-status parent also rejects duplicate or present-empty request-ID and
-host-ID response headers and applies `Maximum_Document_Bytes` while bytes
-arrive. Object Storage selects no retry, retains no caller input, releases the
-response before return, and creates no detached helper task. Flyology.HTTP's
+policy-status and requester-payment parents also reject duplicate or
+present-empty request-ID and host-ID response headers and apply
+`Maximum_Document_Bytes` while bytes arrive. Object Storage selects no retry,
+retains no caller input, releases the response before return, and creates no
+detached helper task. Flyology.HTTP's
 separately qualified one-shot stale pooled-connection recovery remains limited
 to safe GET/HEAD exchanges with no request source and no response bytes.
 
@@ -77,9 +81,10 @@ spellings, namespace compatibility, malformed XML, DTD/entity rejection, and
 structured errors. The raw-loopback corpus performs all six high-level calls
 over sequential signed real-socket responses under both native and Flyology
 lightweight callers. It additionally exercises typed/composable policy-status
-success, consumed-operation restart, exact prepared-operation mismatch,
-malformed singleton headers, response overflow, and every normalized HTTP
-terminal kind; the root gate repeats that corpus three times.
+and requester-payment success, consumed-operation restart, exact
+prepared-operation mismatch, malformed singleton headers, response overflow,
+and every normalized HTTP terminal kind; the root gate repeats that corpus
+three times.
 
 The machine ledger records `GetBucketPolicy` and `GetPublicAccessBlock` as
 `covered / covered / covered / covered` using their independent backend and

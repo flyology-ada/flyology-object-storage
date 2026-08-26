@@ -281,30 +281,31 @@ def main() -> int:
                 if not re.search(rf"\bfunction\s+{re.escape(name)}\b", text):
                     fail(f"{operation}: {name} absent from {label}")
 
-    for label in ("low-level specification", "low-level body"):
-        if not re.search(
-                r"\bprocedure\s+Get_Bucket_Policy_Status\b", texts[label]):
-            fail(
-                "GetBucketPolicyStatus: composable initiator absent from "
-                f"{label}"
-            )
-    for declaration in (
-            "Get_Bucket_Policy_Status_Result",
-            "Get_Bucket_Policy_Status_Operation",
-            "Normalize_Get_Bucket_Policy_Status_Response",
-            "Normalize_Get_Bucket_Policy_Status_Failure",
-    ):
-        if declaration not in texts["high-level specification"]:
-            fail(
-                f"GetBucketPolicyStatus: {declaration} absent from provider "
-                "spec"
-            )
-        if declaration.startswith("Normalize_") and declaration not in texts[
-                "high-level body"]:
-            fail(
-                f"GetBucketPolicyStatus: {declaration} absent from provider "
-                "body"
-            )
+    composable_reads = (
+        ("GetBucketPolicyStatus", "Get_Bucket_Policy_Status"),
+        ("GetBucketRequestPayment", "Get_Bucket_Request_Payment"),
+    )
+    for operation, stem in composable_reads:
+        for label in ("low-level specification", "low-level body"):
+            if not re.search(rf"\bprocedure\s+{stem}\b", texts[label]):
+                fail(
+                    f"{operation}: composable initiator absent from {label}"
+                )
+        for declaration in (
+                f"{stem}_Result",
+                f"{stem}_Operation",
+                f"Normalize_{stem}_Response",
+                f"Normalize_{stem}_Failure",
+        ):
+            if declaration not in texts["high-level specification"]:
+                fail(
+                    f"{operation}: {declaration} absent from provider spec"
+                )
+            if declaration.startswith("Normalize_") and declaration not in (
+                    texts["high-level body"]):
+                fail(
+                    f"{operation}: {declaration} absent from provider body"
+                )
 
     checked_shapes: set[int] = set()
     for _, _, shape_text, _, _, _, _, _ in expected_rows:

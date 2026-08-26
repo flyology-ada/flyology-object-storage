@@ -7,8 +7,9 @@ initiation, one-shot UploadPart, one-shot multipart completion and abort,
 bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
 ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
-bounded GetBucketLocation, bounded GetBucketPolicy and GetBucketPolicyStatus,
-non-replaying Put/DeleteBucketPolicy, non-replaying Put/GetBucketVersioning,
+bounded GetBucketLocation, bounded GetBucketPolicy, GetBucketPolicyStatus, and
+GetBucketRequestPayment, non-replaying Put/DeleteBucketPolicy, non-replaying
+Put/GetBucketVersioning,
 non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
@@ -91,7 +92,8 @@ The implemented operation order is:
 22. bounded `Get_Bucket_Location`;
 23. non-replaying `Put_Bucket_Versioning` and bounded
     `Get_Bucket_Versioning`;
-24. bounded `Get_Bucket_Policy` and `Get_Bucket_Policy_Status`;
+24. bounded `Get_Bucket_Policy`, `Get_Bucket_Policy_Status`, and
+    `Get_Bucket_Request_Payment`;
 25. `Set_Public_Access_Block`, `Get_Public_Access_Block`, and
     `Delete_Public_Access_Block`;
 26. bounded `Get_Ownership_Controls`, non-replaying
@@ -111,9 +113,9 @@ The implemented operation order is:
 34. bounded `Get_Object_Lock_Configuration` and non-replaying
     `Put_Object_Lock_Configuration`.
 
-The provider surface contains 54 domain operations: 19 in `Client.Objects`,
-27 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 51 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 55 domain operations: 19 in `Client.Objects`,
+28 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 52 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -241,6 +243,12 @@ state machine. Physical duplicate or present-empty S3 request identifiers and
 responses beyond the caller's `Parse_Limits` are rejected. This read reports
 modeled policy status; it does not evaluate policy locally or authorize a
 retry.
+GetBucketRequestPayment likewise owns its exact `?requestPayment` prepared
+operation, bounded response, and hidden HTTP exchange through typed Finish.
+Its limited constructor, operation-last restart, typed synchronous wait, and
+established convenience overload all drive the same state machine. The caller
+selects the existing XML document limit, and Object Storage adds no retry or
+billing-policy interpretation.
 PutBucketPolicy copies the caller's exact bounded raw document into the signed
 prepared request and exposes those owned bytes once through a non-rewindable
 source. DeleteBucketPolicy uses the same provider-owned mutation discipline
@@ -531,7 +539,8 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Create_Multipart_Upload`, `Upload_Part`, and
 `Complete_Multipart_Upload`, `Abort_Multipart_Upload`, `List_Parts_Page`, and
 `List_Multipart_Uploads_Page` overloads, plus the typed-result `Copy_Object`,
-`Get_Public_Access_Block`, `Get_Policy_Status`, `Get_Ownership_Controls`, and
+`Get_Public_Access_Block`, `Get_Policy_Status`, `Get_Request_Payment`,
+`Get_Ownership_Controls`, and
 `Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`,
 `Set_Encryption`, `Delete_Encryption`, `Get_CORS`, `Set_CORS`, and
 `Delete_CORS`, `Delete_Lifecycle` overloads, and the

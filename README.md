@@ -76,9 +76,9 @@ The core crate includes:
   single-range Get, bodyless Head, non-replaying Delete and CopyObject,
   multipart initiation, one-shot UploadPart, and one-shot multipart completion
   operations, plus service-level ListBuckets, CreateBucket, DeleteBucket,
-  HeadBucket, bounded GetBucketLocation, bounded GetBucketPolicy and
-  GetBucketPolicyStatus, and bounded non-replaying Put/DeleteBucketPolicy,
-  DeleteBucketLifecycle, and
+  HeadBucket, bounded GetBucketLocation, bounded GetBucketPolicy,
+  GetBucketPolicyStatus, and GetBucketRequestPayment, and bounded
+  non-replaying Put/DeleteBucketPolicy, DeleteBucketLifecycle, and
   Put/GetBucketVersioning, with typed
   synchronous overloads that wait on the same owner-driven state machines and
   never create a per-operation helper task;

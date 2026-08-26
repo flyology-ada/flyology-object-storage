@@ -15,6 +15,8 @@ package Flyology.Object_Storage.Client.Buckets.Testing is
 
    procedure Check_Get_Bucket_Policy_Status_Result_Corpus;
 
+   procedure Check_Get_Bucket_Request_Payment_Result_Corpus;
+
    procedure Check_Bucket_Policy_Certainty_Corpus;
 
    procedure Check_Public_Access_Block_Certainty_Corpus;

@@ -4267,6 +4267,50 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
+              ("200 OK", "<RequestPaymentConfiguration>" &
+               "<Payer>Requester</Payer>" &
+               "</RequestPaymentConfiguration>"),
+            "GET", "/typed-request-payment?requestPayment",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<RequestPaymentConfiguration>" &
+               "<Payer>BucketOwner</Payer>" &
+               "</RequestPaymentConfiguration>"),
+            "GET", "/composed-request-payment?requestPayment",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-request-payment" & CRLF),
+            "GET", "/restart-request-payment?requestPayment",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<RequestPaymentConfiguration>" &
+               "<Payer>Requester</Payer>" &
+               "</RequestPaymentConfiguration>",
+               "x-amz-request-id: first-request-payment" & CRLF &
+               "x-amz-request-id: second-request-payment" & CRLF),
+            "GET", "/duplicate-request-payment-header?requestPayment",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<RequestPaymentConfiguration>" &
+               "<Payer>Requester</Payer>" &
+               "</RequestPaymentConfiguration>",
+               "x-amz-id-2:" & CRLF),
+            "GET", "/empty-request-payment-header?requestPayment",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<RequestPaymentConfiguration>" &
+               "<Payer>Requester</Payer>" &
+               "</RequestPaymentConfiguration>"),
+            "GET", "/bounded-request-payment?requestPayment",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
               ("200 OK", "<PublicAccessBlockConfiguration>" &
                "<BlockPublicAcls>true</BlockPublicAcls>" &
                "<IgnorePublicAcls>false</IgnorePublicAcls>" &
@@ -14033,6 +14077,8 @@ procedure S3_HTTP_Socket_Corpus is
                  Identity,
                  Timeout => 5.0,
                  Limits =>
+                   --  Test-only one-byte ceiling is deliberately below the
+                   --  valid policy-status XML response.
                    (Maximum_Document_Bytes => 1,
                     others => <>));
          begin
@@ -14056,6 +14102,186 @@ procedure S3_HTTP_Socket_Corpus is
             then
                raise Program_Error with
                  "GetBucketRequestPayment socket mismatch";
+            end if;
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Abac
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Bucket_Request_Payment_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Get_Bucket_Request_Payment
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "GetBucketRequestPayment accepted a prepared ABAC request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Request_Payment_Result :=
+              Buckets.Get_Request_Payment
+                (HTTP,
+                 Origin,
+                 "typed-request-payment",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Get_Bucket_Request_Payment_Response_Available
+              or else Result.Failure /= No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+              or else Result.Response.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Response.Payment /= Bucket_Controls.Requester
+            then
+               raise Program_Error with
+                 "typed GetBucketRequestPayment response mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            --  Requester-payment parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_Request_Payment_Result;
+         begin
+            declare
+               Operation : Get_Bucket_Request_Payment_Operation :=
+                 Get_Request_Payment
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-request-payment",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Get_Bucket_Request_Payment_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Bucket_Control_Found
+                 or else Result.Response.Payment /=
+                   Bucket_Controls.Bucket_Owner
+               then
+                  raise Program_Error with
+                    "composed GetBucketRequestPayment first result mismatch";
+               end if;
+               Get_Request_Payment
+                 (HTTP'Access,
+                  Origin,
+                  "restart-request-payment",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Get_Bucket_Request_Payment_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Bucket_Control_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-request-payment"
+               then
+                  raise Program_Error with
+                    "composed GetBucketRequestPayment restart mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Request_Payment_Result :=
+              Buckets.Get_Request_Payment
+                (HTTP,
+                 Origin,
+                 "duplicate-request-payment-header",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Get_Bucket_Request_Payment_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+            then
+               raise Program_Error with
+                 "duplicate GetBucketRequestPayment response header " &
+                 "admitted";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Request_Payment_Result :=
+              Buckets.Get_Request_Payment
+                (HTTP,
+                 Origin,
+                 "empty-request-payment-header",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Get_Bucket_Request_Payment_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+            then
+               raise Program_Error with
+                 "empty GetBucketRequestPayment host ID admitted";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Request_Payment_Result :=
+              Buckets.Get_Request_Payment
+                (HTTP,
+                 Origin,
+                 "bounded-request-payment",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0,
+                 Limits =>
+                   --  Test-only one-byte ceiling is deliberately below the
+                   --  valid requester-payment XML response.
+                   (Maximum_Document_Bytes => 1,
+                    others => <>));
+         begin
+            if Result.Kind /= Get_Bucket_Request_Payment_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+            then
+               raise Program_Error with
+                 "GetBucketRequestPayment response limit was not enforced";
             end if;
          end;
          declare
@@ -17809,6 +18035,7 @@ begin
    Buckets_Testing.Check_Get_Bucket_Location_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Policy_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Policy_Status_Result_Corpus;
+   Buckets_Testing.Check_Get_Bucket_Request_Payment_Result_Corpus;
    Buckets_Testing.Check_Bucket_Policy_Certainty_Corpus;
    Buckets_Testing.Check_Public_Access_Block_Certainty_Corpus;
    Buckets_Testing.Check_Ownership_Controls_Certainty_Corpus;
