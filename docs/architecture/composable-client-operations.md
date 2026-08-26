@@ -21,6 +21,7 @@ Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
 bounded GetBucketLifecycleConfiguration and non-replaying
 PutBucketLifecycleConfiguration,
+bounded GetBucketReplication,
 non-replaying DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketIntelligentTieringConfiguration,
@@ -155,10 +156,13 @@ The implemented operation order is:
     destination, event, and presence-sensitive filter graph.
 48. non-replaying `Set_Notification_Configuration` with that graph and the
     optional exact owner and destination-validation controls.
+49. bounded `Get_Replication_Configuration` with the complete required role
+    and rules graph, presence-preserving nested controls, and exact modeled
+    status and storage-class domains.
 
-The provider surface contains 78 domain operations: 21 in `Client.Objects`,
-49 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 75 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 79 domain operations: 21 in `Client.Objects`,
+50 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 76 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`

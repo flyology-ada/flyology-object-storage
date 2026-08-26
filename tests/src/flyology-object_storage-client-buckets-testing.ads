@@ -37,6 +37,12 @@ package Flyology.Object_Storage.Client.Buckets.Testing is
    procedure Check_Get_Bucket_Lifecycle_Result_Corpus;
    procedure Check_Put_Bucket_Lifecycle_Result_Corpus;
    procedure Check_Bucket_Notification_Result_Corpus;
+   procedure Check_Get_Bucket_Replication_Result_Corpus;
+
+   procedure Check_Get_Bucket_Replication_Pre_Admission_Rejection
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Prepared : Flyology.Object_Storage.Client.Low_Level.Prepared_Request;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline);
 
    procedure Check_Get_Bucket_ACL_Result_Corpus;
 

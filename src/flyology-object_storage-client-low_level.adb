@@ -26,6 +26,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
    package Lifecycle renames Flyology.Object_Storage.S3.Lifecycle;
    package Notifications renames Flyology.Object_Storage.S3.Notifications;
+   package Replication renames Flyology.Object_Storage.S3.Replication;
    package Metadata_Tables renames
      Flyology.Object_Storage.S3.Metadata_Tables;
    package Encoding renames Flyology.Object_Storage.S3.SigV4_Encoding;
@@ -8342,6 +8343,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
          US.Null_Unbounded_String, False, Identity, Region, Timestamp));
 
+   function Prepare_Get_Bucket_Replication
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Bucket_Replication_Operation,
+         Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
+         US.Null_Unbounded_String, False, Identity, Region, Timestamp));
+
    function Prepare_Get_Bucket_ACL
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
@@ -8705,6 +8716,36 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "malformed GetBucketNotificationConfiguration response";
    end Decode_Get_Bucket_Notification_Configuration_Response;
 
+   function Decode_Get_Bucket_Replication_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Replication_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      --  The pinned model declares 200 as the sole success response.
+      if Status = 200 then
+         if Payload'Length = 0 then
+            raise Invalid_Response with "empty GetBucketReplication response";
+         end if;
+         return
+           (Kind          => Bucket_Control_Found,
+            Status        => Status,
+            Configuration => Replication.Parse (Payload, Limits),
+            Error         => (others => <>));
+      end if;
+      return
+        (Kind          => Get_Bucket_Control_Rejected,
+         Status        => Status,
+         Configuration => (Role => US.Null_Unbounded_String, Rules => <>),
+         Error         =>
+           Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Replication.Malformed_Replication | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with "malformed GetBucketReplication response";
+   end Decode_Get_Bucket_Replication_Response;
+
    function Decode_Get_Bucket_ACL_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
@@ -9036,6 +9077,23 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Raw.Status, US.To_String (Raw.Payload),
          US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
    end Execute_Get_Bucket_Notification_Configuration;
+
+   function Execute_Get_Bucket_Replication
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Replication_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared, Model.Get_Bucket_Replication_Operation,
+           False, False, Timeout, Token, Limits);
+   begin
+      return Decode_Get_Bucket_Replication_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_Get_Bucket_Replication;
 
    function Execute_Get_Bucket_ACL
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -13670,6 +13728,26 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
          Token, Operation);
    end Get_Bucket_Notification_Configuration;
+
+   procedure Get_Bucket_Replication
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Get_Bucket_Control_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Get_Bucket_Replication_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Sink
+        (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
+         Token, Operation);
+   end Get_Bucket_Replication;
 
    procedure Create_Bucket_Metadata_Table_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;

@@ -4582,6 +4582,134 @@ package Flyology.Object_Storage.Client.Buckets is
       Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
       return Put_Bucket_Lifecycle_Result;
 
+   --  Shape of a terminal GetBucketReplication read.
+   --  @enum Get_Bucket_Replication_Response_Available Modeled response
+   --     exists
+   --  @enum Get_Bucket_Replication_Exchange_Failed No complete response
+   --     exists
+   type Get_Bucket_Replication_Result_Kind is
+     (Get_Bucket_Replication_Response_Available,
+      Get_Bucket_Replication_Exchange_Failed);
+
+   --  Typed replication configuration response or composable HTTP failure.
+   --  Kind selects the meaningful response/failure fields; no public default
+   --  timeout, resource limit, or result classification is introduced.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Get_Bucket_Replication_Result is record
+      Kind        : Get_Bucket_Replication_Result_Kind;
+      Failure     : Failure_Reason;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty;
+      Response    : Low_Level.Get_Bucket_Replication_Outcome;
+      HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind;
+      HTTP_Phase  : Flyology.HTTP.Client.Exchange_Phase;
+      Detail      : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  One bounded current replication-configuration read with one hidden
+   --  HTTP child. It owns its signed request and response through Finish.
+   type Get_Bucket_Replication_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one bounded current replication-configuration read.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose replication configuration is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established replication read
+   procedure Get_Replication_Configuration
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out Get_Bucket_Replication_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded current replication-configuration read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose replication configuration is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @return Started owner-driven replication read
+   function Get_Replication_Configuration
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return Get_Bucket_Replication_Operation;
+
+   --  Consume one terminal GetBucketReplication operation.
+   --  @param Operation Terminal replication read
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out Get_Bucket_Replication_Operation;
+      Result    : out Get_Bucket_Replication_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Read one current replication configuration by waiting on the same
+   --  owner-driven state machine used by composable callers.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose replication configuration is requested
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected response and error XML limits
+   --  @return Typed modeled response or bounded exchange failure
+   function Get_Replication_Configuration
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
+      return Get_Bucket_Replication_Result;
+
    --  Shape of a terminal GetBucketNotificationConfiguration read.
    --  @enum Get_Bucket_Notification_Response_Available Modeled response
    --     exists
@@ -8673,6 +8801,26 @@ private
    end record;
 
    --  @exclude
+   type Get_Bucket_Replication_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural;
+      Final_Result     : Get_Bucket_Replication_Result;
+      Has_Final_Result : Boolean;
+      Has_Saved_Error  : Boolean;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
    type Get_Bucket_Notification_Operation
      (Set          : not null access Flyology.Operations.Completion_Set'Class;
       HTTP         : not null access Flyology.HTTP.Client.Client;
@@ -9944,6 +10092,20 @@ private
      (Item : in out Get_Bucket_Lifecycle_Operation);
    --  @exclude
    overriding procedure Write
+     (Item : in out Get_Bucket_Replication_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Get_Bucket_Replication_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Bucket_Replication_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Get_Bucket_Replication_Operation);
+   --  @exclude
+   overriding procedure Write
      (Item : in out Get_Bucket_Notification_Operation;
       Data : Ada.Streams.Stream_Element_Array);
    --  @exclude
@@ -10980,6 +11142,18 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Bucket_Lifecycle_Result;
+   --  @exclude
+   function Normalize_Get_Bucket_Replication_Response
+     (Value : Low_Level.Get_Bucket_Replication_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase : Flyology.HTTP.Client.Exchange_Phase)
+      return Get_Bucket_Replication_Result;
+   --  @exclude
+   function Normalize_Get_Bucket_Replication_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String) return Get_Bucket_Replication_Result;
    --  @exclude
    function Normalize_Get_Bucket_Notification_Response
      (Value : Low_Level.Get_Bucket_Notification_Configuration_Outcome;

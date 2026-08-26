@@ -2709,6 +2709,103 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       end;
    end Check_Bucket_Notification_Result_Corpus;
 
+   procedure Check_Get_Bucket_Replication_Result_Corpus is
+      function Error_Response (Code : String) return S3.Errors.Error_Response
+      is
+        ((Code       => US.To_Unbounded_String (Code),
+          Message    => US.Null_Unbounded_String,
+          Resource   => US.Null_Unbounded_String,
+          Request_ID => US.Null_Unbounded_String,
+          Host_ID    => US.Null_Unbounded_String));
+
+      function Value
+        (Status : Flyology.HTTP.Status_Code; Code : String)
+         return Low_Level.Get_Bucket_Replication_Outcome is
+        ((Kind =>
+            (if Status = 200
+             then Low_Level.Bucket_Control_Found
+             else Low_Level.Get_Bucket_Control_Rejected),
+          Status => Status,
+          Configuration =>
+            (Role => US.Null_Unbounded_String, Rules => <>),
+          Error => Error_Response (Code)));
+
+      procedure Check_Response
+        (Status : Flyology.HTTP.Status_Code; Code : String;
+         Failure : Failure_Reason)
+      is
+         Result : constant Get_Bucket_Replication_Result :=
+           Normalize_Get_Bucket_Replication_Response
+             (Value (Status, Code), HTTP_Client.Response_Observed,
+              HTTP_Client.Waiting_Response_Head);
+      begin
+         if Result.Kind /= Get_Bucket_Replication_Response_Available
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "GetBucketReplication normalization mismatch";
+         end if;
+      end Check_Response;
+   begin
+      Check_Response (200, "", No_Failure);
+      Check_Response (400, "InvalidRequest", Invalid_Request);
+      Check_Response (401, "InvalidAccessKeyId", Authentication_Failed);
+      Check_Response (403, "AccessDenied", Authorization_Failed);
+      Check_Response (404, "NoSuchBucket", Not_Found);
+      Check_Response
+        (404, "ReplicationConfigurationNotFoundError", Not_Found);
+      Check_Response (409, "OperationAborted", Unavailable_Or_Retryable);
+      Check_Response (503, "SlowDown", Unavailable_Or_Retryable);
+      Check_Response (409, "", Corrupt_Or_Invalid_Response);
+
+      for Admission in HTTP_Client.Admission_Certainty loop
+         declare
+            Result : constant Get_Bucket_Replication_Result :=
+              Normalize_Get_Bucket_Replication_Failure
+                (HTTP_Client.Timed_Out, Admission,
+                 HTTP_Client.Waiting_Response_Head, "timeout");
+         begin
+            if Result.Kind /= Get_Bucket_Replication_Exchange_Failed
+              or else Result.Failure /= Timed_Out
+              or else Result.Admission /= Admission
+              or else Result.HTTP_Result /= HTTP_Client.Timed_Out
+            then
+               raise Program_Error with
+                 "GetBucketReplication exchange certainty mismatch";
+            end if;
+         end;
+      end loop;
+   end Check_Get_Bucket_Replication_Result_Corpus;
+
+   procedure Check_Get_Bucket_Replication_Pre_Admission_Rejection
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Prepared : Flyology.Object_Storage.Client.Low_Level.Prepared_Request;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline)
+   is
+      --  Derived capacity: test parent, rejected HTTP exchange, and the
+      --  otherwise possible transport child bound this negative oracle.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+      Wrong : aliased Low_Level.Prepared_Request := Prepared;
+      Operation : aliased Get_Bucket_Replication_Operation
+        (Set'Access, Client, null);
+      Rejected : Boolean := False;
+   begin
+      begin
+         Low_Level.Get_Bucket_Replication
+           (Client, Wrong'Access, Operation'Access, Deadline, null,
+            Operation.Child);
+      exception
+         when Low_Level.Invalid_Request => Rejected := True;
+      end;
+      if not Rejected
+        or else Flyology.Operations.Is_Active (Operation.Child)
+      then
+         raise Program_Error with
+           "GetBucketReplication wrong prepared operation crossed admission";
+      end if;
+   end Check_Get_Bucket_Replication_Pre_Admission_Rejection;
+
    procedure Check_Get_Bucket_ACL_Result_Corpus is
       type Failure_Kind_Array is
         array (Positive range <>) of HTTP_Client.Exchange_Result_Kind;

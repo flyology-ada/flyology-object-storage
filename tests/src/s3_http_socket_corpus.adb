@@ -31,6 +31,7 @@ with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Notifications;
+with Flyology.Object_Storage.S3.Replication;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
@@ -67,6 +68,7 @@ procedure S3_HTTP_Socket_Corpus is
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
    package Lifecycle renames Flyology.Object_Storage.S3.Lifecycle;
    package Notifications renames Flyology.Object_Storage.S3.Notifications;
+   package Replication renames Flyology.Object_Storage.S3.Replication;
    package XML renames Flyology.Object_Storage.S3.XML;
    package Metadata_Tables renames
      Flyology.Object_Storage.S3.Metadata_Tables;
@@ -243,6 +245,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Buckets.Delete_Outcome_Kind;
    use type Low_Level.Delete_Bucket_CORS_Outcome_Kind;
    use type Low_Level.Get_Bucket_Control_Outcome_Kind;
+   use type Replication.Status_Kind;
    use type Low_Level.Put_Bucket_Control_Outcome_Kind;
    use type Bucket_Controls.Abac_Status;
    use type Bucket_Controls.Accelerate_Status;
@@ -5129,6 +5132,58 @@ procedure S3_HTTP_Socket_Corpus is
                  "<Message>missing</Message></Error>",
                "x-amz-request-id: restarted-get-notification" & CRLF),
             "GET", "/restart-notification?notification",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ReplicationConfiguration>" &
+                 "<Role>socket-role</Role><Rule><Status>Enabled</Status>" &
+                 "<Destination><Bucket>socket-destination</Bucket>" &
+                 "</Destination></Rule></ReplicationConfiguration>",
+               "x-amz-request-id: replication-request" & CRLF &
+               "x-amz-id-2: replication-host" & CRLF),
+            "GET", "/example-bucket?replication",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ReplicationConfiguration>" &
+                 "<Role>typed-role</Role><Rule><Status>Disabled</Status>" &
+                 "<Destination><Bucket>typed-destination</Bucket>" &
+                 "</Destination></Rule></ReplicationConfiguration>"),
+            "GET", "/typed-replication?replication",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ReplicationConfiguration>" &
+                 "<Role>composed-role</Role><Rule><Status>Enabled</Status>" &
+                 "<Destination><Bucket>first</Bucket></Destination></Rule>" &
+                 "<Rule><Status>Disabled</Status><Destination>" &
+                 "<Bucket>second</Bucket></Destination></Rule>" &
+                 "</ReplicationConfiguration>"),
+            "GET", "/composed-replication?replication",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("404 Not Found",
+               "<Error><Code>ReplicationConfigurationNotFoundError</Code>" &
+                 "<Message>missing</Message></Error>",
+               "x-amz-request-id: restarted-get-replication" & CRLF),
+            "GET", "/restart-replication?replication",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ReplicationConfiguration><Role>r</Role>" &
+                 "<Rule><Status>Enabled</Status><Destination><Bucket>b" &
+                 "</Bucket></Destination></Rule></ReplicationConfiguration>",
+               "x-amz-request-id: one" & CRLF &
+               "x-amz-request-id: two" & CRLF),
+            "GET", "/duplicate-replication?replication",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ReplicationConfiguration>" &
+                 String'(1 .. 64 => ' ') &
+                 "</ReplicationConfiguration>"),
+            "GET", "/bounded-replication?replication",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
@@ -18361,6 +18416,127 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Wrong : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Notification_Configuration
+                (Origin, Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Replication
+                (Origin, Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+            Result : constant Low_Level.Get_Bucket_Replication_Outcome :=
+              Low_Level.Execute_Get_Bucket_Replication
+                (HTTP, Prepared, 5.0, null, XML.Default_Limits);
+         begin
+            Buckets_Testing.
+              Check_Get_Bucket_Replication_Pre_Admission_Rejection
+                (HTTP'Access, Wrong, HTTP_Client.Deadline_After (5.0));
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Status /= 200
+              or else US.To_String (Result.Configuration.Role) /=
+                "socket-role"
+              or else Result.Configuration.Rules.Length /= 1
+            then
+               raise Program_Error with
+                 "GetBucketReplication socket mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Replication_Result :=
+              Get_Replication_Configuration
+                (HTTP, Origin, "typed-replication", Parameters, Identity,
+                 "us-east-1", Low_Level.Path_Style, 5.0, null,
+                 XML.Default_Limits);
+         begin
+            if Result.Kind /= Get_Bucket_Replication_Response_Available
+              or else Result.Failure /= No_Failure
+              or else Result.Response.Configuration.Rules.First_Element.
+                Status /= Replication.Disabled
+            then
+               raise Program_Error with
+                 "typed GetBucketReplication mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_Replication_Result;
+         begin
+            declare
+               Operation : Get_Bucket_Replication_Operation :=
+                 Get_Replication_Configuration
+                   (Set'Access, HTTP'Access, Origin,
+                    "composed-replication", Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0), "us-east-1",
+                    Low_Level.Path_Style, XML.Default_Limits, null);
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Replication_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Configuration.Rules.Length /= 2
+               then
+                  raise Program_Error with
+                    "composed GetBucketReplication mismatch";
+               end if;
+               Get_Replication_Configuration
+                 (HTTP'Access, Origin, "restart-replication", Parameters,
+                  Identity, HTTP_Client.Deadline_After (5.0), "us-east-1",
+                  Low_Level.Path_Style, XML.Default_Limits, null, Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Replication_Response_Available
+                 or else Result.Failure /= Not_Found
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-get-replication"
+               then
+                  raise Program_Error with
+                    "restarted GetBucketReplication mismatch";
+               end if;
+               Get_Replication_Configuration
+                 (HTTP'Access, Origin, "duplicate-replication", Parameters,
+                  Identity, HTTP_Client.Deadline_After (5.0), "us-east-1",
+                  Low_Level.Path_Style, XML.Default_Limits, null, Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Replication_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+               then
+                  raise Program_Error with
+                    "GetBucketReplication accepted duplicate request id";
+               end if;
+               Get_Replication_Configuration
+                 (HTTP'Access, Origin, "bounded-replication", Parameters,
+                  Identity, HTTP_Client.Deadline_After (5.0), "us-east-1",
+                  Low_Level.Path_Style,
+                  --  Test-only limit paired with the oversized fixture.
+                  (Maximum_Document_Bytes => 64,
+                   Maximum_Depth          => 8,
+                   Maximum_Elements       => 32,
+                   Maximum_Text_Bytes     => 64),
+                  null, Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Replication_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /=
+                   HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded GetBucketReplication mismatch";
+               end if;
+            end;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Get_Bucket_Metadata_Table_Configuration
                 (Origin, Low_Level.Path_Style, "example-bucket",
@@ -22602,6 +22778,7 @@ begin
    Buckets_Testing.Check_Get_Bucket_Lifecycle_Result_Corpus;
    Buckets_Testing.Check_Put_Bucket_Lifecycle_Result_Corpus;
    Buckets_Testing.Check_Bucket_Notification_Result_Corpus;
+   Buckets_Testing.Check_Get_Bucket_Replication_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_ACL_Result_Corpus;
    Buckets_Testing.Check_Metadata_Table_Configuration_Result_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Lifecycle_Certainty_Corpus;
