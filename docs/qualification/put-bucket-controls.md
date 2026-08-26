@@ -47,13 +47,13 @@ HTTP.
 Each exact executor checks the private family kind and exact generated
 operation before entering HTTP. A 200 response may contain only an empty or
 whitespace body. Non-200 responses require one strict bounded S3 error.
-PutBucketRequestPayment additionally has provider-owned limited-constructor,
-operation-last restart, typed Finish, and typed synchronous-wait forms. They
-own the serialized payer document and expose it through one non-rewindable
-source, preserve admission certainty, and require read-only requester-payment
-reconciliation after an outcome-unknown result. Calls do not retry, retain no
-caller input, release each response before return, and create no detached
-helper task.
+PutBucketAbac and PutBucketRequestPayment additionally have provider-owned
+limited-constructor, operation-last restart, typed Finish, and typed
+synchronous-wait forms. They own their serialized documents and expose them
+through one non-rewindable source, preserve admission certainty, and require
+read-only GetBucketAbac or GetBucketRequestPayment reconciliation after an
+outcome-unknown result. Calls do not retry, retain no caller input, release
+each response before return, and create no detached helper task.
 
 ## Corpus and coverage boundary
 
@@ -65,10 +65,10 @@ unknown algorithm rejection, exact targets, cross-operation pre-admission
 rejection, bodyless success, and structured/malformed errors. The raw-loopback
 corpus performs all five high-level calls with body-hash, MD5/checksum, owner,
 confirmation, and operation verification under native and Flyology lightweight
-callers. The composable PutBucketRequestPayment corpus also covers
-construction, restart, exact prepared-operation rejection, physical response
-header multiplicity, present-empty response identifiers, caller-selected
-response limits, and certainty normalization.
+callers. The composable PutBucketAbac and PutBucketRequestPayment corpora also
+cover construction, restart, exact prepared-operation rejection, physical
+response header multiplicity, present-empty response identifiers,
+caller-selected response limits, and certainty normalization.
 
 The ledger records `PutBucketPolicy` and `PutPublicAccessBlock` as `covered /
 covered / covered / covered` using their independent backend and server
@@ -88,8 +88,9 @@ exact enum domains, and eleven reciprocal vectors; the expanded GET verifier
 reported six operations, 26 members, five enum domains, and thirteen vectors.
 The 116-operation coverage verifier and its negative oracle also passed. The
 repository-integrity gate passed, and the warning-strict GNATdoc build
-generated 429 HTML pages with the operation type and all four provider-owned
-`Set_Request_Payment` overloads present in `Client.Buckets`.
+generated 429 HTML pages with both operation types and all four provider-owned
+overloads for `Set_ABAC` and `Set_Request_Payment` present in
+`Client.Buckets`.
 
 The latest serialized proof campaign remains the 2026-08-26 936/936 result.
 This slice does not change any of the nine `tools/prove.sh` manifest units, so

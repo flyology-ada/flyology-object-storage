@@ -197,25 +197,30 @@ def main() -> int:
                    for text in texts) != 2:
                 fail(f"{name}: {symbol} is not declared and implemented exactly once")
 
-    for text, label in ((low_spec, "low-level specification"),
-                        (low_body, "low-level body")):
-        if not re.search(r"\bprocedure\s+Put_Bucket_Request_Payment\b", text):
-            fail(f"PutBucketRequestPayment: composable initiator absent from {label}")
-    for declaration in (
-            "Put_Bucket_Request_Payment_Result",
-            "Put_Bucket_Request_Payment_Operation",
-            "Normalize_Put_Bucket_Request_Payment_Response",
-            "Normalize_Put_Bucket_Request_Payment_Failure",
-    ):
-        if declaration not in high_spec:
-            fail(f"PutBucketRequestPayment: {declaration} absent from provider spec")
-        if declaration.startswith("Normalize_") and declaration not in high_body:
-            fail(f"PutBucketRequestPayment: {declaration} absent from provider body")
-    prepare_body = low_body.split(
-        "function Prepare_Put_Bucket_Request_Payment", 1)[1].split(
-            "end Prepare_Put_Bucket_Request_Payment;", 1)[0]
-    if "One_Shot_Source => True" not in prepare_body:
-        fail("PutBucketRequestPayment: composable source is rewindable")
+    composable_writes = (
+        ("PutBucketAbac", "Put_Bucket_ABAC", "Prepare_Put_Bucket_Abac"),
+        ("PutBucketRequestPayment", "Put_Bucket_Request_Payment",
+         "Prepare_Put_Bucket_Request_Payment"),
+    )
+    for operation, stem, prepare in composable_writes:
+        for text, label in ((low_spec, "low-level specification"),
+                            (low_body, "low-level body")):
+            if not re.search(rf"\bprocedure\s+{stem}\b", text):
+                fail(f"{operation}: composable initiator absent from {label}")
+        for declaration in (
+                f"{stem}_Result",
+                f"{stem}_Operation",
+                f"Normalize_{stem}_Response",
+                f"Normalize_{stem}_Failure",
+        ):
+            if declaration not in high_spec:
+                fail(f"{operation}: {declaration} absent from provider spec")
+            if declaration.startswith("Normalize_") and declaration not in high_body:
+                fail(f"{operation}: {declaration} absent from provider body")
+        prepare_body = low_body.split(f"function {prepare}", 1)[1].split(
+            f"end {prepare};", 1)[0]
+        if "One_Shot_Source => True" not in prepare_body:
+            fail(f"{operation}: composable source is rewindable")
     for shape in sorted({int(row[2]) for row in expected_rows}):
         rows = [row for row in expected_rows if int(row[2]) == shape]
         if int(scalar(model, "Member_Count", str(shape))) != len(rows) or \

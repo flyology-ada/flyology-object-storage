@@ -9,7 +9,7 @@ ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
 ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
 bounded GetBucketLocation, bounded GetBucketPolicy, GetBucketPolicyStatus, and
 GetBucketRequestPayment, non-replaying Put/DeleteBucketPolicy, non-replaying
-PutBucketRequestPayment,
+PutBucketAbac and PutBucketRequestPayment,
 Put/GetBucketVersioning,
 non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
@@ -94,7 +94,7 @@ The implemented operation order is:
 23. non-replaying `Put_Bucket_Versioning` and bounded
     `Get_Bucket_Versioning`;
 24. bounded `Get_Bucket_Policy`, `Get_Bucket_Policy_Status`, and
-    `Get_Bucket_Request_Payment`, plus non-replaying
+    `Get_Bucket_Request_Payment`, plus non-replaying `Set_ABAC` and
     `Set_Request_Payment`;
 25. `Set_Public_Access_Block`, `Get_Public_Access_Block`, and
     `Delete_Public_Access_Block`;
@@ -115,9 +115,9 @@ The implemented operation order is:
 34. bounded `Get_Object_Lock_Configuration` and non-replaying
     `Put_Object_Lock_Configuration`.
 
-The provider surface contains 56 domain operations: 19 in `Client.Objects`,
-29 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 53 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 57 domain operations: 19 in `Client.Objects`,
+30 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 54 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -251,6 +251,16 @@ Its limited constructor, operation-last restart, typed synchronous wait, and
 established convenience overload all drive the same state machine. The caller
 selects the existing XML document limit, and Object Storage adds no retry or
 billing-policy interpretation.
+PutBucketAbac copies the presence-preserving serialized status document into
+its signed prepared request and exposes those owned bytes once through a
+non-rewindable source. Its limited constructor, operation-last restart, typed
+Finish, typed synchronous wait, and established convenience overload all
+drive the same provider-owned state machine. Complete response observation
+proves the mutation completed; exact conclusive rejection proves
+non-application; any lost, malformed, retryable, or otherwise uncertain
+outcome after possible admission requires caller-selected GetBucketAbac
+reconciliation. The client never replays the mutation or retains the caller's
+status value.
 PutBucketRequestPayment copies the selected payer document into its signed
 prepared request and exposes those owned bytes once through a non-rewindable
 source. Its limited constructor, operation-last restart, typed Finish, typed
@@ -551,7 +561,7 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Complete_Multipart_Upload`, `Abort_Multipart_Upload`, `List_Parts_Page`, and
 `List_Multipart_Uploads_Page` overloads, plus the typed-result `Copy_Object`,
 `Get_Public_Access_Block`, `Get_Policy_Status`, `Get_Request_Payment`,
-`Set_Request_Payment`,
+`Set_ABAC`, `Set_Request_Payment`,
 `Get_Ownership_Controls`, and
 `Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`,
 `Set_Encryption`, `Delete_Encryption`, `Get_CORS`, `Set_CORS`, and

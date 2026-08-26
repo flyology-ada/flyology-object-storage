@@ -4947,6 +4947,26 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token     : access Flyology.Cancellation.Token := null;
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
+   --  Start an exact prepared PutBucketAbac exchange with its one-shot ABAC
+   --  status source. Another bucket-control mutation is rejected before HTTP
+   --  admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable request source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Put_Bucket_ABAC
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
    --  Start an exact prepared PutPublicAccessBlock exchange with its one-shot
    --  configuration source. Another bucket-control mutation is rejected
    --  before HTTP admission.
