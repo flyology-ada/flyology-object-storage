@@ -20,7 +20,7 @@ non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
 non-replaying DeleteBucketLifecycle, DeleteBucketReplication,
-DeleteBucketAnalyticsConfiguration,
+DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketIntelligentTieringConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration,
 object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
@@ -136,10 +136,12 @@ The implemented operation order is:
     identifier and typed mutation certainty.
 41. non-replaying `Delete_Analytics_Configuration` with copied identifier and
     typed mutation certainty.
+42. non-replaying `Delete_Metrics_Configuration` with copied identifier and
+    typed mutation certainty.
 
-The provider surface contains 71 domain operations: 21 in `Client.Objects`,
-42 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 68 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 72 domain operations: 21 in `Client.Objects`,
+43 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 69 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -377,14 +379,14 @@ any retry. Their parameter-record synchronous overloads wait on these same
 state machines, and restart retains only the established HTTP client and
 cancellation owner.
 DeleteBucketLifecycle, DeleteBucketReplication,
-DeleteBucketAnalyticsConfiguration,
+DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketIntelligentTieringConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration follow the same mutation discipline with
 known-empty non-rewindable sources and their exact pinned `?lifecycle`,
-`?replication`, `?analytics`, `?intelligent-tiering`, `?website`, and
-`?inventory` prepared operations. Analytics, intelligent-tiering, and
-inventory also copy their required identifiers before their constructors
-return.
+`?replication`, `?analytics`, `?metrics`, `?intelligent-tiering`, `?website`,
+and `?inventory` prepared operations. Analytics, metrics,
+intelligent-tiering, and inventory also copy their required identifiers before
+their constructors return.
 Their limited constructors, operation-last reusable initiations, typed Finish,
 and typed
 synchronous waits each share one provider-owned state machine. Complete 204
