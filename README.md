@@ -86,7 +86,8 @@ The core crate includes:
   DeleteBucketLifecycle, DeleteBucketReplication,
   DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
   DeleteBucketIntelligentTieringConfiguration,
-  DeleteBucketMetadataConfiguration, DeleteBucketWebsite,
+  DeleteBucketMetadataConfiguration,
+  DeleteBucketMetadataTableConfiguration, DeleteBucketWebsite,
   DeleteBucketInventoryConfiguration, and
   Put/GetBucketVersioning, with typed
   synchronous overloads that wait on the same owner-driven state machines and
@@ -308,7 +309,8 @@ CopyObject, together with service-level ListBuckets and non-replaying
 CreateBucket, bounded CreateSession, DeleteBucket, DeleteBucketLifecycle,
 DeleteBucketReplication, DeleteBucketAnalyticsConfiguration,
 DeleteBucketMetricsConfiguration, DeleteBucketIntelligentTieringConfiguration,
-DeleteBucketMetadataConfiguration, DeleteBucketWebsite,
+DeleteBucketMetadataConfiguration, DeleteBucketMetadataTableConfiguration,
+DeleteBucketWebsite,
 DeleteBucketInventoryConfiguration, and
 CreateBucketMetadataTableConfiguration, paired with
 bounded

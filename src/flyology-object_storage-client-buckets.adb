@@ -35,7 +35,6 @@ package body Flyology.Object_Storage.Client.Buckets is
               HTTP_Client.Response_Sink_Failed =>
            Corrupt_Or_Invalid_Response);
 
-   package LL renames Low_Level;
    package Bucket_Controls renames
      Flyology.Object_Storage.S3.Bucket_Controls;
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
@@ -431,158 +430,6 @@ package body Flyology.Object_Storage.Client.Buckets is
          end;
       end;
    end Delete;
-
-   type Configuration_Deletion_Kind is
-     (CORS_Configuration,
-      Analytics_Configuration,
-      Intelligent_Tiering_Configuration,
-      Inventory_Configuration,
-      Lifecycle_Configuration,
-      Metadata_Configuration,
-      Metadata_Table_Configuration,
-      Metrics_Configuration,
-      Ownership_Controls_Configuration,
-      Replication_Configuration,
-      Website_Configuration,
-      Public_Access_Block_Configuration);
-
-   function Delete_Configuration
-     (Kind       : Configuration_Deletion_Kind;
-      Client     : aliased in out Flyology.HTTP.Client.Client;
-      Origin     : Flyology.HTTP.Origin;
-      Bucket     : String;
-      Identifier : String;
-      Identity   : Low_Level.Credentials;
-      Region     : String;
-      Style      : Low_Level.Addressing_Style;
-      Expected_Bucket_Owner : String;
-      Timeout    : Duration;
-      Token      : access Flyology.Cancellation.Token)
-      return Delete_Outcome
-   is
-      Parameters : constant Low_Level.Delete_Bucket_Configuration_Parameters :=
-        (Expected_Bucket_Owner =>
-           US.To_Unbounded_String (Expected_Bucket_Owner));
-      Parameters_With_ID : constant
-        Low_Level.Delete_Bucket_Configuration_With_ID_Parameters :=
-          (ID                    => US.To_Unbounded_String (Identifier),
-           Expected_Bucket_Owner =>
-             US.To_Unbounded_String (Expected_Bucket_Owner));
-
-      function Prepare return Low_Level.Prepared_Request is
-      begin
-         case Kind is
-            when CORS_Configuration =>
-               return Low_Level.Prepare_Delete_Bucket_CORS
-                 (Origin, Style, Bucket, Parameters, Identity, Region,
-                  Timestamp);
-            when Analytics_Configuration =>
-               return
-                 Low_Level.Prepare_Delete_Bucket_Analytics_Configuration
-                   (Origin, Style, Bucket, Parameters_With_ID, Identity,
-                    Region, Timestamp);
-            when Intelligent_Tiering_Configuration =>
-               return
-                 LL.Prepare_Delete_Bucket_Intelligent_Tiering_Configuration
-                   (Origin, Style, Bucket, Parameters_With_ID, Identity,
-                    Region, Timestamp);
-            when Inventory_Configuration =>
-               return Low_Level.Prepare_Delete_Bucket_Inventory_Configuration
-                 (Origin, Style, Bucket, Parameters_With_ID, Identity, Region,
-                  Timestamp);
-            when Lifecycle_Configuration =>
-               return Low_Level.Prepare_Delete_Bucket_Lifecycle
-                 (Origin, Style, Bucket, Parameters, Identity, Region,
-                  Timestamp);
-            when Metadata_Configuration =>
-               return Low_Level.Prepare_Delete_Bucket_Metadata_Configuration
-                 (Origin, Style, Bucket, Parameters, Identity, Region,
-                  Timestamp);
-            when Metadata_Table_Configuration =>
-               return
-                 Low_Level.Prepare_Delete_Bucket_Metadata_Table_Configuration
-                   (Origin, Style, Bucket, Parameters, Identity, Region,
-                    Timestamp);
-            when Metrics_Configuration =>
-               return Low_Level.Prepare_Delete_Bucket_Metrics_Configuration
-                 (Origin, Style, Bucket, Parameters_With_ID, Identity, Region,
-                  Timestamp);
-            when Ownership_Controls_Configuration =>
-               return Low_Level.Prepare_Delete_Bucket_Ownership_Controls
-                 (Origin, Style, Bucket, Parameters, Identity, Region,
-                  Timestamp);
-            when Replication_Configuration =>
-               return Low_Level.Prepare_Delete_Bucket_Replication
-                 (Origin, Style, Bucket, Parameters, Identity, Region,
-                  Timestamp);
-            when Website_Configuration =>
-               return Low_Level.Prepare_Delete_Bucket_Website
-                 (Origin, Style, Bucket, Parameters, Identity, Region,
-                  Timestamp);
-            when Public_Access_Block_Configuration =>
-               return Low_Level.Prepare_Delete_Public_Access_Block
-                 (Origin, Style, Bucket, Parameters, Identity, Region,
-                  Timestamp);
-         end case;
-      end Prepare;
-
-      Prepared : constant Low_Level.Prepared_Request := Prepare;
-
-      function Execute return Low_Level.Delete_Bucket_Configuration_Outcome is
-      begin
-         case Kind is
-            when CORS_Configuration =>
-               return Low_Level.Execute_Delete_Bucket_CORS
-                 (Client, Prepared, Timeout, Token);
-            when Analytics_Configuration =>
-               return
-                 Low_Level.Execute_Delete_Bucket_Analytics_Configuration
-                   (Client, Prepared, Timeout, Token);
-            when Intelligent_Tiering_Configuration =>
-               return
-                 LL.Execute_Delete_Bucket_Intelligent_Tiering_Configuration
-                   (Client, Prepared, Timeout, Token);
-            when Inventory_Configuration =>
-               return Low_Level.Execute_Delete_Bucket_Inventory_Configuration
-                 (Client, Prepared, Timeout, Token);
-            when Lifecycle_Configuration =>
-               return Low_Level.Execute_Delete_Bucket_Lifecycle
-                 (Client, Prepared, Timeout, Token);
-            when Metadata_Configuration =>
-               return Low_Level.Execute_Delete_Bucket_Metadata_Configuration
-                 (Client, Prepared, Timeout, Token);
-            when Metadata_Table_Configuration =>
-               return
-                 Low_Level.Execute_Delete_Bucket_Metadata_Table_Configuration
-                   (Client, Prepared, Timeout, Token);
-            when Metrics_Configuration =>
-               return Low_Level.Execute_Delete_Bucket_Metrics_Configuration
-                 (Client, Prepared, Timeout, Token);
-            when Ownership_Controls_Configuration =>
-               return Low_Level.Execute_Delete_Bucket_Ownership_Controls
-                 (Client, Prepared, Timeout, Token);
-            when Replication_Configuration =>
-               return Low_Level.Execute_Delete_Bucket_Replication
-                 (Client, Prepared, Timeout, Token);
-            when Website_Configuration =>
-               return Low_Level.Execute_Delete_Bucket_Website
-                 (Client, Prepared, Timeout, Token);
-            when Public_Access_Block_Configuration =>
-               return Low_Level.Execute_Delete_Public_Access_Block
-                 (Client, Prepared, Timeout, Token);
-         end case;
-      end Execute;
-
-      Outcome : constant Low_Level.Delete_Bucket_Configuration_Outcome :=
-        Execute;
-   begin
-      if Outcome.Kind = Low_Level.Delete_Configuration_Rejected then
-         return
-           (Kind => Delete_Rejected, Status => Outcome.Status,
-            Error => Outcome.Error);
-      end if;
-      return (Kind => Deletion_Completed, Status => Outcome.Status);
-   end Delete_Configuration;
 
    procedure Raise_Public_Access_Block_Exchange_Failure
      (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
@@ -1041,9 +888,32 @@ package body Flyology.Object_Storage.Client.Buckets is
       Expected_Bucket_Owner : String := ""; Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null)
       return Delete_Outcome
-   is (Delete_Configuration
-         (Metadata_Table_Configuration, Client, Origin, Bucket, "", Identity,
-          Region, Style, Expected_Bucket_Owner, Timeout, Token));
+   is
+      Parameters : constant Low_Level.Delete_Bucket_Configuration_Parameters :=
+        (Expected_Bucket_Owner =>
+           US.To_Unbounded_String (Expected_Bucket_Owner));
+      Result : constant Delete_Bucket_Metadata_Table_Result :=
+        Delete_Metadata_Table_Configuration
+          (Client, Origin, Bucket, Parameters, Identity, Region, Style,
+           Timeout, Token);
+   begin
+      if Result.Kind = Delete_Bucket_Metadata_Table_Exchange_Failed then
+         Raise_Public_Access_Block_Exchange_Failure
+           (Result.HTTP_Result, Result.Detail,
+            "DeleteBucketMetadataTableConfiguration");
+         raise Program_Error with
+           "DeleteBucketMetadataTableConfiguration failure raiser returned";
+      end if;
+      if Result.Response.Kind = Low_Level.Delete_Configuration_Rejected then
+         return
+           (Kind   => Delete_Rejected,
+            Status => Result.Response.Status,
+            Error  => Result.Response.Error);
+      else
+         return
+           (Kind => Deletion_Completed, Status => Result.Response.Status);
+      end if;
+   end Delete_Metadata_Table_Configuration;
 
    function Delete_Metrics_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -9392,6 +9262,469 @@ package body Flyology.Object_Storage.Client.Buckets is
         (Operation, Client, Origin, Bucket, Parameters, Identity, Deadline,
          Region, Style, Limits, Token);
    end Delete_Metadata_Configuration;
+
+   --  The pinned S3 operation/error model and maintained signed-response
+   --  corpus establish these exact metadata-table deletion pairs.
+   --  Unknown or retryable responses remain ambiguous.
+   function Conclusive_Bucket_Metadata_Table_Rejection
+     (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
+     ((Status = 400
+       and then Code in
+         "InvalidArgument" | "InvalidBucketName" | "InvalidRequest")
+      or else (Status = 401 and then Code = "InvalidAccessKeyId")
+      or else (Status = 403 and then Code = "AccessDenied")
+      or else (Status = 404 and then Code = "NoSuchBucket")
+      or else (Status = 501 and then Code = "NotImplemented"));
+
+   function Retryable_Bucket_Metadata_Table_Response
+     (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
+     ((Status = 409 and then Code = "OperationAborted")
+      or else (Status = 429 and then Code = "SlowDown")
+      or else (Status = 500 and then Code = "InternalError")
+      or else (Status = 502 and then Code = "BadGateway")
+      or else (Status = 503 and then Code = "SlowDown")
+      or else (Status = 504 and then Code = "RequestTimeout"));
+
+   function Bucket_Metadata_Table_Response_Failure
+     (Status : Flyology.HTTP.Status_Code; Code : String)
+      return Failure_Reason is
+     (if Status = 401 and then Code = "InvalidAccessKeyId"
+      then Authentication_Failed
+      elsif Status = 403 and then Code = "AccessDenied"
+      then Authorization_Failed
+      elsif Status = 404 and then Code = "NoSuchBucket"
+      then Not_Found
+      elsif Conclusive_Bucket_Metadata_Table_Rejection
+        (Status, Code)
+      then Invalid_Request
+      elsif Retryable_Bucket_Metadata_Table_Response
+        (Status, Code)
+      then Unavailable_Or_Retryable
+      else Corrupt_Or_Invalid_Response);
+
+   function Failed_Bucket_Metadata_Table_Disposition
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Bucket_Metadata_Table_Mutation_Disposition is
+     (if Kind = HTTP_Client.Cancelled
+        and then Admission = HTTP_Client.Not_Admitted
+      then
+        Bucket_Metadata_Table_Mutation_Cancelled_Before_Admission
+      elsif Admission = HTTP_Client.Not_Admitted
+      then
+        Bucket_Metadata_Table_Mutation_Definitely_Not_Applied
+      else Bucket_Metadata_Table_Mutation_Outcome_Unknown);
+
+   function Normalize_Delete_Bucket_Metadata_Table_Response
+     (Value     : Low_Level.Delete_Bucket_Configuration_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Delete_Bucket_Metadata_Table_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Delete_Configuration_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Conclusive : constant Boolean :=
+        Conclusive_Bucket_Metadata_Table_Rejection
+          (Value.Status, Code);
+   begin
+      return
+        (Kind =>
+           Delete_Bucket_Metadata_Table_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then
+              Bucket_Metadata_Table_Mutation_Outcome_Unknown
+            elsif Value.Kind = Low_Level.Configuration_Deleted
+            then
+              Bucket_Metadata_Table_Mutation_Completed
+            elsif Conclusive
+            then
+              Bucket_Metadata_Table_Mutation_Definitely_Not_Applied
+            else
+              Bucket_Metadata_Table_Mutation_Outcome_Unknown),
+         Failure =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Configuration_Deleted
+            then No_Failure
+            else Bucket_Metadata_Table_Response_Failure
+              (Value.Status, Code)),
+         Admission => Admission,
+         Response => Value);
+   end Normalize_Delete_Bucket_Metadata_Table_Response;
+
+   function Normalize_Delete_Bucket_Metadata_Table_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "")
+      return Delete_Bucket_Metadata_Table_Result is
+   begin
+      return
+        (Kind =>
+           Delete_Bucket_Metadata_Table_Exchange_Failed,
+         Disposition =>
+           Failed_Bucket_Metadata_Table_Disposition
+             (Kind, Admission),
+         Failure =>
+           (if Kind in HTTP_Client.Response_Invalid |
+                         HTTP_Client.Response_Body_Too_Large |
+                         HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase => Phase,
+         Detail => US.To_Unbounded_String (Detail));
+   end Normalize_Delete_Bucket_Metadata_Table_Failure;
+
+   overriding function Declared_Length
+     (Item : Delete_Bucket_Metadata_Table_Operation)
+      return HTTP_Client.Body_Length is
+   begin
+      pragma Unreferenced (Item);
+      --  The pinned operation has no request payload; zero is the
+      --  protocol-derived wire length rather than a buffering policy.
+      return HTTP_Client.Known_Length (0);
+   end Declared_Length;
+
+   overriding procedure Read_Now
+     (Item   :
+        in out Delete_Bucket_Metadata_Table_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      pragma Unreferenced (Item);
+      Data := (others => 0);
+      Last := Data'First - 1;
+      Result := HTTP_Client.Source_Finished;
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       :
+        in out Delete_Bucket_Metadata_Table_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      pragma Unreferenced (Item, Required);
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item :
+        in out Delete_Bucket_Metadata_Table_Operation) is
+   begin
+      pragma Unreferenced (Item);
+      null;
+   end Release_Source;
+
+   overriding procedure Write
+     (Item :
+        in out Delete_Bucket_Metadata_Table_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "DeleteBucketMetadataTableConfiguration response exceeds " &
+           "the caller-selected limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Delete_Bucket_Metadata_Table_Child
+     (Item :
+        in out Delete_Bucket_Metadata_Table_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural := HTTP_Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Low_Level.Invalid_Response with
+              "duplicate DeleteBucketMetadataTableConfiguration " &
+              "response header";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String := HTTP_Client.Header (Response, Name);
+         begin
+            if Value'Length = 0 then
+               raise Low_Level.Invalid_Response with
+                 "empty DeleteBucketMetadataTableConfiguration " &
+                 "response header";
+            end if;
+            return Value;
+         end;
+      end Singleton_Header;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result :=
+              Normalize_Delete_Bucket_Metadata_Table_Failure
+                (HTTP_Client.Response_Sink_Failed, Admission,
+                 HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result :=
+           Normalize_Delete_Bucket_Metadata_Table_Failure
+             (HTTP_Client.Kind (HTTP_Result),
+              HTTP_Client.Certainty (HTTP_Result),
+              HTTP_Client.Phase (HTTP_Result),
+              HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result :=
+              Normalize_Delete_Bucket_Metadata_Table_Response
+                (Low_Level.Decode_Delete_Bucket_Configuration_Response
+                   (HTTP_Client.Status (Response),
+                    Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                    Singleton_Header ("x-amz-request-id"),
+                    Singleton_Header ("x-amz-id-2"), Item.Limits),
+                 HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result :=
+                 Normalize_Delete_Bucket_Metadata_Table_Failure
+                   (HTTP_Client.Response_Invalid,
+                    HTTP_Client.Certainty (HTTP_Result),
+                    HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Delete_Bucket_Metadata_Table_Child;
+
+   overriding procedure Drive
+     (Item :
+        in out Delete_Bucket_Metadata_Table_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Delete_Bucket_Metadata_Table_Configuration
+           (Item.HTTP, Item.Prepared'Access, Item'Access, Item'Access,
+            Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Delete_Bucket_Metadata_Table_Child (Item);
+      else
+         raise Program_Error with
+           "invalid DeleteBucketMetadataTableConfiguration driver " &
+           "event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item :
+        in out Delete_Bucket_Metadata_Table_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item :
+        in out Delete_Bucket_Metadata_Table_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Delete_Bucket_Metadata_Table
+     (Operation  :
+        in out Delete_Bucket_Metadata_Table_Operation;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "DeleteBucketMetadataTableConfiguration restart changed a " &
+           "retained owner";
+      end if;
+      Operation.Prepared :=
+        Low_Level.Prepare_Delete_Bucket_Metadata_Table_Configuration
+          (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Limits := Limits;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      --  The caller-selected XML document limit bounds the structured S3
+      --  error response; no independent buffering policy is introduced.
+      Operation.Response_Limit := Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Delete_Bucket_Metadata_Table;
+
+   function Delete_Metadata_Table_Configuration
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Delete_Bucket_Metadata_Table_Operation is
+   begin
+      return Result :
+        Delete_Bucket_Metadata_Table_Operation
+          (Set, Client, Token)
+      do
+         Start_Delete_Bucket_Metadata_Table
+           (Result, Client, Origin, Bucket, Parameters, Identity, Deadline,
+            Region, Style, Limits, Token);
+      end return;
+   end Delete_Metadata_Table_Configuration;
+
+   procedure Finish
+     (Operation :
+        in out Delete_Bucket_Metadata_Table_Operation;
+      Result : out Delete_Bucket_Metadata_Table_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with
+           "DeleteBucketMetadataTableConfiguration has no terminal " &
+           "result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   function Delete_Metadata_Table_Configuration
+     (Client     : aliased in out HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Delete_Bucket_Metadata_Table_Result
+   is
+      --  Derived capacity: metadata-table parent, HTTP exchange, and
+      --  HTTP's single active transport child are the only simultaneous
+      --  operations.
+      Set : aliased Operations.Completion_Set (3);
+   begin
+      declare
+         Operation :
+           Delete_Bucket_Metadata_Table_Operation :=
+             Delete_Metadata_Table_Configuration
+               (Set'Access, Client'Access, Origin, Bucket, Parameters,
+                Identity, HTTP_Client.Deadline_After (Timeout), Region, Style,
+                Limits, Token);
+         Result : Delete_Bucket_Metadata_Table_Result;
+      begin
+         Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Delete_Metadata_Table_Configuration;
+
+   procedure Delete_Metadata_Table_Configuration
+     (Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  :
+        in out Delete_Bucket_Metadata_Table_Operation) is
+   begin
+      Start_Delete_Bucket_Metadata_Table
+        (Operation, Client, Origin, Bucket, Parameters, Identity, Deadline,
+         Region, Style, Limits, Token);
+   end Delete_Metadata_Table_Configuration;
 
    --  The pinned S3 operation/error model and maintained signed-response
    --  corpus establish these exact metrics deletion pairs.

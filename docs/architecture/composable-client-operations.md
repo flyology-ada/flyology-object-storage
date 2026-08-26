@@ -22,7 +22,8 @@ tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCor
 non-replaying DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketIntelligentTieringConfiguration,
-DeleteBucketMetadataConfiguration, DeleteBucketWebsite, and
+DeleteBucketMetadataConfiguration, DeleteBucketMetadataTableConfiguration,
+DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration,
 object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
 non-replaying conditional DeleteObjectAnnotation,
@@ -141,10 +142,12 @@ The implemented operation order is:
     typed mutation certainty.
 43. non-replaying `Delete_Metadata_Configuration` with copied owner
     precondition and typed mutation certainty.
+44. non-replaying `Delete_Metadata_Table_Configuration` with copied owner
+    precondition and typed mutation certainty.
 
-The provider surface contains 73 domain operations: 21 in `Client.Objects`,
-44 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 70 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 74 domain operations: 21 in `Client.Objects`,
+45 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 71 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -384,11 +387,13 @@ cancellation owner.
 DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketIntelligentTieringConfiguration,
-DeleteBucketMetadataConfiguration, DeleteBucketWebsite, and
+DeleteBucketMetadataConfiguration, DeleteBucketMetadataTableConfiguration,
+DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration follow the same mutation discipline with
 known-empty non-rewindable sources and their exact pinned `?lifecycle`,
 `?replication`, `?analytics`, `?metrics`, `?intelligent-tiering`,
-`?metadataConfiguration`, `?website`, and `?inventory` prepared operations.
+`?metadataConfiguration`, `?metadataTable`, `?website`, and `?inventory`
+prepared operations.
 Analytics, metrics,
 intelligent-tiering, and inventory also copy their required identifiers before
 their constructors return.
@@ -679,7 +684,8 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Delete_CORS`, `Delete_Lifecycle`, `Delete_Replication`,
 `Delete_Analytics_Configuration`, `Delete_Metrics_Configuration`,
 `Delete_Intelligent_Tiering_Configuration`,
-`Delete_Metadata_Configuration`, `Delete_Website`, and
+`Delete_Metadata_Configuration`, `Delete_Metadata_Table_Configuration`,
+`Delete_Website`, and
 `Delete_Inventory_Configuration` overloads, and the
 `Get_Object_Lock_Configuration` and
 `Put_Object_Lock_Configuration` overloads,

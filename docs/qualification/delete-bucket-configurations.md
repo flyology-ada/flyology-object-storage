@@ -4,7 +4,8 @@ This record qualifies the strict bounded clients and corpora for thirteen
 bodyless bucket-configuration DELETE operations. DeleteBucketLifecycle,
 DeleteBucketReplication, DeleteBucketAnalyticsConfiguration,
 DeleteBucketMetricsConfiguration, DeleteBucketIntelligentTieringConfiguration,
-DeleteBucketMetadataConfiguration, DeleteBucketWebsite, and
+DeleteBucketMetadataConfiguration,
+DeleteBucketMetadataTableConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration also have
 provider-owned composable operations and typed synchronous waits that use their
 corresponding state machines. It does not manufacture backend or server
@@ -63,7 +64,8 @@ the response before return, and create no detached helper task.
 DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketIntelligentTieringConfiguration,
-DeleteBucketMetadataConfiguration, DeleteBucketWebsite, and
+DeleteBucketMetadataConfiguration,
+DeleteBucketMetadataTableConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration
 additionally expose limited constructors, same-name operation-last reusable
 initiation procedures, typed `Finish`, and typed synchronous overloads in
@@ -89,14 +91,15 @@ The raw-loopback corpus adds one signed high-level 204 exchange for every
 operation and caller. It also gates DeleteBucketLifecycle,
 DeleteBucketReplication, DeleteBucketAnalyticsConfiguration,
 DeleteBucketMetricsConfiguration, DeleteBucketIntelligentTieringConfiguration,
-DeleteBucketMetadataConfiguration, DeleteBucketWebsite, and
+DeleteBucketMetadataConfiguration,
+DeleteBucketMetadataTableConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration typed synchronous
 calls, limited constructors, operation-last restarts, exact prepared-operation
 rejection, typed 403 certainty, duplicate and empty physical response
 identifiers, and bounded error bodies. The replication, analytics, metrics,
-intelligent-tiering, metadata, website, and inventory lanes additionally change
-caller-owned parameters after initiation to prove that the operations retained
-no borrow.
+intelligent-tiering, metadata, metadata-table, website, and inventory lanes
+additionally change caller-owned parameters after initiation to prove that the
+operations retained no borrow.
 The complete sequence runs once under a native task and once under a Flyology
 lightweight task; the root gate repeats the whole socket corpus three times.
 The existing shared DeleteBucketCors physical-response lane supplies empty,
@@ -107,9 +110,9 @@ The machine ledger records `DeleteBucketPolicy` and
 `DeletePublicAccessBlock` as `covered / covered / covered / covered` using
 their independent backend and server evidence. The other eleven operations
 remain `missing / covered / missing / covered`; the additional lifecycle,
-replication, analytics, metrics, intelligent-tiering, metadata, website, and
-inventory
-composable clients do not change those ledger tuples.
+replication, analytics, metrics, intelligent-tiering, metadata,
+metadata-table, website, and inventory composable clients do not change those
+ledger tuples.
 This client corpus does not manufacture their backend persistence or server
 routes.
 
@@ -121,12 +124,12 @@ server application corpus, and three repetitions of the deterministic family
 corpus and native/lightweight socket and TLS corpora. The operation inventory
 verifier reported thirteen operations, thirty request members, no modeled
 success outputs, eight reciprocal vectors, and the exact lifecycle,
-replication, analytics, metrics, intelligent-tiering, metadata, website, and
-inventory composable declarations. The 116-operation coverage verifier and
-its negative
-oracle, repository-integrity gate, Markdown-link gate, and generated API build
-also passed. GNATdoc produced a 44,216-line log and 429 HTML files with all
-eight composable APIs present. It reported no error diagnostic and no warning
+replication, analytics, metrics, intelligent-tiering, metadata,
+metadata-table, website, and inventory composable declarations. The
+116-operation coverage verifier and its negative oracle, repository-integrity
+gate, Markdown-link gate, and generated API build
+also passed. GNATdoc produced a 44,241-line log and 429 HTML files with all
+nine composable APIs present. It reported no error diagnostic and no warning
 naming the new public API; the generated model's pre-existing undocumented
 operation-enum warnings remain visible.
 

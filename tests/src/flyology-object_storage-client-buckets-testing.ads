@@ -46,6 +46,7 @@ package Flyology.Object_Storage.Client.Buckets.Testing is
    procedure Check_Delete_Bucket_Website_Certainty_Corpus;
 
    procedure Check_Delete_Bucket_Metadata_Certainty_Corpus;
+   procedure Check_Delete_Bucket_Metadata_Table_Certainty_Corpus;
    procedure Check_Delete_Bucket_Metrics_Certainty_Corpus;
    procedure Check_Delete_Bucket_Analytics_Certainty_Corpus;
    procedure Check_Delete_Bucket_Intelligent_Tiering_Certainty_Corpus;
