@@ -35,6 +35,7 @@ with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Object_Lock;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Tagging;
+with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
 with Flyology.Operations;
 
@@ -153,6 +154,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Bucket_Ownership_Controls_Mutation_Disposition;
    use type Delete_Ownership_Controls_Result_Kind;
    use type Put_Public_Access_Block_Result_Kind;
+   use type Put_Bucket_Request_Payment_Result_Kind;
+   use type Request_Payment_Mutation_Disposition;
    use type Delete_Public_Access_Block_Result_Kind;
    use type Public_Access_Block_Mutation_Disposition;
    use type Get_Bucket_Versioning_Result_Kind;
@@ -4830,6 +4833,51 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-id: restarted-put-public-access" & CRLF),
             "PUT", "/restart-public-access?publicAccessBlock",
             Expected_Body_Root => "<PublicAccessBlockConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/typed-request-payment-put?requestPayment",
+            Expected_Body_Root => "<RequestPaymentConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/composed-request-payment-put?requestPayment",
+            Expected_Body_Root => "<RequestPaymentConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-request-payment-put" & CRLF),
+            "PUT", "/restart-request-payment-put?requestPayment",
+            Expected_Body_Root => "<RequestPaymentConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-request-id: first" & CRLF &
+               "x-amz-request-id: second" & CRLF),
+            "PUT", "/duplicate-request-payment-put?requestPayment",
+            Expected_Body_Root => "<RequestPaymentConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "", "x-amz-id-2:" & CRLF),
+            "PUT", "/empty-request-payment-put?requestPayment",
+            Expected_Body_Root => "<RequestPaymentConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              --  Test-only payload is deliberately larger than the
+              --  caller-selected 64-byte response ceiling below.
+              ("200 OK", String'(1 .. 96 => 'x')),
+            "PUT", "/oversized-request-payment-put?requestPayment",
+            Expected_Body_Root => "<RequestPaymentConfiguration",
             Expected_Content_MD5 => "*",
             Expected_Bucket_Owner => "123456789012");
          Serve
@@ -15701,6 +15749,169 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
+            Parameters : constant Low_Level.Put_Bucket_Control_Parameters :=
+              (Content_MD5 => US.Null_Unbounded_String,
+               Checksum_Algorithm => US.Null_Unbounded_String,
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Put_Bucket_Request_Payment_Result :=
+              Buckets.Set_Request_Payment
+                (HTTP,
+                 Origin,
+                 "typed-request-payment-put",
+                 Bucket_Controls.Requester,
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /=
+                 Put_Bucket_Request_Payment_Response_Available
+              or else Result.Disposition /=
+                Request_Payment_Mutation_Completed
+              or else Result.Failure /= No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+            then
+               raise Program_Error with
+                 "typed PutBucketRequestPayment result mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Put_Bucket_Control_Parameters :=
+              (Content_MD5 => US.Null_Unbounded_String,
+               Checksum_Algorithm => US.Null_Unbounded_String,
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            --  Requester-payment parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Put_Bucket_Request_Payment_Result;
+         begin
+            declare
+               Operation : Put_Bucket_Request_Payment_Operation :=
+                 Set_Request_Payment
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-request-payment-put",
+                    Bucket_Controls.Bucket_Owner,
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Put_Bucket_Request_Payment_Response_Available
+                 or else Result.Disposition /=
+                   Request_Payment_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+               then
+                  raise Program_Error with
+                    "composed PutBucketRequestPayment result mismatch";
+               end if;
+               Set_Request_Payment
+                 (HTTP'Access,
+                  Origin,
+                  "restart-request-payment-put",
+                  Bucket_Controls.Requester,
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                    Put_Bucket_Request_Payment_Response_Available
+                 or else Result.Disposition /=
+                   Request_Payment_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-request-payment-put"
+               then
+                  raise Program_Error with
+                    "restarted PutBucketRequestPayment result mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : constant Low_Level.Put_Bucket_Control_Parameters :=
+              (Content_MD5 => US.Null_Unbounded_String,
+               Checksum_Algorithm => US.Null_Unbounded_String,
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+
+            procedure Check_Invalid_Response
+              (Bucket : String;
+               Limits : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+                 Flyology.Object_Storage.S3.XML.Default_Limits)
+            is
+               Result : constant Put_Bucket_Request_Payment_Result :=
+                 Buckets.Set_Request_Payment
+                   (HTTP,
+                    Origin,
+                    Bucket,
+                    Bucket_Controls.Requester,
+                    Parameters,
+                    Identity,
+                    Timeout => 5.0,
+                    Limits => Limits);
+            begin
+               if Result.Kind /= Put_Bucket_Request_Payment_Exchange_Failed
+                 or else Result.Disposition /=
+                   Request_Payment_Mutation_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+               then
+                  raise Program_Error with
+                    "PutBucketRequestPayment admitted an invalid response";
+               end if;
+            end Check_Invalid_Response;
+         begin
+            Check_Invalid_Response ("duplicate-request-payment-put");
+            Check_Invalid_Response ("empty-request-payment-put");
+            Check_Invalid_Response
+              ("oversized-request-payment-put",
+               --  Test-only caller policy paired with the 96-byte fixture.
+               (Maximum_Document_Bytes => 64,
+                Maximum_Depth          => 8,
+                Maximum_Elements       => 32,
+                Maximum_Text_Bytes     => 64));
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Bucket_Abac
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 Bucket_Controls.Abac_Enabled,
+                 (Content_MD5 => US.Null_Unbounded_String,
+                  Checksum_Algorithm => US.Null_Unbounded_String,
+                  Expected_Bucket_Owner => US.Null_Unbounded_String),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Put_Bucket_Request_Payment_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Put_Bucket_Request_Payment
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "PutBucketRequestPayment accepted a prepared ABAC request";
+            end if;
+         end;
+         declare
             Prepared : aliased Low_Level.Prepared_Request :=
               Low_Level.Prepare_Put_Bucket_Abac
                 (Origin,
@@ -18038,6 +18249,7 @@ begin
    Buckets_Testing.Check_Get_Bucket_Request_Payment_Result_Corpus;
    Buckets_Testing.Check_Bucket_Policy_Certainty_Corpus;
    Buckets_Testing.Check_Public_Access_Block_Certainty_Corpus;
+   Buckets_Testing.Check_Request_Payment_Certainty_Corpus;
    Buckets_Testing.Check_Ownership_Controls_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Encryption_Result_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Lifecycle_Certainty_Corpus;

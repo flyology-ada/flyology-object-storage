@@ -169,11 +169,15 @@ def main() -> int:
     expected_rows = [tuple(str(value) for value in row) for row in EXPECTED_MEMBERS]
     if [tuple(row[name] for name in MEMBER_HEADER[:-1]) for row in members] != expected_rows:
         fail("member inventory does not match the reviewed 32-member graph")
-    texts = [path.read_text(encoding="utf-8") for path in
-             [ROOT / "src/flyology-object_storage-client-low_level.ads",
-              ROOT / "src/flyology-object_storage-client-low_level.adb",
-              ROOT / "src/flyology-object_storage-client-buckets.ads",
-              ROOT / "src/flyology-object_storage-client-buckets.adb"]]
+    low_spec = (ROOT / "src/flyology-object_storage-client-low_level.ads").read_text(
+        encoding="utf-8")
+    low_body = (ROOT / "src/flyology-object_storage-client-low_level.adb").read_text(
+        encoding="utf-8")
+    high_spec = (ROOT / "src/flyology-object_storage-client-buckets.ads").read_text(
+        encoding="utf-8")
+    high_body = (ROOT / "src/flyology-object_storage-client-buckets.adb").read_text(
+        encoding="utf-8")
+    texts = [low_spec, low_body, high_spec, high_body]
     by_operation = {name: [row for row in expected_rows if row[0] == name]
                     for name, *_ in EXPECTED}
     for row, expected in zip(operations, EXPECTED, strict=True):
@@ -192,6 +196,26 @@ def main() -> int:
             if sum(bool(re.search(rf"\bfunction\s+{re.escape(symbol)}\b", text))
                    for text in texts) != 2:
                 fail(f"{name}: {symbol} is not declared and implemented exactly once")
+
+    for text, label in ((low_spec, "low-level specification"),
+                        (low_body, "low-level body")):
+        if not re.search(r"\bprocedure\s+Put_Bucket_Request_Payment\b", text):
+            fail(f"PutBucketRequestPayment: composable initiator absent from {label}")
+    for declaration in (
+            "Put_Bucket_Request_Payment_Result",
+            "Put_Bucket_Request_Payment_Operation",
+            "Normalize_Put_Bucket_Request_Payment_Response",
+            "Normalize_Put_Bucket_Request_Payment_Failure",
+    ):
+        if declaration not in high_spec:
+            fail(f"PutBucketRequestPayment: {declaration} absent from provider spec")
+        if declaration.startswith("Normalize_") and declaration not in high_body:
+            fail(f"PutBucketRequestPayment: {declaration} absent from provider body")
+    prepare_body = low_body.split(
+        "function Prepare_Put_Bucket_Request_Payment", 1)[1].split(
+            "end Prepare_Put_Bucket_Request_Payment;", 1)[0]
+    if "One_Shot_Source => True" not in prepare_body:
+        fail("PutBucketRequestPayment: composable source is rewindable")
     for shape in sorted({int(row[2]) for row in expected_rows}):
         rows = [row for row in expected_rows if int(row[2]) == shape]
         if int(scalar(model, "Member_Count", str(shape))) != len(rows) or \
