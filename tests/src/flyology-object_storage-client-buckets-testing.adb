@@ -1685,7 +1685,33 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
          then Bucket_CORS_Mutation_Definitely_Not_Applied
          else Bucket_CORS_Mutation_Outcome_Unknown);
 
-      procedure Check_Response
+      procedure Check_Get_Response
+        (Status  : Flyology.HTTP.Status_Code;
+         Code    : String;
+         Failure : Failure_Reason)
+      is
+         Value : constant Low_Level.Get_Bucket_CORS_Outcome :=
+           (if Status = 200
+            then (Kind => Low_Level.Bucket_Control_Found,
+                  Status => Status,
+                  Configuration => (others => <>))
+            else (Kind => Low_Level.Get_Bucket_Control_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant Get_Bucket_CORS_Result :=
+           Normalize_Get_Bucket_CORS_Response
+             (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Get_Bucket_CORS_Response_Available
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "GetBucketCors response normalization mismatch";
+         end if;
+      end Check_Get_Response;
+
+      procedure Check_Put_Response
         (Status      : Flyology.HTTP.Status_Code;
          Code        : String;
          Disposition : Bucket_CORS_Mutation_Disposition;
@@ -1709,33 +1735,123 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
             raise Program_Error with
               "PutBucketCors response normalization mismatch";
          end if;
-      end Check_Response;
+      end Check_Put_Response;
+
+      procedure Check_Delete_Response
+        (Status      : Flyology.HTTP.Status_Code;
+         Code        : String;
+         Disposition : Bucket_CORS_Mutation_Disposition;
+         Failure     : Failure_Reason)
+      is
+         Value : constant Low_Level.Delete_Bucket_CORS_Outcome :=
+           (if Status = 204
+            then (Kind => Low_Level.Bucket_CORS_Deleted, Status => Status)
+            else (Kind => Low_Level.Delete_Bucket_CORS_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant Delete_Bucket_CORS_Result :=
+           Normalize_Delete_Bucket_CORS_Response
+             (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Delete_Bucket_CORS_Response_Available
+           or else Result.Disposition /= Disposition
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "DeleteBucketCors response normalization mismatch";
+         end if;
+      end Check_Delete_Response;
    begin
-      Check_Response
+      Check_Get_Response (200, "", No_Failure);
+      Check_Get_Response (400, "InvalidBucketName", Invalid_Request);
+      Check_Get_Response (400, "InvalidRequest", Invalid_Request);
+      Check_Get_Response (401, "InvalidAccessKeyId", Authentication_Failed);
+      Check_Get_Response (403, "AccessDenied", Authorization_Failed);
+      Check_Get_Response (404, "NoSuchBucket", Not_Found);
+      Check_Get_Response (404, "NoSuchCORSConfiguration", Not_Found);
+      Check_Get_Response
+        (409, "OperationAborted", Unavailable_Or_Retryable);
+      Check_Get_Response (429, "SlowDown", Unavailable_Or_Retryable);
+      Check_Get_Response (500, "InternalError", Unavailable_Or_Retryable);
+      Check_Get_Response (502, "BadGateway", Unavailable_Or_Retryable);
+      Check_Get_Response (503, "SlowDown", Unavailable_Or_Retryable);
+      Check_Get_Response (504, "RequestTimeout", Unavailable_Or_Retryable);
+      Check_Get_Response (501, "NotImplemented", Invalid_Request);
+      Check_Get_Response (409, "", Corrupt_Or_Invalid_Response);
+
+      Check_Put_Response
         (200, "", Bucket_CORS_Mutation_Completed, No_Failure);
-      Check_Response
+      Check_Put_Response
         (400, "MalformedXML", Bucket_CORS_Mutation_Definitely_Not_Applied,
          Invalid_Request);
-      Check_Response
+      Check_Put_Response
         (401, "InvalidAccessKeyId",
          Bucket_CORS_Mutation_Definitely_Not_Applied,
          Authentication_Failed);
-      Check_Response
+      Check_Put_Response
         (403, "AccessDenied", Bucket_CORS_Mutation_Definitely_Not_Applied,
          Authorization_Failed);
-      Check_Response
+      Check_Put_Response
         (404, "NoSuchBucket", Bucket_CORS_Mutation_Definitely_Not_Applied,
          Not_Found);
-      Check_Response
+      Check_Put_Response
         (409, "OperationAborted", Bucket_CORS_Mutation_Outcome_Unknown,
          Unavailable_Or_Retryable);
-      Check_Response
+      Check_Put_Response
         (429, "SlowDown", Bucket_CORS_Mutation_Outcome_Unknown,
          Unavailable_Or_Retryable);
-      Check_Response
+      Check_Put_Response
         (500, "InternalError", Bucket_CORS_Mutation_Outcome_Unknown,
          Unavailable_Or_Retryable);
-      Check_Response
+      Check_Put_Response
+        (500, "Unknown", Bucket_CORS_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+
+      Check_Delete_Response
+        (204, "", Bucket_CORS_Mutation_Completed, No_Failure);
+      Check_Delete_Response
+        (400, "InvalidBucketName",
+         Bucket_CORS_Mutation_Definitely_Not_Applied, Invalid_Request);
+      Check_Delete_Response
+        (400, "InvalidArgument",
+         Bucket_CORS_Mutation_Definitely_Not_Applied, Invalid_Request);
+      Check_Delete_Response
+        (400, "InvalidRequest",
+         Bucket_CORS_Mutation_Definitely_Not_Applied, Invalid_Request);
+      Check_Delete_Response
+        (401, "InvalidAccessKeyId",
+         Bucket_CORS_Mutation_Definitely_Not_Applied,
+         Authentication_Failed);
+      Check_Delete_Response
+        (403, "AccessDenied",
+         Bucket_CORS_Mutation_Definitely_Not_Applied,
+         Authorization_Failed);
+      Check_Delete_Response
+        (404, "NoSuchBucket",
+         Bucket_CORS_Mutation_Definitely_Not_Applied, Not_Found);
+      Check_Delete_Response
+        (409, "OperationAborted", Bucket_CORS_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete_Response
+        (429, "SlowDown", Bucket_CORS_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete_Response
+        (500, "InternalError", Bucket_CORS_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete_Response
+        (502, "BadGateway", Bucket_CORS_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete_Response
+        (503, "SlowDown", Bucket_CORS_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete_Response
+        (504, "RequestTimeout", Bucket_CORS_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Delete_Response
+        (501, "NotImplemented",
+         Bucket_CORS_Mutation_Definitely_Not_Applied, Invalid_Request);
+      Check_Delete_Response
         (500, "Unknown", Bucket_CORS_Mutation_Outcome_Unknown,
          Corrupt_Or_Invalid_Response);
 
@@ -1743,16 +1859,32 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
         HTTP_Client.Not_Admitted .. HTTP_Client.Possibly_Admitted
       loop
          declare
+            Get_Value : constant Low_Level.Get_Bucket_CORS_Outcome :=
+              (Kind          => Low_Level.Bucket_Control_Found,
+               Status        => 200,
+               Configuration => (others => <>));
+            Get_Result : constant Get_Bucket_CORS_Result :=
+              Normalize_Get_Bucket_CORS_Response (Get_Value, Admission);
             Value : constant Low_Level.Put_Bucket_Control_Outcome :=
               (Kind => Low_Level.Bucket_Control_Updated, Status => 200);
             Result : constant Put_Bucket_CORS_Result :=
               Normalize_Put_Bucket_CORS_Response (Value, Admission);
+            Delete_Value : constant Low_Level.Delete_Bucket_CORS_Outcome :=
+              (Kind => Low_Level.Bucket_CORS_Deleted, Status => 204);
+            Delete_Result : constant Delete_Bucket_CORS_Result :=
+              Normalize_Delete_Bucket_CORS_Response
+                (Delete_Value, Admission);
          begin
-            if Result.Disposition /= Bucket_CORS_Mutation_Outcome_Unknown
+            if Get_Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.Disposition /=
+                Bucket_CORS_Mutation_Outcome_Unknown
               or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Delete_Result.Disposition /=
+                Bucket_CORS_Mutation_Outcome_Unknown
+              or else Delete_Result.Failure /= Corrupt_Or_Invalid_Response
             then
                raise Program_Error with
-                 "inconsistent PutBucketCors certainty was accepted";
+                 "inconsistent bucket-CORS certainty was accepted";
             end if;
          end;
       end loop;
@@ -1760,19 +1892,36 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       for Kind of Failure_Kinds loop
          for Admission in HTTP_Client.Admission_Certainty loop
             declare
+               Get_Result : constant Get_Bucket_CORS_Result :=
+                 Normalize_Get_Bucket_CORS_Failure
+                   (Kind, Admission, HTTP_Client.Waiting_Response_Head);
                Result : constant Put_Bucket_CORS_Result :=
                  Normalize_Put_Bucket_CORS_Failure
                    (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+               Delete_Result : constant Delete_Bucket_CORS_Result :=
+                 Normalize_Delete_Bucket_CORS_Failure
+                   (Kind, Admission, HTTP_Client.Waiting_Response_Head);
             begin
-               if Result.Kind /= Put_Bucket_CORS_Exchange_Failed
+               if Get_Result.Kind /= Get_Bucket_CORS_Exchange_Failed
+                 or else Get_Result.Failure /= Expected_Failure (Kind)
+                 or else Get_Result.Admission /= Admission
+                 or else Get_Result.HTTP_Result /= Kind
+                 or else Result.Kind /= Put_Bucket_CORS_Exchange_Failed
                  or else Result.Disposition /=
                    Expected_Disposition (Kind, Admission)
                  or else Result.Failure /= Expected_Failure (Kind)
                  or else Result.Admission /= Admission
                  or else Result.HTTP_Result /= Kind
+                 or else Delete_Result.Kind /=
+                   Delete_Bucket_CORS_Exchange_Failed
+                 or else Delete_Result.Disposition /=
+                   Expected_Disposition (Kind, Admission)
+                 or else Delete_Result.Failure /= Expected_Failure (Kind)
+                 or else Delete_Result.Admission /= Admission
+                 or else Delete_Result.HTTP_Result /= Kind
                then
                   raise Program_Error with
-                    "PutBucketCors exchange certainty mismatch";
+                    "bucket-CORS exchange certainty mismatch";
                end if;
             end;
          end loop;

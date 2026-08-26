@@ -4020,6 +4020,27 @@ procedure S3_HTTP_Socket_Corpus is
             "DELETE", "/example-bucket?cors",
             Expected_Bucket_Owner => "123456789012");
          Serve
+           (HTTP_Response ("204 No Content", ""),
+            "DELETE", "/typed-delete-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""),
+            "DELETE", "/composed-delete-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-delete-cors" & CRLF),
+            "DELETE", "/restart-delete-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("500 Internal Server Error",
+               "<Error><Code>InternalError</Code><Message>" &
+               String'(1 .. 256 => 'x') & "</Message></Error>"),
+            "DELETE", "/bounded-delete-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
            (HTTP_Response ("204 No Content", ""), "DELETE",
             "/example-bucket?analytics&id=config%20id",
             Expected_Bucket_Owner => "123456789012");
@@ -4334,6 +4355,34 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "<CORSConfiguration>" &
                  String'(1 .. 64 => ' ') & "</CORSConfiguration>"),
             "GET", "/example-bucket?cors");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<CORSConfiguration><CORSRule>" &
+                 "<AllowedMethod>GET</AllowedMethod>" &
+                 "<AllowedOrigin>https://typed.example</AllowedOrigin>" &
+                 "</CORSRule></CORSConfiguration>"),
+            "GET", "/typed-get-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<CORSConfiguration><CORSRule>" &
+                 "<AllowedMethod>PUT</AllowedMethod>" &
+                 "<AllowedOrigin>https://composed.example</AllowedOrigin>" &
+                 "</CORSRule></CORSConfiguration>"),
+            "GET", "/composed-get-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-get-cors" & CRLF),
+            "GET", "/restart-get-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<CORSConfiguration>" &
+                 String'(1 .. 64 => ' ') & "</CORSConfiguration>"),
+            "GET", "/bounded-get-cors?cors",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
               ("200 OK", "<ServerSideEncryptionConfiguration><Rule>" &
@@ -12670,6 +12719,136 @@ procedure S3_HTTP_Socket_Corpus is
                  "DeleteBucketCors convenience success mismatch";
             end if;
          end;
+         declare
+            Parameters : constant
+              Low_Level.Delete_Bucket_Configuration_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Bucket_Encryption
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 Parameters,
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            --  Parent, HTTP exchange, and HTTP's one active transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Delete_Bucket_CORS_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+            Result : Delete_Bucket_CORS_Result;
+         begin
+            declare
+               Typed_Result : constant Delete_Bucket_CORS_Result :=
+                 Buckets.Delete_CORS
+                   (HTTP,
+                    Origin,
+                    "typed-delete-cors",
+                    Parameters,
+                    Identity,
+                    Timeout => 5.0);
+            begin
+               if Typed_Result.Kind /=
+                    Delete_Bucket_CORS_Response_Available
+                 or else Typed_Result.Disposition /=
+                   Bucket_CORS_Mutation_Completed
+                 or else Typed_Result.Failure /= No_Failure
+                 or else Typed_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Typed_Result.Response.Kind /=
+                   Low_Level.Bucket_CORS_Deleted
+               then
+                  raise Program_Error with
+                    "typed DeleteBucketCors response mismatch";
+               end if;
+            end;
+            begin
+               Low_Level.Delete_Bucket_CORS
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "DeleteBucketCors accepted an encryption request";
+            end if;
+
+            declare
+               Operation : Delete_Bucket_CORS_Operation :=
+                 Delete_CORS
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-delete-cors",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_CORS_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_CORS_Mutation_Completed
+               then
+                  raise Program_Error with
+                    "composed DeleteBucketCors mismatch";
+               end if;
+               Delete_CORS
+                 (HTTP'Access,
+                  Origin,
+                  "restart-delete-cors",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_CORS_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_CORS_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-delete-cors"
+               then
+                  raise Program_Error with
+                    "restarted DeleteBucketCors mismatch";
+               end if;
+               Delete_CORS
+                 (HTTP'Access,
+                  Origin,
+                  "bounded-delete-cors",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Limits =>
+                    --  Test-only caller policy paired with the oversized
+                    --  server fixture above.
+                    (Maximum_Document_Bytes => 64,
+                     Maximum_Depth          => 8,
+                     Maximum_Elements       => 32,
+                     Maximum_Text_Bytes     => 64),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_CORS_Exchange_Failed
+                 or else Result.Disposition /=
+                   Bucket_CORS_Mutation_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded DeleteBucketCors response mismatch";
+               end if;
+            end;
+         end;
          Require_Configuration_Deletion
            (Buckets.Delete_Analytics_Configuration
               (HTTP, Origin, "example-bucket", "config id", Identity,
@@ -13866,6 +14045,135 @@ procedure S3_HTTP_Socket_Corpus is
             Must_Reject_CORS
               ("GetBucketCors accepted oversized success XML",
                Small_Limits => True);
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Encryption
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (others => <>),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            --  Parent, HTTP exchange, and HTTP's one active transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Bucket_CORS_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Get_Bucket_CORS
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "GetBucketCors accepted an encryption request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            --  Parent, HTTP exchange, and HTTP's one active transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_CORS_Result;
+         begin
+            declare
+               Typed_Result : constant Get_Bucket_CORS_Result :=
+                 Buckets.Get_CORS
+                   (HTTP,
+                    Origin,
+                    "typed-get-cors",
+                    Parameters,
+                    Identity,
+                    Timeout => 5.0);
+            begin
+               if Typed_Result.Kind /= Get_Bucket_CORS_Response_Available
+                 or else Typed_Result.Failure /= No_Failure
+                 or else not Typed_Result.Response.Configuration.Is_Set
+                 or else Typed_Result.Response.Configuration.Rules.Length /= 1
+                 or else Typed_Result.Response.Configuration.Rules.Element
+                   (1).Allowed_Origins.Element (1) /=
+                     "https://typed.example"
+               then
+                  raise Program_Error with
+                    "typed GetBucketCors result mismatch";
+               end if;
+            end;
+            declare
+               Operation : Get_Bucket_CORS_Operation :=
+                 Get_CORS
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-get-cors",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_CORS_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else not Result.Response.Configuration.Is_Set
+                 or else Result.Response.Configuration.Rules.Length /= 1
+                 or else Result.Response.Configuration.Rules.Element
+                   (1).Allowed_Methods.Element (1) /= "PUT"
+               then
+                  raise Program_Error with
+                    "composed GetBucketCors result mismatch";
+               end if;
+               Get_CORS
+                 (HTTP'Access,
+                  Origin,
+                  "restart-get-cors",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_CORS_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-get-cors"
+               then
+                  raise Program_Error with
+                    "restarted GetBucketCors result mismatch";
+               end if;
+               Get_CORS
+                 (HTTP'Access,
+                  Origin,
+                  "bounded-get-cors",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Limits =>
+                    --  Test-only caller policy paired with the oversized
+                    --  server fixture above.
+                    (Maximum_Document_Bytes => 64,
+                     Maximum_Depth          => 8,
+                     Maximum_Elements       => 32,
+                     Maximum_Text_Bytes     => 64),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_CORS_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded GetBucketCors response mismatch";
+               end if;
+            end;
          end;
          declare
             Prepared : constant Low_Level.Prepared_Request :=

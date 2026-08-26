@@ -10,8 +10,8 @@ ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
 bounded GetBucketLocation, bounded GetBucketPolicy, non-replaying
 Put/DeleteBucketPolicy, non-replaying Put/GetBucketVersioning, non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
-tagging Put/Get/Delete, non-replaying PutBucketCors, plus object tagging
-Put/Get/Delete. The
+tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
+plus object tagging Put/Get/Delete. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -93,15 +93,16 @@ The implemented operation order is:
     `Set_Ownership_Controls`, and non-replaying
     `Delete_Ownership_Controls`;
 27. bounded `Get_Encryption` and non-replaying `Delete_Encryption`;
-28. non-replaying `Set_CORS`;
+28. bounded `Get_CORS`, non-replaying `Set_CORS`, and non-replaying
+    `Delete_CORS`;
 29. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
 30. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
 
-The provider surface contains 43 domain operations: 15 in `Client.Objects`,
-20 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 40 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 45 domain operations: 15 in `Client.Objects`,
+22 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 42 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -469,8 +470,9 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `List_Multipart_Uploads_Page` overloads, plus the typed-result `Copy_Object`,
 `Get_Public_Access_Block`, `Get_Ownership_Controls`, and
 `Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`, and
-`Delete_Encryption`, and `Set_CORS` overloads are literal waits on the same provider-owned
-state machines and retain their typed certainty, capacity,
+`Delete_Encryption`, and `Get_CORS`, `Set_CORS`, and `Delete_CORS` overloads
+are literal waits on the same provider-owned state machines and retain their
+typed certainty, capacity,
 metadata, and ownership results. The established raising `Delete_Outcome` and
 `Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer
 overloads remain source compatible.
