@@ -141,6 +141,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Public_Access_Block_Result_Kind;
    use type Get_Bucket_Ownership_Controls_Result_Kind;
    use type Get_Bucket_Encryption_Result_Kind;
+   use type Put_Bucket_CORS_Result_Kind;
+   use type Bucket_CORS_Mutation_Disposition;
    use type Delete_Bucket_Encryption_Result_Kind;
    use type Bucket_Encryption_Mutation_Disposition;
    use type Put_Bucket_Ownership_Controls_Result_Kind;
@@ -4187,6 +4189,34 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("200 OK", "<AbacStatus><Status>Enabled</Status></AbacStatus>"),
             "GET", "/example-bucket?abac",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT", "/example-bucket?cors",
+            Expected_Body_Root => "<CORSConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: typed-put-cors" & CRLF),
+            "PUT", "/typed-put-cors?cors",
+            Expected_Body_Root => "<CORSConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT", "/composed-cors?cors",
+            Expected_Body_Root => "<CORSConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-put-cors" & CRLF),
+            "PUT", "/restart-put-cors?cors",
+            Expected_Body_Root => "<CORSConfiguration",
+            Expected_Content_MD5 => "*",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
@@ -13373,6 +13403,149 @@ procedure S3_HTTP_Socket_Corpus is
             end if;
          end;
          declare
+            function Configuration return Bucket_Controls.CORS_Configuration
+            is
+            begin
+               return Value : Bucket_Controls.CORS_Configuration :=
+                 (Is_Set => True, others => <>)
+               do
+                  declare
+                     Rule : Bucket_Controls.CORS_Rule := (others => <>);
+                  begin
+                     Rule.ID :=
+                       (Is_Set => True,
+                        Value => US.To_Unbounded_String ("socket-rule"));
+                     Rule.Allowed_Headers.Append ("x-test");
+                     Rule.Allowed_Methods.Append ("GET");
+                     Rule.Allowed_Origins.Append ("https://example.test");
+                     Rule.Expose_Headers.Append ("etag");
+                     Rule.Max_Age_Seconds :=
+                       (Is_Set => True,
+                        Text => US.To_Unbounded_String ("3600"));
+                     Value.Rules.Append (Rule);
+                  end;
+               end return;
+            end Configuration;
+
+            Parameters : constant Low_Level.Put_Bucket_Control_Parameters :=
+              (Content_MD5 => US.Null_Unbounded_String,
+               Checksum_Algorithm => US.Null_Unbounded_String,
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+         begin
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_CORS
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Configuration,
+                    (Content_MD5 => US.Null_Unbounded_String,
+                     Checksum_Algorithm => US.To_Unbounded_String ("CRC32"),
+                     Expected_Bucket_Owner =>
+                       US.To_Unbounded_String ("123456789012")),
+                    Identity, "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.Put_Bucket_Control_Outcome :=
+                 Low_Level.Execute_Put_Bucket_CORS
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Bucket_Control_Updated
+                 or else Result.Status /= 200
+               then
+                  raise Program_Error with
+                    "low-level one-shot PutBucketCors mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Put_Bucket_CORS_Result :=
+                 Buckets.Set_CORS
+                   (HTTP, Origin, "typed-put-cors", Configuration,
+                    Parameters, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Put_Bucket_CORS_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_CORS_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "typed-put-cors"
+               then
+                  raise Program_Error with
+                    "typed PutBucketCors response mismatch";
+               end if;
+            end;
+            declare
+               Set : aliased Operations.Completion_Set (3);
+               Result : Put_Bucket_CORS_Result;
+               Value : Bucket_Controls.CORS_Configuration := Configuration;
+               Operation : Put_Bucket_CORS_Operation :=
+                 Set_CORS
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-cors",
+                    Value,
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Value.Rules.Clear;
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_CORS_Response_Available
+                 or else Result.Disposition /= Bucket_CORS_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+               then
+                  raise Program_Error with
+                    "composed PutBucketCors result mismatch";
+               end if;
+               Set_CORS
+                 (HTTP'Access,
+                  Origin,
+                  "restart-put-cors",
+                  Configuration,
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_CORS_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_CORS_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-put-cors"
+               then
+                  raise Program_Error with
+                    "restarted PutBucketCors result mismatch";
+               end if;
+            end;
+            declare
+               Prepared : aliased Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Abac
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Bucket_Controls.Abac_Enabled, (others => <>), Identity,
+                    "us-east-1", "20130524T000000Z");
+               Set : aliased Operations.Completion_Set (3);
+               Parent : aliased Put_Bucket_CORS_Operation
+                 (Set'Access, HTTP'Access, null);
+               Child : HTTP_Client.Exchange_Operation (Set'Access);
+               Rejected : Boolean := False;
+            begin
+               begin
+                  Low_Level.Put_Bucket_CORS
+                    (HTTP'Access, Prepared'Access, Parent'Access,
+                     Parent'Access, HTTP_Client.Deadline_After (5.0),
+                     Operation => Child);
+               exception
+                  when Low_Level.Invalid_Request => Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "PutBucketCors accepted a prepared ABAC request";
+               end if;
+            end;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Get_Bucket_Ownership_Controls
                 (Origin, Low_Level.Path_Style, "example-bucket",
@@ -15960,6 +16133,7 @@ begin
    Buckets_Testing.Check_Public_Access_Block_Certainty_Corpus;
    Buckets_Testing.Check_Ownership_Controls_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Encryption_Result_Corpus;
+   Buckets_Testing.Check_Bucket_CORS_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Versioning_Result_Corpus;
    Buckets_Testing.Check_Put_Bucket_Versioning_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;

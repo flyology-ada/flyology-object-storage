@@ -80,7 +80,7 @@ PutBucketAbac	extended	missing	covered	missing	covered
 PutBucketAccelerateConfiguration	extended	missing	covered	missing	covered
 PutBucketAcl	extended	missing	partial	missing	missing
 PutBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
-PutBucketCors	extended	missing	partial	missing	missing
+PutBucketCors	extended	missing	covered	missing	covered
 PutBucketEncryption	extended	missing	partial	missing	missing
 PutBucketIntelligentTieringConfiguration	extended	missing	partial	missing	missing
 PutBucketInventoryConfiguration	extended	missing	partial	missing	missing

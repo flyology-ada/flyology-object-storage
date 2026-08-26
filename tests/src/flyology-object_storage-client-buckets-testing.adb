@@ -1634,6 +1634,151 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       end loop;
    end Check_Bucket_Encryption_Result_Corpus;
 
+   procedure Check_Bucket_CORS_Result_Corpus is
+      type Failure_Kind_Array is array (Positive range <>) of
+        HTTP_Client.Exchange_Result_Kind;
+      Failure_Kinds : constant Failure_Kind_Array :=
+        (HTTP_Client.Pre_Admission_Rejected,
+         HTTP_Client.Cancelled,
+         HTTP_Client.Timed_Out,
+         HTTP_Client.Client_Unavailable,
+         HTTP_Client.Connection_Failed,
+         HTTP_Client.Transport_Failed,
+         HTTP_Client.Request_Source_Failed,
+         HTTP_Client.Response_Invalid,
+         HTTP_Client.Response_Body_Too_Large,
+         HTTP_Client.Response_Sink_Failed);
+
+      function Error_Response (Code : String) return S3.Errors.Error_Response
+      is
+        ((Code       => US.To_Unbounded_String (Code),
+          Message    => US.Null_Unbounded_String,
+          Resource   => US.Null_Unbounded_String,
+          Request_ID => US.Null_Unbounded_String,
+          Host_ID    => US.Null_Unbounded_String));
+
+      function Expected_Failure
+        (Kind : HTTP_Client.Exchange_Result_Kind) return Failure_Reason is
+        (case Kind is
+            when HTTP_Client.Pre_Admission_Rejected => Invalid_Request,
+            when HTTP_Client.Cancelled => Cancelled,
+            when HTTP_Client.Timed_Out => Timed_Out,
+            when HTTP_Client.Client_Unavailable => Client_Unavailable,
+            when HTTP_Client.Connection_Failed => Connection_Failed,
+            when HTTP_Client.Transport_Failed => Transport_Failed,
+            when HTTP_Client.Request_Source_Failed => Request_Source_Failed,
+            when HTTP_Client.Response_Body_Too_Large |
+                 HTTP_Client.Response_Invalid |
+                 HTTP_Client.Response_Sink_Failed =>
+              Corrupt_Or_Invalid_Response,
+            when HTTP_Client.Response_Complete =>
+              raise Program_Error with "complete response is not a failure");
+
+      function Expected_Disposition
+        (Kind      : HTTP_Client.Exchange_Result_Kind;
+         Admission : HTTP_Client.Admission_Certainty)
+         return Bucket_CORS_Mutation_Disposition is
+        (if Kind = HTTP_Client.Cancelled
+           and then Admission = HTTP_Client.Not_Admitted
+         then Bucket_CORS_Mutation_Cancelled_Before_Admission
+         elsif Admission = HTTP_Client.Not_Admitted
+         then Bucket_CORS_Mutation_Definitely_Not_Applied
+         else Bucket_CORS_Mutation_Outcome_Unknown);
+
+      procedure Check_Response
+        (Status      : Flyology.HTTP.Status_Code;
+         Code        : String;
+         Disposition : Bucket_CORS_Mutation_Disposition;
+         Failure     : Failure_Reason)
+      is
+         Value : constant Low_Level.Put_Bucket_Control_Outcome :=
+           (if Status = 200
+            then (Kind => Low_Level.Bucket_Control_Updated, Status => Status)
+            else (Kind => Low_Level.Put_Bucket_Control_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant Put_Bucket_CORS_Result :=
+           Normalize_Put_Bucket_CORS_Response
+             (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Put_Bucket_CORS_Response_Available
+           or else Result.Disposition /= Disposition
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "PutBucketCors response normalization mismatch";
+         end if;
+      end Check_Response;
+   begin
+      Check_Response
+        (200, "", Bucket_CORS_Mutation_Completed, No_Failure);
+      Check_Response
+        (400, "MalformedXML", Bucket_CORS_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Response
+        (401, "InvalidAccessKeyId",
+         Bucket_CORS_Mutation_Definitely_Not_Applied,
+         Authentication_Failed);
+      Check_Response
+        (403, "AccessDenied", Bucket_CORS_Mutation_Definitely_Not_Applied,
+         Authorization_Failed);
+      Check_Response
+        (404, "NoSuchBucket", Bucket_CORS_Mutation_Definitely_Not_Applied,
+         Not_Found);
+      Check_Response
+        (409, "OperationAborted", Bucket_CORS_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Response
+        (429, "SlowDown", Bucket_CORS_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Response
+        (500, "InternalError", Bucket_CORS_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Response
+        (500, "Unknown", Bucket_CORS_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+
+      for Admission in
+        HTTP_Client.Not_Admitted .. HTTP_Client.Possibly_Admitted
+      loop
+         declare
+            Value : constant Low_Level.Put_Bucket_Control_Outcome :=
+              (Kind => Low_Level.Bucket_Control_Updated, Status => 200);
+            Result : constant Put_Bucket_CORS_Result :=
+              Normalize_Put_Bucket_CORS_Response (Value, Admission);
+         begin
+            if Result.Disposition /= Bucket_CORS_Mutation_Outcome_Unknown
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+            then
+               raise Program_Error with
+                 "inconsistent PutBucketCors certainty was accepted";
+            end if;
+         end;
+      end loop;
+
+      for Kind of Failure_Kinds loop
+         for Admission in HTTP_Client.Admission_Certainty loop
+            declare
+               Result : constant Put_Bucket_CORS_Result :=
+                 Normalize_Put_Bucket_CORS_Failure
+                   (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+            begin
+               if Result.Kind /= Put_Bucket_CORS_Exchange_Failed
+                 or else Result.Disposition /=
+                   Expected_Disposition (Kind, Admission)
+                 or else Result.Failure /= Expected_Failure (Kind)
+                 or else Result.Admission /= Admission
+                 or else Result.HTTP_Result /= Kind
+               then
+                  raise Program_Error with
+                    "PutBucketCors exchange certainty mismatch";
+               end if;
+            end;
+         end loop;
+      end loop;
+   end Check_Bucket_CORS_Result_Corpus;
+
    procedure Check_Ownership_Controls_Certainty_Corpus is
       type Failure_Kind_Array is array (Positive range <>) of
         HTTP_Client.Exchange_Result_Kind;

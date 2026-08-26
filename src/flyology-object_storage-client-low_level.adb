@@ -9105,6 +9105,26 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "invalid PutBucketOwnershipControls configuration";
    end Prepare_Put_Bucket_Ownership_Controls;
 
+   function Prepare_Put_Bucket_CORS
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : Bucket_Controls.CORS_Configuration;
+      Parameters : Put_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request
+   is
+   begin
+      return Prepare_Bucket_Control_Mutation
+        (Model.Put_Bucket_Cors_Operation, "PUT", "cors", Origin, Style,
+         Bucket, Bucket_Controls.Serialize_CORS (Value, Limits), True,
+         (others => <>), False, Parameters, Identity, Region, Timestamp,
+         One_Shot_Source => True);
+   exception
+      when Bucket_Controls.Malformed_Configuration =>
+         raise Invalid_Request with "invalid PutBucketCors configuration";
+   end Prepare_Put_Bucket_CORS;
+
    function Prepare_Put_Bucket_Policy
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Policy : String;
@@ -9274,6 +9294,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Put_Bucket_Control_Outcome is
      (Execute_Bucket_Control_Mutation
         (Client, Prepared, Model.Put_Bucket_Ownership_Controls_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Put_Bucket_CORS
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome is
+     (Execute_Bucket_Control_Mutation
+        (Client, Prepared, Model.Put_Bucket_Cors_Operation,
          Timeout, Token, Limits));
 
    function Execute_Put_Bucket_Policy
@@ -13069,6 +13099,27 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
          Deadline, Token, Operation);
    end Put_Bucket_Ownership_Controls;
+
+   procedure Put_Bucket_CORS
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /= Model.Put_Bucket_Cors_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Bucket_CORS;
 
    procedure Delete_Public_Access_Block
      (Client    : not null access Flyology.HTTP.Client.Client;
