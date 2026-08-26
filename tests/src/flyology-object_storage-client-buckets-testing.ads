@@ -23,6 +23,8 @@ package Flyology.Object_Storage.Client.Buckets.Testing is
 
    procedure Check_ABAC_Certainty_Corpus;
 
+   procedure Check_Acceleration_Certainty_Corpus;
+
    procedure Check_Request_Payment_Certainty_Corpus;
 
    procedure Check_Ownership_Controls_Certainty_Corpus;

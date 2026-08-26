@@ -9048,7 +9048,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
          "accelerate",
          Origin, Style, Bucket, Bucket_Controls.Serialize_Accelerate (Value),
          False, (others => <>), False, Parameters, Identity, Region,
-         Timestamp, One_Shot_Source => False));
+         Timestamp, One_Shot_Source => True));
 
    function Prepare_Put_Bucket_Request_Payment
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -13189,6 +13189,29 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
          Deadline, Token, Operation);
    end Put_Bucket_ABAC;
+
+   procedure Put_Bucket_Accelerate_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Put_Bucket_Accelerate_Configuration_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Bucket_Accelerate_Configuration;
+
    procedure Put_Public_Access_Block
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;

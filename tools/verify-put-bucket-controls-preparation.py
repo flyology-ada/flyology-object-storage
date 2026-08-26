@@ -199,6 +199,9 @@ def main() -> int:
 
     composable_writes = (
         ("PutBucketAbac", "Put_Bucket_ABAC", "Prepare_Put_Bucket_Abac"),
+        ("PutBucketAccelerateConfiguration",
+         "Put_Bucket_Accelerate_Configuration",
+         "Prepare_Put_Bucket_Accelerate_Configuration"),
         ("PutBucketRequestPayment", "Put_Bucket_Request_Payment",
          "Prepare_Put_Bucket_Request_Payment"),
     )
