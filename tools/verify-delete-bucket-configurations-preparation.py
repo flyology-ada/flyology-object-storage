@@ -257,15 +257,45 @@ def main() -> int:
             r"Low\.Delete_Bucket_Lifecycle",
         ],
     }
-    for label, patterns in lifecycle_tokens.items():
-        for pattern in patterns:
-            if re.search(pattern, texts[label]) is None:
-                fail(f"DeleteBucketLifecycle composable API absent from {label}")
-    for label in ("high-level specification", "high-level body"):
-        if texts[label].count("function Delete_Lifecycle") != 3:
-            fail(f"DeleteBucketLifecycle function overload count changed in {label}")
-        if texts[label].count("procedure Delete_Lifecycle") != 1:
-            fail(f"DeleteBucketLifecycle reusable overload count changed in {label}")
+    replication_tokens = {
+        "low-level specification": [
+            r"\bprocedure\s+Delete_Bucket_Replication\b",
+            r"Operation\s*:\s*in\s+out\s+"
+            r"Flyology\.HTTP\.Client\.Exchange_Operation",
+        ],
+        "low-level body": [
+            r"\bprocedure\s+Delete_Bucket_Replication\b",
+            r"Model\.Delete_Bucket_Replication_Operation",
+        ],
+        "high-level specification": [
+            r"\btype\s+Delete_Bucket_Replication_Operation\b",
+            r"\btype\s+Delete_Bucket_Replication_Result\b",
+            r"\bprocedure\s+Finish\s*\(\s*Operation\s*:\s*in\s+out\s+"
+            r"Delete_Bucket_Replication_Operation",
+        ],
+        "high-level body": [
+            r"\bprocedure\s+Start_Delete_Bucket_Replication\b",
+            r"\bfunction\s+Normalize_Delete_Bucket_Replication_Response\b",
+            r"Low\.Delete_Bucket_Replication",
+        ],
+    }
+    for operation, tokens in (
+        ("DeleteBucketLifecycle", lifecycle_tokens),
+        ("DeleteBucketReplication", replication_tokens),
+    ):
+        for label, patterns in tokens.items():
+            for pattern in patterns:
+                if re.search(pattern, texts[label]) is None:
+                    fail(f"{operation} composable API absent from {label}")
+    for operation, name in (
+        ("DeleteBucketLifecycle", "Delete_Lifecycle"),
+        ("DeleteBucketReplication", "Delete_Replication"),
+    ):
+        for label in ("high-level specification", "high-level body"):
+            if texts[label].count(f"function {name}") != 3:
+                fail(f"{operation} function overload count changed in {label}")
+            if texts[label].count(f"procedure {name}") != 1:
+                fail(f"{operation} reusable overload count changed in {label}")
 
     if [tuple(row[name] for name in MEMBER_HEADER[:-1]) for row in members] != expected_member_rows:
         fail("member manifest does not exactly match generated input shapes")
@@ -303,7 +333,8 @@ def main() -> int:
     print(
         "bucket-configuration DELETE preparation: 13 operations, 30 request "
         f"members, no modeled success outputs, {len(vectors)} reciprocal vectors; "
-        "pinned model and exact public APIs match"
+        "pinned model and exact public APIs match, including lifecycle and "
+        "replication composable forms"
     )
     return 0
 
