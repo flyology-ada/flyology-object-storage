@@ -176,6 +176,9 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Object_Tagging_Result_Kind;
    use type Delete_Object_Tagging_Result_Kind;
    use type Object_Tag_Mutation_Disposition;
+   use type Get_Legal_Hold_Result_Kind;
+   use type Put_Legal_Hold_Result_Kind;
+   use type Legal_Hold_Mutation_Disposition;
    use type Create_Multipart_Result_Kind;
    use type Multipart_Creation_Disposition;
    use type HTTP_Client.Admission_Certainty;
@@ -4973,6 +4976,34 @@ procedure S3_HTTP_Socket_Corpus is
             "/example-bucket/object%20key?legal-hold&versionId=lost",
             Expected_Body_Root => "<LegalHold",
             Expected_Content_MD5 => "*", Keep_Open => False);
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT",
+            "/example-bucket/composable-legal?legal-hold&" &
+              "versionId=typed%20one",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*",
+            Expected_Request_Payer => "requester");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "PUT", "/example-bucket/composable-legal?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "PUT", "/example-bucket/sync-legal?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              --  Test-only whitespace body is semantically bodyless but one
+              --  byte above the paired 64-byte operation sink ceiling.
+              ("200 OK", String'(1 .. 65 => ' ')),
+            "PUT", "/example-bucket/bounded-legal?legal-hold",
+            Expected_Body_Root => "<LegalHold",
+            Expected_Content_MD5 => "*");
          --  Pinned PutObjectRetention fixtures cover the owned body, every
          --  physical control, sole output, and a lost-response ambiguity lane.
          Serve
@@ -5161,6 +5192,26 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "<LegalHold>" & String'(1 .. 42 => ' ') &
                "</LegalHold>"),
             "GET", "/example-bucket/object?legal-hold");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<LegalHold><Status>ON</Status></LegalHold>"),
+            "GET",
+            "/example-bucket/composable-legal?legal-hold&" &
+              "versionId=typed%20one");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "GET", "/example-bucket/composable-legal?legal-hold");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<LegalHold><Status>OFF</Status></LegalHold>"),
+            "GET", "/example-bucket/sync-legal?legal-hold");
+         Serve
+           (HTTP_Response
+              --  42 text bytes plus 23 markup bytes are one past the paired
+              --  64-byte operation sink ceiling.
+              ("200 OK", "<LegalHold>" & String'(1 .. 42 => ' ') &
+               "</LegalHold>"),
+            "GET", "/example-bucket/bounded-legal?legal-hold");
          Serve
            (HTTP_Response
               ("200 OK", "<Retention><Mode>GOVERNANCE</Mode>" &
@@ -15537,6 +15588,10 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end Must_Reject_Put_Legal_Hold;
          begin
+            Objects_Testing.Check_Legal_Hold_Pre_Admission_Rejection
+              (HTTP'Access, Prepared,
+               --  Test/reference loopback budget, not production policy.
+               HTTP_Client.Deadline_After (5.0));
             declare
                Result : constant Low_Level.Put_Object_Legal_Hold_Outcome :=
                  Low_Level.Execute_Put_Object_Legal_Hold
@@ -15617,6 +15672,106 @@ procedure S3_HTTP_Socket_Corpus is
                if not Ambiguous then
                   raise Program_Error with
                     "lost PutObjectLegalHold was not ambiguous";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : Low_Level.Put_Object_Legal_Hold_Parameters;
+            Value : constant Object_Lock.Legal_Hold :=
+              (Is_Set => True, Status => Object_Lock.Legal_Hold_On);
+            --  Derived capacity: the legal-hold parent, HTTP exchange, and
+            --  HTTP's one active transport child are the only simultaneous
+            --  operations in this test/reference composition.
+            Set : aliased Flyology.Operations.Completion_Set (3);
+         begin
+            Parameters.Version_ID := US.To_Unbounded_String ("typed one");
+            Parameters.Request_Payer := US.To_Unbounded_String ("requester");
+            declare
+               Operation : Put_Legal_Hold_Operation :=
+                 Put_Legal_Hold
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "composable-legal", Value, Parameters, Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Put_Legal_Hold_Result;
+            begin
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Legal_Hold_Response_Available
+                 or else Result.Disposition /= Legal_Hold_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Legal_Hold_Updated
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /= "requester"
+               then
+                  raise Program_Error with
+                    "composable PutObjectLegalHold result mismatch";
+               end if;
+
+               Parameters := (others => <>);
+               Put_Legal_Hold
+                 (HTTP'Access, Origin, "example-bucket", "composable-legal",
+                  Value, Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Legal_Hold_Response_Available
+                 or else Result.Disposition /=
+                   Legal_Hold_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Put_Object_Legal_Hold_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "established PutObjectLegalHold restart mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Put_Legal_Hold_Result :=
+                 Put_Legal_Hold
+                   (HTTP, Origin, "example-bucket", "sync-legal", Value,
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Put_Legal_Hold_Response_Available
+                 or else Result.Disposition /= Legal_Hold_Mutation_Completed
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Legal_Hold_Updated
+               then
+                  raise Program_Error with
+                    "typed synchronous PutObjectLegalHold mismatch";
+               end if;
+            end;
+
+            declare
+               Operation : Put_Legal_Hold_Operation :=
+                 Put_Legal_Hold
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "bounded-legal", Value, (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Put_Legal_Hold_Result;
+            begin
+               --  Test-only ceiling forces the composable sink failure path;
+               --  production retains the shared S3 XML document limit.
+               Objects_Testing.Set_Response_Limit (Operation, 64);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Legal_Hold_Exchange_Failed
+                 or else Result.Disposition /=
+                   Legal_Hold_Mutation_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded composable PutObjectLegalHold mismatch";
                end if;
             end;
          end;
@@ -16085,6 +16240,101 @@ procedure S3_HTTP_Socket_Corpus is
                Small_Limits => True);
          end;
          declare
+            Parameters : Low_Level.Get_Object_Legal_Hold_Parameters;
+            --  Derived capacity: the legal-hold parent, HTTP exchange, and
+            --  HTTP's one active transport child are the only simultaneous
+            --  operations in this test/reference composition.
+            Set : aliased Flyology.Operations.Completion_Set (3);
+         begin
+            Parameters.Version_ID := US.To_Unbounded_String ("typed one");
+            declare
+               Operation : Get_Legal_Hold_Operation :=
+                 Get_Legal_Hold
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "composable-legal", Parameters, Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Get_Legal_Hold_Result;
+            begin
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Legal_Hold_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Legal_Hold_Found
+                 or else not Result.Response.Legal_Hold.Is_Set
+                 or else Result.Response.Legal_Hold.Status /=
+                   Object_Lock.Legal_Hold_On
+               then
+                  raise Program_Error with
+                    "composable GetObjectLegalHold result mismatch";
+               end if;
+
+               Parameters := (others => <>);
+               Get_Legal_Hold
+                 (HTTP'Access, Origin, "example-bucket", "composable-legal",
+                  Parameters, Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Legal_Hold_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Object_Legal_Hold_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "established GetObjectLegalHold restart mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Get_Legal_Hold_Result :=
+                 Get_Legal_Hold
+                   (HTTP, Origin, "example-bucket", "sync-legal",
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /= Get_Legal_Hold_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Legal_Hold_Found
+                 or else Result.Response.Legal_Hold.Status /=
+                   Object_Lock.Legal_Hold_Off
+               then
+                  raise Program_Error with
+                    "typed synchronous GetObjectLegalHold mismatch";
+               end if;
+            end;
+
+            declare
+               Operation : Get_Legal_Hold_Operation :=
+                 Get_Legal_Hold
+                   (Set'Access, HTTP'Access, Origin, "example-bucket",
+                    "bounded-legal", (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Get_Legal_Hold_Result;
+            begin
+               --  Test-only ceiling forces the composable sink failure path;
+               --  production retains the shared S3 XML document limit.
+               Objects_Testing.Set_Response_Limit (Operation, 64);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Legal_Hold_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded composable GetObjectLegalHold mismatch";
+               end if;
+            end;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Get_Object_Retention
                 (Origin, Low_Level.Path_Style, "example-bucket", "object",
@@ -16446,6 +16696,7 @@ begin
    Buckets_Testing.Check_Put_Bucket_Versioning_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;
    Objects_Testing.Check_Object_Tagging_Certainty_Corpus;
+   Objects_Testing.Check_Legal_Hold_Certainty_Corpus;
    Transfers_Testing.Check_List_Parts_Result_Corpus;
    Transfers_Testing.Check_List_Multipart_Uploads_Result_Corpus;
    Transfers_Testing.Check_Copy_Result_Corpus;

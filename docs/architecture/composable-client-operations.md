@@ -11,7 +11,8 @@ bounded GetBucketLocation, bounded GetBucketPolicy, non-replaying
 Put/DeleteBucketPolicy, non-replaying Put/GetBucketVersioning, non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
-plus object tagging Put/Get/Delete. The
+object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
+non-replaying PutObjectLegalHold. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -99,10 +100,11 @@ The implemented operation order is:
     `Delete_Bucket_Tagging`;
 30. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
+31. bounded `Get_Legal_Hold` and non-replaying `Put_Legal_Hold`.
 
-The provider surface contains 45 domain operations: 15 in `Client.Objects`,
+The provider surface contains 47 domain operations: 17 in `Client.Objects`,
 22 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 42 prepared-request initiators in `Client.Low_Level`. The count difference
+to 44 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -232,6 +234,17 @@ the last case requires caller-selected GetBucketPolicy reconciliation before
 any retry. Their parameter-record synchronous overloads wait on these same
 state machines, and restart retains only the established HTTP client and
 cancellation owner.
+GetObjectLegalHold owns the exact signed generation selector and retains its
+same-response XML under the shared S3 document limit. PutObjectLegalHold owns
+the presence-preserving serialized XML and exposes it once through a
+non-rewindable source. Both operations provide a limited constructor,
+operation-last reusable initiation, typed Finish, and a synchronous overload
+that waits on the same provider-owned state machine. Put typed Finish keeps
+admission certainty separate from failure classification: exact modeled
+rejections can prove non-application, while retryable, malformed, or lost
+post-admission results remain outcome-unknown and require a caller-selected
+generation-bound GetObjectLegalHold reconciliation. Neither form retains a
+caller body borrow, creates a helper task, or retries the mutation.
 SetPublicAccessBlock owns the exact serialized four-field configuration in a
 non-rewindable source, while DeletePublicAccessBlock supplies a non-rewindable
 known-empty source. Neither mutation is replayed after possible admission.

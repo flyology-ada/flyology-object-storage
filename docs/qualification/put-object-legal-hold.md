@@ -1,9 +1,9 @@
 # PutObjectLegalHold client qualification
 
-This record qualifies the bounded synchronous one-shot client and corpus for
-`PutObjectLegalHold`. It does not claim legal-hold persistence in a Flyology
-backend, an authenticated Flyology server route, or external provider
-interoperability.
+This record qualifies the bounded composable and synchronous one-shot client
+and corpus for `PutObjectLegalHold`. It does not claim legal-hold persistence
+in a Flyology backend, an authenticated Flyology server route, or external
+provider interoperability.
 
 ## Pinned authority and inventory
 
@@ -44,7 +44,7 @@ zero-, two-, or three-byte enum text. Inconsistent absent-outer/present-status
 input fails before signing. Exact and one-past document, depth, element, and
 text limits are independently gated.
 
-## Synchronous checksum and ownership contract
+## Provider-owned checksum and ownership contract
 
 `Prepare_Put_Object_Legal_Hold` validates the bucket, nonempty greedy key,
 requester enum, physical owner header, MD5 override, checksum algorithm, and
@@ -64,8 +64,12 @@ for exactly 16 bytes. An optional SDK algorithm must be one of all ten pinned
 values and adds both the exact algorithm header and matching digest over the
 same bytes used by MD5 and the SigV4 payload hash.
 
-`Execute_Put_Object_Legal_Hold` accepts only a request prepared for the exact
-operation. Exact 200 with an empty or XML-whitespace body is update success;
+`Client.Objects.Put_Legal_Hold` provides a limited constructor,
+operation-last reusable procedure, typed `Finish`, and synchronous overload
+that waits on the same state machine. The parent owns the prepared request and
+serialized payload through terminal drain, and the low-level reusable
+initiator rejects any other prepared operation before HTTP admission.
+Exact 200 with an empty or XML-whitespace body is update success;
 non-whitespace success content fails closed. Every other status returns a
 strict bounded S3 error. Modeled and diagnostic headers must each be absent or
 one bounded nonempty physical value, and requester-charged must match its exact
@@ -87,12 +91,15 @@ error limits, and cross-operation rejection before admission.
 
 The shared raw loopback corpus adds exact signed PUT method, target, body hash,
 MD5, CRC32, version, payer, and owner projection; the absent zero-length source
-with the exact empty-payload MD5; typed success and structured rejection;
-non-whitespace success; duplicate and empty modeled headers;
-duplicate diagnostics; a response one byte above the caller limit; and a
-server-accepted request followed by a lost response. The next server oracle
-proves that no automatic replay occurs. The root gate drives the sequence under
-native and Flyology lightweight task owners.
+with the exact empty-payload MD5; limited construction, typed Finish,
+operation-last restart, the typed synchronous wait, conclusive non-application
+and exhaustive admission-certainty normalization; typed success and structured
+rejection; non-whitespace success; duplicate and empty modeled headers;
+duplicate diagnostics; low-level and actual owner-driven response-sink
+one-past-limit failures; and a server-accepted request followed by a lost
+response. The next server oracle proves that no automatic replay occurs. The
+root gate drives the sequence under native and Flyology lightweight task
+owners.
 
 The machine ledger records the operation as `missing / covered / missing /
 covered`. Client and corpus qualification do not manufacture backend state or
@@ -109,7 +116,7 @@ so the latest serialized 2026-08-24 result remains applicable: 936/936 checks,
 
 ## Gate evidence
 
-The root gate passed all 40 AUnit cases, the 88-case abrupt-crash matrix, the
+The root gate passed all 41 AUnit cases, the 126-case abrupt-crash matrix, the
 320-vector checksum corpus with 210 chunk boundaries, and three complete
 deterministic, native/lightweight signed raw-socket, and TLS repetitions. The
 SQLite wrapper, catalog, and backend gate also passed.
@@ -118,8 +125,10 @@ The pinned verifier reported all ten modeled members, all ten exact checksum
 values, and all 13 reciprocal vectors. The 116-operation coverage verifier and
 its negative mutation oracle were green.
 
-GNATdoc produced a nonempty API index and a 12,461-line diagnostic log. The
+GNATdoc produced a nonempty API index and a 43,576-line diagnostic log. The
 index contains the serializer, parameter, result, outcome, prepare, decode, and
-execute declarations; those declarations emitted no targeted warning, and the
-log contains no internal error, `LANGKIT_SUPPORT.ERRORS`, infinite-recursion,
-or bounded-channel diagnostic.
+execute declarations together with the provider-owned limited operation,
+constructors, restart procedure, typed Finish, and synchronous wait. Those
+declarations emitted no targeted warning, and the log contains no internal
+error, `LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or bounded-channel
+diagnostic.

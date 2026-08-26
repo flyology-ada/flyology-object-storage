@@ -14,6 +14,7 @@ with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Listings;
+with Flyology.Object_Storage.S3.Object_Lock;
 with Flyology.Object_Storage.S3.Versions;
 with Flyology.Operations;
 
@@ -1360,6 +1361,241 @@ package Flyology.Object_Storage.Client.Objects is
       Result    : out Get_Object_Attributes_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  Shape of a terminal GetObjectLegalHold read.
+   --  @enum Get_Legal_Hold_Response_Available Modeled response exists
+   --  @enum Get_Legal_Hold_Exchange_Failed No modeled response exists
+   type Get_Legal_Hold_Result_Kind is
+     (Get_Legal_Hold_Response_Available, Get_Legal_Hold_Exchange_Failed);
+
+   --  Typed bounded GetObjectLegalHold response or composable HTTP failure.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Get_Legal_Hold_Result
+     (Kind : Get_Legal_Hold_Result_Kind := Get_Legal_Hold_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Get_Legal_Hold_Response_Available =>
+            Response : Low_Level.Get_Object_Legal_Hold_Outcome;
+         when Get_Legal_Hold_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded read-only GetObjectLegalHold parent with one HTTP child.
+   type Get_Legal_Hold_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  These overloads retain the package's established object-read defaults:
+   --  us-east-1, path-style addressing, the shared S3 XML document limit,
+   --  no cancellation source, and a 30-second synchronous wait.  They
+   --  preserve existing client policy rather than adding legal-hold limits.
+   --  Start or restart one bounded GetObjectLegalHold read.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established operation
+   procedure Get_Legal_Hold
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Legal_Hold_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Get_Legal_Hold_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded GetObjectLegalHold read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven legal-hold read
+   function Get_Legal_Hold
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Legal_Hold_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Legal_Hold_Operation;
+
+   --  Consume one terminal GetObjectLegalHold operation.
+   --  @param Operation Terminal legal-hold read
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out Get_Legal_Hold_Operation;
+      Result    : out Get_Legal_Hold_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  What is known about one legal-hold mutation after terminal drain.
+   --  Unknown outcomes require caller-selected GetObjectLegalHold
+   --  reconciliation for the exact object version before any retry.
+   --  @enum Legal_Hold_Mutation_Completed Complete response proves mutation
+   --  @enum Legal_Hold_Mutation_Definitely_Not_Applied Exact rejection or
+   --     non-admission proves the requested mutation was not applied
+   --  @enum Legal_Hold_Mutation_Outcome_Unknown State must be reconciled
+   --  @enum Legal_Hold_Mutation_Cancelled_Before_Admission Cancellation
+   --     preceded possible server admission
+   type Legal_Hold_Mutation_Disposition is
+     (Legal_Hold_Mutation_Completed,
+      Legal_Hold_Mutation_Definitely_Not_Applied,
+      Legal_Hold_Mutation_Outcome_Unknown,
+      Legal_Hold_Mutation_Cancelled_Before_Admission);
+
+   --  Shape of a terminal PutObjectLegalHold mutation.
+   --  @enum Put_Legal_Hold_Response_Available Modeled response exists
+   --  @enum Put_Legal_Hold_Exchange_Failed No modeled response exists
+   type Put_Legal_Hold_Result_Kind is
+     (Put_Legal_Hold_Response_Available, Put_Legal_Hold_Exchange_Failed);
+
+   --  Typed PutObjectLegalHold certainty and response or HTTP failure.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Put_Legal_Hold_Result
+     (Kind : Put_Legal_Hold_Result_Kind := Put_Legal_Hold_Exchange_Failed)
+   is record
+      Disposition : Legal_Hold_Mutation_Disposition :=
+        Legal_Hold_Mutation_Outcome_Unknown;
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Put_Legal_Hold_Response_Available =>
+            Response : Low_Level.Put_Object_Legal_Hold_Outcome;
+         when Put_Legal_Hold_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot PutObjectLegalHold parent owning its serialized XML document.
+   type Put_Legal_Hold_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  These overloads retain the package's established object-mutation
+   --  defaults: us-east-1, path-style addressing, the shared S3 XML document
+   --  limit, no cancellation source, and a 30-second synchronous wait.  They
+   --  preserve existing client policy rather than adding legal-hold limits.
+   --  Start or restart one nonreplaying PutObjectLegalHold mutation.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Value Presence-preserving legal-hold document
+   --  @param Parameters Complete modeled version, checksum, and controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established operation
+   procedure Put_Legal_Hold
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Value      : S3.Object_Lock.Legal_Hold;
+      Parameters : Low_Level.Put_Object_Legal_Hold_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Put_Legal_Hold_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying PutObjectLegalHold mutation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Value Presence-preserving legal-hold document
+   --  @param Parameters Complete modeled version, checksum, and controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven legal-hold mutation
+   function Put_Legal_Hold
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Value      : S3.Object_Lock.Legal_Hold;
+      Parameters : Low_Level.Put_Object_Legal_Hold_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Put_Legal_Hold_Operation;
+
+   --  Consume one terminal PutObjectLegalHold operation.
+   --  @param Operation Terminal legal-hold mutation
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Put_Legal_Hold_Operation;
+      Result    : out Put_Legal_Hold_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
    --  What is known about one object-tag mutation after terminal drain.
    --  Unknown outcomes require caller-selected GetObjectTagging
    --  reconciliation for the exact object version before any retry.
@@ -2451,6 +2687,60 @@ package Flyology.Object_Storage.Client.Objects is
         (Is_Set => False, Value => 0))
       return Delete_Outcome;
 
+   --  Read the selected generation's legal hold by waiting on the same
+   --  bounded owner-driven operation exposed above.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   function Get_Legal_Hold
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Legal_Hold_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Legal_Hold_Result;
+
+   --  Replace the selected generation's legal hold exactly once by waiting
+   --  on the same nonreplaying owner-driven operation exposed above.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Value Presence-preserving legal-hold document copied at start
+   --  @param Parameters Complete modeled version, checksum, and controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Put_Legal_Hold
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Value      : S3.Object_Lock.Legal_Hold;
+      Parameters : Low_Level.Put_Object_Legal_Hold_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Put_Legal_Hold_Result;
+
    type Tagging_Outcome_Kind is
      (Tags_Replaced, Tags_Read, Tags_Cleared, Tagging_Rejected);
 
@@ -2652,6 +2942,93 @@ package Flyology.Object_Storage.Client.Objects is
       return Get_Attributes_Outcome;
 
 private
+
+   type Get_Legal_Hold_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Get_Legal_Hold_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Get_Legal_Hold_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Get_Legal_Hold_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Legal_Hold_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Get_Legal_Hold_Operation);
+
+   type Put_Legal_Hold_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Source_Position : Natural := 0;
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Put_Legal_Hold_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   overriding function Declared_Length
+     (Item : Put_Legal_Hold_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Put_Legal_Hold_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Put_Legal_Hold_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Put_Legal_Hold_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Put_Legal_Hold_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Put_Legal_Hold_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Put_Legal_Hold_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Put_Legal_Hold_Operation);
 
    type Put_Object_Tagging_Operation
      (Set : not null access Flyology.Operations.Completion_Set'Class;
@@ -3183,6 +3560,24 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Get_Object_Attributes_Result;
+   function Normalize_Get_Legal_Hold_Response
+     (Value     : Low_Level.Get_Object_Legal_Hold_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Get_Legal_Hold_Result;
+   function Normalize_Get_Legal_Hold_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Get_Legal_Hold_Result;
+   function Normalize_Put_Legal_Hold_Response
+     (Value     : Low_Level.Put_Object_Legal_Hold_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Put_Legal_Hold_Result;
+   function Normalize_Put_Legal_Hold_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Put_Legal_Hold_Result;
    function Normalize_Put_Object_Tagging_Response
      (Value     : Low_Level.Object_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
