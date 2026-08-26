@@ -182,6 +182,9 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Retention_Result_Kind;
    use type Put_Retention_Result_Kind;
    use type Retention_Mutation_Disposition;
+   use type Get_Object_Lock_Configuration_Result_Kind;
+   use type Put_Object_Lock_Configuration_Result_Kind;
+   use type Object_Lock_Configuration_Mutation_Disposition;
    use type Create_Multipart_Result_Kind;
    use type Multipart_Creation_Disposition;
    use type HTTP_Client.Admission_Certainty;
@@ -5175,6 +5178,32 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Content_MD5 => "*", Keep_Open => False);
          Serve
            (HTTP_Response
+              ("200 OK", "",
+               "x-amz-request-charged: requester" & CRLF),
+            "PUT", "/composable-lock?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Request_Payer => "requester");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "PUT", "/composable-lock?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "PUT", "/sync-lock?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
+              --  Test-only whitespace body is semantically bodyless but one
+              --  byte above the paired 64-byte operation sink ceiling.
+              ("200 OK", String'(1 .. 65 => ' ')),
+            "PUT", "/bounded-lock?object-lock",
+            Expected_Body_Root => "<ObjectLockConfiguration",
+            Expected_Content_MD5 => "*");
+         Serve
+           (HTTP_Response
               ("200 OK", "<AccelerateConfiguration/>",
                "x-amz-request-charged: requester" & CRLF &
                "x-amz-request-charged: requester" & CRLF),
@@ -5365,6 +5394,24 @@ procedure S3_HTTP_Socket_Corpus is
                  String'(1 .. 14 => ' ') &
                  "</ObjectLockConfiguration>"),
             "GET", "/example-bucket?object-lock");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ObjectLockConfiguration>" &
+                 "<ObjectLockEnabled>Enabled</ObjectLockEnabled>" &
+                 "</ObjectLockConfiguration>"),
+            "GET", "/composable-lock?object-lock");
+         Serve
+           (HTTP_Response ("403 Forbidden", Error_XML),
+            "GET", "/composable-lock?object-lock");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<ObjectLockConfiguration>" &
+                 "<ObjectLockEnabled>Enabled</ObjectLockEnabled>" &
+                 "</ObjectLockConfiguration>"),
+            "GET", "/sync-lock?object-lock");
+         Serve
+           (HTTP_Response ("200 OK", String'(1 .. 65 => ' ')),
+            "GET", "/bounded-lock?object-lock");
          Serve
            (HTTP_Response
               ("403 Forbidden", Error_XML,
@@ -16178,6 +16225,11 @@ procedure S3_HTTP_Socket_Corpus is
                end if;
             end Must_Reject_Put_Lock_Configuration;
          begin
+            Buckets_Testing.
+              Check_Object_Lock_Configuration_Pre_Admission_Rejection
+                (HTTP'Access, Prepared,
+                 --  Test/reference loopback budget, not production policy.
+                 HTTP_Client.Deadline_After (5.0));
             declare
                Result : constant
                  Low_Level.Put_Object_Lock_Configuration_Outcome :=
@@ -16263,6 +16315,121 @@ procedure S3_HTTP_Socket_Corpus is
                if not Ambiguous then
                   raise Program_Error with
                     "lost PutObjectLockConfiguration was not ambiguous";
+               end if;
+            end;
+         end;
+         declare
+            --  Test/reference payload mirrors the maintained low-level wire
+            --  fixture; 30 days is not a production retention policy.
+            Value : constant Object_Lock.Object_Lock_Configuration :=
+              (Is_Set  => True,
+               Enabled => Object_Lock.Object_Lock_Enabled,
+               Rule    =>
+                 (Is_Set => True,
+                  Default_Value =>
+                    (Is_Set => True,
+                     Mode   => Object_Lock.Governance_Retention,
+                     Days   =>
+                       (Is_Set => True,
+                        Text => US.To_Unbounded_String ("30")),
+                     Years  => (others => <>))));
+            Parameters : Low_Level.Put_Object_Lock_Configuration_Parameters :=
+              (Request_Payer => US.To_Unbounded_String ("requester"),
+               others => <>);
+            --  Derived capacity: provider parent, HTTP exchange, and HTTP's
+            --  one active transport child are the only simultaneous items.
+            Set : aliased Flyology.Operations.Completion_Set (3);
+         begin
+            declare
+               Operation : Put_Object_Lock_Configuration_Operation :=
+                 Put_Object_Lock_Configuration
+                   (Set'Access, HTTP'Access, Origin, "composable-lock", Value,
+                    Parameters, Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Put_Object_Lock_Configuration_Result;
+            begin
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                   Put_Object_Lock_Configuration_Response_Available
+                 or else Result.Disposition /=
+                   Object_Lock_Configuration_Mutation_Completed
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Lock_Configuration_Updated
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /= "requester"
+               then
+                  raise Program_Error with
+                    "composable PutObjectLockConfiguration mismatch";
+               end if;
+
+               Parameters := (others => <>);
+               Put_Object_Lock_Configuration
+                 (HTTP'Access, Origin, "composable-lock", Value, Parameters,
+                  Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                   Put_Object_Lock_Configuration_Response_Available
+                 or else Result.Disposition /=
+                   Object_Lock_Configuration_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Put_Object_Lock_Configuration_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "established PutObjectLockConfiguration restart mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Put_Object_Lock_Configuration_Result :=
+                 Put_Object_Lock_Configuration
+                   (HTTP, Origin, "sync-lock", Value, (others => <>),
+                    Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                   Put_Object_Lock_Configuration_Response_Available
+                 or else Result.Disposition /=
+                   Object_Lock_Configuration_Mutation_Completed
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Lock_Configuration_Updated
+               then
+                  raise Program_Error with
+                    "typed synchronous PutObjectLockConfiguration mismatch";
+               end if;
+            end;
+
+            declare
+               Operation : Put_Object_Lock_Configuration_Operation :=
+                 Put_Object_Lock_Configuration
+                   (Set'Access, HTTP'Access, Origin, "bounded-lock", Value,
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Put_Object_Lock_Configuration_Result;
+            begin
+               --  Test-only ceiling forces the composable sink failure path;
+               --  production retains the shared S3 XML document limit.
+               Buckets_Testing.Set_Response_Limit (Operation, 64);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Object_Lock_Configuration_Exchange_Failed
+                 or else Result.Disposition /=
+                   Object_Lock_Configuration_Mutation_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded composable PutObjectLockConfiguration mismatch";
                end if;
             end;
          end;
@@ -16842,6 +17009,98 @@ procedure S3_HTTP_Socket_Corpus is
                Small_Limits => True);
          end;
          declare
+            --  Derived capacity: provider parent, HTTP exchange, and HTTP's
+            --  one active transport child are the only simultaneous items.
+            Set : aliased Flyology.Operations.Completion_Set (3);
+         begin
+            declare
+               Operation : Get_Object_Lock_Configuration_Operation :=
+                 Get_Object_Lock_Configuration
+                   (Set'Access, HTTP'Access, Origin, "composable-lock",
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Get_Object_Lock_Configuration_Result;
+            begin
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                   Get_Object_Lock_Configuration_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Lock_Configuration_Found
+                 or else Result.Response.Configuration.Enabled /=
+                   Object_Lock.Object_Lock_Enabled
+               then
+                  raise Program_Error with
+                    "composable GetObjectLockConfiguration mismatch";
+               end if;
+
+               Get_Object_Lock_Configuration
+                 (HTTP'Access, Origin, "composable-lock", (others => <>),
+                  Identity,
+                  --  Test/reference loopback budget, not production policy.
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                   Get_Object_Lock_Configuration_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Object_Lock_Configuration_Rejected
+                 or else US.To_String (Result.Response.Error.Code) /=
+                   "AccessDenied"
+               then
+                  raise Program_Error with
+                    "established GetObjectLockConfiguration restart mismatch";
+               end if;
+            end;
+
+            declare
+               Result : constant Get_Object_Lock_Configuration_Result :=
+                 Get_Object_Lock_Configuration
+                   (HTTP, Origin, "sync-lock", (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                   Get_Object_Lock_Configuration_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Object_Lock_Configuration_Found
+                 or else Result.Response.Configuration.Enabled /=
+                   Object_Lock.Object_Lock_Enabled
+               then
+                  raise Program_Error with
+                    "typed synchronous GetObjectLockConfiguration mismatch";
+               end if;
+            end;
+
+            declare
+               Operation : Get_Object_Lock_Configuration_Operation :=
+                 Get_Object_Lock_Configuration
+                   (Set'Access, HTTP'Access, Origin, "bounded-lock",
+                    (others => <>), Identity,
+                    --  Test/reference loopback budget, not production policy.
+                    HTTP_Client.Deadline_After (5.0));
+               Result : Get_Object_Lock_Configuration_Result;
+            begin
+               --  Test-only ceiling forces the composable sink failure path;
+               --  production retains the shared S3 XML document limit.
+               Buckets_Testing.Set_Response_Limit (Operation, 64);
+               Flyology.Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Object_Lock_Configuration_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded composable GetObjectLockConfiguration mismatch";
+               end if;
+            end;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Delete_Bucket_CORS
                 (Origin, Low_Level.Path_Style, "example-bucket",
@@ -16952,6 +17211,7 @@ begin
    Buckets_Testing.Check_Ownership_Controls_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Encryption_Result_Corpus;
    Buckets_Testing.Check_Bucket_CORS_Result_Corpus;
+   Buckets_Testing.Check_Object_Lock_Configuration_Certainty_Corpus;
    Buckets_Testing.Check_Get_Bucket_Versioning_Result_Corpus;
    Buckets_Testing.Check_Put_Bucket_Versioning_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;

@@ -1,9 +1,9 @@
 # GetObjectLockConfiguration client qualification
 
-This record qualifies the strict bounded synchronous client and corpus for
-`GetObjectLockConfiguration`. It does not claim Object Lock persistence in a
-Flyology backend, an authenticated Flyology server route, or external-server
-interoperability.
+This record qualifies the strict bounded provider-owned composable and
+synchronous clients plus corpus for `GetObjectLockConfiguration`. It does not
+claim Object Lock persistence in a Flyology backend, an authenticated Flyology
+server route, or external-server interoperability.
 
 ## Pinned authority and inventory
 
@@ -32,18 +32,21 @@ member/vector reference:
 python3 tools/verify-get-object-lock-configuration-preparation.py
 ```
 
-## Synchronous API and response contract
+## Provider-owned API and response contract
 
 `Client.Low_Level.Prepare_Get_Object_Lock_Configuration` validates the bucket
 and bounded owner precondition before transport. It projects only the two
 generated-model inputs, signs an empty payload, and supports path and
 virtual-hosted addressing.
 
-`Execute_Get_Object_Lock_Configuration` admits only a prepared request for
-this exact operation. It consumes one bounded whole response body and returns
-either the typed configuration or a strict typed S3 rejection. There is no
-transparent retry, helper task, retained request input, or operation-specific
-XML limit; the caller supplies the shared `S3.XML.Parse_Limits` policy.
+`Client.Low_Level.Get_Object_Lock_Configuration` starts only a prepared request
+for this exact operation and retains a caller-owned bounded response sink.
+`Client.Buckets.Get_Object_Lock_Configuration` colocates the limited
+constructor, operation-last reusable procedure, operation state, typed
+`Finish`, and parameter-record synchronous wait. The synchronous form waits on
+the same state machine. There is no transparent retry, helper task, retained
+request input, or operation-specific XML limit; the caller supplies the shared
+`S3.XML.Parse_Limits` policy.
 
 An empty successful body preserves absence of the modeled outer payload.
 Every nested container and leaf remains independently optional. Explicit enum
@@ -52,6 +55,10 @@ shapes establish no numeric bounds, the client validates signed decimal
 syntax and preserves the exact wire text rather than imposing a machine
 integer ceiling or normalization. It does not infer relationships among
 `Mode`, `Days`, and `Years`.
+
+The typed provider layer classifies both `NoSuchBucket` and AWS's documented
+`ObjectLockConfigurationNotFoundError` as not found. Unknown status/code pairs
+remain corrupt or invalid rather than acquiring invented retry semantics.
 
 The strict parser rejects wrong roots, foreign or mixed namespace styles,
 attributes, unknown or duplicate members, nested leaf content,
@@ -70,10 +77,13 @@ representative error statuses; and exact/one-past document, depth, element,
 and text limits. Cross-operation execution is rejected before HTTP.
 
 The consolidated raw-loopback corpus adds signed success and rejection
-exchanges, physical identifier multiplicity and emptiness, malformed and
-transport-oversized success bodies, and identical execution under native and
-Flyology lightweight task owners. The root gate repeats the deterministic and
-socket paths three times.
+exchanges, limited construction, operation-last restart, typed synchronous
+parity, wrong-prepared-operation rejection before admission, physical
+identifier multiplicity and emptiness, malformed and transport-oversized
+success bodies, an actual one-past composable sink failure, every HTTP terminal
+failure across all admission-certainty values, inconsistent success certainty,
+and identical execution under native and Flyology lightweight task owners. The
+root gate repeats the deterministic and socket paths three times.
 
 The machine ledger records `GetObjectLockConfiguration` as `missing / covered
 / missing / covered`. Client and corpus evidence do not manufacture backend
@@ -90,8 +100,8 @@ required for this client-only closure.
 
 ## Gate evidence
 
-The final warning-strict root gate passed 40/40 AUnit tests with zero failed
-assertions or unexpected errors, the 88-case files crash matrix, 320 checksum
+The final warning-strict root gate passed 41/41 AUnit tests with zero failed
+assertions or unexpected errors, the 126-case files crash matrix, 320 checksum
 oracle vectors, 210 chunk boundaries, the strict server application corpus,
 and three repetitions of the deterministic configuration corpus and
 consolidated native/lightweight signed socket corpus. The SQLite wrapper,
@@ -102,8 +112,10 @@ The inventory verifier reported two request members, one top-level output
 member, six nested members, exact enum domains, both unbounded integer shapes,
 and 13 reciprocal vectors; the 116-operation coverage verifier and its
 negative oracle also passed. GNATdoc 26 completed with a nonempty
-object-storage API index containing every new configuration type, field, enum
-value, parameter, exception, and return value.
+object-storage API index containing every new configuration and operation type,
+overload, field, enum value, parameter, exception, and return value. The
+43,674-line log contains no warning for the new public declarations and no
+internal error or bounded-channel diagnostic.
 
 The latest serialized proof campaign remains the 2026-08-24 936/936 result:
 180 flow checks and 756 prover checks across all nine manifest units, with zero

@@ -24,6 +24,8 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
    use type Low_Level.Put_Bucket_Tagging_Outcome_Kind;
    use type Low_Level.Get_Bucket_Tagging_Outcome_Kind;
    use type Low_Level.Delete_Bucket_Tagging_Outcome_Kind;
+   use type Low_Level.Get_Object_Lock_Configuration_Outcome_Kind;
+   use type Low_Level.Put_Object_Lock_Configuration_Outcome_Kind;
 
    procedure Check_List_Buckets_Response
      (Status  : Flyology.HTTP.Status_Code;
@@ -1927,6 +1929,267 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
          end loop;
       end loop;
    end Check_Bucket_CORS_Result_Corpus;
+
+   procedure Check_Object_Lock_Configuration_Certainty_Corpus is
+      type Failure_Kind_Array is array (Positive range <>) of
+        HTTP_Client.Exchange_Result_Kind;
+      Failure_Kinds : constant Failure_Kind_Array :=
+        (HTTP_Client.Pre_Admission_Rejected,
+         HTTP_Client.Cancelled,
+         HTTP_Client.Timed_Out,
+         HTTP_Client.Client_Unavailable,
+         HTTP_Client.Connection_Failed,
+         HTTP_Client.Transport_Failed,
+         HTTP_Client.Request_Source_Failed,
+         HTTP_Client.Response_Invalid,
+         HTTP_Client.Response_Body_Too_Large,
+         HTTP_Client.Response_Sink_Failed);
+
+      function Error_Response
+        (Code : String) return S3.Errors.Error_Response is
+        (Code       => US.To_Unbounded_String (Code),
+         Message    => US.Null_Unbounded_String,
+         Resource   => US.Null_Unbounded_String,
+         Request_ID => US.Null_Unbounded_String,
+         Host_ID    => US.Null_Unbounded_String);
+
+      function Expected_Failure
+        (Kind : HTTP_Client.Exchange_Result_Kind) return Failure_Reason is
+        (case Kind is
+            when HTTP_Client.Pre_Admission_Rejected => Invalid_Request,
+            when HTTP_Client.Cancelled => Cancelled,
+            when HTTP_Client.Timed_Out => Timed_Out,
+            when HTTP_Client.Client_Unavailable => Client_Unavailable,
+            when HTTP_Client.Connection_Failed => Connection_Failed,
+            when HTTP_Client.Transport_Failed => Transport_Failed,
+            when HTTP_Client.Request_Source_Failed => Request_Source_Failed,
+            when HTTP_Client.Response_Invalid |
+                 HTTP_Client.Response_Body_Too_Large |
+                 HTTP_Client.Response_Sink_Failed =>
+              Corrupt_Or_Invalid_Response,
+            when HTTP_Client.Response_Complete =>
+              raise Program_Error with "complete response is not a failure");
+
+      function Expected_Disposition
+        (Kind      : HTTP_Client.Exchange_Result_Kind;
+         Admission : HTTP_Client.Admission_Certainty)
+         return Object_Lock_Configuration_Mutation_Disposition is
+        (if Kind = HTTP_Client.Cancelled
+           and then Admission = HTTP_Client.Not_Admitted
+         then Object_Lock_Configuration_Mutation_Cancelled_Before_Admission
+         elsif Admission = HTTP_Client.Not_Admitted
+         then Object_Lock_Configuration_Mutation_Definitely_Not_Applied
+         else Object_Lock_Configuration_Mutation_Outcome_Unknown);
+
+      function Get_Value
+        (Status : Flyology.HTTP.Status_Code;
+         Code   : String := "")
+         return Low_Level.Get_Object_Lock_Configuration_Outcome is
+        (if Status = 200
+         then (Kind => Low_Level.Object_Lock_Configuration_Found,
+               Status => Status, Configuration => (others => <>))
+         else (Kind => Low_Level.Get_Object_Lock_Configuration_Rejected,
+               Status => Status, Error => Error_Response (Code)));
+
+      function Put_Value
+        (Status : Flyology.HTTP.Status_Code;
+         Code   : String := "")
+         return Low_Level.Put_Object_Lock_Configuration_Outcome is
+        (if Status = 200
+         then (Kind => Low_Level.Object_Lock_Configuration_Updated,
+               Status => Status, Result => (others => <>))
+         else (Kind => Low_Level.Put_Object_Lock_Configuration_Rejected,
+               Status => Status, Error => Error_Response (Code)));
+
+      procedure Check_Get_Response
+        (Status  : Flyology.HTTP.Status_Code;
+         Code    : String;
+         Failure : Failure_Reason)
+      is
+         Result : constant Get_Object_Lock_Configuration_Result :=
+           Normalize_Get_Object_Lock_Configuration_Response
+             (Get_Value (Status, Code), HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Get_Object_Lock_Configuration_Response_Available
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "GetObjectLockConfiguration response normalization mismatch";
+         end if;
+      end Check_Get_Response;
+
+      procedure Check_Put_Response
+        (Status      : Flyology.HTTP.Status_Code;
+         Code        : String;
+         Disposition : Object_Lock_Configuration_Mutation_Disposition;
+         Failure     : Failure_Reason)
+      is
+         Result : constant Put_Object_Lock_Configuration_Result :=
+           Normalize_Put_Object_Lock_Configuration_Response
+             (Put_Value (Status, Code), HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Put_Object_Lock_Configuration_Response_Available
+           or else Result.Disposition /= Disposition
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "PutObjectLockConfiguration response normalization mismatch";
+         end if;
+      end Check_Put_Response;
+
+      procedure Check_Failure
+        (Kind      : HTTP_Client.Exchange_Result_Kind;
+         Admission : HTTP_Client.Admission_Certainty)
+      is
+         Get_Result : constant Get_Object_Lock_Configuration_Result :=
+           Normalize_Get_Object_Lock_Configuration_Failure
+             (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+         Put_Result : constant Put_Object_Lock_Configuration_Result :=
+           Normalize_Put_Object_Lock_Configuration_Failure
+             (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+      begin
+         if Get_Result.Kind /= Get_Object_Lock_Configuration_Exchange_Failed
+           or else Get_Result.Failure /= Expected_Failure (Kind)
+           or else Get_Result.Admission /= Admission
+           or else Get_Result.HTTP_Result /= Kind
+           or else Put_Result.Kind /=
+             Put_Object_Lock_Configuration_Exchange_Failed
+           or else Put_Result.Disposition /=
+             Expected_Disposition (Kind, Admission)
+           or else Put_Result.Failure /= Expected_Failure (Kind)
+           or else Put_Result.Admission /= Admission
+           or else Put_Result.HTTP_Result /= Kind
+         then
+            raise Program_Error with
+              "Object Lock configuration exchange normalization mismatch";
+         end if;
+      end Check_Failure;
+   begin
+      Check_Get_Response (200, "", No_Failure);
+      Check_Get_Response (400, "InvalidBucketName", Invalid_Request);
+      Check_Get_Response
+        (401, "InvalidAccessKeyId", Authentication_Failed);
+      Check_Get_Response (403, "AccessDenied", Authorization_Failed);
+      Check_Get_Response (404, "NoSuchBucket", Not_Found);
+      Check_Get_Response
+        (404, "ObjectLockConfigurationNotFoundError", Not_Found);
+      Check_Get_Response
+        (409, "OperationAborted", Unavailable_Or_Retryable);
+      Check_Get_Response (403, "", Corrupt_Or_Invalid_Response);
+
+      Check_Put_Response
+        (200, "", Object_Lock_Configuration_Mutation_Completed, No_Failure);
+      Check_Put_Response
+        (400, "MalformedXML",
+         Object_Lock_Configuration_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Put_Response
+        (403, "AccessDenied",
+         Object_Lock_Configuration_Mutation_Definitely_Not_Applied,
+         Authorization_Failed);
+      Check_Put_Response
+        (404, "NoSuchBucket",
+         Object_Lock_Configuration_Mutation_Definitely_Not_Applied,
+         Not_Found);
+      Check_Put_Response
+        (409, "InvalidBucketState",
+         Object_Lock_Configuration_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Put_Response
+        (409, "OperationAborted",
+         Object_Lock_Configuration_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Put_Response
+        (500, "InternalError",
+         Object_Lock_Configuration_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Put_Response
+        (403, "", Object_Lock_Configuration_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+
+      for Admission in
+        HTTP_Client.Not_Admitted .. HTTP_Client.Possibly_Admitted
+      loop
+         declare
+            Get_Result : constant Get_Object_Lock_Configuration_Result :=
+              Normalize_Get_Object_Lock_Configuration_Response
+                (Get_Value (200), Admission);
+            Put_Result : constant Put_Object_Lock_Configuration_Result :=
+              Normalize_Put_Object_Lock_Configuration_Response
+                (Put_Value (200), Admission);
+         begin
+            if Get_Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Put_Result.Disposition /=
+                Object_Lock_Configuration_Mutation_Outcome_Unknown
+              or else Put_Result.Failure /= Corrupt_Or_Invalid_Response
+            then
+               raise Program_Error with
+                 "inconsistent Object Lock certainty was accepted";
+            end if;
+         end;
+      end loop;
+
+      for Kind of Failure_Kinds loop
+         for Admission in HTTP_Client.Admission_Certainty loop
+            Check_Failure (Kind, Admission);
+         end loop;
+      end loop;
+   end Check_Object_Lock_Configuration_Certainty_Corpus;
+
+   procedure Check_Object_Lock_Configuration_Pre_Admission_Rejection
+     (Client   : not null access Flyology.HTTP.Client.Client;
+      Prepared : Flyology.Object_Storage.Client.Low_Level.Prepared_Request;
+      Deadline : Flyology.HTTP.Client.Monotonic_Deadline)
+   is
+      --  Derived capacity: test parent, rejected HTTP exchange, and the
+      --  otherwise possible transport child bound this negative oracle.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+      Wrong : aliased Low_Level.Prepared_Request := Prepared;
+      Get_Operation : aliased Get_Object_Lock_Configuration_Operation
+        (Set'Access, Client, null);
+      Put_Operation : aliased Put_Object_Lock_Configuration_Operation
+        (Set'Access, Client, null);
+      Get_Rejected : Boolean := False;
+      Put_Rejected : Boolean := False;
+   begin
+      begin
+         Low_Level.Get_Object_Lock_Configuration
+           (Client, Wrong'Access, Get_Operation'Access, Deadline, null,
+            Get_Operation.Child);
+      exception
+         when Low_Level.Invalid_Request => Get_Rejected := True;
+      end;
+      begin
+         Low_Level.Put_Object_Lock_Configuration
+           (Client, Wrong'Access, Put_Operation'Access, Put_Operation'Access,
+            Deadline, null, Put_Operation.Child);
+      exception
+         when Low_Level.Invalid_Request => Put_Rejected := True;
+      end;
+      if not Get_Rejected or else not Put_Rejected
+        or else Flyology.Operations.Is_Active (Get_Operation.Child)
+        or else Flyology.Operations.Is_Active (Put_Operation.Child)
+      then
+         raise Program_Error with
+           "Object Lock wrong prepared operation crossed admission";
+      end if;
+   end Check_Object_Lock_Configuration_Pre_Admission_Rejection;
+
+   procedure Set_Response_Limit
+     (Operation : in out Get_Object_Lock_Configuration_Operation;
+      Maximum   : Natural) is
+   begin
+      Operation.Response_Limit := Maximum;
+   end Set_Response_Limit;
+
+   procedure Set_Response_Limit
+     (Operation : in out Put_Object_Lock_Configuration_Operation;
+      Maximum   : Natural) is
+   begin
+      Operation.Response_Limit := Maximum;
+   end Set_Response_Limit;
 
    procedure Check_Ownership_Controls_Certainty_Corpus is
       type Failure_Kind_Array is array (Positive range <>) of

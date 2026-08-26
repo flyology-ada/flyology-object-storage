@@ -13,7 +13,8 @@ Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
 object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
 non-replaying PutObjectLegalHold, plus bounded GetObjectRetention with
-non-replaying PutObjectRetention. The
+non-replaying PutObjectRetention, and bounded GetObjectLockConfiguration with
+non-replaying PutObjectLockConfiguration. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -102,11 +103,13 @@ The implemented operation order is:
 30. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
 31. bounded `Get_Legal_Hold` and non-replaying `Put_Legal_Hold`;
-32. bounded `Get_Retention` and non-replaying `Put_Retention`.
+32. bounded `Get_Retention` and non-replaying `Put_Retention`;
+33. bounded `Get_Object_Lock_Configuration` and non-replaying
+    `Put_Object_Lock_Configuration`.
 
-The provider surface contains 49 domain operations: 19 in `Client.Objects`,
-22 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 46 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 51 domain operations: 19 in `Client.Objects`,
+24 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 48 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -258,6 +261,18 @@ Put certainty distinguishes exact modeled non-application from ambiguous
 post-admission failure; an unknown result requires caller-selected,
 generation-bound GetObjectRetention reconciliation before any retry. Neither
 operation retains request inputs or starts a helper task.
+GetObjectLockConfiguration and PutObjectLockConfiguration are colocated in
+`Client.Buckets` because the exact S3 resource is the bucket-only
+`/{Bucket}?object-lock` target. The Get parent retains one bounded same-response
+XML document and preserves every optional configuration layer. The Put parent
+owns its presence-preserving serialized XML and exposes it once through a
+non-rewindable source. Both provide a limited constructor, operation-last
+reusable initiation, typed Finish, and a synchronous overload that waits on
+the identical state machine. Put certainty distinguishes exact modeled
+non-application from ambiguous post-admission failure; an unknown result
+requires caller-selected GetObjectLockConfiguration reconciliation before any
+retry. Neither form retains caller inputs, starts a helper task, or retries the
+mutation.
 SetPublicAccessBlock owns the exact serialized four-field configuration in a
 non-rewindable source, while DeletePublicAccessBlock supplies a non-rewindable
 known-empty source. Neither mutation is replayed after possible admission.
@@ -497,6 +512,8 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Get_Public_Access_Block`, `Get_Ownership_Controls`, and
 `Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`, and
 `Delete_Encryption`, and `Get_CORS`, `Set_CORS`, and `Delete_CORS` overloads
+and the `Get_Object_Lock_Configuration` and
+`Put_Object_Lock_Configuration` overloads
 are literal waits on the same provider-owned state machines and retain their
 typed certainty, capacity,
 metadata, and ownership results. The established raising `Delete_Outcome` and
