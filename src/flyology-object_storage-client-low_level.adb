@@ -25,6 +25,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
      Flyology.Object_Storage.S3.Bucket_Controls;
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
    package Lifecycle renames Flyology.Object_Storage.S3.Lifecycle;
+   package Notifications renames Flyology.Object_Storage.S3.Notifications;
    package Metadata_Tables renames
      Flyology.Object_Storage.S3.Metadata_Tables;
    package Encoding renames Flyology.Object_Storage.S3.SigV4_Encoding;
@@ -8331,6 +8332,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
          US.Null_Unbounded_String, False, Identity, Region, Timestamp));
 
+   function Prepare_Get_Bucket_Notification_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Bucket_Notification_Configuration_Operation,
+         Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
+         US.Null_Unbounded_String, False, Identity, Region, Timestamp));
+
    function Prepare_Get_Bucket_ACL
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
@@ -8371,6 +8382,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
    begin
       Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      --  The pinned service model declares 200 as the sole success response;
+      --  every other physical status is decoded through the strict S3 error
+      --  envelope so callers never infer success from an unmodeled status.
       if Status = 200 then
          if Request_Charged'Length > 0
            and then Request_Charged /= "requester"
@@ -8655,6 +8669,41 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with
            "malformed GetBucketLifecycleConfiguration response";
    end Decode_Get_Bucket_Lifecycle_Configuration_Response;
+
+   function Decode_Get_Bucket_Notification_Configuration_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Notification_Configuration_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      if Status = 200 then
+         if Payload'Length = 0 then
+            raise Invalid_Response with
+              "empty GetBucketNotificationConfiguration response";
+         end if;
+         return
+           (Kind          => Bucket_Control_Found,
+            Status        => Status,
+            Configuration => Notifications.Parse (Payload, Limits),
+            Error         => (others => <>));
+      end if;
+      return
+        (Kind   => Get_Bucket_Control_Rejected,
+         Status => Status,
+         Configuration =>
+           (Topics              => <>,
+            Queues              => <>,
+            Lambdas             => <>,
+            Event_Bridge_Is_Set => False),
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Notifications.Malformed_Notification |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetBucketNotificationConfiguration response";
+   end Decode_Get_Bucket_Notification_Configuration_Response;
 
    function Decode_Get_Bucket_ACL_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
@@ -8970,6 +9019,24 @@ package body Flyology.Object_Storage.Client.Low_Level is
            (Raw.Transition_Default_Minimum_Object_Size), Limits);
    end Execute_Get_Bucket_Lifecycle_Configuration;
 
+   function Execute_Get_Bucket_Notification_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Notification_Configuration_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared,
+           Model.Get_Bucket_Notification_Configuration_Operation,
+           False, False, Timeout, Token, Limits);
+   begin
+      return Decode_Get_Bucket_Notification_Configuration_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_Get_Bucket_Notification_Configuration;
+
    function Execute_Get_Bucket_ACL
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
@@ -9022,7 +9089,12 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Timestamp       : String;
       One_Shot_Source : Boolean;
       Transition_Default_Minimum_Object_Size : String := "";
-      Require_Checksum : Boolean := False) return Prepared_Request
+      Require_Checksum : Boolean := False;
+      --  Neutral private omission state used by all operations except the
+      --  current notification PUT, whose model owns this exact header.
+      Skip_Destination_Validation : Optional_Boolean := (others => <>);
+      Has_Skip_Destination_Validation : Boolean := False)
+      return Prepared_Request
    is
       Supplied_MD5 : constant String :=
         US.To_String (Parameters.Content_MD5);
@@ -9043,6 +9115,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Boolean'Pos (Owner'Length > 0) +
            Boolean'Pos
              (Transition_Default_Minimum_Object_Size'Length > 0) +
+           Boolean'Pos (Skip_Destination_Validation.Is_Set) +
            2 * Boolean'Pos (Checksum'Length > 0));
       Last : Natural := 0;
    begin
@@ -9057,6 +9130,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else (not Has_Content_MD5 and then Supplied_MD5'Length > 0)
         or else
           (not Has_Confirm_Remove and then Confirm_Remove_Self_Access.Is_Set)
+        or else
+          (not Has_Skip_Destination_Validation
+           and then Skip_Destination_Validation.Is_Set)
         or else (Has_Content_MD5 and then not Wire_Core.Valid_Base64 (MD5, 16))
         or else not Valid_List_Response_Header_Text (Owner)
         or else (Checksum'Length > 0 and then not Algorithm.Valid)
@@ -9094,6 +9170,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
            SigV4.Pair
              ("x-amz-transition-default-minimum-object-size",
               Transition_Default_Minimum_Object_Size);
+      end if;
+      if Skip_Destination_Validation.Is_Set then
+         Last := Last + 1;
+         Headers (Last) :=
+           SigV4.Pair
+             ("x-amz-skip-destination-validation",
+              (if Skip_Destination_Validation.Value then "true" else "false"));
       end if;
       if Checksum'Length > 0 then
          declare
@@ -9290,6 +9373,35 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with
            "invalid PutBucketLifecycleConfiguration payload";
    end Prepare_Put_Bucket_Lifecycle_Configuration;
+
+   function Prepare_Put_Bucket_Notification_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : Notifications.Notification_Configuration;
+      Parameters : Put_Bucket_Notification_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request
+   is
+      Common : constant Bucket_Control_Mutation_Parameters :=
+        (Content_MD5           => US.Null_Unbounded_String,
+         Checksum_Algorithm    => US.Null_Unbounded_String,
+         Expected_Bucket_Owner => Parameters.Expected_Bucket_Owner);
+   begin
+      return Prepare_Bucket_Control_Mutation
+        (Model.Put_Bucket_Notification_Configuration_Operation, "PUT",
+         "notification", Origin, Style, Bucket,
+         Notifications.Serialize (Value, Limits), False, (others => <>),
+         False, Common, Identity, Region, Timestamp,
+         One_Shot_Source => True,
+         Skip_Destination_Validation =>
+           Parameters.Skip_Destination_Validation,
+         Has_Skip_Destination_Validation => True);
+   exception
+      when Notifications.Malformed_Notification =>
+         raise Invalid_Request with
+           "invalid PutBucketNotificationConfiguration payload";
+   end Prepare_Put_Bucket_Notification_Configuration;
 
    function Prepare_Put_Bucket_CORS
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -9593,6 +9705,17 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with
            "lifecycle mutation response exceeds configured limit";
    end Execute_Put_Bucket_Lifecycle_Configuration;
+
+   function Execute_Put_Bucket_Notification_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome is
+     (Execute_Bucket_Control_Mutation
+        (Client, Prepared,
+         Model.Put_Bucket_Notification_Configuration_Operation,
+         Timeout, Token, Limits));
 
    function Execute_Put_Bucket_CORS
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -13528,6 +13651,26 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Token, Operation);
    end Get_Bucket_Lifecycle_Configuration;
 
+   procedure Get_Bucket_Notification_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Get_Bucket_Control_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Get_Bucket_Notification_Configuration_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Sink
+        (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
+         Token, Operation);
+   end Get_Bucket_Notification_Configuration;
+
    procedure Create_Bucket_Metadata_Table_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
@@ -13703,6 +13846,28 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
          Deadline, Token, Operation);
    end Put_Bucket_Lifecycle_Configuration;
+
+   procedure Put_Bucket_Notification_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Put_Bucket_Notification_Configuration_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Bucket_Notification_Configuration;
 
    procedure Put_Bucket_CORS
      (Client    : not null access Flyology.HTTP.Client.Client;

@@ -30,6 +30,7 @@ with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Metadata_Tables;
+with Flyology.Object_Storage.S3.Notifications;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Model;
 with Flyology.Object_Storage.S3.Multipart;
@@ -65,6 +66,7 @@ procedure S3_HTTP_Socket_Corpus is
    package ACL renames Flyology.Object_Storage.S3.ACL;
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
    package Lifecycle renames Flyology.Object_Storage.S3.Lifecycle;
+   package Notifications renames Flyology.Object_Storage.S3.Notifications;
    package XML renames Flyology.Object_Storage.S3.XML;
    package Metadata_Tables renames
      Flyology.Object_Storage.S3.Metadata_Tables;
@@ -840,6 +842,7 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_SDK_Checksum : String := "";
          Expected_Checksum_CRC32 : String := "";
          Expected_Transition_Default_Minimum : String := "";
+         Expected_Skip_Destination_Validation : String := "";
          Expected_Cache_Control : String := "";
          Expected_Content_Disposition : String := "";
          Expected_Content_Encoding : String := "";
@@ -1257,6 +1260,7 @@ procedure S3_HTTP_Socket_Corpus is
                  elsif Expected_Request_Payer'Length > 0
                    or else Expected_Bucket_Owner'Length > 0
                    or else Expected_Object_Attributes'Length > 0
+                   or else Expected_Skip_Destination_Validation'Length > 0
                  then
                     Header_Value (Lower, "x-amz-request-payer") /=
                       Ada.Characters.Handling.To_Lower
@@ -1269,6 +1273,10 @@ procedure S3_HTTP_Socket_Corpus is
                       (Lower, "x-amz-optional-object-attributes") /=
                         Ada.Characters.Handling.To_Lower
                           (Expected_Object_Attributes)
+                    or else Header_Value
+                      (Lower, "x-amz-skip-destination-validation") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Skip_Destination_Validation)
                     or else Ada.Strings.Fixed.Index
                       (Lower,
                        "signedheaders=host;x-amz-content-sha256;" &
@@ -1281,6 +1289,9 @@ procedure S3_HTTP_Socket_Corpus is
                         else "") &
                        (if Expected_Request_Payer'Length > 0 then
                            ";x-amz-request-payer"
+                        else "") &
+                       (if Expected_Skip_Destination_Validation'Length > 0
+                        then ";x-amz-skip-destination-validation"
                         else "")) = 0
                  elsif Expected_If_Match'Length > 0
                    or else Expected_If_Modified_Since'Length > 0
@@ -5088,6 +5099,39 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
+              ("200 OK", "<NotificationConfiguration>" &
+                 "<TopicConfiguration><Topic>socket-topic</Topic>" &
+                 "<Event>s3:ObjectCreated:Put</Event>" &
+                 "</TopicConfiguration></NotificationConfiguration>",
+               "x-amz-request-id: notification-request" & CRLF &
+               "x-amz-id-2: notification-host" & CRLF),
+            "GET", "/example-bucket?notification",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<NotificationConfiguration>" &
+                 "<EventBridgeConfiguration/>" &
+                 "</NotificationConfiguration>"),
+            "GET", "/typed-notification?notification",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<NotificationConfiguration>" &
+                 "<QueueConfiguration><Queue>socket-queue</Queue>" &
+                 "<Event>s3:ObjectRemoved:Delete</Event>" &
+                 "</QueueConfiguration></NotificationConfiguration>"),
+            "GET", "/composed-notification?notification",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("404 Not Found",
+               "<Error><Code>NoSuchBucket</Code>" &
+                 "<Message>missing</Message></Error>",
+               "x-amz-request-id: restarted-get-notification" & CRLF),
+            "GET", "/restart-notification?notification",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
               ("200 OK",
                "<GetBucketMetadataTableConfigurationResult>" &
                  "<MetadataTableConfigurationResult>" &
@@ -5652,6 +5696,34 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Checksum_CRC32 => "*",
             Expected_Transition_Default_Minimum =>
               "varies_by_storage_class");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket?notification",
+            Expected_Body_Root => "<NotificationConfiguration",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Skip_Destination_Validation => "false");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: typed-put-notification" & CRLF),
+            "PUT", "/typed-put-notification?notification",
+            Expected_Body_Root => "<NotificationConfiguration",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Skip_Destination_Validation => "false");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/composed-put-notification?notification",
+            Expected_Body_Root => "<NotificationConfiguration",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Skip_Destination_Validation => "false");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-put-notification" & CRLF),
+            "PUT", "/restart-put-notification?notification",
+            Expected_Body_Root => "<NotificationConfiguration",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Skip_Destination_Validation => "false");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT", "/typed-policy?policy",
             Expected_Body_Root => "typed-policy",
@@ -18207,6 +18279,88 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Notification_Configuration
+                (Origin, Low_Level.Path_Style, "example-bucket", Parameters,
+                 Identity, "us-east-1", "20130524T000000Z");
+            Result : constant
+              Low_Level.Get_Bucket_Notification_Configuration_Outcome :=
+                Low_Level.Execute_Get_Bucket_Notification_Configuration
+                  (HTTP, Prepared, 5.0, null, XML.Default_Limits);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Status /= 200
+              or else Result.Configuration.Topics.Length /= 1
+              or else US.To_String
+                (Result.Configuration.Topics.First_Element.Topic_ARN) /=
+                  "socket-topic"
+            then
+               raise Program_Error with
+                 "GetBucketNotificationConfiguration socket mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Notification_Result :=
+              Get_Notification_Configuration
+                (HTTP, Origin, "typed-notification", Parameters, Identity,
+                 "us-east-1", Low_Level.Path_Style, 5.0, null,
+                 XML.Default_Limits);
+         begin
+            if Result.Kind /= Get_Bucket_Notification_Response_Available
+              or else Result.Failure /= No_Failure
+              or else not Result.Response.Configuration.Event_Bridge_Is_Set
+            then
+               raise Program_Error with
+                 "typed GetBucketNotificationConfiguration mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_Notification_Result;
+         begin
+            declare
+               Operation : Get_Bucket_Notification_Operation :=
+                 Get_Notification_Configuration
+                   (Set'Access, HTTP'Access, Origin,
+                    "composed-notification", Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0), "us-east-1",
+                    Low_Level.Path_Style, XML.Default_Limits, null);
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Notification_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Configuration.Queues.Length /= 1
+               then
+                  raise Program_Error with
+                    "composed GetBucketNotificationConfiguration mismatch";
+               end if;
+               Get_Notification_Configuration
+                 (HTTP'Access, Origin, "restart-notification", Parameters,
+                  Identity, HTTP_Client.Deadline_After (5.0), "us-east-1",
+                  Low_Level.Path_Style, XML.Default_Limits, null, Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Notification_Response_Available
+                 or else Result.Failure /= Not_Found
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-get-notification"
+               then
+                  raise Program_Error with
+                    "restarted GetBucketNotificationConfiguration mismatch";
+               end if;
+            end;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Get_Bucket_Metadata_Table_Configuration
                 (Origin, Low_Level.Path_Style, "example-bucket",
@@ -19933,6 +20087,100 @@ procedure S3_HTTP_Socket_Corpus is
                if not Rejected then
                   raise Program_Error with
                     "PutBucketLifecycleConfiguration accepted ABAC request";
+               end if;
+            end;
+         end;
+         declare
+            function Configuration
+              return Notifications.Notification_Configuration is
+              (Notifications.Parse
+                 ("<NotificationConfiguration>" &
+                  "<TopicConfiguration><Topic>socket-topic</Topic>" &
+                  "<Event>s3:ObjectCreated:Put</Event>" &
+                  "</TopicConfiguration></NotificationConfiguration>",
+                  XML.Default_Limits));
+
+            Parameters : constant
+              Low_Level.Put_Bucket_Notification_Configuration_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"),
+                 Skip_Destination_Validation =>
+                   (Is_Set => True, Value => False));
+         begin
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Notification_Configuration
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Configuration, Parameters, Identity, "us-east-1",
+                    "20130524T000000Z", XML.Default_Limits);
+               Result : constant Low_Level.Put_Bucket_Control_Outcome :=
+                 Low_Level.Execute_Put_Bucket_Notification_Configuration
+                   (HTTP, Prepared, 5.0, null, XML.Default_Limits);
+            begin
+               if Result.Kind /= Low_Level.Bucket_Control_Updated
+                 or else Result.Status /= 200
+               then
+                  raise Program_Error with
+                    "low-level PutBucketNotificationConfiguration mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Put_Bucket_Notification_Result :=
+                 Buckets.Set_Notification_Configuration
+                   (HTTP, Origin, "typed-put-notification", Configuration,
+                    Parameters, Identity, "us-east-1",
+                    Low_Level.Path_Style, 5.0, null, XML.Default_Limits);
+            begin
+               if Result.Kind /= Put_Bucket_Notification_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Notification_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "typed-put-notification"
+               then
+                  raise Program_Error with
+                    "typed PutBucketNotificationConfiguration mismatch";
+               end if;
+            end;
+            declare
+               Set : aliased Operations.Completion_Set (3);
+               Result : Put_Bucket_Notification_Result;
+               Value : Notifications.Notification_Configuration :=
+                 Configuration;
+               Operation : Put_Bucket_Notification_Operation :=
+                 Set_Notification_Configuration
+                   (Set'Access, HTTP'Access, Origin,
+                    "composed-put-notification", Value, Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0), "us-east-1",
+                    Low_Level.Path_Style, XML.Default_Limits, null);
+            begin
+               Value.Topics.Clear;
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Notification_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Notification_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+               then
+                  raise Program_Error with
+                    "composed PutBucketNotificationConfiguration mismatch";
+               end if;
+               Set_Notification_Configuration
+                 (HTTP'Access, Origin, "restart-put-notification",
+                  Configuration, Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0), "us-east-1",
+                  Low_Level.Path_Style, XML.Default_Limits, null, Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Notification_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Notification_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-put-notification"
+               then
+                  raise Program_Error with
+                    "restarted PutBucketNotificationConfiguration mismatch";
                end if;
             end;
          end;
@@ -22353,6 +22601,7 @@ begin
    Buckets_Testing.Check_Bucket_Encryption_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Lifecycle_Result_Corpus;
    Buckets_Testing.Check_Put_Bucket_Lifecycle_Result_Corpus;
+   Buckets_Testing.Check_Bucket_Notification_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_ACL_Result_Corpus;
    Buckets_Testing.Check_Metadata_Table_Configuration_Result_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Lifecycle_Certainty_Corpus;

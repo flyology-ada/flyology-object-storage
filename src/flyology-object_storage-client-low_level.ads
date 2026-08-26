@@ -20,6 +20,7 @@ with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
 with Flyology.Object_Storage.S3.Model;
+with Flyology.Object_Storage.S3.Notifications;
 with Flyology.Object_Storage.S3.Object_Lock;
 with Flyology.Object_Storage.S3.SigV4;
 with Flyology.Object_Storage.S3.Versioning;
@@ -2633,6 +2634,20 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
+   --  Prepare one exactly bound GetBucketNotificationConfiguration request.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Parameters Optional modeled owner precondition
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @return Fully signed request bound to the current notification read
+   function Prepare_Get_Bucket_Notification_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
    --  Prepare one exactly bound GetBucketAcl request.
    --  @param Origin Parsed HTTP origin
    --  @param Style Path or virtual-hosted bucket addressing
@@ -2856,6 +2871,20 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Strict GetBucketNotificationConfiguration outcome with no public
+   --  aggregate defaults. Kind determines whether Configuration or Error is
+   --  present; every decoded status is the physical response status.
+   --  @field Kind Whether configuration or a strict S3 error was returned
+   --  @field Status Exact physical HTTP status
+   --  @field Configuration Complete current notification configuration
+   --  @field Error Structured bounded S3 rejection
+   type Get_Bucket_Notification_Configuration_Outcome is record
+      Kind          : Get_Bucket_Control_Outcome_Kind;
+      Status        : Flyology.HTTP.Status_Code;
+      Configuration : S3.Notifications.Notification_Configuration;
+      Error         : S3.Errors.Error_Response;
+   end record;
+
    --  Presence-preserving GetBucketAcl outcome.  The 500 default is the
    --  established deterministic aggregate sentinel only.
    --  @field Kind Whether policy or a strict S3 error was returned
@@ -2976,6 +3005,18 @@ package Flyology.Object_Storage.Client.Low_Level is
       Transition_Default_Minimum_Object_Size : String := "";
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Lifecycle_Configuration_Outcome;
+   --  Decode one complete bounded GetBucketNotificationConfiguration response.
+   --  @param Status Exact physical response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Optional bounded S3 request identifier
+   --  @param Host_ID Optional bounded S3 host identifier
+   --  @param Limits Caller-selected shared XML resource limits
+   --  @return Typed notification configuration or strict S3 rejection
+   function Decode_Get_Bucket_Notification_Configuration_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Notification_Configuration_Outcome;
    --  Decode one complete bounded GetBucketAcl response.
    --  @param Status Exact physical response status
    --  @param Payload Complete same-response body
@@ -3091,6 +3132,19 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Lifecycle_Configuration_Outcome;
+   --  Execute one prepared GetBucketNotificationConfiguration exchange.
+   --  @param Client Configured caller-owned synchronous HTTP client
+   --  @param Prepared Request returned by the exact notification preparer
+   --  @param Timeout Caller-selected whole blocking exchange budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected shared XML resource limits
+   --  @return Typed configuration or bounded S3 rejection
+   function Execute_Get_Bucket_Notification_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Notification_Configuration_Outcome;
    --  Execute one exact prepared GetBucketAcl request.
    --  The 30-second default is the established low-level synchronous-client
    --  compatibility budget; callers may select a different absolute budget.
@@ -3148,6 +3202,16 @@ package Flyology.Object_Storage.Client.Low_Level is
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
       Transition_Default_Minimum_Object_Size :
         Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Complete physical controls for current
+   --  PutBucketNotificationConfiguration.
+   --  Both optional headers preserve absence versus an exact caller value.
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   --  @field Skip_Destination_Validation Optional explicit Boolean header
+   type Put_Bucket_Notification_Configuration_Parameters is record
+      Expected_Bucket_Owner       : Ada.Strings.Unbounded.Unbounded_String;
+      Skip_Destination_Validation : Optional_Boolean;
    end record;
 
    --  Prepare one exact CreateBucketMetadataTableConfiguration request.
@@ -3261,6 +3325,28 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String;
       Value : S3.Lifecycle.Lifecycle_Configuration;
       Parameters : Put_Bucket_Lifecycle_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request;
+
+   --  Prepare one exactly bound PutBucketNotificationConfiguration request.
+   --  The current model has no request-checksum or Content-MD5 member; SigV4
+   --  still signs the exact owned serialized payload hash.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Value Required complete current notification configuration
+   --  @param Parameters Optional owner and destination-validation headers
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Fully signed one-shot request owning its exact body
+   function Prepare_Put_Bucket_Notification_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Notifications.Notification_Configuration;
+      Parameters : Put_Bucket_Notification_Configuration_Parameters;
       Identity : Credentials; Region, Timestamp : String;
       Limits : S3.XML.Parse_Limits)
       return Prepared_Request;
@@ -3440,6 +3526,21 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token;
       Limits : S3.XML.Parse_Limits)
       return Put_Bucket_Lifecycle_Configuration_Outcome;
+
+   --  Execute one exact prepared PutBucketNotificationConfiguration request.
+   --  No request is replayed after possible admission.
+   --  @param Client Caller-owned synchronous HTTP client
+   --  @param Prepared Request from the matching notification preparer
+   --  @param Timeout Caller-selected absolute operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Typed update success or strict S3 rejection
+   function Execute_Put_Bucket_Notification_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome;
 
    --  Execute one exact prepared PutBucketCors request. The 30-second default
    --  is the established low-level synchronous-client compatibility budget;
@@ -5211,6 +5312,24 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token     : access Flyology.Cancellation.Token := null;
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
+   --  Start an exact prepared GetBucketNotificationConfiguration exchange
+   --  into a bounded sink. Any other prepared operation is rejected before
+   --  HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Get_Bucket_Notification_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
    --  Start an exact prepared CreateBucketMetadataTableConfiguration
    --  exchange with its one-shot destination source. Another bucket-control
    --  mutation is rejected before HTTP admission.
@@ -5369,6 +5488,27 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Token Caller-selected cancellation source or null
    --  @param Operation Fresh or consumed established HTTP exchange
    procedure Put_Bucket_Lifecycle_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared PutBucketNotificationConfiguration exchange
+   --  with its one-shot source. Any other prepared operation is rejected
+   --  before HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable request source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Put_Bucket_Notification_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Source    : not null access

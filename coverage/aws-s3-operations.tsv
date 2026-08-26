@@ -43,7 +43,7 @@ GetBucketMetadataConfiguration	extended	missing	partial	missing	missing
 GetBucketMetadataTableConfiguration	extended	missing	covered	missing	covered
 GetBucketMetricsConfiguration	extended	missing	partial	missing	missing
 GetBucketNotification	extended	missing	partial	missing	missing
-GetBucketNotificationConfiguration	extended	missing	partial	missing	missing
+GetBucketNotificationConfiguration	extended	missing	covered	missing	covered
 GetBucketOwnershipControls	extended	missing	covered	missing	covered
 GetBucketPolicy	extended	covered	covered	covered	covered
 GetBucketPolicyStatus	extended	missing	covered	missing	covered
@@ -89,7 +89,7 @@ PutBucketLifecycleConfiguration	extended	missing	covered	missing	covered
 PutBucketLogging	extended	missing	partial	missing	missing
 PutBucketMetricsConfiguration	extended	missing	partial	missing	missing
 PutBucketNotification	extended	missing	partial	missing	missing
-PutBucketNotificationConfiguration	extended	missing	partial	missing	missing
+PutBucketNotificationConfiguration	extended	missing	covered	missing	covered
 PutBucketOwnershipControls	extended	missing	covered	missing	covered
 PutBucketPolicy	extended	covered	covered	covered	covered
 PutBucketReplication	extended	missing	partial	missing	missing

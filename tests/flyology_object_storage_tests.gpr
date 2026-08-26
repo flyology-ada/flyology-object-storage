@@ -41,6 +41,7 @@ project Flyology_Object_Storage_Tests is
       "s3_get_bucket_encryption_corpus.adb",
       "s3_get_bucket_lifecycle_configuration_corpus.adb",
       "s3_put_bucket_lifecycle_configuration_corpus.adb",
+      "s3_bucket_notification_configuration_corpus.adb",
       "s3_get_bucket_metadata_table_configuration_corpus.adb",
       "s3_get_bucket_acl_corpus.adb",
       "s3_get_object_acl_corpus.adb",

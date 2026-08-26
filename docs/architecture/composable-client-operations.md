@@ -151,10 +151,14 @@ The implemented operation order is:
 46. non-replaying `Set_Lifecycle_Configuration` with the same complete rule
     graph, required caller-selected request checksum, and optional exact
     transition-minimum request and response headers.
+47. bounded `Get_Notification_Configuration` with the complete current
+    destination, event, and presence-sensitive filter graph.
+48. non-replaying `Set_Notification_Configuration` with that graph and the
+    optional exact owner and destination-validation controls.
 
-The provider surface contains 76 domain operations: 21 in `Client.Objects`,
-47 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 73 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 78 domain operations: 21 in `Client.Objects`,
+49 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 75 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -220,6 +224,20 @@ post-admission outcomes require caller-selected
 enforces the complete structural model but does not invent the prose-only
 1,000-rule ceiling or action/filter policy that the pinned shapes do not
 express.
+
+The current GetBucketNotificationConfiguration and
+PutBucketNotificationConfiguration operations are colocated as
+`Get_Notification_Configuration` and `Set_Notification_Configuration`. Their
+strict codec preserves ordered topic, queue, and Lambda destinations; required
+nonempty event lists; optional IDs and presence-sensitive Filter, S3Key, and
+FilterRule structures; all 30 exact event values; and empty EventBridge and
+top-level configurations. The latter is the modeled notification-disabled
+value. The caller selects XML limits, owner precondition, timeout, and the
+optional destination-validation Boolean explicitly. The current PUT model has
+no Content-MD5 or SDK-checksum member, so the client signs only the exact
+owned XML payload hash and never invents those headers. Possible-admission
+failures are unknown and require a caller-selected read-only notification GET
+before any retry.
 
 CreateBucketMetadataTableConfiguration is colocated with that read in
 `Client.Buckets`. Its exact prepared initiator, limited constructor,
@@ -714,6 +732,8 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`,
 `Set_Encryption`, `Delete_Encryption`, `Get_CORS`, `Set_CORS`, and
 `Delete_CORS`, `Get_Lifecycle_Configuration`, `Delete_Lifecycle`,
+`Set_Lifecycle_Configuration`, `Get_Notification_Configuration`,
+`Set_Notification_Configuration`,
 `Delete_Replication`,
 `Delete_Analytics_Configuration`, `Delete_Metrics_Configuration`,
 `Delete_Intelligent_Tiering_Configuration`,

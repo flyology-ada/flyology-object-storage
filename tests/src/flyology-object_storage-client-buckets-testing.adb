@@ -2563,6 +2563,152 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       end loop;
    end Check_Put_Bucket_Lifecycle_Result_Corpus;
 
+   procedure Check_Bucket_Notification_Result_Corpus is
+      function Error_Response (Code : String) return S3.Errors.Error_Response
+      is
+        ((Code       => US.To_Unbounded_String (Code),
+          Message    => US.Null_Unbounded_String,
+          Resource   => US.Null_Unbounded_String,
+          Request_ID => US.Null_Unbounded_String,
+          Host_ID    => US.Null_Unbounded_String));
+
+      function Get_Value
+        (Status : Flyology.HTTP.Status_Code; Code : String)
+         return Low_Level.Get_Bucket_Notification_Configuration_Outcome is
+        ((Kind =>
+            (if Status = 200
+             then Low_Level.Bucket_Control_Found
+             else Low_Level.Get_Bucket_Control_Rejected),
+          Status => Status,
+          Configuration => (others => <>),
+          Error => Error_Response (Code)));
+
+      function Put_Value
+        (Status : Flyology.HTTP.Status_Code; Code : String)
+         return Low_Level.Put_Bucket_Control_Outcome is
+        (if Status = 200
+         then (Kind => Low_Level.Bucket_Control_Updated, Status => Status)
+         else
+           (Kind => Low_Level.Put_Bucket_Control_Rejected,
+            Status => Status, Error => Error_Response (Code)));
+
+      procedure Check_Get
+        (Status : Flyology.HTTP.Status_Code; Code : String;
+         Failure : Failure_Reason)
+      is
+         Result : constant Get_Bucket_Notification_Result :=
+           Normalize_Get_Bucket_Notification_Response
+             (Get_Value (Status, Code), HTTP_Client.Response_Observed,
+              HTTP_Client.Waiting_Response_Head);
+      begin
+         if Result.Kind /= Get_Bucket_Notification_Response_Available
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "GetBucketNotificationConfiguration normalization mismatch";
+         end if;
+      end Check_Get;
+
+      procedure Check_Put
+        (Status : Flyology.HTTP.Status_Code; Code : String;
+         Disposition : Bucket_Notification_Mutation_Disposition;
+         Failure : Failure_Reason)
+      is
+         Result : constant Put_Bucket_Notification_Result :=
+           Normalize_Put_Bucket_Notification_Response
+             (Put_Value (Status, Code), HTTP_Client.Response_Observed,
+              HTTP_Client.Waiting_Response_Head);
+      begin
+         if Result.Kind /= Put_Bucket_Notification_Response_Available
+           or else Result.Disposition /= Disposition
+           or else Result.Failure /= Failure
+         then
+            raise Program_Error with
+              "PutBucketNotificationConfiguration normalization mismatch";
+         end if;
+      end Check_Put;
+   begin
+      Check_Get (200, "", No_Failure);
+      Check_Get (400, "InvalidRequest", Invalid_Request);
+      Check_Get (401, "InvalidAccessKeyId", Authentication_Failed);
+      Check_Get (403, "AccessDenied", Authorization_Failed);
+      Check_Get (404, "NoSuchBucket", Not_Found);
+      Check_Get (409, "OperationAborted", Unavailable_Or_Retryable);
+      Check_Get (503, "SlowDown", Unavailable_Or_Retryable);
+      Check_Get (409, "", Corrupt_Or_Invalid_Response);
+
+      Check_Put
+        (200, "", Bucket_Notification_Mutation_Completed, No_Failure);
+      Check_Put
+        (400, "MalformedXML",
+         Bucket_Notification_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Put
+        (401, "InvalidAccessKeyId",
+         Bucket_Notification_Mutation_Definitely_Not_Applied,
+         Authentication_Failed);
+      Check_Put
+        (403, "AccessDenied",
+         Bucket_Notification_Mutation_Definitely_Not_Applied,
+         Authorization_Failed);
+      Check_Put
+        (404, "NoSuchBucket",
+         Bucket_Notification_Mutation_Definitely_Not_Applied,
+         Not_Found);
+      Check_Put
+        (409, "OperationAborted",
+         Bucket_Notification_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Put
+        (409, "", Bucket_Notification_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+
+      for Admission in HTTP_Client.Admission_Certainty loop
+         declare
+            Get_Result : constant Get_Bucket_Notification_Result :=
+              Normalize_Get_Bucket_Notification_Failure
+                (HTTP_Client.Timed_Out, Admission,
+                 HTTP_Client.Waiting_Response_Head, "timeout");
+            Put_Result : constant Put_Bucket_Notification_Result :=
+              Normalize_Put_Bucket_Notification_Failure
+                (HTTP_Client.Timed_Out, Admission,
+                 HTTP_Client.Waiting_Response_Head, "timeout");
+            Expected : constant Bucket_Notification_Mutation_Disposition :=
+              (if Admission = HTTP_Client.Not_Admitted
+               then Bucket_Notification_Mutation_Definitely_Not_Applied
+               else Bucket_Notification_Mutation_Outcome_Unknown);
+         begin
+            if Get_Result.Kind /= Get_Bucket_Notification_Exchange_Failed
+              or else Get_Result.Failure /= Timed_Out
+              or else Get_Result.Admission /= Admission
+              or else Put_Result.Kind /=
+                Put_Bucket_Notification_Exchange_Failed
+              or else Put_Result.Disposition /= Expected
+              or else Put_Result.Failure /= Timed_Out
+              or else Put_Result.Admission /= Admission
+            then
+               raise Program_Error with
+                 "bucket notification exchange certainty mismatch";
+            end if;
+         end;
+      end loop;
+
+      declare
+         Cancelled : constant Put_Bucket_Notification_Result :=
+           Normalize_Put_Bucket_Notification_Failure
+             (HTTP_Client.Cancelled, HTTP_Client.Not_Admitted,
+              HTTP_Client.Waiting_Response_Head, "");
+      begin
+         if Cancelled.Disposition /=
+           Bucket_Notification_Mutation_Cancelled_Before_Admission
+         then
+            raise Program_Error with
+              "notification pre-admission cancellation certainty mismatch";
+         end if;
+      end;
+   end Check_Bucket_Notification_Result_Corpus;
+
    procedure Check_Get_Bucket_ACL_Result_Corpus is
       type Failure_Kind_Array is
         array (Positive range <>) of HTTP_Client.Exchange_Result_Kind;
