@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the pinned five-operation bucket-control GET family."""
+"""Verify the pinned six-operation bucket-control GET family."""
 
 from __future__ import annotations
 
@@ -249,7 +249,7 @@ def main() -> int:
     expected_rows = [tuple(str(value) for value in row) for row in EXPECTED_MEMBERS]
     actual_rows = [tuple(row[name] for name in MEMBER_HEADER[:-1]) for row in members]
     if actual_rows != expected_rows:
-        fail("member manifest does not exactly match the reviewed 22-member graph")
+        fail("member manifest does not exactly match the reviewed 26-member graph")
 
     rows_by_operation: dict[str, list[tuple[str, ...]]] = {}
     for row in expected_rows:
@@ -280,6 +280,31 @@ def main() -> int:
             for name in names:
                 if not re.search(rf"\bfunction\s+{re.escape(name)}\b", text):
                     fail(f"{operation}: {name} absent from {label}")
+
+    for label in ("low-level specification", "low-level body"):
+        if not re.search(
+                r"\bprocedure\s+Get_Bucket_Policy_Status\b", texts[label]):
+            fail(
+                "GetBucketPolicyStatus: composable initiator absent from "
+                f"{label}"
+            )
+    for declaration in (
+            "Get_Bucket_Policy_Status_Result",
+            "Get_Bucket_Policy_Status_Operation",
+            "Normalize_Get_Bucket_Policy_Status_Response",
+            "Normalize_Get_Bucket_Policy_Status_Failure",
+    ):
+        if declaration not in texts["high-level specification"]:
+            fail(
+                f"GetBucketPolicyStatus: {declaration} absent from provider "
+                "spec"
+            )
+        if declaration.startswith("Normalize_") and declaration not in texts[
+                "high-level body"]:
+            fail(
+                f"GetBucketPolicyStatus: {declaration} absent from provider "
+                "body"
+            )
 
     checked_shapes: set[int] = set()
     for _, _, shape_text, _, _, _, _, _ in expected_rows:
