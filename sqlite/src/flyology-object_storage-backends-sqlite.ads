@@ -71,6 +71,30 @@ package Flyology.Object_Storage.Backends.SQLite is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status);
 
+   overriding procedure Put_Bucket_CORS
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
+   overriding procedure Get_Bucket_CORS
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   overriding procedure Delete_Bucket_CORS
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status);
+
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;
       Bucket        : String;

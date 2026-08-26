@@ -64,6 +64,24 @@ package Flyology.Object_Storage.SQLite.Catalogs is
       Bucket : String;
       Result : out Status);
 
+   procedure Put_Bucket_CORS
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status);
+
+   procedure Get_Bucket_CORS
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status);
+
+   procedure Delete_Bucket_CORS
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status);
+
    procedure Put_Bucket_Public_Access_Block
      (Item          : in out Catalog;
       Bucket        : String;

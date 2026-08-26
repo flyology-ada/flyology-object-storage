@@ -203,6 +203,8 @@ procedure Files_Conditional_Symlink_Probe is
        (Configuration_Path, "public-access-block.fos");
    Policy_Path : constant String :=
      Ada.Directories.Compose (Configuration_Path, "policy.fos");
+   CORS_Path : constant String :=
+     Ada.Directories.Compose (Configuration_Path, "cors.fos");
    Bucket_Link_Path : constant String :=
      Ada.Directories.Compose
        (Ada.Directories.Compose (Root, "buckets"), "root-link-bucket");
@@ -744,6 +746,48 @@ begin
       Require
         (not Ada.Directories.Exists (Missing),
          "bucket policy operations created a dangling file target");
+   end if;
+
+   Ada.Directories.Delete_File (Policy_Path);
+   Create_Symlink (Link_Target, CORS_Path, "bucket-cors-file");
+   Store.Put_Bucket_CORS
+     ("symlink-bucket", "cors", null, Ada.Real_Time.Time_Last, Result);
+   Require
+     (Result = Storage.Backend_Unavailable,
+      "Put_Bucket_CORS accepted a file symlink");
+   declare
+      Document   : US.Unbounded_String;
+      Configured : Boolean;
+   begin
+      Store.Get_Bucket_CORS
+        ("symlink-bucket", null, Ada.Real_Time.Time_Last,
+         Document, Configured, Result);
+      Require
+        (Result = Storage.Backend_Unavailable,
+         "Get_Bucket_CORS accepted a file symlink");
+      Store.Delete_Bucket_CORS
+        ("symlink-bucket", null, Ada.Real_Time.Time_Last, Result);
+      Require
+        (Result = Storage.Backend_Unavailable,
+         "Delete_Bucket_CORS accepted a file symlink");
+   end;
+   Require
+     (GNAT.OS_Lib.Is_Symbolic_Link (CORS_Path),
+      "bucket CORS operations replaced the file symlink");
+   if Mode = "live" then
+      declare
+         File : Ada.Text_IO.File_Type;
+      begin
+         Ada.Text_IO.Open (File, Ada.Text_IO.In_File, Sentinel);
+         Require
+           (Ada.Text_IO.Get_Line (File) = "outside-sentinel",
+            "bucket CORS operations modified the external file");
+         Ada.Text_IO.Close (File);
+      end;
+   else
+      Require
+        (not Ada.Directories.Exists (Missing),
+         "bucket CORS operations created a dangling file target");
    end if;
 
    --  A fresh long key spans multiple encoded directories. It must remain a

@@ -18,6 +18,7 @@ with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Buckets;
+with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Checksum_Policy;
 with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
@@ -41,6 +42,8 @@ procedure S3_Server_Application_Corpus is
    package Sockets renames Flyology.IO.Sockets;
    package SigV4 renames Flyology.Object_Storage.S3.SigV4;
    package Buckets renames Flyology.Object_Storage.S3.Buckets;
+   package Bucket_Controls renames
+     Flyology.Object_Storage.S3.Bucket_Controls;
    package Checksum_Policy renames
      Flyology.Object_Storage.S3.Checksum_Policy;
    package Checksums renames Flyology.Object_Storage.S3.Checksums;
@@ -5556,6 +5559,132 @@ begin
               ("DELETE", "/absent-bucket", Delete_Query)),
             "<Code>NoSuchBucket</Code>"),
          "DeletePublicAccessBlock did not distinguish an absent bucket");
+   end;
+
+   declare
+      Put_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("cors", ""),
+         SigV4.Pair ("x-id", "PutBucketCors"));
+      Get_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("cors", ""),
+         SigV4.Pair ("x-id", "GetBucketCors"));
+      Delete_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("cors", ""),
+         SigV4.Pair ("x-id", "DeleteBucketCors"));
+      Document : constant String :=
+        "<CORSConfiguration xmlns=""http://s3.amazonaws.com/doc/" &
+        "2006-03-01/""><CORSRule><ID>browser</ID>" &
+        "<AllowedMethod>GET</AllowedMethod><AllowedOrigin>*</AllowedOrigin>" &
+        "<ExposeHeader>ETag</ExposeHeader><MaxAgeSeconds>60</MaxAgeSeconds>" &
+        "</CORSRule></CORSConfiguration>";
+      Canonical : constant String :=
+        Bucket_Controls.Serialize_CORS
+          (Bucket_Controls.Parse_CORS (Document));
+   begin
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query)),
+            "<Code>NoSuchCORSConfiguration</Code>"),
+         "GetBucketCors did not distinguish absent configuration");
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Body_Request
+                ("PUT", "/test-bucket", Put_Query, Document));
+      begin
+         Require
+           (Has (Response, "200 OK"),
+            "PutBucketCors rejected a valid configuration: " &
+            Response_Body (Response));
+      end;
+      declare
+         Response : constant String :=
+           Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "Content-Type: application/xml")
+            and then Response_Body (Response) = Canonical,
+            "GetBucketCors did not return the canonical configuration");
+      end;
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Body_Request
+                ("PUT", "/test-bucket", Put_Query, Document,
+                 "x-amz-sdk-checksum-algorithm: SHA256" & CRLF &
+                 "x-amz-checksum-sha256: " &
+                 Checksum_Value (Core.SHA256, Document) & CRLF));
+      begin
+         Require
+           (Has (Response, "200 OK"),
+            "PutBucketCors rejected a valid SDK checksum: " & Response);
+      end;
+      declare
+         Response : constant String :=
+           Run
+             (Signed_Query_Body_Request
+                ("PUT", "/test-bucket", Put_Query,
+                 "<CORSConfiguration><CORSRule>" &
+                 "<AllowedOrigin>*</AllowedOrigin>" &
+                 "</CORSRule></CORSConfiguration>"));
+      begin
+         Require
+           (Has (Response, "<Code>MalformedXML</Code>"),
+            "PutBucketCors accepted a rule without AllowedMethod: " &
+            Response_Body (Response));
+      end;
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("PUT", "/test-bucket", Put_Query, Document,
+                  "content-md5: AAAAAAAAAAAAAAAAAAAAAA==" & CRLF)),
+            "<Code>BadDigest</Code>"),
+         "PutBucketCors accepted a mismatched Content-MD5");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Get_Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketCors ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("cors", ""),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "GetBucketCors accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Delete_Query)),
+            "204 No Content"),
+         "DeleteBucketCors failed");
+      Require
+        (Has
+           (Run (Signed_Query_Request ("GET", "/test-bucket", Get_Query)),
+            "NoSuchCORSConfiguration"),
+         "DeleteBucketCors left visible state");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/test-bucket", Delete_Query)),
+            "204 No Content"),
+         "DeleteBucketCors was not idempotent");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("DELETE", "/absent-bucket", Delete_Query)),
+            "<Code>NoSuchBucket</Code>"),
+         "DeleteBucketCors did not distinguish an absent bucket");
    end;
 
    declare

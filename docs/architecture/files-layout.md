@@ -102,6 +102,13 @@ and nonordinary records. Delete synchronizes the configuration directory after
 unlink; a later synchronization failure can likewise report failure after the
 policy was removed.
 
+Bucket CORS uses the parallel `configuration/cors.fos` record with the
+`FOSCOR01` discriminator and one bounded, length-prefixed canonical XML byte
+string. The S3 adapter owns XML semantics; the files backend atomically stores
+the already validated canonical document. Put and delete use the same
+file/directory synchronization barriers and therefore the same post-publication
+ambiguity contract as bucket policy.
+
 Bucket versioning configuration is a separate fixed-size
 `configuration/versioning.fos` record alongside the tag record. Updates merge
 independently supplied status and MFA-delete fields while holding the same

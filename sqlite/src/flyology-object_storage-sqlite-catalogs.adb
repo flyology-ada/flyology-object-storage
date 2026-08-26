@@ -15,11 +15,11 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
    use type DB.Step_Result;
 
    Application_ID : constant Long_Long_Integer := 1_179_603_761;
-   --  Persisted schema 12 introduces atomic raw bucket-policy records. The
-   --  value follows PublicAccessBlock schema 11; older readers must reject it
+   --  Persisted schema 13 introduces atomic canonical bucket-CORS records.
+   --  The value follows bucket-policy schema 12; older readers must reject it
    --  because they cannot preserve this bucket configuration. Never renumber
    --  or reuse it.
-   Schema_Version : constant Long_Long_Integer := 12;
+   Schema_Version : constant Long_Long_Integer := 13;
    --  Persisted SQL BLOB spelling of the externally fixed S3 version ID
    --  "null". It identifies the sole unversioned/suspended generation; changing
    --  these bytes would make migrated and reopened objects unreachable.
@@ -151,6 +151,15 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
      "CREATE TABLE bucket_policies (" &
      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
      "policy BLOB NOT NULL CHECK(length(policy) <= 16777216)," &
+     "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+     ") WITHOUT ROWID;";
+   --  Persisted schema-13 table for one exact canonical CORS document per
+   --  bucket. The BLOB preserves canonical bytes and shares the backend's
+   --  existing XML-document admission ceiling.
+   Bucket_CORS_Schema : constant String :=
+     "CREATE TABLE bucket_cors_documents (" &
+     "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+     "document BLOB NOT NULL CHECK(length(document) <= 16777216)," &
      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
      ") WITHOUT ROWID;";
    Versioning_Columns_Schema : constant String :=
@@ -984,6 +993,47 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
         and then Has_SQL ("withoutrowid");
    end Valid_Bucket_Policy_Schema;
 
+   function Valid_Bucket_CORS_Schema
+     (Item : in out Catalog) return Boolean
+   is
+      Normalized_SQL : constant String :=
+        "lower(replace(replace(replace(replace(sql,' ','')," &
+        "char(9),''),char(10),''),char(13),''))";
+      function Has_SQL (Fragment : String) return Boolean is
+        (Scalar
+           (Item,
+            "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+            "AND name='bucket_cors_documents' AND instr(" & Normalized_SQL &
+            ",'" & Fragment & "')>0") = 1);
+   begin
+      return Scalar
+        (Item,
+         "SELECT count(*) FROM " &
+         "pragma_table_info('bucket_cors_documents')") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM " &
+           "pragma_table_info('bucket_cors_documents') " &
+           "WHERE name IN ('bucket_name','document')") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM " &
+           "pragma_table_info('bucket_cors_documents') WHERE " &
+           "(name='bucket_name' AND lower(type)='text' " &
+           "AND ""notnull""=1 AND pk=1) OR " &
+           "(name='document' AND lower(type)='blob' " &
+           "AND ""notnull""=1 AND pk=0)") = 2
+        and then Scalar
+          (Item,
+           "SELECT count(*) FROM " &
+           "pragma_foreign_key_list('bucket_cors_documents') " &
+           "WHERE ""table""='buckets' AND ""from""='bucket_name' " &
+           "AND ""to""='name' AND on_delete='CASCADE'") = 1
+        and then Has_SQL ("primarykey")
+        and then Has_SQL ("check(length(document)<=16777216)")
+        and then Has_SQL ("withoutrowid");
+   end Valid_Bucket_CORS_Schema;
+
    function Valid_Generation_Schema (Item : in out Catalog) return Boolean is
       Normalized_SQL : constant String :=
         "lower(replace(replace(replace(replace(sql,' ','')," &
@@ -1211,9 +1261,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          Bucket_Tags_Schema &
          Public_Access_Block_Schema &
          Bucket_Policy_Schema &
+         Bucket_CORS_Schema &
          Generation_Schema &
          "PRAGMA application_id=1179603761;" &
-         "PRAGMA user_version=12;");
+         "PRAGMA user_version=13;");
       DB.Commit (Item.Database);
       In_Transaction := False;
    exception
@@ -1638,6 +1689,32 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          raise;
    end Upgrade_From_V11;
 
+   procedure Upgrade_From_V12 (Item : in out Catalog) is
+      In_Transaction : Boolean := False;
+      Existing_Table : constant Long_Long_Integer :=
+        Scalar
+          (Item,
+           "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+           "AND name='bucket_cors_documents'");
+   begin
+      if Existing_Table /= 0 then
+         raise Catalog_Error with "unsupported SQLite schema version 12";
+      end if;
+      DB.Begin_Transaction (Item.Database, DB.Exclusive);
+      In_Transaction := True;
+      DB.Execute
+        (Item.Database,
+         Bucket_CORS_Schema & "PRAGMA user_version=13;");
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         raise;
+   end Upgrade_From_V12;
+
    procedure Open (Item : in out Catalog; Path : String) is
       App_ID : Long_Long_Integer;
       Version : Long_Long_Integer;
@@ -1680,6 +1757,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             when 10 => null;
             when 11 => null;
             when 12 => null;
+            when 13 => null;
             when others =>
                raise Catalog_Error with
                  "unsupported or unrelated SQLite database";
@@ -1704,6 +1782,10 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
             Upgrade_From_V11 (Item);
             Version := 12;
          end if;
+         if Version = 12 then
+            Upgrade_From_V12 (Item);
+            Version := 13;
+         end if;
       end if;
       DB.Execute (Item.Database, "PRAGMA journal_mode=WAL");
       if Text_Scalar (Item, "PRAGMA journal_mode") /= "wal" then
@@ -1721,7 +1803,7 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          "'bucket_tags','object_versions','current_object_versions'," &
          "'object_version_tags','object_version_metadata'," &
          "'object_version_parts','bucket_public_access_blocks'," &
-         "'bucket_policies')") /= 15
+         "'bucket_policies','bucket_cors_documents')") /= 16
       then
          raise Catalog_Error with "SQLite catalog schema is incomplete";
       elsif not Valid_Checksum_Columns (Item, "objects", True)
@@ -1744,6 +1826,9 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
       elsif not Valid_Bucket_Policy_Schema (Item)
       then
          raise Catalog_Error with "SQLite bucket policy schema is incomplete";
+      elsif not Valid_Bucket_CORS_Schema (Item)
+      then
+         raise Catalog_Error with "SQLite bucket CORS schema is incomplete";
       elsif Scalar
         (Item,
          "SELECT count(*) FROM pragma_table_info('buckets') " &
@@ -2452,6 +2537,172 @@ package body Flyology.Object_Storage.SQLite.Catalogs is
          end if;
          raise;
    end Delete_Bucket_Public_Access_Block;
+
+   procedure Put_Bucket_CORS
+     (Item     : in out Catalog;
+      Bucket   : String;
+      Document : String;
+      Result   : out Status)
+   is
+      Exists         : DB.Statement;
+      Upsert         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      if not Backends.Valid_Bucket_CORS_Document (Document) then
+         Result := Entity_Too_Large;
+         return;
+      end if;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with "bucket CORS bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Upsert, Item.Database,
+         "INSERT INTO bucket_cors_documents VALUES(?1,?2) " &
+         "ON CONFLICT(bucket_name) DO UPDATE " &
+         "SET document=excluded.document");
+      DB.Bind (Upsert, 1, Bucket);
+      DB.Bind_Bytes (Upsert, 2, Document);
+      if DB.Step (Upsert) /= DB.Done then
+         raise Catalog_Error with "bucket CORS upsert returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Put_Bucket_CORS;
+
+   procedure Get_Bucket_CORS
+     (Item       : in out Catalog;
+      Bucket     : String;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      Exists : DB.Statement;
+      Query  : DB.Statement;
+      Locked : Boolean := False;
+   begin
+      Document := US.Null_Unbounded_String;
+      Configured := False;
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with "bucket CORS bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Query, Item.Database,
+         "SELECT document FROM bucket_cors_documents " &
+         "WHERE bucket_name=?1");
+      DB.Bind (Query, 1, Bucket);
+      case DB.Step (Query) is
+         when DB.Row =>
+            Document := US.To_Unbounded_String (DB.Column_Bytes (Query, 0));
+            if DB.Step (Query) /= DB.Done then
+               raise Catalog_Error with
+                 "bucket CORS query returned multiple rows";
+            end if;
+            Configured := True;
+         when DB.Done =>
+            null;
+      end case;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         Document := US.Null_Unbounded_String;
+         Configured := False;
+         raise;
+   end Get_Bucket_CORS;
+
+   procedure Delete_Bucket_CORS
+     (Item   : in out Catalog;
+      Bucket : String;
+      Result : out Status)
+   is
+      Exists         : DB.Statement;
+      Delete         : DB.Statement;
+      Locked         : Boolean := False;
+      In_Transaction : Boolean := False;
+   begin
+      Item.Gate.Acquire;
+      Locked := True;
+      DB.Begin_Transaction (Item.Database);
+      In_Transaction := True;
+      DB.Prepare
+        (Exists, Item.Database,
+         "SELECT EXISTS(SELECT 1 FROM buckets WHERE name=?1)");
+      DB.Bind (Exists, 1, Bucket);
+      if DB.Step (Exists) /= DB.Row then
+         raise Catalog_Error with "bucket CORS bucket query returned no row";
+      elsif DB.Column (Exists, 0) = 0 then
+         DB.Rollback (Item.Database);
+         In_Transaction := False;
+         Result := Not_Found;
+         Item.Gate.Release;
+         Locked := False;
+         return;
+      end if;
+      DB.Prepare
+        (Delete, Item.Database,
+         "DELETE FROM bucket_cors_documents WHERE bucket_name=?1");
+      DB.Bind (Delete, 1, Bucket);
+      if DB.Step (Delete) /= DB.Done then
+         raise Catalog_Error with "bucket CORS deletion returned a row";
+      end if;
+      DB.Commit (Item.Database);
+      In_Transaction := False;
+      Result := Success;
+      Item.Gate.Release;
+      Locked := False;
+   exception
+      when others =>
+         if In_Transaction then
+            Safe_Rollback (Item);
+         end if;
+         if Locked then
+            Item.Gate.Release;
+         end if;
+         raise;
+   end Delete_Bucket_CORS;
 
    procedure Put_Bucket_Policy
      (Item   : in out Catalog;

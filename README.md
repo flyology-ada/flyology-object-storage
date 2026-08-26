@@ -61,7 +61,8 @@ The core crate includes:
   PutBucketTagging, GetBucketTagging, DeleteBucketTagging, GetObject,
   HeadObject, PutObject,
   ListBuckets, ListObjects, ListObjectsV2, ListObjectVersions, DeleteBucket,
-  DeleteBucketCors, all thirteen remaining bodyless bucket-configuration
+  PutBucketCors, GetBucketCors, DeleteBucketCors, all thirteen remaining
+  bodyless bucket-configuration
   deletes, GetBucketAbac, GetBucketAccelerateConfiguration, GetBucketPolicy,
   GetBucketPolicyStatus, GetBucketRequestPayment, GetPublicAccessBlock,
   PutBucketAbac, PutBucketAccelerateConfiguration,

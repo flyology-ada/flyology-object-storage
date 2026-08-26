@@ -480,6 +480,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          "DROP TABLE object_versions;" &
          "DROP TABLE bucket_public_access_blocks;" &
          "DROP TABLE bucket_policies;" &
+         "DROP TABLE bucket_cors_documents;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-bucket',17);" &
          "INSERT INTO objects(bucket_name,object_key,payload,size,modified," &
          "entity_tag,content_type) VALUES(" &
@@ -512,6 +513,7 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
       Databases.Execute
         (Legacy,
          "DROP TABLE bucket_policies;" &
+         "DROP TABLE bucket_cors_documents;" &
          "INSERT INTO buckets(name,created) VALUES('legacy-policy',23);" &
          "PRAGMA user_version=11;");
       Databases.Close (Legacy);
@@ -522,6 +524,28 @@ procedure Flyology_Object_Storage_Sqlite_Tests is
          end if;
          raise;
    end Create_V11_Database;
+
+   procedure Create_V12_Database is
+      Seed   : Catalogs.Catalog;
+      Legacy : Databases.Database;
+   begin
+      Delete_Database;
+      Catalogs.Open (Seed, Database_Path);
+      Catalogs.Close (Seed);
+      Databases.Open (Legacy, Database_Path);
+      Databases.Execute
+        (Legacy,
+         "DROP TABLE bucket_cors_documents;" &
+         "INSERT INTO buckets(name,created) VALUES('legacy-cors',29);" &
+         "PRAGMA user_version=12;");
+      Databases.Close (Legacy);
+   exception
+      when others =>
+         if Databases.Is_Open (Legacy) then
+            Databases.Close (Legacy);
+         end if;
+         raise;
+   end Create_V12_Database;
 
    procedure Assert_Unconfigured_Versioning
      (Catalog : in out Catalogs.Catalog;
@@ -1424,7 +1448,7 @@ begin
          "AND version_id=" & Null_Version_SQL & " AND ordinal=1)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 12
+         and then Databases.Column (Version, 0) = 13
          and then Databases.Step (Generation) = Databases.Row
          and then Databases.Column (Generation, 0) = 1
          and then Databases.Column (Generation, 1) = 1
@@ -1470,10 +1494,54 @@ begin
          "AND name='bucket_policies'");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 12
+         and then Databases.Column (Version, 0) = 13
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 1,
-         "schema-v11 migration did not publish schema 12 atomically");
+         "schema-v11 migration did not publish the current schema atomically");
+   end;
+   Databases.Close (Database);
+   Delete_Database;
+
+   Create_V12_Database;
+   Catalogs.Open (Catalog, Database_Path);
+   declare
+      use Flyology.Object_Storage;
+      Document   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Catalogs.Get_Bucket_CORS
+        (Catalog, "legacy-cors", Document, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Document) = 0,
+         "schema-v12 migration invented a CORS configuration");
+      Catalogs.Put_Bucket_CORS
+        (Catalog, "legacy-cors", "<CORSConfiguration/>", Result);
+      Catalogs.Get_Bucket_CORS
+        (Catalog, "legacy-cors", Document, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Document) = "<CORSConfiguration/>",
+         "schema-v12 migration did not install bucket CORS storage");
+   end;
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   declare
+      Version : Databases.Statement;
+      Table_Count : Databases.Statement;
+   begin
+      Databases.Prepare (Version, Database, "PRAGMA user_version");
+      Databases.Prepare
+        (Table_Count, Database,
+         "SELECT count(*) FROM sqlite_schema WHERE type='table' " &
+         "AND name='bucket_cors_documents'");
+      Assert
+        (Databases.Step (Version) = Databases.Row
+         and then Databases.Column (Version, 0) = 13
+         and then Databases.Step (Table_Count) = Databases.Row
+         and then Databases.Column (Table_Count, 0) = 1,
+         "schema-v12 migration did not publish schema 13 atomically");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -1520,7 +1588,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema12 accepted a non-BLOB bucket policy column");
+         "schema13 accepted a non-BLOB bucket policy column");
    end;
    Delete_Database;
 
@@ -1541,7 +1609,33 @@ begin
       end;
       Assert
         (Rejected,
-         "schema12 accepted a same-count bucket policy column rename");
+         "schema13 accepted a same-count bucket policy column rename");
+   end;
+   Delete_Database;
+
+   Catalogs.Open (Catalog, Database_Path);
+   Catalogs.Close (Catalog);
+   Databases.Open (Database, Database_Path);
+   Databases.Execute
+     (Database,
+      "DROP TABLE bucket_cors_documents;" &
+      "CREATE TABLE bucket_cors_documents (" &
+      "bucket_name TEXT PRIMARY KEY COLLATE BINARY NOT NULL," &
+      "document TEXT NOT NULL CHECK(length(document) <= 16777216)," &
+      "FOREIGN KEY(bucket_name) REFERENCES buckets(name) ON DELETE CASCADE" &
+      ") WITHOUT ROWID;");
+   Databases.Close (Database);
+   declare
+      Rejected : Boolean := False;
+   begin
+      begin
+         Catalogs.Open (Catalog, Database_Path);
+      exception
+         when Catalogs.Catalog_Error => Rejected := True;
+      end;
+      Assert
+        (Rejected,
+         "schema13 accepted a non-BLOB bucket CORS column");
    end;
    Delete_Database;
 
@@ -1563,7 +1657,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema12 accepted a same-count generation identity rename");
+         "schema13 accepted a same-count generation identity rename");
    end;
    Delete_Database;
 
@@ -1589,7 +1683,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema12 accepted a weakened generation identity bound");
+         "schema13 accepted a weakened generation identity bound");
    end;
    Delete_Database;
 
@@ -1614,7 +1708,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema12 accepted a weakened generation tag foreign key");
+         "schema13 accepted a weakened generation tag foreign key");
    end;
    Delete_Database;
 
@@ -1636,7 +1730,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema12 accepted a same-count object_metadata column rename");
+         "schema13 accepted a same-count object_metadata column rename");
    end;
    Delete_Database;
 
@@ -1662,7 +1756,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema12 accepted a weakened object_metadata value constraint");
+         "schema13 accepted a weakened object_metadata value constraint");
    end;
    Delete_Database;
 
@@ -1682,7 +1776,7 @@ begin
          when Catalogs.Catalog_Error => Rejected := True;
       end;
       Assert
-        (Rejected, "schema12 accepted a same-count objects column rename");
+        (Rejected, "schema13 accepted a same-count objects column rename");
    end;
    Delete_Database;
 
@@ -1704,7 +1798,7 @@ begin
       end;
       Assert
         (Rejected,
-         "schema12 accepted a same-count public access column rename");
+         "schema13 accepted a same-count public access column rename");
    end;
    Delete_Database;
 
@@ -2552,8 +2646,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 12,
-         "schema-v1 migration did not publish version 12");
+         and then Databases.Column (Version, 0) = 13,
+         "schema-v1 migration did not publish version 13");
       Databases.Prepare
         (Tables, Database,
          "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -2562,10 +2656,10 @@ begin
          "'bucket_tags','object_versions','current_object_versions'," &
          "'object_version_tags','object_version_metadata'," &
          "'object_version_parts','bucket_public_access_blocks'," &
-         "'bucket_policies')");
+         "'bucket_policies','bucket_cors_documents')");
       Assert
         (Databases.Step (Tables) = Databases.Row
-         and then Databases.Column (Tables, 0) = 15,
+         and then Databases.Column (Tables, 0) = 16,
          "schema-v1 migration did not create the complete schema");
    end;
    Databases.Close (Database);
@@ -2631,8 +2725,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 12,
-         "schema-v2 migration did not publish version 12");
+         and then Databases.Column (Version, 0) = 13,
+         "schema-v2 migration did not publish version 13");
    end;
    declare
       Tables : Databases.Statement;
@@ -2668,10 +2762,10 @@ begin
          "AND name IN ('object_tags','object_parts','bucket_tags')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 12
+         and then Databases.Column (Version, 0) = 13
          and then Databases.Step (Table_Count) = Databases.Row
          and then Databases.Column (Table_Count, 0) = 3,
-         "schema-v3 migration did not publish schema 12 tables");
+         "schema-v3 migration did not publish schema 13 tables");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -2742,8 +2836,8 @@ begin
          Databases.Prepare (Version, Database, "PRAGMA user_version");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 12,
-            "schema-v4 migration did not publish version 12");
+            and then Databases.Column (Version, 0) = 13,
+            "schema-v4 migration did not publish version 13");
          Databases.Prepare
             (Tables, Database,
              "SELECT count(*) FROM sqlite_master WHERE type='table' " &
@@ -2810,7 +2904,7 @@ begin
             "bucket_name='legacy-bucket' AND object_key=X'6B'");
          Assert
            (Databases.Step (Version) = Databases.Row
-            and then Databases.Column (Version, 0) = 12
+            and then Databases.Column (Version, 0) = 13
             and then Databases.Step (Tables) = Databases.Row
             and then Databases.Column (Tables, 0) = 3
             and then Databases.Step (Part_Rows) = Databases.Row
@@ -2888,8 +2982,8 @@ begin
       Databases.Prepare (Version, Database, "PRAGMA user_version");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 12,
-         "schema-v6 migration did not publish version 12");
+         and then Databases.Column (Version, 0) = 13,
+         "schema-v6 migration did not publish version 13");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3020,7 +3114,7 @@ begin
          "length(checksum_value)) FROM object_parts)");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 12
+         and then Databases.Column (Version, 0) = 13
          and then Databases.Step (Defaults) = Databases.Row
          and then Databases.Column (Defaults, 0) = 0,
          "schema-v7 checksum migration did not publish safe defaults");
@@ -3091,10 +3185,10 @@ begin
          "AND name='object_metadata')");
       Assert
         (Databases.Step (Version) = Databases.Row
-         and then Databases.Column (Version, 0) = 12
+         and then Databases.Column (Version, 0) = 13
          and then Databases.Step (Topology) = Databases.Row
          and then Databases.Column (Topology, 0) = 13,
-         "schema-v8 migration did not atomically publish schema12 topology");
+         "schema-v8 migration did not atomically publish schema13 topology");
    end;
    Databases.Close (Database);
    Delete_Database;
@@ -3174,7 +3268,7 @@ begin
              (Is_Set => True,
               Value => Flyology.Object_Storage.Metadata_Time
                 (-315_619_200)),
-         "schema12 pre-epoch Expires did not survive backend reopen");
+         "schema13 pre-epoch Expires did not survive backend reopen");
       Store.Head_Object
         ("sqlite-copy-object-bucket", "copy-max-expires", null,
          Ada.Real_Time.Time_Last, Info, Result);
@@ -3184,7 +3278,7 @@ begin
            Flyology.Object_Storage.Optional_Metadata_Time'
              (Is_Set => True,
               Value => Flyology.Object_Storage.Metadata_Time'Last),
-         "schema12 maximum Expires did not survive backend reopen");
+         "schema13 maximum Expires did not survive backend reopen");
    end;
    Ada.Directories.Delete_Tree (Copy_Root);
 
@@ -3609,6 +3703,63 @@ begin
          Assert
            (Result = Success,
             "SQLite public access state could not be restored");
+      end;
+      declare
+         First : constant String :=
+           "<CORSConfiguration><CORSRule>" &
+           "<AllowedMethod>GET</AllowedMethod>" &
+           "<AllowedOrigin>*</AllowedOrigin>" &
+           "</CORSRule></CORSConfiguration>";
+         Second : constant String :=
+           "<CORSConfiguration><CORSRule><ID>write</ID>" &
+           "<AllowedMethod>PUT</AllowedMethod>" &
+           "<AllowedOrigin>https://example.com</AllowedOrigin>" &
+           "</CORSRule></CORSConfiguration>";
+         Observed   : US.Unbounded_String;
+         Configured : Boolean;
+      begin
+         Store.Get_Bucket_CORS
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then not Configured,
+            "SQLite new bucket unexpectedly had CORS state");
+         Store.Put_Bucket_CORS
+           ("sqlite-bucket", First, null, Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_CORS
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = First,
+            "SQLite bucket CORS did not round trip");
+         Store.Put_Bucket_CORS
+           ("sqlite-bucket", Second, null, Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_CORS
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Observed) = Second,
+            "SQLite bucket CORS replacement lost exact bytes");
+         Store.Delete_Bucket_CORS
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Store.Get_Bucket_CORS
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Observed, Configured, Result);
+         Assert
+           (Result = Success and then not Configured,
+            "SQLite bucket CORS deletion retained state");
+         Store.Delete_Bucket_CORS
+           ("missing-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Not_Found,
+            "SQLite bucket CORS delete lost missing-bucket status");
+         Store.Put_Bucket_CORS
+           ("sqlite-bucket", First, null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success,
+            "SQLite bucket CORS state could not be restored");
       end;
       declare
          First : constant String :=
@@ -4957,6 +5108,22 @@ begin
             and then Configuration.Block_Public_ACLs.Is_Set
             and then Configuration.Block_Public_ACLs.Value,
             "SQLite public access block did not survive reopen");
+      end;
+      declare
+         Document   : US.Unbounded_String;
+         Configured : Boolean;
+      begin
+         Store.Get_Bucket_CORS
+           ("sqlite-bucket", null, Ada.Real_Time.Time_Last,
+            Document, Configured, Result);
+         Assert
+           (Result = Success and then Configured
+            and then US.To_String (Document) =
+              "<CORSConfiguration><CORSRule>" &
+              "<AllowedMethod>GET</AllowedMethod>" &
+              "<AllowedOrigin>*</AllowedOrigin>" &
+              "</CORSRule></CORSConfiguration>",
+            "SQLite bucket CORS did not survive reopen");
       end;
       declare
          Policy     : US.Unbounded_String;

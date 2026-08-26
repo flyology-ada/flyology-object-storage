@@ -424,7 +424,10 @@ package body Flyology.Object_Storage.Backends.Memory is
             end if;
          end loop;
          Bytes := Bytes - Byte_Count
-           (Ada.Strings.Unbounded.Length (Buckets (Index).Policy));
+           (Ada.Strings.Unbounded.Length (Buckets (Index).Policy)) -
+           Byte_Count
+             (Ada.Strings.Unbounded.Length
+                (Buckets (Index).CORS_Document));
          Buckets (Index) := (others => <>);
          Result := Success;
       end Delete_Bucket;
@@ -470,6 +473,75 @@ package body Flyology.Object_Storage.Backends.Memory is
             Result := Success;
          end if;
       end Delete_Bucket_Tags;
+
+      procedure Put_Bucket_CORS
+        (Name : String; Document : String; Result : out Status)
+      is
+         Index    : constant Natural := Bucket_Index (Name);
+         Incoming : constant Byte_Count := Byte_Count (Document'Length);
+         Existing : Byte_Count := 0;
+         Base     : Byte_Count;
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+            return;
+         elsif not Valid_Bucket_CORS_Document (Document) then
+            Result := Entity_Too_Large;
+            return;
+         end if;
+         Existing := Byte_Count
+           (Ada.Strings.Unbounded.Length
+              (Buckets (Index).CORS_Document));
+         Base := Bytes - Existing;
+         if Incoming > Byte_Limit - Base
+           or else Reserved_Bytes > Byte_Limit - Base - Incoming
+         then
+            Result := Capacity_Exceeded;
+         else
+            Buckets (Index).CORS_Document :=
+              Ada.Strings.Unbounded.To_Unbounded_String (Document);
+            Buckets (Index).CORS_Configured := True;
+            Bytes := Base + Incoming;
+            Result := Success;
+         end if;
+      end Put_Bucket_CORS;
+
+      procedure Get_Bucket_CORS
+        (Name       : String;
+         Document   : out Ada.Strings.Unbounded.Unbounded_String;
+         Configured : out Boolean;
+         Result     : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+         Configured := False;
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Document := Buckets (Index).CORS_Document;
+            Configured := Buckets (Index).CORS_Configured;
+            Result := Success;
+         end if;
+      end Get_Bucket_CORS;
+
+      procedure Delete_Bucket_CORS
+        (Name : String; Result : out Status)
+      is
+         Index : constant Natural := Bucket_Index (Name);
+      begin
+         if Index = 0 then
+            Result := Not_Found;
+         else
+            Bytes := Bytes - Byte_Count
+              (Ada.Strings.Unbounded.Length
+                 (Buckets (Index).CORS_Document));
+            Buckets (Index).CORS_Document :=
+              Ada.Strings.Unbounded.Null_Unbounded_String;
+            Buckets (Index).CORS_Configured := False;
+            Result := Success;
+         end if;
+      end Delete_Bucket_CORS;
 
       procedure Put_Bucket_Public_Access_Block
         (Name          : String;
@@ -2284,6 +2356,62 @@ package body Flyology.Object_Storage.Backends.Memory is
          Item.State.Delete_Bucket_Tags (Bucket, Result);
       end if;
    end Delete_Bucket_Tags;
+
+   overriding procedure Put_Bucket_CORS
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      elsif not Valid_Bucket_CORS_Document (Document) then
+         Result := Entity_Too_Large;
+      else
+         Item.State.Put_Bucket_CORS (Bucket, Document, Result);
+      end if;
+   end Put_Bucket_CORS;
+
+   overriding procedure Get_Bucket_CORS
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+   begin
+      Document := Ada.Strings.Unbounded.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Get_Bucket_CORS
+           (Bucket, Document, Configured, Result);
+      end if;
+   end Get_Bucket_CORS;
+
+   overriding procedure Delete_Bucket_CORS
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+      else
+         Item.State.Delete_Bucket_CORS (Bucket, Result);
+      end if;
+   end Delete_Bucket_CORS;
 
    overriding procedure Put_Bucket_Public_Access_Block
      (Item          : in out Store;

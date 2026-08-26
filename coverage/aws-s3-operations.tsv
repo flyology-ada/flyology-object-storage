@@ -9,7 +9,7 @@ CreateMultipartUpload	core	covered	covered	covered	covered
 CreateSession	extended	missing	covered	missing	covered
 DeleteBucket	core	covered	covered	covered	covered
 DeleteBucketAnalyticsConfiguration	extended	missing	covered	missing	covered
-DeleteBucketCors	extended	missing	covered	missing	covered
+DeleteBucketCors	extended	covered	covered	covered	covered
 DeleteBucketEncryption	extended	missing	covered	missing	covered
 DeleteBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
 DeleteBucketInventoryConfiguration	extended	missing	covered	missing	covered
@@ -31,7 +31,7 @@ GetBucketAbac	extended	missing	covered	missing	covered
 GetBucketAccelerateConfiguration	extended	missing	covered	missing	covered
 GetBucketAcl	extended	missing	covered	missing	covered
 GetBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
-GetBucketCors	extended	missing	covered	missing	covered
+GetBucketCors	extended	covered	covered	covered	covered
 GetBucketEncryption	extended	missing	covered	missing	covered
 GetBucketIntelligentTieringConfiguration	extended	missing	partial	missing	missing
 GetBucketInventoryConfiguration	extended	missing	partial	missing	missing
@@ -80,7 +80,7 @@ PutBucketAbac	extended	missing	covered	missing	covered
 PutBucketAccelerateConfiguration	extended	missing	covered	missing	covered
 PutBucketAcl	extended	missing	partial	missing	missing
 PutBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
-PutBucketCors	extended	missing	covered	missing	covered
+PutBucketCors	extended	covered	covered	covered	covered
 PutBucketEncryption	extended	missing	covered	missing	covered
 PutBucketIntelligentTieringConfiguration	extended	missing	partial	missing	missing
 PutBucketInventoryConfiguration	extended	missing	partial	missing	missing

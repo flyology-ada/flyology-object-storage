@@ -62,6 +62,9 @@ package body Flyology.Object_Storage.Backends.Files is
    Bucket_Policy_Magic : constant String := "FOSPOL01";
    --  Persisted-format discriminator for one length-prefixed raw bucket
    --  policy. Changing it would make existing policy files unreadable.
+   Bucket_CORS_Magic : constant String := "FOSCOR01";
+   --  Persisted-format discriminator for one length-prefixed canonical CORS
+   --  document. Changing it would make existing CORS files unreadable.
    Maximum_Metadata_Length : constant Natural := 8 * 1_024;
    Maximum_Checksum_Length : constant Natural := 96;
    Maximum_Tag_Key_Bytes : constant Natural :=
@@ -359,6 +362,12 @@ package body Flyology.Object_Storage.Backends.Files is
    function Bucket_Policy_Path
      (Item : Store; Bucket : String) return String is
      (Join (Configuration_Path (Item, Bucket), "policy.fos"));
+
+   --  Persisted files-layout name paired with FOSCOR01. Renaming it would
+   --  hide an existing bucket CORS configuration from later readers.
+   function Bucket_CORS_Path
+     (Item : Store; Bucket : String) return String is
+     (Join (Configuration_Path (Item, Bucket), "cors.fos"));
 
    function Upload_Path
      (Item : Store; Bucket : String; Upload_ID : String) return String is
@@ -1433,6 +1442,35 @@ package body Flyology.Object_Storage.Backends.Files is
       end if;
       Policy := US.To_Unbounded_String (Read_String (File, Length));
    end Read_Bucket_Policy;
+
+   procedure Write_Bucket_CORS
+     (File : in out SIO.File_Type; Document : String) is
+   begin
+      if not Valid_Bucket_CORS_Document (Document) then
+         raise Constraint_Error;
+      end if;
+      Write_String (File, Bucket_CORS_Magic);
+      Write_U32 (File, Document'Length);
+      Write_String (File, Document);
+   end Write_Bucket_CORS;
+
+   procedure Read_Bucket_CORS
+     (File : in out SIO.File_Type; Document : out US.Unbounded_String)
+   is
+      File_Magic : constant String :=
+        Read_String (File, Bucket_CORS_Magic'Length);
+      Length : constant Natural := Read_U32 (File);
+   begin
+      Document := US.Null_Unbounded_String;
+      if File_Magic /= Bucket_CORS_Magic
+        or else Byte_Count (Length) > Maximum_Bucket_CORS_Bytes
+        or else SIO.Size (File) /=
+          SIO.Count (Bucket_CORS_Magic'Length + 4 + Length)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Document := US.To_Unbounded_String (Read_String (File, Length));
+   end Read_Bucket_CORS;
 
    function Read_Versioning
      (Item : Store; Bucket : String) return Bucket_Versioning_Configuration
@@ -3165,6 +3203,252 @@ package body Flyology.Object_Storage.Backends.Files is
          end if;
          Result := Backend_Unavailable;
    end Delete_Bucket_Public_Access_Block;
+
+   overriding procedure Put_Bucket_CORS
+     (Item     : in out Store;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+      File      : SIO.File_Type;
+      Opened    : Boolean := False;
+      Locked    : Boolean := False;
+      Published : Boolean := False;
+      Temp      : US.Unbounded_String;
+      Number    : Long_Long_Integer;
+      Renamed   : Boolean := False;
+      Target    : constant String := Bucket_CORS_Path (Item, Bucket);
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      elsif not Valid_Bucket_CORS_Document (Document) then
+         Result := Entity_Too_Large;
+         return;
+      end if;
+      Item.Temp_Sequence.Next (Number);
+      Temp := US.To_Unbounded_String
+        (Join
+           (Temp_Path (Item),
+            "bucket-cors-" & GNAT.SHA256.Digest
+              (Bucket & Long_Long_Integer'Image (Number) &
+               Ada.Calendar.Time'Image (Ada.Calendar.Clock))));
+      Validate_New_Temp_Target (Item, US.To_String (Temp));
+      SIO.Create (File, SIO.Out_File, US.To_String (Temp));
+      Opened := True;
+      Write_Bucket_CORS (File, Document);
+      SIO.Close (File);
+      Opened := False;
+      Sync_File (Item, US.To_String (Temp));
+
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Path (Item, Bucket)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         Result := Not_Found;
+         return;
+      elsif Ada.Directories.Kind (Bucket_Path (Item, Bucket)) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      Validate_Configuration_Path (Item, Bucket);
+      if GNAT.OS_Lib.Is_Symbolic_Link (Target)
+        or else
+          (Ada.Directories.Exists (Target)
+           and then Ada.Directories.Kind (Target) /=
+             Ada.Directories.Ordinary_File)
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      end if;
+      GNAT.OS_Lib.Rename_File (US.To_String (Temp), Target, Renamed);
+      if not Renamed then
+         Item.Publication.Release;
+         Locked := False;
+         Ada.Directories.Delete_File (US.To_String (Temp));
+         Result := Backend_Unavailable;
+         return;
+      end if;
+      Published := True;
+      Sync_Directory (Item, Configuration_Path (Item, Bucket));
+      Sync_Directory (Item, Temp_Path (Item));
+      Item.Publication.Release;
+      Locked := False;
+      Result := Success;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         if not Published and then US.Length (Temp) > 0
+           and then Ada.Directories.Exists (US.To_String (Temp))
+         then
+            Ada.Directories.Delete_File (US.To_String (Temp));
+         end if;
+         Result := Backend_Unavailable;
+   end Put_Bucket_CORS;
+
+   overriding procedure Get_Bucket_CORS
+     (Item       : in out Store;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out US.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status)
+   is
+      File   : SIO.File_Type;
+      Opened : Boolean := False;
+      Locked : Boolean := False;
+      Path   : constant String := Bucket_CORS_Path (Item, Bucket);
+   begin
+      Document := US.Null_Unbounded_String;
+      Configured := False;
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Path (Item, Bucket)) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Path (Item, Bucket)) then
+         Result := Not_Found;
+      elsif Ada.Directories.Kind (Bucket_Path (Item, Bucket)) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif GNAT.OS_Lib.Is_Symbolic_Link
+          (Configuration_Path (Item, Bucket))
+        or else not Ada.Directories.Exists
+          (Configuration_Path (Item, Bucket))
+        or else Ada.Directories.Kind (Configuration_Path (Item, Bucket)) /=
+          Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif GNAT.OS_Lib.Is_Symbolic_Link (Path) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Path) then
+         Result := Success;
+      elsif Ada.Directories.Kind (Path) /= Ada.Directories.Ordinary_File then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         SIO.Open (File, SIO.In_File, Path);
+         Opened := True;
+         Read_Bucket_CORS (File, Document);
+         SIO.Close (File);
+         Opened := False;
+         Configured := True;
+         Result := Success;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Opened then
+            SIO.Close (File);
+         end if;
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Document := US.Null_Unbounded_String;
+         Configured := False;
+         Result := Backend_Unavailable;
+   end Get_Bucket_CORS;
+
+   overriding procedure Delete_Bucket_CORS
+     (Item     : in out Store;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status)
+   is
+      Locked : Boolean := False;
+      Bucket_Directory : constant String := Bucket_Path (Item, Bucket);
+      Configuration_Directory : constant String :=
+        Configuration_Path (Item, Bucket);
+      Target : constant String := Bucket_CORS_Path (Item, Bucket);
+   begin
+      Check_Context (Token, Deadline);
+      if not Valid_Bucket_Name (Bucket) then
+         Result := Invalid_Request;
+         return;
+      end if;
+      Acquire_Publication (Item, Token, Deadline);
+      Locked := True;
+      if GNAT.OS_Lib.Is_Symbolic_Link (Bucket_Directory) then
+         raise Ada.IO_Exceptions.Data_Error;
+      elsif not Ada.Directories.Exists (Bucket_Directory) then
+         Result := Not_Found;
+      elsif Ada.Directories.Kind (Bucket_Directory) /=
+        Ada.Directories.Directory
+      then
+         raise Ada.IO_Exceptions.Data_Error;
+      else
+         Validate_Configuration_Path (Item, Bucket);
+         if GNAT.OS_Lib.Is_Symbolic_Link (Target) then
+            raise Ada.IO_Exceptions.Data_Error;
+         elsif not Ada.Directories.Exists (Target) then
+            Result := Success;
+         elsif Ada.Directories.Kind (Target) /=
+             Ada.Directories.Ordinary_File
+         then
+            raise Ada.IO_Exceptions.Data_Error;
+         else
+            Ada.Directories.Delete_File (Target);
+            Sync_Directory (Item, Configuration_Directory);
+            Result := Success;
+         end if;
+      end if;
+      Item.Publication.Release;
+      Locked := False;
+   exception
+      when Flyology.Cancellation.Operation_Cancelled |
+           Flyology.IO.Timeout_Error =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         raise;
+      when others =>
+         if Locked then
+            Item.Publication.Release;
+         end if;
+         Result := Backend_Unavailable;
+   end Delete_Bucket_CORS;
 
    overriding procedure Put_Bucket_Policy
      (Item     : in out Store;

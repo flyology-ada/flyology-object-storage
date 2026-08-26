@@ -632,6 +632,115 @@ package body Object_Storage_Test_Cases is
          "bucket policy persistence fixture put failed");
    end Exercise_Bucket_Policy;
 
+   procedure Exercise_Bucket_CORS
+     (Store  : in out Flyology.Object_Storage.Backends.Backend'Class;
+      Bucket : String)
+   is
+      use AUnit.Assertions;
+      use Flyology.Object_Storage;
+      package US renames Ada.Strings.Unbounded;
+      Namespace : constant String :=
+        "http://s3.amazonaws.com/doc/2006-03-01/";
+      First : constant String :=
+        "<CORSConfiguration xmlns=""" & Namespace & """>" &
+        "<CORSRule><AllowedMethod>GET</AllowedMethod>" &
+        "<AllowedOrigin>*</AllowedOrigin></CORSRule></CORSConfiguration>";
+      Second : constant String :=
+        "<CORSConfiguration xmlns=""" & Namespace & """>" &
+        "<CORSRule><ID>write</ID><AllowedMethod>PUT</AllowedMethod>" &
+        "<AllowedOrigin>https://example.com</AllowedOrigin>" &
+        "</CORSRule></CORSConfiguration>";
+      Observed   : US.Unbounded_String;
+      Configured : Boolean;
+      Result     : Status;
+   begin
+      Store.Get_Bucket_CORS
+        ("missing-cors-bucket", null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Not_Found and then not Configured
+         and then US.Length (Observed) = 0,
+         "bucket CORS get did not distinguish an absent bucket");
+
+      Store.Get_Bucket_CORS
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Observed) = 0,
+         "new bucket exposed a CORS configuration");
+
+      Store.Put_Bucket_CORS
+        (Bucket, First, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "bucket CORS put failed");
+      Store.Get_Bucket_CORS
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Observed) = First,
+         "bucket CORS snapshot did not round trip");
+
+      Store.Put_Bucket_CORS
+        (Bucket, Second, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_CORS
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Success and then Configured
+         and then US.To_String (Observed) = Second,
+         "bucket CORS replacement did not preserve exact bytes");
+
+      Store.Delete_Bucket_CORS
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Store.Get_Bucket_CORS
+        (Bucket, null, Ada.Real_Time.Time_Last,
+         Observed, Configured, Result);
+      Assert
+        (Result = Success and then not Configured
+         and then US.Length (Observed) = 0,
+         "bucket CORS delete left visible state");
+      Store.Delete_Bucket_CORS
+        (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      Assert (Result = Success, "bucket CORS delete was not idempotent");
+      Store.Delete_Bucket_CORS
+        ("missing-cors-bucket", null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Not_Found,
+         "bucket CORS delete did not distinguish an absent bucket");
+
+      declare
+         Cancel : aliased Flyology.Cancellation.Token;
+         Raised : Boolean := False;
+      begin
+         Cancel.Request;
+         begin
+            Store.Get_Bucket_CORS
+              (Bucket, Cancel'Access, Ada.Real_Time.Time_Last,
+               Observed, Configured, Result);
+         exception
+            when Flyology.Cancellation.Operation_Cancelled => Raised := True;
+         end;
+         Assert (Raised, "bucket CORS get ignored cancellation");
+      end;
+      declare
+         Raised : Boolean := False;
+      begin
+         begin
+            Store.Put_Bucket_CORS
+              (Bucket, First, null, Ada.Real_Time.Time_First, Result);
+         exception
+            when Flyology.IO.Timeout_Error => Raised := True;
+         end;
+         Assert (Raised, "bucket CORS put ignored deadline");
+      end;
+      Store.Put_Bucket_CORS
+        (Bucket, First, null, Ada.Real_Time.Time_Last, Result);
+      Assert
+        (Result = Success,
+         "bucket CORS persistence fixture put failed");
+   end Exercise_Bucket_CORS;
+
    procedure Exercise_Bucket_Listing
      (Store : in out Flyology.Object_Storage.Backends.Backend'Class)
    is
@@ -2460,6 +2569,31 @@ package body Object_Storage_Test_Cases is
       Assert
         (Result = Success and then Store.Bytes_Used = 0,
          "memory policy fixture cleanup did not release byte capacity");
+      declare
+         --  The 220-byte fixture admits either conformance document but not
+         --  their combined size, so replacement must reclaim the old value.
+         CORS_Store : Memory.Store (2, 4, 220);
+         Document   : Ada.Strings.Unbounded.Unbounded_String;
+         Configured : Boolean;
+      begin
+         CORS_Store.Create_Bucket
+           ("cors-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert (Result = Success, "create memory CORS bucket");
+         Exercise_Bucket_CORS (CORS_Store, "cors-bucket");
+         CORS_Store.Get_Bucket_CORS
+           ("cors-bucket", null, Ada.Real_Time.Time_Last,
+            Document, Configured, Result);
+         Assert
+           (Configured
+            and then CORS_Store.Bytes_Used = Byte_Count
+              (Ada.Strings.Unbounded.Length (Document)),
+            "memory bucket CORS was not charged to byte capacity");
+         CORS_Store.Delete_Bucket_CORS
+           ("cors-bucket", null, Ada.Real_Time.Time_Last, Result);
+         Assert
+           (Result = Success and then CORS_Store.Bytes_Used = 0,
+            "memory CORS cleanup did not release byte capacity");
+      end;
       Store.Put_Object
         ("test-bucket", "../opaque/key", Source, Default_Put_Options,
          null, Ada.Real_Time.Time_Last, Info, Result);
@@ -3924,6 +4058,46 @@ package body Object_Storage_Test_Cases is
          Assert (Result = Success, "head existing files bucket");
          Exercise_Bucket_Tags (Store, "file-bucket");
          Exercise_Bucket_Public_Access_Block (Store, "file-bucket");
+         Exercise_Bucket_CORS (Store, "file-bucket");
+         declare
+            package SIO renames Ada.Streams.Stream_IO;
+            File       : SIO.File_Type;
+            CORS_Path  : constant String :=
+              Ada.Directories.Compose
+                (Ada.Directories.Compose
+                   (Ada.Directories.Compose
+                      (Ada.Directories.Compose (Root, "buckets"),
+                       "file-bucket"),
+                    "configuration"),
+                 "cors.fos");
+            Corrupt    : constant String := "FOSCOR01";
+            Data       : Ada.Streams.Stream_Element_Array
+              (1 .. Ada.Streams.Stream_Element_Offset (Corrupt'Length));
+            Position   : Ada.Streams.Stream_Element_Offset := Data'First;
+            Document   : US.Unbounded_String;
+            Configured : Boolean;
+         begin
+            for Item of Corrupt loop
+               Data (Position) :=
+                 Ada.Streams.Stream_Element (Character'Pos (Item));
+               Position := Position + 1;
+            end loop;
+            SIO.Create (File, SIO.Out_File, CORS_Path);
+            SIO.Write (File, Data);
+            SIO.Close (File);
+            Store.Get_Bucket_CORS
+              ("file-bucket", null, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+            Assert
+              (Result = Backend_Unavailable and then not Configured,
+               "files bucket CORS accepted a truncated record");
+            Store.Put_Bucket_CORS
+              ("file-bucket", "restored", null,
+               Ada.Real_Time.Time_Last, Result);
+            Assert
+              (Result = Success,
+               "files bucket CORS could not replace a corrupt record");
+         end;
          Exercise_Bucket_Policy (Store, "file-bucket");
          Store.Put_Object
            ("file-bucket", Key, Source,

@@ -169,6 +169,14 @@ procedure Files_Crash_Probe is
       Require (Result = Storage.Success, "could not put test bucket tags");
    end Put_Bucket_Tags;
 
+   procedure Put_Bucket_CORS (Store : in out Files.Store; Text : String) is
+      Result : Storage.Status;
+   begin
+      Store.Put_Bucket_CORS
+        (Bucket, Text, null, Ada.Real_Time.Time_Last, Result);
+      Require (Result = Storage.Success, "could not put test bucket CORS");
+   end Put_Bucket_CORS;
+
    procedure Create_Upload
      (Store : in out Files.Store; Upload_ID : out US.Unbounded_String)
    is
@@ -244,6 +252,8 @@ procedure Files_Crash_Probe is
             end if;
          elsif Scenario in "bucket-tags" | "bucket-tag-delete" then
             Put_Bucket_Tags (Store, "old");
+         elsif Scenario = "bucket-cors" then
+            Put_Bucket_CORS (Store, "old");
          elsif Scenario in "part" | "abort" | "complete" then
             Create_Upload (Store, Upload_ID);
             if Scenario in "part" | "complete" then
@@ -358,6 +368,9 @@ procedure Files_Crash_Probe is
       elsif Scenario = "bucket-tag-delete" then
          Store.Delete_Bucket_Tags
            (Bucket, null, Ada.Real_Time.Time_Last, Result);
+      elsif Scenario = "bucket-cors" then
+         Put_Bucket_CORS (Store, "replacement");
+         Result := Storage.Success;
       elsif Scenario = "delete" then
          Store.Head_Object
            (Bucket, Key, null, Ada.Real_Time.Time_Last, Info, Result);
@@ -640,6 +653,19 @@ procedure Files_Crash_Probe is
                  (Result = Storage.Tag_Set_Not_Found and then
                   Value.Is_Empty),
                "crash exposed malformed bucket tag deletion");
+         end;
+      elsif Scenario = "bucket-cors" then
+         declare
+            Document   : US.Unbounded_String;
+            Configured : Boolean;
+         begin
+            Store.Get_Bucket_CORS
+              (Bucket, null, Ada.Real_Time.Time_Last,
+               Document, Configured, Result);
+            Require
+              (Result = Storage.Success and then Configured
+               and then US.To_String (Document) in "old" | "replacement",
+               "crash exposed a partial bucket CORS replacement");
          end;
       elsif Scenario in "initiate" | "abort" then
          Require

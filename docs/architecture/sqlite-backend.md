@@ -52,6 +52,13 @@ catalog transaction; Get returns one gated snapshot. Schema 11 migrates by
 creating the empty table and does not invent policy state for existing
 buckets.
 
+Schema version 13 adds `bucket_cors_documents`, with one bounded canonical XML
+BLOB per configured bucket and a cascading foreign key. Put and delete are
+single catalog transactions, Get returns one gated byte snapshot, and the
+schema-12 migration creates an empty table without inventing CORS state for
+existing buckets. The S3 adapter, not SQLite, owns XML validation and
+canonicalization.
+
 Schema version 10 adds the durable retained-generation foundation without
 moving bodies into SQLite. `object_versions` stores one bounded metadata row
 per opaque version identity and assigns a monotonically increasing publication

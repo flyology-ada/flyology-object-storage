@@ -151,6 +151,7 @@ run_crash_cases suspended-exact-delete 5
 run_crash_cases object-tags 3
 run_crash_cases bucket-tags 3
 run_crash_cases bucket-tag-delete 1
+run_crash_cases bucket-cors 3
 run_crash_cases delete 1
 run_crash_cases delete-objects 2
 run_crash_cases initiate 6
@@ -161,7 +162,7 @@ run_crash_cases complete 4
 run_crash_cases versioning 3
 rm -rf "$CRASH_ROOT"
 trap - EXIT INT TERM
-echo "files abrupt-crash matrix: 126 pre/post-barrier cases including retained generations OK"
+echo "files abrupt-crash matrix: 132 pre/post-barrier cases including retained generations and bucket CORS OK"
 
 ./bin/flyology_object_storage_tests
 ./bin/s3_bucket_tagging_benchmark --self-test

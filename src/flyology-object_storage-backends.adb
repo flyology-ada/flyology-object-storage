@@ -1,5 +1,8 @@
 package body Flyology.Object_Storage.Backends is
 
+   function Valid_Bucket_CORS_Document (Document : String) return Boolean is
+     (Byte_Count (Document'Length) <= Maximum_Bucket_CORS_Bytes);
+
    function Valid_Bucket_Policy (Policy : String) return Boolean is
      (Byte_Count (Policy'Length) <= Maximum_Bucket_Policy_Bytes);
 

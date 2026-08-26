@@ -109,6 +109,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
      Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
    --  Derived from the shared caller-overridable XML resource policy used by
    --  the PublicAccessBlock codec; changing that source changes admission.
+   Maximum_Bucket_CORS_Body : constant Byte_Count :=
+     Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
+   --  Derived from the shared caller-overridable XML resource policy used by
+   --  the CORS codec; changing that source changes server admission and
+   --  backend persistence compatibility together.
    Maximum_Bucket_Policy_Body : constant Byte_Count :=
      Byte_Count (XML.Default_Limits.Maximum_Document_Bytes);
    --  Derived from the established caller-overridable document resource
@@ -459,6 +464,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Tagging, Get_Bucket_Tagging, Delete_Bucket_Tagging,
          Put_Public_Access_Block, Get_Public_Access_Block,
          Delete_Public_Access_Block,
+         Put_Bucket_CORS, Get_Bucket_CORS, Delete_Bucket_CORS,
          Put_Bucket_Policy, Get_Bucket_Policy, Delete_Bucket_Policy,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
@@ -576,6 +582,20 @@ package body Flyology.Object_Storage.Server.S3_Applications is
              elsif Method = "GET" then "GetBucketPolicy"
              else "DeleteBucketPolicy") &
           "&policy=";
+      Is_Bucket_CORS_Query : constant Boolean :=
+        Query_Text = "cors"
+        or else Query_Text = "cors="
+        or else Query_Text =
+          "cors=&x-id=" &
+            (if Method = "PUT" then "PutBucketCors"
+             elsif Method = "GET" then "GetBucketCors"
+             else "DeleteBucketCors")
+        or else Query_Text =
+          "x-id=" &
+            (if Method = "PUT" then "PutBucketCors"
+             elsif Method = "GET" then "GetBucketCors"
+             else "DeleteBucketCors") &
+          "&cors=";
       Padded_Query : constant String := '&' & Query_Text & '&';
       Has_Bucket_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging&") /= 0
@@ -621,6 +641,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
           (Padded_Query, "&x-id=DeleteBucketPolicy&") /= 0;
       Looks_Like_Bucket_Policy_Query : constant Boolean :=
         Has_Bucket_Policy_Query or else Has_Bucket_Policy_Operation_ID;
+      Has_Bucket_CORS_Query : constant Boolean :=
+        Ada.Strings.Fixed.Index (Padded_Query, "&cors&") /= 0
+        or else Ada.Strings.Fixed.Index (Padded_Query, "&cors=") /= 0;
+      Has_Bucket_CORS_Operation_ID : constant Boolean :=
+        Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=PutBucketCors&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=GetBucketCors&") /= 0
+        or else Ada.Strings.Fixed.Index
+          (Padded_Query, "&x-id=DeleteBucketCors&") /= 0;
+      Looks_Like_Bucket_CORS_Query : constant Boolean :=
+        Has_Bucket_CORS_Query or else Has_Bucket_CORS_Operation_ID;
       Has_Tagging_Query : constant Boolean :=
         Ada.Strings.Fixed.Index (Padded_Query, "&tagging") /= 0
         or else
@@ -675,6 +707,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Bucket_Tagging_Query_Invalid : Boolean := False;
       Public_Access_Block_Query_Invalid : Boolean := False;
       Bucket_Policy_Query_Invalid : Boolean := False;
+      Bucket_CORS_Query_Invalid : Boolean := False;
       Object_Read_Request : Object_Reads.Object_Read_Request;
       Tagging_Query_Invalid : Boolean := False;
       Tagging_Request : Tagging.Tagging_Query;
@@ -1528,6 +1561,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Bucket_Policy_Query)
         and then not
+          (Parsed.Kind = Requests.Bucket_Target
+           and then Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Bucket_CORS_Query)
+        and then not
           (Parsed.Kind = Requests.Object_Target
            and then Method = "DELETE"
            and then Requests.Query_String (Target_Text, Parsed) =
@@ -1577,8 +1614,18 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Bucket_Policy_Query
            and then not Is_Bucket_Policy_Query;
+         Bucket_CORS_Query_Invalid :=
+           Method in "PUT" | "GET" | "DELETE"
+           and then Looks_Like_Bucket_CORS_Query
+           and then not Is_Bucket_CORS_Query;
          Operation :=
-           (if Method = "PUT" and then Looks_Like_Bucket_Policy_Query
+           (if Method = "PUT" and then Looks_Like_Bucket_CORS_Query
+            then Put_Bucket_CORS
+            elsif Method = "GET" and then Looks_Like_Bucket_CORS_Query
+            then Get_Bucket_CORS
+            elsif Method = "DELETE" and then Looks_Like_Bucket_CORS_Query
+            then Delete_Bucket_CORS
+            elsif Method = "PUT" and then Looks_Like_Bucket_Policy_Query
             then Put_Bucket_Policy
             elsif Method = "GET" and then Looks_Like_Bucket_Policy_Query
             then Get_Bucket_Policy
@@ -1772,7 +1819,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       Apps.Configure_Route
          (X, "s3", Target_Text,
          (if Operation in Create_Bucket | Put_Bucket_Tagging |
-         Put_Public_Access_Block | Put_Bucket_Policy |
+         Put_Public_Access_Block | Put_Bucket_CORS | Put_Bucket_Policy |
          Put_Bucket_Versioning | Put_Object |
          Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
          Complete_Multipart
@@ -1872,6 +1919,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (X, 400, "InvalidArgument",
             "The bucket policy request query is invalid", Target_Text);
          return;
+      elsif Bucket_CORS_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The bucket CORS request query is invalid", Target_Text);
+         return;
       elsif Delete_Object_Query_Invalid then
          Send_Error
            (X, 400, "InvalidArgument",
@@ -1895,7 +1947,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       end if;
 
       if Operation not in Create_Bucket | Put_Bucket_Tagging |
-        Put_Public_Access_Block | Put_Bucket_Policy |
+        Put_Public_Access_Block | Put_Bucket_CORS | Put_Bucket_Policy |
         Put_Bucket_Versioning | Put_Object |
         Put_Object_Tagging | Delete_Objects | Put_Multipart_Part |
         Complete_Multipart
@@ -2960,6 +3012,223 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         else
                            Send_Backend_Error
                              (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Put_Bucket_CORS =>
+               declare
+                  MD5_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "content-md5");
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  SDK_Count : constant Natural :=
+                    Apps.Request_Header_Count
+                      (X, "x-amz-sdk-checksum-algorithm");
+                  Trailer_Declaration_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-trailer");
+                  Checksum_Count : constant Natural :=
+                    Checksum_Value_Header_Count;
+                  Selected : constant
+                    Checksum_Policy.Algorithm_Parse_Result :=
+                      (if SDK_Count = 1 then
+                         Checksum_Policy.Parse_Algorithm
+                           (Apps.Request_Header
+                              (X, "x-amz-sdk-checksum-algorithm"))
+                       else (Valid => False));
+                  Owner_Accepted : Boolean;
+
+                  procedure Process
+                    (Algorithm    : Checksum_Policy.Algorithm;
+                     Check_Body   : Boolean;
+                     From_Trailer : Boolean;
+                     Expected     : String)
+                  is
+                     Source : Request_IO.Request_Source :=
+                       (Checksum_Kind => Algorithm,
+                        Length_Value  => Length,
+                        Expected_Hash => Auth.Payload_Hash,
+                        Check_Hash    =>
+                          US.To_String (Auth.Payload_Hash) /=
+                            S3.SigV4.Unsigned_Payload,
+                        Hash      => GNAT.SHA256.Initial_Context,
+                        Check_Content_MD5 => MD5_Count = 1,
+                        Expected_Content_MD5 =>
+                          (if MD5_Count = 1 then
+                             US.To_Unbounded_String
+                               (Apps.Request_Header (X, "content-md5"))
+                           else US.Null_Unbounded_String),
+                        Content_MD5_Hash => GNAT.MD5.Initial_Context,
+                        Check_Body_Checksum => Check_Body,
+                        Checksum_From_Trailer => From_Trailer,
+                        Reject_Unexpected_Trailers => True,
+                        Expected_Body_Checksum =>
+                          US.To_Unbounded_String (Expected),
+                        Observed  => 0,
+                        Maximum   => Maximum_Bucket_CORS_Body,
+                        Completed => False,
+                        others    => <>);
+                     Document : constant String := Read_Document (Source);
+                     Configuration : Bucket_Controls.CORS_Configuration;
+                     Canonical : US.Unbounded_String;
+                  begin
+                     Configuration := Bucket_Controls.Parse_CORS (Document);
+                     Canonical := US.To_Unbounded_String
+                       (Bucket_Controls.Serialize_CORS (Configuration));
+                     Store.Put_Bucket_CORS
+                       (Bucket, US.To_String (Canonical),
+                        Apps.Cancellation (X),
+                        Apps.Deadline (X), Result);
+                     if Result = Success then
+                        Apps.Respond (X, 200, "", "");
+                     else
+                        Send_Backend_Error (X, Result, True, Target_Text);
+                     end if;
+                  exception
+                     when Bucket_Controls.Malformed_Configuration =>
+                        Send_Error
+                          (X, 400, "MalformedXML",
+                           "The XML provided was not well-formed or did not " &
+                           "validate against the published schema",
+                           Target_Text);
+                  end Process;
+               begin
+                  if MD5_Count > 1
+                    or else Payer_Count > 1
+                    or else SDK_Count > 1
+                    or else Trailer_Declaration_Count > 1
+                    or else Checksum_Count > 1
+                    or else Apps.Request_Header_Count (X, "content-type") > 1
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "A PutBucketCors header is duplicated", Target_Text);
+                  elsif MD5_Count = 1
+                    and then not S3.Wire_Core.Valid_Base64
+                      (Apps.Request_Header (X, "content-md5"), 16)
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The Content-MD5 header is invalid", Target_Text);
+                  elsif Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "PutBucketCors does not define RequestPayer",
+                        Target_Text);
+                  elsif
+                    (SDK_Count = 0
+                     and then
+                       (Trailer_Declaration_Count /= 0
+                        or else Checksum_Count /= 0))
+                    or else (SDK_Count = 1 and then not Selected.Valid)
+                    or else
+                      (SDK_Count = 1
+                       and then Trailer_Declaration_Count = 1
+                       and then
+                         (Checksum_Count /= 0
+                          or else
+                            Ada.Characters.Handling.To_Lower
+                              (Apps.Request_Header (X, "x-amz-trailer")) /=
+                            Checksum_Header_Name
+                              (Storage_Algorithm (Selected.Value))))
+                    or else
+                      (SDK_Count = 1
+                       and then Trailer_Declaration_Count = 0
+                       and then
+                         (Checksum_Count /= 1
+                          or else Apps.Request_Header_Count
+                            (X, Checksum_Header_Name
+                               (Storage_Algorithm (Selected.Value))) /= 1))
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The PutBucketCors checksum group is invalid",
+                        Target_Text);
+                  elsif Length.Kind = Backends.Known
+                    and then Length.Bytes > Maximum_Bucket_CORS_Body
+                  then
+                     Send_Error
+                       (X, 400, "EntityTooLarge",
+                        "Your proposed upload exceeds the maximum allowed " &
+                        "size", Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        if SDK_Count = 0 then
+                           Process (S3.Core.CRC64NVME, False, False, "");
+                        elsif Trailer_Declaration_Count = 1 then
+                           Process (Selected.Value, True, True, "");
+                        else
+                           Process
+                             (Selected.Value, True, False,
+                              Apps.Request_Header
+                                (X, Checksum_Header_Name
+                                   (Storage_Algorithm (Selected.Value))));
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Get_Bucket_CORS =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+                  Document : US.Unbounded_String;
+                  Configured : Boolean;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "GetBucketCors does not define RequestPayer",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Get_Bucket_CORS
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Document, Configured, Result);
+                        if Result /= Success then
+                           Send_Backend_Error (X, Result, True, Target_Text);
+                        elsif not Configured then
+                           Send_Error
+                             (X, 404, "NoSuchCORSConfiguration",
+                              "The CORS configuration does not exist",
+                              Target_Text);
+                        else
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              US.To_String (Document));
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Delete_Bucket_CORS =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "DeleteBucketCors does not define RequestPayer",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Delete_Bucket_CORS
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Result);
+                        if Result = Success then
+                           Apps.Respond (X, 204, "", "");
+                        else
+                           Send_Backend_Error (X, Result, True, Target_Text);
                         end if;
                      end if;
                   end if;

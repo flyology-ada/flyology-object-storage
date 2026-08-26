@@ -649,6 +649,64 @@ package Flyology.Object_Storage.Backends is
       Deadline : Ada.Real_Time.Time;
       Result   : out Status) is abstract;
 
+   --  Check the shared persistence bound for one canonical CORS document.
+   --  XML parsing and semantic validation remain above this HTTP-independent
+   --  boundary; every admitted document has already been normalized by the
+   --  S3 adapter.
+   --  @param Document Exact canonical CORSConfiguration bytes
+   --  @return True when every backend can retain the document
+   function Valid_Bucket_CORS_Document (Document : String) return Boolean;
+
+   --  Atomically replace the complete canonical CORS document of an existing
+   --  bucket.  The backend treats Document as bounded opaque bytes and does
+   --  not depend on S3 XML or request types.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Document Validated canonical CORSConfiguration bytes
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Put_Bucket_CORS
+     (Item     : in out Backend;
+      Bucket   : String;
+      Document : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
+   --  Return one atomic canonical CORS-document snapshot. Configured is False
+   --  for an existing bucket with no CORS state and is reset together with
+   --  Document on every failure.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Document Exact retained canonical bytes when configured
+   --  @param Configured Whether the existing bucket has a CORS configuration
+   --  @param Result Read result
+   procedure Get_Bucket_CORS
+     (Item       : in out Backend;
+      Bucket     : String;
+      Token      : access Flyology.Cancellation.Token;
+      Deadline   : Ada.Real_Time.Time;
+      Document   : out Ada.Strings.Unbounded.Unbounded_String;
+      Configured : out Boolean;
+      Result     : out Status) is abstract;
+
+   --  Atomically remove CORS state. Deletion is idempotent for an existing
+   --  bucket with no CORS configuration.
+   --  @param Item Backend that owns the bucket configuration
+   --  @param Bucket Existing bucket name
+   --  @param Token Optional cooperative cancellation token
+   --  @param Deadline Absolute operation deadline
+   --  @param Result Mutation result
+   procedure Delete_Bucket_CORS
+     (Item     : in out Backend;
+      Bucket   : String;
+      Token    : access Flyology.Cancellation.Token;
+      Deadline : Ada.Real_Time.Time;
+      Result   : out Status) is abstract;
+
    --  Atomically replace the complete PublicAccessBlock configuration of an
    --  existing bucket.  A configuration whose four members are absent is a
    --  present empty configuration, not a deletion.
@@ -1302,6 +1360,13 @@ private
    --  budget without exposing a new caller-visible constant or coupling the
    --  HTTP-independent backend boundary to the S3 wire package. Changing it
    --  changes accepted and persisted bucket-policy compatibility.
+
+   Maximum_Bucket_CORS_Bytes : constant Byte_Count :=
+     Maximum_Bucket_Policy_Bytes;
+   --  Derived from the same S3.XML.Default_Limits document admission budget
+   --  as bucket policy.  This private project-policy value bounds persisted
+   --  canonical CORS bytes without creating a caller-visible resource limit;
+   --  changing it changes accepted and durable CORS compatibility.
 
    --  Monotonic publication order is backend-private metadata, not a wire or
    --  caller-visible value.  It disambiguates generations that share a
