@@ -18,7 +18,8 @@ Put/GetBucketVersioning,
 non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
-non-replaying DeleteBucketLifecycle and DeleteBucketReplication,
+non-replaying DeleteBucketLifecycle, DeleteBucketReplication, and
+DeleteBucketWebsite,
 object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
 non-replaying conditional DeleteObjectAnnotation,
 non-replaying PutObjectLegalHold, plus bounded GetObjectRetention with
@@ -111,7 +112,8 @@ The implemented operation order is:
     non-replaying `Delete_Encryption`;
 28. bounded `Get_CORS`, non-replaying `Set_CORS`, and non-replaying
     `Delete_CORS`;
-29. non-replaying `Delete_Lifecycle` and `Delete_Replication`;
+29. non-replaying `Delete_Lifecycle`, `Delete_Replication`, and
+    `Delete_Website`;
 30. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
 31. `Put_Object_Tagging`, `Get_Object_Tagging`, and
@@ -126,9 +128,9 @@ The implemented operation order is:
 38. bounded `Get_Metadata_Table_Configuration` and non-replaying
     `Create_Metadata_Table_Configuration`.
 
-The provider surface contains 66 domain operations: 21 in `Client.Objects`,
-37 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 63 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 67 domain operations: 21 in `Client.Objects`,
+38 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 64 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -354,16 +356,17 @@ the last case requires caller-selected GetBucketPolicy reconciliation before
 any retry. Their parameter-record synchronous overloads wait on these same
 state machines, and restart retains only the established HTTP client and
 cancellation owner.
-DeleteBucketLifecycle and DeleteBucketReplication follow the same mutation
-discipline with known-empty non-rewindable sources and their exact pinned
-`?lifecycle` and `?replication` prepared operations. Their limited
-constructors, operation-last reusable initiations, typed Finish, and typed
+DeleteBucketLifecycle, DeleteBucketReplication, and DeleteBucketWebsite follow
+the same mutation discipline with known-empty non-rewindable sources and their
+exact pinned `?lifecycle`, `?replication`, and `?website` prepared operations.
+Their limited constructors, operation-last reusable initiations, typed Finish,
+and typed
 synchronous waits each share one provider-owned state machine. Complete 204
 proves deletion, exact conclusive service rejection proves non-application,
 and any lost, malformed, retryable, or otherwise uncertain result after
-possible admission remains outcome-unknown. The client never replays either
-mutation; callers choose the corresponding read-only reconciliation before
-any later retry. Restart retains only the established HTTP client and
+possible admission remains outcome-unknown. The client never replays any of
+these mutations; callers choose the corresponding read-only reconciliation
+before any later retry. Restart retains only the established HTTP client and
 cancellation owner, and no request input remains borrowed after signing.
 GetObjectLegalHold owns the exact signed generation selector and retains its
 same-response XML under the shared S3 document limit. PutObjectLegalHold owns
@@ -640,7 +643,8 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Get_Ownership_Controls`, and
 `Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`,
 `Set_Encryption`, `Delete_Encryption`, `Get_CORS`, `Set_CORS`, and
-`Delete_CORS`, `Delete_Lifecycle`, `Delete_Replication` overloads, and the
+`Delete_CORS`, `Delete_Lifecycle`, `Delete_Replication`, and
+`Delete_Website` overloads, and the
 `Get_Object_Lock_Configuration` and
 `Put_Object_Lock_Configuration` overloads,
 are literal waits on the same provider-owned state machines and retain their

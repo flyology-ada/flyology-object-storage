@@ -4234,9 +4234,45 @@ procedure S3_HTTP_Socket_Corpus is
                String'(1 .. 256 => 'x') & "</Message></Error>"),
             "DELETE", "/bounded-delete-replication?replication",
             Expected_Bucket_Owner => "123456789012");
+         --  Pinned website fixtures preserve the shared reference owner,
+         --  exact 204/403 outcomes, and the 256-byte oversized error payload
+         --  paired with the client-selected 64-byte limit below.
          Serve
            (HTTP_Response ("204 No Content", ""), "DELETE",
             "/example-bucket?website",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/typed-delete-website?website",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/composed-delete-website?website",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-delete-website" & CRLF),
+            "DELETE", "/restart-delete-website?website",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-request-id: duplicate-website" & CRLF &
+               "x-amz-request-id: duplicate-website" & CRLF),
+            "DELETE", "/invalid-delete-website?website",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "", "x-amz-id-2: " & CRLF),
+            "DELETE", "/empty-host-delete-website?website",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("500 Internal Server Error",
+               "<Error><Code>InternalError</Code><Message>" &
+               String'(1 .. 256 => 'x') & "</Message></Error>"),
+            "DELETE", "/bounded-delete-website?website",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response ("204 No Content", ""), "DELETE",
@@ -14315,6 +14351,185 @@ procedure S3_HTTP_Socket_Corpus is
               (HTTP, Origin, "example-bucket", Identity,
                Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
             "DeleteBucketWebsite");
+         declare
+            --  Shared signed-corpus owner value; mutation below distinguishes
+            --  copied request state from a retained caller borrow.
+            Parameters :
+              Low_Level.Delete_Bucket_Configuration_Parameters :=
+                (Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Bucket_Lifecycle
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 Parameters,
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            --  Parent, HTTP exchange, and HTTP's one active transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Delete_Bucket_Website_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+            Result : Delete_Bucket_Website_Result;
+         begin
+            declare
+               Typed_Result : constant Delete_Bucket_Website_Result :=
+                 Buckets.Delete_Website
+                   (HTTP,
+                    Origin,
+                    "typed-delete-website",
+                    Parameters,
+                    Identity,
+                    Timeout => 5.0);
+            begin
+               if Typed_Result.Kind /=
+                    Delete_Bucket_Website_Response_Available
+                 or else Typed_Result.Disposition /=
+                   Bucket_Website_Mutation_Completed
+                 or else Typed_Result.Failure /= No_Failure
+                 or else Typed_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Typed_Result.Response.Kind /=
+                   Low_Level.Configuration_Deleted
+               then
+                  raise Program_Error with
+                    "typed DeleteBucketWebsite response mismatch";
+               end if;
+            end;
+            begin
+               Low_Level.Delete_Bucket_Website
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "DeleteBucketWebsite accepted a lifecycle request";
+            end if;
+
+            declare
+               Operation : Delete_Bucket_Website_Operation :=
+                 Delete_Website
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-delete-website",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               --  The operation owns the prepared request.  This deliberately
+               --  changes caller storage before the owner stack drives it.
+               Parameters.Expected_Bucket_Owner :=
+                 US.To_Unbounded_String ("changed-owner");
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               Parameters.Expected_Bucket_Owner :=
+                 US.To_Unbounded_String ("123456789012");
+               if Result.Kind /= Delete_Bucket_Website_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Website_Mutation_Completed
+               then
+                  raise Program_Error with
+                    "composed DeleteBucketWebsite mismatch";
+               end if;
+               Delete_Website
+                 (HTTP'Access,
+                  Origin,
+                  "restart-delete-website",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_Website_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Website_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-delete-website"
+               then
+                  raise Program_Error with
+                    "restarted DeleteBucketWebsite mismatch";
+               end if;
+               Delete_Website
+                 (HTTP'Access,
+                  Origin,
+                  "invalid-delete-website",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_Website_Exchange_Failed
+                 or else Result.Disposition /=
+                   Bucket_Website_Mutation_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+               then
+                  raise Program_Error with
+                    "DeleteBucketWebsite accepted duplicate response " &
+                    "identifier";
+               end if;
+               Delete_Website
+                 (HTTP'Access,
+                  Origin,
+                  "empty-host-delete-website",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_Website_Exchange_Failed
+                 or else Result.Disposition /=
+                   Bucket_Website_Mutation_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+               then
+                  raise Program_Error with
+                    "DeleteBucketWebsite accepted an empty host " &
+                    "identifier";
+               end if;
+               Delete_Website
+                 (HTTP'Access,
+                  Origin,
+                  "bounded-delete-website",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Limits =>
+                    --  Test-only caller policy paired with the oversized
+                    --  server fixture above.
+                    (Maximum_Document_Bytes => 64,
+                     Maximum_Depth          => 8,
+                     Maximum_Elements       => 32,
+                     Maximum_Text_Bytes     => 64),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Delete_Bucket_Website_Exchange_Failed
+                 or else Result.Disposition /=
+                   Bucket_Website_Mutation_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /=
+                   HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded DeleteBucketWebsite response mismatch";
+               end if;
+            end;
+         end;
          Require_Configuration_Deletion
            (Buckets.Delete_Public_Access_Block
               (HTTP, Origin, "example-bucket", Identity,
@@ -20248,6 +20463,7 @@ begin
    Buckets_Testing.Check_Metadata_Table_Configuration_Result_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Lifecycle_Certainty_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Replication_Certainty_Corpus;
+   Buckets_Testing.Check_Delete_Bucket_Website_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_CORS_Result_Corpus;
    Buckets_Testing.Check_Object_Lock_Configuration_Certainty_Corpus;
    Buckets_Testing.Check_Get_Bucket_Versioning_Result_Corpus;

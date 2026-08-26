@@ -83,7 +83,7 @@ The core crate includes:
   non-replaying PutBucketAbac, PutBucketAccelerateConfiguration,
   PutBucketRequestPayment,
   Put/DeleteBucketPolicy,
-  DeleteBucketLifecycle, DeleteBucketReplication, and
+  DeleteBucketLifecycle, DeleteBucketReplication, DeleteBucketWebsite, and
   Put/GetBucketVersioning, with typed
   synchronous overloads that wait on the same owner-driven state machines and
   never create a per-operation helper task;
@@ -301,9 +301,9 @@ They cover conditional Put, whole and exact-range Get, Head, Delete,
 CreateMultipartUpload, UploadPart, CompleteMultipartUpload,
 AbortMultipartUpload, bounded ListParts and ListMultipartUploads, and
 CopyObject, together with service-level ListBuckets and non-replaying
-CreateBucket, DeleteBucket, DeleteBucketLifecycle,
-DeleteBucketReplication, and CreateBucketMetadataTableConfiguration, paired
-with bounded
+CreateBucket, DeleteBucket, DeleteBucketLifecycle, DeleteBucketReplication,
+DeleteBucketWebsite, and CreateBucketMetadataTableConfiguration, paired with
+bounded
 GetBucketMetadataTableConfiguration reconciliation. The typed synchronous
 overloads wait on those same owner-driven state machines.
 Conditional DeleteObjectAnnotation is likewise exposed as provider-owned

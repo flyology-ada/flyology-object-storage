@@ -1,10 +1,10 @@
 # Bodyless bucket-configuration DELETE client qualification
 
 This record qualifies the strict bounded clients and corpora for thirteen
-bodyless bucket-configuration DELETE operations. DeleteBucketLifecycle and
-DeleteBucketReplication also have provider-owned composable operations and
-typed synchronous waits that use their corresponding state machines. It does
-not
+bodyless bucket-configuration DELETE operations. DeleteBucketLifecycle,
+DeleteBucketReplication, and DeleteBucketWebsite also have provider-owned
+composable operations and typed synchronous waits that use their corresponding
+state machines. It does not
 manufacture backend or server coverage. `DeleteBucketPolicy` and
 `DeletePublicAccessBlock` now have that independent coverage in
 [bucket-policy.md](bucket-policy.md) and
@@ -57,12 +57,13 @@ bindings while returning the existing deletion-completed or structured-error
 outcome. Calls are synchronous, do not retry, retain no caller input, release
 the response before return, and create no detached helper task.
 
-DeleteBucketLifecycle and DeleteBucketReplication additionally expose limited
-constructors, same-name operation-last reusable initiation procedures, typed
-`Finish`, and typed synchronous overloads in `Client.Buckets`.
+DeleteBucketLifecycle, DeleteBucketReplication, and DeleteBucketWebsite
+additionally expose limited constructors, same-name operation-last reusable
+initiation procedures, typed `Finish`, and typed synchronous overloads in
+`Client.Buckets`.
 `Client.Low_Level` exposes each exact prepared-operation initiator used by its
 parent. Each parent owns a known-empty nonrewindable source and bounded error
-response through terminal drain. Neither replays a mutation. A complete 204
+response through terminal drain. None replays a mutation. A complete 204
 proves completion; exact conclusive service rejection proves non-application;
 cancellation before admission is distinct; and any failure after possible
 admission remains outcome-unknown for caller-selected read-only
@@ -78,12 +79,13 @@ control-bearing and overlong inputs, exact 204 semantics, structured errors,
 malformed errors, and cross-operation executor rejection before HTTP.
 
 The raw-loopback corpus adds one signed high-level 204 exchange for every
-operation and caller. It also gates DeleteBucketLifecycle and
-DeleteBucketReplication typed synchronous calls, limited constructors,
-operation-last restarts, exact prepared-operation rejection, typed 403
-certainty, duplicate and empty physical response identifiers, and bounded
-error bodies. The replication lane additionally changes caller-owned
-parameters after initiation to prove that the operation retained no borrow.
+operation and caller. It also gates DeleteBucketLifecycle,
+DeleteBucketReplication, and DeleteBucketWebsite typed synchronous calls,
+limited constructors, operation-last restarts, exact prepared-operation
+rejection, typed 403 certainty, duplicate and empty physical response
+identifiers, and bounded error bodies. The replication and website lanes
+additionally change caller-owned parameters after initiation to prove that the
+operations retained no borrow.
 The complete sequence runs once under a native task and once under a Flyology
 lightweight task; the root gate repeats the whole socket corpus three times.
 The existing shared DeleteBucketCors physical-response lane supplies empty,
@@ -93,9 +95,10 @@ decoder and executor machinery.
 The machine ledger records `DeleteBucketPolicy` and
 `DeletePublicAccessBlock` as `covered / covered / covered / covered` using
 their independent backend and server evidence. The other eleven operations
-remain `missing / covered / missing / covered`; the additional lifecycle and
-replication composable clients do not change those ledger tuples. This client
-corpus does not manufacture their backend persistence or server routes.
+remain `missing / covered / missing / covered`; the additional lifecycle,
+replication, and website composable clients do not change those ledger tuples.
+This client corpus does not manufacture their backend persistence or server
+routes.
 
 ## Gate evidence
 
@@ -104,14 +107,14 @@ crash matrix, 320 checksum oracle vectors, 210 chunk boundaries, the strict
 server application corpus, and three repetitions of the deterministic family
 corpus and native/lightweight socket and TLS corpora. The operation inventory
 verifier reported thirteen operations, thirty request members, no modeled
-success outputs, eight reciprocal vectors, and the exact lifecycle and
-replication composable declarations. The 116-operation coverage verifier and
-its negative oracle,
+success outputs, eight reciprocal vectors, and the exact lifecycle,
+replication, and website composable declarations. The 116-operation coverage
+verifier and its negative oracle,
 repository-integrity gate, Markdown-link gate, and generated API build also
-passed. GNATdoc produced a 44,047-line log and 429 HTML files with both
-composable APIs present. It reported no error diagnostic and no new related
-warning; the generated model's pre-existing undocumented replication enum
-literal warning remains visible.
+passed. GNATdoc produced a 44,072-line log and 429 HTML files with all three
+composable APIs present. It reported no error diagnostic and no new public-API
+warning; the generated model's pre-existing undocumented operation-enum
+warnings remain visible.
 
 The latest serialized proof campaign remains the 2026-08-26 936/936 result.
 This slice changes only non-SPARK client, corpus, coverage, and documentation
