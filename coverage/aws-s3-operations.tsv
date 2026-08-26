@@ -29,7 +29,7 @@ DeleteObjects	core	covered	covered	covered	covered
 DeletePublicAccessBlock	extended	covered	covered	covered	covered
 GetBucketAbac	extended	missing	covered	missing	covered
 GetBucketAccelerateConfiguration	extended	missing	covered	missing	covered
-GetBucketAcl	extended	missing	covered	missing	covered
+GetBucketAcl	extended	missing	covered	covered	covered
 GetBucketAnalyticsConfiguration	extended	missing	partial	missing	missing
 GetBucketCors	extended	covered	covered	covered	covered
 GetBucketEncryption	extended	missing	covered	missing	covered
@@ -53,7 +53,7 @@ GetBucketTagging	core	covered	covered	covered	covered
 GetBucketVersioning	core	covered	covered	covered	covered
 GetBucketWebsite	extended	missing	partial	missing	missing
 GetObject	core	covered	covered	covered	covered
-GetObjectAcl	extended	missing	covered	missing	covered
+GetObjectAcl	extended	missing	covered	covered	covered
 GetObjectAnnotation	extended	missing	partial	missing	missing
 GetObjectAttributes	core	covered	covered	covered	covered
 GetObjectLegalHold	extended	missing	covered	missing	covered

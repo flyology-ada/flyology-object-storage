@@ -26,11 +26,16 @@ package Flyology.Object_Storage.Server.S3_Applications is
    --  Serve one Flyology HTTP exchange. The current slice implements the
    --  service-level ListBuckets, path-style
    --  Create/GetBucketLocation/Put/GetBucketVersioning/Head/DeleteBucket,
+   --  GetBucketAcl,
    --  Put/Get/DeletePublicAccessBlock,
-   --  Put/Get/Head/DeleteObject, DeleteObjects, ListObjects v1/v2, and core
+   --  Put/Get/Head/DeleteObject, GetObjectAcl, DeleteObjects,
+   --  ListObjects v1/v2, and core
    --  multipart operations,
    --  including ListParts and ListMultipartUploads. Unsupported S3 operations
    --  receive a typed NotImplemented response and never reach the backend.
+   --  The ACL reads derive one owner-only FULL_CONTROL policy from the stable
+   --  single-tenant Principal and the application's private-only bucket and
+   --  object mutation profile; they do not imply persisted ACL state.
    --  @param X Borrowed request-scoped Flyology HTTP exchange
    procedure Handle
      (X : in out Flyology.HTTP.Server.Applications.Exchange);

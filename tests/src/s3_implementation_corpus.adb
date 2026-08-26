@@ -18,6 +18,7 @@ with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.Client.Objects;
 with Flyology.Object_Storage.Client.Transfers;
+with Flyology.Object_Storage.S3.ACL;
 with Flyology.Object_Storage.S3.Attributes;
 with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
@@ -37,6 +38,7 @@ procedure S3_Implementation_Corpus is
    package Client_Buckets renames Flyology.Object_Storage.Client.Buckets;
    package Client_Objects renames Flyology.Object_Storage.Client.Objects;
    package Transfers renames Flyology.Object_Storage.Client.Transfers;
+   package ACL renames Flyology.Object_Storage.S3.ACL;
    package Attributes renames Flyology.Object_Storage.S3.Attributes;
    package Checksums renames Flyology.Object_Storage.S3.Checksums;
    package Checksum_Policy renames Checksums.Policy;
@@ -110,11 +112,31 @@ procedure S3_Implementation_Corpus is
    use type Client_Buckets.Set_Versioning_Outcome_Kind;
    use type Client_Buckets.Get_Versioning_Outcome_Kind;
    use type Flyology.Object_Storage.Bucket_Versioning_Status;
+   use type Low_Level.Get_Bucket_Control_Outcome_Kind;
+   use type Low_Level.Get_Object_ACL_Outcome_Kind;
+   use type ACL.Grantee_Type;
+   use type ACL.Permission;
 
    Access_Key : constant String := "FLYOLOGYS3ORACLE";
    Secret_Key : constant String := "flyology-s3-oracle-secret-key-tests";
    Payload    : aliased constant String :=
      String'(1 .. 6 * 1_024 * 1_024 => 'm');
+
+   function Is_Flyology_Server return Boolean is
+      --  test-flyology-server.sh assigns this stable implementation prefix
+      --  only to the in-repository authenticated black-box server lanes.
+      Variable : constant String := "FLYOLOGY_S3_IMPLEMENTATION";
+   begin
+      if not Ada.Environment_Variables.Exists (Variable) then
+         return False;
+      end if;
+      declare
+         Value : constant String := Ada.Environment_Variables.Value (Variable);
+      begin
+         return Value'Length >= 9
+           and then Value (Value'First .. Value'First + 8) = "flyology-";
+      end;
+   end Is_Flyology_Server;
 
    function Buffer_String (Item : Buffers.Unique_Buffer) return String is
       Value : US.Unbounded_String;
@@ -2591,6 +2613,77 @@ procedure S3_Implementation_Corpus is
             end;
          end;
       end Require_Complete_Put_Tuple;
+
+      procedure Require_Private_ACL is
+         Bucket_Parameters : Low_Level.Get_Bucket_Control_Parameters;
+         Object_Parameters : Low_Level.Get_Object_ACL_Parameters;
+
+         procedure Check
+           (Policy : ACL.Access_Control_Policy;
+            Label_Text : String)
+         is
+         begin
+            if not Policy.Is_Set
+              or else not Policy.Policy_Owner.Is_Set
+              or else not Policy.Policy_Owner.ID.Is_Set
+              or else US.To_String (Policy.Policy_Owner.ID.Value) /=
+                "qualification"
+              or else not Policy.ACL.Is_Set
+              or else Policy.ACL.Grants.Length /= 1
+            then
+               raise Program_Error with
+                 "Flyology server returned an invalid private " & Label_Text;
+            end if;
+            declare
+               Grant : constant ACL.Grant :=
+                 Policy.ACL.Grants.First_Element;
+            begin
+               if not Grant.Principal.Is_Set
+                 or else Grant.Principal.Kind /= ACL.Canonical_User
+                 or else not Grant.Principal.ID.Is_Set
+                 or else US.To_String (Grant.Principal.ID.Value) /=
+                   "qualification"
+                 or else not Grant.Allowed.Is_Set
+                 or else Grant.Allowed.Value /= ACL.Full_Control
+               then
+                  raise Program_Error with
+                    "Flyology server returned an invalid private " &
+                    Label_Text;
+               end if;
+            end;
+         end Check;
+      begin
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_ACL
+                (Origin, Low_Level.Path_Style, Bucket, Bucket_Parameters,
+                 Identity, "us-east-1", Timestamp);
+            Outcome : constant Low_Level.Get_Bucket_ACL_Outcome :=
+              Low_Level.Execute_Get_Bucket_ACL
+                (HTTP, Prepared, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Low_Level.Bucket_Control_Found then
+               raise Program_Error with
+                 "Flyology server rejected black-box GetBucketAcl";
+            end if;
+            Check (Outcome.Policy, "bucket ACL");
+         end;
+         declare
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_ACL
+                (Origin, Low_Level.Path_Style, Bucket, Key,
+                 Object_Parameters, Identity, "us-east-1", Timestamp);
+            Outcome : constant Low_Level.Get_Object_ACL_Outcome :=
+              Low_Level.Execute_Get_Object_ACL
+                (HTTP, Prepared, Timeout => 30.0);
+         begin
+            if Outcome.Kind /= Low_Level.Object_ACL_Found then
+               raise Program_Error with
+                 "Flyology server rejected black-box GetObjectAcl";
+            end if;
+            Check (Outcome.Result.Policy, "object ACL");
+         end;
+      end Require_Private_ACL;
    begin
       HTTP_Client.Configure (HTTP, Origin);
       Check_Bucket_Tags;
@@ -2820,6 +2913,9 @@ procedure S3_Implementation_Corpus is
       end;
       Require_Listed_Object;
       Require_Head_Object;
+      if Is_Flyology_Server then
+         Require_Private_ACL;
+      end if;
       if Check_Get_Object_Attributes then
          Require_Get_Object_Attributes;
       end if;

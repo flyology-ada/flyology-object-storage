@@ -458,9 +458,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
 
    procedure Handle (X : in out Apps.Exchange) is
       type Operation_Kind is
-        (Unsupported,
+        (Unsupported, Unsupported_ACL,
          List_Buckets,
          Create_Bucket, Get_Bucket_Location, Head_Bucket, Delete_Bucket,
+         Get_Bucket_ACL,
          Put_Bucket_Tagging, Get_Bucket_Tagging, Delete_Bucket_Tagging,
          Put_Public_Access_Block, Get_Public_Access_Block,
          Delete_Public_Access_Block,
@@ -468,6 +469,7 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Put_Bucket_Policy, Get_Bucket_Policy, Delete_Bucket_Policy,
          Put_Bucket_Versioning, Get_Bucket_Versioning,
          Put_Object, Copy_Object, Get_Object, Head_Object, Delete_Object,
+         Get_Object_ACL,
          Put_Object_Tagging, Get_Object_Tagging, Delete_Object_Tagging,
          Get_Object_Attributes,
          Delete_Objects,
@@ -501,6 +503,91 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          when Tagging.Malformed_Tagging_Query =>
             return False;
       end Is_Valid_Tagging_Query;
+
+      function Hex_Value (Value : Character) return Natural is
+        (if Value in '0' .. '9' then
+            Character'Pos (Value) - Character'Pos ('0')
+         elsif Value in 'a' .. 'f' then
+            Character'Pos (Value) - Character'Pos ('a') + 10
+         elsif Value in 'A' .. 'F' then
+            Character'Pos (Value) - Character'Pos ('A') + 10
+         else 16);
+
+      function Decode_ACL_Query_Component (Value : String) return String is
+         Result : String (1 .. Value'Length);
+         Raw    : constant String (1 .. Value'Length) := Value;
+         Input  : Natural := 1;
+         Output : Natural := 0;
+      begin
+         while Input <= Raw'Length loop
+            Output := Output + 1;
+            if Raw (Input) = '%' then
+               if Input + 2 > Raw'Length
+                 or else Hex_Value (Raw (Input + 1)) > 15
+                 or else Hex_Value (Raw (Input + 2)) > 15
+               then
+                  raise Constraint_Error;
+               end if;
+               Result (Output) := Character'Val
+                 (16 * Hex_Value (Raw (Input + 1)) +
+                  Hex_Value (Raw (Input + 2)));
+               Input := Input + 3;
+            else
+               Result (Output) := Raw (Input);
+               Input := Input + 1;
+            end if;
+         end loop;
+         return Result (1 .. Output);
+      end Decode_ACL_Query_Component;
+
+      function Query_Mentions_ACL (Query : String) return Boolean is
+      begin
+         if Query'Length = 0 then
+            return False;
+         end if;
+         declare
+            Raw   : constant String (1 .. Query'Length) := Query;
+            First : Positive := 1;
+         begin
+            for Index in 1 .. Raw'Last + 1 loop
+               if Index = Raw'Last + 1 or else Raw (Index) = '&' then
+                  if Index > First then
+                     declare
+                        Pair_Text : constant String :=
+                          Raw (First .. Index - 1);
+                        Equals : constant Natural :=
+                          Ada.Strings.Fixed.Index (Pair_Text, "=");
+                        Name : constant String :=
+                          Decode_ACL_Query_Component
+                            ((if Equals = 0 then Pair_Text
+                              elsif Equals = Pair_Text'First then ""
+                              else Pair_Text
+                                (Pair_Text'First .. Equals - 1)));
+                        Value : constant String :=
+                          Decode_ACL_Query_Component
+                            ((if Equals = 0 or else Equals = Pair_Text'Last
+                              then ""
+                              else Pair_Text (Equals + 1 .. Pair_Text'Last)));
+                     begin
+                        if Name = "acl"
+                          or else
+                            (Name = "x-id"
+                             and then Value in
+                               "GetBucketAcl" | "GetObjectAcl")
+                        then
+                           return True;
+                        end if;
+                     end;
+                  end if;
+                  First := Index + 1;
+               end if;
+            end loop;
+         end;
+         return False;
+      exception
+         when Constraint_Error =>
+            return False;
+      end Query_Mentions_ACL;
 
       Target_Text : constant String := Apps.Request_Target (X);
       Method      : constant String := Apps.Request_Method (X);
@@ -539,6 +626,8 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Query_Text = "location="
         or else Query_Text = "location=&x-id=GetBucketLocation"
         or else Query_Text = "x-id=GetBucketLocation&location=";
+      Looks_Like_ACL_Query : constant Boolean :=
+        Query_Mentions_ACL (Query_Text);
       Is_Put_Bucket_Tagging_Query : constant Boolean :=
         Query_Text = "tagging"
         or else Query_Text = "tagging="
@@ -699,6 +788,101 @@ package body Flyology.Object_Storage.Server.S3_Applications is
         or else Ada.Strings.Fixed.Index
           (Padded_Query, "&x-id=GetObjectAttributes&") /= 0;
       Operation   : Operation_Kind := Unsupported;
+      type ACL_Query_Result is record
+         Valid          : Boolean := False;
+         Has_Version_ID : Boolean := False;
+         Version_ID     : US.Unbounded_String;
+      end record;
+
+      function Parse_ACL_Query
+        (Query        : String;
+         Object_Scope : Boolean) return ACL_Query_Result
+      is
+         Result       : ACL_Query_Result;
+         Seen_ACL     : Boolean := False;
+         Seen_Version : Boolean := False;
+         Seen_X_ID    : Boolean := False;
+         Count        : Natural := 1;
+      begin
+         if Query'Length = 0
+           or else Query'Length > Requests.Maximum_Target_Length
+         then
+            return Result;
+         end if;
+         for Item of Query loop
+            if Item = '&' then
+               Count := Count + 1;
+            end if;
+         end loop;
+         --  Pinned GetBucketAcl has acl plus optional x-id; GetObjectAcl adds
+         --  only versionId. These model fields, rather than server policy,
+         --  establish the two- and three-member query bounds.
+         if Count > (if Object_Scope then 3 else 2) then
+            return Result;
+         end if;
+         declare
+            Raw   : constant String (1 .. Query'Length) := Query;
+            First : Positive := 1;
+         begin
+            for Index in 1 .. Raw'Last + 1 loop
+               if Index = Raw'Last + 1 or else Raw (Index) = '&' then
+                  if Index = First then
+                     return Result;
+                  end if;
+                  declare
+                     Pair_Text : constant String := Raw (First .. Index - 1);
+                     Equals : constant Natural :=
+                       Ada.Strings.Fixed.Index (Pair_Text, "=");
+                     Name : constant String := Decode_ACL_Query_Component
+                       ((if Equals = 0 then Pair_Text
+                         elsif Equals = Pair_Text'First then ""
+                         else Pair_Text (Pair_Text'First .. Equals - 1)));
+                     Value : constant String := Decode_ACL_Query_Component
+                       ((if Equals = 0 or else Equals = Pair_Text'Last then ""
+                         else Pair_Text (Equals + 1 .. Pair_Text'Last)));
+                  begin
+                     if Name = "acl" then
+                        if Seen_ACL or else Value'Length /= 0 then
+                           return Result;
+                        end if;
+                        Seen_ACL := True;
+                     elsif Name = "versionId" then
+                        if not Object_Scope or else Seen_Version
+                          or else not Deletions.Valid_Version_ID (Value)
+                        then
+                           return Result;
+                        end if;
+                        Seen_Version := True;
+                        Result.Has_Version_ID := True;
+                        Result.Version_ID := US.To_Unbounded_String (Value);
+                     elsif Name = "x-id" then
+                        if Seen_X_ID
+                          or else Value /=
+                            (if Object_Scope
+                             then "GetObjectAcl" else "GetBucketAcl")
+                        then
+                           return Result;
+                        end if;
+                        Seen_X_ID := True;
+                     else
+                        return Result;
+                     end if;
+                  end;
+                  First := Index + 1;
+               end if;
+            end loop;
+         end;
+         Result.Valid := Seen_ACL;
+         return Result;
+      exception
+         when Constraint_Error =>
+            return (others => <>);
+      end Parse_ACL_Query;
+
+      ACL_Request : constant ACL_Query_Result :=
+        Parse_ACL_Query
+          (Query_Text, Parsed.Kind = Requests.Object_Target);
+      ACL_Query_Invalid : Boolean := False;
       Multipart_Query_Invalid : Boolean := False;
       Delete_Object_Query_Invalid : Boolean := False;
       Delete_Request : Deletions.Delete_Object_Request;
@@ -907,6 +1091,26 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             Accepted := True;
          end if;
       end Check_Expected_Bucket_Owner;
+
+      function Private_ACL_Document (Principal : String) return String is
+         Escaped : constant String := XML.Escape_Text (Principal);
+      begin
+         --  The application contract admits only one stable tenant principal,
+         --  CreateBucket accepts only private/BucketOwnerEnforced controls,
+         --  and PutObject accepts only the private canned ACL. The resulting
+         --  owner-only FULL_CONTROL policy is therefore derived state, not a
+         --  fabricated stored ACL. Namespace, xsi:type, CanonicalUser, and
+         --  FULL_CONTROL are exact externally fixed S3 wire spellings.
+         return
+           "<AccessControlPolicy " &
+           "xmlns=""http://s3.amazonaws.com/doc/2006-03-01/"">" &
+           "<Owner><ID>" & Escaped & "</ID></Owner>" &
+           "<AccessControlList><Grant><Grantee " &
+           "xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" " &
+           "xsi:type=""CanonicalUser""><ID>" & Escaped &
+           "</ID></Grantee><Permission>FULL_CONTROL</Permission>" &
+           "</Grant></AccessControlList></AccessControlPolicy>";
+      end Private_ACL_Document;
 
       function Copy_Result_XML
         (Root : String; Value : Object_Information) return String
@@ -1565,6 +1769,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Bucket_CORS_Query)
         and then not
+          (Parsed.Kind in Requests.Bucket_Target | Requests.Object_Target
+           and then Looks_Like_ACL_Query)
+        and then not
           (Parsed.Kind = Requests.Object_Target
            and then Method = "DELETE"
            and then Requests.Query_String (Target_Text, Parsed) =
@@ -1595,6 +1802,9 @@ package body Flyology.Object_Storage.Server.S3_Applications is
       if Parsed.Kind = Requests.Service_Target then
          Operation := (if Method = "GET" then List_Buckets else Unsupported);
       elsif Parsed.Kind = Requests.Bucket_Target then
+         ACL_Query_Invalid :=
+           Method = "GET" and then Looks_Like_ACL_Query
+           and then not ACL_Request.Valid;
          Bucket_Tagging_Query_Invalid :=
            Method in "PUT" | "GET" | "DELETE"
            and then Looks_Like_Bucket_Tagging_Query
@@ -1619,7 +1829,10 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            and then Looks_Like_Bucket_CORS_Query
            and then not Is_Bucket_CORS_Query;
          Operation :=
-           (if Method = "PUT" and then Looks_Like_Bucket_CORS_Query
+           (if Looks_Like_ACL_Query
+            then
+              (if Method = "GET" then Get_Bucket_ACL else Unsupported_ACL)
+            elsif Method = "PUT" and then Looks_Like_Bucket_CORS_Query
             then Put_Bucket_CORS
             elsif Method = "GET" and then Looks_Like_Bucket_CORS_Query
             then Get_Bucket_CORS
@@ -1678,7 +1891,13 @@ package body Flyology.Object_Storage.Server.S3_Applications is
             elsif Method = "GET" then List_Objects
             else Unsupported);
       elsif Parsed.Kind = Requests.Object_Target then
-         if Parsed.Has_Query and then Has_Tagging_Query
+         ACL_Query_Invalid :=
+           Method = "GET" and then Looks_Like_ACL_Query
+           and then not ACL_Request.Valid;
+         if Looks_Like_ACL_Query then
+            Operation :=
+              (if Method = "GET" then Get_Object_ACL else Unsupported_ACL);
+         elsif Parsed.Has_Query and then Has_Tagging_Query
            and then Method in "PUT" | "GET" | "DELETE"
          then
             declare
@@ -1899,6 +2118,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
            (X, 400, "InvalidArgument",
             "The multipart request query is invalid", Target_Text);
          return;
+      elsif ACL_Query_Invalid then
+         Send_Error
+           (X, 400, "InvalidArgument",
+            "The access-control request query is invalid", Target_Text);
+         return;
       elsif Bucket_Versioning_Query_Invalid then
          Send_Error
            (X, 400, "InvalidArgument",
@@ -1986,6 +2210,11 @@ package body Flyology.Object_Storage.Server.S3_Applications is
          Key    : constant String := Requests.Object_Key (Target_Text, Parsed);
       begin
          case Operation is
+            when Unsupported_ACL =>
+               Send_Error
+                 (X, 501, "NotImplemented",
+                  "ACL mutation is not implemented", Target_Text);
+
             when List_Buckets =>
                begin
                   declare
@@ -2343,6 +2572,37 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                            Result);
                         if Result = Success then
                            Apps.Respond (X, 200, "", "");
+                        else
+                           Send_Backend_Error
+                             (X, Result, True, Target_Text);
+                        end if;
+                     end if;
+                  end if;
+               end;
+
+            when Get_Bucket_ACL =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+               begin
+                  if Payer_Count > 0 then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "GetBucketAcl does not define RequestPayer",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Head_Bucket
+                          (Bucket, Apps.Cancellation (X), Apps.Deadline (X),
+                           Result);
+                        if Result = Success then
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              Private_ACL_Document
+                                (US.To_String (Auth.Principal)));
                         else
                            Send_Backend_Error
                              (X, Result, True, Target_Text);
@@ -7740,6 +8000,67 @@ package body Flyology.Object_Storage.Server.S3_Applications is
                         Apps.Respond (X, 204, "", "");
                      else
                         Send_Backend_Error (X, Result, False, Target_Text);
+                     end if;
+                  end if;
+               end;
+
+            when Get_Object_ACL =>
+               declare
+                  Payer_Count : constant Natural :=
+                    Apps.Request_Header_Count (X, "x-amz-request-payer");
+                  Owner_Accepted : Boolean;
+                  Selected_Info : Object_Information;
+                  Selector : constant Backends.Version_Selector :=
+                    (if not ACL_Request.Has_Version_ID
+                     then Backends.Current_Version_Selector
+                     elsif US.To_String (ACL_Request.Version_ID) = "null"
+                     then Backends.Null_Version_Selector
+                     else
+                       (Kind => Backends.Exact_Version,
+                        ID   => ACL_Request.Version_ID));
+               begin
+                  if Payer_Count > 1
+                    or else
+                      (Payer_Count = 1
+                       and then Apps.Request_Header
+                         (X, "x-amz-request-payer") /= "requester")
+                  then
+                     Send_Error
+                       (X, 400, "InvalidRequest",
+                        "The GetObjectAcl RequestPayer header is invalid",
+                        Target_Text);
+                  else
+                     Check_Expected_Bucket_Owner
+                       (US.To_String (Auth.Principal), Owner_Accepted);
+                     if Owner_Accepted then
+                        Store.Head_Object
+                          (Bucket, Key, Apps.Cancellation (X),
+                           Apps.Deadline (X), Selected_Info, Result,
+                           Selector => Selector);
+                        if Result = Success then
+                           Apps.Respond
+                             (X, 200, "application/xml",
+                              Private_ACL_Document
+                                (US.To_String (Auth.Principal)));
+                        elsif Result = Not_Found then
+                           --  Head_Object deliberately has one object-miss
+                           --  status.  The S3 route distinguishes an absent
+                           --  bucket from an absent key by classifying the
+                           --  miss with a read-only bucket lookup.
+                           Store.Head_Bucket
+                             (Bucket, Apps.Cancellation (X),
+                              Apps.Deadline (X), Result);
+                           if Result = Success then
+                              Send_Backend_Error
+                                (X, Not_Found, False, Target_Text);
+                           else
+                              Send_Backend_Error
+                                (X, Result, True, Target_Text);
+                           end if;
+                        else
+                           Send_Backend_Error
+                             (X, Result, False, Target_Text);
+                        end if;
                      end if;
                   end if;
                end;

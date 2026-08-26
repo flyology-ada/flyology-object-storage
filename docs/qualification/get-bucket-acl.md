@@ -1,8 +1,9 @@
-# GetBucketAcl client qualification
+# GetBucketAcl client and server qualification
 
-This record qualifies the strict bounded synchronous client and corpus for
-`GetBucketAcl`. It does not claim ACL persistence in a Flyology backend, an
-authenticated Flyology server route, or external server interoperability.
+This record qualifies the strict bounded synchronous client, corpus, and
+authenticated Flyology server route for `GetBucketAcl`. It does not claim ACL
+persistence in a Flyology backend, ACL mutation, public grants, or external
+server interoperability.
 
 ## Pinned authority and inventory
 
@@ -67,6 +68,22 @@ mixed namespaces; DTDs, entities, processing instructions, malformed UTF-8;
 and caller-limit violations. Diagnostic request and host IDs must each be
 absent or one nonempty control-free bounded value.
 
+## Authenticated server profile
+
+The path-style server accepts only the exact `acl` subresource with the
+optional matching SDK `x-id`, authenticates before request validation, rejects
+request bodies and RequestPayer, enforces the expected-owner precondition, and
+checks bucket existence through the backend. Other methods on the ACL
+subresource return authenticated `NotImplemented` and cannot fall through to
+ordinary bucket mutation routing.
+
+The server's existing application contract binds one store to one stable
+tenant principal. CreateBucket accepts only `private` and
+`BucketOwnerEnforced`, while object publication accepts only the `private`
+canned ACL. The server therefore derives a single `CanonicalUser`
+`FULL_CONTROL` grant for that principal. This is a read projection of the
+qualified private-only profile, not stored ACL state or a general ACL engine.
+
 ## Corpus and coverage boundary
 
 The deterministic corpus covers both addressing styles; exact/one-past owner
@@ -81,29 +98,34 @@ duplicate and empty physical diagnostic headers, malformed XML, and a body
 over the caller limit. The common root gate repeats the entire socket sequence
 under native and Flyology lightweight task owners three times.
 
-The machine ledger records `GetBucketAcl` as `missing / covered / missing /
-covered`. Client and corpus qualification does not manufacture backend state
-or a server route; those cells require separate persistence, routing, and
-independent black-box evidence.
+The machine ledger records `GetBucketAcl` as `missing / covered / covered /
+covered`. The backend cell remains missing because no ACL is persisted. The
+server cell is gated by the strict authenticated application corpus and a
+separate signed client over the real Flyology memory-server socket; neither
+gate claims external-server interoperability.
 
 ## Formal boundary
 
-This slice changes only non-SPARK client, XML facade, codec, corpus, and
-documentation units. None of the nine `tools/prove.sh` manifest units
-changes, so the latest serialized 2026-08-24 result remains applicable:
+This server extension changes only non-SPARK routing, corpus, and
+documentation units. None of the nine `tools/prove.sh` manifest units changes,
+so the latest serialized 2026-08-25 result remains applicable:
 936/936 checks, 180 flow and 756 prover, with zero warnings, unproved or
 justified checks, or `pragma Assume` statements.
 
 ## Gate evidence
 
-The root test gate passed all 40 AUnit cases, the 88-case crash corpus, the
-320-case checksum corpus, the 210-case multipart-checksum corpus, and three
-complete native/lightweight deterministic and raw-loopback repetitions. The
-SQLite gate also passed. The pinned-model verifier, 116-operation coverage
+The authenticated application corpus and real memory, files, and SQLite server
+sockets passed, including native and Flyology lightweight signed clients and
+the existing independent s5cmd guard. The standalone supervised server gate
+also passed all three backend selections. The root test gate passed all 41
+AUnit cases, the 132-case crash corpus, the 320-case checksum corpus, the
+210-case multipart-checksum corpus, and three complete native/lightweight
+deterministic and raw-loopback repetitions. The SQLite wrapper, catalog, and
+backend gate also passed. The pinned-model verifier, 116-operation coverage
 verifier, and coverage negative oracle were green.
 
-GNATdoc produced a nonempty API index containing the ACL codec, low-level
-GetBucketAcl API, and additive `Element_Attribute` callback. The new public
-declarations emitted no targeted warnings, and the documentation log contained
-no internal error, `LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or bounded-
+GNATdoc produced a 43,716-line log and a nonempty API index containing the ACL
+codec, low-level GetBucketAcl API, and changed server `Handle` contract. That
+contract emitted no targeted warning, and the documentation log contained no
+internal error, `LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or bounded-
 channel diagnostic.

@@ -96,13 +96,15 @@ The core crate includes:
   codecs and interoperability gates remain tracked as incomplete;
 - an authenticated path-style S3 server application for the initial
   Create/GetLocation/Head/DeleteBucket, Put/Get/DeleteBucketTagging,
+  GetBucketAcl,
   ListObjects v1/v2, DeleteObjects,
-  Put/Copy/Get/Head/GetAttributes/DeleteObject,
+  Put/Copy/Get/Head/GetAttributes/DeleteObject, GetObjectAcl,
   Put/Get/DeleteObjectTagging, and core multipart/ListParts/
   ListMultipartUploads slice, with current/null/exact generation routing,
   SigV4 admission before body acceptance,
   streamed payload-hash verification before commit, atomic suffix-range
-  resolution, and typed S3 error responses;
+  resolution, typed S3 error responses, and owner-only ACL reads derived from
+  the existing private single-tenant profile without persisted ACL state;
 - the namespace for the low-level and convenience clients.
 
 The optional `flyology_object_storage_sqlite` subcrate vendors a pinned

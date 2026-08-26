@@ -1,8 +1,9 @@
-# GetObjectAcl client qualification
+# GetObjectAcl client and server qualification
 
-This record qualifies the strict bounded synchronous client and corpus for
-`GetObjectAcl`. It does not claim ACL persistence in a Flyology backend, an
-authenticated Flyology server route, or external server interoperability.
+This record qualifies the strict bounded synchronous client, corpus, and
+authenticated Flyology server route for `GetObjectAcl`. It does not claim ACL
+persistence in a Flyology backend, ACL mutation, public grants, requester
+billing, or external server interoperability.
 
 ## Pinned authority and inventory
 
@@ -64,6 +65,23 @@ malformed UTF-8; and caller-limit violations. Dynamic grant and string storage
 is bounded by caller-selected XML limits because the pinned shapes specify no
 independent maxima.
 
+## Authenticated server profile
+
+The path-style server accepts the exact `acl` subresource, an optional matching
+SDK `x-id`, and an optional validated `versionId`. It authenticates before
+request validation, rejects request bodies, enforces expected owner, admits
+only the modeled `requester` payer spelling, and resolves current, null, or
+opaque exact generations with `Head_Object`. An object miss is classified by a
+read-only `Head_Bucket` call so absent buckets and absent keys retain their S3
+error distinction. The server performs no requester billing and therefore
+does not emit `x-amz-request-charged`.
+
+The bound store has one stable tenant principal, and the qualified mutation
+profile admits only private ACLs. The response therefore contains one
+`CanonicalUser` `FULL_CONTROL` grant for that principal. It is derived
+read-only state, not a persisted ACL. Other methods on the ACL subresource
+return authenticated `NotImplemented` and cannot fall through to PutObject.
+
 ## Corpus and coverage boundary
 
 The deterministic corpus covers both addressing styles; exact greedy-key and
@@ -79,32 +97,37 @@ empty, and altered physical headers, malformed XML, and a body over the caller
 limit. The common root gate repeats the full sequence under native and Flyology
 lightweight task owners three times.
 
-The machine ledger records `GetObjectAcl` as `missing / covered / missing /
-covered`. Client and corpus qualification does not manufacture backend state
-or a server route; those cells require separate persistence, routing, and
-independent black-box evidence.
+The machine ledger records `GetObjectAcl` as `missing / covered / covered /
+covered`. The backend cell remains missing because no ACL is persisted. The
+server cell is gated by the strict authenticated application corpus and a
+separate signed client over the real Flyology memory-server socket; neither
+gate claims external-server interoperability.
 
 ## Formal boundary
 
-This slice changes only non-SPARK client, corpus, and documentation units.
-None of the nine `tools/prove.sh` manifest units changes, so the latest
-serialized 2026-08-24 result remains applicable: 936/936 checks, 180 flow and
-756 prover, with zero warnings, unproved or justified checks, or
+This server extension changes only non-SPARK routing, corpus, and
+documentation units. None of the nine `tools/prove.sh` manifest units changes,
+so the latest serialized 2026-08-25 result remains applicable: 936/936 checks,
+180 flow and 756 prover, with zero warnings, unproved or justified checks, or
 `pragma Assume` statements.
 
 ## Gate evidence
 
-The root test gate passed all 40 AUnit cases, the 88-case crash corpus, the
-320-case checksum corpus, the 210-case multipart-checksum corpus, and three
-complete native/lightweight deterministic and raw-loopback repetitions. The
-SQLite wrapper, catalog, and backend gate also passed.
+The authenticated application corpus and real memory, files, and SQLite server
+sockets passed, including native and Flyology lightweight signed clients and
+the existing independent s5cmd guard. The standalone supervised server gate
+also passed all three backend selections. The root test gate passed all 41
+AUnit cases, the 132-case crash corpus, the 320-case checksum corpus, the
+210-case multipart-checksum corpus, and three complete native/lightweight
+deterministic and raw-loopback repetitions. The SQLite wrapper, catalog, and
+backend gate also passed.
 
 The pinned GetObjectAcl verifier reported all 17 modeled members, the one
 nonflattened list, all 10 exact enum values, and all 13 reciprocal vectors.
 The 116-operation coverage verifier and its negative oracle were green.
 
-GNATdoc produced a nonempty API index containing the public GetObjectAcl
-parameter, result, outcome, prepare, decode, and execute declarations. Those
-declarations emitted no targeted warning, and the log contained no internal
-error, `LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or bounded-channel
-diagnostic.
+GNATdoc produced a 43,716-line log and a nonempty API index containing the
+public GetObjectAcl parameter, result, outcome, prepare, decode, execute, and
+changed server `Handle` contract. That contract emitted no targeted warning,
+and the log contained no internal error, `LANGKIT_SUPPORT.ERRORS`,
+infinite-recursion, or bounded-channel diagnostic.

@@ -17,6 +17,7 @@ with Flyology.Object_Storage;
 with Flyology.Object_Storage.Backends;
 with Flyology.Object_Storage.Backends.Memory;
 with Flyology.Object_Storage.S3.Attributes;
+with Flyology.Object_Storage.S3.ACL;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Checksum_Policy;
@@ -49,6 +50,7 @@ procedure S3_Server_Application_Corpus is
    package Checksums renames Flyology.Object_Storage.S3.Checksums;
    package Core renames Flyology.Object_Storage.S3.Core;
    package Attributes renames Flyology.Object_Storage.S3.Attributes;
+   package ACL renames Flyology.Object_Storage.S3.ACL;
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package Listings renames Flyology.Object_Storage.S3.Listings;
    package Multipart renames Flyology.Object_Storage.S3.Multipart;
@@ -76,6 +78,8 @@ procedure S3_Server_Application_Corpus is
    use type Backends.Version_Delete_Kind;
    use type MFA.Authorization_Status;
    use type Tags.Tag_Vectors.Vector;
+   use type ACL.Grantee_Type;
+   use type ACL.Permission;
 
    CRLF : constant String := Character'Val (13) & Character'Val (10);
    Access_Key : constant String := "AKIDEXAMPLE";
@@ -4174,6 +4178,268 @@ begin
             "HeadBucket accepted a duplicate expected owner header: " &
               Duplicate);
       end;
+   end;
+
+   declare
+      Bucket_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("acl", ""));
+      Bucket_ID_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("acl", ""), SigV4.Pair ("x-id", "GetBucketAcl"));
+      Object_Query : constant SigV4.Name_Value_Array :=
+        (1 => SigV4.Pair ("acl", ""));
+      Object_Version_Query : constant SigV4.Name_Value_Array :=
+        (SigV4.Pair ("acl", ""), SigV4.Pair ("versionId", "null"));
+
+      function Encoded_ACL_Request
+        (Method, Target : String) return String
+      is
+         Request : constant String :=
+           Signed_Query_Request (Method, Target, Object_Query);
+         Marker : constant Natural :=
+           Ada.Strings.Fixed.Index (Request, "?acl=");
+      begin
+         if Marker = 0 then
+            raise Program_Error with "ACL test signer omitted its query";
+         end if;
+         --  SigV4 decodes query components before canonicalization, so this
+         --  wire spelling has the same valid signature as the plain name.
+         return Request (Request'First .. Marker - 1) & "?%61cl=" &
+           Request (Marker + 5 .. Request'Last);
+      end Encoded_ACL_Request;
+
+      procedure Check_Private_ACL (Response, Label_Text : String) is
+         Policy : constant ACL.Access_Control_Policy :=
+           ACL.Parse (Response_Body (Response));
+      begin
+         Require
+           (Has (Response, "200 OK")
+            and then Has (Response, "Content-Type: application/xml"),
+            Label_Text & " did not return an XML success");
+         Require
+           (Policy.Is_Set and then Policy.Policy_Owner.Is_Set
+            and then Policy.Policy_Owner.ID.Is_Set
+            and then US.To_String (Policy.Policy_Owner.ID.Value) =
+              "test-principal"
+            and then Policy.ACL.Is_Set and then Policy.ACL.Grants.Length = 1,
+            Label_Text & " did not derive the private tenant ACL");
+         declare
+            Grant : constant ACL.Grant :=
+              Policy.ACL.Grants.First_Element;
+         begin
+            Require
+              (Grant.Principal.Is_Set
+               and then Grant.Principal.Kind = ACL.Canonical_User
+               and then Grant.Principal.ID.Is_Set
+               and then US.To_String (Grant.Principal.ID.Value) =
+                 "test-principal"
+               and then Grant.Allowed.Is_Set
+               and then Grant.Allowed.Value = ACL.Full_Control,
+               Label_Text & " did not derive the private tenant ACL");
+         end;
+      end Check_Private_ACL;
+   begin
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("PUT", "/test-bucket/acl-object", "acl payload")),
+            "200 OK"),
+         "ACL server fixture PutObject failed");
+      Check_Private_ACL
+        (Run (Signed_Query_Request
+          ("GET", "/test-bucket", Bucket_Query)),
+         "GetBucketAcl");
+      Check_Private_ACL
+        (Run (Signed_Query_Request
+          ("GET", "/test-bucket", Bucket_ID_Query)),
+         "GetBucketAcl x-id");
+      Check_Private_ACL
+        (Run
+           (Signed_Query_Request
+              ("GET", "/test-bucket", Bucket_Query,
+               "x-amz-expected-bucket-owner", "test-principal")),
+         "GetBucketAcl expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Bucket_Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetBucketAcl ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket", Bucket_Query,
+                  "x-amz-request-payer", "requester")),
+            "<Code>InvalidRequest</Code>"),
+         "GetBucketAcl accepted RequestPayer");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("acl", ""), SigV4.Pair ("acl", "")))),
+            "400 Bad Request"),
+         "GetBucketAcl accepted a duplicate acl query");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket",
+                  (SigV4.Pair ("acl", ""),
+                   SigV4.Pair ("x-id", "GetObjectAcl")))),
+            "400 Bad Request"),
+         "GetBucketAcl accepted the object operation id");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket", Bucket_Query)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetBucketAcl did not distinguish an absent bucket");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket", Bucket_Query, "unexpected")),
+            "<Code>InvalidRequest</Code>"),
+         "GetBucketAcl accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("GET", "/test-bucket", "", Query_Name => "acl",
+                  Corrupt_Signature => True)),
+            "<Code>SignatureDoesNotMatch</Code>"),
+         "GetBucketAcl validation ran before authentication");
+
+      Check_Private_ACL
+        (Run (Signed_Query_Request
+          ("GET", "/test-bucket/acl-object", Object_Query)),
+         "GetObjectAcl");
+      Check_Private_ACL
+        (Run (Encoded_ACL_Request
+          ("GET", "/test-bucket/acl-object")),
+         "GetObjectAcl encoded subresource");
+      Check_Private_ACL
+        (Run
+           (Signed_Query_Request
+              ("GET", "/test-bucket/acl-object", Object_Version_Query)),
+         "GetObjectAcl null version");
+      Check_Private_ACL
+        (Run
+           (Signed_Query_Request
+              ("GET", "/test-bucket/acl-object", Object_Query,
+               "x-amz-request-payer", "requester")),
+         "GetObjectAcl RequestPayer");
+      Check_Private_ACL
+        (Run
+           (Signed_Query_Request
+              ("GET", "/test-bucket/acl-object", Object_Query,
+               "x-amz-expected-bucket-owner", "test-principal")),
+         "GetObjectAcl expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/acl-object", Object_Query,
+                  "x-amz-expected-bucket-owner", "different-owner")),
+            "403 Forbidden"),
+         "GetObjectAcl ignored expected owner");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/acl-object", Object_Query,
+                  "x-amz-request-payer", "owner")),
+            "<Code>InvalidRequest</Code>"),
+         "GetObjectAcl accepted an invalid RequestPayer");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/acl-object", Object_Query,
+                  "x-amz-request-payer", "requester",
+                  Second_Header_Value => "requester")),
+            "<Code>InvalidRequest</Code>"),
+         "GetObjectAcl accepted duplicate RequestPayer fields");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/missing-acl-object", Object_Query)),
+            "<Code>NoSuchKey</Code>"),
+         "GetObjectAcl did not distinguish an absent object");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/absent-bucket/object", Object_Query)),
+            "<Code>NoSuchBucket</Code>"),
+         "GetObjectAcl did not distinguish an absent bucket");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/acl-object",
+                  (SigV4.Pair ("acl", ""),
+                   SigV4.Pair ("unexpected", "1")))),
+            "400 Bad Request"),
+         "GetObjectAcl accepted an extra query member");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("GET", "/test-bucket/acl-object",
+                  (SigV4.Pair ("acl", ""),
+                   SigV4.Pair ("versionId", "")))),
+            "400 Bad Request"),
+         "GetObjectAcl accepted an empty version selector");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Body_Request
+                 ("GET", "/test-bucket/acl-object", Object_Query,
+                  "unexpected")),
+            "<Code>InvalidRequest</Code>"),
+         "GetObjectAcl accepted a request body");
+      Require
+        (Has
+           (Run
+              (Signed_Query_Request
+                 ("PUT", "/test-bucket/acl-mutation-guard", Object_Query)),
+            "501 Not Implemented"),
+         "PutObjectAcl was not rejected explicitly");
+      Require
+        (Has
+           (Run
+              (Encoded_ACL_Request
+                 ("PUT", "/test-bucket/encoded-acl-mutation-guard")),
+            "501 Not Implemented"),
+         "encoded PutObjectAcl was not rejected explicitly");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("GET", "/test-bucket/acl-mutation-guard", "")),
+            "<Code>NoSuchKey</Code>"),
+         "unsupported PutObjectAcl reached PutObject storage");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("GET", "/test-bucket/encoded-acl-mutation-guard", "")),
+            "<Code>NoSuchKey</Code>"),
+         "encoded PutObjectAcl reached PutObject storage");
+      Require
+        (Has
+           (Run
+              (Signed_Request
+                 ("DELETE", "/test-bucket/acl-object", "")),
+            "204 No Content"),
+         "ACL server fixture cleanup failed");
    end;
 
    declare
