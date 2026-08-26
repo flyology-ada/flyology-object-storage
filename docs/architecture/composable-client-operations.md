@@ -8,7 +8,8 @@ bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
 ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
 bounded GetBucketLocation, bounded GetBucketPolicy, GetBucketPolicyStatus, and
-GetBucketRequestPayment, bounded GetBucketAbac, non-replaying
+GetBucketRequestPayment, bounded GetBucketAbac and
+GetBucketAccelerateConfiguration, non-replaying
 Put/DeleteBucketPolicy, non-replaying
 PutBucketAbac, PutBucketAccelerateConfiguration, and
 PutBucketRequestPayment,
@@ -96,7 +97,8 @@ The implemented operation order is:
 23. non-replaying `Put_Bucket_Versioning` and bounded
     `Get_Bucket_Versioning`;
 24. bounded `Get_Bucket_Policy`, `Get_Bucket_Policy_Status`,
-    `Get_Bucket_Request_Payment`, and `Get_ABAC`, plus non-replaying `Set_ABAC`,
+    `Get_Bucket_Request_Payment`, `Get_ABAC`, and
+    `Get_Accelerate_Configuration`, plus non-replaying `Set_ABAC`,
     `Set_Accelerate_Configuration`, and `Set_Request_Payment`;
 25. `Set_Public_Access_Block`, `Get_Public_Access_Block`, and
     `Delete_Public_Access_Block`;
@@ -117,9 +119,9 @@ The implemented operation order is:
 34. bounded `Get_Object_Lock_Configuration` and non-replaying
     `Put_Object_Lock_Configuration`.
 
-The provider surface contains 59 domain operations: 19 in `Client.Objects`,
-32 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 56 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 60 domain operations: 19 in `Client.Objects`,
+33 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 57 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -260,6 +262,14 @@ convenience overload all drive one provider-owned state machine. Duplicate or
 present-empty S3 response identifiers and responses beyond the caller's
 existing XML document limit are rejected. The read selects no mutation retry
 policy and retains no caller input after signing.
+GetBucketAccelerateConfiguration follows that bounded read discipline with its
+exact `?accelerate` prepared operation, owner precondition, requester-pays
+control, presence-sensitive status, and optional modeled request-charged
+response. Its limited constructor, operation-last restart, typed Finish, typed
+synchronous wait, and convenience overload all drive one state machine. All
+three modeled singleton response headers and the caller's existing XML
+document limit are enforced; the read adds no retry or local acceleration
+policy.
 PutBucketAbac copies the presence-preserving serialized status document into
 its signed prepared request and exposes those owned bytes once through a
 non-rewindable source. Its limited constructor, operation-last restart, typed

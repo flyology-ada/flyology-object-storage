@@ -137,6 +137,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Bucket_Location_Result_Kind;
    use type Get_Bucket_Policy_Result_Kind;
    use type Get_Bucket_Policy_Status_Result_Kind;
+   use type Get_Bucket_Accelerate_Configuration_Result_Kind;
    use type Get_Bucket_ABAC_Result_Kind;
    use type Put_Bucket_Policy_Result_Kind;
    use type Delete_Bucket_Policy_Result_Kind;
@@ -4206,6 +4207,52 @@ procedure S3_HTTP_Socket_Corpus is
                "x-amz-request-charged: requester" & CRLF),
             "GET", "/example-bucket?accelerate",
             Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<AccelerateConfiguration><Status>Enabled</Status>" &
+               "</AccelerateConfiguration>",
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/typed-accelerate-get?accelerate",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<AccelerateConfiguration><Status>Suspended</Status>" &
+               "</AccelerateConfiguration>"),
+            "GET", "/composed-accelerate-get?accelerate",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-accelerate-get" & CRLF),
+            "GET", "/restart-accelerate-get?accelerate",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<AccelerateConfiguration><Status>Enabled</Status>" &
+               "</AccelerateConfiguration>",
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/duplicate-accelerate-get-header?accelerate",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<AccelerateConfiguration><Status>Enabled</Status>" &
+               "</AccelerateConfiguration>",
+               "x-amz-request-charged:" & CRLF),
+            "GET", "/empty-accelerate-get-header?accelerate",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<AccelerateConfiguration><Status>Enabled</Status>" &
+               "</AccelerateConfiguration>"),
+            "GET", "/bounded-accelerate-get?accelerate",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response ("200 OK", "{""Statement"":[]}"),
@@ -13976,6 +14023,203 @@ procedure S3_HTTP_Socket_Corpus is
                  "us-east-1",
                  "20130524T000000Z");
             Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Bucket_Accelerate_Configuration_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Get_Bucket_Accelerate_Configuration
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "GetBucketAccelerateConfiguration accepted a prepared " &
+                 "ABAC request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Accelerate_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"),
+               Request_Payer => US.To_Unbounded_String ("requester"));
+            Result : constant Get_Bucket_Accelerate_Configuration_Result :=
+              Buckets.Get_Accelerate_Configuration
+                (HTTP,
+                 Origin,
+                 "typed-accelerate-get",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /=
+              Get_Bucket_Accelerate_Configuration_Response_Available
+              or else Result.Failure /= No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+              or else Result.Response.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Response.Configuration /=
+                Bucket_Controls.Accelerate_Enabled
+              or else US.To_String (Result.Response.Request_Charged) /=
+                "requester"
+            then
+               raise Program_Error with
+                 "typed GetBucketAccelerateConfiguration response mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Accelerate_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"),
+               Request_Payer => US.Null_Unbounded_String);
+            --  Acceleration-read parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_Accelerate_Configuration_Result;
+         begin
+            declare
+               Operation : Get_Bucket_Accelerate_Configuration_Operation :=
+                 Get_Accelerate_Configuration
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-accelerate-get",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                 Get_Bucket_Accelerate_Configuration_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Bucket_Control_Found
+                 or else Result.Response.Configuration /=
+                   Bucket_Controls.Accelerate_Suspended
+               then
+                  raise Program_Error with
+                    "composed GetBucketAccelerateConfiguration first " &
+                    "result mismatch";
+               end if;
+               Get_Accelerate_Configuration
+                 (HTTP'Access,
+                  Origin,
+                  "restart-accelerate-get",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                 Get_Bucket_Accelerate_Configuration_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Bucket_Control_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-accelerate-get"
+               then
+                  raise Program_Error with
+                    "composed GetBucketAccelerateConfiguration restart " &
+                    "mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Accelerate_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"),
+               Request_Payer => US.Null_Unbounded_String);
+            Result : constant Get_Bucket_Accelerate_Configuration_Result :=
+              Buckets.Get_Accelerate_Configuration
+                (HTTP,
+                 Origin,
+                 "duplicate-accelerate-get-header",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /=
+              Get_Bucket_Accelerate_Configuration_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+            then
+               raise Program_Error with
+                 "duplicate GetBucketAccelerateConfiguration response " &
+                 "header admitted";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Accelerate_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"),
+               Request_Payer => US.Null_Unbounded_String);
+            Result : constant Get_Bucket_Accelerate_Configuration_Result :=
+              Buckets.Get_Accelerate_Configuration
+                (HTTP,
+                 Origin,
+                 "empty-accelerate-get-header",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /=
+              Get_Bucket_Accelerate_Configuration_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+            then
+               raise Program_Error with
+                 "empty GetBucketAccelerateConfiguration response header " &
+                 "admitted";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Accelerate_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"),
+               Request_Payer => US.Null_Unbounded_String);
+            Result : constant Get_Bucket_Accelerate_Configuration_Result :=
+              Buckets.Get_Accelerate_Configuration
+                (HTTP,
+                 Origin,
+                 "bounded-accelerate-get",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0,
+                 Limits =>
+                   --  Test-only one-byte ceiling is deliberately below the
+                   --  valid acceleration-status XML response.
+                   (Maximum_Document_Bytes => 1,
+                    others => <>));
+         begin
+            if Result.Kind /=
+              Get_Bucket_Accelerate_Configuration_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+            then
+               raise Program_Error with
+                 "GetBucketAccelerateConfiguration response limit was not " &
+                 "enforced";
+            end if;
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Abac
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
             Parent : aliased Get_Bucket_Policy_Operation
               (Set'Access, HTTP'Access, null);
             Child : HTTP_Client.Exchange_Operation (Set'Access);
@@ -18885,6 +19129,7 @@ begin
    Buckets_Testing.Check_Get_Bucket_Location_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Policy_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Policy_Status_Result_Corpus;
+   Buckets_Testing.Check_Get_Bucket_Accelerate_Configuration_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_ABAC_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Request_Payment_Result_Corpus;
    Buckets_Testing.Check_Bucket_Policy_Certainty_Corpus;

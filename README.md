@@ -77,7 +77,8 @@ The core crate includes:
   multipart initiation, one-shot UploadPart, and one-shot multipart completion
   operations, plus service-level ListBuckets, CreateBucket, DeleteBucket,
   HeadBucket, bounded GetBucketLocation, bounded GetBucketPolicy,
-  GetBucketPolicyStatus, GetBucketRequestPayment, and GetBucketAbac, and bounded
+  GetBucketPolicyStatus, GetBucketRequestPayment, GetBucketAbac, and
+  GetBucketAccelerateConfiguration, and bounded
   non-replaying PutBucketAbac, PutBucketAccelerateConfiguration,
   PutBucketRequestPayment,
   Put/DeleteBucketPolicy,
