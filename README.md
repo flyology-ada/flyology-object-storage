@@ -366,6 +366,18 @@ with a generation-bound whole Get before deciding whether to retry.
 The detailed policy is in
 [client transfers](docs/architecture/client-transfers.md).
 
+## Operation automation
+
+The human-reviewed
+[S3 operation registry](coverage/s3-operations.toml) inventories all 116
+pinned model operations, including exact coverage, implementation/test
+provenance, and executable evidence. Its `uv` tool audits complete reachable
+model shapes, refuses unresolved semantic decisions, drives focused
+qualification, and generates coverage counts, test registration, and the
+[complete documentation list](docs/generated/s3-operation-registry.md).
+The workflow and generated-versus-human ownership boundary are documented in
+[S3 operation automation](docs/architecture/s3-operation-automation.md).
+
 ## Secret erasure boundary
 
 Secure erasure does not inherently require C. This crate uses one tiny C11

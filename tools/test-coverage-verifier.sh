@@ -21,7 +21,7 @@ then
   exit 1
 fi
 if ! grep -Fq \
-  "covered server cell lacks test evidence: CreateSession" "$OUTPUT"
+  "coverage ledger differs from reviewed evidence registry" "$OUTPUT"
 then
   echo "coverage verifier rejected the fixture for the wrong reason" >&2
   cat "$OUTPUT" >&2

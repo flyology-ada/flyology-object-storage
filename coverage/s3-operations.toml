@@ -1,0 +1,1952 @@
+# Human-reviewed decisions and executable evidence for every pinned S3 operation.
+# Generated artifacts name this file as their source; edit this file, not them.
+schema_version = 1
+model_revision = "36c34f15391da01cd717c73c0fffa747c9889768"
+model_sha256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
+default_decision_status = "inventory_only"
+default_public_name = "legacy_preserved"
+
+[qualification]
+get_bucket_replication = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-replication-preparation.py"],
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_get_bucket_replication_corpus"],
+  ["@tests", "./bin/s3_http_socket_corpus"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-s3-operation-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
+
+[test_registration]
+# These counts and the three corpus repetitions preserve the pre-registry
+# maintained suite. Change them only with a reviewed registration update.
+model_verifier_count = 29
+corpus_count = 30
+corpus_repetitions = 3
+model_verifiers = [
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-create-session-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-list-object-versions-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-bucket-cors-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-bucket-configurations-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-controls-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-bucket-controls-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-bucket-ownership-controls-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-bucket-encryption-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-create-bucket-metadata-table-configuration-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-delete-object-annotation-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-legal-hold-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-retention-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-object-lock-configuration-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-torrent-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-legal-hold-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-retention-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-lock-configuration-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-ownership-controls-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-cors-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-bucket-cors-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-encryption-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-lifecycle-configuration-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-bucket-lifecycle-configuration-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-bucket-notification-configuration-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-replication-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-put-bucket-replication-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-metadata-table-configuration-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-bucket-acl-preparation.py"],
+  ["uv", "run", "--python", "3.13", "--", "tools/verify-get-object-acl-preparation.py"],
+]
+corpora = [
+  ["./bin/s3_list_object_versions_corpus"],
+  ["./bin/s3_delete_bucket_cors_corpus"],
+  ["./bin/s3_delete_bucket_configurations_corpus"],
+  ["./bin/s3_get_bucket_controls_corpus"],
+  ["./bin/s3_put_bucket_controls_corpus"],
+  ["./bin/s3_put_bucket_ownership_controls_corpus"],
+  ["./bin/s3_create_bucket_metadata_table_configuration_corpus"],
+  ["./bin/s3_delete_object_annotation_corpus"],
+  ["./bin/s3_put_object_legal_hold_corpus"],
+  ["./bin/s3_put_object_retention_corpus"],
+  ["./bin/s3_put_object_lock_configuration_corpus"],
+  ["./bin/s3_get_object_torrent_corpus"],
+  ["./bin/s3_get_object_torrent_socket_corpus"],
+  ["./bin/s3_get_object_legal_hold_corpus"],
+  ["./bin/s3_get_object_retention_corpus"],
+  ["./bin/s3_get_object_lock_configuration_corpus"],
+  ["./bin/s3_get_bucket_ownership_controls_corpus"],
+  ["./bin/s3_get_bucket_cors_corpus"],
+  ["./bin/s3_get_bucket_encryption_corpus"],
+  ["./bin/s3_get_bucket_lifecycle_configuration_corpus"],
+  ["./bin/s3_put_bucket_lifecycle_configuration_corpus"],
+  ["./bin/s3_bucket_notification_configuration_corpus"],
+  ["./bin/s3_get_bucket_replication_corpus"],
+  ["./bin/s3_put_bucket_replication_corpus"],
+  ["./bin/s3_get_bucket_metadata_table_configuration_corpus"],
+  ["./bin/s3_get_bucket_acl_corpus"],
+  ["./bin/s3_get_object_acl_corpus"],
+  ["./bin/s3_http_socket_corpus"],
+  ["./bin/s3_create_session_tls_corpus"],
+  ["./bin/s3_transfer_many_corpus"],
+]
+
+[[operation]]
+name = "AbortMultipartUpload"
+tier = "core"
+provider = "transfers"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Transfers"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "CompleteMultipartUpload"
+tier = "core"
+provider = "transfers"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Transfers"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-seaweedfs.sh"] }
+
+[[operation]]
+name = "CopyObject"
+tier = "core"
+provider = "transfers"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Transfers"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-seaweedfs.sh"] }
+
+[[operation]]
+name = "CreateBucket"
+tier = "core"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-implementation.sh"] }
+
+[[operation]]
+name = "CreateBucketMetadataConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "CreateBucketMetadataTableConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "CreateMultipartUpload"
+tier = "core"
+provider = "transfers"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Transfers"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "CreateSession"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_create_session_tls_corpus.adb"], server = [], corpus = ["tests/src/s3_create_session_tls_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucket"
+tier = "core"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_delete_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_delete_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketAnalyticsConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketCors"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketEncryption"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketIntelligentTieringConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketInventoryConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketLifecycle"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketMetadataConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketMetadataTableConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketMetricsConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketOwnershipControls"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketPolicy"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketReplication"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketTagging"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "DeleteBucketWebsite"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteObject"
+tier = "core"
+provider = "objects"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-implementation.sh", "tests/scripts/run-s3-server-slice.sh", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+
+[[operation]]
+name = "DeleteObjectAnnotation"
+tier = "extended"
+provider = "objects"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_delete_object_annotation_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "DeleteObjectTagging"
+tier = "core"
+provider = "objects"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "DeleteObjects"
+tier = "core"
+provider = "objects"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-implementation.sh", "tests/scripts/run-s3-server-slice.sh"] }
+
+[[operation]]
+name = "DeletePublicAccessBlock"
+tier = "extended"
+provider = "buckets"
+family = "bodyless_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+evidence_tokens = ["PublicAccessBlock", "Public_Access_Block"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketAbac"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_get_bucket_ownership_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_get_bucket_ownership_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketAccelerateConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketAcl"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketAnalyticsConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "GetBucketCors"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketEncryption"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_acl_corpus.adb", "tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketIntelligentTieringConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "GetBucketInventoryConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "GetBucketLifecycle"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "GetBucketLifecycleConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketLocation"
+tier = "core"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketLogging"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "GetBucketMetadataConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "GetBucketMetadataTableConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketMetricsConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "GetBucketNotification"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "GetBucketNotificationConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_bucket_notification_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_bucket_notification_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketOwnershipControls"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_bucket_ownership_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_ownership_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketPolicy"
+tier = "extended"
+provider = "buckets"
+family = "bounded_document_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "bounded_bytes_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketPolicyStatus"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketReplication"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+public_name = "Get_Replication_Configuration"
+codec = "rest_xml_and_headers"
+absence = "404 NoSuchBucket or ReplicationConfigurationNotFoundError maps to Not_Found"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_bucket_replication_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_replication_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+decision_status = "reviewed"
+qualification = "get_bucket_replication"
+ada_symbols = ["Prepare_Get_Bucket_Replication", "Execute_Get_Bucket_Replication", "Get_Bucket_Replication_Operation", "Get_Replication_Configuration", "Finish"]
+
+[[operation]]
+name = "GetBucketRequestPayment"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketTagging"
+tier = "core"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketVersioning"
+tier = "core"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "GetBucketWebsite"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "GetObject"
+tier = "core"
+provider = "objects"
+family = "streaming_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "streaming_bytes"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+
+[[operation]]
+name = "GetObjectAcl"
+tier = "extended"
+provider = "objects"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "GetObjectAnnotation"
+tier = "extended"
+provider = "objects"
+family = "streaming_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "streaming_bytes_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "GetObjectAttributes"
+tier = "core"
+provider = "objects"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+
+[[operation]]
+name = "GetObjectLegalHold"
+tier = "extended"
+provider = "objects"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb"], server = [], corpus = ["tests/src/s3_get_object_acl_corpus.adb", "tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb"] }
+
+[[operation]]
+name = "GetObjectLockConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb"], server = [], corpus = ["tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb"] }
+
+[[operation]]
+name = "GetObjectRetention"
+tier = "extended"
+provider = "objects"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"], server = [], corpus = ["tests/src/s3_get_object_lock_configuration_corpus.adb", "tests/src/s3_get_object_retention_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"] }
+
+[[operation]]
+name = "GetObjectTagging"
+tier = "core"
+provider = "objects"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "GetObjectTorrent"
+tier = "extended"
+provider = "objects"
+family = "bounded_binary_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "bounded_bytes_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_object_legal_hold_corpus.adb", "tests/src/s3_get_object_torrent_corpus.adb", "tests/src/s3_get_object_torrent_socket_corpus.adb"] }
+
+[[operation]]
+name = "GetPublicAccessBlock"
+tier = "extended"
+provider = "buckets"
+family = "bounded_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+evidence_tokens = ["PublicAccessBlock", "Public_Access_Block"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "HeadBucket"
+tier = "core"
+provider = "buckets"
+family = "response_head_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "HeadObject"
+tier = "core"
+provider = "objects"
+family = "response_head_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+
+[[operation]]
+name = "ListBucketAnalyticsConfigurations"
+tier = "extended"
+provider = "buckets"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "ListBucketIntelligentTieringConfigurations"
+tier = "extended"
+provider = "buckets"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "ListBucketInventoryConfigurations"
+tier = "extended"
+provider = "buckets"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "ListBucketMetricsConfigurations"
+tier = "extended"
+provider = "buckets"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "ListBuckets"
+tier = "core"
+provider = "buckets"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_create_session_tls_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_create_session_tls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/run-s3-server-slice.sh"] }
+
+[[operation]]
+name = "ListDirectoryBuckets"
+tier = "extended"
+provider = "buckets"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "ListMultipartUploads"
+tier = "core"
+provider = "transfers"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Transfers"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-seaweedfs.sh"] }
+
+[[operation]]
+name = "ListObjectAnnotations"
+tier = "extended"
+provider = "objects"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "ListObjectVersions"
+tier = "core"
+provider = "objects"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_list_object_versions_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_list_object_versions_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "ListObjects"
+tier = "core"
+provider = "objects"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-minio.sh", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+
+[[operation]]
+name = "ListObjectsV2"
+tier = "core"
+provider = "objects"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "ListParts"
+tier = "core"
+provider = "transfers"
+family = "paginated_rest_xml_read"
+public_provider = "Flyology.Object_Storage.Client.Transfers"
+codec = "rest_xml_and_headers"
+absence = "legacy_preserved"
+errors = ["legacy_preserved"]
+certainty = "read_only"
+reconciliation = "not_applicable"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+
+[[operation]]
+name = "PutBucketAbac"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_put_bucket_ownership_controls_corpus.adb"], server = [], corpus = ["tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_put_bucket_ownership_controls_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketAccelerateConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketAcl"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "PutBucketAnalyticsConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "PutBucketCors"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_get_bucket_cors_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketEncryption"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_encryption_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketIntelligentTieringConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "PutBucketInventoryConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "PutBucketLifecycle"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "PutBucketLifecycleConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketLogging"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "PutBucketMetricsConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "PutBucketNotification"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "PutBucketNotificationConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_bucket_notification_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_bucket_notification_configuration_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketOwnershipControls"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_ownership_controls_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_ownership_controls_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketPolicy"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketReplication"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_replication_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_replication_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketRequestPayment"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketTagging"
+tier = "core"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketVersioning"
+tier = "core"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "PutBucketWebsite"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "PutObject"
+tier = "core"
+provider = "objects"
+family = "streaming_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb", "tests/src/s3_server_application_corpus.adb", "tests/scripts/test-rustfs.sh", "tests/scripts/test-seaweedfs.sh"] }
+
+[[operation]]
+name = "PutObjectAcl"
+tier = "extended"
+provider = "objects"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "PutObjectAnnotation"
+tier = "extended"
+provider = "objects"
+family = "streaming_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "streaming_request_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "PutObjectLegalHold"
+tier = "extended"
+provider = "objects"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_legal_hold_corpus.adb"] }
+
+[[operation]]
+name = "PutObjectLockConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_lock_configuration_corpus.adb"] }
+
+[[operation]]
+name = "PutObjectRetention"
+tier = "extended"
+provider = "objects"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"], server = [], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_object_retention_corpus.adb"] }
+
+[[operation]]
+name = "PutObjectTagging"
+tier = "core"
+provider = "objects"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "PutPublicAccessBlock"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+evidence_tokens = ["PublicAccessBlock", "Public_Access_Block"]
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb", "sqlite/tests/src/flyology_object_storage_sqlite_tests.adb"], client = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_delete_bucket_configurations_corpus.adb", "tests/src/s3_get_bucket_controls_corpus.adb", "tests/src/s3_http_socket_corpus.adb", "tests/src/s3_put_bucket_controls_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "RenameObject"
+tier = "extended"
+provider = "objects"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "RestoreObject"
+tier = "extended"
+provider = "objects"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "SelectObjectContent"
+tier = "extended"
+provider = "objects"
+family = "event_stream_read"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_request_and_event_stream"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "UpdateBucketMetadataAnnotationTableConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "UpdateBucketMetadataInventoryTableConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "UpdateBucketMetadataJournalTableConfiguration"
+tier = "extended"
+provider = "buckets"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Buckets"
+codec = "empty_response"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "UpdateObjectEncryption"
+tier = "extended"
+provider = "objects"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }
+
+[[operation]]
+name = "UploadPart"
+tier = "core"
+provider = "transfers"
+family = "streaming_mutation"
+public_provider = "Flyology.Object_Storage.Client.Transfers"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "UploadPartCopy"
+tier = "core"
+provider = "transfers"
+family = "rest_xml_mutation"
+public_provider = "Flyology.Object_Storage.Client.Transfers"
+codec = "rest_xml_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "covered", client = "covered", server = "covered", corpus = "covered" }
+provenance = { backend = "handwritten", client = "handwritten", server = "handwritten", tests = "handwritten" }
+evidence = { backend = ["tests/src/object_storage_test_cases.adb"], client = ["tests/src/s3_http_socket_corpus.adb"], server = ["tests/src/s3_server_application_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], corpus = ["tests/src/s3_http_socket_corpus.adb", "tests/src/s3_implementation_corpus.adb", "tests/src/s3_server_application_corpus.adb"] }
+
+[[operation]]
+name = "WriteGetObjectResponse"
+tier = "extended"
+provider = "objects"
+family = "streaming_mutation"
+public_provider = "Flyology.Object_Storage.Client.Objects"
+codec = "streaming_request_and_headers"
+absence = "not_applicable"
+errors = ["legacy_preserved"]
+certainty = "legacy_preserved_no_automatic_replay"
+reconciliation = "legacy_preserved"
+exclusions = []
+coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+evidence = { backend = [], client = [], server = [], corpus = [] }

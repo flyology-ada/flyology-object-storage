@@ -1,0 +1,70 @@
+{
+  "backend": {
+    "covered": 39,
+    "missing": 77,
+    "partial": 0
+  },
+  "client": {
+    "covered": 80,
+    "missing": 0,
+    "partial": 36
+  },
+  "corpus": {
+    "covered": 80,
+    "missing": 36,
+    "partial": 0
+  },
+  "decision_status": {
+    "inventory_only": 115,
+    "reviewed": 1
+  },
+  "families": {
+    "bodyless_mutation": 20,
+    "bounded_binary_read": 1,
+    "bounded_document_read": 1,
+    "bounded_rest_xml_read": 32,
+    "event_stream_read": 1,
+    "paginated_rest_xml_read": 12,
+    "response_head_read": 2,
+    "rest_xml_mutation": 41,
+    "streaming_mutation": 4,
+    "streaming_read": 2
+  },
+  "operations": 116,
+  "provenance": {
+    "backend": {
+      "absent": 77,
+      "generated": 0,
+      "handwritten": 39,
+      "shared_family": 0
+    },
+    "client": {
+      "absent": 0,
+      "generated": 36,
+      "handwritten": 80,
+      "shared_family": 0
+    },
+    "server": {
+      "absent": 75,
+      "generated": 0,
+      "handwritten": 41,
+      "shared_family": 0
+    },
+    "tests": {
+      "absent": 36,
+      "generated": 0,
+      "handwritten": 80,
+      "shared_family": 0
+    }
+  },
+  "providers": {
+    "buckets": 80,
+    "objects": 28,
+    "transfers": 8
+  },
+  "server": {
+    "covered": 41,
+    "missing": 75,
+    "partial": 0
+  }
+}

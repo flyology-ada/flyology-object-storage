@@ -4,6 +4,14 @@ set -euo pipefail
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 LEDGER=${COVERAGE_LEDGER:-"$PROJECT_DIR/coverage/aws-s3-operations.tsv"}
 
+uv run --python 3.13 -- "$PROJECT_DIR/tools/s3-operation.py" generate --check
+uv run --python 3.13 -- "$PROJECT_DIR/tools/test-s3-operation-registry.py"
+if [ "$LEDGER" != "$PROJECT_DIR/coverage/aws-s3-operations.tsv" ] &&
+  ! cmp -s "$LEDGER" "$PROJECT_DIR/coverage/aws-s3-operations.tsv"
+then
+  echo "coverage ledger differs from reviewed evidence registry" >&2
+  exit 1
+fi
 test -s "$PROJECT_DIR/coverage/corpora.lock.toml"
 "$PROJECT_DIR/tools/verify-corpora-lock.sh"
 "$PROJECT_DIR/tools/verify-benchmark-plan.sh"
@@ -19,12 +27,8 @@ else
   exit 1
 fi
 
-# A covered cell must remain tied to operation-specific executable evidence.
-# This does not attempt to replace semantic review; it prevents a ledger-only
-# promotion from passing CI when the corresponding qualification corpus has no
-# trace of that operation. Combined feature suites use the explicit aliases
-# below because their Ada test names describe the shared domain rather than one
-# REST operation.
+# Retained independent oracle while the generated registry evidence gate is
+# qualified against the complete repository suite.
 evidence_pattern() {
   operation_name=$1
   case "$operation_name" in
@@ -74,6 +78,9 @@ do
     require_evidence "$operation_name" client "$pattern" \
       "$PROJECT_DIR/tests/src/object_storage_test_cases.adb" \
       "$PROJECT_DIR/tests/src/s3_http_socket_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_list_object_versions_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_delete_bucket_cors_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_delete_bucket_configurations_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_controls_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_put_bucket_controls_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_object_legal_hold_corpus.adb" \
@@ -82,9 +89,25 @@ do
       "$PROJECT_DIR/tests/src/s3_get_bucket_ownership_controls_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_encryption_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_cors_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_bucket_notification_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_delete_object_annotation_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_object_legal_hold_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_object_retention_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_object_lock_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_object_legal_hold_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_object_retention_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_object_torrent_corpus.adb" \
-      "$PROJECT_DIR/tests/src/s3_get_object_torrent_socket_corpus.adb"
+      "$PROJECT_DIR/tests/src/s3_get_object_torrent_socket_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_replication_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_bucket_replication_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_acl_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_object_acl_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_create_session_tls_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_transfer_many_corpus.adb"
   fi
   if [ "$server_state" = covered ]; then
     require_evidence "$operation_name" server "$pattern" \
@@ -94,14 +117,35 @@ do
   if [ "$corpus_state" = covered ]; then
     require_evidence "$operation_name" corpus "$pattern" \
       "$PROJECT_DIR/tests/src/s3_implementation_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_list_object_versions_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_delete_bucket_cors_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_delete_bucket_configurations_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_controls_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_put_bucket_controls_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_bucket_ownership_controls_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_object_lock_configuration_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_ownership_controls_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_encryption_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_get_bucket_cors_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_lifecycle_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_bucket_lifecycle_configuration_corpus.adb" \
       "$PROJECT_DIR/tests/src/s3_bucket_notification_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_create_bucket_metadata_table_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_delete_object_annotation_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_object_legal_hold_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_object_retention_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_object_lock_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_object_legal_hold_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_object_retention_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_object_torrent_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_object_torrent_socket_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_replication_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_put_bucket_replication_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_metadata_table_configuration_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_bucket_acl_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_get_object_acl_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_create_session_tls_corpus.adb" \
+      "$PROJECT_DIR/tests/src/s3_transfer_many_corpus.adb" \
       "$PROJECT_DIR/tests/scripts"
   fi
 done

@@ -3,39 +3,13 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+cd "$PROJECT_DIR"
 "$PROJECT_DIR/tools/verify-coverage.sh"
 "$PROJECT_DIR/tools/test-coverage-verifier.sh"
 "$PROJECT_DIR/tools/verify-composable-client-fixtures.sh"
 "$PROJECT_DIR/tools/test-composable-client-fixtures-verifier.sh"
-python3 "$PROJECT_DIR/tools/verify-create-session-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-list-object-versions-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-delete-bucket-cors-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-delete-bucket-configurations-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-bucket-controls-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-put-bucket-controls-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-put-bucket-ownership-controls-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-put-bucket-encryption-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-create-bucket-metadata-table-configuration-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-delete-object-annotation-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-put-object-legal-hold-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-put-object-retention-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-put-object-lock-configuration-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-object-torrent-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-object-legal-hold-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-object-retention-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-object-lock-configuration-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-bucket-ownership-controls-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-bucket-cors-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-put-bucket-cors-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-bucket-encryption-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-bucket-lifecycle-configuration-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-put-bucket-lifecycle-configuration-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-bucket-notification-configuration-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-bucket-replication-preparation.py"
-uv run --python 3.13 -- "$PROJECT_DIR/tools/verify-put-bucket-replication-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-bucket-metadata-table-configuration-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-bucket-acl-preparation.py"
-python3 "$PROJECT_DIR/tools/verify-get-object-acl-preparation.py"
+. "$PROJECT_DIR/tests/generated/s3-operation-tests.sh"
+run_s3_model_verifiers
 cd "$PROJECT_DIR/tests"
 alr -n build
 
@@ -173,36 +147,9 @@ echo "files abrupt-crash matrix: 132 pre/post-barrier cases including retained g
 ./bin/s3_bucket_tagging_benchmark --self-test
 ./bin/s3_checksum_corpus
 ./bin/s3_server_application_corpus
-for run in 1 2 3
+run=1
+while [ "$run" -le "$s3_operation_corpus_repetitions" ]
 do
-  ./bin/s3_list_object_versions_corpus
-  ./bin/s3_delete_bucket_cors_corpus
-  ./bin/s3_delete_bucket_configurations_corpus
-  ./bin/s3_get_bucket_controls_corpus
-  ./bin/s3_put_bucket_controls_corpus
-  ./bin/s3_put_bucket_ownership_controls_corpus
-  ./bin/s3_create_bucket_metadata_table_configuration_corpus
-  ./bin/s3_delete_object_annotation_corpus
-  ./bin/s3_put_object_legal_hold_corpus
-  ./bin/s3_put_object_retention_corpus
-  ./bin/s3_put_object_lock_configuration_corpus
-  ./bin/s3_get_object_torrent_corpus
-  ./bin/s3_get_object_torrent_socket_corpus
-  ./bin/s3_get_object_legal_hold_corpus
-  ./bin/s3_get_object_retention_corpus
-  ./bin/s3_get_object_lock_configuration_corpus
-  ./bin/s3_get_bucket_ownership_controls_corpus
-  ./bin/s3_get_bucket_cors_corpus
-  ./bin/s3_get_bucket_encryption_corpus
-  ./bin/s3_get_bucket_lifecycle_configuration_corpus
-  ./bin/s3_put_bucket_lifecycle_configuration_corpus
-  ./bin/s3_bucket_notification_configuration_corpus
-  ./bin/s3_get_bucket_replication_corpus
-  ./bin/s3_put_bucket_replication_corpus
-  ./bin/s3_get_bucket_metadata_table_configuration_corpus
-  ./bin/s3_get_bucket_acl_corpus
-  ./bin/s3_get_object_acl_corpus
-  ./bin/s3_http_socket_corpus
-  ./bin/s3_create_session_tls_corpus
-  ./bin/s3_transfer_many_corpus
+  run_s3_operation_corpora
+  run=$((run + 1))
 done
