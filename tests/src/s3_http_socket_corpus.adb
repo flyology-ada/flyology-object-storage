@@ -139,6 +139,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Bucket_Policy_Status_Result_Kind;
    use type Get_Bucket_Accelerate_Configuration_Result_Kind;
    use type Get_Bucket_ACL_Result_Kind;
+   use type Get_Bucket_Metadata_Table_Configuration_Result_Kind;
    use type Get_Object_ACL_Result_Kind;
    use type Get_Bucket_ABAC_Result_Kind;
    use type Put_Bucket_Policy_Result_Kind;
@@ -4758,6 +4759,47 @@ procedure S3_HTTP_Socket_Corpus is
                  String'(1 .. 64 => ' ') &
                  "</GetBucketMetadataTableConfigurationResult>"),
             "GET", "/example-bucket?metadataTable");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<GetBucketMetadataTableConfigurationResult>" &
+                 "<MetadataTableConfigurationResult>" &
+                 "<S3TablesDestinationResult>" &
+                 "<TableBucketArn>typed-bucket</TableBucketArn>" &
+                 "<TableName>typed-table</TableName>" &
+                 "<TableArn>typed-arn</TableArn>" &
+                 "<TableNamespace>typed-namespace</TableNamespace>" &
+                 "</S3TablesDestinationResult>" &
+                 "</MetadataTableConfigurationResult>" &
+                 "<Status>READY</Status>" &
+                 "</GetBucketMetadataTableConfigurationResult>",
+               "x-amz-request-id: typed-metadata-table" & CRLF),
+            "GET", "/typed-metadata-table?metadataTable",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "GET", "/composed-metadata-table?metadataTable",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-metadata-table" & CRLF),
+            "GET", "/restart-metadata-table?metadataTable",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-request-id: first" & CRLF &
+               "x-amz-request-id: second" & CRLF),
+            "GET", "/duplicate-metadata-table-header?metadataTable",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<GetBucketMetadataTableConfigurationResult>" &
+                 String'(1 .. 64 => ' ') &
+                 "</GetBucketMetadataTableConfigurationResult>"),
+            "GET", "/bounded-metadata-table?metadataTable",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
               ("200 OK", "<AccessControlPolicy><Owner>" &
@@ -16016,6 +16058,141 @@ procedure S3_HTTP_Socket_Corpus is
                Small_Limits => True);
          end;
          declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_ACL
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Bucket_Metadata_Table_Configuration_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Get_Bucket_Metadata_Table_Configuration
+                 (HTTP'Access, Prepared'Access, Parent'Access,
+                  HTTP_Client.Deadline_After (5.0), Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "metadata-table read accepted an ACL request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Metadata_Table_Configuration_Result :=
+              Buckets.Get_Metadata_Table_Configuration
+                (HTTP, Origin, "typed-metadata-table", Parameters, Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /=
+              Get_Bucket_Metadata_Table_Configuration_Response_Available
+              or else Result.Failure /= No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+              or else Result.Response.Kind /= Low_Level.Bucket_Control_Found
+              or else not Result.Response.Configuration.Is_Set
+              or else US.To_String
+                (Result.Response.Configuration.Destination.Table_Name) /=
+                  "typed-table"
+              or else US.To_String
+                (Result.Response.Configuration.Status) /= "READY"
+            then
+               raise Program_Error with
+                 "typed metadata-table response mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            --  Read parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_Metadata_Table_Configuration_Result;
+         begin
+            declare
+               Operation : Get_Bucket_Metadata_Table_Configuration_Operation :=
+                 Get_Metadata_Table_Configuration
+                   (Set'Access, HTTP'Access, Origin,
+                    "composed-metadata-table", Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                 Get_Bucket_Metadata_Table_Configuration_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Bucket_Control_Found
+                 or else Result.Response.Configuration.Is_Set
+               then
+                  raise Program_Error with
+                    "composed metadata-table first result mismatch";
+               end if;
+               Get_Metadata_Table_Configuration
+                 (HTTP'Access, Origin, "restart-metadata-table", Parameters,
+                  Identity, HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                 Get_Bucket_Metadata_Table_Configuration_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Bucket_Control_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-metadata-table"
+               then
+                  raise Program_Error with
+                    "composed metadata-table restart mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Metadata_Table_Configuration_Result :=
+              Buckets.Get_Metadata_Table_Configuration
+                (HTTP, Origin, "duplicate-metadata-table-header", Parameters,
+                 Identity, Timeout => 5.0);
+         begin
+            if Result.Kind /=
+              Get_Bucket_Metadata_Table_Configuration_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+            then
+               raise Program_Error with
+                 "duplicate metadata-table response header admitted";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Metadata_Table_Configuration_Result :=
+              Buckets.Get_Metadata_Table_Configuration
+                (HTTP, Origin, "bounded-metadata-table", Parameters, Identity,
+                 Timeout => 5.0,
+                 Limits =>
+                   --  Test-only one-byte ceiling is below the valid XML.
+                   (Maximum_Document_Bytes => 1,
+                    others => <>));
+         begin
+            if Result.Kind /=
+              Get_Bucket_Metadata_Table_Configuration_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+            then
+               raise Program_Error with
+                 "metadata-table response limit was not enforced";
+            end if;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Get_Bucket_ACL
                 (Origin, Low_Level.Path_Style, "example-bucket",
@@ -19483,6 +19660,8 @@ begin
    Buckets_Testing.Check_Ownership_Controls_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Encryption_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_ACL_Result_Corpus;
+   Buckets_Testing.
+     Check_Get_Bucket_Metadata_Table_Configuration_Result_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Lifecycle_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_CORS_Result_Corpus;
    Buckets_Testing.Check_Object_Lock_Configuration_Certainty_Corpus;

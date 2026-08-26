@@ -15,6 +15,8 @@ LOCK = ROOT / "coverage/corpora.lock.toml"
 SOURCES = (
     ROOT / "src/flyology-object_storage-client-low_level.ads",
     ROOT / "src/flyology-object_storage-client-low_level.adb",
+    ROOT / "src/flyology-object_storage-client-buckets.ads",
+    ROOT / "src/flyology-object_storage-client-buckets.adb",
     ROOT / "src/flyology-object_storage-s3-metadata_tables.ads",
     ROOT / "src/flyology-object_storage-s3-metadata_tables.adb",
 )
@@ -181,6 +183,10 @@ def main() -> int:
     for token in ("Prepare_Get_Bucket_Metadata_Table_Configuration",
                   "Decode_Get_Bucket_Metadata_Table_Configuration_Response",
                   "Execute_Get_Bucket_Metadata_Table_Configuration",
+                  "procedure Get_Bucket_Metadata_Table_Configuration",
+                  "Get_Bucket_Metadata_Table_Configuration_Operation",
+                  "procedure Get_Metadata_Table_Configuration",
+                  "function Get_Metadata_Table_Configuration",
                   "S3_Tables_Destination_Result",
                   "Status remains an opaque required provider string"):
         if token not in source:

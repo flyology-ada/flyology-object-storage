@@ -4866,6 +4866,24 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token     : access Flyology.Cancellation.Token := null;
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
+   --  Start an exact prepared GetBucketMetadataTableConfiguration exchange
+   --  into a bounded sink. Another prepared operation is rejected before
+   --  HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Get_Bucket_Metadata_Table_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
    --  Start an exact prepared PutBucketPolicy exchange with its one-shot
    --  policy source. The prepared request must be bound to PutBucketPolicy;
    --  another bucket-control mutation is rejected before HTTP admission.

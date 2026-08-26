@@ -10,7 +10,7 @@ ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
 bounded GetBucketLocation, bounded GetBucketPolicy, GetBucketPolicyStatus, and
 GetBucketRequestPayment, bounded GetBucketAbac and
 GetBucketAccelerateConfiguration, bounded GetBucketAcl and GetObjectAcl,
-non-replaying
+bounded GetBucketMetadataTableConfiguration, non-replaying
 Put/DeleteBucketPolicy, non-replaying
 PutBucketAbac, PutBucketAccelerateConfiguration, and
 PutBucketRequestPayment,
@@ -121,10 +121,11 @@ The implemented operation order is:
     `Put_Object_Lock_Configuration`.
 35. bounded `Get_ACL` for a bucket access-control policy.
 36. bounded `Get_ACL` for an object access-control policy.
+37. bounded `Get_Metadata_Table_Configuration`.
 
-The provider surface contains 62 domain operations: 20 in `Client.Objects`,
-34 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 59 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 63 domain operations: 20 in `Client.Objects`,
+35 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 60 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -147,6 +148,13 @@ requester-pays value, expected owner, and XML limits. The complete policy,
 request-charged value, and diagnostic headers come from one bounded response;
 physical headers are singletons. It performs no retry and selects no ACL,
 billing, or resource policy.
+
+GetBucketMetadataTableConfiguration is colocated with `Client.Buckets`. Its
+exact prepared initiator, limited constructor, operation-last restart, typed
+Finish, and typed synchronous wait retain the signed request and one bounded
+response snapshot through terminal drain. The caller's XML limits bound the
+configuration and structured error; opaque provider status remains text. The
+operation performs no retry and introduces no metadata lifecycle policy.
 
 Each implemented operation has both a limited constructor taking a completion
 set and a same-name, operation-last procedure suitable for a reusable component

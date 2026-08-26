@@ -79,7 +79,7 @@ The core crate includes:
   HeadBucket, bounded GetBucketLocation, bounded GetBucketPolicy,
   GetBucketPolicyStatus, GetBucketRequestPayment, GetBucketAbac, and
   GetBucketAccelerateConfiguration, bounded GetBucketAcl and GetObjectAcl,
-  and
+  bounded GetBucketMetadataTableConfiguration, and
   non-replaying PutBucketAbac, PutBucketAccelerateConfiguration,
   PutBucketRequestPayment,
   Put/DeleteBucketPolicy,
