@@ -137,6 +137,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Bucket_Location_Result_Kind;
    use type Get_Bucket_Policy_Result_Kind;
    use type Get_Bucket_Policy_Status_Result_Kind;
+   use type Get_Bucket_ABAC_Result_Kind;
    use type Put_Bucket_Policy_Result_Kind;
    use type Delete_Bucket_Policy_Result_Kind;
    use type Bucket_Policy_Mutation_Disposition;
@@ -4346,6 +4347,40 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response
               ("200 OK", "<AbacStatus><Status>Enabled</Status></AbacStatus>"),
             "GET", "/example-bucket?abac",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AbacStatus><Status>Enabled</Status></AbacStatus>"),
+            "GET", "/typed-abac-get?abac",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AbacStatus><Status>Disabled</Status></AbacStatus>"),
+            "GET", "/composed-abac-get?abac",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-abac-get" & CRLF),
+            "GET", "/restart-abac-get?abac",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AbacStatus><Status>Enabled</Status></AbacStatus>",
+               "x-amz-request-id: first-abac-get" & CRLF &
+               "x-amz-request-id: second-abac-get" & CRLF),
+            "GET", "/duplicate-abac-get-header?abac",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AbacStatus><Status>Enabled</Status></AbacStatus>",
+               "x-amz-id-2:" & CRLF),
+            "GET", "/empty-abac-get-header?abac",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AbacStatus><Status>Enabled</Status></AbacStatus>"),
+            "GET", "/bounded-abac-get?abac",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT", "/example-bucket?cors",
@@ -14302,7 +14337,7 @@ procedure S3_HTTP_Socket_Corpus is
             Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
               (Expected_Bucket_Owner =>
                  US.To_Unbounded_String ("123456789012"));
-            --  ABAC parent, HTTP exchange, and transport child.
+            --  Requester-payment parent, HTTP exchange, and transport child.
             Set : aliased Operations.Completion_Set (3);
             Result : Get_Bucket_Request_Payment_Result;
          begin
@@ -14551,6 +14586,185 @@ procedure S3_HTTP_Socket_Corpus is
               or else Result.Configuration /= Bucket_Controls.Abac_Enabled
             then
                raise Program_Error with "GetBucketAbac socket mismatch";
+            end if;
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Request_Payment
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 (Expected_Bucket_Owner =>
+                    US.To_Unbounded_String ("123456789012")),
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Bucket_ABAC_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Get_Bucket_ABAC
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request =>
+                  Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "GetBucketAbac accepted a prepared requester-payment " &
+                 "request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_ABAC_Result :=
+              Buckets.Get_ABAC
+                (HTTP,
+                 Origin,
+                 "typed-abac-get",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Get_Bucket_ABAC_Response_Available
+              or else Result.Failure /= No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+              or else Result.Response.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Response.Configuration /=
+                Bucket_Controls.Abac_Enabled
+            then
+               raise Program_Error with
+                 "typed GetBucketAbac response mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            --  ABAC-read parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_ABAC_Result;
+         begin
+            declare
+               Operation : Get_Bucket_ABAC_Operation :=
+                 Get_ABAC
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-abac-get",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_ABAC_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /=
+                   Low_Level.Bucket_Control_Found
+                 or else Result.Response.Configuration /=
+                   Bucket_Controls.Abac_Disabled
+               then
+                  raise Program_Error with
+                    "composed GetBucketAbac first result mismatch";
+               end if;
+               Get_ABAC
+                 (HTTP'Access,
+                  Origin,
+                  "restart-abac-get",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_ABAC_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Bucket_Control_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-abac-get"
+               then
+                  raise Program_Error with
+                    "composed GetBucketAbac restart mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_ABAC_Result :=
+              Buckets.Get_ABAC
+                (HTTP,
+                 Origin,
+                 "duplicate-abac-get-header",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Get_Bucket_ABAC_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+            then
+               raise Program_Error with
+                 "duplicate GetBucketAbac response header admitted";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_ABAC_Result :=
+              Buckets.Get_ABAC
+                (HTTP,
+                 Origin,
+                 "empty-abac-get-header",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Get_Bucket_ABAC_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+            then
+               raise Program_Error with
+                 "empty GetBucketAbac host ID admitted";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_ABAC_Result :=
+              Buckets.Get_ABAC
+                (HTTP,
+                 Origin,
+                 "bounded-abac-get",
+                 Parameters,
+                 Identity,
+                 Timeout => 5.0,
+                 Limits =>
+                   --  Test-only one-byte ceiling is deliberately below the
+                   --  valid ABAC-status XML response.
+                   (Maximum_Document_Bytes => 1,
+                    others => <>));
+         begin
+            if Result.Kind /= Get_Bucket_ABAC_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+            then
+               raise Program_Error with
+                 "GetBucketAbac response limit was not enforced";
             end if;
          end;
          declare
@@ -18671,6 +18885,7 @@ begin
    Buckets_Testing.Check_Get_Bucket_Location_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Policy_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Policy_Status_Result_Corpus;
+   Buckets_Testing.Check_Get_Bucket_ABAC_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Request_Payment_Result_Corpus;
    Buckets_Testing.Check_Bucket_Policy_Certainty_Corpus;
    Buckets_Testing.Check_Public_Access_Block_Certainty_Corpus;

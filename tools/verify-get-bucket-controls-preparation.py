@@ -282,6 +282,7 @@ def main() -> int:
                     fail(f"{operation}: {name} absent from {label}")
 
     composable_reads = (
+        ("GetBucketAbac", "Get_Bucket_ABAC"),
         ("GetBucketPolicyStatus", "Get_Bucket_Policy_Status"),
         ("GetBucketRequestPayment", "Get_Bucket_Request_Payment"),
     )

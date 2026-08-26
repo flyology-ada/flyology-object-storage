@@ -13,7 +13,9 @@ operation-last reusable initiation, typed Finish, and typed synchronous wait;
 its established convenience overload waits on that same state machine.
 `GetBucketRequestPayment` now has the same provider-owned forms and uses its
 exact prepared operation and strict payer decoder without interpreting billing
-policy locally.
+policy locally. `GetBucketAbac` has the same forms, preserves its
+presence-sensitive status through a caller-bounded response, and selects no
+mutation retry policy.
 
 ## Pinned authority and complete inventory
 
@@ -43,8 +45,8 @@ signs an empty body, and binds the exact generated operation. Only the
 accelerate request projects `x-amz-request-payer`, whose sole modeled value is
 the exact lowercase `requester`. Each executor rejects a request prepared for
 another member of the family before entering HTTP. The composable
-`GetBucketPolicyStatus` and `GetBucketRequestPayment` low-level initiators
-preserve their exact operation binding.
+`GetBucketAbac`, `GetBucketPolicyStatus`, and `GetBucketRequestPayment`
+low-level initiators preserve their exact operation binding.
 
 ABAC status preserves absent, `Enabled`, and `Disabled`. Accelerate status
 preserves absent, `Enabled`, and `Suspended`. Request payment
@@ -63,8 +65,8 @@ rejected without a partial output. `GetBucketPolicy` instead returns the exact
 same-response payload, including an empty payload, and applies the caller's
 document-byte ceiling without inventing an independent policy limit.
 
-Non-200 responses require one strict bounded S3 error. The composable
-policy-status and requester-payment parents also reject duplicate or
+Non-200 responses require one strict bounded S3 error. The composable ABAC,
+policy-status, and requester-payment parents also reject duplicate or
 present-empty request-ID and host-ID response headers and apply
 `Maximum_Document_Bytes` while bytes arrive. Object Storage selects no retry,
 retains no caller input, releases the response before return, and creates no
@@ -80,8 +82,8 @@ optional presence, raw policy byte boundaries, exact enum and Boolean
 spellings, namespace compatibility, malformed XML, DTD/entity rejection, and
 structured errors. The raw-loopback corpus performs all six high-level calls
 over sequential signed real-socket responses under both native and Flyology
-lightweight callers. It additionally exercises typed/composable policy-status
-and requester-payment success, consumed-operation restart, exact
+lightweight callers. It additionally exercises typed/composable ABAC,
+policy-status, and requester-payment success, consumed-operation restart, exact
 prepared-operation mismatch, malformed singleton headers, response overflow,
 and every normalized HTTP terminal kind; the root gate repeats that corpus
 three times.
@@ -101,9 +103,9 @@ corpus and native/lightweight socket and TLS corpora. The operation inventory
 verifier reported six operations, 26 request/output/nested members, five exact
 enum domains, and thirteen reciprocal vectors; the 116-operation coverage
 verifier and its negative oracle also passed. Repository integrity and
-whitespace gates passed. GNATdoc produced a nonempty 429-file HTML API index;
-none of the new public declarations appears in its undocumented-entity
-warnings.
+whitespace gates passed. GNATdoc produced a nonempty 430-file HTML API index;
+none of the new typed or composable public declarations appears in its
+undocumented-entity warnings.
 
 This slice changes only non-SPARK client, corpus, verifier, and documentation
 units, not any of the nine `tools/prove.sh` manifest units. Formal tools also
