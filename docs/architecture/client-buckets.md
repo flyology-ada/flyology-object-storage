@@ -117,13 +117,17 @@ or a bounded structured S3 rejection. This client-only boundary does not imply
 that Flyology backends store CORS configuration or that the authenticated
 server routes the operation.
 
-The same private synchronous state machine serves the twelve other bodyless
-bucket-configuration deletes: analytics, encryption, intelligent tiering,
+The same operation-specific request and response contract serves the twelve
+other bodyless bucket-configuration deletes: analytics, encryption,
+intelligent tiering,
 inventory, lifecycle, metadata, metadata table, metrics, ownership controls,
 replication, website, and public access block. Analytics, intelligent tiering,
 inventory, and metrics require a caller-supplied configuration identifier;
 every operation preserves the optional expected-owner precondition. The
-public functions and low-level preparer/executor pairs remain
+inventory, lifecycle, replication, and website clients additionally expose
+provider-owned non-replaying composable operations and typed synchronous waits
+over those state machines. Public functions and low-level preparer/executor
+pairs remain
 operation-specific, so sharing transport and response logic does not allow a
 prepared request to be executed as another operation. These are client-only
 wire boundaries and make no backend, Flyology server, or external provider

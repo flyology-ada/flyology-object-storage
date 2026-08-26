@@ -18,8 +18,8 @@ Put/GetBucketVersioning,
 non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
-non-replaying DeleteBucketLifecycle, DeleteBucketReplication, and
-DeleteBucketWebsite,
+non-replaying DeleteBucketLifecycle, DeleteBucketReplication,
+DeleteBucketWebsite, and DeleteBucketInventoryConfiguration,
 object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
 non-replaying conditional DeleteObjectAnnotation,
 non-replaying PutObjectLegalHold, plus bounded GetObjectRetention with
@@ -112,8 +112,8 @@ The implemented operation order is:
     non-replaying `Delete_Encryption`;
 28. bounded `Get_CORS`, non-replaying `Set_CORS`, and non-replaying
     `Delete_CORS`;
-29. non-replaying `Delete_Lifecycle`, `Delete_Replication`, and
-    `Delete_Website`;
+29. non-replaying `Delete_Lifecycle`, `Delete_Replication`,
+    `Delete_Website`, and `Delete_Inventory_Configuration`;
 30. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
 31. `Put_Object_Tagging`, `Get_Object_Tagging`, and
@@ -128,9 +128,9 @@ The implemented operation order is:
 38. bounded `Get_Metadata_Table_Configuration` and non-replaying
     `Create_Metadata_Table_Configuration`.
 
-The provider surface contains 67 domain operations: 21 in `Client.Objects`,
-38 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 64 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 68 domain operations: 21 in `Client.Objects`,
+39 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 65 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -356,9 +356,11 @@ the last case requires caller-selected GetBucketPolicy reconciliation before
 any retry. Their parameter-record synchronous overloads wait on these same
 state machines, and restart retains only the established HTTP client and
 cancellation owner.
-DeleteBucketLifecycle, DeleteBucketReplication, and DeleteBucketWebsite follow
-the same mutation discipline with known-empty non-rewindable sources and their
-exact pinned `?lifecycle`, `?replication`, and `?website` prepared operations.
+DeleteBucketLifecycle, DeleteBucketReplication, DeleteBucketWebsite, and
+DeleteBucketInventoryConfiguration follow the same mutation discipline with
+known-empty non-rewindable sources and their exact pinned `?lifecycle`,
+`?replication`, `?website`, and `?inventory` prepared operations. Inventory
+also copies its required identifier before the constructor returns.
 Their limited constructors, operation-last reusable initiations, typed Finish,
 and typed
 synchronous waits each share one provider-owned state machine. Complete 204
