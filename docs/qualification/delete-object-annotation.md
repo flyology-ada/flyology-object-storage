@@ -1,9 +1,10 @@
 # DeleteObjectAnnotation client qualification
 
-This record qualifies the strict synchronous low-level client and corpus for
+This record qualifies the strict low-level request boundary, provider-owned
+composable operation, typed synchronous wait, and corpus for
 `DeleteObjectAnnotation`. It does not claim annotation persistence in a
-Flyology backend, an authenticated Flyology server route, or external provider
-interoperability.
+Flyology backend, an authenticated Flyology server route, or external
+provider interoperability.
 
 ## Pinned authority and inventory
 
@@ -31,7 +32,7 @@ surface, and reciprocal vector reachability:
 python3 tools/verify-delete-object-annotation-preparation.py
 ```
 
-## Synchronous API and admission contract
+## Provider-owned API and admission contract
 
 `Client.Low_Level.Prepare_Delete_Object_Annotation` validates the bucket and
 the complete pinned model before transport, preserves the greedy object key,
@@ -46,6 +47,18 @@ HTTP engine cannot transparently resubmit a conditional mutation after stale
 connection admission. There is no helper task, retained borrowed input,
 second protocol engine, or automatic retry.
 
+`Client.Low_Level.Delete_Object_Annotation` starts that exact prepared request
+with a caller-owned non-rewindable empty source and bounded response sink. It
+rejects any other modeled operation before HTTP admission.
+
+`Client.Objects.Delete_Annotation` owns the complete provider vocabulary: a
+limited constructor, same-name operation-last restart, typed `Finish`, and a
+typed synchronous overload that waits on the same state machine. Preparation
+copies the annotation name plus exact version, requester-pays, expected-owner,
+and object-CAS values before initiation returns. The operation retains no
+caller string or credential borrow, creates no helper task, and never retries
+the mutation.
+
 Exact 204 with an exactly empty body is typed deletion success. Every other
 status is a strict bounded S3 error. The decoder admits at most one nonempty
 physical value for each modeled or diagnostic response header, validates the
@@ -53,10 +66,13 @@ exact requester enum and bounded header text, and fails closed on unmodeled
 success content. HTTP framing can reject an illegal body on a 204 response
 before the operation decoder; that protocol exception is also fail-closed.
 
-Any exception after entry into the blocking provider call leaves the mutation
-outcome unknown. Callers must reconcile read-only using the exact object and
-generation evidence appropriate to their annotation contract and must not
-automatically retry the conditional deletion.
+The typed provider result preserves HTTP admission certainty independently of
+the failure reason. Exact 204 proves completion. Exact conclusive rejection or
+non-admission proves the requested deletion was not applied. A retryable,
+unknown, malformed, oversized, or post-admission transport outcome is
+`Annotation_Deletion_Outcome_Unknown`. Callers must reconcile read-only using
+the exact object and generation evidence appropriate to their annotation
+contract and must not automatically retry the conditional deletion.
 
 ## Corpus and coverage boundary
 
@@ -70,9 +86,14 @@ exact and one-past XML limits, and cross-operation rejection before admission.
 The common raw loopback sequence adds exact signed DELETE method, target,
 requester, owner, version, and object-CAS projection; typed success and
 structured rejection; a forbidden success body; duplicate and empty modeled
-headers; duplicate diagnostics; and a response one byte above a caller-selected
-ceiling. The root gate drives that same sequence under native and Flyology
-lightweight task owners.
+headers; duplicate diagnostics; and a response one byte above a
+caller-selected ceiling. Provider coverage adds typed synchronous rejection,
+composed success, restart after Finish, mutation of every caller input after
+initiation, a bounded exchange failure, and exact prepared-operation rejection.
+The normalization oracle covers every maintained response pair, every
+non-observed admission state, and every expected HTTP failure across all
+admission certainties. The root gate drives the same socket sequence under
+native and Flyology lightweight task owners.
 
 The machine ledger records the operation as `missing / covered / missing /
 covered`. Client and corpus qualification do not manufacture backend state or
@@ -83,23 +104,27 @@ black-box evidence.
 
 This slice changes only non-SPARK client, corpus, and documentation units. None
 of the nine `tools/prove.sh` manifest units changes, so the latest serialized
-2026-08-24 result remains applicable: 936/936 checks, 180 flow and 756 prover,
+result remains applicable: 936/936 checks, 180 flow and 756 prover,
 with zero warnings, unproved or justified checks, or `pragma Assume`
 statements.
 
 ## Gate evidence
 
-The root gate passed all 40 AUnit cases, the 88-case abrupt-crash matrix, the
+The root gate passed all 41 AUnit cases, the 132-case abrupt-crash matrix, the
 320-vector checksum corpus with 210 chunk boundaries, and three complete
 deterministic, native/lightweight signed raw-socket, and TLS repetitions. The
-SQLite wrapper, catalog, and backend gate also passed.
+focused provider/socket rerun also passed. The SQLite binding and backend were
+unchanged, so their separate gate was not required for this client-only slice.
 
 The operation verifier reported all nine modeled members and all 12 reciprocal
-vectors. The 116-operation coverage verifier and its negative mutation oracle
-were green.
+vectors, including the new Low_Level and provider-owned surface. The
+116-operation coverage verifier and its negative mutation oracle were green.
+The repository integrity gate passed dependency, script, workflow, conflict,
+whitespace, Markdown-link, lock, coverage, and generated-corpus checks.
 
-GNATdoc produced a nonempty API index and a 12,461-line diagnostic log. The
-index contains the parameter, result, outcome, prepare, decode, and execute
-declarations; those declarations emitted no targeted warning, and the log
-contains no internal error, `LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or
-bounded-channel diagnostic.
+GNATdoc produced a nonempty API index and a 44,022-line diagnostic log. The
+index contains the provider operation, result, constructor, restart, Finish,
+and synchronous wait declarations. Those declarations emitted no targeted
+warning; the sole exact operation-name warning is the preexisting generated
+model enumeration. The log contains no internal error,
+`LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or bounded-channel diagnostic.

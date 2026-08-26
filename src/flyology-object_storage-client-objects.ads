@@ -1978,6 +1978,181 @@ package Flyology.Object_Storage.Client.Objects is
       Result    : out Put_Retention_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  What is known about one conditional annotation deletion after terminal
+   --  drain. Unknown outcomes require caller-selected read-only
+   --  reconciliation for the exact object generation before any retry.
+   --  @enum Annotation_Deletion_Completed Complete response proves deletion
+   --  @enum Annotation_Deletion_Definitely_Not_Applied Exact rejection or
+   --     non-admission proves the requested deletion was not applied
+   --  @enum Annotation_Deletion_Outcome_Unknown State must be reconciled
+   --  @enum Annotation_Deletion_Cancelled_Before_Admission Cancellation
+   --     preceded possible server admission
+   type Object_Annotation_Deletion_Disposition is
+     (Annotation_Deletion_Completed,
+      Annotation_Deletion_Definitely_Not_Applied,
+      Annotation_Deletion_Outcome_Unknown,
+      Annotation_Deletion_Cancelled_Before_Admission);
+
+   --  Shape of a terminal DeleteObjectAnnotation mutation.
+   --  @enum Delete_Object_Annotation_Response_Available Modeled response
+   --     exists
+   --  @enum Delete_Object_Annotation_Exchange_Failed No modeled response
+   --     exists
+   type Delete_Object_Annotation_Result_Kind is
+     (Delete_Object_Annotation_Response_Available,
+      Delete_Object_Annotation_Exchange_Failed);
+
+   --  Typed DeleteObjectAnnotation certainty and response or HTTP failure.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Delete_Object_Annotation_Result
+     (Kind : Delete_Object_Annotation_Result_Kind :=
+        Delete_Object_Annotation_Exchange_Failed)
+   is record
+      Disposition : Object_Annotation_Deletion_Disposition :=
+        Annotation_Deletion_Outcome_Unknown;
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Delete_Object_Annotation_Response_Available =>
+            Response : Low_Level.Delete_Object_Annotation_Outcome;
+         when Delete_Object_Annotation_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot DeleteObjectAnnotation parent. The prepared request owns the
+   --  exact annotation, version, requester, owner, and object-CAS values
+   --  through Finish; its empty request source is never replayed.
+   type Delete_Object_Annotation_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Compatibility contract: region, path-style addressing, the shared XML
+   --  limits, cancellation, and the 30-second synchronous timeout preserve
+   --  the established low-level DeleteObjectAnnotation and provider defaults.
+   --  Changing them would select different wire or resource behavior between
+   --  the synchronous and composable forms.
+
+   --  Start or restart one nonreplaying conditional annotation deletion.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Annotation_Name Exact opaque annotation selector
+   --  @param Parameters Complete generation, payer, owner, and CAS controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response byte and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established mutation
+   procedure Delete_Annotation
+     (Client          : not null access Flyology.HTTP.Client.Client;
+      Origin          : Flyology.HTTP.Origin;
+      Bucket          : String;
+      Key             : String;
+      Annotation_Name : String;
+      Parameters      : Low_Level.Delete_Object_Annotation_Parameters;
+      Identity        : Low_Level.Credentials;
+      Deadline        : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region          : String := "us-east-1";
+      Style           : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits          : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token           : access Flyology.Cancellation.Token := null;
+      Operation       : in out Delete_Object_Annotation_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying conditional annotation deletion.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Annotation_Name Exact opaque annotation selector
+   --  @param Parameters Complete generation, payer, owner, and CAS controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response byte and error XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven mutation
+   function Delete_Annotation
+     (Set             : not null access
+        Flyology.Operations.Completion_Set'Class;
+      Client          : not null access Flyology.HTTP.Client.Client;
+      Origin          : Flyology.HTTP.Origin;
+      Bucket          : String;
+      Key             : String;
+      Annotation_Name : String;
+      Parameters      : Low_Level.Delete_Object_Annotation_Parameters;
+      Identity        : Low_Level.Credentials;
+      Deadline        : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region          : String := "us-east-1";
+      Style           : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits          : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token           : access Flyology.Cancellation.Token := null)
+      return Delete_Object_Annotation_Operation;
+
+   --  Consume one terminal DeleteObjectAnnotation operation.
+   --  @param Operation Terminal annotation deletion
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Delete_Object_Annotation_Operation;
+      Result    : out Delete_Object_Annotation_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Delete one annotation by waiting on the same provider-owned operation
+   --  used by composable callers. The request is never replayed.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket containing the selected object
+   --  @param Key Exact object key
+   --  @param Annotation_Name Exact opaque annotation selector
+   --  @param Parameters Complete generation, payer, owner, and CAS controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response byte and error XML limits
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Delete_Annotation
+     (Client          : aliased in out Flyology.HTTP.Client.Client;
+      Origin          : Flyology.HTTP.Origin;
+      Bucket          : String;
+      Key             : String;
+      Annotation_Name : String;
+      Parameters      : Low_Level.Delete_Object_Annotation_Parameters;
+      Identity        : Low_Level.Credentials;
+      Region          : String := "us-east-1";
+      Style           : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout         : Duration := 30.0;
+      Token           : access Flyology.Cancellation.Token := null;
+      Limits          : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Delete_Object_Annotation_Result;
+
    --  What is known about one object-tag mutation after terminal drain.
    --  Unknown outcomes require caller-selected GetObjectTagging
    --  reconciliation for the exact object version before any retry.
@@ -3732,6 +3907,62 @@ private
      (Item : in out Delete_Object_Tagging_Operation);
 
    --  @exclude
+   type Delete_Object_Annotation_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Source_Position : Natural := 0;
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      XML_Limits : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Final_Result : Delete_Object_Annotation_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   overriding function Declared_Length
+     (Item : Delete_Object_Annotation_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Delete_Object_Annotation_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Delete_Object_Annotation_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Delete_Object_Annotation_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Delete_Object_Annotation_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Delete_Object_Annotation_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Delete_Object_Annotation_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Delete_Object_Annotation_Operation);
+
+   --  @exclude
    type Conditional_Put_Operation
      (Set : not null access Flyology.Operations.Completion_Set'Class;
       HTTP : not null access Flyology.HTTP.Client.Client;
@@ -4192,5 +4423,16 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Delete_Object_Tagging_Result;
+   --  @exclude
+   function Normalize_Delete_Object_Annotation_Response
+     (Value     : Low_Level.Delete_Object_Annotation_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Delete_Object_Annotation_Result;
+   --  @exclude
+   function Normalize_Delete_Object_Annotation_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Delete_Object_Annotation_Result;
 
 end Flyology.Object_Storage.Client.Objects;

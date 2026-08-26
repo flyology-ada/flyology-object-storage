@@ -16,6 +16,8 @@ package Flyology.Object_Storage.Client.Objects.Testing is
 
    procedure Check_Object_Tagging_Certainty_Corpus;
 
+   procedure Check_Object_Annotation_Deletion_Certainty_Corpus;
+
    procedure Check_Legal_Hold_Certainty_Corpus;
 
    procedure Check_Retention_Certainty_Corpus;

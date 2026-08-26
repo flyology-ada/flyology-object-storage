@@ -13845,6 +13845,22 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Sink, Deadline, Token, Operation);
    end Delete_Object_Tagging;
 
+   procedure Delete_Object_Annotation
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Model_Source_Sink
+        (S3.Model.Delete_Object_Annotation_Operation, Client, Prepared, Source,
+         Sink, Deadline, Token, Operation);
+   end Delete_Object_Annotation;
+
    procedure Get_Object_ACL
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;

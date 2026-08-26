@@ -15,6 +15,9 @@ LOCK = ROOT / "coverage/corpora.lock.toml"
 SOURCES = (
     ROOT / "src/flyology-object_storage-client-low_level.ads",
     ROOT / "src/flyology-object_storage-client-low_level.adb",
+    ROOT / "src/flyology-object_storage-client-objects.ads",
+    ROOT / "src/flyology-object_storage-client-objects.adb",
+    ROOT / "tests/src/flyology-object_storage-client-objects-testing.adb",
 )
 REVISION = "36c34f15391da01cd717c73c0fffa747c9889768"
 SHA256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
@@ -192,6 +195,11 @@ def main() -> int:
                   "Decode_Delete_Object_Annotation_Response",
                   "Delete_Object_Annotation_Operation",
                   "Non_Replayable_Empty_Source",
+                  "Delete_Object_Annotation_Result",
+                  "Delete_Annotation",
+                  "Normalize_Delete_Object_Annotation_Response",
+                  "Normalize_Delete_Object_Annotation_Failure",
+                  "Low.Delete_Object_Annotation",
                   "ObjectIfMatch",
                   "x-amz-object-version-id"):
         if token not in source:

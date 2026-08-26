@@ -208,6 +208,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Object_Tagging_Result_Kind;
    use type Delete_Object_Tagging_Result_Kind;
    use type Object_Tag_Mutation_Disposition;
+   use type Delete_Object_Annotation_Result_Kind;
+   use type Object_Annotation_Deletion_Disposition;
    use type Get_Legal_Hold_Result_Kind;
    use type Put_Legal_Hold_Result_Kind;
    use type Legal_Hold_Mutation_Disposition;
@@ -5440,6 +5442,48 @@ procedure S3_HTTP_Socket_Corpus is
             "DELETE",
             "/example-bucket/object%20key?annotation&" &
               "annotationName=socket-oversized");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: typed-delete-annotation" & CRLF),
+            "DELETE",
+            "/typed-annotation-bucket/object%20key?annotation&" &
+              "annotationName=typed%20annotation&" &
+              "versionId=version%20one",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_If_Match => "typed-etag");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-object-version-id: composed-generation" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "DELETE",
+            "/composed-annotation-bucket/object%20key?annotation&" &
+              "annotationName=composed%20annotation&" &
+              "versionId=composed%20version",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_If_Match => "composed-etag");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-delete-annotation" & CRLF),
+            "DELETE",
+            "/restart-annotation-bucket/object%20key?annotation&" &
+              "annotationName=restart%20annotation&" &
+              "versionId=restart%20version",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_If_Match => "restart-etag");
+         Serve
+           (HTTP_Response
+              --  Test-only rejection body is one byte above the paired
+              --  caller-selected 512-byte response ceiling.
+              ("403 Forbidden", String'(1 .. 513 => 'x')),
+            "DELETE",
+            "/bounded-annotation-bucket/object%20key?annotation&" &
+              "annotationName=bounded%20annotation");
          --  Pinned PutObjectLegalHold fixtures cover the owned body, all
          --  physical controls, the sole output, and one lost-response lane.
          Serve
@@ -18252,6 +18296,149 @@ procedure S3_HTTP_Socket_Corpus is
                Small_Limits => True);
          end;
          declare
+            function Parameters
+              (Version, Owner, ETag : String)
+               return Low_Level.Delete_Object_Annotation_Parameters is
+              ((Version_ID => US.To_Unbounded_String (Version),
+                Request_Payer =>
+                  (if Owner'Length > 0
+                   then US.To_Unbounded_String ("requester")
+                   else US.Null_Unbounded_String),
+                Expected_Bucket_Owner => US.To_Unbounded_String (Owner),
+                Object_If_Match => US.To_Unbounded_String (ETag)));
+         begin
+            declare
+               Result : constant Delete_Object_Annotation_Result :=
+                 Objects.Delete_Annotation
+                   (HTTP, Origin, "typed-annotation-bucket", "object key",
+                    "typed annotation",
+                    Parameters
+                      ("version one", "123456789012", "typed-etag"),
+                    Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /=
+                   Delete_Object_Annotation_Response_Available
+                 or else Result.Disposition /=
+                   Annotation_Deletion_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "typed-delete-annotation"
+               then
+                  raise Program_Error with
+                    "typed DeleteObjectAnnotation result mismatch";
+               end if;
+            end;
+            declare
+               --  Parent, HTTP exchange, and transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Annotation : US.Unbounded_String :=
+                 US.To_Unbounded_String ("composed annotation");
+               Value : Low_Level.Delete_Object_Annotation_Parameters :=
+                 Parameters
+                   ("composed version", "123456789012", "composed-etag");
+               Result : Delete_Object_Annotation_Result;
+               Operation : Delete_Object_Annotation_Operation :=
+                 Delete_Annotation
+                   (Set'Access, HTTP'Access, Origin,
+                    "composed-annotation-bucket", "object key",
+                    US.To_String (Annotation), Value, Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Annotation := US.To_Unbounded_String ("caller mutated");
+               Value.Version_ID := US.To_Unbounded_String ("mutated");
+               Value.Request_Payer := US.Null_Unbounded_String;
+               Value.Expected_Bucket_Owner := US.Null_Unbounded_String;
+               Value.Object_If_Match := US.Null_Unbounded_String;
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                   Delete_Object_Annotation_Response_Available
+                 or else Result.Disposition /= Annotation_Deletion_Completed
+                 or else Result.Failure /= No_Failure
+                 or else US.To_String
+                   (Result.Response.Result.Object_Version_ID) /=
+                     "composed-generation"
+                 or else US.To_String
+                   (Result.Response.Result.Request_Charged) /= "requester"
+               then
+                  raise Program_Error with
+                    "composed DeleteObjectAnnotation result mismatch";
+               end if;
+               Delete_Annotation
+                 (HTTP'Access, Origin, "restart-annotation-bucket",
+                  "object key", "restart annotation",
+                  Parameters
+                    ("restart version", "123456789012", "restart-etag"),
+                  Identity, HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                   Delete_Object_Annotation_Response_Available
+                 or else Result.Disposition /=
+                   Annotation_Deletion_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-delete-annotation"
+               then
+                  raise Program_Error with
+                    "restarted DeleteObjectAnnotation result mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Delete_Object_Annotation_Result :=
+                 Objects.Delete_Annotation
+                   (HTTP, Origin, "bounded-annotation-bucket", "object key",
+                    "bounded annotation", Parameters ("", "", ""),
+                    Identity, Timeout => 5.0,
+                    Limits =>
+                      --  Test-only caller response ceiling paired with the
+                      --  513-byte server fixture above.
+                      (Maximum_Document_Bytes => 512,
+                       Maximum_Depth          => 8,
+                       Maximum_Elements       => 32,
+                       Maximum_Text_Bytes     => 512));
+            begin
+               if Result.Kind /= Delete_Object_Annotation_Exchange_Failed
+                 or else Result.Disposition /=
+                   Annotation_Deletion_Outcome_Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /=
+                   HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "DeleteObjectAnnotation response limit was not enforced";
+               end if;
+            end;
+            declare
+               Prepared : aliased Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Delete_Object_Tagging
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    "object key", (others => <>), Identity,
+                    "us-east-1", "20130524T000000Z");
+               Set : aliased Operations.Completion_Set (3);
+               Parent : aliased Delete_Object_Annotation_Operation
+                 (Set'Access, HTTP'Access, null);
+               Child : HTTP_Client.Exchange_Operation (Set'Access);
+               Rejected : Boolean := False;
+            begin
+               begin
+                  Low_Level.Delete_Object_Annotation
+                    (HTTP'Access, Prepared'Access, Parent'Access,
+                     Parent'Access, HTTP_Client.Deadline_After (5.0),
+                     Operation => Child);
+               exception
+                  when Low_Level.Invalid_Request => Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "DeleteObjectAnnotation accepted a prepared tagging " &
+                    "request";
+               end if;
+            end;
+         end;
+         declare
             function Prepare
               (Version : String := ""; Full_Controls : Boolean := False;
                Present : Boolean := True)
@@ -19851,6 +20038,7 @@ begin
    Buckets_Testing.Check_Put_Bucket_Versioning_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Tagging_Certainty_Corpus;
    Objects_Testing.Check_Object_Tagging_Certainty_Corpus;
+   Objects_Testing.Check_Object_Annotation_Deletion_Certainty_Corpus;
    Objects_Testing.Check_Legal_Hold_Certainty_Corpus;
    Objects_Testing.Check_Retention_Certainty_Corpus;
    Transfers_Testing.Check_List_Parts_Result_Corpus;

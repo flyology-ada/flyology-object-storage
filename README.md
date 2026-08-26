@@ -305,6 +305,11 @@ CreateBucket, DeleteBucket, DeleteBucketLifecycle, and
 CreateBucketMetadataTableConfiguration, paired with bounded
 GetBucketMetadataTableConfiguration reconciliation. The typed synchronous
 overloads wait on those same owner-driven state machines.
+Conditional DeleteObjectAnnotation is likewise exposed as provider-owned
+`Client.Objects.Delete_Annotation` constructor, operation-last restart, typed
+Finish, and synchronous wait forms. It never replays the mutation, and an
+unknown post-admission result requires generation-bound read-only
+reconciliation before any caller-selected retry.
 Multipart initiation and abort use one-shot empty sources, UploadPart moves one
 owned bounded buffer, and completion owns the exact serialized XML behind a
 one-shot source. Each preserves HTTP

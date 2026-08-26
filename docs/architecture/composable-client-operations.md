@@ -20,6 +20,7 @@ Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
 non-replaying DeleteBucketLifecycle,
 object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
+non-replaying conditional DeleteObjectAnnotation,
 non-replaying PutObjectLegalHold, plus bounded GetObjectRetention with
 non-replaying PutObjectRetention, and bounded GetObjectLockConfiguration with
 non-replaying PutObjectLockConfiguration. The
@@ -115,18 +116,19 @@ The implemented operation order is:
     `Delete_Bucket_Tagging`;
 31. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`;
-32. bounded `Get_Legal_Hold` and non-replaying `Put_Legal_Hold`;
-33. bounded `Get_Retention` and non-replaying `Put_Retention`;
-34. bounded `Get_Object_Lock_Configuration` and non-replaying
+32. non-replaying conditional `Delete_Annotation`;
+33. bounded `Get_Legal_Hold` and non-replaying `Put_Legal_Hold`;
+34. bounded `Get_Retention` and non-replaying `Put_Retention`;
+35. bounded `Get_Object_Lock_Configuration` and non-replaying
     `Put_Object_Lock_Configuration`.
-35. bounded `Get_ACL` for a bucket access-control policy.
-36. bounded `Get_ACL` for an object access-control policy.
-37. bounded `Get_Metadata_Table_Configuration` and non-replaying
+36. bounded `Get_ACL` for a bucket access-control policy.
+37. bounded `Get_ACL` for an object access-control policy.
+38. bounded `Get_Metadata_Table_Configuration` and non-replaying
     `Create_Metadata_Table_Configuration`.
 
-The provider surface contains 64 domain operations: 20 in `Client.Objects`,
+The provider surface contains 65 domain operations: 21 in `Client.Objects`,
 36 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 61 prepared-request initiators in `Client.Low_Level`. The count difference
+to 62 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -165,6 +167,15 @@ and signing inputs; caller destination values are not borrowed after signing.
 A complete response exposes typed admission and mutation certainty. Anything
 unknown after possible admission requires caller-selected read-only
 `Get_Metadata_Table_Configuration` reconciliation before any retry.
+
+DeleteObjectAnnotation is colocated with object operations as
+`Delete_Annotation`. Its exact prepared initiator, limited constructor,
+operation-last restart, typed Finish, and typed synchronous wait drive one
+non-replaying empty-source state machine. Preparation copies the annotation
+name and exact version, requester, owner, and object-CAS controls; no caller
+string is retained. A complete response exposes typed admission and mutation
+certainty. Anything unknown after possible admission requires caller-selected
+read-only reconciliation for the exact object generation before any retry.
 
 Each implemented operation has both a limited constructor taking a completion
 set and a same-name, operation-last procedure suitable for a reusable component
