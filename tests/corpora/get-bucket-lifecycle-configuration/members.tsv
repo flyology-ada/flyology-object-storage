@@ -1,0 +1,37 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	238	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind its exact value into the signed lifecycle target.	GLC-RQ-001,GLC-RQ-003,GLC-RQ-004
+request	238	2	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	GLC-RQ-002,GLC-RQ-003,GLC-RQ-004
+output	237	1	Rules	377	body	false	decoded	Preserve absent body versus a present LifecycleConfiguration and every direct Rule in wire order.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-TR-001,GLC-TR-002
+output	237	2	TransitionDefaultMinimumObjectSize	693	header	false	decoded	Preserve header absence or one exact pinned transition-minimum value.	GLC-RS-001,GLC-RS-006,GLC-RS-007,GLC-TR-001,GLC-TR-002
+nested	3	1	DaysAfterInitiation	142	body	false	decoded	Preserve optional validated signed-decimal text without imposing a machine-integer ceiling.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	373	1	Date	140	body	false	decoded	Preserve an optional exact validated ISO-8601 expiration timestamp.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	373	2	Days	141	body	false	decoded	Preserve optional validated signed-decimal expiration days without a machine ceiling.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	373	3	ExpiredObjectDeleteMarker	208	body	false	decoded	Preserve optional exact Boolean presence independently from false.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	374	1	Expiration	373	body	false	decoded	Preserve optional current-version expiration structure presence.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	374	2	ID	308	body	false	decoded	Preserve optional exact rule identifier text including an empty value.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	374	3	Prefix	517	body	false	decoded	Preserve optional deprecated rule prefix independently from Filter.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	374	4	Filter	376	body	false	decoded	Preserve optional Filter presence including the model-permitted empty structure.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	374	5	Status	207	body	true	decoded	Require exactly Enabled or Disabled for every decoded rule.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	374	6	Transitions	694	body	false	decoded	Preserve every direct Transition in wire order within shared XML limits.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	374	7	NoncurrentVersionTransitions	457	body	false	decoded	Preserve every direct NoncurrentVersionTransition in wire order within shared XML limits.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	374	8	NoncurrentVersionExpiration	455	body	false	decoded	Preserve optional noncurrent expiration structure presence.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	374	9	AbortIncompleteMultipartUpload	3	body	false	decoded	Preserve optional incomplete-multipart abort structure presence.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	375	1	Prefix	517	body	false	decoded	Preserve optional logical-And prefix text.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	375	2	Tags	674	body	false	decoded	Preserve every direct Tag value in wire order with required Key and Value.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	375	3	ObjectSizeGreaterThan	488	body	false	decoded	Preserve optional validated signed-decimal lower bound without a machine ceiling.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	375	4	ObjectSizeLessThan	489	body	false	decoded	Preserve optional validated signed-decimal upper bound without a machine ceiling.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	376	1	Prefix	517	body	false	decoded	Preserve optional Filter prefix text.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	376	2	Tag	672	body	false	decoded	Preserve optional Tag structure presence with its required pair.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	376	3	ObjectSizeGreaterThan	488	body	false	decoded	Preserve optional validated signed-decimal lower bound without a machine ceiling.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	376	4	ObjectSizeLessThan	489	body	false	decoded	Preserve optional validated signed-decimal upper bound without a machine ceiling.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	376	5	And	375	body	false	decoded	Preserve optional logical-And structure presence independently from its members.	GLC-RS-001,GLC-RS-002,GLC-RS-005
+nested	455	1	NoncurrentDays	141	body	false	decoded	Preserve optional validated signed-decimal noncurrent expiration days.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	455	2	NewerNoncurrentVersions	711	body	false	decoded	Preserve optional validated signed-decimal version count without a machine ceiling.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	456	1	NoncurrentDays	141	body	false	decoded	Preserve optional validated signed-decimal noncurrent transition days.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	456	2	StorageClass	695	body	false	decoded	Preserve absence or one of the six exact transition storage classes.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	456	3	NewerNoncurrentVersions	711	body	false	decoded	Preserve optional validated signed-decimal version count without a machine ceiling.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	672	1	Key	471	body	true	decoded	Require exact key text whenever a lifecycle Tag is present.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	672	2	Value	710	body	true	decoded	Require exact value text whenever a lifecycle Tag is present.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	692	1	Date	140	body	false	decoded	Preserve an optional exact validated ISO-8601 transition timestamp.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	692	2	Days	141	body	false	decoded	Preserve optional validated signed-decimal transition days without a machine ceiling.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007
+nested	692	3	StorageClass	695	body	false	decoded	Preserve absence or one of the six exact transition storage classes.	GLC-RS-001,GLC-RS-002,GLC-RS-005,GLC-RS-007

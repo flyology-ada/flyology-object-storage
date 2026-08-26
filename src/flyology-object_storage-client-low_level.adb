@@ -24,6 +24,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    package Bucket_Controls renames
      Flyology.Object_Storage.S3.Bucket_Controls;
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
+   package Lifecycle renames Flyology.Object_Storage.S3.Lifecycle;
    package Metadata_Tables renames
      Flyology.Object_Storage.S3.Metadata_Tables;
    package Encoding renames Flyology.Object_Storage.S3.SigV4_Encoding;
@@ -8320,6 +8321,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
          US.Null_Unbounded_String, False, Identity, Region, Timestamp));
 
+   function Prepare_Get_Bucket_Lifecycle_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Bucket_Lifecycle_Configuration_Operation,
+         Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
+         US.Null_Unbounded_String, False, Identity, Region, Timestamp));
+
    function Prepare_Get_Bucket_ACL
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
@@ -8605,6 +8616,46 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "malformed GetBucketEncryption response";
    end Decode_Get_Bucket_Encryption_Response;
 
+   function Decode_Get_Bucket_Lifecycle_Configuration_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Transition_Default_Minimum_Object_Size : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Lifecycle_Configuration_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      if not Valid_List_Response_Header_Text
+        (Transition_Default_Minimum_Object_Size)
+      then
+         raise Invalid_Response with
+           "invalid GetBucketLifecycleConfiguration response header";
+      end if;
+      if Status = 200 then
+         return
+           (Kind          => Bucket_Control_Found,
+            Status        => Status,
+            Configuration =>
+              (if Payload'Length = 0 then (others => <>)
+               else Lifecycle.Parse (Payload, Limits)),
+            Transition_Default_Minimum_Object_Size =>
+              Lifecycle.Parse_Transition_Default_Minimum_Size
+                (Transition_Default_Minimum_Object_Size));
+      end if;
+      if Transition_Default_Minimum_Object_Size'Length > 0 then
+         raise Invalid_Response with
+           "lifecycle transition header on rejected response";
+      end if;
+      return
+        (Kind   => Get_Bucket_Control_Rejected,
+         Status => Status,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Lifecycle.Malformed_Lifecycle | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetBucketLifecycleConfiguration response";
+   end Decode_Get_Bucket_Lifecycle_Configuration_Response;
+
    function Decode_Get_Bucket_ACL_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
@@ -8663,12 +8714,15 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Request_ID      : US.Unbounded_String;
       Host_ID         : US.Unbounded_String;
       Request_Charged : US.Unbounded_String;
+      Transition_Default_Minimum_Object_Size : US.Unbounded_String;
    end record;
 
    function Execute_Bucket_Control_Get
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Operation : Model.Operation_Id;
-      Collect_Request_Charged : Boolean; Timeout : Duration;
+      Collect_Request_Charged : Boolean;
+      Collect_Transition_Minimum : Boolean;
+      Timeout : Duration;
       Token : access Flyology.Cancellation.Token;
       Limits : S3.XML.Parse_Limits) return Bucket_Control_Raw_Response
    is
@@ -8723,6 +8777,12 @@ package body Flyology.Object_Storage.Client.Low_Level is
               (if Collect_Request_Charged
                then US.To_Unbounded_String
                  (Singleton_Header ("x-amz-request-charged"))
+               else US.Null_Unbounded_String),
+            Transition_Default_Minimum_Object_Size =>
+              (if Collect_Transition_Minimum
+               then US.To_Unbounded_String
+                 (Singleton_Header
+                    ("x-amz-transition-default-minimum-object-size"))
                else US.Null_Unbounded_String));
       end;
    exception
@@ -8741,7 +8801,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Raw : constant Bucket_Control_Raw_Response :=
         Execute_Bucket_Control_Get
           (Client, Prepared,
-           Model.Get_Bucket_Accelerate_Configuration_Operation, True,
+           Model.Get_Bucket_Accelerate_Configuration_Operation, True, False,
            Timeout, Token, Limits);
    begin
       return Decode_Get_Bucket_Accelerate_Response
@@ -8759,7 +8819,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Raw : constant Bucket_Control_Raw_Response :=
         Execute_Bucket_Control_Get
-          (Client, Prepared, Model.Get_Bucket_Abac_Operation, False,
+          (Client, Prepared, Model.Get_Bucket_Abac_Operation, False, False,
            Timeout, Token, Limits);
    begin
       return Decode_Get_Bucket_Abac_Response
@@ -8776,7 +8836,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Raw : constant Bucket_Control_Raw_Response :=
         Execute_Bucket_Control_Get
-          (Client, Prepared, Model.Get_Bucket_Policy_Operation, False,
+          (Client, Prepared, Model.Get_Bucket_Policy_Operation, False, False,
            Timeout, Token, Limits);
    begin
       return Decode_Get_Bucket_Policy_Response
@@ -8793,7 +8853,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Raw : constant Bucket_Control_Raw_Response :=
         Execute_Bucket_Control_Get
-          (Client, Prepared, Model.Get_Bucket_Policy_Status_Operation, False,
+          (Client, Prepared, Model.Get_Bucket_Policy_Status_Operation,
+           False, False,
            Timeout, Token, Limits);
    begin
       return Decode_Get_Bucket_Policy_Status_Response
@@ -8811,7 +8872,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Raw : constant Bucket_Control_Raw_Response :=
         Execute_Bucket_Control_Get
           (Client, Prepared, Model.Get_Bucket_Request_Payment_Operation,
-           False, Timeout, Token, Limits);
+           False, False, Timeout, Token, Limits);
    begin
       return Decode_Get_Bucket_Request_Payment_Response
         (Raw.Status, US.To_String (Raw.Payload),
@@ -8827,7 +8888,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Raw : constant Bucket_Control_Raw_Response :=
         Execute_Bucket_Control_Get
-          (Client, Prepared, Model.Get_Public_Access_Block_Operation, False,
+          (Client, Prepared, Model.Get_Public_Access_Block_Operation,
+           False, False,
            Timeout, Token, Limits);
    begin
       return Decode_Get_Public_Access_Block_Response
@@ -8845,7 +8907,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Raw : constant Bucket_Control_Raw_Response :=
         Execute_Bucket_Control_Get
           (Client, Prepared,
-           Model.Get_Bucket_Ownership_Controls_Operation, False,
+           Model.Get_Bucket_Ownership_Controls_Operation, False, False,
            Timeout, Token, Limits);
    begin
       return Decode_Get_Bucket_Ownership_Controls_Response
@@ -8862,7 +8924,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Raw : constant Bucket_Control_Raw_Response :=
         Execute_Bucket_Control_Get
-          (Client, Prepared, Model.Get_Bucket_Cors_Operation, False,
+          (Client, Prepared, Model.Get_Bucket_Cors_Operation, False, False,
            Timeout, Token, Limits);
    begin
       return Decode_Get_Bucket_CORS_Response
@@ -8879,13 +8941,34 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Raw : constant Bucket_Control_Raw_Response :=
         Execute_Bucket_Control_Get
-          (Client, Prepared, Model.Get_Bucket_Encryption_Operation, False,
+          (Client, Prepared, Model.Get_Bucket_Encryption_Operation,
+           False, False,
            Timeout, Token, Limits);
    begin
       return Decode_Get_Bucket_Encryption_Response
         (Raw.Status, US.To_String (Raw.Payload),
          US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
    end Execute_Get_Bucket_Encryption;
+
+   function Execute_Get_Bucket_Lifecycle_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Lifecycle_Configuration_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared,
+           Model.Get_Bucket_Lifecycle_Configuration_Operation,
+           False, True, Timeout, Token, Limits);
+   begin
+      return Decode_Get_Bucket_Lifecycle_Configuration_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID),
+         US.To_String
+           (Raw.Transition_Default_Minimum_Object_Size), Limits);
+   end Execute_Get_Bucket_Lifecycle_Configuration;
 
    function Execute_Get_Bucket_ACL
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -8896,7 +8979,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
    is
       Raw : constant Bucket_Control_Raw_Response :=
         Execute_Bucket_Control_Get
-          (Client, Prepared, Model.Get_Bucket_Acl_Operation, False,
+          (Client, Prepared, Model.Get_Bucket_Acl_Operation, False, False,
            Timeout, Token, Limits);
    begin
       return Decode_Get_Bucket_ACL_Response
@@ -8914,8 +8997,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Raw : constant Bucket_Control_Raw_Response :=
         Execute_Bucket_Control_Get
           (Client, Prepared,
-           Model.Get_Bucket_Metadata_Table_Configuration_Operation, False,
-           Timeout, Token, Limits);
+           Model.Get_Bucket_Metadata_Table_Configuration_Operation,
+           False, False, Timeout, Token, Limits);
    begin
       return Decode_Get_Bucket_Metadata_Table_Configuration_Response
         (Raw.Status, US.To_String (Raw.Payload),
@@ -13274,6 +13357,26 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
          Token, Operation);
    end Get_Bucket_Encryption;
+
+   procedure Get_Bucket_Lifecycle_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Get_Bucket_Control_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Get_Bucket_Lifecycle_Configuration_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Sink
+        (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
+         Token, Operation);
+   end Get_Bucket_Lifecycle_Configuration;
 
    procedure Create_Bucket_Metadata_Table_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;

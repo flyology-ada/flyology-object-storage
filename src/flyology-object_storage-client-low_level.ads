@@ -15,6 +15,7 @@ with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Listings;
+with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Multipart;
 with Flyology.Object_Storage.S3.Multipart_Uploads;
@@ -2618,6 +2619,20 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
+   --  Prepare one exactly bound GetBucketLifecycleConfiguration request.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Parameters Optional modeled owner precondition
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @return Fully signed request bound to the lifecycle operation
+   function Prepare_Get_Bucket_Lifecycle_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
    --  Prepare one exactly bound GetBucketAcl request.
    --  @param Origin Parsed HTTP origin
    --  @param Style Path or virtual-hosted bucket addressing
@@ -2818,6 +2833,29 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Presence-preserving GetBucketLifecycleConfiguration outcome. The 500
+   --  default is the established deterministic aggregate sentinel only.
+   --  @field Kind Whether configuration or a strict S3 error was returned
+   --  @field Status Exact physical HTTP status
+   --  @field Configuration Optional typed lifecycle configuration
+   --  @field Transition_Default_Minimum_Object_Size Optional exact header
+   --  @field Error Structured bounded S3 rejection
+   type Get_Bucket_Lifecycle_Configuration_Outcome
+     (Kind : Get_Bucket_Control_Outcome_Kind :=
+        Get_Bucket_Control_Rejected)
+   is record
+      Status : Flyology.HTTP.Status_Code := 500;
+      case Kind is
+         when Bucket_Control_Found =>
+            Configuration : S3.Lifecycle.Lifecycle_Configuration;
+            Transition_Default_Minimum_Object_Size :
+              S3.Lifecycle.Transition_Default_Minimum_Size :=
+                S3.Lifecycle.Transition_Minimum_Absent;
+         when Get_Bucket_Control_Rejected =>
+            Error : S3.Errors.Error_Response;
+      end case;
+   end record;
+
    --  Presence-preserving GetBucketAcl outcome.  The 500 default is the
    --  established deterministic aggregate sentinel only.
    --  @field Kind Whether policy or a strict S3 error was returned
@@ -2924,6 +2962,20 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String := ""; Host_ID : String := "";
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Encryption_Outcome;
+   --  Decode one complete bounded GetBucketLifecycleConfiguration response.
+   --  @param Status Exact physical response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Optional bounded S3 request identifier
+   --  @param Host_ID Optional bounded S3 host identifier
+   --  @param Transition_Default_Minimum_Object_Size Optional exact header
+   --  @param Limits Caller-selected shared XML resource limits
+   --  @return Typed lifecycle configuration or strict S3 rejection
+   function Decode_Get_Bucket_Lifecycle_Configuration_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String := ""; Host_ID : String := "";
+      Transition_Default_Minimum_Object_Size : String := "";
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Lifecycle_Configuration_Outcome;
    --  Decode one complete bounded GetBucketAcl response.
    --  @param Status Exact physical response status
    --  @param Payload Complete same-response body
@@ -3024,6 +3076,21 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Get_Bucket_Encryption_Outcome;
+   --  Execute one prepared GetBucketLifecycleConfiguration exchange. The
+   --  30-second default is the established low-level synchronous-client
+   --  compatibility budget; callers may select another whole-call budget.
+   --  @param Client Configured caller-owned synchronous HTTP client
+   --  @param Prepared Request returned by the exact lifecycle preparer
+   --  @param Timeout Whole blocking exchange timeout
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected shared XML resource limits
+   --  @return Typed configuration or bounded S3 rejection
+   function Execute_Get_Bucket_Lifecycle_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Get_Bucket_Lifecycle_Configuration_Outcome;
    --  Execute one exact prepared GetBucketAcl request.
    --  The 30-second default is the established low-level synchronous-client
    --  compatibility budget; callers may select a different absolute budget.
@@ -5037,6 +5104,24 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Token Optional cancellation source retained through drain
    --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Bucket_Encryption
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared GetBucketLifecycleConfiguration exchange into
+   --  a bounded sink. Another bucket-control read is rejected before HTTP
+   --  admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Get_Bucket_Lifecycle_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Sink      : not null access

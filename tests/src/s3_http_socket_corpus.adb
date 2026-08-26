@@ -28,6 +28,7 @@ with Flyology.Object_Storage.S3.Checksums;
 with Flyology.Object_Storage.S3.Core;
 with Flyology.Object_Storage.S3.Deletions;
 with Flyology.Object_Storage.S3.Encryption;
+with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Model;
@@ -63,6 +64,7 @@ procedure S3_HTTP_Socket_Corpus is
    package Deletions renames Flyology.Object_Storage.S3.Deletions;
    package ACL renames Flyology.Object_Storage.S3.ACL;
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
+   package Lifecycle renames Flyology.Object_Storage.S3.Lifecycle;
    package Metadata_Tables renames
      Flyology.Object_Storage.S3.Metadata_Tables;
    package Checksums renames Flyology.Object_Storage.S3.Checksums;
@@ -246,6 +248,8 @@ procedure S3_HTTP_Socket_Corpus is
    use type ACL.Permission;
    use type Encryption.Encryption_Algorithm;
    use type Encryption.Blocked_Encryption_Type;
+   use type Lifecycle.Rule_Status;
+   use type Lifecycle.Transition_Default_Minimum_Size;
    use type Tags.Tag_Vectors.Vector;
    use type Transfers.Download_Outcome_Kind;
    use type Transfers.Upload_Outcome_Kind;
@@ -4996,6 +5000,58 @@ procedure S3_HTTP_Socket_Corpus is
               ("403 Forbidden", Error_XML,
                "x-amz-request-id: restarted-get-encryption" & CRLF),
             "GET", "/restart-encryption?encryption",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<LifecycleConfiguration><Rule><ID>socket-rule</ID>" &
+                 "<Filter><Prefix>logs/</Prefix></Filter>" &
+                 "<Status>Enabled</Status><Transition><Days>0</Days>" &
+                 "<StorageClass>GLACIER_IR</StorageClass></Transition>" &
+                 "</Rule></LifecycleConfiguration>",
+               "x-amz-request-id: lifecycle-request" & CRLF &
+               "x-amz-id-2: lifecycle-host" & CRLF &
+               "x-amz-transition-default-minimum-object-size: " &
+               "varies_by_storage_class" & CRLF),
+            "GET", "/example-bucket?lifecycle",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<LifecycleConfiguration><Rule><Status>Disabled</Status>" &
+                 "</Rule></LifecycleConfiguration>"),
+            "GET", "/typed-lifecycle?lifecycle",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK",
+               "<LifecycleConfiguration><Rule><Status>Enabled</Status>" &
+                 "</Rule></LifecycleConfiguration>"),
+            "GET", "/composed-lifecycle?lifecycle",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("404 Not Found",
+               "<Error><Code>NoSuchLifecycleConfiguration</Code>" &
+                 "<Message>missing</Message></Error>",
+               "x-amz-request-id: restarted-get-lifecycle" & CRLF),
+            "GET", "/restart-lifecycle?lifecycle",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<LifecycleConfiguration></LifecycleConfiguration>",
+               "x-amz-transition-default-minimum-object-size: " &
+                 "varies_by_storage_class" & CRLF &
+               "x-amz-transition-default-minimum-object-size: " &
+                 "all_storage_classes_128K" & CRLF),
+            "GET", "/duplicate-lifecycle?lifecycle",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<LifecycleConfiguration>" &
+                 String'(1 .. 64 => ' ') &
+                 "</LifecycleConfiguration>"),
+            "GET", "/bounded-lifecycle?lifecycle",
             Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response
@@ -17921,6 +17977,157 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Prepared : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Lifecycle_Configuration
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 Parameters, Identity, "us-east-1", "20130524T000000Z");
+            Result : constant
+              Low_Level.Get_Bucket_Lifecycle_Configuration_Outcome :=
+                Low_Level.Execute_Get_Bucket_Lifecycle_Configuration
+                  (HTTP, Prepared, Timeout => 5.0);
+            Rule : constant Lifecycle.Lifecycle_Rule :=
+              Result.Configuration.Rules.Element (1);
+         begin
+            if Result.Kind /= Low_Level.Bucket_Control_Found
+              or else Result.Status /= 200
+              or else not Result.Configuration.Is_Set
+              or else Result.Configuration.Rules.Length /= 1
+              or else US.To_String (Rule.ID.Value) /= "socket-rule"
+              or else Rule.Status /= Lifecycle.Rule_Enabled
+              or else Rule.Transitions.Length /= 1
+              or else Result.Transition_Default_Minimum_Object_Size /=
+                Lifecycle.Varies_By_Storage_Class
+            then
+               raise Program_Error with
+                 "GetBucketLifecycleConfiguration socket success mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Bucket_Lifecycle_Result :=
+              Get_Lifecycle_Configuration
+                (HTTP, Origin, "typed-lifecycle", Parameters, Identity,
+                 Timeout => 5.0);
+         begin
+            if Result.Kind /= Get_Bucket_Lifecycle_Response_Available
+              or else Result.Failure /= No_Failure
+              or else Result.Response.Configuration.Rules.Length /= 1
+              or else Result.Response.Configuration.Rules.Element (1).
+                Status /= Lifecycle.Rule_Disabled
+            then
+               raise Program_Error with
+                 "typed GetBucketLifecycleConfiguration mismatch";
+            end if;
+         end;
+         declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Bucket_Encryption
+                (Origin, Low_Level.Path_Style, "example-bucket",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Bucket_Lifecycle_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Get_Bucket_Lifecycle_Configuration
+                 (HTTP'Access, Prepared'Access, Parent'Access,
+                  HTTP_Client.Deadline_After (5.0), Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "GetBucketLifecycleConfiguration accepted encryption " &
+                 "request";
+            end if;
+         end;
+         declare
+            Parameters : Low_Level.Get_Bucket_Control_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Bucket_Lifecycle_Result;
+         begin
+            declare
+               Operation : Get_Bucket_Lifecycle_Operation :=
+                 Get_Lifecycle_Configuration
+                   (Set'Access, HTTP'Access, Origin, "composed-lifecycle",
+                    Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               --  The signed request is owned before the caller value changes.
+               Parameters.Expected_Bucket_Owner :=
+                 US.To_Unbounded_String ("changed-owner");
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               Parameters.Expected_Bucket_Owner :=
+                 US.To_Unbounded_String ("123456789012");
+               if Result.Kind /= Get_Bucket_Lifecycle_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Configuration.Rules.Length /= 1
+               then
+                  raise Program_Error with
+                    "composed GetBucketLifecycleConfiguration mismatch";
+               end if;
+               Get_Lifecycle_Configuration
+                 (HTTP'Access, Origin, "restart-lifecycle", Parameters,
+                  Identity, HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Lifecycle_Response_Available
+                 or else Result.Failure /= Not_Found
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-get-lifecycle"
+               then
+                  raise Program_Error with
+                    "restarted GetBucketLifecycleConfiguration mismatch";
+               end if;
+               Get_Lifecycle_Configuration
+                 (HTTP'Access, Origin, "duplicate-lifecycle", Parameters,
+                  Identity, HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Lifecycle_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+               then
+                  raise Program_Error with
+                    "GetBucketLifecycleConfiguration accepted duplicate " &
+                    "transition header";
+               end if;
+               Get_Lifecycle_Configuration
+                 (HTTP'Access, Origin, "bounded-lifecycle", Parameters,
+                  Identity, HTTP_Client.Deadline_After (5.0),
+                  Limits =>
+                    --  Test-only caller policy paired with oversized fixture.
+                    (Maximum_Document_Bytes => 64,
+                     Maximum_Depth          => 8,
+                     Maximum_Elements       => 32,
+                     Maximum_Text_Bytes     => 64),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Get_Bucket_Lifecycle_Exchange_Failed
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /=
+                   HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded GetBucketLifecycleConfiguration mismatch";
+               end if;
+            end;
+         end;
+         declare
             Prepared : constant Low_Level.Prepared_Request :=
               Low_Level.Prepare_Get_Bucket_Metadata_Table_Configuration
                 (Origin, Low_Level.Path_Style, "example-bucket",
@@ -21937,6 +22144,7 @@ begin
    Buckets_Testing.Check_Request_Payment_Certainty_Corpus;
    Buckets_Testing.Check_Ownership_Controls_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Encryption_Result_Corpus;
+   Buckets_Testing.Check_Get_Bucket_Lifecycle_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_ACL_Result_Corpus;
    Buckets_Testing.Check_Metadata_Table_Configuration_Result_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Lifecycle_Certainty_Corpus;

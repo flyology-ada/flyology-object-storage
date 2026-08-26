@@ -19,6 +19,7 @@ Put/GetBucketVersioning,
 non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
+bounded GetBucketLifecycleConfiguration,
 non-replaying DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketIntelligentTieringConfiguration,
@@ -144,10 +145,12 @@ The implemented operation order is:
     precondition and typed mutation certainty.
 44. non-replaying `Delete_Metadata_Table_Configuration` with copied owner
     precondition and typed mutation certainty.
+45. bounded `Get_Lifecycle_Configuration` with the complete presence-sensitive
+    rule graph and optional transition-minimum response header.
 
-The provider surface contains 74 domain operations: 21 in `Client.Objects`,
-45 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 71 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 75 domain operations: 21 in `Client.Objects`,
+46 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 72 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -188,6 +191,17 @@ Finish, and typed synchronous wait retain the signed request and one bounded
 response snapshot through terminal drain. The caller's XML limits bound the
 configuration and structured error; opaque provider status remains text. The
 operation performs no retry and introduces no metadata lifecycle policy.
+
+GetBucketLifecycleConfiguration is likewise colocated with `Client.Buckets`.
+Its exact prepared initiator, limited constructor, operation-last restart,
+typed Finish, and typed synchronous wait retain one signed request and bounded
+response snapshot through terminal drain. The strict codec preserves all 36
+pinned request, output, and nested members: direct ordered rules, tags and
+transition lists; required rule status and tag pairs; optional structures;
+exact enum and Boolean domains; ISO-8601 timestamps; and unbounded integer and
+long values as validated decimal text. The caller's existing shared XML limits
+bound dynamic storage. The read adds no lifecycle, retention, transition,
+capacity, timeout, retry, or reconciliation policy.
 
 CreateBucketMetadataTableConfiguration is colocated with that read in
 `Client.Buckets`. Its exact prepared initiator, limited constructor,
@@ -681,7 +695,8 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Get_Ownership_Controls`, and
 `Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`,
 `Set_Encryption`, `Delete_Encryption`, `Get_CORS`, `Set_CORS`, and
-`Delete_CORS`, `Delete_Lifecycle`, `Delete_Replication`,
+`Delete_CORS`, `Get_Lifecycle_Configuration`, `Delete_Lifecycle`,
+`Delete_Replication`,
 `Delete_Analytics_Configuration`, `Delete_Metrics_Configuration`,
 `Delete_Intelligent_Tiering_Configuration`,
 `Delete_Metadata_Configuration`, `Delete_Metadata_Table_Configuration`,
