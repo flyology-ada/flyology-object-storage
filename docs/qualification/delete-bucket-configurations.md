@@ -2,8 +2,8 @@
 
 This record qualifies the strict bounded clients and corpora for thirteen
 bodyless bucket-configuration DELETE operations. DeleteBucketLifecycle,
-DeleteBucketReplication, DeleteBucketIntelligentTieringConfiguration,
-DeleteBucketWebsite, and
+DeleteBucketReplication, DeleteBucketAnalyticsConfiguration,
+DeleteBucketIntelligentTieringConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration also have provider-owned
 composable operations and typed synchronous waits that use their corresponding
 state machines. It does not
@@ -60,6 +60,7 @@ outcome. Calls are synchronous, do not retry, retain no caller input, release
 the response before return, and create no detached helper task.
 
 DeleteBucketLifecycle, DeleteBucketReplication,
+DeleteBucketAnalyticsConfiguration,
 DeleteBucketIntelligentTieringConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration
 additionally expose limited constructors, same-name operation-last reusable
@@ -84,14 +85,15 @@ malformed errors, and cross-operation executor rejection before HTTP.
 
 The raw-loopback corpus adds one signed high-level 204 exchange for every
 operation and caller. It also gates DeleteBucketLifecycle,
-DeleteBucketReplication, DeleteBucketIntelligentTieringConfiguration,
-DeleteBucketWebsite, and
+DeleteBucketReplication, DeleteBucketAnalyticsConfiguration,
+DeleteBucketIntelligentTieringConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration typed synchronous calls,
 limited constructors, operation-last restarts, exact prepared-operation
 rejection, typed 403 certainty, duplicate and empty physical response
-identifiers, and bounded error bodies. The replication, intelligent-tiering,
-website, and inventory lanes additionally change caller-owned parameters after
-initiation to prove that the operations retained no borrow.
+identifiers, and bounded error bodies. The replication, analytics,
+intelligent-tiering, website, and inventory lanes additionally change
+caller-owned parameters after initiation to prove that the operations retained
+no borrow.
 The complete sequence runs once under a native task and once under a Flyology
 lightweight task; the root gate repeats the whole socket corpus three times.
 The existing shared DeleteBucketCors physical-response lane supplies empty,
@@ -102,8 +104,8 @@ The machine ledger records `DeleteBucketPolicy` and
 `DeletePublicAccessBlock` as `covered / covered / covered / covered` using
 their independent backend and server evidence. The other eleven operations
 remain `missing / covered / missing / covered`; the additional lifecycle,
-replication, intelligent-tiering, website, and inventory composable clients do
-not change those ledger tuples.
+replication, analytics, intelligent-tiering, website, and inventory composable
+clients do not change those ledger tuples.
 This client corpus does not manufacture their backend persistence or server
 routes.
 
@@ -115,10 +117,10 @@ server application corpus, and three repetitions of the deterministic family
 corpus and native/lightweight socket and TLS corpora. The operation inventory
 verifier reported thirteen operations, thirty request members, no modeled
 success outputs, eight reciprocal vectors, and the exact lifecycle,
-replication, intelligent-tiering, website, and inventory composable
+replication, analytics, intelligent-tiering, website, and inventory composable
 declarations. The 116-operation coverage verifier and its negative oracle,
 repository-integrity gate, Markdown-link gate, and generated API build also
-passed. GNATdoc produced a 44,141-line log and 429 HTML files with all five
+passed. GNATdoc produced a 44,166-line log and 429 HTML files with all six
 composable APIs present. It reported no error diagnostic and no warning naming
 the new public API; the generated model's pre-existing undocumented
 operation-enum warnings remain visible.

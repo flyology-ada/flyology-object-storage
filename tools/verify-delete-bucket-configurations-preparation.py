@@ -301,6 +301,28 @@ def main() -> int:
             r"Low\.Delete_Bucket_Website",
         ],
     }
+    analytics_tokens = {
+        "low-level specification": [
+            r"\bprocedure\s+Delete_Bucket_Analytics_Configuration\b",
+            r"Operation\s*:\s*in\s+out\s+"
+            r"Flyology\.HTTP\.Client\.Exchange_Operation",
+        ],
+        "low-level body": [
+            r"\bprocedure\s+Delete_Bucket_Analytics_Configuration\b",
+            r"Model\.Delete_Bucket_Analytics_Configuration_Operation",
+        ],
+        "high-level specification": [
+            r"\btype\s+Delete_Bucket_Analytics_Operation\b",
+            r"\btype\s+Delete_Bucket_Analytics_Result\b",
+            r"\bprocedure\s+Finish\s*\(\s*Operation\s*:\s*in\s+out\s+"
+            r"Delete_Bucket_Analytics_Operation",
+        ],
+        "high-level body": [
+            r"\bprocedure\s+Start_Delete_Bucket_Analytics\b",
+            r"\bfunction\s+Normalize_Delete_Bucket_Analytics_Response\b",
+            r"Low\.Delete_Bucket_Analytics_Configuration",
+        ],
+    }
     intelligent_tiering_tokens = {
         "low-level specification": [
             r"\bprocedure\s+Delete_Bucket_Intelligent_Tiering_Configuration\b",
@@ -349,6 +371,7 @@ def main() -> int:
         ("DeleteBucketLifecycle", lifecycle_tokens),
         ("DeleteBucketReplication", replication_tokens),
         ("DeleteBucketWebsite", website_tokens),
+        ("DeleteBucketAnalyticsConfiguration", analytics_tokens),
         ("DeleteBucketIntelligentTieringConfiguration",
          intelligent_tiering_tokens),
         ("DeleteBucketInventoryConfiguration", inventory_tokens),
@@ -361,6 +384,7 @@ def main() -> int:
         ("DeleteBucketLifecycle", "Delete_Lifecycle"),
         ("DeleteBucketReplication", "Delete_Replication"),
         ("DeleteBucketWebsite", "Delete_Website"),
+        ("DeleteBucketAnalyticsConfiguration", "Delete_Analytics_Configuration"),
         ("DeleteBucketIntelligentTieringConfiguration",
          "Delete_Intelligent_Tiering_Configuration"),
         ("DeleteBucketInventoryConfiguration", "Delete_Inventory_Configuration"),
@@ -407,9 +431,9 @@ def main() -> int:
     print(
         "bucket-configuration DELETE preparation: 13 operations, 30 request "
         f"members, no modeled success outputs, {len(vectors)} reciprocal vectors; "
-        "pinned model and exact public APIs match, including lifecycle, "
-        "replication, website, intelligent-tiering, and inventory composable "
-        "forms"
+        "pinned model and exact public APIs match, including analytics, "
+        "lifecycle, replication, website, intelligent-tiering, and inventory "
+        "composable forms"
     )
     return 0
 

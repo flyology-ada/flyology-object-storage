@@ -303,8 +303,9 @@ CreateMultipartUpload, UploadPart, CompleteMultipartUpload,
 AbortMultipartUpload, bounded ListParts and ListMultipartUploads, and
 CopyObject, together with service-level ListBuckets and non-replaying
 CreateBucket, bounded CreateSession, DeleteBucket, DeleteBucketLifecycle,
-DeleteBucketReplication, DeleteBucketIntelligentTieringConfiguration,
-DeleteBucketWebsite, DeleteBucketInventoryConfiguration, and
+DeleteBucketReplication, DeleteBucketAnalyticsConfiguration,
+DeleteBucketIntelligentTieringConfiguration, DeleteBucketWebsite,
+DeleteBucketInventoryConfiguration, and
 CreateBucketMetadataTableConfiguration, paired with
 bounded
 GetBucketMetadataTableConfiguration reconciliation. The typed synchronous
