@@ -1596,6 +1596,241 @@ package Flyology.Object_Storage.Client.Objects is
       Result    : out Put_Legal_Hold_Result)
      with Pre => Flyology.Operations.Is_Terminal (Operation);
 
+   --  Shape of a terminal GetObjectRetention read.
+   --  @enum Get_Retention_Response_Available Modeled response exists
+   --  @enum Get_Retention_Exchange_Failed No modeled response exists
+   type Get_Retention_Result_Kind is
+     (Get_Retention_Response_Available, Get_Retention_Exchange_Failed);
+
+   --  Typed bounded GetObjectRetention response or composable HTTP failure.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Get_Retention_Result
+     (Kind : Get_Retention_Result_Kind := Get_Retention_Exchange_Failed)
+   is record
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Get_Retention_Response_Available =>
+            Response : Low_Level.Get_Object_Retention_Outcome;
+         when Get_Retention_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One bounded read-only GetObjectRetention parent with one HTTP child.
+   type Get_Retention_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  These overloads retain the package's established object-read defaults:
+   --  us-east-1, path-style addressing, the shared S3 XML document limit,
+   --  no cancellation source, and a 30-second synchronous wait. They
+   --  preserve existing client policy rather than adding retention limits.
+   --  Start or restart one bounded GetObjectRetention read.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established operation
+   procedure Get_Retention
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Get_Retention_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded GetObjectRetention read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven retention read
+   function Get_Retention
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Retention_Operation;
+
+   --  Consume one terminal GetObjectRetention operation.
+   --  @param Operation Terminal retention read
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out Get_Retention_Operation;
+      Result    : out Get_Retention_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  What is known about one retention mutation after terminal drain.
+   --  Unknown outcomes require caller-selected GetObjectRetention
+   --  reconciliation for the exact object version before any retry.
+   --  @enum Retention_Mutation_Completed Complete response proves mutation
+   --  @enum Retention_Mutation_Definitely_Not_Applied Exact rejection or
+   --     non-admission proves the requested mutation was not applied
+   --  @enum Retention_Mutation_Outcome_Unknown State must be reconciled
+   --  @enum Retention_Mutation_Cancelled_Before_Admission Cancellation
+   --     preceded possible server admission
+   type Retention_Mutation_Disposition is
+     (Retention_Mutation_Completed,
+      Retention_Mutation_Definitely_Not_Applied,
+      Retention_Mutation_Outcome_Unknown,
+      Retention_Mutation_Cancelled_Before_Admission);
+
+   --  Shape of a terminal PutObjectRetention mutation.
+   --  @enum Put_Retention_Response_Available Modeled response exists
+   --  @enum Put_Retention_Exchange_Failed No modeled response exists
+   type Put_Retention_Result_Kind is
+     (Put_Retention_Response_Available, Put_Retention_Exchange_Failed);
+
+   --  Typed PutObjectRetention certainty and response or HTTP failure.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Put_Retention_Result
+     (Kind : Put_Retention_Result_Kind := Put_Retention_Exchange_Failed)
+   is record
+      Disposition : Retention_Mutation_Disposition :=
+        Retention_Mutation_Outcome_Unknown;
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Put_Retention_Response_Available =>
+            Response : Low_Level.Put_Object_Retention_Outcome;
+         when Put_Retention_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot PutObjectRetention parent owning its serialized XML document.
+   type Put_Retention_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  These overloads retain the package's established object-mutation
+   --  defaults: us-east-1, path-style addressing, the shared S3 XML document
+   --  limit, no cancellation source, and a 30-second synchronous wait. They
+   --  preserve existing client policy rather than adding retention limits.
+   --  Start or restart one nonreplaying PutObjectRetention mutation.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Value Presence-preserving retention document
+   --  @param Parameters Complete modeled checksum, bypass, and controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established operation
+   procedure Put_Retention
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Value      : S3.Object_Lock.Retention;
+      Parameters : Low_Level.Put_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Put_Retention_Operation)
+     with Pre => not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying PutObjectRetention mutation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Value Presence-preserving retention document
+   --  @param Parameters Complete modeled checksum, bypass, and controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven retention mutation
+   function Put_Retention
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Value      : S3.Object_Lock.Retention;
+      Parameters : Low_Level.Put_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Put_Retention_Operation;
+
+   --  Consume one terminal PutObjectRetention operation.
+   --  @param Operation Terminal retention mutation
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Put_Retention_Operation;
+      Result    : out Put_Retention_Result)
+     with Pre => Flyology.Operations.Is_Terminal (Operation);
+
    --  What is known about one object-tag mutation after terminal drain.
    --  Unknown outcomes require caller-selected GetObjectTagging
    --  reconciliation for the exact object version before any retry.
@@ -2741,6 +2976,60 @@ package Flyology.Object_Storage.Client.Objects is
       Token      : access Flyology.Cancellation.Token := null)
       return Put_Legal_Hold_Result;
 
+   --  Read the selected generation's retention state by waiting on the same
+   --  bounded owner-driven operation exposed above.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Parameters Complete modeled version and request controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed modeled response or bounded exchange failure
+   function Get_Retention
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Retention_Result;
+
+   --  Replace the selected generation's retention state exactly once by
+   --  waiting on the same nonreplaying owner-driven operation exposed above.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket containing the selected object generation
+   --  @param Key Exact object key
+   --  @param Value Presence-preserving retention document copied at start
+   --  @param Parameters Complete modeled checksum, bypass, and controls
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Put_Retention
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Value      : S3.Object_Lock.Retention;
+      Parameters : Low_Level.Put_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Put_Retention_Result;
+
    type Tagging_Outcome_Kind is
      (Tags_Replaced, Tags_Read, Tags_Cleared, Tagging_Rejected);
 
@@ -3029,6 +3318,93 @@ private
    --  @exclude
    overriding procedure Finalize
      (Item : in out Put_Legal_Hold_Operation);
+
+   type Get_Retention_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Get_Retention_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Get_Retention_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Get_Retention_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Retention_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Get_Retention_Operation);
+
+   type Put_Retention_Operation
+     (Set : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set) and
+       Flyology.HTTP.Client.Operation_Request_Body_Source and
+       Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared   : aliased Low_Level.Prepared_Request;
+      Child      : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Source_Position : Natural := 0;
+      Response_Data : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Final_Result : Put_Retention_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   overriding function Declared_Length
+     (Item : Put_Retention_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Put_Retention_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Put_Retention_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Put_Retention_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Put_Retention_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Put_Retention_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Put_Retention_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Put_Retention_Operation);
 
    type Put_Object_Tagging_Operation
      (Set : not null access Flyology.Operations.Completion_Set'Class;
@@ -3578,6 +3954,24 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Put_Legal_Hold_Result;
+   function Normalize_Get_Retention_Response
+     (Value     : Low_Level.Get_Object_Retention_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Get_Retention_Result;
+   function Normalize_Get_Retention_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Get_Retention_Result;
+   function Normalize_Put_Retention_Response
+     (Value     : Low_Level.Put_Object_Retention_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Put_Retention_Result;
+   function Normalize_Put_Retention_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Put_Retention_Result;
    function Normalize_Put_Object_Tagging_Response
      (Value     : Low_Level.Object_Tagging_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)

@@ -12,7 +12,8 @@ Put/DeleteBucketPolicy, non-replaying Put/GetBucketVersioning, non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
 object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
-non-replaying PutObjectLegalHold. The
+non-replaying PutObjectLegalHold, plus bounded GetObjectRetention with
+non-replaying PutObjectRetention. The
 prerequisite is published through the Flyology Alire index as lockstep HTTP and
 QUIC 0.1.3 development crates.
 
@@ -100,11 +101,12 @@ The implemented operation order is:
     `Delete_Bucket_Tagging`;
 30. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
-31. bounded `Get_Legal_Hold` and non-replaying `Put_Legal_Hold`.
+31. bounded `Get_Legal_Hold` and non-replaying `Put_Legal_Hold`;
+32. bounded `Get_Retention` and non-replaying `Put_Retention`.
 
-The provider surface contains 47 domain operations: 17 in `Client.Objects`,
+The provider surface contains 49 domain operations: 19 in `Client.Objects`,
 22 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 44 prepared-request initiators in `Client.Low_Level`. The count difference
+to 46 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -245,6 +247,17 @@ rejections can prove non-application, while retryable, malformed, or lost
 post-admission results remain outcome-unknown and require a caller-selected
 generation-bound GetObjectLegalHold reconciliation. Neither form retains a
 caller body borrow, creates a helper task, or retries the mutation.
+GetObjectRetention and PutObjectRetention use the same provider-owned shape
+for the selected object generation. The Get parent retains one bounded
+same-response XML document and returns the exact optional mode and ISO-8601
+date. The Put parent owns its presence-preserving serialized XML, exposes it
+through a non-rewindable source, and never replays after possible admission.
+Both provide a limited constructor, operation-last reusable initiation, typed
+Finish, and a synchronous overload that waits on the identical state machine.
+Put certainty distinguishes exact modeled non-application from ambiguous
+post-admission failure; an unknown result requires caller-selected,
+generation-bound GetObjectRetention reconciliation before any retry. Neither
+operation retains request inputs or starts a helper task.
 SetPublicAccessBlock owns the exact serialized four-field configuration in a
 non-rewindable source, while DeletePublicAccessBlock supplies a non-rewindable
 known-empty source. Neither mutation is replayed after possible admission.

@@ -2,10 +2,10 @@
 
 ## Scope
 
-This qualification covers the backend-independent synchronous
-`PutObjectRetention` client contract. It makes no claim that the Flyology
-memory, files, SQLite, or S3 server applications implement object retention,
-and it makes no external-provider interoperability claim.
+This qualification covers the backend-independent provider-owned composable
+and synchronous `PutObjectRetention` client contract. It makes no claim that
+the Flyology memory, files, SQLite, or S3 server applications implement object
+retention, and it makes no external-provider interoperability claim.
 
 The source model is the locked botocore S3 service graph at revision
 `36c34f15391da01cd717c73c0fffa747c9889768`, whose recorded service-model
@@ -35,12 +35,16 @@ element, and aggregate text limits. Exact and one-past boundaries are tested
 for the full three-element graph. Inconsistent absent-outer values and invalid
 dates reject before HTTP admission.
 
-The prepared request owns a copy of the serialized bytes. Execution creates a
-one-shot `Request_Body_Source` derived directly from the non-rewindable base
-class, reports its exact known length, and never retains caller input. Bucket,
-key, version, payer, owner, and the explicit governance bypass are validated
-before admission. The bypass preserves absent, explicit `true`, and explicit
-`false`; only a present control is signed.
+The prepared request owns a copy of the serialized bytes. The provider-owned
+limited parent implements the non-rewindable request source directly, reports
+its exact known length, owns the bounded response sink, and never retains
+caller input. Its limited constructor, same-name operation-last procedure, and
+typed `Finish` expose composition from `Client.Objects`; the parameter-record
+synchronous overload waits on that same state machine. The established
+low-level blocking form uses the same prepared wire contract. Bucket, key,
+version, payer, owner, and the explicit governance bypass are validated before
+admission. The bypass preserves absent, explicit `true`, and explicit `false`;
+only a present control is signed.
 
 The client always signs `Content-MD5` over the owned bytes. A caller override
 must be canonical base64 for exactly 16 digest bytes. Every exact pinned SDK
@@ -57,10 +61,12 @@ must each be absent or one bounded, nonempty physical header. The modeled
 charged value, when present, must be exact `requester`. Every non-200 response
 is decoded as a bounded structured S3 error with exact status and diagnostics.
 
-The call is deliberately not retried. Any exception after entering the
-blocking provider call leaves publication unknown. A caller that needs
-certainty must reconcile read-only against the intended object generation;
-it must not replay the retention mutation automatically.
+The mutation is deliberately not retried. Typed Finish distinguishes modeled
+completion, exact non-application, cancellation before admission, and an
+outcome that remains unknown after possible admission. A caller that needs
+certainty must reconcile with generation-bound GetObjectRetention before
+selecting any retry; neither the composable nor synchronous form replays the
+retention mutation automatically.
 
 ## Corpus boundary
 
@@ -78,9 +84,13 @@ CRC32, payer, version, owner, and governance `true`/`false` projection; the
 absent zero-length source with exact empty-payload MD5; typed success and
 structured rejection; non-whitespace success; duplicate and empty modeled
 headers; duplicate diagnostics; a response one byte above the caller limit;
-and a server-accepted request followed by a lost response. The next server
-oracle proves that no automatic replay occurs. The root gate drives this
-sequence under native and Flyology lightweight task owners.
+exact prepared-operation rejection before admission; limited construction,
+operation-last restart, typed Finish, synchronous parity, and an actual
+one-past composable sink failure; plus a server-accepted request followed by a
+lost response. The next server oracle proves that no automatic replay occurs.
+The direct normalization oracle crosses every terminal HTTP failure with every
+admission certainty. The root gate drives this sequence under native and
+Flyology lightweight task owners.
 
 The machine ledger records the operation as `missing / covered / missing /
 covered`: backend and server support remain absent, while the complete typed
@@ -104,10 +114,13 @@ The required gates are:
 - `./tools/build-api-docs.sh`
 - `git diff --check`
 
-The root gate passed all 40 AUnit cases, the 88-case abrupt-crash matrix, the
+The root gate passed all 41 AUnit cases, the 126-case abrupt-crash matrix, the
 320-vector checksum corpus with 210 chunk boundaries, and three complete
 deterministic, native/lightweight signed raw-socket, and TLS repetitions. The
-SQLite wrapper, catalog, and backend gate also passed.
+SQLite wrapper, catalog, and backend gate also passed. GNATdoc 26 completed a
+43,629-line run with a nonempty 430-file API index containing the new provider
+operations and typed result surface, with no warning on the new declarations
+or internal documentation error.
 
 GNATdoc produced a nonempty API index and a 12,461-line diagnostic log. The
 new serializer and prepare/decode/execute APIs are present in the generated

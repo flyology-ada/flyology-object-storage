@@ -70,9 +70,11 @@ package body Flyology.Object_Storage.Client.Objects is
    use type Low_Level.Delete_Object_Outcome_Kind;
    use type Low_Level.Get_Object_Head_Outcome_Kind;
    use type Low_Level.Get_Object_Legal_Hold_Outcome_Kind;
+   use type Low_Level.Get_Object_Retention_Outcome_Kind;
    use type Low_Level.List_Outcome_Kind;
    use type Low_Level.Object_Tagging_Outcome_Kind;
    use type Low_Level.Put_Object_Legal_Hold_Outcome_Kind;
+   use type Low_Level.Put_Object_Retention_Outcome_Kind;
 
    function Timestamp return String is
       Image : constant String := Ada.Calendar.Formatting.Image
@@ -1223,6 +1225,70 @@ package body Flyology.Object_Storage.Client.Objects is
          return Result;
       end;
    end Put_Legal_Hold;
+
+   function Get_Retention
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Retention_Result
+   is
+      --  Derived capacity: retention parent, HTTP exchange, and HTTP's single
+      --  active transport child are the only simultaneous operations.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Get_Retention_Operation :=
+           Get_Retention
+             (Set'Access, Client'Access, Origin, Bucket, Key, Parameters,
+              Identity, Flyology.HTTP.Client.Deadline_After (Timeout), Region,
+              Style, Token);
+         Result : Get_Retention_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Get_Retention;
+
+   function Put_Retention
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Value      : S3.Object_Lock.Retention;
+      Parameters : Low_Level.Put_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Put_Retention_Result
+   is
+      --  Derived capacity: retention parent, HTTP exchange, and HTTP's single
+      --  active transport child are the only simultaneous operations.
+      Set : aliased Flyology.Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Put_Retention_Operation :=
+           Put_Retention
+             (Set'Access, Client'Access, Origin, Bucket, Key, Value,
+              Parameters, Identity,
+              Flyology.HTTP.Client.Deadline_After (Timeout), Region, Style,
+              Token);
+         Result : Put_Retention_Result;
+      begin
+         Flyology.Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Put_Retention;
 
    function Put_Tags
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -4629,21 +4695,21 @@ package body Flyology.Object_Storage.Client.Objects is
       Result := Operation.Final_Result;
    end Finish;
 
-   procedure Append_Legal_Hold_Response
+   procedure Append_Object_Lock_Response
      (Target : in out Flyology.Bytes.Unbounded_Bytes;
       Limit  : Natural;
       Data   : Ada.Streams.Stream_Element_Array) is
    begin
       if Natural (Data'Length) > Limit - Flyology.Bytes.Length (Target) then
          raise Response_Limit_Exceeded with
-           "legal-hold response exceeds the S3 XML limit";
+           "Object Lock response exceeds the S3 XML limit";
       end if;
       Flyology.Bytes.Append (Target, Data);
-   end Append_Legal_Hold_Response;
+   end Append_Object_Lock_Response;
 
    --  These status/code pairs are the modeled conclusive Object Lock
    --  rejections. Retryable or unknown provider failures remain ambiguous.
-   function Conclusive_Legal_Hold_Rejection
+   function Conclusive_Object_Lock_Rejection
      (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
      ((Status = 400
        and then Code in "BadDigest" | "InvalidArgument" | "InvalidDigest" |
@@ -4655,7 +4721,7 @@ package body Flyology.Object_Storage.Client.Objects is
         and then Code in "NoSuchBucket" | "NoSuchKey" | "NoSuchVersion")
       or else (Status = 501 and then Code = "NotImplemented"));
 
-   function Legal_Hold_Response_Failure
+   function Object_Lock_Response_Failure
      (Status : Flyology.HTTP.Status_Code; Code : String)
       return Failure_Reason is
      (if Status = 401 and then Code = "InvalidAccessKeyId"
@@ -4665,7 +4731,7 @@ package body Flyology.Object_Storage.Client.Objects is
       elsif Status = 404
         and then Code in "NoSuchBucket" | "NoSuchKey" | "NoSuchVersion"
       then Not_Found
-      elsif Conclusive_Legal_Hold_Rejection (Status, Code)
+      elsif Conclusive_Object_Lock_Rejection (Status, Code)
       then Invalid_Request
       elsif (Status = 409 and then Code = "OperationAborted")
         or else (Status = 429 and then Code = "SlowDown")
@@ -4692,7 +4758,7 @@ package body Flyology.Object_Storage.Client.Objects is
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Object_Legal_Hold_Found
             then No_Failure
-            else Legal_Hold_Response_Failure (Value.Status, Code)),
+            else Object_Lock_Response_Failure (Value.Status, Code)),
          Admission => Admission,
          Response => Value);
    end Normalize_Get_Legal_Hold_Response;
@@ -4721,7 +4787,7 @@ package body Flyology.Object_Storage.Client.Objects is
      (Item : in out Get_Legal_Hold_Operation;
       Data : Ada.Streams.Stream_Element_Array) is
    begin
-      Append_Legal_Hold_Response
+      Append_Object_Lock_Response
         (Item.Response_Data, Item.Response_Limit, Data);
    end Write;
 
@@ -4975,7 +5041,7 @@ package body Flyology.Object_Storage.Client.Objects is
         (if Value.Kind = Low_Level.Put_Object_Legal_Hold_Rejected
          then US.To_String (Value.Error.Code) else "");
       Conclusive : constant Boolean :=
-        Conclusive_Legal_Hold_Rejection (Value.Status, Code);
+        Conclusive_Object_Lock_Rejection (Value.Status, Code);
    begin
       return
         (Kind => Put_Legal_Hold_Response_Available,
@@ -4992,7 +5058,7 @@ package body Flyology.Object_Storage.Client.Objects is
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Object_Legal_Hold_Updated
             then No_Failure
-            else Legal_Hold_Response_Failure (Value.Status, Code)),
+            else Object_Lock_Response_Failure (Value.Status, Code)),
          Admission => Admission,
          Response => Value);
    end Normalize_Put_Legal_Hold_Response;
@@ -5054,7 +5120,7 @@ package body Flyology.Object_Storage.Client.Objects is
      (Item : in out Put_Legal_Hold_Operation;
       Data : Ada.Streams.Stream_Element_Array) is
    begin
-      Append_Legal_Hold_Response
+      Append_Object_Lock_Response
         (Item.Response_Data, Item.Response_Limit, Data);
    end Write;
 
@@ -5252,6 +5318,547 @@ package body Flyology.Object_Storage.Client.Objects is
             Ada.Exceptions.Exception_Message (Operation.Saved_Error));
       elsif not Operation.Has_Final_Result then
          raise Program_Error with "PutObjectLegalHold has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   function Normalize_Get_Retention_Response
+     (Value     : Low_Level.Get_Object_Retention_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Get_Retention_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Get_Object_Retention_Rejected
+         then US.To_String (Value.Error.Code) else "");
+   begin
+      return
+        (Kind => Get_Retention_Response_Available,
+         Failure =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Object_Retention_Found
+            then No_Failure
+            else Object_Lock_Response_Failure (Value.Status, Code)),
+         Admission => Admission,
+         Response => Value);
+   end Normalize_Get_Retention_Response;
+
+   function Normalize_Get_Retention_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Get_Retention_Result is
+   begin
+      return
+        (Kind => Get_Retention_Exchange_Failed,
+         Failure =>
+           (if Kind in HTTP_Client.Response_Invalid |
+                         HTTP_Client.Response_Body_Too_Large |
+                         HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase => Phase,
+         Detail => US.To_Unbounded_String (Detail));
+   end Normalize_Get_Retention_Failure;
+
+   overriding procedure Write
+     (Item : in out Get_Retention_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      Append_Object_Lock_Response
+        (Item.Response_Data, Item.Response_Limit, Data);
+   end Write;
+
+   procedure Complete_Get_Retention_Child
+     (Item : in out Get_Retention_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_Get_Retention_Failure
+              (HTTP_Client.Response_Sink_Failed, Admission,
+               HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Get_Retention_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Get_Retention_Response
+              (Low_Level.Decode_Get_Object_Retention_Response
+                 (HTTP_Client.Status (Response),
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  HTTP_Client.Header (Response, "x-amz-request-id"),
+                  HTTP_Client.Header (Response, "x-amz-id-2")),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_Get_Retention_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Get_Retention_Child;
+
+   overriding procedure Drive
+     (Item : in out Get_Retention_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Get_Object_Retention
+           (Item.HTTP, Item.Prepared'Access, Item'Access,
+            Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Get_Retention_Child (Item);
+      else
+         raise Program_Error with "invalid GetObjectRetention driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Retention_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Get_Retention_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Get_Retention
+     (Operation  : in out Get_Retention_Operation;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Token      : access Flyology.Cancellation.Token) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "GetObjectRetention restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Get_Object_Retention
+        (Origin, Style, Bucket, Key, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Get_Retention;
+
+   function Get_Retention
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Get_Retention_Operation is
+   begin
+      return Result : Get_Retention_Operation (Set, Client, Token) do
+         Start_Get_Retention
+           (Result, Client, Origin, Bucket, Key, Parameters, Identity,
+            Deadline, Region, Style, Token);
+      end return;
+   end Get_Retention;
+
+   procedure Finish
+     (Operation : in out Get_Retention_Operation;
+      Result    : out Get_Retention_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "GetObjectRetention has no terminal result";
+      end if;
+      Result := Operation.Final_Result;
+   end Finish;
+
+   function Failed_Retention_Mutation_Disposition
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Retention_Mutation_Disposition is
+     (if Kind = HTTP_Client.Cancelled
+        and then Admission = HTTP_Client.Not_Admitted
+      then Retention_Mutation_Cancelled_Before_Admission
+      elsif Admission = HTTP_Client.Not_Admitted
+      then Retention_Mutation_Definitely_Not_Applied
+      else Retention_Mutation_Outcome_Unknown);
+
+   function Normalize_Put_Retention_Response
+     (Value     : Low_Level.Put_Object_Retention_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Put_Retention_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Put_Object_Retention_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Conclusive : constant Boolean :=
+        Conclusive_Object_Lock_Rejection (Value.Status, Code);
+   begin
+      return
+        (Kind => Put_Retention_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Retention_Mutation_Outcome_Unknown
+            elsif Value.Kind = Low_Level.Object_Retention_Updated
+            then Retention_Mutation_Completed
+            elsif Conclusive
+            then Retention_Mutation_Definitely_Not_Applied
+            else Retention_Mutation_Outcome_Unknown),
+         Failure =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Object_Retention_Updated
+            then No_Failure
+            else Object_Lock_Response_Failure (Value.Status, Code)),
+         Admission => Admission,
+         Response => Value);
+   end Normalize_Put_Retention_Response;
+
+   function Normalize_Put_Retention_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String := "") return Put_Retention_Result is
+   begin
+      return
+        (Kind => Put_Retention_Exchange_Failed,
+         Disposition =>
+           Failed_Retention_Mutation_Disposition (Kind, Admission),
+         Failure =>
+           (if Kind in HTTP_Client.Response_Invalid |
+                         HTTP_Client.Response_Body_Too_Large |
+                         HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase => Phase,
+         Detail => US.To_Unbounded_String (Detail));
+   end Normalize_Put_Retention_Failure;
+
+   overriding function Declared_Length
+     (Item : Put_Retention_Operation) return HTTP_Client.Body_Length is
+     (Owned_Prepared_Length (Item.Prepared));
+
+   overriding procedure Read_Now
+     (Item   : in out Put_Retention_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      Read_Owned_Prepared_Source
+        (Item.Prepared, Item.Source_Position, Data, Last, Result);
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Put_Retention_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+      pragma Unreferenced (Item, Required);
+   begin
+      Descriptor := Flyology.IO.Invalid_Descriptor;
+      Ready_Now := True;
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Put_Retention_Operation) is
+   begin
+      Item.Source_Position := Low.Owned_Payload_Length (Item.Prepared);
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Put_Retention_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      Append_Object_Lock_Response
+        (Item.Response_Data, Item.Response_Limit, Data);
+   end Write;
+
+   procedure Complete_Put_Retention_Child
+     (Item : in out Put_Retention_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Final_Result := Normalize_Put_Retention_Failure
+              (HTTP_Client.Response_Sink_Failed, Admission,
+               HTTP_Client.Receiving_Response_Body);
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Item.Has_Final_Result := True;
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_Result := Normalize_Put_Retention_Failure
+           (HTTP_Client.Kind (HTTP_Result),
+            HTTP_Client.Certainty (HTTP_Result),
+            HTTP_Client.Phase (HTTP_Result),
+            HTTP_Client.Failure_Detail (HTTP_Result));
+      else
+         begin
+            Item.Final_Result := Normalize_Put_Retention_Response
+              (Low_Level.Decode_Put_Object_Retention_Response
+                 (HTTP_Client.Status (Response),
+                  Flyology.Bytes.To_Byte_String (Item.Response_Data),
+                  (Request_Charged => US.To_Unbounded_String
+                     (HTTP_Client.Header
+                        (Response, "x-amz-request-charged"))),
+                  HTTP_Client.Header (Response, "x-amz-request-id"),
+                  HTTP_Client.Header (Response, "x-amz-id-2")),
+               HTTP_Client.Certainty (HTTP_Result));
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_Result := Normalize_Put_Retention_Failure
+                 (HTTP_Client.Response_Invalid,
+                  HTTP_Client.Certainty (HTTP_Result),
+                  HTTP_Client.Phase (HTTP_Result));
+         end;
+      end if;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Put_Retention_Child;
+
+   overriding procedure Drive
+     (Item : in out Put_Retention_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Put_Object_Retention
+           (Item.HTTP, Item.Prepared'Access, Item'Access, Item'Access,
+            Item.Deadline, Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Put_Retention_Child (Item);
+      else
+         raise Program_Error with "invalid PutObjectRetention driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Put_Retention_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Put_Retention_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Put_Retention
+     (Operation  : in out Put_Retention_Operation;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Value      : Flyology.Object_Storage.S3.Object_Lock.Retention;
+      Parameters : Low_Level.Put_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Token      : access Flyology.Cancellation.Token) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "PutObjectRetention restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Put_Object_Retention
+        (Origin, Style, Bucket, Key, Value, Parameters, Identity, Region,
+         Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Source_Position := 0;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit :=
+        Flyology.Object_Storage.S3.XML.Default_Limits.Maximum_Document_Bytes;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Put_Retention;
+
+   function Put_Retention
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Value      : Flyology.Object_Storage.S3.Object_Lock.Retention;
+      Parameters : Low_Level.Put_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Put_Retention_Operation is
+   begin
+      return Result : Put_Retention_Operation (Set, Client, Token) do
+         Start_Put_Retention
+           (Result, Client, Origin, Bucket, Key, Value, Parameters, Identity,
+            Deadline, Region, Style, Token);
+      end return;
+   end Put_Retention;
+
+   procedure Finish
+     (Operation : in out Put_Retention_Operation;
+      Result    : out Put_Retention_Result) is
+   begin
+      Operations.Consume (Operation);
+      Low.Clear_Prepared_Request (Operation.Prepared);
+      if Operation.Has_Saved_Error then
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         raise Program_Error with "PutObjectRetention has no terminal result";
       end if;
       Result := Operation.Final_Result;
    end Finish;
@@ -6540,6 +7147,43 @@ package body Flyology.Object_Storage.Client.Objects is
         (Operation, Client, Origin, Bucket, Key, Value, Parameters, Identity,
          Deadline, Region, Style, Token);
    end Put_Legal_Hold;
+
+   procedure Get_Retention
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Parameters : Low_Level.Get_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Get_Retention_Operation) is
+   begin
+      Start_Get_Retention
+        (Operation, Client, Origin, Bucket, Key, Parameters, Identity,
+         Deadline, Region, Style, Token);
+   end Get_Retention;
+
+   procedure Put_Retention
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Key        : String;
+      Value      : S3.Object_Lock.Retention;
+      Parameters : Low_Level.Put_Object_Retention_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Put_Retention_Operation) is
+   begin
+      Start_Put_Retention
+        (Operation, Client, Origin, Bucket, Key, Value, Parameters, Identity,
+         Deadline, Region, Style, Token);
+   end Put_Retention;
 
    procedure Put_Tags
      (Client     : not null access Flyology.HTTP.Client.Client;
