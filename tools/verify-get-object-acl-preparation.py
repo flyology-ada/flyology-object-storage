@@ -15,6 +15,8 @@ LOCK = ROOT / "coverage/corpora.lock.toml"
 SOURCES = (
     ROOT / "src/flyology-object_storage-client-low_level.ads",
     ROOT / "src/flyology-object_storage-client-low_level.adb",
+    ROOT / "src/flyology-object_storage-client-objects.ads",
+    ROOT / "src/flyology-object_storage-client-objects.adb",
     ROOT / "src/flyology-object_storage-s3-acl.ads",
     ROOT / "src/flyology-object_storage-s3-acl.adb",
 )
@@ -190,6 +192,10 @@ def main() -> int:
     source = "\n".join(path.read_text(encoding="utf-8") for path in SOURCES)
     for token in ("Prepare_Get_Object_ACL", "Decode_Get_Object_ACL_Response",
                   "Execute_Get_Object_ACL", "Get_Object_Acl_Operation",
+                  "Get_Object_ACL_Operation",
+                  "Get_Object_ACL_Response_Available",
+                  "procedure Get_Object_ACL", "procedure Get_ACL",
+                  "function Get_ACL",
                   "Request_Charged", "ACL.Parse", "Grant_Vectors"):
         if token not in source:
             fail(f"typed implementation lacks {token}")

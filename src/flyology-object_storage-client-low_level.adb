@@ -13803,6 +13803,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Sink, Deadline, Token, Operation);
    end Delete_Object_Tagging;
 
+   procedure Get_Object_ACL
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Sink
+        (Get_Object_ACL_Operation, Client, Prepared, Sink, Deadline, Token,
+         Operation);
+   end Get_Object_ACL;
+
    procedure Get_Object_Legal_Hold
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;

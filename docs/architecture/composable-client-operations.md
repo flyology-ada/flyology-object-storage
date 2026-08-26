@@ -9,7 +9,8 @@ ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
 ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
 bounded GetBucketLocation, bounded GetBucketPolicy, GetBucketPolicyStatus, and
 GetBucketRequestPayment, bounded GetBucketAbac and
-GetBucketAccelerateConfiguration, bounded GetBucketAcl, non-replaying
+GetBucketAccelerateConfiguration, bounded GetBucketAcl and GetObjectAcl,
+non-replaying
 Put/DeleteBucketPolicy, non-replaying
 PutBucketAbac, PutBucketAccelerateConfiguration, and
 PutBucketRequestPayment,
@@ -119,10 +120,11 @@ The implemented operation order is:
 34. bounded `Get_Object_Lock_Configuration` and non-replaying
     `Put_Object_Lock_Configuration`.
 35. bounded `Get_ACL` for a bucket access-control policy.
+36. bounded `Get_ACL` for an object access-control policy.
 
-The provider surface contains 61 domain operations: 19 in `Client.Objects`,
+The provider surface contains 62 domain operations: 20 in `Client.Objects`,
 34 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 58 prepared-request initiators in `Client.Low_Level`. The count difference
+to 59 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -137,6 +139,14 @@ and typed synchronous wait retain the signed request and complete ACL response
 through terminal drain. The caller's existing XML limits bound both policy and
 error payloads; diagnostic headers are physical singletons. The operation
 selects no ACL policy, retry, or helper task.
+
+GetObjectAcl is colocated with `Client.Objects` under that same contract. Its
+exact prepared initiator, limited constructor, operation-last restart, typed
+Finish, and typed synchronous wait preserve the caller's exact key, version,
+requester-pays value, expected owner, and XML limits. The complete policy,
+request-charged value, and diagnostic headers come from one bounded response;
+physical headers are singletons. It performs no retry and selects no ACL,
+billing, or resource policy.
 
 Each implemented operation has both a limited constructor taking a completion
 set and a same-name, operation-last procedure suitable for a reusable component

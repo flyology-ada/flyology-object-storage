@@ -139,6 +139,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Bucket_Policy_Status_Result_Kind;
    use type Get_Bucket_Accelerate_Configuration_Result_Kind;
    use type Get_Bucket_ACL_Result_Kind;
+   use type Get_Object_ACL_Result_Kind;
    use type Get_Bucket_ABAC_Result_Kind;
    use type Put_Bucket_Policy_Result_Kind;
    use type Delete_Bucket_Policy_Result_Kind;
@@ -4908,6 +4909,40 @@ procedure S3_HTTP_Socket_Corpus is
               ("200 OK", "<AccessControlPolicy>" &
                  String'(1 .. 64 => ' ') & "</AccessControlPolicy>"),
             "GET", "/example-bucket/a%20b?acl");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccessControlPolicy><Owner><ID>" &
+                 "typed-object-owner</ID></Owner><AccessControlList/>" &
+                 "</AccessControlPolicy>",
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-id: typed-object-acl" & CRLF),
+            "GET", "/typed-object-acl/key?acl&versionId=v%2F1",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""),
+            "GET", "/composed-object-acl/key?acl",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-object-acl" & CRLF),
+            "GET", "/restart-object-acl/key?acl",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccessControlPolicy/>",
+               "x-amz-request-charged: requester" & CRLF &
+               "x-amz-request-charged: requester" & CRLF),
+            "GET", "/duplicate-object-acl-header/key?acl",
+            Expected_Request_Payer => "requester",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "<AccessControlPolicy><Owner><ID>large" &
+                 "</ID></Owner></AccessControlPolicy>"),
+            "GET", "/bounded-object-acl/key?acl",
+            Expected_Bucket_Owner => "123456789012");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT", "/example-bucket?abac",
             Expected_Body_Root => "<AbacStatus",
@@ -16363,6 +16398,142 @@ procedure S3_HTTP_Socket_Corpus is
                Small_Limits => True);
          end;
          declare
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Get_Object_Legal_Hold
+                (Origin, Low_Level.Path_Style, "example-bucket", "key",
+                 (others => <>), Identity, "us-east-1",
+                 "20130524T000000Z");
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Get_Object_ACL_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+         begin
+            begin
+               Low_Level.Get_Object_ACL
+                 (HTTP'Access, Prepared'Access, Parent'Access,
+                  HTTP_Client.Deadline_After (5.0), Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "GetObjectAcl accepted a legal-hold request";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Object_ACL_Parameters :=
+              (Version_ID => US.To_Unbounded_String ("v/1"),
+               Request_Payer => US.To_Unbounded_String ("requester"),
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+            Result : constant Get_Object_ACL_Result :=
+              Objects.Get_ACL
+                (HTTP, Origin, "typed-object-acl", "key", Parameters,
+                 Identity, Timeout => 5.0);
+         begin
+            if Result.Kind /= Get_Object_ACL_Response_Available
+              or else Result.Failure /= No_Failure
+              or else Result.Admission /= HTTP_Client.Response_Observed
+              or else Result.Response.Kind /= Low_Level.Object_ACL_Found
+              or else not Result.Response.Result.Policy.Is_Set
+              or else not Result.Response.Result.Policy.Policy_Owner.Is_Set
+              or else US.To_String
+                (Result.Response.Result.Policy.Policy_Owner.ID.Value) /=
+                  "typed-object-owner"
+              or else US.To_String
+                (Result.Response.Result.Request_Charged) /= "requester"
+            then
+               raise Program_Error with
+                 "typed GetObjectAcl response mismatch";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Object_ACL_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"),
+               others => <>);
+            --  ACL-read parent, HTTP exchange, and transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Result : Get_Object_ACL_Result;
+         begin
+            declare
+               Operation : Get_Object_ACL_Operation :=
+                 Objects.Get_ACL
+                   (Set'Access, HTTP'Access, Origin, "composed-object-acl",
+                    "key", Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Operations.Wait_All (Set);
+               Objects.Finish (Operation, Result);
+               if Result.Kind /= Get_Object_ACL_Response_Available
+                 or else Result.Failure /= No_Failure
+                 or else Result.Response.Kind /= Low_Level.Object_ACL_Found
+                 or else Result.Response.Result.Policy.Is_Set
+               then
+                  raise Program_Error with
+                    "composed GetObjectAcl first result mismatch";
+               end if;
+               Objects.Get_ACL
+                 (HTTP'Access, Origin, "restart-object-acl", "key",
+                  Parameters, Identity, HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Objects.Finish (Operation, Result);
+               if Result.Kind /= Get_Object_ACL_Response_Available
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Response.Kind /=
+                   Low_Level.Get_Object_ACL_Rejected
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-object-acl"
+               then
+                  raise Program_Error with
+                    "composed GetObjectAcl restart mismatch";
+               end if;
+            end;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Object_ACL_Parameters :=
+              (Request_Payer => US.To_Unbounded_String ("requester"),
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"),
+               others => <>);
+            Result : constant Get_Object_ACL_Result :=
+              Objects.Get_ACL
+                (HTTP, Origin, "duplicate-object-acl-header", "key",
+                 Parameters, Identity, Timeout => 5.0);
+         begin
+            if Result.Kind /= Get_Object_ACL_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+            then
+               raise Program_Error with
+                 "duplicate GetObjectAcl response header admitted";
+            end if;
+         end;
+         declare
+            Parameters : constant Low_Level.Get_Object_ACL_Parameters :=
+              (Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"),
+               others => <>);
+            Result : constant Get_Object_ACL_Result :=
+              Objects.Get_ACL
+                (HTTP, Origin, "bounded-object-acl", "key", Parameters,
+                 Identity, Timeout => 5.0,
+                 Limits =>
+                   --  Test-only one-byte ceiling is below the valid ACL XML.
+                   (Maximum_Document_Bytes => 1,
+                    others => <>));
+         begin
+            if Result.Kind /= Get_Object_ACL_Exchange_Failed
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Result.HTTP_Result /= HTTP_Client.Response_Sink_Failed
+            then
+               raise Program_Error with
+                 "GetObjectAcl response limit was not enforced";
+            end if;
+         end;
+         declare
             Abac : constant Low_Level.Put_Bucket_Control_Outcome :=
               Buckets.Set_ABAC
                 (HTTP, Origin, "example-bucket", Bucket_Controls.Abac_Enabled,
@@ -19293,6 +19464,7 @@ begin
    Transfers_Testing.Check_Complete_Multipart_Certainty_Corpus;
    Transfers_Testing.Check_Abort_Multipart_Certainty_Corpus;
    Objects_Testing.Check_List_Objects_Result_Corpus;
+   Objects_Testing.Check_Get_Object_ACL_Result_Corpus;
    Buckets_Testing.Check_List_Buckets_Result_Corpus;
    Buckets_Testing.Check_Create_Bucket_Certainty_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Certainty_Corpus;

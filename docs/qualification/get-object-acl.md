@@ -1,9 +1,10 @@
 # GetObjectAcl client and server qualification
 
-This record qualifies the strict bounded synchronous client, corpus, and
-authenticated Flyology server route for `GetObjectAcl`. It does not claim ACL
-persistence in a Flyology backend, ACL mutation, public grants, requester
-billing, or external server interoperability.
+This record qualifies the strict bounded provider-owned composable and typed
+synchronous clients, corpus, and authenticated Flyology server route for
+`GetObjectAcl`. It does not claim ACL persistence in a Flyology backend, ACL
+mutation, public grants, requester billing, or external server
+interoperability.
 
 ## Pinned authority and inventory
 
@@ -27,10 +28,11 @@ The verifier gates the exact operation scalars, list member and flattening,
 XML-attribute position, and all four enum domains:
 
 ```sh
-python3 tools/verify-get-object-acl-preparation.py
+UV_CACHE_DIR=/private/tmp/fos-uv-cache uv run --python 3.13 -- \
+  ./tools/verify-get-object-acl-preparation.py
 ```
 
-## Synchronous API and request contract
+## Provider-owned API and request contract
 
 `Client.Low_Level.Prepare_Get_Object_ACL` validates the bucket, greedy object
 key, bounded version selector, exact requester-pays value, and bounded owner
@@ -38,10 +40,19 @@ precondition before transport. It signs an empty body and projects only the
 five modeled inputs. Path and virtual-hosted addressing preserve the exact
 escaped key, `acl` flag, and optional `versionId` query value.
 
-`Execute_Get_Object_ACL` accepts only the exact prepared operation and drives
-the existing caller-owned synchronous HTTP client. It consumes one bounded
-same-response body and returns typed ACL state or a strict S3 error. There is
-no retry, helper task, retained borrowed input, or second protocol engine.
+`Client.Low_Level.Get_Object_ACL` starts only the exact prepared operation into
+the parent provider's bounded response sink; another prepared operation is
+rejected before HTTP admission. `Client.Objects.Get_ACL` owns the limited
+constructor, operation-last reusable initiation, operation state, and typed
+`Finish`. The typed synchronous overload waits on that same state machine.
+All forms consume one bounded same-response body and return typed ACL state or
+a strict S3 error. There is no retry, helper task, retained borrowed input, or
+second protocol engine. The caller-owned completion set, operation, signed
+request, and response storage remain live through terminal drain and typed
+Finish.
+
+The established synchronous `Execute_Get_Object_ACL` remains the strict
+low-level convenience form and uses the same prepared request and decoder.
 
 ## Response contract
 
@@ -94,8 +105,12 @@ cross-operation execution rejection.
 The raw-loopback corpus adds a signed versioned success with all request
 headers, requester-charged success and rejection, outer absence, duplicate,
 empty, and altered physical headers, malformed XML, and a body over the caller
-limit. The common root gate repeats the full sequence under native and Flyology
-lightweight task owners three times.
+limit. Provider coverage adds exact-operation pre-admission rejection, typed
+synchronous success, limited construction, consumed restart, duplicate-header
+failure, caller-selected response bounds, every modeled status/code mapping,
+and every HTTP terminal failure across all admission certainties. The common
+root gate repeats the full sequence under native and Flyology lightweight task
+owners three times.
 
 The machine ledger records `GetObjectAcl` as `missing / covered / covered /
 covered`. The backend cell remains missing because no ACL is persisted. The
@@ -105,11 +120,11 @@ gate claims external-server interoperability.
 
 ## Formal boundary
 
-This server extension changes only non-SPARK routing, corpus, and
-documentation units. None of the nine `tools/prove.sh` manifest units changes,
-so the latest serialized 2026-08-25 result remains applicable: 936/936 checks,
-180 flow and 756 prover, with zero warnings, unproved or justified checks, or
-`pragma Assume` statements.
+This provider extension changes only non-SPARK client, corpus, verifier, and
+documentation units. Neither client package appears in the nine
+`tools/prove.sh` manifest units, so the latest serialized result remains
+applicable: 936/936 checks, 180 flow and 756 prover, with zero warnings,
+unproved or justified checks, or `pragma Assume` statements.
 
 ## Gate evidence
 
@@ -126,8 +141,10 @@ The pinned GetObjectAcl verifier reported all 17 modeled members, the one
 nonflattened list, all 10 exact enum values, and all 13 reciprocal vectors.
 The 116-operation coverage verifier and its negative oracle were green.
 
-GNATdoc produced a 43,716-line log and a nonempty API index containing the
-public GetObjectAcl parameter, result, outcome, prepare, decode, execute, and
-changed server `Handle` contract. That contract emitted no targeted warning,
-and the log contained no internal error, `LANGKIT_SUPPORT.ERRORS`,
-infinite-recursion, or bounded-channel diagnostic.
+GNATdoc produced a 43,958-line log and a nonempty API index containing the
+public GetObjectAcl parameters, low-level preparation and exact composable
+initiator, provider result and operation types, three `Get_ACL` forms, typed
+`Finish`, decoder, synchronous executor, and server `Handle` contract. The new
+public declarations emitted no targeted warning, and the log contained no
+internal error, `LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or
+bounded-channel diagnostic.
