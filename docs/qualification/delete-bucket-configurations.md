@@ -1,7 +1,9 @@
 # Bodyless bucket-configuration DELETE client qualification
 
-This record qualifies the strict bounded synchronous clients and corpora for
-thirteen bodyless bucket-configuration DELETE operations. It does not
+This record qualifies the strict bounded clients and corpora for thirteen
+bodyless bucket-configuration DELETE operations. DeleteBucketLifecycle also
+has a provider-owned composable operation and a typed synchronous wait that
+uses the same state machine. It does not
 manufacture backend or server coverage. `DeleteBucketPolicy` and
 `DeletePublicAccessBlock` now have that independent coverage in
 [bucket-policy.md](bucket-policy.md) and
@@ -31,7 +33,7 @@ presence, and both directions of every operation/vector reference:
 python3 tools/verify-delete-bucket-configurations-preparation.py
 ```
 
-## Synchronous API and response contract
+## API and response contract
 
 Each low-level preparer validates the bucket, required identifier when present,
 and optional owner before transport; projects only its generated model shape;
@@ -54,6 +56,17 @@ bindings while returning the existing deletion-completed or structured-error
 outcome. Calls are synchronous, do not retry, retain no caller input, release
 the response before return, and create no detached helper task.
 
+DeleteBucketLifecycle additionally exposes a limited constructor, a same-name
+operation-last reusable initiation procedure, typed `Finish`, and a typed
+synchronous overload in `Client.Buckets`. `Client.Low_Level` exposes the exact
+prepared-operation initiator used by that parent. The parent owns a known-empty
+nonrewindable source and bounded error response through terminal drain. It
+never replays a mutation. A complete 204 proves completion; exact conclusive
+service rejection proves non-application; cancellation before admission is
+distinct; and any failure after possible admission remains outcome-unknown
+for caller-selected read-only reconciliation. Restart retains only the
+established HTTP client and cancellation owner.
+
 ## Corpus and coverage boundary
 
 The deterministic corpus enumerates all thirteen path and virtual-hosted
@@ -63,30 +76,36 @@ control-bearing and overlong inputs, exact 204 semantics, structured errors,
 malformed errors, and cross-operation executor rejection before HTTP.
 
 The raw-loopback corpus adds one signed high-level 204 exchange for every
-operation and caller. The complete sequence runs once under a native task and
-once under a Flyology lightweight task; the root gate repeats the whole socket
-corpus three times. The existing shared DeleteBucketCors physical-response
-lane supplies duplicate, empty, malformed, and one-past bounded response
-faults against the same internal decoder and executor machinery.
+operation and caller. It also gates DeleteBucketLifecycle typed synchronous,
+limited-constructor, operation-last restart, exact prepared-operation
+rejection, typed 403 certainty, and duplicate physical response-header
+handling. The complete sequence runs once under a native task and once under
+a Flyology lightweight task; the root gate repeats the whole socket corpus
+three times. The existing shared DeleteBucketCors physical-response lane
+supplies empty, malformed, and one-past bounded response faults against the
+same internal decoder and executor machinery.
 
 The machine ledger records `DeleteBucketPolicy` and
 `DeletePublicAccessBlock` as `covered / covered / covered / covered` using
 their independent backend and server evidence. The other eleven operations
-remain `missing / covered / missing / covered`; this client corpus does not
-manufacture their backend persistence or server routes.
+remain `missing / covered / missing / covered`; DeleteBucketLifecycle's
+additional composable client does not change that ledger tuple. This client
+corpus does not manufacture their backend persistence or server routes.
 
 ## Gate evidence
 
-The final warning-strict root gate passed 38/38 AUnit tests, the 88-case files
+The final warning-strict root gate passed 41/41 AUnit tests, the 132-case files
 crash matrix, 320 checksum oracle vectors, 210 chunk boundaries, the strict
 server application corpus, and three repetitions of the deterministic family
-corpus and native/lightweight socket and TLS corpora. The SQLite wrapper,
-catalog, backend, reopen, and upgrade gate passed separately. The operation
-inventory verifier reported thirteen operations, thirty request members, no
-modeled success outputs, and eight reciprocal vectors; the 116-operation
-coverage verifier and its negative oracle also passed.
+corpus and native/lightweight socket and TLS corpora. The operation inventory
+verifier reported thirteen operations, thirty request members, no modeled
+success outputs, eight reciprocal vectors, and the exact lifecycle composable
+declarations. The 116-operation coverage verifier and its negative oracle,
+repository-integrity gate, Markdown-link gate, and generated API build also
+passed. GNATdoc produced 429 HTML files with the lifecycle API present and no
+new lifecycle documentation warning or error diagnostic.
 
-The latest serialized proof campaign remains the 2026-08-23 936/936 result.
+The latest serialized proof campaign remains the 2026-08-26 936/936 result.
 This slice changes only non-SPARK client, corpus, coverage, and documentation
 units, not any of the nine `tools/prove.sh` manifest units, so a redundant
 proof rerun was not performed.

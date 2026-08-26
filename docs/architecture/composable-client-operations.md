@@ -11,6 +11,7 @@ bounded GetBucketLocation, bounded GetBucketPolicy, non-replaying
 Put/DeleteBucketPolicy, non-replaying Put/GetBucketVersioning, non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
+non-replaying DeleteBucketLifecycle,
 object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
 non-replaying PutObjectLegalHold, plus bounded GetObjectRetention with
 non-replaying PutObjectRetention, and bounded GetObjectLockConfiguration with
@@ -99,18 +100,19 @@ The implemented operation order is:
     non-replaying `Delete_Encryption`;
 28. bounded `Get_CORS`, non-replaying `Set_CORS`, and non-replaying
     `Delete_CORS`;
-29. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
+29. non-replaying `Delete_Lifecycle`;
+30. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
-30. `Put_Object_Tagging`, `Get_Object_Tagging`, and
+31. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`;
-31. bounded `Get_Legal_Hold` and non-replaying `Put_Legal_Hold`;
-32. bounded `Get_Retention` and non-replaying `Put_Retention`;
-33. bounded `Get_Object_Lock_Configuration` and non-replaying
+32. bounded `Get_Legal_Hold` and non-replaying `Put_Legal_Hold`;
+33. bounded `Get_Retention` and non-replaying `Put_Retention`;
+34. bounded `Get_Object_Lock_Configuration` and non-replaying
     `Put_Object_Lock_Configuration`.
 
-The provider surface contains 52 domain operations: 19 in `Client.Objects`,
-25 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 49 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 53 domain operations: 19 in `Client.Objects`,
+26 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 50 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -240,6 +242,16 @@ the last case requires caller-selected GetBucketPolicy reconciliation before
 any retry. Their parameter-record synchronous overloads wait on these same
 state machines, and restart retains only the established HTTP client and
 cancellation owner.
+DeleteBucketLifecycle follows the same mutation discipline with a known-empty
+non-rewindable source and the exact pinned `?lifecycle` prepared operation.
+Its limited constructor, operation-last reusable initiation, typed Finish, and
+typed synchronous wait share one provider-owned state machine. Complete 204
+proves deletion, exact conclusive service rejection proves non-application,
+and any lost, malformed, retryable, or otherwise uncertain result after
+possible admission remains outcome-unknown. The client never replays the
+mutation; callers choose a read-only lifecycle reconciliation before any later
+retry. Restart retains only the established HTTP client and cancellation
+owner, and no request input remains borrowed after signing.
 GetObjectLegalHold owns the exact signed generation selector and retains its
 same-response XML under the shared S3 document limit. PutObjectLegalHold owns
 the presence-preserving serialized XML and exposes it once through a
@@ -513,7 +525,8 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Get_Public_Access_Block`, `Get_Ownership_Controls`, and
 `Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`,
 `Set_Encryption`, `Delete_Encryption`, `Get_CORS`, `Set_CORS`, and
-`Delete_CORS` overloads, and the `Get_Object_Lock_Configuration` and
+`Delete_CORS`, `Delete_Lifecycle` overloads, and the
+`Get_Object_Lock_Configuration` and
 `Put_Object_Lock_Configuration` overloads,
 are literal waits on the same provider-owned state machines and retain their
 typed certainty, capacity, metadata, and ownership results. The established

@@ -235,6 +235,38 @@ def main() -> int:
                 if not re.search(rf"\bfunction\s+{re.escape(name)}\b", text):
                     fail(f"{operation}: {name} absent from {label}")
 
+    lifecycle_tokens = {
+        "low-level specification": [
+            r"\bprocedure\s+Delete_Bucket_Lifecycle\b",
+            r"Operation\s*:\s*in\s+out\s+"
+            r"Flyology\.HTTP\.Client\.Exchange_Operation",
+        ],
+        "low-level body": [
+            r"\bprocedure\s+Delete_Bucket_Lifecycle\b",
+            r"Model\.Delete_Bucket_Lifecycle_Operation",
+        ],
+        "high-level specification": [
+            r"\btype\s+Delete_Bucket_Lifecycle_Operation\b",
+            r"\btype\s+Delete_Bucket_Lifecycle_Result\b",
+            r"\bprocedure\s+Finish\s*\(\s*Operation\s*:\s*in\s+out\s+"
+            r"Delete_Bucket_Lifecycle_Operation",
+        ],
+        "high-level body": [
+            r"\bprocedure\s+Start_Delete_Bucket_Lifecycle\b",
+            r"\bfunction\s+Normalize_Delete_Bucket_Lifecycle_Response\b",
+            r"Low\.Delete_Bucket_Lifecycle",
+        ],
+    }
+    for label, patterns in lifecycle_tokens.items():
+        for pattern in patterns:
+            if re.search(pattern, texts[label]) is None:
+                fail(f"DeleteBucketLifecycle composable API absent from {label}")
+    for label in ("high-level specification", "high-level body"):
+        if texts[label].count("function Delete_Lifecycle") != 3:
+            fail(f"DeleteBucketLifecycle function overload count changed in {label}")
+        if texts[label].count("procedure Delete_Lifecycle") != 1:
+            fail(f"DeleteBucketLifecycle reusable overload count changed in {label}")
+
     if [tuple(row[name] for name in MEMBER_HEADER[:-1]) for row in members] != expected_member_rows:
         fail("member manifest does not exactly match generated input shapes")
 

@@ -2481,6 +2481,173 @@ package Flyology.Object_Storage.Client.Buckets is
         Flyology.Object_Storage.S3.XML.Default_Limits)
       return Delete_Bucket_Encryption_Result;
 
+   --  What is known about a DeleteBucketLifecycle mutation after terminal
+   --  drain. Outcome unknown requires caller-selected read reconciliation
+   --  before any retry.
+   --  @enum Bucket_Lifecycle_Mutation_Completed Complete response proves the
+   --     requested deletion completed
+   --  @enum Bucket_Lifecycle_Mutation_Definitely_Not_Applied Exact rejection
+   --     or non-admission proves no mutation occurred
+   --  @enum Bucket_Lifecycle_Mutation_Outcome_Unknown State requires
+   --     caller-selected read reconciliation
+   --  @enum Bucket_Lifecycle_Mutation_Cancelled_Before_Admission Cancellation
+   --     preceded possible server admission
+   type Bucket_Lifecycle_Mutation_Disposition is
+     (Bucket_Lifecycle_Mutation_Completed,
+      Bucket_Lifecycle_Mutation_Definitely_Not_Applied,
+      Bucket_Lifecycle_Mutation_Outcome_Unknown,
+      Bucket_Lifecycle_Mutation_Cancelled_Before_Admission);
+
+   --  Shape of a terminal DeleteBucketLifecycle mutation.
+   --  @enum Delete_Bucket_Lifecycle_Response_Available Modeled response
+   --     exists
+   --  @enum Delete_Bucket_Lifecycle_Exchange_Failed No complete response
+   --     exists
+   type Delete_Bucket_Lifecycle_Result_Kind is
+     (Delete_Bucket_Lifecycle_Response_Available,
+      Delete_Bucket_Lifecycle_Exchange_Failed);
+
+   --  Typed DeleteBucketLifecycle certainty and response or HTTP failure.
+   --  Record defaults are deterministic aggregate sentinels only and never
+   --  classify a decoded terminal result.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Delete_Bucket_Lifecycle_Result
+     (Kind : Delete_Bucket_Lifecycle_Result_Kind :=
+        Delete_Bucket_Lifecycle_Exchange_Failed)
+   is record
+      Disposition : Bucket_Lifecycle_Mutation_Disposition :=
+        Bucket_Lifecycle_Mutation_Outcome_Unknown;
+      Failure   : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Delete_Bucket_Lifecycle_Response_Available =>
+            Response : Low_Level.Delete_Bucket_Configuration_Outcome;
+         when Delete_Bucket_Lifecycle_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot DeleteBucketLifecycle parent. Its signed request and empty
+   --  nonreplayable source remain owned through terminal Finish.
+   type Delete_Bucket_Lifecycle_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  These overloads retain the existing Delete_Lifecycle defaults:
+   --  us-east-1, path-style addressing, shared XML limits, and no
+   --  cancellation source. The values preserve existing signing and timeout
+   --  policy rather than introducing operation-specific policy.
+   --  Start or restart one nonreplaying DeleteBucketLifecycle mutation.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose lifecycle configuration is removed
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected error-response XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established configuration mutation
+   procedure Delete_Lifecycle
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Delete_Bucket_Lifecycle_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying DeleteBucketLifecycle mutation.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose lifecycle configuration is removed
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected error-response XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven lifecycle deletion
+   function Delete_Lifecycle
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Delete_Bucket_Lifecycle_Operation;
+
+   --  Consume one terminal DeleteBucketLifecycle operation.
+   --  @param Operation Terminal bucket-lifecycle deletion
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Delete_Bucket_Lifecycle_Operation;
+      Result    : out Delete_Bucket_Lifecycle_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Delete the bucket lifecycle configuration by waiting on the same
+   --  nonreplaying provider-owned operation used by composable callers. The
+   --  established region, addressing, 30-second timeout, shared XML-limit,
+   --  and null-cancellation defaults are preserved.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used to configure Client and sign requests
+   --  @param Bucket Bucket whose lifecycle configuration is removed
+   --  @param Parameters Complete modeled owner precondition
+   --  @param Identity Credentials used only while signing this request
+   --  @param Region SigV4 signing region
+   --  @param Style Path or virtual-hosted addressing
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Delete_Lifecycle
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Delete_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style := Low_Level.Path_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Delete_Bucket_Lifecycle_Result;
+
    --  Shape of a terminal GetBucketOwnershipControls read.
    --  @enum Get_Bucket_Ownership_Controls_Response_Available Modeled
    --     response exists
@@ -4831,6 +4998,27 @@ private
    end record;
 
    --  @exclude
+   type Delete_Bucket_Lifecycle_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural := 0;
+      Final_Result     : Delete_Bucket_Lifecycle_Result;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error  : Boolean := False;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
    type Delete_Bucket_CORS_Operation
      (Set          : not null access Flyology.Operations.Completion_Set'Class;
       HTTP         : not null access Flyology.HTTP.Client.Client;
@@ -5674,6 +5862,39 @@ private
      (Item : in out Delete_Bucket_Encryption_Operation);
    overriding procedure Finalize
      (Item : in out Delete_Bucket_Encryption_Operation);
+   --  @exclude
+   overriding function Declared_Length
+     (Item : Delete_Bucket_Lifecycle_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Delete_Bucket_Lifecycle_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Delete_Bucket_Lifecycle_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Delete_Bucket_Lifecycle_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Delete_Bucket_Lifecycle_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Delete_Bucket_Lifecycle_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Delete_Bucket_Lifecycle_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Delete_Bucket_Lifecycle_Operation);
    overriding procedure Write
      (Item : in out Get_Bucket_Ownership_Controls_Operation;
       Data : Ada.Streams.Stream_Element_Array);
@@ -6062,6 +6283,17 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String := "") return Delete_Bucket_Encryption_Result;
+   --  @exclude
+   function Normalize_Delete_Bucket_Lifecycle_Response
+     (Value     : Low_Level.Delete_Bucket_Configuration_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty)
+      return Delete_Bucket_Lifecycle_Result;
+   --  @exclude
+   function Normalize_Delete_Bucket_Lifecycle_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String := "") return Delete_Bucket_Lifecycle_Result;
    function Normalize_Put_Bucket_CORS_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
       Admission : Flyology.HTTP.Client.Admission_Certainty)
