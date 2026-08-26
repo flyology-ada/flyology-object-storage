@@ -4109,6 +4109,45 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response ("204 No Content", ""), "DELETE",
             "/example-bucket?id=config%20id&intelligent-tiering",
             Expected_Bucket_Owner => "123456789012");
+         --  Pinned intelligent-tiering fixtures preserve the shared reference
+         --  owner, exact 204/403 outcomes, and the 256-byte oversized error
+         --  payload paired with the client-selected 64-byte limit below.
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/typed-delete-tiering?id=config%20id&intelligent-tiering",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", ""), "DELETE",
+            "/composed-delete-tiering?id=config%20id&intelligent-tiering",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-delete-tiering" & CRLF),
+            "DELETE",
+            "/restart-delete-tiering?id=config%20id&intelligent-tiering",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("204 No Content", "",
+               "x-amz-request-id: duplicate-tiering" & CRLF &
+               "x-amz-request-id: duplicate-tiering" & CRLF),
+            "DELETE",
+            "/invalid-delete-tiering?id=config%20id&intelligent-tiering",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("204 No Content", "", "x-amz-id-2: " & CRLF),
+            "DELETE",
+            "/empty-host-delete-tiering?id=config%20id&intelligent-tiering",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("500 Internal Server Error",
+               "<Error><Code>InternalError</Code><Message>" &
+               String'(1 .. 256 => 'x') & "</Message></Error>"),
+            "DELETE",
+            "/bounded-delete-tiering?id=config%20id&intelligent-tiering",
+            Expected_Bucket_Owner => "123456789012");
          --  Pinned inventory fixtures preserve the shared reference owner,
          --  exact 204/403 outcomes, and the 256-byte oversized error payload
          --  paired with the client-selected 64-byte limit below.
@@ -13799,6 +13838,216 @@ procedure S3_HTTP_Socket_Corpus is
               (HTTP, Origin, "example-bucket", "config id", Identity,
                Expected_Bucket_Owner => "123456789012", Timeout => 5.0),
             "DeleteBucketIntelligentTieringConfiguration");
+         declare
+            --  Shared signed-corpus owner value; mutation below distinguishes
+            --  copied request state from a retained caller borrow.
+            Parameters :
+              Low_Level.Delete_Bucket_Configuration_With_ID_Parameters :=
+                (ID => US.To_Unbounded_String ("config id"),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+            Prepared : aliased Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Delete_Bucket_Analytics_Configuration
+                (Origin,
+                 Low_Level.Path_Style,
+                 "example-bucket",
+                 Parameters,
+                 Identity,
+                 "us-east-1",
+                 "20130524T000000Z");
+            --  Parent, HTTP exchange, and HTTP's one active transport child.
+            Set : aliased Operations.Completion_Set (3);
+            Parent : aliased Delete_Bucket_Tiering_Operation
+              (Set'Access, HTTP'Access, null);
+            Child : HTTP_Client.Exchange_Operation (Set'Access);
+            Rejected : Boolean := False;
+            Result : Delete_Bucket_Tiering_Result;
+            Completed : constant
+              Bucket_Tiering_Configuration_Mutation_Disposition :=
+                Bucket_Tiering_Configuration_Mutation_Completed;
+            Not_Applied : constant
+              Bucket_Tiering_Configuration_Mutation_Disposition :=
+                Bucket_Tiering_Configuration_Mutation_Definitely_Not_Applied;
+            Unknown : constant
+              Bucket_Tiering_Configuration_Mutation_Disposition :=
+                Bucket_Tiering_Configuration_Mutation_Outcome_Unknown;
+         begin
+            declare
+               Typed_Result : constant
+                 Delete_Bucket_Tiering_Result :=
+                 Buckets.Delete_Intelligent_Tiering_Configuration
+                   (HTTP,
+                    Origin,
+                    "typed-delete-tiering",
+                    Parameters,
+                    Identity,
+                    Timeout => 5.0);
+            begin
+               if Typed_Result.Kind /=
+                    Delete_Bucket_Tiering_Response_Available
+                 or else Typed_Result.Disposition /=
+                   Completed
+                 or else Typed_Result.Failure /= No_Failure
+                 or else Typed_Result.Admission /=
+                   HTTP_Client.Response_Observed
+                 or else Typed_Result.Response.Kind /=
+                   Low_Level.Configuration_Deleted
+               then
+                  raise Program_Error with
+                    "typed DeleteBucketIntelligentTieringConfiguration " &
+                    "response " &
+                    "mismatch";
+               end if;
+            end;
+            begin
+               Low_Level.Delete_Bucket_Intelligent_Tiering_Configuration
+                 (HTTP'Access,
+                  Prepared'Access,
+                  Parent'Access,
+                  Parent'Access,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Child);
+            exception
+               when Low_Level.Invalid_Request => Rejected := True;
+            end;
+            if not Rejected then
+               raise Program_Error with
+                 "DeleteBucketIntelligentTieringConfiguration accepted " &
+                 "an analytics " &
+                 "request";
+            end if;
+
+            declare
+               Operation :
+                 Delete_Bucket_Tiering_Operation :=
+                 Delete_Intelligent_Tiering_Configuration
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-delete-tiering",
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               --  The operation owns the prepared request.  This deliberately
+               --  changes caller storage before the owner stack drives it.
+               Parameters.ID := US.To_Unbounded_String ("changed-id");
+               Parameters.Expected_Bucket_Owner :=
+                 US.To_Unbounded_String ("changed-owner");
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               Parameters.ID := US.To_Unbounded_String ("config id");
+               Parameters.Expected_Bucket_Owner :=
+                 US.To_Unbounded_String ("123456789012");
+               if Result.Kind /=
+                 Delete_Bucket_Tiering_Response_Available
+                 or else Result.Disposition /=
+                   Completed
+               then
+                  raise Program_Error with
+                    "composed DeleteBucketIntelligentTieringConfiguration " &
+                    "mismatch";
+               end if;
+               Delete_Intelligent_Tiering_Configuration
+                 (HTTP'Access,
+                  Origin,
+                  "restart-delete-tiering",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                 Delete_Bucket_Tiering_Response_Available
+                 or else Result.Disposition /=
+                   Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-delete-tiering"
+               then
+                  raise Program_Error with
+                    "restarted DeleteBucketIntelligentTieringConfiguration " &
+                    "mismatch";
+               end if;
+               Delete_Intelligent_Tiering_Configuration
+                 (HTTP'Access,
+                  Origin,
+                  "invalid-delete-tiering",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                 Delete_Bucket_Tiering_Exchange_Failed
+                 or else Result.Disposition /=
+                   Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+               then
+                  raise Program_Error with
+                    "DeleteBucketIntelligentTieringConfiguration accepted " &
+                    "duplicate " &
+                    "response " &
+                    "identifier";
+               end if;
+               Delete_Intelligent_Tiering_Configuration
+                 (HTTP'Access,
+                  Origin,
+                  "empty-host-delete-tiering",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                 Delete_Bucket_Tiering_Exchange_Failed
+                 or else Result.Disposition /=
+                   Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+               then
+                  raise Program_Error with
+                    "DeleteBucketIntelligentTieringConfiguration accepted " &
+                    "an empty " &
+                    "host " &
+                    "identifier";
+               end if;
+               Delete_Intelligent_Tiering_Configuration
+                 (HTTP'Access,
+                  Origin,
+                  "bounded-delete-tiering",
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Limits =>
+                    --  Test-only caller policy paired with the oversized
+                    --  server fixture above.
+                    (Maximum_Document_Bytes => 64,
+                     Maximum_Depth          => 8,
+                     Maximum_Elements       => 32,
+                     Maximum_Text_Bytes     => 64),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /=
+                 Delete_Bucket_Tiering_Exchange_Failed
+                 or else Result.Disposition /=
+                   Unknown
+                 or else Result.Failure /= Corrupt_Or_Invalid_Response
+                 or else Result.HTTP_Result /=
+                   HTTP_Client.Response_Sink_Failed
+               then
+                  raise Program_Error with
+                    "bounded DeleteBucketIntelligentTieringConfiguration " &
+                    "response " &
+                    "mismatch";
+               end if;
+            end;
+         end;
          Require_Configuration_Deletion
            (Buckets.Delete_Inventory_Configuration
               (HTTP, Origin, "example-bucket", "config id", Identity,
@@ -20703,6 +20952,7 @@ begin
    Buckets_Testing.Check_Delete_Bucket_Lifecycle_Certainty_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Replication_Certainty_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Website_Certainty_Corpus;
+   Buckets_Testing.Check_Delete_Bucket_Intelligent_Tiering_Certainty_Corpus;
    Buckets_Testing.
      Check_Delete_Bucket_Inventory_Configuration_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_CORS_Result_Corpus;

@@ -3177,6 +3177,208 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       end loop;
    end Check_Delete_Bucket_Website_Certainty_Corpus;
 
+   procedure Check_Delete_Bucket_Intelligent_Tiering_Certainty_Corpus is
+      type Failure_Kind_Array is array (Positive range <>) of
+        HTTP_Client.Exchange_Result_Kind;
+      Failure_Kinds : constant Failure_Kind_Array :=
+        (HTTP_Client.Pre_Admission_Rejected,
+         HTTP_Client.Cancelled,
+         HTTP_Client.Timed_Out,
+         HTTP_Client.Client_Unavailable,
+         HTTP_Client.Connection_Failed,
+         HTTP_Client.Transport_Failed,
+         HTTP_Client.Request_Source_Failed,
+         HTTP_Client.Response_Invalid,
+         HTTP_Client.Response_Body_Too_Large,
+         HTTP_Client.Response_Sink_Failed);
+      Completed : constant
+        Bucket_Tiering_Configuration_Mutation_Disposition :=
+          Bucket_Tiering_Configuration_Mutation_Completed;
+      Definitely_Not_Applied : constant
+        Bucket_Tiering_Configuration_Mutation_Disposition :=
+          Bucket_Tiering_Configuration_Mutation_Definitely_Not_Applied;
+      Outcome_Unknown : constant
+        Bucket_Tiering_Configuration_Mutation_Disposition :=
+          Bucket_Tiering_Configuration_Mutation_Outcome_Unknown;
+      Cancelled_Before_Admission : constant
+        Bucket_Tiering_Configuration_Mutation_Disposition :=
+          Bucket_Tiering_Configuration_Mutation_Cancelled_Before_Admission;
+
+      function Error_Response (Code : String) return S3.Errors.Error_Response
+      is
+        ((Code       => US.To_Unbounded_String (Code),
+          Message    => US.Null_Unbounded_String,
+          Resource   => US.Null_Unbounded_String,
+          Request_ID => US.Null_Unbounded_String,
+          Host_ID    => US.Null_Unbounded_String));
+
+      function Expected_Failure
+        (Kind : HTTP_Client.Exchange_Result_Kind) return Failure_Reason is
+        (case Kind is
+            when HTTP_Client.Pre_Admission_Rejected => Invalid_Request,
+            when HTTP_Client.Cancelled => Cancelled,
+            when HTTP_Client.Timed_Out => Timed_Out,
+            when HTTP_Client.Client_Unavailable => Client_Unavailable,
+            when HTTP_Client.Connection_Failed => Connection_Failed,
+            when HTTP_Client.Transport_Failed => Transport_Failed,
+            when HTTP_Client.Request_Source_Failed => Request_Source_Failed,
+            when HTTP_Client.Response_Body_Too_Large |
+                 HTTP_Client.Response_Invalid |
+                 HTTP_Client.Response_Sink_Failed =>
+              Corrupt_Or_Invalid_Response,
+            when HTTP_Client.Response_Complete =>
+              raise Program_Error with "complete response is not a failure");
+
+      function Expected_Disposition
+        (Kind      : HTTP_Client.Exchange_Result_Kind;
+         Admission : HTTP_Client.Admission_Certainty)
+         return Bucket_Tiering_Configuration_Mutation_Disposition is
+        (if Kind = HTTP_Client.Cancelled
+           and then Admission = HTTP_Client.Not_Admitted
+         then Cancelled_Before_Admission
+         elsif Admission = HTTP_Client.Not_Admitted
+         then Definitely_Not_Applied
+         else Outcome_Unknown);
+
+      procedure Check_Response
+        (Status      : Flyology.HTTP.Status_Code;
+         Code        : String;
+         Disposition : Bucket_Tiering_Configuration_Mutation_Disposition;
+         Failure     : Failure_Reason)
+      is
+         Value : constant Low_Level.Delete_Bucket_Configuration_Outcome :=
+           (if Status = 204
+            then (Kind => Low_Level.Configuration_Deleted, Status => Status)
+            else (Kind => Low_Level.Delete_Configuration_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant Delete_Bucket_Tiering_Result :=
+           Normalize_Delete_Bucket_Tiering_Response
+             (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /=
+           Delete_Bucket_Tiering_Response_Available
+           or else Result.Disposition /= Disposition
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "DeleteBucketIntelligentTieringConfiguration response " &
+              "normalization " &
+              "mismatch";
+         end if;
+      end Check_Response;
+   begin
+      --  These status/code pairs are the pinned S3 error-model and signed
+      --  family-corpus references used by the production normalizer.
+      Check_Response
+        (204, "", Completed, No_Failure);
+      Check_Response
+        (400, "InvalidArgument",
+         Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Response
+        (400, "InvalidBucketName",
+         Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Response
+        (400, "InvalidRequest",
+         Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Response
+        (401, "InvalidAccessKeyId",
+         Definitely_Not_Applied,
+         Authentication_Failed);
+      Check_Response
+        (403, "AccessDenied",
+         Definitely_Not_Applied,
+         Authorization_Failed);
+      Check_Response
+        (404, "NoSuchBucket",
+         Definitely_Not_Applied,
+         Not_Found);
+      Check_Response
+        (409, "OperationAborted",
+         Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Response
+        (429, "SlowDown",
+         Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Response
+        (500, "InternalError",
+         Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Response
+        (502, "BadGateway",
+         Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Response
+        (503, "SlowDown",
+         Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Response
+        (504, "RequestTimeout",
+         Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Response
+        (501, "NotImplemented",
+         Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Response
+        (500, "Unknown",
+         Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
+
+      for Admission in
+        HTTP_Client.Not_Admitted .. HTTP_Client.Possibly_Admitted
+      loop
+         declare
+            Value : constant Low_Level.Delete_Bucket_Configuration_Outcome :=
+              (Kind => Low_Level.Configuration_Deleted, Status => 204);
+            Result : constant
+              Delete_Bucket_Tiering_Result :=
+                Normalize_Delete_Bucket_Tiering_Response
+                  (Value, Admission);
+         begin
+            if Result.Disposition /=
+                Outcome_Unknown
+              or else Result.Failure /= Corrupt_Or_Invalid_Response
+            then
+               raise Program_Error with
+                 "inconsistent DeleteBucketIntelligentTieringConfiguration " &
+                 "certainty " &
+                 "was accepted";
+            end if;
+         end;
+      end loop;
+
+      for Kind of Failure_Kinds loop
+         for Admission in HTTP_Client.Admission_Certainty loop
+            declare
+               Result : constant
+                 Delete_Bucket_Tiering_Result :=
+                 Normalize_Delete_Bucket_Tiering_Failure
+                   (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+            begin
+               if Result.Kind /=
+                 Delete_Bucket_Tiering_Exchange_Failed
+                 or else Result.Disposition /=
+                   Expected_Disposition (Kind, Admission)
+                 or else Result.Failure /= Expected_Failure (Kind)
+                 or else Result.Admission /= Admission
+                 or else Result.HTTP_Result /= Kind
+               then
+                  raise Program_Error with
+                    "DeleteBucketIntelligentTieringConfiguration exchange " &
+                    "certainty " &
+                    "mismatch";
+               end if;
+            end;
+         end loop;
+      end loop;
+   end Check_Delete_Bucket_Intelligent_Tiering_Certainty_Corpus;
+
    procedure Check_Delete_Bucket_Inventory_Configuration_Certainty_Corpus is
       type Failure_Kind_Array is array (Positive range <>) of
         HTTP_Client.Exchange_Result_Kind;

@@ -20,7 +20,8 @@ non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
 non-replaying DeleteBucketLifecycle, DeleteBucketReplication,
-DeleteBucketWebsite, and DeleteBucketInventoryConfiguration,
+DeleteBucketIntelligentTieringConfiguration, DeleteBucketWebsite, and
+DeleteBucketInventoryConfiguration,
 object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
 non-replaying conditional DeleteObjectAnnotation,
 non-replaying PutObjectLegalHold, plus bounded GetObjectRetention with
@@ -130,10 +131,12 @@ The implemented operation order is:
     `Create_Metadata_Table_Configuration`.
 39. bounded `Create_Session` with limited zeroizing credentials constructed by
     typed Finish.
+40. non-replaying `Delete_Intelligent_Tiering_Configuration` with copied
+    identifier and typed mutation certainty.
 
-The provider surface contains 69 domain operations: 21 in `Client.Objects`,
-40 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 66 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 70 domain operations: 21 in `Client.Objects`,
+41 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 67 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -370,11 +373,13 @@ the last case requires caller-selected GetBucketPolicy reconciliation before
 any retry. Their parameter-record synchronous overloads wait on these same
 state machines, and restart retains only the established HTTP client and
 cancellation owner.
-DeleteBucketLifecycle, DeleteBucketReplication, DeleteBucketWebsite, and
+DeleteBucketLifecycle, DeleteBucketReplication,
+DeleteBucketIntelligentTieringConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration follow the same mutation discipline with
 known-empty non-rewindable sources and their exact pinned `?lifecycle`,
-`?replication`, `?website`, and `?inventory` prepared operations. Inventory
-also copies its required identifier before the constructor returns.
+`?replication`, `?intelligent-tiering`, `?website`, and `?inventory` prepared
+operations. Intelligent-tiering and inventory also copy their required
+identifiers before their constructors return.
 Their limited constructors, operation-last reusable initiations, typed Finish,
 and typed
 synchronous waits each share one provider-owned state machine. Complete 204
