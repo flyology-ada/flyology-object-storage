@@ -3136,6 +3136,20 @@ package Flyology.Object_Storage.Client.Low_Level is
    subtype Put_Bucket_Control_Parameters is
      Bucket_Control_Mutation_Parameters;
 
+   --  Complete physical controls for PutBucketLifecycleConfiguration.
+   --  The transition field is empty for absence or one exact modeled wire
+   --  value; callers therefore select presence explicitly rather than inherit
+   --  a library lifecycle policy.
+   --  @field Checksum_Algorithm Required one of the ten modeled algorithms
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   --  @field Transition_Default_Minimum_Object_Size Empty or exact header
+   type Put_Bucket_Lifecycle_Configuration_Parameters is record
+      Checksum_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+      Transition_Default_Minimum_Object_Size :
+        Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  Prepare one exact CreateBucketMetadataTableConfiguration request.
    --  The request is a signed POST with the required Content-MD5, optional
    --  modeled SDK checksum, and one bounded REST/XML destination payload.
@@ -3231,6 +3245,26 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Prepared_Request;
 
+   --  Prepare one exact PutBucketLifecycleConfiguration request.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Value Absent body or present nonempty lifecycle-rule graph
+   --  @param Parameters Complete checksum, owner, and transition controls
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Fully signed request bound to the current lifecycle operation
+   function Prepare_Put_Bucket_Lifecycle_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Lifecycle.Lifecycle_Configuration;
+      Parameters : Put_Bucket_Lifecycle_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request;
+
    --  Prepare one exact PutBucketCors request.
    --  @param Origin Parsed HTTP origin
    --  @param Style Path or virtual-hosted bucket addressing
@@ -3272,12 +3306,43 @@ package Flyology.Object_Storage.Client.Low_Level is
       end case;
    end record;
 
+   --  Terminal result for PutBucketLifecycleConfiguration. The same response
+   --  preserves the physical status, optional exact transition header, and
+   --  structured error storage. Kind determines which fields are meaningful;
+   --  no public initialization or lifecycle default is selected.
+   --  @field Kind Whether the update or a strict S3 error was returned
+   --  @field Status Exact physical HTTP status
+   --  @field Transition_Default_Minimum_Object_Size Optional exact header
+   --  @field Error Structured bounded S3 rejection when Kind is rejected
+   type Put_Bucket_Lifecycle_Configuration_Outcome is record
+      Kind : Put_Bucket_Control_Outcome_Kind;
+      Status : Flyology.HTTP.Status_Code;
+      Transition_Default_Minimum_Object_Size :
+        S3.Lifecycle.Transition_Default_Minimum_Size;
+      Error : S3.Errors.Error_Response;
+   end record;
+
    --  Decode one bounded bodyless bucket-control mutation response.
    function Decode_Put_Bucket_Control_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome;
+
+   --  Decode one complete PutBucketLifecycleConfiguration response.
+   --  @param Status Exact physical response status
+   --  @param Payload Complete same-response body
+   --  @param Request_ID Optional bounded S3 request identifier
+   --  @param Host_ID Optional bounded S3 host identifier
+   --  @param Transition_Default_Minimum_Object_Size Optional exact header
+   --  @param Limits Caller-selected error XML limits
+   --  @return Typed update success or strict S3 rejection
+   function Decode_Put_Bucket_Lifecycle_Configuration_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Transition_Default_Minimum_Object_Size : String;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Lifecycle_Configuration_Outcome;
 
    --  Execute one exact prepared CreateBucketMetadataTableConfiguration
    --  request.  The 30-second default is the established low-level
@@ -3359,6 +3424,22 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token := null;
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Put_Bucket_Control_Outcome;
+
+   --  Execute one exact prepared PutBucketLifecycleConfiguration request.
+   --  Every resource and cancellation choice is caller-supplied. No request
+   --  is replayed after possible admission.
+   --  @param Client Caller-owned synchronous HTTP client
+   --  @param Prepared Request from the matching lifecycle preparer
+   --  @param Timeout Caller-selected absolute operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Typed update success or strict S3 rejection
+   function Execute_Put_Bucket_Lifecycle_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Lifecycle_Configuration_Outcome;
 
    --  Execute one exact prepared PutBucketCors request. The 30-second default
    --  is the established low-level synchronous-client compatibility budget;
@@ -5275,6 +5356,27 @@ package Flyology.Object_Storage.Client.Low_Level is
         Flyology.HTTP.Client.Response_Body_Sink'Class;
       Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
       Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared PutBucketLifecycleConfiguration exchange with
+   --  its one-shot configuration source. Any other prepared operation is
+   --  rejected before HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable request source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Put_Bucket_Lifecycle_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 
    --  Start an exact prepared PutBucketCors exchange with its one-shot

@@ -737,6 +737,391 @@ package body Flyology.Object_Storage.S3.Lifecycle is
          raise Malformed_Lifecycle with "malformed bucket-lifecycle XML";
    end Parse;
 
+   function Serialize
+     (Value  : Lifecycle_Configuration;
+      Limits : XML.Parse_Limits) return String
+   is
+      Result       : US.Unbounded_String;
+      Elements     : Natural := 1;
+      Text_Bytes   : Natural := 0;
+      Actual_Depth : Positive := 1;
+
+      --  Pinned PutBucketLifecycleConfiguration REST/XML namespace and root.
+      --  Changing either changes provider compatibility and request signing.
+      Prefix : constant String :=
+        "<LifecycleConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">";
+      Suffix : constant String := "</LifecycleConfiguration>";
+
+      function Status_Text (Item : Rule_Status) return String is
+        (case Item is
+            when Rule_Enabled  => "Enabled",
+            when Rule_Disabled => "Disabled");
+
+      function Storage_Class_Text
+        (Item : Transition_Storage_Class) return String is
+        (case Item is
+            when Glacier                   => "GLACIER",
+            when Standard_IA               => "STANDARD_IA",
+            when One_Zone_IA               => "ONEZONE_IA",
+            when Intelligent_Tiering       => "INTELLIGENT_TIERING",
+            when Deep_Archive              => "DEEP_ARCHIVE",
+            when Glacier_Instant_Retrieval => "GLACIER_IR");
+
+      --  XML 1.0 text is UTF-8 and excludes raw C0 controls other than tab,
+      --  line feed, and carriage return. This structural wire authority keeps
+      --  the serializer from emitting bytes the matching parser must reject.
+      function Valid_XML_UTF8 (Text : String) return Boolean is
+         Cursor : Integer := Text'First;
+
+         function Byte_At (Offset : Natural) return Natural is
+           (Character'Pos (Text (Cursor + Integer (Offset))));
+
+         function Continuation (Offset : Natural) return Boolean is
+           (Offset <= Natural (Text'Last - Cursor)
+            and then Byte_At (Offset) in 16#80# .. 16#BF#);
+      begin
+         while Cursor <= Text'Last loop
+            declare
+               First : constant Natural := Byte_At (0);
+               Width : Positive;
+            begin
+               if First in 16#20# .. 16#7E#
+                 or else First in 16#09# | 16#0A# | 16#0D#
+               then
+                  Width := 1;
+               elsif First in 16#C2# .. 16#DF#
+                 and then Continuation (1)
+               then
+                  Width := 2;
+               elsif First in 16#E0# .. 16#EF#
+                 and then Continuation (1) and then Continuation (2)
+                 and then (First /= 16#E0# or else Byte_At (1) >= 16#A0#)
+                 and then (First /= 16#ED# or else Byte_At (1) <= 16#9F#)
+                 and then
+                   (First /= 16#EF#
+                    or else Byte_At (1) /= 16#BF#
+                    or else Byte_At (2) not in 16#BE# .. 16#BF#)
+               then
+                  Width := 3;
+               elsif First in 16#F0# .. 16#F4#
+                 and then Continuation (1) and then Continuation (2)
+                 and then Continuation (3)
+                 and then (First /= 16#F0# or else Byte_At (1) >= 16#90#)
+                 and then (First /= 16#F4# or else Byte_At (1) <= 16#8F#)
+               then
+                  Width := 4;
+               else
+                  return False;
+               end if;
+               if Width - 1 = Natural (Text'Last - Cursor) then
+                  return True;
+               end if;
+               Cursor := Cursor + Width;
+            end;
+         end loop;
+         return True;
+      end Valid_XML_UTF8;
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Lifecycle with
+              "bucket-lifecycle document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+
+      procedure Add_Element (Name : String; Depth : Positive) is
+      begin
+         if Elements = Limits.Maximum_Elements then
+            raise Malformed_Lifecycle with
+              "bucket-lifecycle elements exceed caller limit";
+         end if;
+         Elements := Elements + 1;
+         Actual_Depth := Positive'Max (Actual_Depth, Depth);
+         Append_Bounded ("<" & Name & ">");
+      end Add_Element;
+
+      procedure End_Element (Name : String) is
+      begin
+         Append_Bounded ("</" & Name & ">");
+      end End_Element;
+
+      procedure Add_Text (Text : String) is
+      begin
+         if not Valid_XML_UTF8 (Text) then
+            raise Malformed_Lifecycle with
+              "invalid lifecycle XML text";
+         elsif Text'Length > Limits.Maximum_Text_Bytes - Text_Bytes then
+            raise Malformed_Lifecycle with
+              "bucket-lifecycle text exceeds caller limit";
+         end if;
+         Text_Bytes := Text_Bytes + Text'Length;
+         Append_Bounded (XML.Escape_Text (Text));
+      end Add_Text;
+
+      procedure Add_Scalar
+        (Name : String; Text : String; Depth : Positive) is
+      begin
+         Add_Element (Name, Depth);
+         Add_Text (Text);
+         End_Element (Name);
+      end Add_Scalar;
+
+      procedure Add_Optional_String
+        (Name : String; Item : Optional_String; Depth : Positive) is
+      begin
+         if Item.Is_Set then
+            Add_Scalar (Name, US.To_String (Item.Value), Depth);
+         elsif US.Length (Item.Value) /= 0 then
+            raise Malformed_Lifecycle with
+              "absent lifecycle string contains text";
+         end if;
+      end Add_Optional_String;
+
+      procedure Add_Optional_Integer
+        (Name : String; Item : Optional_Integer_Text; Depth : Positive)
+      is
+         Text : constant String := US.To_String (Item.Text);
+      begin
+         if Item.Is_Set then
+            if not Valid_Integer_Text (Text) then
+               raise Malformed_Lifecycle with
+                 "invalid lifecycle integer";
+            end if;
+            Add_Scalar (Name, Text, Depth);
+         elsif Text'Length /= 0 then
+            raise Malformed_Lifecycle with
+              "absent lifecycle integer contains text";
+         end if;
+      end Add_Optional_Integer;
+
+      procedure Add_Optional_Timestamp
+        (Name : String; Item : Optional_Timestamp; Depth : Positive)
+      is
+         Text : constant String := US.To_String (Item.Text);
+      begin
+         if Item.Is_Set then
+            if not Valid_ISO_8601_Timestamp (Text) then
+               raise Malformed_Lifecycle with
+                 "invalid lifecycle timestamp";
+            end if;
+            Add_Scalar (Name, Text, Depth);
+         elsif Text'Length /= 0 then
+            raise Malformed_Lifecycle with
+              "absent lifecycle timestamp contains text";
+         end if;
+      end Add_Optional_Timestamp;
+
+      procedure Add_Optional_Boolean
+        (Name : String; Item : Optional_Boolean; Depth : Positive) is
+      begin
+         if Item.Is_Set then
+            Add_Scalar
+              (Name, (if Item.Value then "true" else "false"), Depth);
+         elsif Item.Value then
+            raise Malformed_Lifecycle with
+              "absent lifecycle Boolean contains a value";
+         end if;
+      end Add_Optional_Boolean;
+
+      procedure Add_Tag (Item : Lifecycle_Tag; Depth : Positive) is
+      begin
+         Add_Element ("Tag", Depth);
+         Add_Scalar ("Key", US.To_String (Item.Key), Depth + 1);
+         Add_Scalar ("Value", US.To_String (Item.Value), Depth + 1);
+         End_Element ("Tag");
+      end Add_Tag;
+
+      function Tag_Has_Data (Item : Lifecycle_Tag) return Boolean is
+        (US.Length (Item.Key) /= 0 or else US.Length (Item.Value) /= 0);
+
+      function And_Has_Data (Item : Lifecycle_And) return Boolean is
+        (Item.Prefix.Is_Set
+         or else US.Length (Item.Prefix.Value) /= 0
+         or else not Item.Tags.Is_Empty
+         or else Item.Object_Size_Greater_Than.Is_Set
+         or else US.Length (Item.Object_Size_Greater_Than.Text) /= 0
+         or else Item.Object_Size_Less_Than.Is_Set
+         or else US.Length (Item.Object_Size_Less_Than.Text) /= 0);
+
+      procedure Add_Filter (Item : Lifecycle_Filter) is
+      begin
+         if not Item.Is_Set then
+            if Item.Prefix.Is_Set
+              or else US.Length (Item.Prefix.Value) /= 0
+              or else Item.Tag.Is_Set
+              or else Tag_Has_Data (Item.Tag.Value)
+              or else Item.Object_Size_Greater_Than.Is_Set
+              or else US.Length (Item.Object_Size_Greater_Than.Text) /= 0
+              or else Item.Object_Size_Less_Than.Is_Set
+              or else US.Length (Item.Object_Size_Less_Than.Text) /= 0
+              or else Item.And_Predicates.Is_Set
+              or else And_Has_Data (Item.And_Predicates)
+            then
+               raise Malformed_Lifecycle with
+                 "absent lifecycle filter contains values";
+            end if;
+            return;
+         end if;
+
+         Add_Element ("Filter", 3);
+         Add_Optional_String ("Prefix", Item.Prefix, 4);
+         if Item.Tag.Is_Set then
+            Add_Tag (Item.Tag.Value, 4);
+         elsif Tag_Has_Data (Item.Tag.Value) then
+            raise Malformed_Lifecycle with
+              "absent lifecycle tag contains values";
+         end if;
+         Add_Optional_Integer
+           ("ObjectSizeGreaterThan", Item.Object_Size_Greater_Than, 4);
+         Add_Optional_Integer
+           ("ObjectSizeLessThan", Item.Object_Size_Less_Than, 4);
+         if Item.And_Predicates.Is_Set then
+            Add_Element ("And", 4);
+            Add_Optional_String
+              ("Prefix", Item.And_Predicates.Prefix, 5);
+            for Tag of Item.And_Predicates.Tags loop
+               Add_Tag (Tag, 5);
+            end loop;
+            Add_Optional_Integer
+              ("ObjectSizeGreaterThan",
+               Item.And_Predicates.Object_Size_Greater_Than, 5);
+            Add_Optional_Integer
+              ("ObjectSizeLessThan",
+               Item.And_Predicates.Object_Size_Less_Than, 5);
+            End_Element ("And");
+         elsif And_Has_Data (Item.And_Predicates) then
+            raise Malformed_Lifecycle with
+              "absent lifecycle And contains values";
+         end if;
+         End_Element ("Filter");
+      end Add_Filter;
+
+      procedure Add_Rule (Item : Lifecycle_Rule) is
+      begin
+         Add_Element ("Rule", 2);
+         if Item.Expiration.Is_Set then
+            Add_Element ("Expiration", 3);
+            Add_Optional_Timestamp
+              ("Date", Item.Expiration.Date, 4);
+            Add_Optional_Integer ("Days", Item.Expiration.Days, 4);
+            Add_Optional_Boolean
+              ("ExpiredObjectDeleteMarker",
+               Item.Expiration.Expired_Object_Delete_Marker, 4);
+            End_Element ("Expiration");
+         elsif Item.Expiration.Date.Is_Set
+           or else US.Length (Item.Expiration.Date.Text) /= 0
+           or else Item.Expiration.Days.Is_Set
+           or else US.Length (Item.Expiration.Days.Text) /= 0
+           or else Item.Expiration.Expired_Object_Delete_Marker.Is_Set
+           or else Item.Expiration.Expired_Object_Delete_Marker.Value
+         then
+            raise Malformed_Lifecycle with
+              "absent lifecycle expiration contains values";
+         end if;
+
+         Add_Optional_String ("ID", Item.ID, 3);
+         Add_Optional_String ("Prefix", Item.Prefix, 3);
+         Add_Filter (Item.Filter);
+         Add_Scalar ("Status", Status_Text (Item.Status), 3);
+
+         for Transition of Item.Transitions loop
+            Add_Element ("Transition", 3);
+            Add_Optional_Timestamp ("Date", Transition.Date, 4);
+            Add_Optional_Integer ("Days", Transition.Days, 4);
+            if Transition.Storage_Class_Is_Set then
+               Add_Scalar
+                 ("StorageClass",
+                  Storage_Class_Text (Transition.Storage_Class), 4);
+            elsif Transition.Storage_Class /= Glacier then
+               raise Malformed_Lifecycle with
+                 "absent lifecycle transition class contains a value";
+            end if;
+            End_Element ("Transition");
+         end loop;
+
+         for Transition of Item.Noncurrent_Transitions loop
+            Add_Element ("NoncurrentVersionTransition", 3);
+            Add_Optional_Integer
+              ("NoncurrentDays", Transition.Noncurrent_Days, 4);
+            if Transition.Storage_Class_Is_Set then
+               Add_Scalar
+                 ("StorageClass",
+                  Storage_Class_Text (Transition.Storage_Class), 4);
+            elsif Transition.Storage_Class /= Glacier then
+               raise Malformed_Lifecycle with
+                 "absent noncurrent transition class contains a value";
+            end if;
+            Add_Optional_Integer
+              ("NewerNoncurrentVersions",
+               Transition.Newer_Noncurrent_Versions, 4);
+            End_Element ("NoncurrentVersionTransition");
+         end loop;
+
+         if Item.Noncurrent_Expiration.Is_Set then
+            Add_Element ("NoncurrentVersionExpiration", 3);
+            Add_Optional_Integer
+              ("NoncurrentDays",
+               Item.Noncurrent_Expiration.Noncurrent_Days, 4);
+            Add_Optional_Integer
+              ("NewerNoncurrentVersions",
+               Item.Noncurrent_Expiration.Newer_Noncurrent_Versions, 4);
+            End_Element ("NoncurrentVersionExpiration");
+         elsif Item.Noncurrent_Expiration.Noncurrent_Days.Is_Set
+           or else US.Length
+             (Item.Noncurrent_Expiration.Noncurrent_Days.Text) /= 0
+           or else Item.Noncurrent_Expiration.
+             Newer_Noncurrent_Versions.Is_Set
+           or else US.Length
+             (Item.Noncurrent_Expiration.Newer_Noncurrent_Versions.Text) /= 0
+         then
+            raise Malformed_Lifecycle with
+              "absent noncurrent expiration contains values";
+         end if;
+
+         if Item.Abort_Incomplete.Is_Set then
+            Add_Element ("AbortIncompleteMultipartUpload", 3);
+            Add_Optional_Integer
+              ("DaysAfterInitiation",
+               Item.Abort_Incomplete.Days_After_Initiation, 4);
+            End_Element ("AbortIncompleteMultipartUpload");
+         elsif Item.Abort_Incomplete.Days_After_Initiation.Is_Set
+           or else US.Length
+             (Item.Abort_Incomplete.Days_After_Initiation.Text) /= 0
+         then
+            raise Malformed_Lifecycle with
+              "absent multipart abort contains values";
+         end if;
+         End_Element ("Rule");
+      end Add_Rule;
+   begin
+      if not Value.Is_Set then
+         if not Value.Rules.Is_Empty then
+            raise Malformed_Lifecycle with
+              "absent lifecycle configuration contains rules";
+         end if;
+         return "";
+      elsif Value.Rules.Is_Empty then
+         raise Malformed_Lifecycle with "lifecycle rules are required";
+      end if;
+      Append_Bounded (Prefix);
+      for Rule of Value.Rules loop
+         Add_Rule (Rule);
+      end loop;
+      if Actual_Depth > Limits.Maximum_Depth then
+         raise Malformed_Lifecycle with
+           "bucket-lifecycle depth exceeds caller limit";
+      end if;
+      Append_Bounded (Suffix);
+      return US.To_String (Result);
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Lifecycle with "invalid lifecycle XML text";
+   end Serialize;
+
    function Parse_Transition_Default_Minimum_Size
      (Value : String) return Transition_Default_Minimum_Size is
    begin

@@ -35,6 +35,7 @@ package Flyology.Object_Storage.Client.Buckets.Testing is
 
    procedure Check_Bucket_Encryption_Result_Corpus;
    procedure Check_Get_Bucket_Lifecycle_Result_Corpus;
+   procedure Check_Put_Bucket_Lifecycle_Result_Corpus;
 
    procedure Check_Get_Bucket_ACL_Result_Corpus;
 

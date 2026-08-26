@@ -232,6 +232,19 @@ package Flyology.Object_Storage.S3.Lifecycle is
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Lifecycle_Configuration;
 
+   --  Serialize one exact PutBucketLifecycleConfiguration payload.
+   --  An absent configuration emits an empty body. When configuration is
+   --  present, its required flattened Rule member is nonempty. Structural
+   --  constraints come from the pinned service model; no prose-only
+   --  lifecycle policy is selected here.
+   --  @param Value Complete presence-sensitive lifecycle configuration
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Exact namespaced REST/XML request payload
+   --  @exception Malformed_Lifecycle Value violates the pinned input model
+   function Serialize
+     (Value  : Lifecycle_Configuration;
+      Limits : XML.Parse_Limits) return String;
+
    --  Parse the optional exact
    --  x-amz-transition-default-minimum-object-size response header.
    --  @param Value Empty for absence or one exact pinned wire value

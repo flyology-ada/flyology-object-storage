@@ -85,7 +85,7 @@ PutBucketEncryption	extended	missing	covered	missing	covered
 PutBucketIntelligentTieringConfiguration	extended	missing	partial	missing	missing
 PutBucketInventoryConfiguration	extended	missing	partial	missing	missing
 PutBucketLifecycle	extended	missing	partial	missing	missing
-PutBucketLifecycleConfiguration	extended	missing	partial	missing	missing
+PutBucketLifecycleConfiguration	extended	missing	covered	missing	covered
 PutBucketLogging	extended	missing	partial	missing	missing
 PutBucketMetricsConfiguration	extended	missing	partial	missing	missing
 PutBucketNotification	extended	missing	partial	missing	missing

@@ -29,6 +29,7 @@ python3 "$PROJECT_DIR/tools/verify-get-bucket-cors-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-put-bucket-cors-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-bucket-encryption-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-bucket-lifecycle-configuration-preparation.py"
+python3 "$PROJECT_DIR/tools/verify-put-bucket-lifecycle-configuration-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-bucket-metadata-table-configuration-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-bucket-acl-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-object-acl-preparation.py"
@@ -191,6 +192,7 @@ do
   ./bin/s3_get_bucket_cors_corpus
   ./bin/s3_get_bucket_encryption_corpus
   ./bin/s3_get_bucket_lifecycle_configuration_corpus
+  ./bin/s3_put_bucket_lifecycle_configuration_corpus
   ./bin/s3_get_bucket_metadata_table_configuration_corpus
   ./bin/s3_get_bucket_acl_corpus
   ./bin/s3_get_object_acl_corpus

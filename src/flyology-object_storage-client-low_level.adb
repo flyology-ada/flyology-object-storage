@@ -9020,7 +9020,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Identity        : Credentials;
       Region          : String;
       Timestamp       : String;
-      One_Shot_Source : Boolean) return Prepared_Request
+      One_Shot_Source : Boolean;
+      Transition_Default_Minimum_Object_Size : String := "";
+      Require_Checksum : Boolean := False) return Prepared_Request
    is
       Supplied_MD5 : constant String :=
         US.To_String (Parameters.Content_MD5);
@@ -9039,6 +9041,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (1 .. Boolean'Pos (Has_Content_MD5) +
            Boolean'Pos (Confirm_Remove_Self_Access.Is_Set) +
            Boolean'Pos (Owner'Length > 0) +
+           Boolean'Pos
+             (Transition_Default_Minimum_Object_Size'Length > 0) +
            2 * Boolean'Pos (Checksum'Length > 0));
       Last : Natural := 0;
    begin
@@ -9056,6 +9060,14 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else (Has_Content_MD5 and then not Wire_Core.Valid_Base64 (MD5, 16))
         or else not Valid_List_Response_Header_Text (Owner)
         or else (Checksum'Length > 0 and then not Algorithm.Valid)
+        or else (Require_Checksum and then Checksum'Length = 0)
+        or else
+          (Transition_Default_Minimum_Object_Size'Length > 0
+           and then
+             (Operation /=
+                Model.Put_Bucket_Lifecycle_Configuration_Operation
+              or else Transition_Default_Minimum_Object_Size not in
+                "varies_by_storage_class" | "all_storage_classes_128K"))
       then
          raise Invalid_Request with
            "invalid bucket-control mutation parameters";
@@ -9075,6 +9087,13 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Last := Last + 1;
          Headers (Last) :=
            SigV4.Pair ("x-amz-expected-bucket-owner", Owner);
+      end if;
+      if Transition_Default_Minimum_Object_Size'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) :=
+           SigV4.Pair
+             ("x-amz-transition-default-minimum-object-size",
+              Transition_Default_Minimum_Object_Size);
       end if;
       if Checksum'Length > 0 then
          declare
@@ -9243,6 +9262,35 @@ package body Flyology.Object_Storage.Client.Low_Level is
            "invalid PutBucketEncryption configuration";
    end Prepare_Put_Bucket_Encryption;
 
+   function Prepare_Put_Bucket_Lifecycle_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : Lifecycle.Lifecycle_Configuration;
+      Parameters : Put_Bucket_Lifecycle_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request
+   is
+      Common : constant Bucket_Control_Mutation_Parameters :=
+        (Content_MD5           => US.Null_Unbounded_String,
+         Checksum_Algorithm    => Parameters.Checksum_Algorithm,
+         Expected_Bucket_Owner => Parameters.Expected_Bucket_Owner);
+   begin
+      return Prepare_Bucket_Control_Mutation
+        (Model.Put_Bucket_Lifecycle_Configuration_Operation, "PUT",
+         "lifecycle", Origin, Style, Bucket,
+         Lifecycle.Serialize (Value, Limits), False, (others => <>), False,
+         Common, Identity, Region, Timestamp, One_Shot_Source => True,
+         Transition_Default_Minimum_Object_Size =>
+           US.To_String
+             (Parameters.Transition_Default_Minimum_Object_Size),
+         Require_Checksum => True);
+   exception
+      when Lifecycle.Malformed_Lifecycle =>
+         raise Invalid_Request with
+           "invalid PutBucketLifecycleConfiguration payload";
+   end Prepare_Put_Bucket_Lifecycle_Configuration;
+
    function Prepare_Put_Bucket_CORS
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String;
@@ -9310,6 +9358,44 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Response with
            "malformed bucket-control mutation response";
    end Decode_Put_Bucket_Control_Response;
+
+   function Decode_Put_Bucket_Lifecycle_Configuration_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Transition_Default_Minimum_Object_Size : String;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Lifecycle_Configuration_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      if Status = 200 then
+         if not Whitespace_Only (Payload) then
+            raise Invalid_Response with
+              "PutBucketLifecycleConfiguration success contains a body";
+         end if;
+         return
+           (Kind   => Bucket_Control_Updated,
+            Status => Status,
+            Transition_Default_Minimum_Object_Size =>
+              Lifecycle.Parse_Transition_Default_Minimum_Size
+                (Transition_Default_Minimum_Object_Size),
+            Error  => (others => <>));
+      end if;
+      if Transition_Default_Minimum_Object_Size'Length > 0 then
+         raise Invalid_Response with
+           "lifecycle transition header on rejected response";
+      end if;
+      return
+        (Kind   => Put_Bucket_Control_Rejected,
+         Status => Status,
+         Transition_Default_Minimum_Object_Size =>
+           Lifecycle.Transition_Minimum_Absent,
+         Error  => Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Lifecycle.Malformed_Lifecycle | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed PutBucketLifecycleConfiguration response";
+   end Decode_Put_Bucket_Lifecycle_Configuration_Response;
 
    function Execute_Bucket_Control_Mutation
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -9443,6 +9529,70 @@ package body Flyology.Object_Storage.Client.Low_Level is
      (Execute_Bucket_Control_Mutation
         (Client, Prepared, Model.Put_Bucket_Encryption_Operation,
          Timeout, Token, Limits));
+
+   function Execute_Put_Bucket_Lifecycle_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Lifecycle_Configuration_Outcome
+   is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Put_Bucket_Lifecycle_Configuration_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      declare
+         Source : Non_Replayable_Buffer_Source :=
+           (Data => Prepared.Owned_Request_Payload, Next => 1);
+         Response : Flyology.HTTP.Client.Response :=
+           Flyology.HTTP.Client.Execute
+             (Client, Prepared.Message, Source, Timeout, Token);
+
+         function Singleton_Header (Name : String) return String is
+            Count : constant Natural :=
+              Flyology.HTTP.Client.Header_Count (Response, Name);
+         begin
+            if Count > 1 then
+               raise Invalid_Response with
+                 "invalid lifecycle mutation header multiplicity";
+            elsif Count = 0 then
+               return "";
+            end if;
+            declare
+               Value : constant String :=
+                 Flyology.HTTP.Client.Header (Response, Name);
+            begin
+               if Value'Length = 0
+                 or else not Valid_List_Response_Header_Text (Value)
+               then
+                  raise Invalid_Response with
+                    "invalid lifecycle mutation response header";
+               end if;
+               return Value;
+            end;
+         end Singleton_Header;
+
+         Payload : constant Flyology.Bytes.Unbounded_Bytes :=
+           Flyology.HTTP.Client.Read_All
+             (Response, Limits.Maximum_Document_Bytes, Token);
+      begin
+         return Decode_Put_Bucket_Lifecycle_Configuration_Response
+           (Flyology.HTTP.Client.Status (Response),
+            Flyology.Bytes.To_Byte_String (Payload),
+            Singleton_Header ("x-amz-request-id"),
+            Singleton_Header ("x-amz-id-2"),
+            Singleton_Header
+              ("x-amz-transition-default-minimum-object-size"),
+            Limits);
+      end;
+   exception
+      when Flyology.HTTP.Client.Response_Too_Large =>
+         raise Invalid_Response with
+           "lifecycle mutation response exceeds configured limit";
+   end Execute_Put_Bucket_Lifecycle_Configuration;
 
    function Execute_Put_Bucket_CORS
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -13531,6 +13681,28 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
          Deadline, Token, Operation);
    end Put_Bucket_Encryption;
+
+   procedure Put_Bucket_Lifecycle_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Put_Bucket_Lifecycle_Configuration_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Bucket_Lifecycle_Configuration;
 
    procedure Put_Bucket_CORS
      (Client    : not null access Flyology.HTTP.Client.Client;

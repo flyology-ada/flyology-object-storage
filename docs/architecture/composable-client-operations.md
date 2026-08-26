@@ -19,7 +19,8 @@ Put/GetBucketVersioning,
 non-replaying
 Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
-bounded GetBucketLifecycleConfiguration,
+bounded GetBucketLifecycleConfiguration and non-replaying
+PutBucketLifecycleConfiguration,
 non-replaying DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketIntelligentTieringConfiguration,
@@ -147,10 +148,13 @@ The implemented operation order is:
     precondition and typed mutation certainty.
 45. bounded `Get_Lifecycle_Configuration` with the complete presence-sensitive
     rule graph and optional transition-minimum response header.
+46. non-replaying `Set_Lifecycle_Configuration` with the same complete rule
+    graph, required caller-selected request checksum, and optional exact
+    transition-minimum request and response headers.
 
-The provider surface contains 75 domain operations: 21 in `Client.Objects`,
-46 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 72 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 76 domain operations: 21 in `Client.Objects`,
+47 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 73 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -202,6 +206,20 @@ exact enum and Boolean domains; ISO-8601 timestamps; and unbounded integer and
 long values as validated decimal text. The caller's existing shared XML limits
 bound dynamic storage. The read adds no lifecycle, retention, transition,
 capacity, timeout, retry, or reconciliation policy.
+
+PutBucketLifecycleConfiguration is colocated with that read as
+`Set_Lifecycle_Configuration`. The limited constructor, operation-last
+restart, typed Finish, and typed synchronous wait drive one non-replaying
+state machine that owns its exact serialized body through terminal drain.
+Every addressing, deadline, cancellation, XML-limit, request-checksum, owner,
+and transition-header choice is explicit. The pinned model requires a request
+checksum but exposes no Content-MD5 member, so callers select one of its ten
+algorithms and the client computes and signs the matching digest. Unknown
+post-admission outcomes require caller-selected
+`Get_Lifecycle_Configuration` reconciliation before any retry. The codec
+enforces the complete structural model but does not invent the prose-only
+1,000-rule ceiling or action/filter policy that the pinned shapes do not
+express.
 
 CreateBucketMetadataTableConfiguration is colocated with that read in
 `Client.Buckets`. Its exact prepared initiator, limited constructor,

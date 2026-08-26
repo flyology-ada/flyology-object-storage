@@ -65,6 +65,7 @@ procedure S3_HTTP_Socket_Corpus is
    package ACL renames Flyology.Object_Storage.S3.ACL;
    package Encryption renames Flyology.Object_Storage.S3.Encryption;
    package Lifecycle renames Flyology.Object_Storage.S3.Lifecycle;
+   package XML renames Flyology.Object_Storage.S3.XML;
    package Metadata_Tables renames
      Flyology.Object_Storage.S3.Metadata_Tables;
    package Checksums renames Flyology.Object_Storage.S3.Checksums;
@@ -167,6 +168,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Bucket_Ownership_Controls_Result_Kind;
    use type Get_Bucket_Encryption_Result_Kind;
    use type Put_Bucket_Encryption_Result_Kind;
+   use type Put_Bucket_Lifecycle_Result_Kind;
    use type Put_Bucket_CORS_Result_Kind;
    use type Bucket_CORS_Mutation_Disposition;
    use type Delete_Bucket_Encryption_Result_Kind;
@@ -837,6 +839,7 @@ procedure S3_HTTP_Socket_Corpus is
          Expected_Confirm_Remove_Self_Access : String := "";
          Expected_SDK_Checksum : String := "";
          Expected_Checksum_CRC32 : String := "";
+         Expected_Transition_Default_Minimum : String := "";
          Expected_Cache_Control : String := "";
          Expected_Content_Disposition : String := "";
          Expected_Content_Encoding : String := "";
@@ -915,7 +918,37 @@ procedure S3_HTTP_Socket_Corpus is
                 (Require_Zero_Content_Length
                  and then Header_Value (Lower, "content-length") /= "0")
               or else
-                (if Expected_Tagging'Length > 0 then
+                (if Expected_Transition_Default_Minimum'Length > 0 then
+                    Header_Value
+                      (Lower, "x-amz-expected-bucket-owner") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_Bucket_Owner)
+                    or else Header_Value
+                      (Lower, "x-amz-sdk-checksum-algorithm") /=
+                        Ada.Characters.Handling.To_Lower
+                          (Expected_SDK_Checksum)
+                    or else
+                      (Header_Value
+                         (Lower, "x-amz-checksum-crc32")'Length = 0
+                       or else
+                         (Expected_Checksum_CRC32 /= "*"
+                          and then Header_Value
+                            (Lower, "x-amz-checksum-crc32") /=
+                              Ada.Characters.Handling.To_Lower
+                                (Expected_Checksum_CRC32)))
+                    or else Exact_Header_Value
+                      (Header,
+                       "x-amz-transition-default-minimum-object-size") /=
+                        Expected_Transition_Default_Minimum
+                    or else not Is_Signed
+                      (Lower, "x-amz-expected-bucket-owner")
+                    or else not Is_Signed
+                      (Lower, "x-amz-sdk-checksum-algorithm")
+                    or else not Is_Signed (Lower, "x-amz-checksum-crc32")
+                    or else not Is_Signed
+                      (Lower,
+                       "x-amz-transition-default-minimum-object-size")
+                 elsif Expected_Tagging'Length > 0 then
                     Exact_Header_Value (Header, "content-md5") /=
                       Expected_Content_MD5
                     or else Exact_Header_Value (Header, "content-type") /=
@@ -5573,6 +5606,52 @@ procedure S3_HTTP_Socket_Corpus is
             Expected_Body_Root => "<ServerSideEncryptionConfiguration",
             Expected_Content_MD5 => "*",
             Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-transition-default-minimum-object-size: " &
+               "all_storage_classes_128K" & CRLF),
+            "PUT", "/example-bucket?lifecycle",
+            Expected_Body_Root => "<LifecycleConfiguration",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*",
+            Expected_Transition_Default_Minimum =>
+              "varies_by_storage_class");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: typed-put-lifecycle" & CRLF),
+            "PUT", "/typed-put-lifecycle?lifecycle",
+            Expected_Body_Root => "<LifecycleConfiguration",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*",
+            Expected_Transition_Default_Minimum =>
+              "varies_by_storage_class");
+         Serve
+           (HTTP_Response
+              ("200 OK", "",
+               "x-amz-transition-default-minimum-object-size: " &
+               "varies_by_storage_class" & CRLF),
+            "PUT", "/composed-put-lifecycle?lifecycle",
+            Expected_Body_Root => "<LifecycleConfiguration",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*",
+            Expected_Transition_Default_Minimum =>
+              "varies_by_storage_class");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-put-lifecycle" & CRLF),
+            "PUT", "/restart-put-lifecycle?lifecycle",
+            Expected_Body_Root => "<LifecycleConfiguration",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*",
+            Expected_Transition_Default_Minimum =>
+              "varies_by_storage_class");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT", "/typed-policy?policy",
             Expected_Body_Root => "typed-policy",
@@ -19730,6 +19809,134 @@ procedure S3_HTTP_Socket_Corpus is
             end;
          end;
          declare
+            function Configuration
+              return Lifecycle.Lifecycle_Configuration
+            is
+              (Lifecycle.Parse
+                 ("<LifecycleConfiguration xmlns=""http://s3.amazonaws.com/" &
+                  "doc/2006-03-01/""><Rule><Status>Enabled</Status>" &
+                  "</Rule></LifecycleConfiguration>"));
+
+            Parameters : constant
+              Low_Level.Put_Bucket_Lifecycle_Configuration_Parameters :=
+                (Checksum_Algorithm => US.To_Unbounded_String ("CRC32"),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"),
+                 Transition_Default_Minimum_Object_Size =>
+                   US.To_Unbounded_String ("varies_by_storage_class"));
+         begin
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Lifecycle_Configuration
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Configuration, Parameters, Identity, "us-east-1",
+                    "20130524T000000Z", XML.Default_Limits);
+               Result : constant
+                 Low_Level.Put_Bucket_Lifecycle_Configuration_Outcome :=
+                   Low_Level.Execute_Put_Bucket_Lifecycle_Configuration
+                     (HTTP, Prepared, 5.0, null, XML.Default_Limits);
+            begin
+               if Result.Kind /= Low_Level.Bucket_Control_Updated
+                 or else Result.Status /= 200
+                 or else
+                   Result.Transition_Default_Minimum_Object_Size /=
+                     Lifecycle.All_Storage_Classes_128K
+               then
+                  raise Program_Error with
+                    "low-level PutBucketLifecycleConfiguration mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Put_Bucket_Lifecycle_Result :=
+                 Buckets.Set_Lifecycle_Configuration
+                   (HTTP, Origin, "typed-put-lifecycle", Configuration,
+                    Parameters, Identity, "us-east-1",
+                    Low_Level.Path_Style, 5.0, null, XML.Default_Limits);
+            begin
+               if Result.Kind /= Put_Bucket_Lifecycle_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Lifecycle_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "typed-put-lifecycle"
+               then
+                  raise Program_Error with
+                    "typed PutBucketLifecycleConfiguration mismatch";
+               end if;
+            end;
+            declare
+               Set : aliased Operations.Completion_Set (3);
+               Result : Put_Bucket_Lifecycle_Result;
+               Value : Lifecycle.Lifecycle_Configuration := Configuration;
+               Operation : Put_Bucket_Lifecycle_Operation :=
+                 Set_Lifecycle_Configuration
+                   (Set'Access, HTTP'Access, Origin,
+                    "composed-put-lifecycle", Value, Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0), "us-east-1",
+                    Low_Level.Path_Style, XML.Default_Limits, null);
+            begin
+               Value.Rules.Clear;
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Lifecycle_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Lifecycle_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+                 or else
+                   Result.Response.
+                     Transition_Default_Minimum_Object_Size /=
+                       Lifecycle.Varies_By_Storage_Class
+               then
+                  raise Program_Error with
+                    "composed PutBucketLifecycleConfiguration mismatch";
+               end if;
+               Set_Lifecycle_Configuration
+                 (HTTP'Access, Origin, "restart-put-lifecycle",
+                  Configuration, Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0), "us-east-1",
+                  Low_Level.Path_Style, XML.Default_Limits, null,
+                  Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Lifecycle_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Lifecycle_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-put-lifecycle"
+               then
+                  raise Program_Error with
+                    "restarted PutBucketLifecycleConfiguration mismatch";
+               end if;
+            end;
+            declare
+               Prepared : aliased Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Abac
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Bucket_Controls.Abac_Enabled, (others => <>), Identity,
+                    "us-east-1", "20130524T000000Z");
+               Set : aliased Operations.Completion_Set (3);
+               Parent : aliased Put_Bucket_Lifecycle_Operation
+                 (Set'Access, HTTP'Access, null);
+               Child : HTTP_Client.Exchange_Operation (Set'Access);
+               Rejected : Boolean := False;
+            begin
+               begin
+                  Low_Level.Put_Bucket_Lifecycle_Configuration
+                    (HTTP'Access, Prepared'Access, Parent'Access,
+                     Parent'Access, HTTP_Client.Deadline_After (5.0), null,
+                     Child);
+               exception
+                  when Low_Level.Invalid_Request => Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "PutBucketLifecycleConfiguration accepted ABAC request";
+               end if;
+            end;
+         end;
+         declare
             Prepared : aliased Low_Level.Prepared_Request :=
               Low_Level.Prepare_Put_Bucket_Abac
                 (Origin,
@@ -22145,6 +22352,7 @@ begin
    Buckets_Testing.Check_Ownership_Controls_Certainty_Corpus;
    Buckets_Testing.Check_Bucket_Encryption_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Lifecycle_Result_Corpus;
+   Buckets_Testing.Check_Put_Bucket_Lifecycle_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_ACL_Result_Corpus;
    Buckets_Testing.Check_Metadata_Table_Configuration_Result_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Lifecycle_Certainty_Corpus;
