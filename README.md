@@ -78,7 +78,7 @@ The core crate includes:
   operations, plus service-level ListBuckets, CreateBucket, DeleteBucket,
   HeadBucket, bounded GetBucketLocation, bounded GetBucketPolicy,
   GetBucketPolicyStatus, GetBucketRequestPayment, GetBucketAbac, and
-  GetBucketAccelerateConfiguration, and bounded
+  GetBucketAccelerateConfiguration, bounded GetBucketAcl, and
   non-replaying PutBucketAbac, PutBucketAccelerateConfiguration,
   PutBucketRequestPayment,
   Put/DeleteBucketPolicy,

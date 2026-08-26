@@ -1,9 +1,9 @@
 # GetBucketAcl client and server qualification
 
-This record qualifies the strict bounded synchronous client, corpus, and
-authenticated Flyology server route for `GetBucketAcl`. It does not claim ACL
-persistence in a Flyology backend, ACL mutation, public grants, or external
-server interoperability.
+This record qualifies the strict bounded provider-owned composable and typed
+synchronous clients, corpus, and authenticated Flyology server route for
+`GetBucketAcl`. It does not claim ACL persistence in a Flyology backend, ACL
+mutation, public grants, or external server interoperability.
 
 ## Pinned authority and inventory
 
@@ -24,7 +24,7 @@ security, header, limit, and transport contracts. The verifier also gates the
 list member, nonflattened flag, XML-attribute position, and both enum domains:
 
 ```sh
-python3 tools/verify-get-bucket-acl-preparation.py
+uv run --python 3.13 -- tools/verify-get-bucket-acl-preparation.py
 ```
 
 ## XML attribute boundary
@@ -42,7 +42,7 @@ wrong namespaces, duplicates, and extra attributes fail closed. The existing
 document-byte limit bounds attribute storage; no new resource default or
 independent ceiling is introduced.
 
-## Synchronous API and response contract
+## Provider-owned API and response contract
 
 `Client.Low_Level.Prepare_Get_Bucket_ACL` reuses the strict common
 bucket-control projector. It validates the bucket and bounded owner before
@@ -53,6 +53,15 @@ supports path and virtual-hosted addressing.
 the established synchronous bucket-control HTTP engine to consume one bounded
 same-response body. It returns a typed policy or strict S3 error. There is no
 retry, helper task, retained borrowed input, or second protocol engine.
+
+`Client.Low_Level.Get_Bucket_ACL` exposes that exact prepared exchange to a
+caller-owned bounded sink and rejects a request for another modeled operation
+before HTTP admission. `Client.Buckets.Get_ACL` owns the complete provider
+vocabulary: limited constructor, operation-last reusable initiation, operation
+type, typed `Finish`, and typed synchronous wait. The synchronous form waits
+on that same state machine. The parent owns its signed request and response
+bytes through terminal drain; cancellation remains owner-driven and no helper
+task or automatic retry is introduced.
 
 An empty successful body preserves optional outer-payload absence. A present
 policy independently preserves optional Owner and AccessControlList wrappers.
@@ -94,9 +103,11 @@ representative non-200 statuses; cross-operation rejection; and exact/one-past
 success and error XML byte, depth, element, and text limits.
 
 The raw-loopback corpus adds signed nested success, absence, typed rejection,
-duplicate and empty physical diagnostic headers, malformed XML, and a body
-over the caller limit. The common root gate repeats the entire socket sequence
-under native and Flyology lightweight task owners three times.
+exact prepared-operation mismatch, limited construction, consumed-operation
+restart, every normalized HTTP terminal kind, duplicate and empty physical
+diagnostic headers, malformed XML, and a body over the caller limit. The
+common root gate repeats the entire socket sequence under native and Flyology
+lightweight task owners three times.
 
 The machine ledger records `GetBucketAcl` as `missing / covered / covered /
 covered`. The backend cell remains missing because no ACL is persisted. The
@@ -106,9 +117,9 @@ gate claims external-server interoperability.
 
 ## Formal boundary
 
-This server extension changes only non-SPARK routing, corpus, and
-documentation units. None of the nine `tools/prove.sh` manifest units changes,
-so the latest serialized 2026-08-25 result remains applicable:
+This client/server qualification changes only non-SPARK routing, client,
+corpus, and documentation units. None of the nine `tools/prove.sh` manifest
+units changes, so the latest serialized 2026-08-25 result remains applicable:
 936/936 checks, 180 flow and 756 prover, with zero warnings, unproved or
 justified checks, or `pragma Assume` statements.
 
@@ -124,8 +135,15 @@ deterministic and raw-loopback repetitions. The SQLite wrapper, catalog, and
 backend gate also passed. The pinned-model verifier, 116-operation coverage
 verifier, and coverage negative oracle were green.
 
-GNATdoc produced a 43,716-line log and a nonempty API index containing the ACL
-codec, low-level GetBucketAcl API, and changed server `Handle` contract. That
-contract emitted no targeted warning, and the documentation log contained no
-internal error, `LANGKIT_SUPPORT.ERRORS`, infinite-recursion, or bounded-
-channel diagnostic.
+The provider-owned extension additionally passed the exact public-API
+verifier, warning-strict root and tests builds, all 41 AUnit cases, the complete
+crash and checksum corpora, and three native/lightweight raw-loopback repeats.
+The focused socket sequence covered exact prepared-operation rejection,
+limited construction, typed synchronous waiting, consumed-operation restart,
+bounded response overflow, and malformed physical singleton headers.
+
+GNATdoc produced a 43,944-line log and a nonempty API index containing the ACL
+codec, provider-owned and low-level GetBucketAcl APIs, and server `Handle`
+contract. The new public declarations emitted no targeted warning, and the
+documentation log contained no internal error, `LANGKIT_SUPPORT.ERRORS`,
+infinite-recursion, or bounded-channel diagnostic.

@@ -15,6 +15,8 @@ LOCK = ROOT / "coverage/corpora.lock.toml"
 SOURCES = (
     ROOT / "src/flyology-object_storage-client-low_level.ads",
     ROOT / "src/flyology-object_storage-client-low_level.adb",
+    ROOT / "src/flyology-object_storage-client-buckets.ads",
+    ROOT / "src/flyology-object_storage-client-buckets.adb",
     ROOT / "src/flyology-object_storage-s3-acl.ads",
     ROOT / "src/flyology-object_storage-s3-acl.adb",
     ROOT / "src/flyology-object_storage-s3-xml.ads",
@@ -189,7 +191,10 @@ def main() -> int:
             fail(f'{vector["id"]}: unreachable vector')
     source = "\n".join(path.read_text(encoding="utf-8") for path in SOURCES)
     for token in ("Prepare_Get_Bucket_ACL", "Decode_Get_Bucket_ACL_Response",
-                  "Execute_Get_Bucket_ACL", "Element_Attribute",
+                  "Execute_Get_Bucket_ACL", "Get_Bucket_ACL_Operation",
+                  "Get_Bucket_ACL_Response_Available",
+                  "procedure Get_Bucket_ACL", "procedure Get_ACL",
+                  "function Get_ACL", "Element_Attribute",
                   "http://www.w3.org/2001/XMLSchema-instance",
                   "Grant_Vectors", "Amazon_Customer_By_Email"):
         if token not in source:
