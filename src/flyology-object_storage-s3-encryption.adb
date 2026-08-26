@@ -313,4 +313,145 @@ package body Flyology.Object_Storage.S3.Encryption is
          raise Malformed_Encryption with "malformed bucket-encryption XML";
    end Parse;
 
+   function Serialize
+     (Value  : Encryption_Configuration;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String
+   is
+      Result       : US.Unbounded_String;
+      Elements     : Natural := 1;
+      Text_Bytes   : Natural := 0;
+      Actual_Depth : Positive := 2;
+
+      --  Pinned PutBucketEncryption REST/XML namespace and member spellings.
+      --  Changing them changes provider compatibility and request signatures.
+      Prefix : constant String :=
+        "<ServerSideEncryptionConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">";
+      Suffix : constant String :=
+        "</ServerSideEncryptionConfiguration>";
+
+      function Algorithm_Text (Item : Encryption_Algorithm) return String is
+        (case Item is
+            when AES256_Encryption   => "AES256",
+            when FSx_Encryption      => "aws:fsx",
+            when Backup_Encryption   => "aws:backup",
+            when KMS_Encryption      => "aws:kms",
+            when KMS_DSSE_Encryption => "aws:kms:dsse");
+
+      function Blocked_Text (Item : Blocked_Encryption_Type) return String is
+        (case Item is
+            when No_Blocked_Encryption => "NONE",
+            when SSE_C_Blocked         => "SSE-C");
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Encryption with
+              "bucket-encryption document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+
+      procedure Add_Elements (Count : Positive) is
+      begin
+         if Count > Limits.Maximum_Elements - Elements then
+            raise Malformed_Encryption with
+              "bucket-encryption elements exceed caller limit";
+         end if;
+         Elements := Elements + Count;
+      end Add_Elements;
+
+      procedure Add_Text (Text : String) is
+      begin
+         if Text'Length > Limits.Maximum_Text_Bytes - Text_Bytes then
+            raise Malformed_Encryption with
+              "bucket-encryption text exceeds caller limit";
+         end if;
+         Text_Bytes := Text_Bytes + Text'Length;
+         Append_Bounded (XML.Escape_Text (Text));
+      end Add_Text;
+   begin
+      if not Value.Is_Set or else Value.Rules.Is_Empty then
+         raise Malformed_Encryption with
+           "bucket-encryption rules are required";
+      end if;
+
+      Append_Bounded (Prefix);
+      for Rule of Value.Rules loop
+         Add_Elements (1);
+         Append_Bounded ("<Rule>");
+
+         if Rule.Default_Encryption.Is_Set then
+            Add_Elements (2);
+            Actual_Depth := Positive'Max (Actual_Depth, 4);
+            Append_Bounded ("<ApplyServerSideEncryptionByDefault>");
+            Append_Bounded ("<SSEAlgorithm>");
+            Add_Text (Algorithm_Text (Rule.Default_Encryption.Algorithm));
+            Append_Bounded ("</SSEAlgorithm>");
+            if Rule.Default_Encryption.KMS_Master_Key_ID.Is_Set then
+               Add_Elements (1);
+               Append_Bounded ("<KMSMasterKeyID>");
+               Add_Text
+                 (US.To_String
+                    (Rule.Default_Encryption.KMS_Master_Key_ID.Value));
+               Append_Bounded ("</KMSMasterKeyID>");
+            end if;
+            Append_Bounded ("</ApplyServerSideEncryptionByDefault>");
+         elsif Rule.Default_Encryption.KMS_Master_Key_ID.Is_Set then
+            raise Malformed_Encryption with
+              "KMS key requires default encryption";
+         end if;
+
+         if Rule.Bucket_Key_Enabled.Is_Set then
+            Add_Elements (1);
+            Actual_Depth := Positive'Max (Actual_Depth, 3);
+            Append_Bounded ("<BucketKeyEnabled>");
+            Add_Text
+              ((if Rule.Bucket_Key_Enabled.Value then "true" else "false"));
+            Append_Bounded ("</BucketKeyEnabled>");
+         end if;
+
+         if Rule.Blocked_Types.Is_Set then
+            Add_Elements (1);
+            Actual_Depth := Positive'Max (Actual_Depth, 3);
+            if Rule.Blocked_Types.Types_Is_Set
+              and then Rule.Blocked_Types.Types.Is_Empty
+            then
+               raise Malformed_Encryption with
+                 "present blocked-encryption list is empty";
+            elsif not Rule.Blocked_Types.Types_Is_Set
+              and then not Rule.Blocked_Types.Types.Is_Empty
+            then
+               raise Malformed_Encryption with
+                 "absent blocked-encryption list contains values";
+            end if;
+            Append_Bounded ("<BlockedEncryptionTypes>");
+            if Rule.Blocked_Types.Types_Is_Set then
+               Actual_Depth := Positive'Max (Actual_Depth, 4);
+               for Item of Rule.Blocked_Types.Types loop
+                  Add_Elements (1);
+                  Append_Bounded ("<EncryptionType>");
+                  Add_Text (Blocked_Text (Item));
+                  Append_Bounded ("</EncryptionType>");
+               end loop;
+            end if;
+            Append_Bounded ("</BlockedEncryptionTypes>");
+         elsif Rule.Blocked_Types.Types_Is_Set
+           or else not Rule.Blocked_Types.Types.Is_Empty
+         then
+            raise Malformed_Encryption with
+              "blocked-encryption values require their container";
+         end if;
+
+         Append_Bounded ("</Rule>");
+      end loop;
+      if Actual_Depth > Limits.Maximum_Depth then
+         raise Malformed_Encryption with
+           "bucket-encryption depth exceeds caller limit";
+      end if;
+      Append_Bounded (Suffix);
+      return US.To_String (Result);
+   end Serialize;
+
 end Flyology.Object_Storage.S3.Encryption;

@@ -1,0 +1,13 @@
+direction	shape	ordinal	member	member_shape	wire_location	required	current_boundary	required_contract	vector_ids
+request	528	1	Bucket	60	uri-label	true	projected	Require one valid bucket and bind it into the exact signed encryption target.	PBE-RQ-001,PBE-RQ-005,PBE-RQ-006
+request	528	2	ContentMD5	111	header	false	projected	Generate the exact payload MD5 when omitted or validate and sign one exact 16-byte base64 override.	PBE-RQ-003,PBE-RQ-004,PBE-RQ-005,PBE-RQ-006
+request	528	3	ChecksumAlgorithm	77	header	false	projected	Preserve omission or sign one exact modeled algorithm and matching payload digest header.	PBE-RQ-003,PBE-RQ-004,PBE-RQ-005,PBE-RQ-006
+request	528	4	ServerSideEncryptionConfiguration	648	body	true	encoded	Require and encode one caller-bounded exact bucket-encryption document.	PBE-RQ-002,PBE-RQ-004,PBE-RQ-005,PBE-RQ-006,PBE-TR-001,PBE-TR-002
+request	528	5	ExpectedBucketOwner	15	header	false	projected	Preserve omission or sign one bounded control-free owner precondition exactly once.	PBE-RQ-003,PBE-RQ-005,PBE-RQ-006
+nested	648	1	Rules	650	body	true	encoded	Require a nonempty flattened Rule list and preserve caller order without inventing a list ceiling.	PBE-RQ-002,PBE-RQ-004,PBE-RQ-005,PBE-TR-001,PBE-TR-002
+nested	649	1	ApplyServerSideEncryptionByDefault	647	body	false	encoded	Preserve absence or encode one exact default-encryption structure.	PBE-RQ-002,PBE-RQ-005,PBE-TR-001,PBE-TR-002
+nested	649	2	BucketKeyEnabled	54	body	false	encoded	Preserve absence or encode the exact lowercase Boolean value.	PBE-RQ-002,PBE-RQ-005,PBE-TR-001,PBE-TR-002
+nested	649	3	BlockedEncryptionTypes	45	body	false	encoded	Preserve outer and flattened-list presence while encoding caller order.	PBE-RQ-002,PBE-RQ-005,PBE-TR-001,PBE-TR-002
+nested	647	1	SSEAlgorithm	646	body	true	encoded	Require and encode exactly one of the five pinned encryption algorithms.	PBE-RQ-002,PBE-RQ-005,PBE-TR-001,PBE-TR-002
+nested	647	2	KMSMasterKeyID	639	body	false	encoded	Preserve omission versus present empty or escaped exact key text.	PBE-RQ-002,PBE-RQ-005,PBE-TR-001,PBE-TR-002
+nested	45	1	EncryptionType	190	body	false	encoded	Preserve flattened-list absence or encode the two exact blocked-encryption values in caller order.	PBE-RQ-002,PBE-RQ-005,PBE-TR-001,PBE-TR-002

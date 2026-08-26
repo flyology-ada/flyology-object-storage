@@ -91,15 +91,16 @@ The implemented operation order is:
 26. bounded `Get_Ownership_Controls`, non-replaying
     `Set_Ownership_Controls`, and non-replaying
     `Delete_Ownership_Controls`;
-27. bounded `Get_Encryption` and non-replaying `Delete_Encryption`;
+27. bounded `Get_Encryption`, non-replaying `Set_Encryption`, and
+    non-replaying `Delete_Encryption`;
 28. `Put_Bucket_Tagging`, `Get_Bucket_Tagging`, and
     `Delete_Bucket_Tagging`;
 29. `Put_Object_Tagging`, `Get_Object_Tagging`, and
     `Delete_Object_Tagging`.
 
-The provider surface contains 42 domain operations: 15 in `Client.Objects`,
-19 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 39 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 43 domain operations: 15 in `Client.Objects`,
+20 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 40 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -466,8 +467,9 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Complete_Multipart_Upload`, `Abort_Multipart_Upload`, `List_Parts_Page`, and
 `List_Multipart_Uploads_Page` overloads, plus the typed-result `Copy_Object`,
 `Get_Public_Access_Block`, `Get_Ownership_Controls`, and
-`Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`, and
-`Delete_Encryption` overloads are literal waits on the same provider-owned
+`Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`,
+`Set_Encryption`, and `Delete_Encryption` overloads are literal waits on the
+same provider-owned
 state machines and retain their typed certainty, capacity,
 metadata, and ownership results. The established raising `Delete_Outcome` and
 `Create_Multipart_Outcome`, older one-shot source, owned-bytes, and transfer

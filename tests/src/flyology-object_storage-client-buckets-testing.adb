@@ -1474,6 +1474,32 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
          end if;
       end Check_Response;
 
+      procedure Check_Put
+        (Status      : Flyology.HTTP.Status_Code;
+         Code        : String;
+         Disposition : Bucket_Encryption_Mutation_Disposition;
+         Failure     : Failure_Reason)
+      is
+         Value : constant Low_Level.Put_Bucket_Control_Outcome :=
+           (if Status = 200
+            then (Kind => Low_Level.Bucket_Control_Updated, Status => Status)
+            else (Kind => Low_Level.Put_Bucket_Control_Rejected,
+                  Status => Status,
+                  Error => Error_Response (Code)));
+         Result : constant Put_Bucket_Encryption_Result :=
+           Normalize_Put_Bucket_Encryption_Response
+             (Value, HTTP_Client.Response_Observed);
+      begin
+         if Result.Kind /= Put_Bucket_Encryption_Response_Available
+           or else Result.Disposition /= Disposition
+           or else Result.Failure /= Failure
+           or else Result.Admission /= HTTP_Client.Response_Observed
+         then
+            raise Program_Error with
+              "PutBucketEncryption response normalization mismatch";
+         end if;
+      end Check_Put;
+
       procedure Check_Delete
         (Status      : Flyology.HTTP.Status_Code;
          Code        : String;
@@ -1516,6 +1542,29 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       Check_Response (504, "RequestTimeout", Unavailable_Or_Retryable);
       Check_Response (501, "NotImplemented", Invalid_Request);
       Check_Response (409, "", Corrupt_Or_Invalid_Response);
+
+      Check_Put
+        (200, "", Bucket_Encryption_Mutation_Completed, No_Failure);
+      Check_Put
+        (400, "MalformedXML",
+         Bucket_Encryption_Mutation_Definitely_Not_Applied,
+         Invalid_Request);
+      Check_Put
+        (403, "AccessDenied",
+         Bucket_Encryption_Mutation_Definitely_Not_Applied,
+         Authorization_Failed);
+      Check_Put
+        (404, "NoSuchBucket",
+         Bucket_Encryption_Mutation_Definitely_Not_Applied,
+         Not_Found);
+      Check_Put
+        (409, "OperationAborted",
+         Bucket_Encryption_Mutation_Outcome_Unknown,
+         Unavailable_Or_Retryable);
+      Check_Put
+        (500, "Unknown",
+         Bucket_Encryption_Mutation_Outcome_Unknown,
+         Corrupt_Or_Invalid_Response);
 
       Check_Delete
         (204, "", Bucket_Encryption_Mutation_Completed, No_Failure);
@@ -1592,8 +1641,16 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
             Delete_Result : constant Delete_Bucket_Encryption_Result :=
               Normalize_Delete_Bucket_Encryption_Response
                 (Delete_Value, Admission);
+            Put_Value : constant Low_Level.Put_Bucket_Control_Outcome :=
+              (Kind => Low_Level.Bucket_Control_Updated, Status => 200);
+            Put_Result : constant Put_Bucket_Encryption_Result :=
+              Normalize_Put_Bucket_Encryption_Response
+                (Put_Value, Admission);
          begin
             if Result.Failure /= Corrupt_Or_Invalid_Response
+              or else Put_Result.Disposition /=
+                Bucket_Encryption_Mutation_Outcome_Unknown
+              or else Put_Result.Failure /= Corrupt_Or_Invalid_Response
               or else Delete_Result.Disposition /=
                 Bucket_Encryption_Mutation_Outcome_Unknown
               or else Delete_Result.Failure /= Corrupt_Or_Invalid_Response
@@ -1613,11 +1670,21 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
                Delete_Result : constant Delete_Bucket_Encryption_Result :=
                  Normalize_Delete_Bucket_Encryption_Failure
                    (Kind, Admission, HTTP_Client.Waiting_Response_Head);
+               Put_Result : constant Put_Bucket_Encryption_Result :=
+                 Normalize_Put_Bucket_Encryption_Failure
+                   (Kind, Admission, HTTP_Client.Waiting_Response_Head);
             begin
                if Result.Kind /= Get_Bucket_Encryption_Exchange_Failed
                  or else Result.Failure /= Expected_Failure (Kind)
                  or else Result.Admission /= Admission
                  or else Result.HTTP_Result /= Kind
+                 or else Put_Result.Kind /=
+                   Put_Bucket_Encryption_Exchange_Failed
+                 or else Put_Result.Disposition /=
+                   Expected_Disposition (Kind, Admission)
+                 or else Put_Result.Failure /= Expected_Failure (Kind)
+                 or else Put_Result.Admission /= Admission
+                 or else Put_Result.HTTP_Result /= Kind
                  or else Delete_Result.Kind /=
                    Delete_Bucket_Encryption_Exchange_Failed
                  or else Delete_Result.Disposition /=

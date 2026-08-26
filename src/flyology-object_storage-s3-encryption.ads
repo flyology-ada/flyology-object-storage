@@ -2,7 +2,7 @@ with Ada.Containers.Vectors;
 with Ada.Strings.Unbounded;
 with Flyology.Object_Storage.S3.XML;
 
---  Strict REST/XML codec for S3 bucket-encryption configuration reads.
+--  Strict REST/XML codec for S3 bucket-encryption configurations.
 package Flyology.Object_Storage.S3.Encryption is
 
    --  Raised when a response violates the pinned GetBucketEncryption model.
@@ -100,5 +100,18 @@ package Flyology.Object_Storage.S3.Encryption is
      (Document : String;
       Limits   : XML.Parse_Limits := XML.Default_Limits)
       return Encryption_Configuration;
+
+   --  Serialize one exact required PutBucketEncryption payload within the
+   --  caller-selected shared XML resource limits. The required flattened Rule
+   --  list must contain at least one element because an empty flattened list
+   --  has no distinct REST/XML representation.
+   --  @param Value Present configuration with one or more exact rules
+   --  @param Limits Caller-selected document, depth, element, and text limits
+   --  @return Exact S3 ServerSideEncryptionConfiguration XML document
+   --  @exception Malformed_Encryption Value or encoded document violates the
+   --   pinned schema or caller-selected limits
+   function Serialize
+     (Value  : Encryption_Configuration;
+      Limits : XML.Parse_Limits := XML.Default_Limits) return String;
 
 end Flyology.Object_Storage.S3.Encryption;

@@ -141,6 +141,7 @@ procedure S3_HTTP_Socket_Corpus is
    use type Get_Public_Access_Block_Result_Kind;
    use type Get_Bucket_Ownership_Controls_Result_Kind;
    use type Get_Bucket_Encryption_Result_Kind;
+   use type Put_Bucket_Encryption_Result_Kind;
    use type Delete_Bucket_Encryption_Result_Kind;
    use type Bucket_Encryption_Mutation_Disposition;
    use type Put_Bucket_Ownership_Controls_Result_Kind;
@@ -4628,6 +4629,36 @@ procedure S3_HTTP_Socket_Corpus is
            (HTTP_Response ("200 OK", ""), "PUT",
             "/low-level-policy?policy",
             Expected_Body_Root => "low-level-policy-document",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket?encryption",
+            Expected_Body_Root => "<ServerSideEncryptionConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: typed-put-encryption" & CRLF),
+            "PUT", "/typed-put-encryption?encryption",
+            Expected_Body_Root => "<ServerSideEncryptionConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/composed-encryption?encryption",
+            Expected_Body_Root => "<ServerSideEncryptionConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-put-encryption" & CRLF),
+            "PUT", "/restart-put-encryption?encryption",
+            Expected_Body_Root => "<ServerSideEncryptionConfiguration",
             Expected_Content_MD5 => "*",
             Expected_Bucket_Owner => "123456789012");
          Serve
@@ -14446,6 +14477,153 @@ procedure S3_HTTP_Socket_Corpus is
                raise Program_Error with
                  "low-level one-shot PutBucketPolicy mismatch";
             end if;
+         end;
+         declare
+            function Configuration
+              return Encryption.Encryption_Configuration
+            is
+            begin
+               return Value : Encryption.Encryption_Configuration :=
+                 (Is_Set => True, others => <>)
+               do
+                  declare
+                     Rule : Encryption.Encryption_Rule := (others => <>);
+                  begin
+                     Rule.Default_Encryption :=
+                       (Is_Set => True,
+                        Algorithm => Encryption.KMS_Encryption,
+                        KMS_Master_Key_ID =>
+                          (Is_Set => True,
+                           Value => US.To_Unbounded_String ("socket-key")));
+                     Rule.Bucket_Key_Enabled :=
+                       (Is_Set => True, Value => True);
+                     Rule.Blocked_Types.Is_Set := True;
+                     Rule.Blocked_Types.Types_Is_Set := True;
+                     Rule.Blocked_Types.Types.Append
+                       (Encryption.SSE_C_Blocked);
+                     Value.Rules.Append (Rule);
+                  end;
+               end return;
+            end Configuration;
+
+            Parameters : constant Low_Level.Put_Bucket_Control_Parameters :=
+              (Content_MD5 => US.Null_Unbounded_String,
+               Checksum_Algorithm => US.Null_Unbounded_String,
+               Expected_Bucket_Owner =>
+                 US.To_Unbounded_String ("123456789012"));
+         begin
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Encryption
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Configuration,
+                    (Content_MD5 => US.Null_Unbounded_String,
+                     Checksum_Algorithm => US.To_Unbounded_String ("CRC32"),
+                     Expected_Bucket_Owner =>
+                       US.To_Unbounded_String ("123456789012")),
+                    Identity, "us-east-1", "20130524T000000Z");
+               Result : constant Low_Level.Put_Bucket_Control_Outcome :=
+                 Low_Level.Execute_Put_Bucket_Encryption
+                   (HTTP, Prepared, Timeout => 5.0);
+            begin
+               if Result.Kind /= Low_Level.Bucket_Control_Updated
+                 or else Result.Status /= 200
+               then
+                  raise Program_Error with
+                    "low-level one-shot PutBucketEncryption mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Put_Bucket_Encryption_Result :=
+                 Buckets.Set_Encryption
+                   (HTTP, Origin, "typed-put-encryption", Configuration,
+                    Parameters, Identity, Timeout => 5.0);
+            begin
+               if Result.Kind /= Put_Bucket_Encryption_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Encryption_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "typed-put-encryption"
+               then
+                  raise Program_Error with
+                    "typed PutBucketEncryption response mismatch";
+               end if;
+            end;
+            declare
+               Set : aliased Operations.Completion_Set (3);
+               Result : Put_Bucket_Encryption_Result;
+               Value : Encryption.Encryption_Configuration := Configuration;
+               Operation : Put_Bucket_Encryption_Operation :=
+                 Set_Encryption
+                   (Set'Access,
+                    HTTP'Access,
+                    Origin,
+                    "composed-encryption",
+                    Value,
+                    Parameters,
+                    Identity,
+                    HTTP_Client.Deadline_After (5.0));
+            begin
+               Value.Rules.Clear;
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Encryption_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Encryption_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+               then
+                  raise Program_Error with
+                    "composed PutBucketEncryption result mismatch";
+               end if;
+               Set_Encryption
+                 (HTTP'Access,
+                  Origin,
+                  "restart-put-encryption",
+                  Configuration,
+                  Parameters,
+                  Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Encryption_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Encryption_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-put-encryption"
+               then
+                  raise Program_Error with
+                    "restarted PutBucketEncryption result mismatch";
+               end if;
+            end;
+            declare
+               Prepared : aliased Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Abac
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Bucket_Controls.Abac_Enabled, (others => <>), Identity,
+                    "us-east-1", "20130524T000000Z");
+               Set : aliased Operations.Completion_Set (3);
+               Parent : aliased Put_Bucket_Encryption_Operation
+                 (Set'Access, HTTP'Access, null);
+               Child : HTTP_Client.Exchange_Operation (Set'Access);
+               Rejected : Boolean := False;
+            begin
+               begin
+                  Low_Level.Put_Bucket_Encryption
+                    (HTTP'Access, Prepared'Access, Parent'Access,
+                     Parent'Access, HTTP_Client.Deadline_After (5.0),
+                     Operation => Child);
+               exception
+                  when Low_Level.Invalid_Request => Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "PutBucketEncryption accepted a prepared ABAC request";
+               end if;
+            end;
          end;
          declare
             Prepared : aliased Low_Level.Prepared_Request :=

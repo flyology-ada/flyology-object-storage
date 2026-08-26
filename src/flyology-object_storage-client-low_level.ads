@@ -3144,6 +3144,26 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Prepared_Request;
 
+   --  Prepare one exact PutBucketEncryption request.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Value Required nonempty encryption-rule configuration
+   --  @param Parameters Optional MD5, SDK checksum, and owner controls
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Fully signed request bound to PutBucketEncryption
+   function Prepare_Put_Bucket_Encryption
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Encryption.Encryption_Configuration;
+      Parameters : Put_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Prepared_Request;
+
    type Put_Bucket_Control_Outcome_Kind is
      (Bucket_Control_Updated, Put_Bucket_Control_Rejected);
 
@@ -3230,6 +3250,23 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Limits Caller-selected error-response XML limits
    --  @return Typed update success or strict S3 rejection
    function Execute_Put_Bucket_Ownership_Controls
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration := 30.0;
+      Token : access Flyology.Cancellation.Token := null;
+      Limits : S3.XML.Parse_Limits := S3.XML.Default_Limits)
+      return Put_Bucket_Control_Outcome;
+
+   --  Execute one exact prepared PutBucketEncryption request. The 30-second
+   --  default is the established low-level synchronous-client compatibility
+   --  budget; callers may select a different absolute budget. No request is
+   --  replayed after possible admission.
+   --  @param Client Caller-owned synchronous HTTP client
+   --  @param Prepared Request from Prepare_Put_Bucket_Encryption
+   --  @param Timeout Caller-selected absolute operation budget
+   --  @param Token Optional cooperative cancellation token
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Typed update success or strict S3 rejection
+   function Execute_Put_Bucket_Encryption
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration := 30.0;
       Token : access Flyology.Cancellation.Token := null;
@@ -4830,6 +4867,27 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Token Optional cancellation source retained through drain
    --  @param Operation Fresh or consumed established HTTP exchange
    procedure Put_Bucket_Ownership_Controls
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared PutBucketEncryption exchange with its one-shot
+   --  configuration source. Another bucket-control mutation is rejected
+   --  before HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable request source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Put_Bucket_Encryption
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Source    : not null access

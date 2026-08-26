@@ -24,6 +24,9 @@ procedure S3_Get_Bucket_Encryption_Corpus is
      ("AKID", "SECRET");
    Origin : constant Flyology.HTTP.Origin :=
      Flyology.HTTP.Parse_Origin ("https://s3.example.test");
+   Hosted_Origin : constant Flyology.HTTP.Origin :=
+     Flyology.HTTP.Parse_Origin
+       ("https://example-bucket.s3.example.test");
    Error_XML : constant String :=
      "<Error><Code>ServerSideEncryptionConfigurationNotFoundError</Code>" &
      "<Message>missing</Message><Resource>/example-bucket</Resource></Error>";
@@ -35,6 +38,73 @@ procedure S3_Get_Bucket_Encryption_Corpus is
    --  Exact 200 is contrasted with another 2xx and representative failures.
    Rejection_Statuses : constant Status_Array :=
      (201, 400, 403, 404, 429, 500);
+   type Text_Array is array (Positive range <>) of US.Unbounded_String;
+   --  Pinned SDK checksum enum and its exact algorithm-specific headers.
+   Algorithms : constant Text_Array :=
+     (US.To_Unbounded_String ("CRC32"),
+      US.To_Unbounded_String ("CRC32C"),
+      US.To_Unbounded_String ("CRC64NVME"),
+      US.To_Unbounded_String ("SHA1"),
+      US.To_Unbounded_String ("SHA256"),
+      US.To_Unbounded_String ("SHA512"),
+      US.To_Unbounded_String ("MD5"),
+      US.To_Unbounded_String ("XXHASH64"),
+      US.To_Unbounded_String ("XXHASH3"),
+      US.To_Unbounded_String ("XXHASH128"));
+   Checksum_Headers : constant Text_Array :=
+     (US.To_Unbounded_String ("x-amz-checksum-crc32"),
+      US.To_Unbounded_String ("x-amz-checksum-crc32c"),
+      US.To_Unbounded_String ("x-amz-checksum-crc64nvme"),
+      US.To_Unbounded_String ("x-amz-checksum-sha1"),
+      US.To_Unbounded_String ("x-amz-checksum-sha256"),
+      US.To_Unbounded_String ("x-amz-checksum-sha512"),
+      US.To_Unbounded_String ("x-amz-checksum-md5"),
+      US.To_Unbounded_String ("x-amz-checksum-xxhash64"),
+      US.To_Unbounded_String ("x-amz-checksum-xxhash3"),
+      US.To_Unbounded_String ("x-amz-checksum-xxhash128"));
+
+   function Configuration return Encryption.Encryption_Configuration is
+   begin
+      return Value : Encryption.Encryption_Configuration :=
+        (Is_Set => True, others => <>)
+      do
+         declare
+            Rule : Encryption.Encryption_Rule := (others => <>);
+         begin
+            Rule.Default_Encryption :=
+              (Is_Set => True,
+               Algorithm => Encryption.KMS_Encryption,
+               KMS_Master_Key_ID =>
+                 (Is_Set => True,
+                  Value => US.To_Unbounded_String ("key<&>")));
+            Rule.Bucket_Key_Enabled := (Is_Set => True, Value => True);
+            Rule.Blocked_Types.Is_Set := True;
+            Rule.Blocked_Types.Types_Is_Set := True;
+            Rule.Blocked_Types.Types.Append
+              (Encryption.No_Blocked_Encryption);
+            Rule.Blocked_Types.Types.Append (Encryption.SSE_C_Blocked);
+            Value.Rules.Append (Rule);
+         end;
+         declare
+            Rule : Encryption.Encryption_Rule := (others => <>);
+         begin
+            Rule.Default_Encryption :=
+              (Is_Set => True,
+               Algorithm => Encryption.FSx_Encryption,
+               KMS_Master_Key_ID => (others => <>));
+            Rule.Bucket_Key_Enabled := (Is_Set => True, Value => False);
+            Rule.Blocked_Types.Is_Set := True;
+            Value.Rules.Append (Rule);
+         end;
+      end return;
+   end Configuration;
+
+   function Put_Parameters
+     (Checksum : String := ""; MD5 : String := ""; Owner : String := "")
+      return Low_Level.Put_Bucket_Control_Parameters is
+     ((Content_MD5 => US.To_Unbounded_String (MD5),
+       Checksum_Algorithm => US.To_Unbounded_String (Checksum),
+       Expected_Bucket_Owner => US.To_Unbounded_String (Owner)));
 
    procedure Require (Condition : Boolean; Message : String) is
    begin
@@ -87,7 +157,177 @@ procedure S3_Get_Bucket_Encryption_Corpus is
       Require (Raised, "GetBucketEncryption admitted invalid request");
    end Expect_Invalid_Request;
 
+   procedure Expect_Invalid_Put
+     (Bucket : String := "example-bucket";
+      Value : Encryption.Encryption_Configuration := Configuration;
+      Parameters : Low_Level.Put_Bucket_Control_Parameters := Put_Parameters;
+      Limits : XML.Parse_Limits := XML.Default_Limits)
+   is
+      Raised : Boolean := False;
+   begin
+      begin
+         declare
+            Ignored : constant Low_Level.Prepared_Request :=
+              Low_Level.Prepare_Put_Bucket_Encryption
+                (Origin, Low_Level.Path_Style, Bucket, Value, Parameters,
+                 Identity, "us-east-1", "20130524T000000Z", Limits);
+            pragma Unreferenced (Ignored);
+         begin
+            null;
+         end;
+      exception
+         when Low_Level.Invalid_Request => Raised := True;
+      end;
+      Require (Raised, "PutBucketEncryption admitted invalid request");
+   end Expect_Invalid_Put;
+
 begin
+   declare
+      Value : constant Encryption.Encryption_Configuration := Configuration;
+      Document : constant String := Encryption.Serialize (Value);
+      Expected : constant String :=
+        "<ServerSideEncryptionConfiguration xmlns=""http://s3.amazonaws." &
+        "com/doc/2006-03-01/""><Rule>" &
+        "<ApplyServerSideEncryptionByDefault><SSEAlgorithm>aws:kms" &
+        "</SSEAlgorithm><KMSMasterKeyID>key&lt;&amp;&gt;</KMSMasterKeyID>" &
+        "</ApplyServerSideEncryptionByDefault><BucketKeyEnabled>true" &
+        "</BucketKeyEnabled><BlockedEncryptionTypes><EncryptionType>NONE" &
+        "</EncryptionType><EncryptionType>SSE-C</EncryptionType>" &
+        "</BlockedEncryptionTypes></Rule><Rule>" &
+        "<ApplyServerSideEncryptionByDefault><SSEAlgorithm>aws:fsx" &
+        "</SSEAlgorithm></ApplyServerSideEncryptionByDefault>" &
+        "<BucketKeyEnabled>false</BucketKeyEnabled>" &
+        "<BlockedEncryptionTypes></BlockedEncryptionTypes></Rule>" &
+        "</ServerSideEncryptionConfiguration>";
+      Parsed : constant Encryption.Encryption_Configuration :=
+        Encryption.Parse (Document);
+   begin
+      Require
+        (Document = Expected
+         and then Parsed.Rules.Length = 2
+         and then US.To_String
+           (Parsed.Rules.Element (1).Default_Encryption.KMS_Master_Key_ID.
+              Value) = "key<&>"
+         and then Parsed.Rules.Element (1).Blocked_Types.Types.Length = 2
+         and then Parsed.Rules.Element (2).Bucket_Key_Enabled.Is_Set
+         and then not Parsed.Rules.Element (2).Bucket_Key_Enabled.Value
+         and then Parsed.Rules.Element (2).Blocked_Types.Is_Set
+         and then not Parsed.Rules.Element (2).Blocked_Types.Types_Is_Set,
+         "PutBucketEncryption exact serialization or round trip mismatch");
+      declare
+         --  Pinned graph formula for these two rules: fourteen elements,
+         --  maximum depth four, and 38 decoded text bytes.
+         Exact : constant XML.Parse_Limits :=
+           (Maximum_Document_Bytes => Document'Length,
+            Maximum_Depth => 4, Maximum_Elements => 14,
+            Maximum_Text_Bytes => 38);
+         Ignored : constant String := Encryption.Serialize (Value, Exact);
+         pragma Unreferenced (Ignored);
+      begin
+         Expect_Invalid_Put
+           (Limits => (Document'Length - 1, 4, 14, 38));
+         Expect_Invalid_Put
+           (Limits => (Document'Length, 3, 14, 38));
+         Expect_Invalid_Put
+           (Limits => (Document'Length, 4, 13, 38));
+         Expect_Invalid_Put
+           (Limits => (Document'Length, 4, 14, 37));
+      end;
+   end;
+   Expect_Invalid_Put (Value => (others => <>));
+   Expect_Invalid_Put (Value => (Is_Set => True, others => <>));
+   declare
+      Invalid : Encryption.Encryption_Configuration := Configuration;
+      Rule : Encryption.Encryption_Rule := Invalid.Rules.Element (1);
+   begin
+      Rule.Default_Encryption.Is_Set := False;
+      Invalid.Rules.Replace_Element (1, Rule);
+      Expect_Invalid_Put (Value => Invalid);
+   end;
+   declare
+      Invalid : Encryption.Encryption_Configuration := Configuration;
+      Rule : Encryption.Encryption_Rule := Invalid.Rules.Element (1);
+   begin
+      Rule.Blocked_Types.Is_Set := False;
+      Invalid.Rules.Replace_Element (1, Rule);
+      Expect_Invalid_Put (Value => Invalid);
+   end;
+   declare
+      Invalid : Encryption.Encryption_Configuration := Configuration;
+      Rule : Encryption.Encryption_Rule := Invalid.Rules.Element (1);
+   begin
+      Rule.Blocked_Types.Types.Clear;
+      Invalid.Rules.Replace_Element (1, Rule);
+      Expect_Invalid_Put (Value => Invalid);
+   end;
+   declare
+      Invalid : Encryption.Encryption_Configuration := Configuration;
+      Rule : Encryption.Encryption_Rule := Invalid.Rules.Element (1);
+   begin
+      Rule.Blocked_Types.Types_Is_Set := False;
+      Invalid.Rules.Replace_Element (1, Rule);
+      Expect_Invalid_Put (Value => Invalid);
+   end;
+   declare
+      Path : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Put_Bucket_Encryption
+          (Origin, Low_Level.Path_Style, "example-bucket", Configuration,
+           Put_Parameters (Checksum => "CRC32", Owner => "123456789012"),
+           Identity, "us-east-1", "20130524T000000Z");
+      Hosted : constant Low_Level.Prepared_Request :=
+        Low_Level.Prepare_Put_Bucket_Encryption
+          (Hosted_Origin, Low_Level.Virtual_Hosted_Style, "example-bucket",
+           Configuration, Put_Parameters, Identity, "us-east-1",
+           "20130524T000000Z");
+   begin
+      Require
+        (Low_Level.Target (Path) = "/example-bucket?encryption"
+         and then Ada.Strings.Fixed.Index
+           (Low_Level.Signed_Headers (Path), "content-md5") > 0
+         and then Ada.Strings.Fixed.Index
+           (Low_Level.Signed_Headers (Path),
+            "x-amz-expected-bucket-owner") > 0
+         and then Ada.Strings.Fixed.Index
+           (Low_Level.Signed_Headers (Path),
+            "x-amz-sdk-checksum-algorithm") > 0
+         and then Ada.Strings.Fixed.Index
+           (Low_Level.Signed_Headers (Path), "x-amz-checksum-crc32") > 0
+         and then Low_Level.Owned_Payload_Length (Path) =
+           Encryption.Serialize (Configuration)'Length,
+         "PutBucketEncryption path projection or checksum mismatch");
+      Require
+        (Low_Level.Target (Hosted) = "/?encryption"
+         and then Low_Level.Authority (Hosted) =
+           "example-bucket.s3.example.test",
+         "PutBucketEncryption hosted projection mismatch");
+   end;
+   for Index in Algorithms'Range loop
+      declare
+         Prepared : constant Low_Level.Prepared_Request :=
+           Low_Level.Prepare_Put_Bucket_Encryption
+             (Origin, Low_Level.Path_Style, "example-bucket", Configuration,
+              Put_Parameters (Checksum => US.To_String (Algorithms (Index))),
+              Identity, "us-east-1", "20130524T000000Z");
+      begin
+         Require
+           (Ada.Strings.Fixed.Index
+              (Low_Level.Signed_Headers (Prepared),
+               US.To_String (Checksum_Headers (Index))) > 0,
+            "PutBucketEncryption checksum header mismatch");
+      end;
+   end loop;
+   Expect_Invalid_Put (Bucket => "");
+   Expect_Invalid_Put (Bucket => "UPPERCASE");
+   Expect_Invalid_Put
+     (Parameters => Put_Parameters (Checksum => "crc32"));
+   Expect_Invalid_Put (Parameters => Put_Parameters (MD5 => "invalid"));
+   Expect_Invalid_Put
+     (Parameters => Put_Parameters
+        (Owner => String'(1 .. Header_Boundary + 1 => 'o')));
+   Expect_Invalid_Put
+     (Parameters => Put_Parameters
+        (Owner => "owner" & Character'Val (10)));
+
    declare
       Path : constant Low_Level.Prepared_Request :=
         Low_Level.Prepare_Get_Bucket_Encryption
@@ -393,5 +633,5 @@ begin
    end;
 
    Ada.Text_IO.Put_Line
-     ("S3 GetBucketEncryption deterministic corpus: OK");
+     ("S3 Get/PutBucketEncryption deterministic corpus: OK");
 end S3_Get_Bucket_Encryption_Corpus;
