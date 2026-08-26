@@ -83,7 +83,10 @@ The core crate includes:
   non-replaying PutBucketAbac, PutBucketAccelerateConfiguration,
   PutBucketRequestPayment,
   Put/DeleteBucketPolicy,
-  DeleteBucketLifecycle, DeleteBucketReplication, DeleteBucketWebsite,
+  DeleteBucketLifecycle, DeleteBucketReplication,
+  DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
+  DeleteBucketIntelligentTieringConfiguration,
+  DeleteBucketMetadataConfiguration, DeleteBucketWebsite,
   DeleteBucketInventoryConfiguration, and
   Put/GetBucketVersioning, with typed
   synchronous overloads that wait on the same owner-driven state machines and
@@ -305,7 +308,8 @@ CopyObject, together with service-level ListBuckets and non-replaying
 CreateBucket, bounded CreateSession, DeleteBucket, DeleteBucketLifecycle,
 DeleteBucketReplication, DeleteBucketAnalyticsConfiguration,
 DeleteBucketMetricsConfiguration, DeleteBucketIntelligentTieringConfiguration,
-DeleteBucketWebsite, DeleteBucketInventoryConfiguration, and
+DeleteBucketMetadataConfiguration, DeleteBucketWebsite,
+DeleteBucketInventoryConfiguration, and
 CreateBucketMetadataTableConfiguration, paired with
 bounded
 GetBucketMetadataTableConfiguration reconciliation. The typed synchronous

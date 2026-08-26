@@ -21,7 +21,8 @@ Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
 non-replaying DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
-DeleteBucketIntelligentTieringConfiguration, DeleteBucketWebsite, and
+DeleteBucketIntelligentTieringConfiguration,
+DeleteBucketMetadataConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration,
 object tagging Put/Get/Delete, and bounded GetObjectLegalHold with
 non-replaying conditional DeleteObjectAnnotation,
@@ -138,10 +139,12 @@ The implemented operation order is:
     typed mutation certainty.
 42. non-replaying `Delete_Metrics_Configuration` with copied identifier and
     typed mutation certainty.
+43. non-replaying `Delete_Metadata_Configuration` with copied owner
+    precondition and typed mutation certainty.
 
-The provider surface contains 72 domain operations: 21 in `Client.Objects`,
-43 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 69 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 73 domain operations: 21 in `Client.Objects`,
+44 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 70 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -380,11 +383,13 @@ state machines, and restart retains only the established HTTP client and
 cancellation owner.
 DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
-DeleteBucketIntelligentTieringConfiguration, DeleteBucketWebsite, and
+DeleteBucketIntelligentTieringConfiguration,
+DeleteBucketMetadataConfiguration, DeleteBucketWebsite, and
 DeleteBucketInventoryConfiguration follow the same mutation discipline with
 known-empty non-rewindable sources and their exact pinned `?lifecycle`,
-`?replication`, `?analytics`, `?metrics`, `?intelligent-tiering`, `?website`,
-and `?inventory` prepared operations. Analytics, metrics,
+`?replication`, `?analytics`, `?metrics`, `?intelligent-tiering`,
+`?metadataConfiguration`, `?website`, and `?inventory` prepared operations.
+Analytics, metrics,
 intelligent-tiering, and inventory also copy their required identifiers before
 their constructors return.
 Their limited constructors, operation-last reusable initiations, typed Finish,
@@ -671,8 +676,11 @@ The buffer-owned `Client.Objects.Put_If_Absent`, `Put_If_Matches`, `Get_Whole`,
 `Get_Ownership_Controls`, and
 `Set_Ownership_Controls`, `Delete_Ownership_Controls`, `Get_Encryption`,
 `Set_Encryption`, `Delete_Encryption`, `Get_CORS`, `Set_CORS`, and
-`Delete_CORS`, `Delete_Lifecycle`, `Delete_Replication`, and
-`Delete_Website` overloads, and the
+`Delete_CORS`, `Delete_Lifecycle`, `Delete_Replication`,
+`Delete_Analytics_Configuration`, `Delete_Metrics_Configuration`,
+`Delete_Intelligent_Tiering_Configuration`,
+`Delete_Metadata_Configuration`, `Delete_Website`, and
+`Delete_Inventory_Configuration` overloads, and the
 `Get_Object_Lock_Configuration` and
 `Put_Object_Lock_Configuration` overloads,
 are literal waits on the same provider-owned state machines and retain their

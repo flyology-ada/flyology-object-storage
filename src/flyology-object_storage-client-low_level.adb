@@ -13582,6 +13582,28 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Sink, Deadline, Token, Operation);
    end Delete_Bucket_Website;
 
+   procedure Delete_Bucket_Metadata_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Delete_Bucket_Configuration_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Delete_Bucket_Metadata_Configuration_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Delete_Bucket_Configuration_Operation, Client, Prepared, Source,
+         Sink, Deadline, Token, Operation);
+   end Delete_Bucket_Metadata_Configuration;
+
    procedure Delete_Bucket_Metrics_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
