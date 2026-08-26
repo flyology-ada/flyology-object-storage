@@ -6991,6 +6991,147 @@ package Flyology.Object_Storage.Client.Buckets is
       Token    : access Flyology.Cancellation.Token := null)
       return Get_Versioning_Outcome;
 
+   --  Shape of a terminal CreateSession exchange.
+   --  @enum Create_Session_Response_Available Complete modeled response
+   --  @enum Create_Session_Exchange_Failed No modeled response exists
+   type Create_Session_Result_Kind is
+     (Create_Session_Response_Available, Create_Session_Exchange_Failed);
+
+   --  Typed CreateSession response or bounded HTTP failure. The successful
+   --  credentials branch is limited and zeroizing; it is constructed only by
+   --  Finish and is never copied into operation storage.
+   --  @field Kind Result shape
+   --  @field Admission HTTP admission certainty
+   --  @field Response Zeroizing modeled session response
+   --  @field Failure Bounded expected failure reason
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Create_Session_Result
+     (Kind : Create_Session_Result_Kind) is limited record
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      case Kind is
+         when Create_Session_Response_Available =>
+            Response : Low_Level.Create_Session_Outcome;
+         when Create_Session_Exchange_Failed =>
+            Failure     : Failure_Reason;
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind;
+            HTTP_Phase  : Flyology.HTTP.Client.Exchange_Phase;
+            Detail      : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  Owner-driven bounded CreateSession exchange. The signed request and raw
+   --  bounded response remain owned until typed Finish constructs the limited
+   --  zeroizing credentials result.
+   type Create_Session_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Compatibility contract: the existing virtual-hosted style, signing
+   --  region, XML limits, cancellation, and synchronous timeout defaults are
+   --  preserved by every overload below.
+
+   --  Start or restart one bounded CreateSession exchange.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Secure zonal endpoint used to configure and sign Client
+   --  @param Bucket Directory bucket encoded in Origin's virtual host
+   --  @param Parameters Complete modeled session policy
+   --  @param Identity Long-term credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 signing region
+   --  @param Style Must remain virtual-hosted for CreateSession
+   --  @param Limits Caller-selected response XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established exchange
+   procedure Create_Session
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Create_Session_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style :=
+        Low_Level.Virtual_Hosted_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Create_Session_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one bounded CreateSession exchange.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Secure zonal endpoint used to configure and sign Client
+   --  @param Bucket Directory bucket encoded in Origin's virtual host
+   --  @param Parameters Complete modeled session policy
+   --  @param Identity Long-term credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 signing region
+   --  @param Style Must remain virtual-hosted for CreateSession
+   --  @param Limits Caller-selected response XML limits
+   --  @param Token Optional cancellation source retained through drain
+   --  @return Started owner-driven session exchange
+   function Create_Session
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Create_Session_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style :=
+        Low_Level.Virtual_Hosted_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Create_Session_Operation;
+
+   --  Consume one terminal CreateSession operation and construct its limited
+   --  credentials result exactly once.
+   --  @param Operation Terminal session exchange
+   --  @return Zeroizing response or bounded exchange failure
+   function Finish
+     (Operation : in out Create_Session_Operation)
+      return Create_Session_Result
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Create a session by waiting on the same provider-owned state machine
+   --  used by composable callers.
+   --  @param Client Configured, caller-owned Flyology HTTP client
+   --  @param Origin Secure zonal endpoint used to configure and sign Client
+   --  @param Bucket Directory bucket encoded in Origin's virtual host
+   --  @param Parameters Complete modeled session policy
+   --  @param Identity Long-term credentials used only while signing
+   --  @param Region SigV4 signing region
+   --  @param Style Must remain virtual-hosted for CreateSession
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Optional cancellation source
+   --  @param Limits Caller-selected response XML limits
+   --  @return Zeroizing response or bounded exchange failure
+   function Create_Session
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Create_Session_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style :=
+        Low_Level.Virtual_Hosted_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Create_Session_Result;
+
    --  Create one five-minute directory-bucket authorization session through
    --  the secure virtual-hosted CreateSession endpoint. Returned access,
    --  secret, and token values remain inside the zeroizing low-level
@@ -7028,6 +7169,70 @@ package Flyology.Object_Storage.Client.Buckets is
       return Low_Level.Create_Session_Outcome;
 
 private
+
+   --  @exclude
+   type Create_Session_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline       : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared       : aliased Low_Level.Prepared_Request;
+      Child          : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Limits         : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Response_Data  : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit : Natural := 0;
+      Metadata       : Low_Level.Create_Session_Response_Metadata;
+      --  Private preterminal state sentinels are reset on every Start and
+      --  guarded by Has_Final_Result; they never select external retry policy.
+      Admission      : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      Final_HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+        Flyology.HTTP.Client.Client_Unavailable;
+      Final_HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+        Flyology.HTTP.Client.Not_Started;
+      Final_Detail    : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Response    : Boolean := False;
+      Has_Final_Result : Boolean := False;
+      Has_Saved_Error : Boolean := False;
+      Saved_Error     : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Create_Session_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item  : in out Create_Session_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Create_Session_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Create_Session_Operation);
+
+   --  @exclude
+   procedure Start_Create_Session
+     (Operation  : in out Create_Session_Operation;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Create_Session_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token);
+
+   --  @exclude
+   function Finish_Create_Session_Response
+     (Operation : in out Create_Session_Operation)
+      return Low_Level.Create_Session_Outcome;
 
    --  @exclude
    type Get_Bucket_CORS_Operation

@@ -95,6 +95,15 @@ its raising transport behavior. No request text or credential remains borrowed
 after signing, and this read-only operation does not select mutation retry
 policy.
 
+`Create_Session` likewise has a same-name limited constructor, operation-last
+restart, typed Finish, and parameter-record synchronous wait. Its operation
+retains the signed request and bounded raw response, not decoded credentials;
+Finish constructs the limited zeroizing identity exactly once after validating
+the physically captured headers against the signed policy. The established
+scalar convenience overload waits on the same state machine. No overload adds
+a refresh task, client-side session cache, retained caller borrow, or
+operation-level replay; transport recovery remains the configured HTTP policy.
+
 The complete-configuration `Set_Versioning_Configuration` overload likewise
 waits on a provider-owned limited mutation. Directly composed callers use its
 same-name constructor or operation-last procedure and typed `Finish`. The

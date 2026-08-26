@@ -2286,6 +2286,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Value;
    end Error_Response;
 
+   --  Project-policy scalar/header ceiling qualified by the maintained
+   --  CreateSession corpus; changing it alters accepted wire compatibility.
    Maximum_Create_Session_Header_Bytes : constant Positive := 8_192;
 
    function Valid_Create_Session_Header_Text
@@ -2710,6 +2712,92 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Status, Payload, Headers, (others => <>), False,
          Request_ID, Host_ID, Limits));
 
+   function Read_Create_Session_Response_Metadata
+     (Response : Flyology.HTTP.Client.Response)
+      return Create_Session_Response_Metadata
+   is
+      function Singleton_Header (Name : String) return String is
+         Count : constant Natural :=
+           Flyology.HTTP.Client.Header_Count (Response, Name);
+      begin
+         if Count > 1 then
+            raise Invalid_Response with
+              "duplicate CreateSession response header";
+         elsif Count = 0 then
+            return "";
+         end if;
+         declare
+            Value : constant String :=
+              Flyology.HTTP.Client.Header (Response, Name);
+         begin
+            if Value'Length = 0
+              or else Value'Length > Maximum_Create_Session_Header_Bytes
+            then
+               raise Invalid_Response with
+                 "invalid CreateSession response header";
+            end if;
+            for Character_Value of Value loop
+               if Character'Pos (Character_Value) < 32
+                 or else Character'Pos (Character_Value) = 127
+               then
+                  raise Invalid_Response with
+                    "invalid CreateSession response header";
+               end if;
+            end loop;
+            return Value;
+         end;
+      end Singleton_Header;
+
+      Bucket_Key : constant String := Singleton_Header
+        ("x-amz-server-side-encryption-bucket-key-enabled");
+   begin
+      return
+        (Validated => True,
+         Status => Flyology.HTTP.Client.Status (Response),
+         Headers =>
+           (Server_Side_Encryption => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-server-side-encryption")),
+            SSE_KMS_Key_ID => US.To_Unbounded_String
+              (Singleton_Header
+                 ("x-amz-server-side-encryption-aws-kms-key-id")),
+            SSE_KMS_Encryption_Context => US.To_Unbounded_String
+              (Singleton_Header ("x-amz-server-side-encryption-context")),
+            Bucket_Key_Enabled => Optional_Boolean_Header (Bucket_Key)),
+         Request_ID =>
+           US.To_Unbounded_String (Singleton_Header ("x-amz-request-id")),
+         Host_ID => US.To_Unbounded_String (Singleton_Header ("x-amz-id-2")));
+   end Read_Create_Session_Response_Metadata;
+
+   function Decode_Create_Session_Complete_Response
+     (Metadata : Create_Session_Response_Metadata;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits)
+      return Create_Session_Outcome
+   is
+   begin
+      if Prepared.Operation /= Create_Session_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      elsif not Metadata.Validated then
+         raise Invalid_Response with "unvalidated CreateSession metadata";
+      end if;
+      declare
+         Expected : constant Create_Session_Response_Headers :=
+           (Server_Side_Encryption =>
+              Prepared.Requested_Session_Server_Side_Encryption,
+            SSE_KMS_Key_ID => Prepared.Requested_Session_SSE_KMS_Key_ID,
+            SSE_KMS_Encryption_Context =>
+              Prepared.Requested_Session_SSE_KMS_Encryption_Context,
+            Bucket_Key_Enabled =>
+              Prepared.Requested_Session_Bucket_Key_Enabled);
+      begin
+         return Decode_Create_Session_Response_Internal
+           (Metadata.Status, Payload, Metadata.Headers, Expected, True,
+            US.To_String (Metadata.Request_ID),
+            US.To_String (Metadata.Host_ID), Limits);
+      end;
+   end Decode_Create_Session_Complete_Response;
+
    function Execute_Create_Session
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -2726,69 +2814,15 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Response : Flyology.HTTP.Client.Response :=
            Flyology.HTTP.Client.Execute
              (Client, Prepared.Message, Timeout, Token);
-         Status : constant Flyology.HTTP.Status_Code :=
-           Flyology.HTTP.Client.Status (Response);
-
-         function Singleton_Header (Name : String) return String is
-            Count : constant Natural :=
-              Flyology.HTTP.Client.Header_Count (Response, Name);
-         begin
-            if Count > 1 then
-               raise Invalid_Response with
-                 "duplicate CreateSession response header";
-            elsif Count = 0 then
-               return "";
-            end if;
-            declare
-               Value : constant String :=
-                 Flyology.HTTP.Client.Header (Response, Name);
-            begin
-               if Value'Length = 0
-                 or else Value'Length > Maximum_Create_Session_Header_Bytes
-               then
-                  raise Invalid_Response with
-                    "invalid CreateSession response header";
-               end if;
-               for Character_Value of Value loop
-                  if Character'Pos (Character_Value) < 32
-                    or else Character'Pos (Character_Value) = 127
-                  then
-                     raise Invalid_Response with
-                       "invalid CreateSession response header";
-                  end if;
-               end loop;
-               return Value;
-            end;
-         end Singleton_Header;
-
-         Request_ID : constant String := Singleton_Header ("x-amz-request-id");
-         Host_ID : constant String := Singleton_Header ("x-amz-id-2");
-         Bucket_Key : constant String := Singleton_Header
-           ("x-amz-server-side-encryption-bucket-key-enabled");
-         Headers : constant Create_Session_Response_Headers :=
-           (Server_Side_Encryption => US.To_Unbounded_String
-              (Singleton_Header ("x-amz-server-side-encryption")),
-            SSE_KMS_Key_ID => US.To_Unbounded_String
-              (Singleton_Header
-                 ("x-amz-server-side-encryption-aws-kms-key-id")),
-            SSE_KMS_Encryption_Context => US.To_Unbounded_String
-              (Singleton_Header ("x-amz-server-side-encryption-context")),
-            Bucket_Key_Enabled => Optional_Boolean_Header (Bucket_Key));
-         Expected : constant Create_Session_Response_Headers :=
-           (Server_Side_Encryption =>
-              Prepared.Requested_Session_Server_Side_Encryption,
-            SSE_KMS_Key_ID => Prepared.Requested_Session_SSE_KMS_Key_ID,
-            SSE_KMS_Encryption_Context =>
-              Prepared.Requested_Session_SSE_KMS_Encryption_Context,
-            Bucket_Key_Enabled =>
-              Prepared.Requested_Session_Bucket_Key_Enabled);
+         Metadata : constant Create_Session_Response_Metadata :=
+           Read_Create_Session_Response_Metadata (Response);
          Payload : constant Flyology.Bytes.Unbounded_Bytes :=
            Flyology.HTTP.Client.Read_All
              (Response, Limits.Maximum_Document_Bytes, Token);
       begin
-         return Decode_Create_Session_Response_Internal
-           (Status, Flyology.Bytes.To_Byte_String (Payload), Headers, Expected,
-            True, Request_ID, Host_ID, Limits);
+         return Decode_Create_Session_Complete_Response
+           (Metadata, Flyology.Bytes.To_Byte_String (Payload), Prepared,
+            Limits);
       end;
    exception
       when Flyology.HTTP.Client.Response_Too_Large =>
@@ -12964,6 +12998,23 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Get_Bucket_Versioning_Operation, Client, Prepared, Sink, Deadline,
          Token, Operation);
    end Get_Bucket_Versioning;
+
+   procedure Create_Session
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Create_Session_Operation then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Sink
+        (Create_Session_Operation, Client, Prepared, Sink, Deadline, Token,
+         Operation);
+   end Create_Session;
 
    procedure Get_Bucket_Policy
      (Client    : not null access Flyology.HTTP.Client.Client;

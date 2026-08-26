@@ -3291,12 +3291,364 @@ package body Flyology.Object_Storage.Client.Buckets is
          SSE_KMS_Encryption_Context =>
            US.To_Unbounded_String (SSE_KMS_Encryption_Context),
          Bucket_Key_Enabled => Bucket_Key_Enabled);
-      Prepared : constant Low_Level.Prepared_Request :=
-        Low_Level.Prepare_Create_Session
-          (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
+      --  Derived capacity: CreateSession parent, HTTP exchange, and HTTP's
+      --  single active transport child are the only simultaneous operations.
+      Set : aliased Operations.Completion_Set (3);
    begin
-      return Low_Level.Execute_Create_Session
-        (Client, Prepared, Timeout, Token);
+      declare
+         Operation : Create_Session_Operation :=
+           Create_Session
+             (Set'Access, Client'Access, Origin, Bucket, Parameters, Identity,
+              HTTP_Client.Deadline_After (Timeout), Region, Style,
+              Flyology.Object_Storage.S3.XML.Default_Limits, Token);
+      begin
+         Operations.Wait_All (Set);
+         return Finish_Create_Session_Response (Operation);
+      end;
+   end Create_Session;
+
+   overriding procedure Write
+     (Item : in out Create_Session_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      if Natural (Data'Length) >
+        Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
+      then
+         raise Response_Limit_Exceeded with
+           "CreateSession response exceeds the caller-selected limit";
+      end if;
+      Flyology.Bytes.Append (Item.Response_Data, Data);
+   end Write;
+
+   procedure Complete_Create_Session_Child
+     (Item : in out Create_Session_Operation)
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        HTTP_Client.Admission (Item.Child);
+      HTTP_Result : HTTP_Client.Exchange_Result;
+      Response : HTTP_Client.Response;
+   begin
+      begin
+         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
+      exception
+         when Response_Limit_Exceeded =>
+            Operations.Release (Item.Child);
+            Item.Admission := Admission;
+            Item.Final_HTTP_Result := HTTP_Client.Response_Sink_Failed;
+            Item.Final_HTTP_Phase := HTTP_Client.Receiving_Response_Body;
+            Item.Has_Response := False;
+            Item.Has_Final_Result := True;
+            Low.Clear_Prepared_Request (Item.Prepared);
+            Operation_Drivers.Complete (Item, Operations.Succeeded);
+            return;
+         when Error : others =>
+            if Operations.Id (Item.Child) /= 0
+              and then not Operations.Is_Active (Item.Child)
+              and then not Operations.Is_Terminal (Item.Child)
+            then
+               Operations.Release (Item.Child);
+            end if;
+            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+            Item.Has_Saved_Error := True;
+            if not Operations.Is_Active (Item.Child) then
+               Low.Clear_Prepared_Request (Item.Prepared);
+            end if;
+            Operation_Drivers.Complete (Item, Operations.Failed);
+            return;
+      end;
+      Operations.Release (Item.Child);
+      Item.Admission := HTTP_Client.Certainty (HTTP_Result);
+      Item.Final_HTTP_Phase := HTTP_Client.Phase (HTTP_Result);
+      Item.Final_Detail :=
+        US.To_Unbounded_String (HTTP_Client.Failure_Detail (HTTP_Result));
+      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
+         Item.Final_HTTP_Result := HTTP_Client.Kind (HTTP_Result);
+         Item.Has_Response := False;
+         Low.Clear_Prepared_Request (Item.Prepared);
+      else
+         begin
+            Item.Metadata :=
+              Low_Level.Read_Create_Session_Response_Metadata (Response);
+            Item.Has_Response := True;
+         exception
+            when Low_Level.Invalid_Response =>
+               Item.Final_HTTP_Result := HTTP_Client.Response_Invalid;
+               Item.Has_Response := False;
+               Low.Clear_Prepared_Request (Item.Prepared);
+         end;
+      end if;
+      Item.Has_Final_Result := True;
+      Operation_Drivers.Complete (Item, Operations.Succeeded);
+   end Complete_Create_Session_Child;
+
+   overriding procedure Drive
+     (Item  : in out Create_Session_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      if Event = Operations.Start_Operation then
+         Low.Create_Session
+           (Item.HTTP, Item.Prepared'Access, Item'Access, Item.Deadline,
+            Item.Cancellation, Item.Child);
+         Operations.Continue_After (Item, Item.Child);
+      elsif Event = Operations.Dependency_Changed
+        and then Operations.Is_Terminal (Item.Child)
+      then
+         Complete_Create_Session_Child (Item);
+      else
+         raise Program_Error with "invalid CreateSession driver event";
+      end if;
+   exception
+      when Error : others =>
+         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
+         Item.Has_Saved_Error := True;
+         if not Operations.Is_Active (Item.Child) then
+            Low.Clear_Prepared_Request (Item.Prepared);
+         end if;
+         if Operations.Is_Active (Item) then
+            Operation_Drivers.Complete (Item, Operations.Failed);
+         end if;
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Create_Session_Operation) is
+   begin
+      if Operations.Is_Active (Item.Child) then
+         Operations.Cancel (Item.Child);
+      end if;
+   exception
+      when others => null;
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Create_Session_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Low.Clear_Prepared_Request (Item.Prepared);
+      Flyology.Bytes.Clear (Item.Response_Data);
+   end Finalize;
+
+   procedure Start_Create_Session
+     (Operation  : in out Create_Session_Operation;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Create_Session_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "CreateSession restart changed a retained owner";
+      end if;
+      Operation.Prepared := Low_Level.Prepare_Create_Session
+        (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
+      Operation.Deadline := Deadline;
+      Operation.Limits := Limits;
+      Flyology.Bytes.Clear (Operation.Response_Data);
+      Operation.Response_Limit := Limits.Maximum_Document_Bytes;
+      Operation.Admission := HTTP_Client.Not_Admitted;
+      Operation.Final_HTTP_Result := HTTP_Client.Client_Unavailable;
+      Operation.Final_HTTP_Phase := HTTP_Client.Not_Started;
+      Operation.Final_Detail := US.Null_Unbounded_String;
+      Operation.Has_Response := False;
+      Operation.Has_Final_Result := False;
+      Operation.Has_Saved_Error := False;
+      Operation_Drivers.Start (Operation);
+      begin
+         Operations.Drive
+           (Operations.Operation'Class (Operation),
+            Operations.Start_Operation);
+      exception
+         when others =>
+            if Operations.Is_Active (Operation) then
+               Operation_Drivers.Rollback_Start (Operation);
+            end if;
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            raise;
+      end;
+   end Start_Create_Session;
+
+   function Create_Session
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Create_Session_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style :=
+        Low_Level.Virtual_Hosted_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null)
+      return Create_Session_Operation is
+   begin
+      return Result : Create_Session_Operation (Set, Client, Token) do
+         Start_Create_Session
+           (Result, Client, Origin, Bucket, Parameters, Identity, Deadline,
+            Region, Style, Limits, Token);
+      end return;
+   end Create_Session;
+
+   procedure Create_Session
+     (Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Create_Session_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style :=
+        Low_Level.Virtual_Hosted_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits;
+      Token      : access Flyology.Cancellation.Token := null;
+      Operation  : in out Create_Session_Operation) is
+   begin
+      Start_Create_Session
+        (Operation, Client, Origin, Bucket, Parameters, Identity, Deadline,
+         Region, Style, Limits, Token);
+   end Create_Session;
+
+   function Finish_Create_Session_Response
+     (Operation : in out Create_Session_Operation)
+      return Low_Level.Create_Session_Outcome
+   is
+   begin
+      Operations.Consume (Operation);
+      if Operation.Has_Saved_Error then
+         Low.Clear_Prepared_Request (Operation.Prepared);
+         Flyology.Bytes.Clear (Operation.Response_Data);
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         Low.Clear_Prepared_Request (Operation.Prepared);
+         Flyology.Bytes.Clear (Operation.Response_Data);
+         raise Program_Error with "CreateSession has no terminal result";
+      elsif not Operation.Has_Response then
+         Low.Clear_Prepared_Request (Operation.Prepared);
+         Flyology.Bytes.Clear (Operation.Response_Data);
+         Raise_Public_Access_Block_Exchange_Failure
+           (Operation.Final_HTTP_Result, Operation.Final_Detail,
+            "CreateSession");
+         raise Program_Error with "CreateSession failure raiser returned";
+      end if;
+      return Result : Low_Level.Create_Session_Outcome :=
+        Low_Level.Decode_Create_Session_Complete_Response
+          (Operation.Metadata,
+           Flyology.Bytes.To_Byte_String (Operation.Response_Data),
+           Operation.Prepared, Operation.Limits)
+      do
+         Low.Clear_Prepared_Request (Operation.Prepared);
+         Flyology.Bytes.Clear (Operation.Response_Data);
+      end return;
+   exception
+      when others =>
+         Low.Clear_Prepared_Request (Operation.Prepared);
+         Flyology.Bytes.Clear (Operation.Response_Data);
+         raise;
+   end Finish_Create_Session_Response;
+
+   function Finish
+     (Operation : in out Create_Session_Operation)
+      return Create_Session_Result
+   is
+      Admission : constant HTTP_Client.Admission_Certainty :=
+        Operation.Admission;
+      Phase : constant HTTP_Client.Exchange_Phase :=
+        Operation.Final_HTTP_Phase;
+   begin
+      if Operation.Has_Saved_Error then
+         Operations.Consume (Operation);
+         Low.Clear_Prepared_Request (Operation.Prepared);
+         Flyology.Bytes.Clear (Operation.Response_Data);
+         Ada.Exceptions.Raise_Exception
+           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
+            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
+      elsif not Operation.Has_Final_Result then
+         Operations.Consume (Operation);
+         Low.Clear_Prepared_Request (Operation.Prepared);
+         Flyology.Bytes.Clear (Operation.Response_Data);
+         raise Program_Error with "CreateSession has no terminal result";
+      elsif not Operation.Has_Response then
+         declare
+            Kind : constant HTTP_Client.Exchange_Result_Kind :=
+              Operation.Final_HTTP_Result;
+            Detail : constant US.Unbounded_String := Operation.Final_Detail;
+         begin
+            Operations.Consume (Operation);
+            Low.Clear_Prepared_Request (Operation.Prepared);
+            Flyology.Bytes.Clear (Operation.Response_Data);
+            return
+              (Kind        => Create_Session_Exchange_Failed,
+               Admission   => Admission,
+               Failure     =>
+                 (if Kind in HTTP_Client.Response_Invalid |
+                             HTTP_Client.Response_Body_Too_Large |
+                             HTTP_Client.Response_Sink_Failed
+                  then Corrupt_Or_Invalid_Response
+                  else Failed_Reason (Kind)),
+               HTTP_Result => Kind,
+               HTTP_Phase  => Phase,
+               Detail      => Detail);
+         end;
+      end if;
+      begin
+         return
+           (Kind      => Create_Session_Response_Available,
+            Admission => Admission,
+            Response  => Finish_Create_Session_Response (Operation));
+      exception
+         when Low_Level.Invalid_Response =>
+            return
+              (Kind        => Create_Session_Exchange_Failed,
+               Admission   => Admission,
+               Failure     => Corrupt_Or_Invalid_Response,
+               HTTP_Result => HTTP_Client.Response_Invalid,
+               HTTP_Phase  => Phase,
+               Detail      => US.Null_Unbounded_String);
+      end;
+   end Finish;
+
+   function Create_Session
+     (Client     : aliased in out HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Create_Session_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String := "us-east-1";
+      Style      : Low_Level.Addressing_Style :=
+        Low_Level.Virtual_Hosted_Style;
+      Timeout    : Duration := 30.0;
+      Token      : access Flyology.Cancellation.Token := null;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits :=
+        Flyology.Object_Storage.S3.XML.Default_Limits)
+      return Create_Session_Result
+   is
+      --  Derived capacity: CreateSession parent, HTTP exchange, and HTTP's
+      --  single active transport child are the only simultaneous operations.
+      Set : aliased Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Create_Session_Operation :=
+           Create_Session
+             (Set'Access, Client'Access, Origin, Bucket, Parameters, Identity,
+              HTTP_Client.Deadline_After (Timeout), Region, Style, Limits,
+              Token);
+      begin
+         Operations.Wait_All (Set);
+         return Finish (Operation);
+      end;
    end Create_Session;
 
    function Normalize_List_Buckets_Response

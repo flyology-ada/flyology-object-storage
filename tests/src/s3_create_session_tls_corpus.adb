@@ -5,13 +5,17 @@ with Ada.Strings.Fixed;
 with Ada.Strings.Unbounded;
 with Ada.Text_IO;
 with Flyology;
+with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
 with Flyology.IO.Sockets;
 with Flyology.IO.TLS;
 with Flyology.IO.TLS.OpenSSL;
+with Flyology.Object_Storage.Client;
 with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Low_Level;
+with Flyology.Object_Storage.S3.XML;
+with Flyology.Operations;
 
 procedure S3_Create_Session_TLS_Corpus is
    package HTTP_Client renames Flyology.HTTP.Client;
@@ -20,10 +24,16 @@ procedure S3_Create_Session_TLS_Corpus is
    package Sockets renames Flyology.IO.Sockets;
    package TLS renames Flyology.IO.TLS;
    package OpenSSL renames Flyology.IO.TLS.OpenSSL;
+   package Operations renames Flyology.Operations;
+   package Storage_Client renames Flyology.Object_Storage.Client;
    package US renames Ada.Strings.Unbounded;
 
    use Ada.Streams;
+   use type Buckets.Create_Session_Result_Kind;
+   use type HTTP_Client.Admission_Certainty;
+   use type HTTP_Client.Exchange_Result_Kind;
    use type Low_Level.Create_Session_Outcome_Kind;
+   use type Storage_Client.Failure_Reason;
    use type Sockets.Selector_Status;
 
    CRLF : constant String := Character'Val (13) & Character'Val (10);
@@ -31,7 +41,9 @@ procedure S3_Create_Session_TLS_Corpus is
      "fixtures/tls/create-session-cert.pem";
    Private_Key : constant String :=
      "fixtures/tls/create-session-key.pem";
-   Request_Count : constant Positive := 10;
+   --  Derived test oracle: ten exact exchanges from one native and one
+   --  lightweight caller make the complete server count below.
+   Request_Count : constant Positive := 20;
    Client_Backend : aliased OpenSSL.OpenSSL_Provider;
    Server_Backend : aliased OpenSSL.OpenSSL_Provider;
 
@@ -245,6 +257,199 @@ procedure S3_Create_Session_TLS_Corpus is
            ("empty", "CreateSession accepted present-empty physical header");
          Must_Reject
            ("bool", "CreateSession accepted noncanonical boolean header");
+         declare
+            Parameters : Low_Level.Create_Session_Parameters :=
+              (Session_Mode => US.To_Unbounded_String ("ReadOnly"),
+               Server_Side_Encryption => US.To_Unbounded_String ("aws:kms"),
+               SSE_KMS_Key_ID => US.To_Unbounded_String ("typed"),
+               SSE_KMS_Encryption_Context => US.To_Unbounded_String ("e30="),
+               Bucket_Key_Enabled => (Is_Set => True, Value => True));
+
+            procedure Require_Success
+              (Result : Buckets.Create_Session_Result;
+               Key_ID : String) is
+            begin
+               if Result.Kind /= Buckets.Create_Session_Response_Available
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else Result.Response.Kind /= Low_Level.Session_Created
+                 or else US.To_String
+                   (Result.Response.Result.SSE_KMS_Key_ID) /= Key_ID
+               then
+                  raise Program_Error with
+                    "typed CreateSession result mismatch for " & Key_ID;
+               end if;
+            end Require_Success;
+
+            procedure Check_Prepared_Rejection is
+               Prepared : aliased Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_List_Buckets
+                   (Origin, Low_Level.Virtual_Hosted_Style, (others => <>),
+                    Identity, "us-east-1", "20260823T150000Z");
+               --  Parent, rejected HTTP exchange, and possible transport
+               --  child.
+               Set : aliased Operations.Completion_Set (3);
+               Parent : aliased Buckets.Create_Session_Operation
+                 (Set'Access, HTTP'Access, null);
+               Child : HTTP_Client.Exchange_Operation (Set'Access);
+               Rejected : Boolean := False;
+               Decoder_Rejected : Boolean := False;
+            begin
+               begin
+                  Low_Level.Create_Session
+                    (HTTP'Access, Prepared'Access, Parent'Access,
+                     HTTP_Client.Deadline_After (5.0), Operation => Child);
+               exception
+                  when Low_Level.Invalid_Request => Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "CreateSession accepted a ListBuckets prepared request";
+               end if;
+               begin
+                  declare
+                     Metadata : Low_Level.Create_Session_Response_Metadata;
+                     Ignored : constant Low_Level.Create_Session_Outcome :=
+                       Low_Level.Decode_Create_Session_Complete_Response
+                         (Metadata, "", Prepared,
+                          Flyology.Object_Storage.S3.XML.Default_Limits);
+                     pragma Unreferenced (Ignored);
+                  begin
+                     null;
+                  end;
+               exception
+                  when Low_Level.Invalid_Request => Decoder_Rejected := True;
+               end;
+               if not Decoder_Rejected then
+                  raise Program_Error with
+                    "CreateSession decoder accepted a ListBuckets request";
+               end if;
+            end Check_Prepared_Rejection;
+
+            procedure Check_Pre_Cancelled is
+               Token : aliased Flyology.Cancellation.Token;
+               --  Parent, HTTP exchange, and possible transport child.
+               Set : aliased Operations.Completion_Set (3);
+            begin
+               Token.Request;
+               declare
+                  Operation : Buckets.Create_Session_Operation :=
+                    Buckets.Create_Session
+                      (Set'Access, HTTP'Access, Origin, "127", Parameters,
+                       Identity, HTTP_Client.Deadline_After (5.0),
+                       Token => Token'Access);
+               begin
+                  Operations.Wait_All (Set);
+                  declare
+                     Result : constant Buckets.Create_Session_Result :=
+                       Buckets.Finish (Operation);
+                  begin
+                     if Result.Kind /= Buckets.Create_Session_Exchange_Failed
+                       or else Result.Admission /= HTTP_Client.Not_Admitted
+                       or else Result.Failure /= Storage_Client.Cancelled
+                       or else Result.HTTP_Result /= HTTP_Client.Cancelled
+                     then
+                        raise Program_Error with
+                          "pre-cancelled CreateSession result mismatch";
+                     end if;
+                  end;
+               end;
+            end Check_Pre_Cancelled;
+         begin
+            Check_Prepared_Rejection;
+            Check_Pre_Cancelled;
+            declare
+               Result : constant Buckets.Create_Session_Result :=
+                 Buckets.Create_Session
+                   (HTTP, Origin, "127", Parameters, Identity,
+                    Timeout => 5.0);
+            begin
+               Require_Success (Result, "typed");
+            end;
+            Parameters.SSE_KMS_Key_ID :=
+              US.To_Unbounded_String ("composed");
+            declare
+               --  Parent, HTTP exchange, and HTTP's one transport child.
+               Set : aliased Operations.Completion_Set (3);
+               Operation : Buckets.Create_Session_Operation :=
+                 Buckets.Create_Session
+                   (Set'Access, HTTP'Access, Origin, "127", Parameters,
+                    Identity, HTTP_Client.Deadline_After (5.0));
+            begin
+               --  Signing copied every policy field before returning.
+               Parameters.SSE_KMS_Key_ID :=
+                 US.To_Unbounded_String ("changed-after-start");
+               Operations.Wait_All (Set);
+               declare
+                  Result : constant Buckets.Create_Session_Result :=
+                    Buckets.Finish (Operation);
+               begin
+                  Require_Success (Result, "composed");
+               end;
+
+               Parameters.SSE_KMS_Key_ID :=
+                 US.To_Unbounded_String ("mismatch");
+               Buckets.Create_Session
+                 (HTTP'Access, Origin, "127", Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Operations.Wait_All (Set);
+               declare
+                  Result : constant Buckets.Create_Session_Result :=
+                    Buckets.Finish (Operation);
+               begin
+                  if Result.Kind /= Buckets.Create_Session_Exchange_Failed
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                    or else Result.Failure /=
+                      Storage_Client.Corrupt_Or_Invalid_Response
+                    or else Result.HTTP_Result /= HTTP_Client.Response_Invalid
+                  then
+                     raise Program_Error with
+                       "composed CreateSession accepted mismatched policy";
+                  end if;
+               end;
+
+               Parameters.SSE_KMS_Key_ID :=
+                 US.To_Unbounded_String ("oversized");
+               Buckets.Create_Session
+                 (HTTP'Access, Origin, "127", Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0),
+                  Limits =>
+                    --  Test-only response bound below the server fixture.
+                    (Maximum_Document_Bytes => 64,
+                     Maximum_Depth          => 8,
+                     Maximum_Elements       => 32,
+                     Maximum_Text_Bytes     => 64),
+                  Operation => Operation);
+               Operations.Wait_All (Set);
+               declare
+                  Result : constant Buckets.Create_Session_Result :=
+                    Buckets.Finish (Operation);
+               begin
+                  if Result.Kind /= Buckets.Create_Session_Exchange_Failed
+                    or else Result.Admission /= HTTP_Client.Response_Observed
+                    or else Result.Failure /=
+                      Storage_Client.Corrupt_Or_Invalid_Response
+                    or else Result.HTTP_Result /=
+                      HTTP_Client.Response_Sink_Failed
+                  then
+                     raise Program_Error with
+                       "bounded CreateSession response mismatch";
+                  end if;
+               end;
+
+               Parameters.SSE_KMS_Key_ID :=
+                 US.To_Unbounded_String ("restart");
+               Buckets.Create_Session
+                 (HTTP'Access, Origin, "127", Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0), Operation => Operation);
+               Operations.Wait_All (Set);
+               declare
+                  Result : constant Buckets.Create_Session_Result :=
+                    Buckets.Finish (Operation);
+               begin
+                  Require_Success (Result, "restart");
+               end;
+            end;
+         end;
          HTTP_Client.Shutdown (HTTP);
       end;
    end Run_Client;

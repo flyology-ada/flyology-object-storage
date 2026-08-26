@@ -3776,6 +3776,37 @@ package Flyology.Object_Storage.Client.Low_Level is
       Limits     : S3.XML.Parse_Limits := S3.XML.Default_Limits)
       return Create_Session_Outcome;
 
+   --  Complete physically validated CreateSession response metadata. Header
+   --  absence remains distinct from a present-empty value, which is rejected
+   --  while capturing this value. The private representation prevents callers
+   --  from fabricating metadata that bypasses physical header validation.
+   type Create_Session_Response_Metadata is private;
+
+   --  Capture and validate every physical CreateSession response header.
+   --  @param Response Complete HTTP response head
+   --  @return Bounded metadata safe to retain after releasing Response
+   --  @exception Invalid_Response A header is duplicate, empty, overlong,
+   --     control-bearing, or otherwise malformed
+   function Read_Create_Session_Response_Metadata
+     (Response : Flyology.HTTP.Client.Response)
+      return Create_Session_Response_Metadata;
+
+   --  Decode one complete CreateSession response against its signed request.
+   --  @param Metadata Physically validated response status and headers
+   --  @param Payload Complete bounded response document
+   --  @param Prepared Exact prepared CreateSession request
+   --  @param Limits Caller-selected XML limits
+   --  @return Zeroizing session credentials or structured S3 rejection
+   --  @exception Invalid_Request Prepared is not CreateSession
+   --  @exception Invalid_Response Response is malformed or conflicts with the
+   --     signed request
+   function Decode_Create_Session_Complete_Response
+     (Metadata : Create_Session_Response_Metadata;
+      Payload  : String;
+      Prepared : Prepared_Request;
+      Limits   : S3.XML.Parse_Limits)
+      return Create_Session_Outcome;
+
    function Execute_Create_Session
      (Client   : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request;
@@ -4752,6 +4783,22 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Token Optional cancellation source retained through drain
    --  @param Operation Fresh or consumed established HTTP exchange
    procedure Get_Bucket_Versioning
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token := null;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared CreateSession exchange into a bounded sink.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Optional cancellation source retained through drain
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Create_Session
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Sink      : not null access
@@ -5749,6 +5796,18 @@ package Flyology.Object_Storage.Client.Low_Level is
 private
    Maximum_Credential_Bytes : constant := 1_024;
    Maximum_Session_Token_Bytes : constant := 8_192;
+
+   type Create_Session_Response_Metadata is record
+      --  Private validity sentinel: only the physical response reader sets
+      --  this, so default-declared opaque values cannot bypass validation.
+      Validated  : Boolean := False;
+      --  This derived placeholder is ignored unless Validated is true.
+      Status     : Flyology.HTTP.Status_Code :=
+        Flyology.HTTP.Status_Code'First;
+      Headers    : Create_Session_Response_Headers := (others => <>);
+      Request_ID : Ada.Strings.Unbounded.Unbounded_String;
+      Host_ID    : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
 
    type Session_Token_Kind is (Security_Token, S3_Session_Token);
 

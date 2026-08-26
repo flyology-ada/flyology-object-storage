@@ -1,7 +1,8 @@
 # CreateSession client qualification
 
-This record qualifies the synchronous client boundary for the directory-bucket
-CreateSession operation. It does not claim a directory-bucket backend, an
+This record qualifies the synchronous and provider-owned composable client
+boundary for the directory-bucket CreateSession operation. It does not claim a
+directory-bucket backend, an
 authenticated Flyology server route, or interoperability from the pinned
 general-purpose S3-compatible servers.
 
@@ -18,7 +19,7 @@ members. The current
 was reviewed on 2026-08-23. The pinned generated model remains authoritative
 for this crate where its exact enum surface differs from current prose.
 
-## Qualified synchronous boundary
+## Qualified client boundary
 
 `Client.Low_Level.Create_Session_Parameters` projects every non-resource input
 member. Preparation requires HTTPS and virtual-hosted addressing, preserves
@@ -41,11 +42,21 @@ the generic `x-amz-security-token`. Generic HTTP and XML response buffers can
 contain transient copies and are not claimed to be securely erased, but this
 layer does not log or durably retain them.
 
-`Client.Buckets.Create_Session` performs the bounded synchronous call without a
-refresh task or retained client-side session cache. It returns a limited typed
-success or structured S3 rejection. Transport retry behavior remains owned by
-the configured Flyology HTTP client; this wrapper does not add an operation
-replay or a detached helper task.
+`Client.Buckets.Create_Session` exposes a limited constructor, operation-last
+restart, typed `Finish`, and a parameter-record synchronous wait. All four use
+one owner-driven bounded-response state machine. The operation copies the
+signed policy during initiation and retains bounded raw response state through
+terminal drain; it does not store decoded credentials. `Finish` validates the
+captured physical headers against the signed request and constructs the
+limited, zeroizing identity exactly once. The established scalar convenience
+form waits on that state machine while retaining its raising transport and
+malformed-response behavior.
+
+No overload creates a refresh task, retains client-side session state or caller
+input after signing, adds operation-level replay, or starts a detached helper
+task. Transport recovery remains the configured Flyology HTTP client's policy.
+A typed exchange failure preserves admission certainty for the caller's retry
+decision.
 
 ## Independent corpus
 
@@ -53,7 +64,8 @@ replay or a detached helper task.
 `vectors.tsv` defines request, response, ownership, TLS, and capability cases.
 The isolated verifier checks the locked revision and hash, exact generated
 member counts, names and wire locations, canonical vector identifiers, and
-reciprocal references:
+reciprocal references, plus the low-level initiator, captured-response decoder,
+provider operation, operation-last restart, and typed Finish declarations:
 
 ```sh
 python3 tools/verify-create-session-preparation.py
@@ -66,7 +78,9 @@ binding, and reuse of returned temporary credentials. A trusted project-owned
 TLS fixture drives the public wrapper through both native and Flyology
 lightweight callers, verifies the exact signed request, and rejects response
 policy mismatch, duplicate physical headers, present-empty headers, and
-noncanonical booleans.
+noncanonical booleans. Both task kinds also drive the typed synchronous form,
+limited constructor, copied-policy mutation, operation-last mismatch and
+successful restarts, typed Finish, and a caller-selected response bound.
 
 CreateSession requires an AWS directory-bucket zonal endpoint. RustFS,
 SeaweedFS, MinIO, and the Flyology general-purpose servers in the existing
@@ -76,12 +90,15 @@ to claim server interoperability.
 
 ## Frozen gate evidence
 
-The qualified source passed the root and SQLite gates and the isolated
-CreateSession inventory verifier. The root gate includes 38/38 AUnit tests and
-three repetitions of both task kinds through the loopback TLS corpus. The
-serialized proof campaign started at 2026-08-23T15:56:13Z with FSF GNATprove
-16.1.0. `./tools/prove.sh` used warnings as errors and proved 936/936 checks
-across all nine manifest units: 180 flow checks and 756 prover checks, with a
-maximum of 663 steps. The report contains zero warnings, justified or unproved
-checks, and `pragma Assume` statements. The source suppression audit and the
-post-run GNATprove/Why3/SMT process audit were clean.
+The exact client slice passed the root gate, repository-integrity gate, and
+isolated CreateSession inventory verifier. The root gate includes 41/41 AUnit
+tests and three repetitions of both task kinds through the 20-exchange loopback
+TLS corpus. GNATdoc produced a 44,116-line diagnostic log and 429 HTML pages
+with no error or new public-API warning; the generated model's pre-existing
+undocumented operation-enum warning remains visible. The slice does not change
+SQLite or backend code, so a redundant SQLite gate was not run.
+
+The latest serialized proof campaign remains the 2026-08-26 936/936 result.
+This slice changes only non-SPARK client, TLS-corpus, verifier, and
+documentation units, not any of the nine `tools/prove.sh` manifest units, so a
+redundant proof rerun was not performed.

@@ -12,6 +12,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "tests" / "corpora" / "create-session"
 MODEL = ROOT / "src" / "flyology-object_storage-s3-model.adb"
+LOW_SPEC = ROOT / "src" / "flyology-object_storage-client-low_level.ads"
+LOW_BODY = ROOT / "src" / "flyology-object_storage-client-low_level.adb"
+HIGH_SPEC = ROOT / "src" / "flyology-object_storage-client-buckets.ads"
+HIGH_BODY = ROOT / "src" / "flyology-object_storage-client-buckets.adb"
 LOCK = ROOT / "coverage" / "corpora.lock.toml"
 EXPECTED_REVISION = "36c34f15391da01cd717c73c0fffa747c9889768"
 EXPECTED_SHA256 = "429763d64912af5edae4c7a0f20a8ac3e6fecf734cde5fc465016bc8badcdef9"
@@ -125,6 +129,12 @@ def main() -> int:
         fail("pinned botocore service hash changed")
 
     model = MODEL.read_text(encoding="utf-8")
+    sources = {
+        "low-level specification": LOW_SPEC.read_text(encoding="utf-8"),
+        "low-level body": LOW_BODY.read_text(encoding="utf-8"),
+        "provider specification": HIGH_SPEC.read_text(encoding="utf-8"),
+        "provider body": HIGH_BODY.read_text(encoding="utf-8"),
+    }
     members = read_tsv(CORPUS / "members.tsv", MEMBER_HEADER)
     vectors = read_tsv(CORPUS / "vectors.tsv", VECTOR_HEADER)
     vector_by_id: dict[str, dict[str, str]] = {}
@@ -184,10 +194,69 @@ def main() -> int:
                 csv_values(vector["member_refs"]):
             fail(f"{vector_id}: unreachable vector")
 
+    composable_patterns = {
+        "low-level specification": [
+            r"\bprocedure\s+Create_Session\b",
+            r"\btype\s+Create_Session_Response_Metadata\b",
+            r"\bfunction\s+Decode_Create_Session_Complete_Response\b",
+            r"Operation\s*:\s*in\s+out\s+"
+            r"Flyology\.HTTP\.Client\.Exchange_Operation",
+        ],
+        "low-level body": [
+            r"\bprocedure\s+Create_Session\b",
+            r"Start_Sink\s*\(\s*Create_Session_Operation",
+            r"\bfunction\s+Read_Create_Session_Response_Metadata\b",
+            r"\bfunction\s+Decode_Create_Session_Complete_Response\b",
+        ],
+        "provider specification": [
+            r"\btype\s+Create_Session_Operation\b",
+            r"\btype\s+Create_Session_Result\b",
+            r"\bfunction\s+Finish\s*\(\s*Operation\s*:\s*in\s+out\s+"
+            r"Create_Session_Operation",
+        ],
+        "provider body": [
+            r"\bprocedure\s+Start_Create_Session\b",
+            r"\bfunction\s+Finish_Create_Session_Response\b",
+            r"Low\.Create_Session",
+            r"Low_Level\.Decode_Create_Session_Complete_Response",
+        ],
+    }
+    for label, patterns in composable_patterns.items():
+        for pattern in patterns:
+            if re.search(pattern, sources[label]) is None:
+                fail(f"CreateSession composable API absent from {label}")
+    for label in ("provider specification", "provider body"):
+        if sources[label].count("function Create_Session") != 3:
+            fail(f"CreateSession function overload count changed in {label}")
+        if sources[label].count("procedure Create_Session") != 1:
+            fail(f"CreateSession reusable overload count changed in {label}")
+
+    decoder = function_body(
+        sources["low-level body"], "Decode_Create_Session_Complete_Response"
+    )
+    operation_check = decoder.find(
+        "if Prepared.Operation /= Create_Session_Operation then"
+    )
+    metadata_check = decoder.find("elsif not Metadata.Validated then")
+    session_field_accesses = [
+        decoder.find("Prepared.Requested_Session_Server_Side_Encryption"),
+        decoder.find("Prepared.Requested_Session_SSE_KMS_Key_ID"),
+        decoder.find("Prepared.Requested_Session_SSE_KMS_Encryption_Context"),
+        decoder.find("Prepared.Requested_Session_Bucket_Key_Enabled"),
+    ]
+    if (
+        operation_check < 0
+        or metadata_check < 0
+        or any(position < 0 for position in session_field_accesses)
+    ):
+        fail("CreateSession complete decoder binding structure changed")
+    if not operation_check < metadata_check < min(session_field_accesses):
+        fail("CreateSession decoder reads response/request fields before validation")
+
     print(
         "CreateSession preparation: 6 request members, 5 top-level response "
         f"members, 4 credential members, {len(vectors)} contract vectors; "
-        "pinned model and references match"
+        "pinned model, references, and composable API match"
     )
     return 0
 

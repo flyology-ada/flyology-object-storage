@@ -7,7 +7,8 @@ initiation, one-shot UploadPart, one-shot multipart completion and abort,
 bounded multipart discovery, CopyObject, UploadPartCopy, DeleteObjects,
 ListObjects v1/v2, ListObjectVersions, GetObjectAttributes, and service-level
 ListBuckets, CreateBucket, non-replaying DeleteBucket, bodyless HeadBucket,
-bounded GetBucketLocation, bounded GetBucketPolicy, GetBucketPolicyStatus, and
+bounded CreateSession, bounded GetBucketLocation, bounded GetBucketPolicy,
+GetBucketPolicyStatus, and
 GetBucketRequestPayment, bounded GetBucketAbac and
 GetBucketAccelerateConfiguration, bounded GetBucketAcl and GetObjectAcl,
 bounded GetBucketMetadataTableConfiguration, non-replaying
@@ -127,10 +128,12 @@ The implemented operation order is:
 37. bounded `Get_ACL` for an object access-control policy.
 38. bounded `Get_Metadata_Table_Configuration` and non-replaying
     `Create_Metadata_Table_Configuration`.
+39. bounded `Create_Session` with limited zeroizing credentials constructed by
+    typed Finish.
 
-The provider surface contains 68 domain operations: 21 in `Client.Objects`,
-39 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 65 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 69 domain operations: 21 in `Client.Objects`,
+40 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 66 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -138,6 +141,17 @@ prepared-request initiator. `Get_Whole` and `Get_Range` are two provider
 projections of the one `Client.Low_Level.Get_Object` prepared-request
 initiator. Every provider operation therefore has a prepared-request
 initiator; none was omitted.
+
+CreateSession retains its exact signed request and bounded raw response through
+terminal drain, but it does not decode or store the limited credentials inside
+the operation. Typed Finish validates the physically captured singleton
+headers against that request and constructs the zeroizing credentials exactly
+once. The same-name constructor, operation-last restart, and parameter-record
+synchronous wait use that state machine. The established scalar convenience
+form also waits on it while preserving its raising transport and malformed
+response behavior. No form starts a refresh task, caches a session, retains a
+caller borrow after signing, or adds operation-level replay; transport recovery
+remains the configured Flyology HTTP client's policy.
 
 GetBucketAcl follows the same bounded provider-owned read contract. Its exact
 prepared initiator, limited constructor, operation-last restart, typed Finish,

@@ -302,7 +302,8 @@ They cover conditional Put, whole and exact-range Get, Head, Delete,
 CreateMultipartUpload, UploadPart, CompleteMultipartUpload,
 AbortMultipartUpload, bounded ListParts and ListMultipartUploads, and
 CopyObject, together with service-level ListBuckets and non-replaying
-CreateBucket, DeleteBucket, DeleteBucketLifecycle, DeleteBucketReplication,
+CreateBucket, bounded CreateSession, DeleteBucket, DeleteBucketLifecycle,
+DeleteBucketReplication,
 DeleteBucketWebsite, DeleteBucketInventoryConfiguration, and
 CreateBucketMetadataTableConfiguration, paired with
 bounded
