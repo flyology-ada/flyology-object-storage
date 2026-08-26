@@ -9151,7 +9151,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
       --  Neutral private omission state used by all operations except the
       --  current notification PUT, whose model owns this exact header.
       Skip_Destination_Validation : Optional_Boolean := (others => <>);
-      Has_Skip_Destination_Validation : Boolean := False)
+      Has_Skip_Destination_Validation : Boolean := False;
+      Object_Lock_Token : String := "";
+      Has_Object_Lock_Token : Boolean := False)
       return Prepared_Request
    is
       Supplied_MD5 : constant String :=
@@ -9174,6 +9176,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
            Boolean'Pos
              (Transition_Default_Minimum_Object_Size'Length > 0) +
            Boolean'Pos (Skip_Destination_Validation.Is_Set) +
+           Boolean'Pos (Object_Lock_Token'Length > 0) +
            2 * Boolean'Pos (Checksum'Length > 0));
       Last : Natural := 0;
    begin
@@ -9191,8 +9194,11 @@ package body Flyology.Object_Storage.Client.Low_Level is
         or else
           (not Has_Skip_Destination_Validation
            and then Skip_Destination_Validation.Is_Set)
+        or else
+          (not Has_Object_Lock_Token and then Object_Lock_Token'Length > 0)
         or else (Has_Content_MD5 and then not Wire_Core.Valid_Base64 (MD5, 16))
         or else not Valid_List_Response_Header_Text (Owner)
+        or else not Valid_List_Response_Header_Text (Object_Lock_Token)
         or else (Checksum'Length > 0 and then not Algorithm.Valid)
         or else (Require_Checksum and then Checksum'Length = 0)
         or else
@@ -9235,6 +9241,12 @@ package body Flyology.Object_Storage.Client.Low_Level is
            SigV4.Pair
              ("x-amz-skip-destination-validation",
               (if Skip_Destination_Validation.Value then "true" else "false"));
+      end if;
+      if Object_Lock_Token'Length > 0 then
+         Last := Last + 1;
+         Headers (Last) :=
+           SigV4.Pair
+             ("x-amz-bucket-object-lock-token", Object_Lock_Token);
       end if;
       if Checksum'Length > 0 then
          declare
@@ -9460,6 +9472,33 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with
            "invalid PutBucketNotificationConfiguration payload";
    end Prepare_Put_Bucket_Notification_Configuration;
+
+   function Prepare_Put_Bucket_Replication
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : Replication.Replication_Configuration;
+      Parameters : Put_Bucket_Replication_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request
+   is
+      Common : constant Bucket_Control_Mutation_Parameters :=
+        (Content_MD5           => Parameters.Content_MD5,
+         Checksum_Algorithm    => Parameters.Checksum_Algorithm,
+         Expected_Bucket_Owner => Parameters.Expected_Bucket_Owner);
+   begin
+      return Prepare_Bucket_Control_Mutation
+        (Model.Put_Bucket_Replication_Operation, "PUT", "replication",
+         Origin, Style, Bucket, Replication.Serialize (Value, Limits), True,
+         (others => <>), False, Common, Identity, Region, Timestamp,
+         One_Shot_Source => True, Require_Checksum => True,
+         Object_Lock_Token => US.To_String (Parameters.Token),
+         Has_Object_Lock_Token => True);
+   exception
+      when Replication.Malformed_Replication =>
+         raise Invalid_Request with
+           "invalid PutBucketReplication payload";
+   end Prepare_Put_Bucket_Replication;
 
    function Prepare_Put_Bucket_CORS
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -9773,6 +9812,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
      (Execute_Bucket_Control_Mutation
         (Client, Prepared,
          Model.Put_Bucket_Notification_Configuration_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Put_Bucket_Replication
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome is
+     (Execute_Bucket_Control_Mutation
+        (Client, Prepared, Model.Put_Bucket_Replication_Operation,
          Timeout, Token, Limits));
 
    function Execute_Put_Bucket_CORS
@@ -13946,6 +13995,28 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
          Deadline, Token, Operation);
    end Put_Bucket_Notification_Configuration;
+
+   procedure Put_Bucket_Replication
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Put_Bucket_Replication_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Bucket_Replication;
 
    procedure Put_Bucket_CORS
      (Client    : not null access Flyology.HTTP.Client.Client;

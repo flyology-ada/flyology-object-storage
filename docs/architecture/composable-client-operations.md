@@ -21,7 +21,7 @@ Put/DeletePublicAccessBlock with bounded GetPublicAccessBlock, and bucket
 tagging Put/Get/Delete, bounded GetBucketCors, non-replaying Put/DeleteBucketCors,
 bounded GetBucketLifecycleConfiguration and non-replaying
 PutBucketLifecycleConfiguration,
-bounded GetBucketReplication,
+bounded GetBucketReplication and non-replaying PutBucketReplication,
 non-replaying DeleteBucketLifecycle, DeleteBucketReplication,
 DeleteBucketAnalyticsConfiguration, DeleteBucketMetricsConfiguration,
 DeleteBucketIntelligentTieringConfiguration,
@@ -160,9 +160,9 @@ The implemented operation order is:
     and rules graph, presence-preserving nested controls, and exact modeled
     status and storage-class domains.
 
-The provider surface contains 79 domain operations: 21 in `Client.Objects`,
-50 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
-to 76 prepared-request initiators in `Client.Low_Level`. The count difference
+The provider surface contains 80 domain operations: 21 in `Client.Objects`,
+51 in `Client.Buckets`, and eight in `Client.Transfers`. Those operations map
+to 77 prepared-request initiators in `Client.Low_Level`. The count difference
 is intentional. `Put_Object`, `Put_If_Absent`, and `Put_If_Matches` are three
 provider operations with distinct certainty contracts, but all three select
 their condition and use the one `Client.Low_Level.Put_Object`
@@ -242,6 +242,19 @@ no Content-MD5 or SDK-checksum member, so the client signs only the exact
 owned XML payload hash and never invents those headers. Possible-admission
 failures are unknown and require a caller-selected read-only notification GET
 before any retry.
+
+GetBucketReplication and PutBucketReplication are colocated as
+`Get_Replication_Configuration` and `Set_Replication_Configuration`. They
+share one strict presence-sensitive replication graph, while their operation
+types preserve read and mutation semantics separately. The PUT constructor,
+operation-last restart, typed Finish, and synchronous wait drive one
+non-replaying state machine that owns the exact serialized XML through drain.
+Every deadline, cancellation owner, XML limit, checksum algorithm, MD5
+override, object-lock token, and expected owner remains explicit. Only a
+reviewed complete rejection proves non-application; possible-admission failure
+requires caller-selected read-only replication GET reconciliation before any
+retry. The structural codec does not infer the prose-only filter cardinality,
+replication-time/metrics pairing, or V1/V2 policy absent from the pinned model.
 
 CreateBucketMetadataTableConfiguration is colocated with that read in
 `Client.Buckets`. Its exact prepared initiator, limited constructor,

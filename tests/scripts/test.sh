@@ -32,6 +32,7 @@ python3 "$PROJECT_DIR/tools/verify-get-bucket-lifecycle-configuration-preparatio
 python3 "$PROJECT_DIR/tools/verify-put-bucket-lifecycle-configuration-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-bucket-notification-configuration-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-bucket-replication-preparation.py"
+uv run --python 3.13 -- "$PROJECT_DIR/tools/verify-put-bucket-replication-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-bucket-metadata-table-configuration-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-bucket-acl-preparation.py"
 python3 "$PROJECT_DIR/tools/verify-get-object-acl-preparation.py"
@@ -197,6 +198,7 @@ do
   ./bin/s3_put_bucket_lifecycle_configuration_corpus
   ./bin/s3_bucket_notification_configuration_corpus
   ./bin/s3_get_bucket_replication_corpus
+  ./bin/s3_put_bucket_replication_corpus
   ./bin/s3_get_bucket_metadata_table_configuration_corpus
   ./bin/s3_get_bucket_acl_corpus
   ./bin/s3_get_object_acl_corpus

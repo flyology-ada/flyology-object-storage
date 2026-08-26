@@ -92,7 +92,7 @@ PutBucketNotification	extended	missing	partial	missing	missing
 PutBucketNotificationConfiguration	extended	missing	covered	missing	covered
 PutBucketOwnershipControls	extended	missing	covered	missing	covered
 PutBucketPolicy	extended	covered	covered	covered	covered
-PutBucketReplication	extended	missing	partial	missing	missing
+PutBucketReplication	extended	missing	covered	missing	covered
 PutBucketRequestPayment	extended	missing	covered	missing	covered
 PutBucketTagging	core	covered	covered	covered	covered
 PutBucketVersioning	core	covered	covered	covered	covered

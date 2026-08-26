@@ -16,6 +16,7 @@ with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Notifications;
 with Flyology.Object_Storage.S3.Object_Lock;
+with Flyology.Object_Storage.S3.Replication;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Object_Storage.Tags;
 
@@ -2693,7 +2694,7 @@ package Flyology.Object_Storage.Client.Buckets is
       Token : access Flyology.Cancellation.Token := null)
       return Delete_Outcome;
 
-   --  What is known about a DeleteBucketReplication mutation after terminal
+   --  What is known about a bucket-replication mutation after terminal
    --  drain. Unknown outcomes require caller-selected read-only
    --  reconciliation before any retry.
    --  @enum Bucket_Replication_Mutation_Completed Complete response proves
@@ -4709,6 +4710,144 @@ package Flyology.Object_Storage.Client.Buckets is
       Token      : access Flyology.Cancellation.Token;
       Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
       return Get_Bucket_Replication_Result;
+
+   --  Shape of a terminal PutBucketReplication mutation.
+   --  @enum Put_Bucket_Replication_Response_Available Modeled response exists
+   --  @enum Put_Bucket_Replication_Exchange_Failed No complete response exists
+   type Put_Bucket_Replication_Result_Kind is
+     (Put_Bucket_Replication_Response_Available,
+      Put_Bucket_Replication_Exchange_Failed);
+
+   --  Typed replication replacement response and application certainty.
+   --  Every checksum, resource, and deadline choice remains caller-supplied.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Put_Bucket_Replication_Result is record
+      Kind        : Put_Bucket_Replication_Result_Kind;
+      Disposition : Bucket_Replication_Mutation_Disposition;
+      Failure     : Failure_Reason;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty;
+      Response    : Low_Level.Put_Bucket_Control_Outcome;
+      HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind;
+      HTTP_Phase  : Flyology.HTTP.Client.Exchange_Phase;
+      Detail      : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  One-shot replication replacement with one hidden HTTP child. The
+   --  operation owns the exact serialized and signed body through Finish; it
+   --  never rewinds, replays, or retains caller input.
+   type Put_Bucket_Replication_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one nonreplaying replication replacement.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose complete configuration is replaced
+   --  @param Value Complete presence-sensitive replication graph
+   --  @param Parameters MD5, required checksum, token, and owner controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected request/response XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established replication mutation
+   procedure Set_Replication_Configuration
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Replication.
+        Replication_Configuration;
+      Parameters : Low_Level.Put_Bucket_Replication_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out Put_Bucket_Replication_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying replication replacement.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose complete configuration is replaced
+   --  @param Value Complete presence-sensitive replication graph
+   --  @param Parameters MD5, required checksum, token, and owner controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected request/response XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @return Started owner-driven replication mutation
+   function Set_Replication_Configuration
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Replication.
+        Replication_Configuration;
+      Parameters : Low_Level.Put_Bucket_Replication_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return Put_Bucket_Replication_Operation;
+
+   --  Consume one terminal PutBucketReplication operation.
+   --  @param Operation Terminal replication replacement
+   --  @param Result Typed response or bounded ambiguous exchange failure
+   procedure Finish
+     (Operation : in out Put_Bucket_Replication_Operation;
+      Result    : out Put_Bucket_Replication_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Replace the replication configuration by waiting on the same
+   --  nonreplaying owner-driven state machine used by composable callers.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose complete configuration is replaced
+   --  @param Value Complete presence-sensitive replication graph
+   --  @param Parameters MD5, required checksum, token, and owner controls
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Timeout Whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected request/response XML limits
+   --  @return Typed response or bounded ambiguous exchange failure
+   function Set_Replication_Configuration
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Flyology.Object_Storage.S3.Replication.
+        Replication_Configuration;
+      Parameters : Low_Level.Put_Bucket_Replication_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
+      return Put_Bucket_Replication_Result;
 
    --  Shape of a terminal GetBucketNotificationConfiguration read.
    --  @enum Get_Bucket_Notification_Response_Available Modeled response
@@ -8821,6 +8960,28 @@ private
    end record;
 
    --  @exclude
+   type Put_Bucket_Replication_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
+      Prepared         : aliased Low_Level.Prepared_Request;
+      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
+      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Source_Position  : Natural;
+      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
+      Response_Limit   : Natural;
+      Final_Result     : Put_Bucket_Replication_Result;
+      Has_Final_Result : Boolean;
+      Has_Saved_Error  : Boolean;
+      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+   end record;
+
+   --  @exclude
    type Get_Bucket_Notification_Operation
      (Set          : not null access Flyology.Operations.Completion_Set'Class;
       HTTP         : not null access Flyology.HTTP.Client.Client;
@@ -10105,6 +10266,39 @@ private
    overriding procedure Finalize
      (Item : in out Get_Bucket_Replication_Operation);
    --  @exclude
+   overriding function Declared_Length
+     (Item : Put_Bucket_Replication_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Put_Bucket_Replication_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Put_Bucket_Replication_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Put_Bucket_Replication_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Put_Bucket_Replication_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Put_Bucket_Replication_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Put_Bucket_Replication_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Put_Bucket_Replication_Operation);
+   --  @exclude
    overriding procedure Write
      (Item : in out Get_Bucket_Notification_Operation;
       Data : Ada.Streams.Stream_Element_Array);
@@ -11154,6 +11348,18 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase     : Flyology.HTTP.Client.Exchange_Phase;
       Detail    : String) return Get_Bucket_Replication_Result;
+   --  @exclude
+   function Normalize_Put_Bucket_Replication_Response
+     (Value : Low_Level.Put_Bucket_Control_Outcome;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase : Flyology.HTTP.Client.Exchange_Phase)
+      return Put_Bucket_Replication_Result;
+   --  @exclude
+   function Normalize_Put_Bucket_Replication_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String) return Put_Bucket_Replication_Result;
    --  @exclude
    function Normalize_Get_Bucket_Notification_Response
      (Value : Low_Level.Get_Bucket_Notification_Configuration_Outcome;

@@ -222,4 +222,15 @@ package Flyology.Object_Storage.S3.Replication is
      (Document : String; Limits : XML.Parse_Limits)
       return Replication_Configuration;
 
+   --  Serialize one exact PutBucketReplication payload. Required structural
+   --  members and presence wrappers come from the pinned service model; the
+   --  serializer does not select prose-only cross-field policy.
+   --  @param Value Complete presence-sensitive replication configuration
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Exact namespaced REST/XML request payload
+   --  @exception Malformed_Replication Value violates the pinned input model
+   function Serialize
+     (Value  : Replication_Configuration;
+      Limits : XML.Parse_Limits) return String;
+
 end Flyology.Object_Storage.S3.Replication;

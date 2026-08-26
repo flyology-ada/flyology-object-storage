@@ -5753,6 +5753,46 @@ procedure S3_HTTP_Socket_Corpus is
               "varies_by_storage_class");
          Serve
            (HTTP_Response ("200 OK", ""), "PUT",
+            "/example-bucket?replication",
+            Expected_Body_Root => "<ReplicationConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Lock_Token => "socket-token",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: typed-put-replication" & CRLF),
+            "PUT", "/typed-put-replication?replication",
+            Expected_Body_Root => "<ReplicationConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Lock_Token => "socket-token",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
+            "/composed-put-replication?replication",
+            Expected_Body_Root => "<ReplicationConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Lock_Token => "socket-token",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*");
+         Serve
+           (HTTP_Response
+              ("403 Forbidden", Error_XML,
+               "x-amz-request-id: restarted-put-replication" & CRLF),
+            "PUT", "/restart-put-replication?replication",
+            Expected_Body_Root => "<ReplicationConfiguration",
+            Expected_Content_MD5 => "*",
+            Expected_Bucket_Owner => "123456789012",
+            Expected_Object_Lock_Token => "socket-token",
+            Expected_SDK_Checksum => "CRC32",
+            Expected_Checksum_CRC32 => "*");
+         Serve
+           (HTTP_Response ("200 OK", ""), "PUT",
             "/example-bucket?notification",
             Expected_Body_Root => "<NotificationConfiguration",
             Expected_Bucket_Owner => "123456789012",
@@ -20268,6 +20308,127 @@ procedure S3_HTTP_Socket_Corpus is
          end;
          declare
             function Configuration
+              return Replication.Replication_Configuration is
+              (Replication.Parse
+                 ("<ReplicationConfiguration><Role>socket-role</Role>" &
+                  "<Rule><Status>Enabled</Status><Destination>" &
+                  "<Bucket>socket-destination</Bucket></Destination>" &
+                  "</Rule></ReplicationConfiguration>",
+                  XML.Default_Limits));
+
+            Parameters : constant
+              Low_Level.Put_Bucket_Replication_Parameters :=
+                (Content_MD5           => US.Null_Unbounded_String,
+                 Checksum_Algorithm    => US.To_Unbounded_String ("CRC32"),
+                 Token                 =>
+                   US.To_Unbounded_String ("socket-token"),
+                 Expected_Bucket_Owner =>
+                   US.To_Unbounded_String ("123456789012"));
+         begin
+            declare
+               Prepared : constant Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Replication
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Configuration, Parameters, Identity, "us-east-1",
+                    "20130524T000000Z", XML.Default_Limits);
+               Result : constant Low_Level.Put_Bucket_Control_Outcome :=
+                 Low_Level.Execute_Put_Bucket_Replication
+                   (HTTP, Prepared, 5.0, null, XML.Default_Limits);
+            begin
+               if Result.Kind /= Low_Level.Bucket_Control_Updated
+                 or else Result.Status /= 200
+               then
+                  raise Program_Error with
+                    "low-level PutBucketReplication mismatch";
+               end if;
+            end;
+            declare
+               Result : constant Put_Bucket_Replication_Result :=
+                 Buckets.Set_Replication_Configuration
+                   (HTTP, Origin, "typed-put-replication", Configuration,
+                    Parameters, Identity, "us-east-1",
+                    Low_Level.Path_Style, 5.0, null, XML.Default_Limits);
+            begin
+               if Result.Kind /= Put_Bucket_Replication_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Replication_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else Result.Admission /= HTTP_Client.Response_Observed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "typed-put-replication"
+               then
+                  raise Program_Error with
+                    "typed PutBucketReplication mismatch";
+               end if;
+            end;
+            declare
+               Set : aliased Operations.Completion_Set (3);
+               Result : Put_Bucket_Replication_Result;
+               Value : Replication.Replication_Configuration := Configuration;
+               Operation : Put_Bucket_Replication_Operation :=
+                 Set_Replication_Configuration
+                   (Set'Access, HTTP'Access, Origin,
+                    "composed-put-replication", Value, Parameters, Identity,
+                    HTTP_Client.Deadline_After (5.0), "us-east-1",
+                    Low_Level.Path_Style, XML.Default_Limits, null);
+            begin
+               Value.Rules.Clear;
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Replication_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Replication_Mutation_Completed
+                 or else Result.Failure /= No_Failure
+               then
+                  raise Program_Error with
+                    "composed PutBucketReplication mismatch";
+               end if;
+               Set_Replication_Configuration
+                 (HTTP'Access, Origin, "restart-put-replication",
+                  Configuration, Parameters, Identity,
+                  HTTP_Client.Deadline_After (5.0), "us-east-1",
+                  Low_Level.Path_Style, XML.Default_Limits, null, Operation);
+               Operations.Wait_All (Set);
+               Finish (Operation, Result);
+               if Result.Kind /= Put_Bucket_Replication_Response_Available
+                 or else Result.Disposition /=
+                   Bucket_Replication_Mutation_Definitely_Not_Applied
+                 or else Result.Failure /= Authorization_Failed
+                 or else US.To_String (Result.Response.Error.Request_ID) /=
+                   "restarted-put-replication"
+               then
+                  raise Program_Error with
+                    "restarted PutBucketReplication mismatch";
+               end if;
+            end;
+            declare
+               Prepared : aliased Low_Level.Prepared_Request :=
+                 Low_Level.Prepare_Put_Bucket_Abac
+                   (Origin, Low_Level.Path_Style, "example-bucket",
+                    Bucket_Controls.Abac_Enabled, (others => <>), Identity,
+                    "us-east-1", "20130524T000000Z");
+               Set : aliased Operations.Completion_Set (3);
+               Parent : aliased Put_Bucket_Replication_Operation
+                 (Set'Access, HTTP'Access, null);
+               Child : HTTP_Client.Exchange_Operation (Set'Access);
+               Rejected : Boolean := False;
+            begin
+               begin
+                  Low_Level.Put_Bucket_Replication
+                    (HTTP'Access, Prepared'Access, Parent'Access,
+                     Parent'Access, HTTP_Client.Deadline_After (5.0), null,
+                     Child);
+               exception
+                  when Low_Level.Invalid_Request => Rejected := True;
+               end;
+               if not Rejected then
+                  raise Program_Error with
+                    "PutBucketReplication accepted ABAC request";
+               end if;
+            end;
+         end;
+         declare
+            function Configuration
               return Notifications.Notification_Configuration is
               (Notifications.Parse
                  ("<NotificationConfiguration>" &
@@ -22779,6 +22940,7 @@ begin
    Buckets_Testing.Check_Put_Bucket_Lifecycle_Result_Corpus;
    Buckets_Testing.Check_Bucket_Notification_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_Replication_Result_Corpus;
+   Buckets_Testing.Check_Put_Bucket_Replication_Result_Corpus;
    Buckets_Testing.Check_Get_Bucket_ACL_Result_Corpus;
    Buckets_Testing.Check_Metadata_Table_Configuration_Result_Corpus;
    Buckets_Testing.Check_Delete_Bucket_Lifecycle_Certainty_Corpus;

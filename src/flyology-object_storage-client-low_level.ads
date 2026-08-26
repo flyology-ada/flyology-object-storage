@@ -3266,6 +3266,20 @@ package Flyology.Object_Storage.Client.Low_Level is
       Skip_Destination_Validation : Optional_Boolean;
    end record;
 
+   --  Complete physical controls for current PutBucketReplication. Empty
+   --  Content_MD5 requests automatic generation over the exact owned XML;
+   --  the checksum algorithm remains a required caller selection.
+   --  @field Content_MD5 Optional exact base64 MD5 override
+   --  @field Checksum_Algorithm Required one of the ten modeled algorithms
+   --  @field Token Optional exact object-lock enablement token
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Put_Bucket_Replication_Parameters is record
+      Content_MD5           : Ada.Strings.Unbounded.Unbounded_String;
+      Checksum_Algorithm    : Ada.Strings.Unbounded.Unbounded_String;
+      Token                 : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  Prepare one exact CreateBucketMetadataTableConfiguration request.
    --  The request is a signed POST with the required Content-MD5, optional
    --  modeled SDK checksum, and one bounded REST/XML destination payload.
@@ -3399,6 +3413,27 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String;
       Value : S3.Notifications.Notification_Configuration;
       Parameters : Put_Bucket_Notification_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request;
+
+   --  Prepare one exactly bound PutBucketReplication request. The exact XML
+   --  and signed checksums are owned by the returned one-shot request.
+   --  @param Origin Parsed HTTP origin
+   --  @param Style Path or virtual-hosted bucket addressing
+   --  @param Bucket Required bucket name
+   --  @param Value Required complete replication configuration
+   --  @param Parameters MD5, required checksum, token, and owner controls
+   --  @param Identity Signing credentials
+   --  @param Region SigV4 signing region
+   --  @param Timestamp Basic ISO SigV4 timestamp
+   --  @param Limits Caller-selected XML serialization limits
+   --  @return Fully signed one-shot request bound to replication replacement
+   function Prepare_Put_Bucket_Replication
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Replication.Replication_Configuration;
+      Parameters : Put_Bucket_Replication_Parameters;
       Identity : Credentials; Region, Timestamp : String;
       Limits : S3.XML.Parse_Limits)
       return Prepared_Request;
@@ -3588,6 +3623,21 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Limits Caller-selected error-response XML limits
    --  @return Typed update success or strict S3 rejection
    function Execute_Put_Bucket_Notification_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome;
+
+   --  Execute one exact prepared PutBucketReplication request. No request is
+   --  replayed after possible admission.
+   --  @param Client Caller-owned synchronous HTTP client
+   --  @param Prepared Request from the matching replication preparer
+   --  @param Timeout Caller-selected absolute operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected error-response XML limits
+   --  @return Typed update success or strict S3 rejection
+   function Execute_Put_Bucket_Replication
      (Client : aliased in out Flyology.HTTP.Client.Client;
       Prepared : Prepared_Request; Timeout : Duration;
       Token : access Flyology.Cancellation.Token;
@@ -5578,6 +5628,27 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  @param Token Caller-selected cancellation source or null
    --  @param Operation Fresh or consumed established HTTP exchange
    procedure Put_Bucket_Notification_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared PutBucketReplication exchange with its
+   --  non-rewindable source. Any other prepared operation is rejected before
+   --  HTTP admission.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Prepared Owned signed request retained by the parent operation
+   --  @param Source Non-rewindable request source retained through drain
+   --  @param Sink Bounded response sink retained by the parent operation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established HTTP exchange
+   procedure Put_Bucket_Replication
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Source    : not null access

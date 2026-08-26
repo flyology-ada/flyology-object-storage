@@ -769,4 +769,386 @@ package body Flyology.Object_Storage.S3.Replication is
          raise Malformed_Replication with "malformed bucket-replication XML";
    end Parse;
 
+   function Serialize
+     (Value  : Replication_Configuration;
+      Limits : XML.Parse_Limits) return String
+   is
+      Result       : US.Unbounded_String;
+      Elements     : Natural := 1;
+      Text_Bytes   : Natural := 0;
+      Actual_Depth : Positive := 1;
+
+      --  Pinned PutBucketReplication REST/XML namespace and root. Changing
+      --  either changes provider compatibility and the exact signed payload.
+      Prefix : constant String :=
+        "<ReplicationConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">";
+      Suffix : constant String := "</ReplicationConfiguration>";
+
+      function Status_Text (Item : Status_Kind) return String is
+        (case Item is when Enabled => "Enabled", when Disabled => "Disabled");
+
+      function Storage_Class_Text
+        (Item : Storage_Class_Kind) return String is
+        (case Item is
+            when Standard                 => "STANDARD",
+            when Reduced_Redundancy       => "REDUCED_REDUNDANCY",
+            when Standard_IA              => "STANDARD_IA",
+            when One_Zone_IA              => "ONEZONE_IA",
+            when Intelligent_Tiering      => "INTELLIGENT_TIERING",
+            when Glacier                  => "GLACIER",
+            when Deep_Archive             => "DEEP_ARCHIVE",
+            when Outposts                 => "OUTPOSTS",
+            when Glacier_Instant_Retrieval => "GLACIER_IR",
+            when Snow                     => "SNOW",
+            when Express_One_Zone         => "EXPRESS_ONEZONE",
+            when FSX_OpenZFS              => "FSX_OPENZFS",
+            when FSX_ONTAP                => "FSX_ONTAP",
+            when AWS_Backup_Warm          => "AWS_BACKUP_WARM",
+            when AWS_Backup_Low_Cost_Warm => "AWS_BACKUP_LOW_COST_WARM");
+
+      --  XML 1.0 text is UTF-8 and excludes raw C0 controls other than tab,
+      --  line feed, and carriage return. This wire rule keeps the serializer
+      --  from emitting bytes that the matching parser must reject.
+      function Valid_XML_UTF8 (Text : String) return Boolean is
+         Cursor : Integer := Text'First;
+
+         function Byte_At (Offset : Natural) return Natural is
+           (Character'Pos (Text (Cursor + Integer (Offset))));
+
+         function Continuation (Offset : Natural) return Boolean is
+           (Offset <= Natural (Text'Last - Cursor)
+            and then Byte_At (Offset) in 16#80# .. 16#BF#);
+      begin
+         while Cursor <= Text'Last loop
+            declare
+               First : constant Natural := Byte_At (0);
+               Width : Positive;
+            begin
+               if First in 16#20# .. 16#7F#
+                 or else First in 16#09# | 16#0A# | 16#0D#
+               then
+                  Width := 1;
+               elsif First in 16#C2# .. 16#DF#
+                 and then Continuation (1)
+               then
+                  Width := 2;
+               elsif First in 16#E0# .. 16#EF#
+                 and then Continuation (1) and then Continuation (2)
+                 and then (First /= 16#E0# or else Byte_At (1) >= 16#A0#)
+                 and then (First /= 16#ED# or else Byte_At (1) <= 16#9F#)
+                 and then
+                   (First /= 16#EF#
+                    or else Byte_At (1) /= 16#BF#
+                    or else Byte_At (2) not in 16#BE# .. 16#BF#)
+               then
+                  Width := 3;
+               elsif First in 16#F0# .. 16#F4#
+                 and then Continuation (1) and then Continuation (2)
+                 and then Continuation (3)
+                 and then (First /= 16#F0# or else Byte_At (1) >= 16#90#)
+                 and then (First /= 16#F4# or else Byte_At (1) <= 16#8F#)
+               then
+                  Width := 4;
+               else
+                  return False;
+               end if;
+               if Width - 1 = Natural (Text'Last - Cursor) then
+                  return True;
+               end if;
+               Cursor := Cursor + Width;
+            end;
+         end loop;
+         return True;
+      end Valid_XML_UTF8;
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Replication with
+              "bucket-replication document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+
+      procedure Add_Element (Name : String; Depth : Positive) is
+      begin
+         if Elements = Limits.Maximum_Elements then
+            raise Malformed_Replication with
+              "bucket-replication elements exceed caller limit";
+         end if;
+         Elements := Elements + 1;
+         Actual_Depth := Positive'Max (Actual_Depth, Depth);
+         Append_Bounded ("<" & Name & ">");
+      end Add_Element;
+
+      procedure End_Element (Name : String) is
+      begin
+         Append_Bounded ("</" & Name & ">");
+      end End_Element;
+
+      procedure Add_Text (Text : String) is
+      begin
+         if not Valid_XML_UTF8 (Text) then
+            raise Malformed_Replication with
+              "invalid replication XML text";
+         elsif Text'Length > Limits.Maximum_Text_Bytes - Text_Bytes then
+            raise Malformed_Replication with
+              "bucket-replication text exceeds caller limit";
+         end if;
+         Text_Bytes := Text_Bytes + Text'Length;
+         Append_Bounded (XML.Escape_Text (Text));
+      end Add_Text;
+
+      procedure Add_Scalar
+        (Name : String; Text : String; Depth : Positive) is
+      begin
+         Add_Element (Name, Depth);
+         Add_Text (Text);
+         End_Element (Name);
+      end Add_Scalar;
+
+      procedure Add_Optional_String
+        (Name : String; Item : Optional_String; Depth : Positive) is
+      begin
+         if Item.Is_Set then
+            Add_Scalar (Name, US.To_String (Item.Value), Depth);
+         elsif US.Length (Item.Value) /= 0 then
+            raise Malformed_Replication with
+              "absent replication string contains text";
+         end if;
+      end Add_Optional_String;
+
+      procedure Add_Optional_Integer
+        (Name : String; Item : Optional_Integer_Text; Depth : Positive)
+      is
+         Text : constant String := US.To_String (Item.Text);
+      begin
+         if Item.Is_Set then
+            if not Valid_Integer (Text) then
+               raise Malformed_Replication with
+                 "invalid replication integer";
+            end if;
+            Add_Scalar (Name, Text, Depth);
+         elsif Text'Length /= 0 then
+            raise Malformed_Replication with
+              "absent replication integer contains text";
+         end if;
+      end Add_Optional_Integer;
+
+      function Tag_Has_Data (Item : Replication_Tag) return Boolean is
+        (US.Length (Item.Key) /= 0 or else US.Length (Item.Value) /= 0);
+
+      procedure Add_Tag
+        (Name : String; Item : Replication_Tag; Depth : Positive) is
+      begin
+         Add_Element (Name, Depth);
+         Add_Scalar ("Key", US.To_String (Item.Key), Depth + 1);
+         Add_Scalar ("Value", US.To_String (Item.Value), Depth + 1);
+         End_Element (Name);
+      end Add_Tag;
+
+      function And_Has_Data (Item : Replication_And) return Boolean is
+        (Item.Prefix.Is_Set
+         or else US.Length (Item.Prefix.Value) /= 0
+         or else not Item.Tags.Is_Empty);
+
+      procedure Add_Filter (Item : Replication_Filter) is
+      begin
+         if not Item.Is_Set then
+            if Item.Prefix.Is_Set
+              or else US.Length (Item.Prefix.Value) /= 0
+              or else Item.Tag.Is_Set
+              or else Tag_Has_Data (Item.Tag.Value)
+              or else Item.And_Predicates.Is_Set
+              or else And_Has_Data (Item.And_Predicates)
+            then
+               raise Malformed_Replication with
+                 "absent replication filter contains values";
+            end if;
+            return;
+         end if;
+         Add_Element ("Filter", 3);
+         Add_Optional_String ("Prefix", Item.Prefix, 4);
+         if Item.Tag.Is_Set then
+            Add_Tag ("Tag", Item.Tag.Value, 4);
+         elsif Tag_Has_Data (Item.Tag.Value) then
+            raise Malformed_Replication with
+              "absent replication tag contains values";
+         end if;
+         if Item.And_Predicates.Is_Set then
+            Add_Element ("And", 4);
+            Add_Optional_String
+              ("Prefix", Item.And_Predicates.Prefix, 5);
+            for Tag of Item.And_Predicates.Tags loop
+               Add_Tag ("Tag", Tag, 5);
+            end loop;
+            End_Element ("And");
+         elsif And_Has_Data (Item.And_Predicates) then
+            raise Malformed_Replication with
+              "absent replication And contains values";
+         end if;
+         End_Element ("Filter");
+      end Add_Filter;
+
+      procedure Add_Status_Structure
+        (Name : String; Item : Optional_Status; Depth : Positive;
+         Status_Required : Boolean) is
+      begin
+         if Item.Is_Set then
+            Add_Element (Name, Depth);
+            if Item.Status_Is_Set then
+               Add_Scalar
+                 ("Status", Status_Text (Item.Status), Depth + 1);
+            elsif Status_Required then
+               raise Malformed_Replication with
+                 "required replication status is absent";
+            elsif Item.Status /= Disabled then
+               raise Malformed_Replication with
+                 "absent replication status contains a value";
+            end if;
+            End_Element (Name);
+         elsif Item.Status_Is_Set or else Item.Status /= Disabled then
+            raise Malformed_Replication with
+              "absent replication status structure contains values";
+         end if;
+      end Add_Status_Structure;
+
+      procedure Add_Source (Item : Source_Selection_Criteria) is
+      begin
+         if Item.Is_Set then
+            Add_Element ("SourceSelectionCriteria", 3);
+            Add_Status_Structure
+              ("SseKmsEncryptedObjects", Item.SSE_KMS_Encrypted_Objects,
+               4, True);
+            Add_Status_Structure
+              ("ReplicaModifications", Item.Replica_Modifications, 4, True);
+            End_Element ("SourceSelectionCriteria");
+         elsif Item.SSE_KMS_Encrypted_Objects.Is_Set
+           or else Item.SSE_KMS_Encrypted_Objects.Status_Is_Set
+           or else Item.SSE_KMS_Encrypted_Objects.Status /= Disabled
+           or else Item.Replica_Modifications.Is_Set
+           or else Item.Replica_Modifications.Status_Is_Set
+           or else Item.Replica_Modifications.Status /= Disabled
+         then
+            raise Malformed_Replication with
+              "absent source selection contains values";
+         end if;
+      end Add_Source;
+
+      procedure Add_Time_Value
+        (Name : String; Item : Replication_Time_Value; Depth : Positive) is
+      begin
+         if Item.Is_Set then
+            Add_Element (Name, Depth);
+            Add_Optional_Integer ("Minutes", Item.Minutes, Depth + 1);
+            End_Element (Name);
+         elsif Item.Minutes.Is_Set or else US.Length (Item.Minutes.Text) /= 0
+         then
+            raise Malformed_Replication with
+              "absent replication time value contains values";
+         end if;
+      end Add_Time_Value;
+
+      procedure Add_Destination (Item : Destination) is
+      begin
+         Add_Element ("Destination", 3);
+         Add_Scalar ("Bucket", US.To_String (Item.Bucket), 4);
+         Add_Optional_String ("Account", Item.Account, 4);
+         if Item.Storage_Class_Is_Set then
+            Add_Scalar
+              ("StorageClass", Storage_Class_Text (Item.Storage_Class), 4);
+         elsif Item.Storage_Class /= Standard then
+            raise Malformed_Replication with
+              "absent destination storage class contains a value";
+         end if;
+         if Item.Access_Control.Is_Set then
+            Add_Element ("AccessControlTranslation", 4);
+            Add_Scalar ("Owner", "Destination", 5);
+            End_Element ("AccessControlTranslation");
+         end if;
+         if Item.Encryption.Is_Set then
+            Add_Element ("EncryptionConfiguration", 4);
+            Add_Optional_String
+              ("ReplicaKmsKeyID", Item.Encryption.Replica_KMS_Key_ID, 5);
+            End_Element ("EncryptionConfiguration");
+         elsif Item.Encryption.Replica_KMS_Key_ID.Is_Set
+           or else US.Length (Item.Encryption.Replica_KMS_Key_ID.Value) /= 0
+         then
+            raise Malformed_Replication with
+              "absent destination encryption contains values";
+         end if;
+         if Item.Time.Is_Set then
+            if not Item.Time.Time.Is_Set then
+               raise Malformed_Replication with
+                 "replication time value is required";
+            end if;
+            Add_Element ("ReplicationTime", 4);
+            Add_Scalar ("Status", Status_Text (Item.Time.Status), 5);
+            Add_Time_Value ("Time", Item.Time.Time, 5);
+            End_Element ("ReplicationTime");
+         elsif Item.Time.Status /= Disabled
+           or else Item.Time.Time.Is_Set
+           or else Item.Time.Time.Minutes.Is_Set
+           or else US.Length (Item.Time.Time.Minutes.Text) /= 0
+         then
+            raise Malformed_Replication with
+              "absent replication time contains values";
+         end if;
+         if Item.Metrics.Is_Set then
+            Add_Element ("Metrics", 4);
+            Add_Scalar ("Status", Status_Text (Item.Metrics.Status), 5);
+            Add_Time_Value
+              ("EventThreshold", Item.Metrics.Event_Threshold, 5);
+            End_Element ("Metrics");
+         elsif Item.Metrics.Status /= Disabled
+           or else Item.Metrics.Event_Threshold.Is_Set
+           or else Item.Metrics.Event_Threshold.Minutes.Is_Set
+           or else US.Length (Item.Metrics.Event_Threshold.Minutes.Text) /= 0
+         then
+            raise Malformed_Replication with
+              "absent replication metrics contain values";
+         end if;
+         End_Element ("Destination");
+      end Add_Destination;
+
+      procedure Add_Rule (Item : Replication_Rule) is
+      begin
+         Add_Element ("Rule", 2);
+         Add_Optional_String ("ID", Item.ID, 3);
+         Add_Optional_Integer ("Priority", Item.Priority, 3);
+         Add_Optional_String ("Prefix", Item.Prefix, 3);
+         Add_Filter (Item.Filter);
+         Add_Scalar ("Status", Status_Text (Item.Status), 3);
+         Add_Source (Item.Source_Selection);
+         Add_Status_Structure
+           ("ExistingObjectReplication", Item.Existing_Object_Replication,
+            3, True);
+         Add_Destination (Item.Target);
+         Add_Status_Structure
+           ("DeleteMarkerReplication", Item.Delete_Marker_Replication,
+            3, False);
+         End_Element ("Rule");
+      end Add_Rule;
+   begin
+      if Value.Rules.Is_Empty then
+         raise Malformed_Replication with "replication rules are required";
+      end if;
+      Append_Bounded (Prefix);
+      Add_Scalar ("Role", US.To_String (Value.Role), 2);
+      for Rule of Value.Rules loop
+         Add_Rule (Rule);
+      end loop;
+      if Actual_Depth > Limits.Maximum_Depth then
+         raise Malformed_Replication with
+           "bucket-replication depth exceeds caller limit";
+      end if;
+      Append_Bounded (Suffix);
+      return US.To_String (Result);
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Replication with "invalid replication XML text";
+   end Serialize;
+
 end Flyology.Object_Storage.S3.Replication;
