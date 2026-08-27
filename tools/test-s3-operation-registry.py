@@ -45,6 +45,20 @@ def main() -> None:
         pass
     else:
         raise AssertionError("unbalanced generated source region was accepted")
+    replacement = s3_codegen.materialize_generated_replacement(
+        "before\nlegacy\nafter\n",
+        "EXAMPLE_REPLACEMENT",
+        "generated",
+        "legacy",
+    )
+    assert "legacy" not in replacement
+    assert "generated" in replacement
+    assert s3_codegen.materialize_generated_replacement(
+        replacement,
+        "EXAMPLE_REPLACEMENT",
+        "updated",
+        "legacy",
+    ).replace("updated", "generated") == replacement
 
     registry = s3_operation.load_registry()
     assert Counter(
@@ -59,7 +73,12 @@ def main() -> None:
         name
         for name, entry in registry.operations.items()
         if entry["generator_eligible"]
-    } == {"ListDirectoryBuckets"}
+    } == {
+        "ListDirectoryBuckets",
+        "PutBucketInventoryConfiguration",
+        "PutBucketLogging",
+        "PutBucketWebsite",
+    }
     canary = registry.operations["GetBucketReplication"]
     assert not s3_operation.evidence_findings(
         canary, include_partial=False
@@ -282,6 +301,20 @@ def main() -> None:
             )
             assert expected[1] in serializer_body
             assert "XML_Writers.Initialize (Item, Limits)" in serializer_body
+            signed = s3_operation.generated_mutation_signed_socket(
+                mutation, registry.operations[mutation]
+            )
+            assert len(signed["case"]) == 9
+            assert {case["lane"] for case in signed["case"]} == {
+                "low_level",
+                "synchronous",
+                "composable",
+                "restart",
+                "invalid_xml",
+            }
+            assert signed["case"][-1]["limits"][
+                "maximum_document_bytes"
+            ] > len(signed["case"][0]["exchange"][0]["request_body"])
         derived = s3_operation.negative_xml_cases(
             model, "GetBucketReplication", canary["negative_xml"]
         )

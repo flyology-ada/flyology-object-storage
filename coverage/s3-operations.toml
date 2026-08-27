@@ -53,6 +53,16 @@ put_bucket_intelligent_tiering_configuration = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+generated_bucket_configuration_mutation_batch = [
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "PutBucketInventoryConfiguration"],
+  ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "PutBucketLogging"],
+  ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "PutBucketWebsite"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-generated-bucket-mutations-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 list_bucket_metrics_configurations = [
   ["@tests", "alr", "-n", "build"],
   ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketMetricsConfigurations"],
@@ -3297,18 +3307,24 @@ tier = "extended"
 provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "empty_response"
+codec = "strict_generated_rest_xml_request_and_singleton_headers"
+public_name = "Set_Inventory_Configuration"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "complete observed success or conclusive rejection; otherwise Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected Get_Inventory_Configuration or List_Inventory_Configurations before any retry"
+exclusions = ["the pinned model does not require the query id and payload Id to be equal; caller policy may require that check before invocation"]
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "generated" }
 implementation_mode = "generated"
-generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+generator_eligible = true
+human_decisions_resolved = true
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-generated_put_bucket_inventory_configuration_xml.ads", "src/flyology-object_storage-s3-generated_put_bucket_inventory_configuration_xml.adb", "src/flyology-object_storage-s3-xml_writers.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_put_bucket_inventory_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-signed-socket.json", "tests/src/s3_put_bucket_inventory_configuration_qualification.adb"] }
+decision_status = "reviewed"
+ada_symbols = ["Put_Bucket_Inventory_Configuration_Parameters", "Prepare_Put_Bucket_Inventory_Configuration", "Execute_Put_Bucket_Inventory_Configuration", "Put_Bucket_Inventory_Configuration_Operation", "Set_Inventory_Configuration", "Finish"]
+generation = { public_result = "Put_Bucket_Inventory_Configuration_Result wrapping the exact low-level bucket-control outcome", response_representation = "empty modeled success or strict bounded S3 Error response with singleton request identifiers", replay = "never replay a possibly admitted mutation; no automatic retry", ownership = "operation owns its exact serialized one-shot request body and bounded response bytes through terminal typed Finish", retained_borrows = "HTTP client and optional cancellation token are retained only through terminal drain; no caller payload borrow is retained", cross_field_validation = "the pinned model has no equality constraint between query id and payload Id; no additional rule is generated", intentional_exclusions = ["no backend or server compatibility claim", "no provider-specific publication or durability claim"] }
+qualification = "generated_bucket_configuration_mutation_batch"
+generated_mutation_qualification = { adapter = "./bin/s3_put_bucket_inventory_configuration_qualification", input_values = { Id = "qualified inventory", ExpectedBucketOwner = "123456789012" }, request_body = "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>", expected_request_headers = {} }
 
 [[operation]]
 name = "PutBucketLifecycle"
@@ -3354,18 +3370,24 @@ tier = "extended"
 provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "empty_response"
+codec = "strict_generated_rest_xml_request_and_singleton_headers"
+public_name = "Set_Logging"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "complete observed success or conclusive rejection; otherwise Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected Get_Logging before any retry"
 exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "generated" }
 implementation_mode = "generated"
-generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+generator_eligible = true
+human_decisions_resolved = true
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-generated_put_bucket_logging_xml.ads", "src/flyology-object_storage-s3-generated_put_bucket_logging_xml.adb", "src/flyology-object_storage-s3-xml_writers.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_put_bucket_logging_qualification.adb"], server = [], corpus = ["tests/generated/s3-signed-socket.json", "tests/src/s3_put_bucket_logging_qualification.adb"] }
+decision_status = "reviewed"
+ada_symbols = ["Prepare_Put_Bucket_Logging", "Execute_Put_Bucket_Logging", "Put_Bucket_Logging_Operation", "Set_Logging", "Finish"]
+generation = { public_result = "Put_Bucket_Logging_Result wrapping the exact low-level bucket-control outcome", response_representation = "empty modeled success or strict bounded S3 Error response with singleton request identifiers", replay = "never replay a possibly admitted mutation; no automatic retry", ownership = "operation owns its exact serialized one-shot request body and bounded response bytes through terminal typed Finish", retained_borrows = "HTTP client and optional cancellation token are retained only through terminal drain; no caller payload borrow is retained", cross_field_validation = "no additional request cross-field rule beyond the pinned model", intentional_exclusions = ["no backend or server compatibility claim", "no provider-specific publication or durability claim"] }
+qualification = "generated_bucket_configuration_mutation_batch"
+generated_mutation_qualification = { adapter = "./bin/s3_put_bucket_logging_qualification", input_values = { ExpectedBucketOwner = "123456789012" }, request_body = "<BucketLoggingStatus xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LoggingEnabled><TargetBucket>qualified-log-target</TargetBucket><TargetPrefix>qualified/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>", expected_request_headers = { x-amz-sdk-checksum-algorithm = "SHA256" } }
 
 [[operation]]
 name = "PutBucketMetricsConfiguration"
@@ -3667,18 +3689,24 @@ tier = "extended"
 provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
-codec = "empty_response"
+codec = "strict_generated_rest_xml_request_and_singleton_headers"
+public_name = "Set_Website"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "complete observed success or conclusive rejection; otherwise Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected Get_Website before any retry"
+exclusions = ["the pinned model does not express website routing-mode exclusivity; no additional cross-field rule is generated"]
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "generated", server = "absent", tests = "generated" }
 implementation_mode = "generated"
-generator_eligible = false
-human_decisions_resolved = false
-evidence = { backend = [], client = [], server = [], corpus = [] }
+generator_eligible = true
+human_decisions_resolved = true
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-generated_put_bucket_website_xml.ads", "src/flyology-object_storage-s3-generated_put_bucket_website_xml.adb", "src/flyology-object_storage-s3-xml_writers.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_put_bucket_website_qualification.adb"], server = [], corpus = ["tests/generated/s3-signed-socket.json", "tests/src/s3_put_bucket_website_qualification.adb"] }
+decision_status = "reviewed"
+ada_symbols = ["Prepare_Put_Bucket_Website", "Execute_Put_Bucket_Website", "Put_Bucket_Website_Operation", "Set_Website", "Finish"]
+generation = { public_result = "Put_Bucket_Website_Result wrapping the exact low-level bucket-control outcome", response_representation = "empty modeled success or strict bounded S3 Error response with singleton request identifiers", replay = "never replay a possibly admitted mutation; no automatic retry", ownership = "operation owns its exact serialized one-shot request body and bounded response bytes through terminal typed Finish", retained_borrows = "HTTP client and optional cancellation token are retained only through terminal drain; no caller payload borrow is retained", cross_field_validation = "website routing-mode exclusivity is not modeled and remains an explicit caller or later human-owned adapter decision", intentional_exclusions = ["no backend or server compatibility claim", "no provider-specific publication or durability claim"] }
+qualification = "generated_bucket_configuration_mutation_batch"
+generated_mutation_qualification = { adapter = "./bin/s3_put_bucket_website_qualification", input_values = { ExpectedBucketOwner = "123456789012" }, request_body = "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>", expected_request_headers = { x-amz-sdk-checksum-algorithm = "SHA256" } }
 
 [[operation]]
 name = "PutObject"

@@ -1301,9 +1301,12 @@ def signed_socket_exchange(
 def signed_socket_text(registry: Registry, model: dict[str, Any]) -> str:
     operations: dict[str, Any] = {}
     for name, entry in sorted(registry.operations.items()):
-        if "signed_socket" not in entry:
+        if "signed_socket" in entry:
+            source = entry["signed_socket"]
+        elif "generated_mutation_qualification" in entry:
+            source = generated_mutation_signed_socket(name, entry)
+        else:
             continue
-        source = entry["signed_socket"]
         cases = []
         for case in source["case"]:
             generated = {
@@ -1330,6 +1333,150 @@ def signed_socket_text(registry: Registry, model: dict[str, Any]) -> str:
         indent=2,
         sort_keys=True,
     ) + "\n"
+
+
+def generated_mutation_signed_socket(
+    operation_name: str, entry: dict[str, Any]
+) -> dict[str, Any]:
+    """Expand one reviewed mutation fixture into the shared lane matrix."""
+    if entry.get("family") != "rest_xml_mutation":
+        raise Audit_Error(
+            f"generated mutation qualification has wrong family: "
+            f"{operation_name}"
+        )
+    fixture = entry["generated_mutation_qualification"]
+    if set(fixture) != {
+        "adapter",
+        "input_values",
+        "request_body",
+        "expected_request_headers",
+    }:
+        raise Audit_Error(
+            f"invalid generated mutation fixture: {operation_name}"
+        )
+    adapter = fixture["adapter"]
+    values = fixture["input_values"]
+    request_body = fixture["request_body"]
+    expected_headers = fixture["expected_request_headers"]
+    if (
+        not isinstance(adapter, str)
+        or not adapter.startswith("./bin/")
+        or not isinstance(values, dict)
+        or "Bucket" in values
+        or any(not isinstance(key, str) or not isinstance(value, str)
+               for key, value in values.items())
+        or not isinstance(request_body, str)
+        or not request_body
+        or not isinstance(expected_headers, dict)
+        or any(not isinstance(key, str) or not isinstance(value, str)
+               for key, value in expected_headers.items())
+    ):
+        raise Audit_Error(
+            f"invalid generated mutation fixture values: {operation_name}"
+        )
+
+    def exchange(
+        bucket: str,
+        status: str,
+        body: str,
+        headers: list[list[str]] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "input_values": {"Bucket": bucket, **values},
+            "request_body": request_body,
+            "expected_request_headers": expected_headers,
+            "status": status,
+            "headers": headers or [],
+            "body": body,
+        }
+
+    malformed = (
+        "<Error><Code>MalformedXML</Code>"
+        "<Message>invalid</Message></Error>"
+    )
+    bounded = (
+        "<Error><Code>InvalidRequest</Code><Message>"
+        + "x" * (len(request_body) + 64)
+        + "</Message></Error>"
+    )
+    cases = [
+        {
+            "id": "low-level-success",
+            "lane": "low_level",
+            "expected": "success",
+            "exchange": [exchange("qualified-low-level", "modeled_success", "")],
+        },
+        {
+            "id": "synchronous-success",
+            "lane": "synchronous",
+            "expected": "success",
+            "exchange": [exchange("qualified-sync", "modeled_success", "")],
+        },
+        {
+            "id": "composable-malformed",
+            "lane": "composable",
+            "expected": "invalid_request",
+            "exchange": [exchange("qualified-composable", "400 Bad Request", malformed)],
+        },
+        {
+            "id": "authentication-rejection",
+            "lane": "synchronous",
+            "expected": "authentication_failed",
+            "exchange": [exchange(
+                "qualified-authentication", "401 Unauthorized",
+                "<Error><Code>InvalidAccessKeyId</Code>"
+                "<Message>invalid key</Message></Error>",
+            )],
+        },
+        {
+            "id": "authorization-rejection",
+            "lane": "synchronous",
+            "expected": "authorization_failed",
+            "exchange": [exchange(
+                "qualified-authorization", "403 Forbidden",
+                "<Error><Code>AccessDenied</Code>"
+                "<Message>denied</Message></Error>",
+            )],
+        },
+        {
+            "id": "missing-bucket-rejection",
+            "lane": "synchronous",
+            "expected": "not_found",
+            "exchange": [exchange(
+                "qualified-missing", "404 Not Found",
+                "<Error><Code>NoSuchBucket</Code>"
+                "<Message>missing</Message></Error>",
+            )],
+        },
+        {
+            "id": "restart-rejection",
+            "lane": "restart",
+            "expected": "invalid_request",
+            "exchange": [
+                exchange("qualified-restart", "modeled_success", ""),
+                exchange("qualified-restart-second", "400 Bad Request", malformed),
+            ],
+        },
+        {
+            "id": "duplicate-singleton-header",
+            "lane": "invalid_xml",
+            "expected": "response_invalid",
+            "exchange": [exchange(
+                "qualified-duplicate", "modeled_success", "",
+                [["x-amz-request-id", "one"], ["x-amz-request-id", "two"]],
+            )],
+        },
+        {
+            "id": "bounded-response",
+            "lane": "invalid_xml",
+            "expected": "response_sink_failed",
+            "limits": {"maximum_document_bytes": len(request_body) + 1},
+            "exchange": [exchange(
+                "qualified-bounded", "400 Bad Request", bounded,
+            )],
+        },
+    ]
+    return {"adapter": adapter, "case": cases}
 
 
 def unresolved_decisions(entry: dict[str, Any]) -> list[str]:
@@ -1659,7 +1806,10 @@ def validate_committed_signed_socket(
     if value.get("model_sha256") != EXPECTED_MODEL_SHA256:
         raise Audit_Error("signed socket plan names an unexpected model hash")
     expected = {
-        name for name, entry in registry.operations.items() if "signed_socket" in entry
+        name
+        for name, entry in registry.operations.items()
+        if "signed_socket" in entry
+        or "generated_mutation_qualification" in entry
     }
     if set(value.get("operations", {})) != expected:
         raise Audit_Error("signed socket operation inventory differs from registry")

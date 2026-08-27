@@ -93,10 +93,10 @@ remain inventory-only until their audits gain executable evidence.
 | PutBucketCors | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketEncryption | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketIntelligentTieringConfiguration | Set_Intelligent_Tiering_Configuration | buckets | rest_xml_mutation | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| PutBucketInventoryConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutBucketInventoryConfiguration | Set_Inventory_Configuration | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | PutBucketLifecycle | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | PutBucketLifecycleConfiguration | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutBucketLogging | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutBucketLogging | Set_Logging | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | PutBucketMetricsConfiguration | Set_Metrics_Configuration | buckets | rest_xml_mutation | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | PutBucketNotification | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | PutBucketNotificationConfiguration | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
@@ -106,7 +106,7 @@ remain inventory-only until their audits gain executable evidence.
 | PutBucketRequestPayment | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | PutBucketTagging | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutBucketVersioning | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutBucketWebsite | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutBucketWebsite | Set_Website | buckets | rest_xml_mutation | generated | true | true | missing / absent | covered / generated | missing / absent | covered / generated |
 | PutObject | legacy_preserved | objects | streaming_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | PutObjectAcl | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
 | PutObjectAnnotation | legacy_preserved | objects | streaming_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |

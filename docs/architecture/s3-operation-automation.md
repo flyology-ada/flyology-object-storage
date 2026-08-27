@@ -142,6 +142,31 @@ every byte outside the region unchanged. This permits deterministic additions
 to the provider-centric parent packages without treating their existing
 handwritten declarations and bodies as generated input.
 
+For generated REST/XML mutations, one reviewed
+`generated_mutation_qualification` fixture records the exact typed input
+values, serialized request body, expected extra request headers, and adapter
+name. The tool expands that fixture into the common nine-case signed-socket
+matrix: low-level and synchronous success, composable modeled rejection,
+authentication, authorization, missing bucket, operation-last restart,
+duplicate singleton response header, and bounded response failure. This keeps
+each operation visible in executable evidence without copying a manually
+synchronized server/client sequence into the registry.
+Before its signed low-level success exchange, every generated adapter also
+passes a differently bound prepared request to the operation-specific executor
+and requires `Invalid_Request` before any socket admission. Thus the shared
+matrix executes the exact-operation binding rather than treating its generated
+comparison as sufficient evidence.
+
+The generated mutation provider surface retains operation-specific public
+result and disposition types while instantiating the existing human-owned
+`Client.REST_XML_Mutations` state machine. The generator emits the exact
+prepared-request binding, limited constructor, operation-last restart, typed
+`Finish`, lifecycle forwarding, and synchronous wait wrapper. Its reviewed
+manifest still owns admission certainty, replay prohibition, reconciliation,
+retained-borrow policy, cross-field rules, and compatibility exclusions.
+Unrecognized service responses remain `Outcome_Unknown`; no generated
+mutation is automatically replayed.
+
 ### GetBucketWebsite non-destructive canary
 
 `GetBucketWebsite` remains the authoritative shared-family handwritten

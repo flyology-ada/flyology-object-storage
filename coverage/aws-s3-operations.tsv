@@ -83,10 +83,10 @@ PutBucketAnalyticsConfiguration	extended	missing	covered	missing	covered
 PutBucketCors	extended	covered	covered	covered	covered
 PutBucketEncryption	extended	missing	covered	missing	covered
 PutBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
-PutBucketInventoryConfiguration	extended	missing	partial	missing	missing
+PutBucketInventoryConfiguration	extended	missing	covered	missing	covered
 PutBucketLifecycle	extended	missing	partial	missing	missing
 PutBucketLifecycleConfiguration	extended	missing	covered	missing	covered
-PutBucketLogging	extended	missing	partial	missing	missing
+PutBucketLogging	extended	missing	covered	missing	covered
 PutBucketMetricsConfiguration	extended	missing	covered	missing	covered
 PutBucketNotification	extended	missing	partial	missing	missing
 PutBucketNotificationConfiguration	extended	missing	covered	missing	covered
@@ -96,7 +96,7 @@ PutBucketReplication	extended	missing	covered	missing	covered
 PutBucketRequestPayment	extended	missing	covered	missing	covered
 PutBucketTagging	core	covered	covered	covered	covered
 PutBucketVersioning	core	covered	covered	covered	covered
-PutBucketWebsite	extended	missing	partial	missing	missing
+PutBucketWebsite	extended	missing	covered	missing	covered
 PutObject	core	covered	covered	covered	covered
 PutObjectAcl	extended	missing	partial	missing	missing
 PutObjectAnnotation	extended	missing	partial	missing	missing

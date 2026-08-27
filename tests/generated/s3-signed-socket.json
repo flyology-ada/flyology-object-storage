@@ -3359,6 +3359,506 @@
         }
       ]
     },
+    "PutBucketInventoryConfiguration": {
+      "adapter": "./bin/s3_put_bucket_inventory_configuration_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "qualified inventory"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "30039d88fd0b8c6749dce630b3b3ea5ef16ba996ff55d68c5b43eea7918d6dc5",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?id=qualified%20inventory&inventory"
+            }
+          ],
+          "expected": "success",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "qualified inventory"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "30039d88fd0b8c6749dce630b3b3ea5ef16ba996ff55d68c5b43eea7918d6dc5",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?id=qualified%20inventory&inventory"
+            }
+          ],
+          "expected": "success",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "qualified inventory"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "30039d88fd0b8c6749dce630b3b3ea5ef16ba996ff55d68c5b43eea7918d6dc5",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-composable?id=qualified%20inventory&inventory"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "composable-malformed",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authentication",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "qualified inventory"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "30039d88fd0b8c6749dce630b3b3ea5ef16ba996ff55d68c5b43eea7918d6dc5",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "401 Unauthorized",
+              "target": "/qualified-authentication?id=qualified%20inventory&inventory"
+            }
+          ],
+          "expected": "authentication_failed",
+          "id": "authentication-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authorization",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "qualified inventory"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "30039d88fd0b8c6749dce630b3b3ea5ef16ba996ff55d68c5b43eea7918d6dc5",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "403 Forbidden",
+              "target": "/qualified-authorization?id=qualified%20inventory&inventory"
+            }
+          ],
+          "expected": "authorization_failed",
+          "id": "authorization-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-missing",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "qualified inventory"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "30039d88fd0b8c6749dce630b3b3ea5ef16ba996ff55d68c5b43eea7918d6dc5",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-missing?id=qualified%20inventory&inventory"
+            }
+          ],
+          "expected": "not_found",
+          "id": "missing-bucket-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "qualified inventory"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "30039d88fd0b8c6749dce630b3b3ea5ef16ba996ff55d68c5b43eea7918d6dc5",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?id=qualified%20inventory&inventory"
+            },
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "qualified inventory"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "30039d88fd0b8c6749dce630b3b3ea5ef16ba996ff55d68c5b43eea7918d6dc5",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-restart-second?id=qualified%20inventory&inventory"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "restart-rejection",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "qualified inventory"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "30039d88fd0b8c6749dce630b3b3ea5ef16ba996ff55d68c5b43eea7918d6dc5",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?id=qualified%20inventory&inventory"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidRequest</Code><Message>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "qualified inventory"
+              },
+              "method": "PUT",
+              "request_body": "<InventoryConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Destination><S3BucketDestination><Bucket>arn:aws:s3:::qualified-reports</Bucket><Format>CSV</Format></S3BucketDestination></Destination><IsEnabled>true</IsEnabled><Id>qualified inventory</Id><IncludedObjectVersions>All</IncludedObjectVersions><Schedule><Frequency>Daily</Frequency></Schedule></InventoryConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "30039d88fd0b8c6749dce630b3b3ea5ef16ba996ff55d68c5b43eea7918d6dc5",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-bounded?id=qualified%20inventory&inventory"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 391
+          }
+        }
+      ]
+    },
+    "PutBucketLogging": {
+      "adapter": "./bin/s3_put_bucket_logging_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<BucketLoggingStatus xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LoggingEnabled><TargetBucket>qualified-log-target</TargetBucket><TargetPrefix>qualified/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "request_headers": {
+                "x-amz-content-sha256": "4ac99295ef427a0b6ae4e8e323d481915885a72d4acc02bb83a0a0b179f631dc",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?logging"
+            }
+          ],
+          "expected": "success",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<BucketLoggingStatus xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LoggingEnabled><TargetBucket>qualified-log-target</TargetBucket><TargetPrefix>qualified/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "request_headers": {
+                "x-amz-content-sha256": "4ac99295ef427a0b6ae4e8e323d481915885a72d4acc02bb83a0a0b179f631dc",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?logging"
+            }
+          ],
+          "expected": "success",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<BucketLoggingStatus xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LoggingEnabled><TargetBucket>qualified-log-target</TargetBucket><TargetPrefix>qualified/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "request_headers": {
+                "x-amz-content-sha256": "4ac99295ef427a0b6ae4e8e323d481915885a72d4acc02bb83a0a0b179f631dc",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-composable?logging"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "composable-malformed",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authentication",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<BucketLoggingStatus xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LoggingEnabled><TargetBucket>qualified-log-target</TargetBucket><TargetPrefix>qualified/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "request_headers": {
+                "x-amz-content-sha256": "4ac99295ef427a0b6ae4e8e323d481915885a72d4acc02bb83a0a0b179f631dc",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "401 Unauthorized",
+              "target": "/qualified-authentication?logging"
+            }
+          ],
+          "expected": "authentication_failed",
+          "id": "authentication-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authorization",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<BucketLoggingStatus xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LoggingEnabled><TargetBucket>qualified-log-target</TargetBucket><TargetPrefix>qualified/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "request_headers": {
+                "x-amz-content-sha256": "4ac99295ef427a0b6ae4e8e323d481915885a72d4acc02bb83a0a0b179f631dc",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "403 Forbidden",
+              "target": "/qualified-authorization?logging"
+            }
+          ],
+          "expected": "authorization_failed",
+          "id": "authorization-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-missing",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<BucketLoggingStatus xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LoggingEnabled><TargetBucket>qualified-log-target</TargetBucket><TargetPrefix>qualified/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "request_headers": {
+                "x-amz-content-sha256": "4ac99295ef427a0b6ae4e8e323d481915885a72d4acc02bb83a0a0b179f631dc",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-missing?logging"
+            }
+          ],
+          "expected": "not_found",
+          "id": "missing-bucket-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<BucketLoggingStatus xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LoggingEnabled><TargetBucket>qualified-log-target</TargetBucket><TargetPrefix>qualified/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "request_headers": {
+                "x-amz-content-sha256": "4ac99295ef427a0b6ae4e8e323d481915885a72d4acc02bb83a0a0b179f631dc",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?logging"
+            },
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<BucketLoggingStatus xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LoggingEnabled><TargetBucket>qualified-log-target</TargetBucket><TargetPrefix>qualified/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "request_headers": {
+                "x-amz-content-sha256": "4ac99295ef427a0b6ae4e8e323d481915885a72d4acc02bb83a0a0b179f631dc",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-restart-second?logging"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "restart-rejection",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<BucketLoggingStatus xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LoggingEnabled><TargetBucket>qualified-log-target</TargetBucket><TargetPrefix>qualified/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "request_headers": {
+                "x-amz-content-sha256": "4ac99295ef427a0b6ae4e8e323d481915885a72d4acc02bb83a0a0b179f631dc",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?logging"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidRequest</Code><Message>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<BucketLoggingStatus xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><LoggingEnabled><TargetBucket>qualified-log-target</TargetBucket><TargetPrefix>qualified/</TargetPrefix></LoggingEnabled></BucketLoggingStatus>",
+              "request_headers": {
+                "x-amz-content-sha256": "4ac99295ef427a0b6ae4e8e323d481915885a72d4acc02bb83a0a0b179f631dc",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-bounded?logging"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 213
+          }
+        }
+      ]
+    },
     "PutBucketMetricsConfiguration": {
       "adapter": "./bin/s3_put_bucket_metrics_configuration_qualification",
       "cases": [
@@ -3615,6 +4115,256 @@
           "lane": "invalid_xml",
           "limits": {
             "maximum_document_bytes": 192
+          }
+        }
+      ]
+    },
+    "PutBucketWebsite": {
+      "adapter": "./bin/s3_put_bucket_website_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "740d79d00f8c04c133f6dcdbbe98cb43ad9430438a2a077981940da18bb8237f",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?website"
+            }
+          ],
+          "expected": "success",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "740d79d00f8c04c133f6dcdbbe98cb43ad9430438a2a077981940da18bb8237f",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?website"
+            }
+          ],
+          "expected": "success",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "740d79d00f8c04c133f6dcdbbe98cb43ad9430438a2a077981940da18bb8237f",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-composable?website"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "composable-malformed",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authentication",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "740d79d00f8c04c133f6dcdbbe98cb43ad9430438a2a077981940da18bb8237f",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "401 Unauthorized",
+              "target": "/qualified-authentication?website"
+            }
+          ],
+          "expected": "authentication_failed",
+          "id": "authentication-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authorization",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "740d79d00f8c04c133f6dcdbbe98cb43ad9430438a2a077981940da18bb8237f",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "403 Forbidden",
+              "target": "/qualified-authorization?website"
+            }
+          ],
+          "expected": "authorization_failed",
+          "id": "authorization-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-missing",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "740d79d00f8c04c133f6dcdbbe98cb43ad9430438a2a077981940da18bb8237f",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-missing?website"
+            }
+          ],
+          "expected": "not_found",
+          "id": "missing-bucket-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "740d79d00f8c04c133f6dcdbbe98cb43ad9430438a2a077981940da18bb8237f",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?website"
+            },
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "740d79d00f8c04c133f6dcdbbe98cb43ad9430438a2a077981940da18bb8237f",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-restart-second?website"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "restart-rejection",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "740d79d00f8c04c133f6dcdbbe98cb43ad9430438a2a077981940da18bb8237f",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?website"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidRequest</Code><Message>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "PUT",
+              "request_body": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IndexDocument><Suffix>index.html</Suffix></IndexDocument></WebsiteConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "740d79d00f8c04c133f6dcdbbe98cb43ad9430438a2a077981940da18bb8237f",
+                "x-amz-expected-bucket-owner": "123456789012",
+                "x-amz-sdk-checksum-algorithm": "SHA256"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-bounded?website"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 152
           }
         }
       ]

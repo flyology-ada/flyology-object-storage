@@ -7283,6 +7283,113 @@ package Flyology.Object_Storage.Client.Low_Level is
       Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
       Token     : access Flyology.Cancellation.Token;
       Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Complete non-body inputs for generated named configuration
+   --  replacements. The query identifier and body identifier remain
+   --  independent because the pinned model encodes no equality constraint.
+   --  @field ID Required exact `id` query value
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type Put_Bucket_Inventory_Configuration_Parameters is record
+      ID                    : Ada.Strings.Unbounded.Unbounded_String;
+      Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  Prepare one exact PutBucketInventoryConfiguration request. The returned
+   --  request owns its exact serialized and signed one-shot XML body.
+   function Prepare_Put_Bucket_Inventory_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Inventory.Inventory_Configuration;
+      Parameters : Put_Bucket_Inventory_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request;
+
+   --  Execute one exact prepared PutBucketInventoryConfiguration request
+   --  without replay.
+   function Execute_Put_Bucket_Inventory_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome;
+
+   --  Start one exact prepared PutBucketInventoryConfiguration exchange. A
+   --  differently bound request is rejected before HTTP admission.
+   procedure Put_Bucket_Inventory_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Prepare one exact PutBucketLogging request. The returned
+   --  request owns its exact serialized and signed one-shot XML body.
+   function Prepare_Put_Bucket_Logging
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Logging.Logging_Status;
+      Parameters : Bucket_Control_Mutation_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request;
+
+   --  Execute one exact prepared PutBucketLogging request without replay.
+   function Execute_Put_Bucket_Logging
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome;
+
+   --  Start one exact prepared PutBucketLogging exchange. A differently bound
+   --  request is rejected before HTTP admission.
+   procedure Put_Bucket_Logging
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Prepare one exact PutBucketWebsite request. The returned
+   --  request owns its exact serialized and signed one-shot XML body.
+   function Prepare_Put_Bucket_Website
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : S3.Website.Website_Configuration;
+      Parameters : Bucket_Control_Mutation_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request;
+
+   --  Execute one exact prepared PutBucketWebsite request without replay.
+   function Execute_Put_Bucket_Website
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome;
+
+   --  Start one exact prepared PutBucketWebsite exchange. A differently bound
+   --  request is rejected before HTTP admission.
+   procedure Put_Bucket_Website
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
 --  END S3 OPERATION GENERATOR: LOW_LEVEL_VISIBLE
 
 private
