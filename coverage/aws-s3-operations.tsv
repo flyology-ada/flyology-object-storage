@@ -51,7 +51,7 @@ GetBucketReplication	extended	missing	covered	missing	covered
 GetBucketRequestPayment	extended	missing	covered	missing	covered
 GetBucketTagging	core	covered	covered	covered	covered
 GetBucketVersioning	core	covered	covered	covered	covered
-GetBucketWebsite	extended	missing	partial	missing	missing
+GetBucketWebsite	extended	missing	covered	missing	covered
 GetObject	core	covered	covered	covered	covered
 GetObjectAcl	extended	missing	covered	covered	covered
 GetObjectAnnotation	extended	missing	partial	missing	missing

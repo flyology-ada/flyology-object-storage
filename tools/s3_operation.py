@@ -673,17 +673,27 @@ def negative_xml_cases(
             f"reviewed XML payload shape is invalid: {operation_name}"
         )
     if payload_shape != modeled_payload_shape:
-        ignored_alias_traits = {"documentation", "locationName"}
-        modeled_contract = {
-            key: value
-            for key, value in model["shapes"][modeled_payload_shape].items()
-            if key not in ignored_alias_traits
-        }
-        reviewed_contract = {
-            key: value
-            for key, value in model["shapes"][payload_shape].items()
-            if key not in ignored_alias_traits
-        }
+        def without_documentation(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {
+                    key: without_documentation(item)
+                    for key, item in value.items()
+                    if key != "documentation"
+                }
+            if isinstance(value, list):
+                return [without_documentation(item) for item in value]
+            return value
+
+        modeled_contract = without_documentation(
+            model["shapes"][modeled_payload_shape]
+        )
+        reviewed_contract = without_documentation(
+            model["shapes"][payload_shape]
+        )
+        #  The reviewed alias supplies the wire root name. A differing member
+        #  locationName remains contract-significant and is still compared.
+        modeled_contract.pop("locationName", None)
+        reviewed_contract.pop("locationName", None)
         if reviewed_contract != modeled_contract:
             raise Audit_Error(
                 f"reviewed XML payload alias is not structurally equivalent: "

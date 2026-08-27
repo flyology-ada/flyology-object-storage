@@ -1311,6 +1311,243 @@
         }
       ],
       "valid_document": "<ReplicationConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Role>reviewed-role</Role><Rule><Status>Enabled</Status><Destination><Bucket>reviewed-destination</Bucket></Destination></Rule></ReplicationConfiguration>"
+    },
+    "GetBucketWebsite": {
+      "cases": [
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-errordocument",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-errordocument-1-key",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-indexdocument",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-indexdocument-1-suffix",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-redirectallrequeststo",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-redirectallrequeststo-1-hostname",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-redirectallrequeststo-1-protocol",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-routingrules-1-routingrule-1-condition",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-routingrules-1-routingrule-1-condition-1-httperrorcodereturnedequals",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-routingrules-1-routingrule-1-redirect",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-routingrules-1-routingrule-1-redirect-1-hostname",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-routingrules-1-routingrule-1-redirect-1-protocol",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-routingrules-1-routingrule-1-redirect-1-replacekeywith",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-routingrules-1-routingrule-2-condition",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-routingrules-1-routingrule-2-condition-1-keyprefixequals",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-routingrules-1-routingrule-2-redirect",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-routingrules-1-routingrule-2-redirect-1-httpredirectcode",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-routingrules-1-routingrule-2-redirect-1-replacekeyprefixwith",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>__INVALID_MODEL_ENUM__</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-redirectallrequeststo-1-protocol-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>__INVALID_MODEL_ENUM__</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "invalid-enum",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-enum-routingrules-1-routingrule-1-redirect-1-protocol-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-depth",
+          "limits": {
+            "maximum_depth": 4
+          }
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_sink_failed",
+          "id": "limit-failure-document-bytes",
+          "limits": {
+            "maximum_document_bytes": 778
+          }
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-elements",
+          "limits": {
+            "maximum_elements": 21
+          }
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-text-bytes",
+          "limits": {
+            "maximum_text_bytes": 84
+          }
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument /><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-errordocument-1-key",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument /><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-indexdocument-1-suffix",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-redirectallrequeststo-1-hostname",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-routingrules-1-routingrule-1-redirect",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-routingrules-1-routingrule-2-redirect",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"urn:flyology:invalid-s3-namespace\" xmlns:ns1=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns1:RedirectAllRequestsTo><ns1:HostName>all.example</ns1:HostName><ns1:Protocol>https</ns1:Protocol></ns1:RedirectAllRequestsTo><ns1:IndexDocument><ns1:Suffix>index.html</ns1:Suffix></ns1:IndexDocument><ns1:ErrorDocument><ns1:Key>error.html</ns1:Key></ns1:ErrorDocument><ns1:RoutingRules><ns1:RoutingRule><ns1:Condition><ns1:HttpErrorCodeReturnedEquals>404</ns1:HttpErrorCodeReturnedEquals></ns1:Condition><ns1:Redirect><ns1:HostName>errors.example</ns1:HostName><ns1:Protocol>http</ns1:Protocol><ns1:ReplaceKeyWith>missing.html</ns1:ReplaceKeyWith></ns1:Redirect></ns1:RoutingRule><ns1:RoutingRule><ns1:Condition><ns1:KeyPrefixEquals>docs/</ns1:KeyPrefixEquals></ns1:Condition><ns1:Redirect><ns1:HttpRedirectCode>302</ns1:HttpRedirectCode><ns1:ReplaceKeyPrefixWith>archive/</ns1:ReplaceKeyPrefixWith></ns1:Redirect></ns1:RoutingRule></ns1:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "namespace-violation",
+          "expected_http_result": "response_invalid",
+          "id": "namespace-violation-websiteconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\" unexpected-model-attribute=\"true\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules></ns0:WebsiteConfiguration>",
+          "category": "unexpected-attribute",
+          "expected_http_result": "response_invalid",
+          "id": "unexpected-attribute-websiteconfiguration",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:WebsiteConfiguration xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:RedirectAllRequestsTo><ns0:HostName>all.example</ns0:HostName><ns0:Protocol>https</ns0:Protocol></ns0:RedirectAllRequestsTo><ns0:IndexDocument><ns0:Suffix>index.html</ns0:Suffix></ns0:IndexDocument><ns0:ErrorDocument><ns0:Key>error.html</ns0:Key></ns0:ErrorDocument><ns0:RoutingRules><ns0:RoutingRule><ns0:Condition><ns0:HttpErrorCodeReturnedEquals>404</ns0:HttpErrorCodeReturnedEquals></ns0:Condition><ns0:Redirect><ns0:HostName>errors.example</ns0:HostName><ns0:Protocol>http</ns0:Protocol><ns0:ReplaceKeyWith>missing.html</ns0:ReplaceKeyWith></ns0:Redirect></ns0:RoutingRule><ns0:RoutingRule><ns0:Condition><ns0:KeyPrefixEquals>docs/</ns0:KeyPrefixEquals></ns0:Condition><ns0:Redirect><ns0:HttpRedirectCode>302</ns0:HttpRedirectCode><ns0:ReplaceKeyPrefixWith>archive/</ns0:ReplaceKeyPrefixWith></ns0:Redirect></ns0:RoutingRule></ns0:RoutingRules><UnknownModelMember /></ns0:WebsiteConfiguration>",
+          "category": "unknown-member",
+          "expected_http_result": "response_invalid",
+          "id": "unknown-member-websiteconfiguration",
+          "limits": {}
+        }
+      ],
+      "valid_document": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RedirectAllRequestsTo><HostName>all.example</HostName><Protocol>https</Protocol></RedirectAllRequestsTo><IndexDocument><Suffix>index.html</Suffix></IndexDocument><ErrorDocument><Key>error.html</Key></ErrorDocument><RoutingRules><RoutingRule><Condition><HttpErrorCodeReturnedEquals>404</HttpErrorCodeReturnedEquals></Condition><Redirect><HostName>errors.example</HostName><Protocol>http</Protocol><ReplaceKeyWith>missing.html</ReplaceKeyWith></Redirect></RoutingRule><RoutingRule><Condition><KeyPrefixEquals>docs/</KeyPrefixEquals></Condition><Redirect><HttpRedirectCode>302</HttpRedirectCode><ReplaceKeyPrefixWith>archive/</ReplaceKeyPrefixWith></Redirect></RoutingRule></RoutingRules></WebsiteConfiguration>"
     }
   }
 }

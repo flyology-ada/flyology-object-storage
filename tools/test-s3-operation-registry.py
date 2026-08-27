@@ -79,6 +79,17 @@ def main() -> None:
         "unexpected-attribute": 1,
         "unknown-member": 1,
     }
+    website_cases = negative["operations"]["GetBucketWebsite"]["cases"]
+    assert len(website_cases) == 32
+    assert Counter(case["category"] for case in website_cases) == {
+        "duplicate-singleton": 18,
+        "invalid-enum": 2,
+        "limit-failure": 4,
+        "missing-required-member": 5,
+        "namespace-violation": 1,
+        "unexpected-attribute": 1,
+        "unknown-member": 1,
+    }
     invalid_logging_decisions = copy.deepcopy(
         registry.operations["GetBucketLogging"]["negative_xml"]
     )
@@ -137,6 +148,13 @@ def main() -> None:
     logging_request = logging_socket_operation["cases"][0]["exchange"][0]
     assert logging_request["target"] == "/qualified-low-level?logging"
     assert logging_request["request_headers"] == {
+        "x-amz-expected-bucket-owner": "123456789012"
+    }
+    website_socket_operation = socket_plan["operations"]["GetBucketWebsite"]
+    assert len(website_socket_operation["cases"]) == 7
+    website_request = website_socket_operation["cases"][0]["exchange"][0]
+    assert website_request["target"] == "/qualified-low-level?website"
+    assert website_request["request_headers"] == {
         "x-amz-expected-bucket-owner": "123456789012"
     }
     stale_socket = copy.deepcopy(socket_plan)

@@ -176,3 +176,16 @@ state, caller-owned endpoint exclusion, typed fixtures, and structural-only
 key-format interpretation. Seven reviewed lanes plus 38 generated XML
 negatives execute 45 signed socket cases; the strict logging codec and small
 typed result adapter remain operation-specific.
+
+GetBucketWebsite reuses the same transport, lifecycle, request, evidence, and
+negative-case machinery. The model supplies its `website` target, complete
+20-shape response closure, nonflattened ordered routing rules, required nested
+members, and exact lowercase protocol domain. The reviewed manifest records
+the structurally equivalent `WebsiteConfiguration` payload alias, public name,
+read-only absence mapping, caller-owned endpoint exclusion, typed fixtures,
+the pinned directory-bucket exclusion, and deliberate structural-only
+interpretation of the prose-level top-member exclusivity. Seven reviewed lanes
+plus 32 generated XML negatives execute 39 signed socket cases; the strict
+website codec and small typed result adapter remain operation-specific.
+Payload-alias verification strips documentation recursively but continues to
+compare every wire-relevant trait.

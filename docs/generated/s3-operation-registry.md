@@ -61,7 +61,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketRequestPayment | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketTagging | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketVersioning | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetBucketWebsite | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketWebsite | Get_Website | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetObject | legacy_preserved | objects | streaming_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetObjectAcl | legacy_preserved | objects | bounded_rest_xml_read | missing / absent | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetObjectAnnotation | legacy_preserved | objects | streaming_read | missing / absent | partial / generated | missing / absent | missing / absent |

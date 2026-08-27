@@ -3,6 +3,7 @@ with Flyology.Object_Storage.S3.Analytics;
 with Flyology.Object_Storage.S3.Intelligent_Tiering;
 with Flyology.Object_Storage.S3.Inventory;
 with Flyology.Object_Storage.S3.Logging;
+with Flyology.Object_Storage.S3.Website;
 with Flyology.Object_Storage.S3.Tagging;
 with Flyology.Object_Storage.S3.Versioning;
 with Flyology.Operations.Drivers;
@@ -53,6 +54,7 @@ package body Flyology.Object_Storage.Client.Buckets is
      Flyology.Object_Storage.S3.Intelligent_Tiering;
    package Inventory renames Flyology.Object_Storage.S3.Inventory;
    package Logging renames Flyology.Object_Storage.S3.Logging;
+   package Website renames Flyology.Object_Storage.S3.Website;
    package Object_Lock renames Flyology.Object_Storage.S3.Object_Lock;
    package Replication renames Flyology.Object_Storage.S3.Replication;
    use type Low_Level.List_Buckets_Outcome_Kind;
@@ -7274,6 +7276,234 @@ package body Flyology.Object_Storage.Client.Buckets is
          return Result;
       end;
    end Get_Logging;
+
+   function Empty_Get_Bucket_Website_Outcome
+      return Low_Level.Get_Bucket_Website_Outcome is
+     --  Status 500 is the established deterministic result sentinel when no
+     --  physical response exists. HTTP is unreachable parser scratch state;
+     --  the surrounding presence flags and result Kind are authoritative.
+     ((Kind          => Low_Level.Get_Bucket_Control_Rejected,
+       Status        => 500,
+       Configuration =>
+         (Redirect_All =>
+            (Is_Set    => False,
+             Host_Name => US.Null_Unbounded_String,
+             Scheme    => (Is_Set => False, Value => Website.HTTP)),
+          Index        =>
+            (Is_Set => False, Suffix => US.Null_Unbounded_String),
+          Error        =>
+            (Is_Set => False, Key => US.Null_Unbounded_String),
+          Routes       =>
+            (Is_Set => False,
+             Rules => Website.Routing_Rule_Vectors.Empty_Vector)),
+       Error => (others => <>)));
+
+   function Normalize_Get_Bucket_Website_Response
+     (Value : Low_Level.Get_Bucket_Website_Outcome;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase : HTTP_Client.Exchange_Phase)
+      return Get_Bucket_Website_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Get_Bucket_Control_Rejected
+         then US.To_String (Value.Error.Code)
+         else "");
+      --  Both modeled absence conditions map to the provider's read-only
+      --  Not_Found result: the bucket or its website configuration is absent.
+      Failure : constant Failure_Reason :=
+        (if Admission /= HTTP_Client.Response_Observed
+         then Corrupt_Or_Invalid_Response
+         elsif Value.Kind = Low_Level.Bucket_Control_Found
+         then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchWebsiteConfiguration"
+         then Not_Found
+         elsif Value.Status = 400
+           and then Code in "InvalidBucketName" | "InvalidRequest"
+         then Invalid_Request
+         elsif Value.Status = 501 and then Code = "NotImplemented"
+         then Invalid_Request
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => Get_Bucket_Website_Response_Available,
+         Failure     => Failure,
+         Admission   => Admission,
+         Response    => Value,
+         HTTP_Result => HTTP_Client.Response_Complete,
+         HTTP_Phase  => Phase,
+         Detail      => US.Null_Unbounded_String);
+   end Normalize_Get_Bucket_Website_Response;
+
+   function Decode_Get_Bucket_Website_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Admission  : HTTP_Client.Admission_Certainty;
+      Phase      : HTTP_Client.Exchange_Phase)
+      return Get_Bucket_Website_Result is
+   begin
+      return Normalize_Get_Bucket_Website_Response
+        (Low.Decode_Get_Bucket_Website_Response
+           (Status, Payload, Request_ID, Host_ID, Limits),
+         Admission, Phase);
+   exception
+      when Error : Low.Invalid_Response =>
+         return Normalize_Get_Bucket_Website_Failure
+           (HTTP_Client.Response_Invalid, Admission, Phase,
+            Ada.Exceptions.Exception_Message (Error));
+   end Decode_Get_Bucket_Website_Response;
+
+   function Normalize_Get_Bucket_Website_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String) return Get_Bucket_Website_Result is
+   begin
+      return
+        (Kind        => Get_Bucket_Website_Exchange_Failed,
+         Failure     =>
+           (if Kind
+               in HTTP_Client.Response_Invalid
+                | HTTP_Client.Response_Body_Too_Large
+                | HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         Response    => Empty_Get_Bucket_Website_Outcome,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Get_Bucket_Website_Failure;
+
+   overriding procedure Write
+     (Item : in out Get_Bucket_Website_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      Get_Bucket_Website_Reads.Write (Item.State, Data);
+   end Write;
+
+   overriding procedure Drive
+     (Item  : in out Get_Bucket_Website_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      Get_Bucket_Website_Reads.Drive
+        (Item.State, Item'Access, Item'Access, Item.HTTP,
+         Item.Cancellation, Event);
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Bucket_Website_Operation) is
+   begin
+      Get_Bucket_Website_Reads.Request_Cancellation (Item.State);
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Get_Bucket_Website_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Get_Bucket_Website_Reads.Finalize (Item.State);
+   end Finalize;
+
+   procedure Get_Website
+     (Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out Get_Bucket_Website_Operation) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with "GetBucketWebsite restart changed owner";
+      end if;
+      Get_Bucket_Website_Reads.Start
+        (Operation.State, Operation'Access,
+         Low.Prepare_Get_Bucket_Website
+           (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp),
+         Deadline, Limits);
+   end Get_Website;
+
+   function Get_Website
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return Get_Bucket_Website_Operation is
+   begin
+      return Result : Get_Bucket_Website_Operation (Set, Client, Token) do
+         Get_Website
+           (Client, Origin, Bucket, Parameters, Identity, Deadline, Region,
+            Style, Limits, Token, Result);
+      end return;
+   end Get_Website;
+
+   procedure Finish
+     (Operation : in out Get_Bucket_Website_Operation;
+      Result    : out Get_Bucket_Website_Result) is
+   begin
+      Get_Bucket_Website_Reads.Finish
+        (Operation.State, Operation'Access, Result);
+   end Finish;
+
+   function Get_Website
+     (Client     : aliased in out HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
+      return Get_Bucket_Website_Result
+   is
+      --  Derived owner stack: provider parent, HTTP exchange, and HTTP's one
+      --  active transport child. This is not a caller resource default.
+      Set : aliased Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Get_Bucket_Website_Operation :=
+           Get_Website
+             (Set'Access, Client'Access, Origin, Bucket, Parameters, Identity,
+              HTTP_Client.Deadline_After (Timeout), Region, Style, Limits,
+              Token);
+         Result : Get_Bucket_Website_Result;
+      begin
+         Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Get_Website;
 
    --  These exact status/code pairs prove that the provider rejected the
    --  replication replacement. Any other complete rejection remains

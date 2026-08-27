@@ -1198,6 +1198,199 @@
         }
       ],
       "negative_template": "synchronous-success"
+    },
+    "GetBucketWebsite": {
+      "adapter": "./bin/s3_get_bucket_website_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "<WebsiteConfiguration><IndexDocument><Suffix>low-level-index</Suffix></IndexDocument></WebsiteConfiguration>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?website"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "low-level-index",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<WebsiteConfiguration><RedirectAllRequestsTo><HostName>all.example</HostName><Protocol>https</Protocol></RedirectAllRequestsTo><IndexDocument><Suffix>synchronous-index</Suffix></IndexDocument><ErrorDocument><Key>error.html</Key></ErrorDocument><RoutingRules><RoutingRule><Condition><HttpErrorCodeReturnedEquals>404</HttpErrorCodeReturnedEquals></Condition><Redirect><HostName>errors.example</HostName><Protocol>http</Protocol><ReplaceKeyWith>missing.html</ReplaceKeyWith></Redirect></RoutingRule><RoutingRule><Condition><KeyPrefixEquals>docs/</KeyPrefixEquals></Condition><Redirect><HttpRedirectCode>302</HttpRedirectCode><ReplaceKeyPrefixWith>archive/</ReplaceKeyPrefixWith></Redirect></RoutingRule></RoutingRules></WebsiteConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?website"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "synchronous-index",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<WebsiteConfiguration></WebsiteConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-empty",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-empty?website"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "empty",
+          "id": "empty-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<WebsiteConfiguration><IndexDocument><Suffix>composable-index</Suffix></IndexDocument></WebsiteConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-composable?website"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "composable-index",
+          "id": "composable-success",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<WebsiteConfiguration><IndexDocument><Suffix>restart-index</Suffix></IndexDocument></WebsiteConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?website"
+            },
+            {
+              "body": "<Error><Code>NoSuchWebsiteConfiguration</Code><Message>missing</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "restart-missing"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-restart-second?website"
+            }
+          ],
+          "expected": "not_found",
+          "id": "restart-not-found",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<WebsiteConfiguration><IndexDocument><Suffix>duplicate-index</Suffix></IndexDocument></WebsiteConfiguration>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?website"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<WebsiteConfiguration><IndexDocument><Suffix>                                                                bounded-index</Suffix></IndexDocument></WebsiteConfiguration>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-bounded?website"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 80
+          }
+        }
+      ],
+      "negative_template": "synchronous-success"
     }
   }
 }

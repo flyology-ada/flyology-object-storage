@@ -35,6 +35,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
      Flyology.Object_Storage.S3.Intelligent_Tiering;
    package Inventory renames Flyology.Object_Storage.S3.Inventory;
    package Logging renames Flyology.Object_Storage.S3.Logging;
+   package Website renames Flyology.Object_Storage.S3.Website;
    package Encoding renames Flyology.Object_Storage.S3.SigV4_Encoding;
    package Object_Reads renames Flyology.Object_Storage.S3.Object_Reads;
    package Object_Lock renames Flyology.Object_Storage.S3.Object_Lock;
@@ -8383,6 +8384,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
          US.Null_Unbounded_String, False, Identity, Region, Timestamp));
 
+   function Prepare_Get_Bucket_Website
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Bucket_Website_Operation,
+         Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
+         US.Null_Unbounded_String, False, Identity, Region, Timestamp));
+
    function Prepare_Get_Bucket_Metrics_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
@@ -9088,6 +9099,55 @@ package body Flyology.Object_Storage.Client.Low_Level is
            & Ada.Exceptions.Exception_Message (Error);
    end Decode_Get_Bucket_Logging_Response;
 
+   function Empty_Website_Configuration
+      return Website.Website_Configuration is
+     --  HTTP is unreachable response payload state for a rejected outcome;
+     --  each presence flag determines whether its companion value matters.
+     ((Redirect_All =>
+         (Is_Set    => False,
+          Host_Name => US.Null_Unbounded_String,
+          Scheme    => (Is_Set => False, Value => Website.HTTP)),
+       Index        =>
+         (Is_Set => False, Suffix => US.Null_Unbounded_String),
+       Error        =>
+         (Is_Set => False, Key => US.Null_Unbounded_String),
+       Routes       =>
+         (Is_Set => False,
+          Rules => Website.Routing_Rule_Vectors.Empty_Vector)));
+
+   function Decode_Get_Bucket_Website_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Website_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      --  The pinned model declares 200 as the sole success response and its
+      --  output is a complete XML document, including the empty root form.
+      if Status = 200 then
+         if Payload'Length = 0 then
+            raise Invalid_Response with "empty GetBucketWebsite response";
+         end if;
+         return
+           (Kind          => Bucket_Control_Found,
+            Status        => Status,
+            Configuration => Website.Parse (Payload, Limits),
+            Error         => (others => <>));
+      end if;
+      return
+        (Kind          => Get_Bucket_Control_Rejected,
+         Status        => Status,
+         Configuration => Empty_Website_Configuration,
+         Error         =>
+           Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Error : Website.Malformed_Website | S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetBucketWebsite response: "
+           & Ada.Exceptions.Exception_Message (Error);
+   end Decode_Get_Bucket_Website_Response;
+
    function Decode_Get_Bucket_ACL_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
@@ -9524,6 +9584,23 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Raw.Status, US.To_String (Raw.Payload),
          US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
    end Execute_Get_Bucket_Logging;
+
+   function Execute_Get_Bucket_Website
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Website_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared, Model.Get_Bucket_Website_Operation,
+           False, False, Timeout, Token, Limits);
+   begin
+      return Decode_Get_Bucket_Website_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_Get_Bucket_Website;
 
    function Execute_Get_Bucket_ACL
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -14311,6 +14388,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Model.Get_Bucket_Logging_Operation, Client, Prepared, Sink,
          Deadline, Token, Operation);
    end Get_Bucket_Logging;
+
+   procedure Get_Bucket_Website
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Exact_Bucket_Control_Get
+        (Model.Get_Bucket_Website_Operation, Client, Prepared, Sink,
+         Deadline, Token, Operation);
+   end Get_Bucket_Website;
 
    procedure Create_Bucket_Metadata_Table_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
