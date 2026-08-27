@@ -118,7 +118,7 @@ def run_case(
             "FLYOLOGY_S3_QUALIFICATION_LANE": case["lane"],
             "FLYOLOGY_S3_QUALIFICATION_BUCKET": case["exchange"][0][
                 "input_values"
-            ]["Bucket"],
+            ].get("Bucket", ""),
             "FLYOLOGY_S3_QUALIFICATION_EXPECTED": case["expected"],
         }
     )
@@ -198,7 +198,10 @@ def generated_negative_cases(
                 "id": "generated-" + generated_case["id"],
                 "lane": "invalid_xml",
                 "expected": generated_case["expected_http_result"],
-                "limits": generated_case["limits"],
+                "limits": {
+                    **template.get("limits", {}),
+                    **generated_case["limits"],
+                },
                 "exchange": [exchange],
             }
         )

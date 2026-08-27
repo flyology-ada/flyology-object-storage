@@ -56,6 +56,7 @@ project Flyology_Object_Storage_Tests is
       "s3_list_bucket_intelligent_tiering_configurations_qualification.adb",
       "s3_list_bucket_inventory_configurations_qualification.adb",
       "s3_list_object_annotations_qualification.adb",
+      "s3_list_directory_buckets_qualification.adb",
       "s3_get_bucket_analytics_configuration_qualification.adb",
       "s3_get_bucket_intelligent_tiering_configuration_qualification.adb",
       "s3_get_bucket_inventory_configuration_qualification.adb",

@@ -15,6 +15,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -389,6 +390,7 @@ def validate_operation_qualification(name: str, entry: dict[str, Any]) -> None:
                 "maximum_depth",
                 "maximum_elements",
                 "maximum_text_bytes",
+                "collection_limit",
             }
             or not isinstance(value, int)
             or isinstance(value, bool)
@@ -666,6 +668,29 @@ def local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def valid_iso8601_timestamp(value: str) -> bool:
+    """Match the established S3 modeled timestamp grammar."""
+    match = re.fullmatch(
+        r"(\d{4})-(\d{2})-(\d{2})T"
+        r"(\d{2}):(\d{2}):(\d{2})"
+        r"(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})",
+        value,
+    )
+    if match is None:
+        return False
+    year, month, day, hour, minute, second = (
+        int(match.group(index)) for index in range(1, 7)
+    )
+    try:
+        datetime(year, month, day, hour, minute, second)
+    except ValueError:
+        return False
+    zone = match.group(8)
+    return zone == "Z" or (
+        int(zone[1:3]) <= 23 and int(zone[4:6]) <= 59
+    )
+
+
 def namespace_uri(tag: str) -> str:
     return tag[1:].split("}", 1)[0] if tag.startswith("{") else ""
 
@@ -924,6 +949,21 @@ def negative_xml_cases(
                     ]
                     changed_matches[index].text = "__INVALID_MODEL_ENUM__"
                     add_case("invalid-enum", [*member_path, str(index + 1)], changed)
+            if target_shape["type"] == "timestamp":
+                for index, _ in enumerate(matching):
+                    changed = deepcopy(valid_root)
+                    target = find_element(changed, path)
+                    changed_matches = [
+                        child
+                        for child in list(target)
+                        if local_name(child.tag) == spec["tag"]
+                    ]
+                    changed_matches[index].text = "2026-02-30T00:00:00Z"
+                    add_case(
+                        "invalid-timestamp",
+                        [*member_path, str(index + 1)],
+                        changed,
+                    )
             if target_shape["type"] in {"structure", "list"}:
                 for index, child in enumerate(matching):
                     walk(child, spec["shape"], [*member_path, str(index + 1)])
@@ -1063,6 +1103,13 @@ def validate_reviewed_xml(
                 if (child.text or "") not in target_shape["enum"]:
                     raise Audit_Error(
                         f"reviewed XML enum is outside {spec['name']}: {operation_name}"
+                    )
+        if target_shape["type"] == "timestamp":
+            for child in matching:
+                if not valid_iso8601_timestamp(child.text or ""):
+                    raise Audit_Error(
+                        f"reviewed XML timestamp is outside {spec['name']}: "
+                        f"{operation_name}"
                     )
         if target_shape["type"] in {"structure", "list"}:
             for child in matching:
@@ -1539,7 +1586,9 @@ def documentation_text(registry: Registry) -> str:
 
 
 def generated_outputs(
-    registry: Registry, model: dict[str, Any] | None = None
+    registry: Registry,
+    model: dict[str, Any] | None = None,
+    source_overrides: dict[Path, str] | None = None,
 ) -> dict[Path, str]:
     result = {
         LEDGER_PATH: ledger_text(registry),
@@ -1551,7 +1600,9 @@ def generated_outputs(
     if model is not None:
         import s3_codegen
 
-        website_canary = s3_codegen.get_bucket_website_canary(registry, model)
+        website_canary = s3_codegen.get_bucket_website_canary(
+            registry, model, source_overrides
+        )
         if website_canary["findings"]:
             raise Audit_Error(
                 "GetBucketWebsite generation canary findings: "

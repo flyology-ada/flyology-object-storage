@@ -59,7 +59,7 @@ def main() -> None:
         name
         for name, entry in registry.operations.items()
         if entry["generator_eligible"]
-    } == set()
+    } == {"ListDirectoryBuckets"}
     canary = registry.operations["GetBucketReplication"]
     assert not s3_operation.evidence_findings(
         canary, include_partial=False

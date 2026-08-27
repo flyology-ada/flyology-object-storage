@@ -2559,6 +2559,103 @@
       ],
       "valid_document": "<ListBucketMetricsConfigurationsOutput xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IsTruncated>true</IsTruncated><ContinuationToken>reviewed-current</ContinuationToken><NextContinuationToken>reviewed-next</NextContinuationToken><MetricsConfiguration><Id>reviewed-metrics</Id><Filter><Tag><Key>reviewed-key</Key><Value>reviewed-value</Value></Tag></Filter></MetricsConfiguration></ListBucketMetricsConfigurationsOutput>"
     },
+    "ListDirectoryBuckets": {
+      "cases": [
+        {
+          "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-buckets-1-bucket-1-bucketarn",
+          "limits": {}
+        },
+        {
+          "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-buckets-1-bucket-1-bucketregion",
+          "limits": {}
+        },
+        {
+          "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-buckets-1-bucket-1-creationdate",
+          "limits": {}
+        },
+        {
+          "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-buckets-1-bucket-1-name",
+          "limits": {}
+        },
+        {
+          "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-continuationtoken",
+          "limits": {}
+        },
+        {
+          "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-02-30T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>",
+          "category": "invalid-timestamp",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-timestamp-buckets-1-bucket-1-creationdate-1",
+          "limits": {}
+        },
+        {
+          "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-depth",
+          "limits": {
+            "maximum_depth": 3
+          }
+        },
+        {
+          "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_sink_failed",
+          "id": "limit-failure-document-bytes",
+          "limits": {
+            "maximum_document_bytes": 361
+          }
+        },
+        {
+          "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-elements",
+          "limits": {
+            "maximum_elements": 7
+          }
+        },
+        {
+          "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-text-bytes",
+          "limits": {
+            "maximum_text_bytes": 135
+          }
+        },
+        {
+          "body": "<ListDirectoryBucketsOutput unexpected-model-attribute=\"true\"><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>",
+          "category": "unexpected-attribute",
+          "expected_http_result": "response_invalid",
+          "id": "unexpected-attribute-listdirectorybucketsoutput",
+          "limits": {}
+        },
+        {
+          "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken><UnknownModelMember /></ListDirectoryBucketsOutput>",
+          "category": "unknown-member",
+          "expected_http_result": "response_invalid",
+          "id": "unknown-member-listdirectorybucketsoutput",
+          "limits": {}
+        }
+      ],
+      "valid_document": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next-page</ContinuationToken></ListDirectoryBucketsOutput>"
+    },
     "ListObjectAnnotations": {
       "cases": [
         {
@@ -2664,6 +2761,13 @@
           "category": "invalid-enum",
           "expected_http_result": "response_invalid",
           "id": "invalid-enum-annotations-1-annotationentry-1-replicationstatus-1",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListObjectAnnotationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:Annotations><ns0:AnnotationEntry><ns0:AnnotationName>reviewed-annotation</ns0:AnnotationName><ns0:LastModified>2026-02-30T00:00:00Z</ns0:LastModified><ns0:ETag>\"reviewed-etag\"</ns0:ETag><ns0:ChecksumAlgorithm>CRC32C</ns0:ChecksumAlgorithm><ns0:ChecksumAlgorithm>SHA512</ns0:ChecksumAlgorithm><ns0:Size>42</ns0:Size><ns0:ReplicationStatus>COMPLETE</ns0:ReplicationStatus></ns0:AnnotationEntry></ns0:Annotations><ns0:Bucket>reviewed-bucket</ns0:Bucket><ns0:Key>reviewed/key</ns0:Key><ns0:AnnotationPrefix>reviewed/</ns0:AnnotationPrefix><ns0:MaxAnnotationResults>2</ns0:MaxAnnotationResults><ns0:AnnotationCount>1</ns0:AnnotationCount><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken></ns0:ListObjectAnnotationsOutput>",
+          "category": "invalid-timestamp",
+          "expected_http_result": "response_invalid",
+          "id": "invalid-timestamp-annotations-1-annotationentry-1-lastmodified-1",
           "limits": {}
         },
         {

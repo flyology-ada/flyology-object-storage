@@ -2372,6 +2372,180 @@
       ],
       "negative_template": "synchronous-success"
     },
+    "ListDirectoryBuckets": {
+      "adapter": "./bin/s3_list_directory_buckets_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>directory--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/directory--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>low level% cursor</ContinuationToken></ListDirectoryBucketsOutput>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ]
+              ],
+              "input_values": {
+                "ContinuationToken": "low level% cursor",
+                "MaxDirectoryBuckets": "2"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "200 OK",
+              "target": "/?continuation-token=low%20level%25%20cursor&max-directory-buckets=2"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "directory--use1-az4--x-s3",
+          "id": "low-level-success",
+          "lane": "low_level",
+          "limits": {
+            "collection_limit": 2
+          }
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>first--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/first--use1-az4--x-s3</BucketArn></Bucket><Bucket><Name>second--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:01Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/second--use1-az4--x-s3</BucketArn></Bucket></Buckets><ContinuationToken>next cursor</ContinuationToken></ListDirectoryBucketsOutput>",
+              "headers": [],
+              "input_values": {
+                "ContinuationToken": "sync cursor",
+                "MaxDirectoryBuckets": "2"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "200 OK",
+              "target": "/?continuation-token=sync%20cursor&max-directory-buckets=2"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "first--use1-az4--x-s3",
+          "id": "synchronous-success",
+          "lane": "synchronous",
+          "limits": {
+            "collection_limit": 2
+          }
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>composable--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/composable--use1-az4--x-s3</BucketArn></Bucket></Buckets></ListDirectoryBucketsOutput>",
+              "headers": [
+                [
+                  "x-amz-id-2",
+                  "composable-host"
+                ]
+              ],
+              "input_values": {
+                "MaxDirectoryBuckets": "1"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "200 OK",
+              "target": "/?max-directory-buckets=1"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "composable--use1-az4--x-s3",
+          "id": "composable-success",
+          "lane": "composable",
+          "limits": {
+            "collection_limit": 1
+          }
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListDirectoryBucketsOutput><Buckets><Bucket><Name>restart--use1-az4--x-s3</Name><CreationDate>2026-08-27T00:00:00Z</CreationDate><BucketRegion>us-east-1</BucketRegion><BucketArn>arn:aws:s3express:us-east-1:123456789012:bucket/restart--use1-az4--x-s3</BucketArn></Bucket></Buckets></ListDirectoryBucketsOutput>",
+              "headers": [],
+              "input_values": {
+                "MaxDirectoryBuckets": "1"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "200 OK",
+              "target": "/?max-directory-buckets=1"
+            },
+            {
+              "body": "<Error><Code>InvalidRequest</Code><Message>invalid</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "restart-invalid"
+                ]
+              ],
+              "input_values": {
+                "MaxDirectoryBuckets": "1"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "400 Bad Request",
+              "target": "/?max-directory-buckets=1"
+            }
+          ],
+          "expected": "invalid_request",
+          "expected_value": "restart--use1-az4--x-s3",
+          "id": "restart-ownership",
+          "lane": "restart",
+          "limits": {
+            "collection_limit": 1
+          }
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListDirectoryBucketsOutput/>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "MaxDirectoryBuckets": "1"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "200 OK",
+              "target": "/?max-directory-buckets=1"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml",
+          "limits": {
+            "collection_limit": 1
+          }
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListDirectoryBucketsOutput>                                                                                                </ListDirectoryBucketsOutput>",
+              "headers": [],
+              "input_values": {
+                "MaxDirectoryBuckets": "1"
+              },
+              "method": "GET",
+              "request_headers": {},
+              "status": "200 OK",
+              "target": "/?max-directory-buckets=1"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "collection_limit": 1,
+            "maximum_document_bytes": 96
+          }
+        }
+      ],
+      "negative_template": "synchronous-success"
+    },
     "ListObjectAnnotations": {
       "adapter": "./bin/s3_list_object_annotations_qualification",
       "cases": [
