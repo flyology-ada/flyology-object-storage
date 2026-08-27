@@ -2557,6 +2557,18 @@ package Flyology.Object_Storage.Client.Low_Level is
       Expected_Bucket_Owner : Ada.Strings.Unbounded.Unbounded_String;
    end record;
 
+   --  Complete shared request shape for paginated bucket-configuration
+   --  reads. Presence preserves an explicitly empty continuation token
+   --  independently from omission; no page-size policy is client-selected.
+   --  @field Continuation_Token Exact optional request cursor
+   --  @field Has_Continuation_Token Whether the cursor member is present
+   --  @field Expected_Bucket_Owner Optional exact owner precondition
+   type List_Bucket_Configuration_Parameters is record
+      Continuation_Token     : Ada.Strings.Unbounded.Unbounded_String;
+      Has_Continuation_Token : Boolean;
+      Expected_Bucket_Owner  : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
    --  Complete GetBucketAccelerateConfiguration request parameters.
    --  @field Expected_Bucket_Owner Optional exact owner precondition
    --  @field Request_Payer Optional exact requester-pays admission value
@@ -2693,6 +2705,12 @@ package Flyology.Object_Storage.Client.Low_Level is
    function Prepare_Get_Bucket_Metrics_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
+   --  Prepare one exactly bound ListBucketMetricsConfigurations request.
+   function Prepare_List_Bucket_Metrics_Configurations
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : List_Bucket_Configuration_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
    --  Prepare one exactly bound GetBucketAnalyticsConfiguration request.
@@ -2975,6 +2993,26 @@ package Flyology.Object_Storage.Client.Low_Level is
       Error         : S3.Errors.Error_Response;
    end record;
 
+   --  Shape of one strict ListBucketMetricsConfigurations response.
+   --  @enum Bucket_Metrics_Configurations_Listed Complete page exists
+   --  @enum List_Bucket_Metrics_Configurations_Rejected S3 rejected the read
+   type List_Bucket_Metrics_Configurations_Outcome_Kind is
+     (Bucket_Metrics_Configurations_Listed,
+      List_Bucket_Metrics_Configurations_Rejected);
+
+   --  Strict metrics-configuration page or structured S3 rejection. Kind
+   --  determines which payload is meaningful; no public sentinel is chosen.
+   --  @field Kind Whether a complete page or rejection exists
+   --  @field Status Exact physical HTTP status
+   --  @field Result Complete presence-preserving page
+   --  @field Error Structured bounded S3 rejection
+   type List_Bucket_Metrics_Configurations_Outcome is record
+      Kind   : List_Bucket_Metrics_Configurations_Outcome_Kind;
+      Status : Flyology.HTTP.Status_Code;
+      Result : S3.Metrics.Metrics_Configuration_Page;
+      Error  : S3.Errors.Error_Response;
+   end record;
+
    --  Strict GetBucketAnalyticsConfiguration outcome with physical status.
    --  @field Kind Whether configuration or a strict S3 error was returned
    --  @field Status Exact physical HTTP status
@@ -3185,6 +3223,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String; Host_ID : String;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Metrics_Configuration_Outcome;
+   --  Decode one complete bounded ListBucketMetricsConfigurations response.
+   function Decode_List_Bucket_Metrics_Configurations_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return List_Bucket_Metrics_Configurations_Outcome;
    --  Decode one complete bounded GetBucketAnalyticsConfiguration response.
    function Decode_Get_Bucket_Analytics_Configuration_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
@@ -3364,6 +3408,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Metrics_Configuration_Outcome;
+   --  Execute one exact prepared ListBucketMetricsConfigurations exchange.
+   function Execute_List_Bucket_Metrics_Configurations
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return List_Bucket_Metrics_Configurations_Outcome;
    --  Execute one exact prepared GetBucketAnalyticsConfiguration exchange.
    function Execute_Get_Bucket_Analytics_Configuration
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -5655,6 +5706,17 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Start an exact prepared GetBucketMetricsConfiguration exchange into a
    --  bounded sink. Another prepared operation is rejected before admission.
    procedure Get_Bucket_Metrics_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared ListBucketMetricsConfigurations exchange into
+   --  a bounded sink. Another prepared operation is rejected pre-admission.
+   procedure List_Bucket_Metrics_Configurations
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Sink      : not null access

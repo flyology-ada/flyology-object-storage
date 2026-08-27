@@ -1548,6 +1548,145 @@
         }
       ],
       "valid_document": "<WebsiteConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><RedirectAllRequestsTo><HostName>all.example</HostName><Protocol>https</Protocol></RedirectAllRequestsTo><IndexDocument><Suffix>index.html</Suffix></IndexDocument><ErrorDocument><Key>error.html</Key></ErrorDocument><RoutingRules><RoutingRule><Condition><HttpErrorCodeReturnedEquals>404</HttpErrorCodeReturnedEquals></Condition><Redirect><HostName>errors.example</HostName><Protocol>http</Protocol><ReplaceKeyWith>missing.html</ReplaceKeyWith></Redirect></RoutingRule><RoutingRule><Condition><KeyPrefixEquals>docs/</KeyPrefixEquals></Condition><Redirect><HttpRedirectCode>302</HttpRedirectCode><ReplaceKeyPrefixWith>archive/</ReplaceKeyPrefixWith></Redirect></RoutingRule></RoutingRules></WebsiteConfiguration>"
+    },
+    "ListBucketMetricsConfigurations": {
+      "cases": [
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-continuationtoken",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-istruncated",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-metricsconfigurationlist-1-filter",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-metricsconfigurationlist-1-filter-1-tag",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-metricsconfigurationlist-1-filter-1-tag-1-key",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-metricsconfigurationlist-1-filter-1-tag-1-value",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-metricsconfigurationlist-1-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "duplicate-singleton",
+          "expected_http_result": "response_invalid",
+          "id": "duplicate-singleton-nextcontinuationtoken",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-depth",
+          "limits": {
+            "maximum_depth": 4
+          }
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_sink_failed",
+          "id": "limit-failure-document-bytes",
+          "limits": {
+            "maximum_document_bytes": 422
+          }
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-elements",
+          "limits": {
+            "maximum_elements": 9
+          }
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "limit-failure",
+          "expected_http_result": "response_invalid",
+          "id": "limit-failure-text-bytes",
+          "limits": {
+            "maximum_text_bytes": 74
+          }
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-metricsconfigurationlist-1-filter-1-tag-1-key",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-metricsconfigurationlist-1-filter-1-tag-1-value",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "missing-required-member",
+          "expected_http_result": "response_invalid",
+          "id": "missing-required-member-metricsconfigurationlist-1-id",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"urn:flyology:invalid-s3-namespace\" xmlns:ns1=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns1:IsTruncated>true</ns1:IsTruncated><ns1:ContinuationToken>reviewed-current</ns1:ContinuationToken><ns1:NextContinuationToken>reviewed-next</ns1:NextContinuationToken><ns1:MetricsConfiguration><ns1:Id>reviewed-metrics</ns1:Id><ns1:Filter><ns1:Tag><ns1:Key>reviewed-key</ns1:Key><ns1:Value>reviewed-value</ns1:Value></ns1:Tag></ns1:Filter></ns1:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "namespace-violation",
+          "expected_http_result": "response_invalid",
+          "id": "namespace-violation-listbucketmetricsconfigurationsoutput",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\" unexpected-model-attribute=\"true\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "unexpected-attribute",
+          "expected_http_result": "response_invalid",
+          "id": "unexpected-attribute-listbucketmetricsconfigurationsoutput",
+          "limits": {}
+        },
+        {
+          "body": "<ns0:ListBucketMetricsConfigurationsOutput xmlns:ns0=\"http://s3.amazonaws.com/doc/2006-03-01/\"><ns0:IsTruncated>true</ns0:IsTruncated><ns0:ContinuationToken>reviewed-current</ns0:ContinuationToken><ns0:NextContinuationToken>reviewed-next</ns0:NextContinuationToken><ns0:MetricsConfiguration><ns0:Id>reviewed-metrics</ns0:Id><ns0:Filter><ns0:Tag><ns0:Key>reviewed-key</ns0:Key><ns0:Value>reviewed-value</ns0:Value></ns0:Tag></ns0:Filter></ns0:MetricsConfiguration><UnknownModelMember /></ns0:ListBucketMetricsConfigurationsOutput>",
+          "category": "unknown-member",
+          "expected_http_result": "response_invalid",
+          "id": "unknown-member-listbucketmetricsconfigurationsoutput",
+          "limits": {}
+        }
+      ],
+      "valid_document": "<ListBucketMetricsConfigurationsOutput xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><IsTruncated>true</IsTruncated><ContinuationToken>reviewed-current</ContinuationToken><NextContinuationToken>reviewed-next</NextContinuationToken><MetricsConfiguration><Id>reviewed-metrics</Id><Filter><Tag><Key>reviewed-key</Key><Value>reviewed-value</Value></Tag></Filter></MetricsConfiguration></ListBucketMetricsConfigurationsOutput>"
     }
   }
 }

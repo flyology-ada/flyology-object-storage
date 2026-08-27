@@ -1391,6 +1391,207 @@
         }
       ],
       "negative_template": "synchronous-success"
+    },
+    "ListBucketMetricsConfigurations": {
+      "adapter": "./bin/s3_list_bucket_metrics_configurations_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketMetricsConfigurationsOutput><IsTruncated>false</IsTruncated><ContinuationToken>low level% cursor</ContinuationToken><MetricsConfiguration><Id>low-level-metrics</Id></MetricsConfiguration></ListBucketMetricsConfigurationsOutput>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ContinuationToken": "low level% cursor",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?continuation-token=low%20level%25%20cursor&metrics"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "low-level-metrics",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketMetricsConfigurationsOutput><IsTruncated>true</IsTruncated><ContinuationToken>sync cursor</ContinuationToken><NextContinuationToken>next cursor</NextContinuationToken><MetricsConfiguration><Id>synchronous-metrics</Id><Filter><And><Prefix>logs/</Prefix><Tag><Key>team</Key><Value>storage</Value></Tag><AccessPointArn>arn:qualified</AccessPointArn></And></Filter></MetricsConfiguration><MetricsConfiguration><Id>second-metrics</Id></MetricsConfiguration></ListBucketMetricsConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ContinuationToken": "sync cursor",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?continuation-token=sync%20cursor&metrics"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "synchronous-metrics",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketMetricsConfigurationsOutput><IsTruncated>false</IsTruncated><ContinuationToken></ContinuationToken></ListBucketMetricsConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-empty",
+                "ContinuationToken": "",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-empty?continuation-token&metrics"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "",
+          "id": "empty-cursor-empty-page",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketMetricsConfigurationsOutput><IsTruncated>false</IsTruncated><MetricsConfiguration><Id>composable-metrics</Id><Filter><Tag><Key>key</Key><Value>value</Value></Tag></Filter></MetricsConfiguration></ListBucketMetricsConfigurationsOutput>",
+              "headers": [
+                [
+                  "x-amz-id-2",
+                  "composable-host"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-composable?metrics"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "composable-metrics",
+          "id": "composable-success",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketMetricsConfigurationsOutput><IsTruncated>false</IsTruncated><MetricsConfiguration><Id>restart-metrics</Id></MetricsConfiguration></ListBucketMetricsConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?metrics"
+            },
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "restart-missing"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-restart-second?metrics"
+            }
+          ],
+          "expected": "not_found",
+          "id": "restart-ownership",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketMetricsConfigurationsOutput><IsTruncated>false</IsTruncated></ListBucketMetricsConfigurationsOutput>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?metrics"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<ListBucketMetricsConfigurationsOutput><IsTruncated>false</IsTruncated>                                                                                                </ListBucketMetricsConfigurationsOutput>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-bounded?metrics"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 96
+          }
+        }
+      ],
+      "negative_template": "synchronous-success"
     }
   }
 }

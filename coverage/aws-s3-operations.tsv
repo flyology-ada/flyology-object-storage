@@ -67,7 +67,7 @@ HeadObject	core	covered	covered	covered	covered
 ListBucketAnalyticsConfigurations	extended	missing	partial	missing	missing
 ListBucketIntelligentTieringConfigurations	extended	missing	partial	missing	missing
 ListBucketInventoryConfigurations	extended	missing	partial	missing	missing
-ListBucketMetricsConfigurations	extended	missing	partial	missing	missing
+ListBucketMetricsConfigurations	extended	missing	covered	missing	covered
 ListBuckets	core	covered	covered	covered	covered
 ListDirectoryBuckets	extended	missing	partial	missing	missing
 ListMultipartUploads	core	covered	covered	covered	covered

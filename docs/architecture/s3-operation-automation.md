@@ -189,3 +189,44 @@ plus 32 generated XML negatives execute 39 signed socket cases; the strict
 website codec and small typed result adapter remain operation-specific.
 Payload-alias verification strips documentation recursively but continues to
 compare every wire-relevant trait.
+
+## Paginated REST/XML configuration-read family
+
+`Flyology.Object_Storage.S3.Paginated_REST_XML_Reads` owns the strict common
+response envelope shared by bucket-configuration list operations. It validates
+the exact result root, namespace and attribute rules, singleton
+`IsTruncated`, `ContinuationToken`, and `NextContinuationToken` members, and
+the flattened repeated item element. It preserves scalar presence and wire
+order while delegating every item to the already reviewed domain codec.
+
+The generic does not own transport policy, result classification, public
+limits, page sizing, or continuation policy. Provider packages continue to
+own their public result and operation types, request preparation, classifier,
+limited constructor, operation-last restart, typed `Finish`, and synchronous
+wrapper. The existing bounded REST/XML state machine still owns the response
+sink, singleton headers, cancellation, drain, and restart lifetime. A call
+returns exactly one page; callers explicitly decide whether and when to submit
+the returned continuation token. There is no hidden auto-pagination or retry.
+
+ListBucketMetricsConfigurations is the first canary. The metrics item parser
+is shared with GetBucketMetricsConfiguration, so the only new codec mechanics
+are the typed page projection and small callbacks that append one reviewed
+item. The manifest supplies the public name, read-only absence mapping,
+caller-owned continuation fixtures, and the deliberate exclusion of automatic
+S3 Express endpoint selection. The pinned model supplies the `GET` method,
+`/{Bucket}?metrics` target, optional continuation query, expected-owner header,
+200 status, complete reachable shape graph, two flattened lists, and routine
+negative cases. Seven reviewed lanes plus 18 generated cases execute 25 signed
+socket exchanges through low-level, synchronous, composable, restart,
+singleton-header, and bounded-sink paths.
+
+Human-owned files are the generic Ada specification and body, provider and
+low-level declarations/callbacks, the metrics page projection, the typed test
+adapter, and reviewed TOML decisions. Coverage ledgers, operation counts, test
+registration, signed socket fixtures, routine negative XML cases, and the
+registry page remain generated. The same envelope is intended for
+ListBucketAnalyticsConfigurations,
+ListBucketIntelligentTieringConfigurations, and
+ListBucketInventoryConfigurations; each still requires a reviewed manifest,
+domain result adapter, and executable equivalence evidence before coverage is
+promoted.

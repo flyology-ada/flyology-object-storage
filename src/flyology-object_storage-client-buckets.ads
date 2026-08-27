@@ -4836,6 +4836,121 @@ package Flyology.Object_Storage.Client.Buckets is
       Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
       return Get_Bucket_Metrics_Result;
 
+   --  Shape of a terminal ListBucketMetricsConfigurations read.
+   --  @enum List_Bucket_Metrics_Response_Available Modeled page exists
+   --  @enum List_Bucket_Metrics_Exchange_Failed No complete response exists
+   type List_Bucket_Metrics_Result_Kind is
+     (List_Bucket_Metrics_Response_Available,
+      List_Bucket_Metrics_Exchange_Failed);
+
+   --  Typed metrics-configuration page or composable HTTP failure.
+   --  @field Kind Result shape
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type List_Bucket_Metrics_Result is record
+      Kind        : List_Bucket_Metrics_Result_Kind;
+      Failure     : Failure_Reason;
+      Admission   : Flyology.HTTP.Client.Admission_Certainty;
+      Response    : Low_Level.List_Bucket_Metrics_Configurations_Outcome;
+      HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind;
+      HTTP_Phase  : Flyology.HTTP.Client.Exchange_Phase;
+      Detail      : Ada.Strings.Unbounded.Unbounded_String;
+   end record;
+
+   --  One bounded metrics-configuration page read with one hidden HTTP child.
+   --  It owns its signed request and response through typed Finish; callers
+   --  decide whether and when to submit any returned continuation token.
+   type List_Bucket_Metrics_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one metrics-configuration page read.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose metrics configurations are requested
+   --  @param Parameters Complete modeled cursor and owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established page read
+   procedure List_Metrics_Configurations
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.List_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out List_Bucket_Metrics_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one metrics-configuration page read.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose metrics configurations are requested
+   --  @param Parameters Complete modeled cursor and owner precondition
+   --  @param Identity Credentials borrowed only during signing
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region SigV4 region
+   --  @param Style S3 addressing style
+   --  @param Limits Caller-selected response and error XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @return Started owner-driven metrics page read
+   function List_Metrics_Configurations
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.List_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return List_Bucket_Metrics_Operation;
+
+   --  Consume one terminal ListBucketMetricsConfigurations operation.
+   --  @param Operation Terminal metrics page read
+   --  @param Result Typed modeled response or bounded exchange failure
+   procedure Finish
+     (Operation : in out List_Bucket_Metrics_Operation;
+      Result    : out List_Bucket_Metrics_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Read one metrics-configuration page by waiting on the same owner-driven
+   --  state machine used by composable callers. Continuation remains explicit
+   --  in Parameters; the wrapper never starts a hidden next-page request.
+   function List_Metrics_Configurations
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.List_Bucket_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
+      return List_Bucket_Metrics_Result;
+
    --  Shape of a terminal GetBucketAnalyticsConfiguration read.
    --  @enum Get_Bucket_Analytics_Response_Available Modeled response exists
    --  @enum Get_Bucket_Analytics_Exchange_Failed No complete response exists
@@ -9792,6 +9907,59 @@ private
    --  @exclude
    overriding procedure Finalize
      (Item : in out Get_Bucket_Metrics_Operation);
+
+   --  @exclude
+   function Decode_List_Bucket_Metrics_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Admission  : Flyology.HTTP.Client.Admission_Certainty;
+      Phase      : Flyology.HTTP.Client.Exchange_Phase)
+      return List_Bucket_Metrics_Result;
+
+   --  @exclude
+   function Normalize_List_Bucket_Metrics_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String) return List_Bucket_Metrics_Result;
+
+   --  @exclude
+   package List_Bucket_Metrics_Reads is new
+     Flyology.Object_Storage.Client.Bounded_REST_XML_Reads
+       (Result_Type       => List_Bucket_Metrics_Result,
+        Operation_Name    => "ListBucketMetricsConfigurations",
+        Start_Exchange    => Low_Level.List_Bucket_Metrics_Configurations,
+        Decode_Response   => Decode_List_Bucket_Metrics_Response,
+        Normalize_Failure => Normalize_List_Bucket_Metrics_Failure);
+
+   --  @exclude
+   type List_Bucket_Metrics_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      State : List_Bucket_Metrics_Reads.State (Set);
+   end record;
+
+   --  @exclude
+   overriding procedure Write
+     (Item : in out List_Bucket_Metrics_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out List_Bucket_Metrics_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out List_Bucket_Metrics_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out List_Bucket_Metrics_Operation);
 
    --  @exclude
    function Decode_Get_Bucket_Analytics_Response

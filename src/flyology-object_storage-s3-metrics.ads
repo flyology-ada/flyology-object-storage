@@ -72,6 +72,28 @@ package Flyology.Object_Storage.S3.Metrics is
       Filter : Metrics_Filter;
    end record;
 
+   --  Metrics configurations in exact response order. The caller's shared
+   --  XML document and element limits bound one decoded page; this vector does
+   --  not introduce a separate client-side page-size policy.
+   package Configuration_Vectors is new Ada.Containers.Vectors
+     (Index_Type => Positive, Element_Type => Metrics_Configuration);
+
+   --  Complete ListBucketMetricsConfigurations response payload. Optional
+   --  scalars preserve absence independently from empty or false values, and
+   --  no cross-field relationship is inferred beyond the pinned model.
+   --  @field Has_Is_Truncated Whether IsTruncated was present
+   --  @field Is_Truncated Exact modeled value when present
+   --  @field Continuation_Token Optional echoed request cursor
+   --  @field Next_Continuation_Token Optional next-page cursor
+   --  @field Configurations Configuration values in wire order
+   type Metrics_Configuration_Page is record
+      Has_Is_Truncated        : Boolean;
+      Is_Truncated            : Boolean;
+      Continuation_Token      : Optional_String;
+      Next_Continuation_Token : Optional_String;
+      Configurations          : Configuration_Vectors.Vector;
+   end record;
+
    --  Parse one exact nonempty GetBucketMetricsConfiguration payload.
    --  @param Document Complete same-response XML document
    --  @param Limits Caller-selected shared S3 XML resource limits
@@ -80,5 +102,15 @@ package Flyology.Object_Storage.S3.Metrics is
    function Parse
      (Document : String; Limits : XML.Parse_Limits)
       return Metrics_Configuration;
+
+   --  Parse one exact ListBucketMetricsConfigurations payload through the
+   --  shared paginated REST/XML envelope and the same reviewed item decoder.
+   --  @param Document Complete same-response XML document
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Presence-preserving metrics page
+   --  @exception Malformed_Metrics Document violates the pinned model
+   function Parse_List
+     (Document : String; Limits : XML.Parse_Limits)
+      return Metrics_Configuration_Page;
 
 end Flyology.Object_Storage.S3.Metrics;
