@@ -126,6 +126,13 @@ rewrite. A prospective descriptor may be generated in a temporary directory
 to compare model-derived structure, but adopting a generated implementation
 for an existing operation requires separate user authorization.
 
+New provider and low-level declarations may be materialized only inside
+explicitly delimited generator-owned regions. The materializer replaces the
+complete marked region, refuses unbalanced or duplicate markers, and leaves
+every byte outside the region unchanged. This permits deterministic additions
+to the provider-centric parent packages without treating their existing
+handwritten declarations and bodies as generated input.
+
 ### GetBucketWebsite non-destructive canary
 
 `GetBucketWebsite` remains the authoritative shared-family handwritten

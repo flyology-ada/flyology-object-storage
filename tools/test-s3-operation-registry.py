@@ -16,6 +16,36 @@ import s3_codegen
 
 
 def main() -> None:
+    original_source = "package Example is\n\nprivate\n\nend Example;\n"
+    materialized = s3_codegen.materialize_generated_region(
+        original_source,
+        "EXAMPLE_VISIBLE",
+        "   Generated_Value : constant := 1;",
+        "private",
+    )
+    assert materialized.startswith("package Example is\n\n--  BEGIN")
+    assert materialized.endswith("private\n\nend Example;\n")
+    replaced = s3_codegen.materialize_generated_region(
+        materialized,
+        "EXAMPLE_VISIBLE",
+        "   Generated_Value : constant := 2;",
+        "private",
+    )
+    assert "constant := 1" not in replaced
+    assert replaced.count("constant := 2") == 1
+    assert replaced.replace("constant := 2", "constant := 1") == materialized
+    try:
+        s3_codegen.materialize_generated_region(
+            materialized.replace("--  END S3 OPERATION GENERATOR", "--  LOST"),
+            "EXAMPLE_VISIBLE",
+            "",
+            "private",
+        )
+    except s3_operation.Audit_Error:
+        pass
+    else:
+        raise AssertionError("unbalanced generated source region was accepted")
+
     registry = s3_operation.load_registry()
     assert Counter(
         entry["implementation_mode"]
