@@ -62,6 +62,7 @@ run_s3_operation_corpora() {
   ./bin/s3_put_bucket_replication_corpus
   ./bin/s3_put_bucket_metrics_configuration_corpus
   ./bin/s3_put_bucket_analytics_configuration_corpus
+  ./bin/s3_put_bucket_intelligent_tiering_configuration_corpus
   ./bin/s3_get_bucket_metadata_table_configuration_corpus
   ./bin/s3_get_bucket_acl_corpus
   ./bin/s3_get_object_acl_corpus
@@ -75,6 +76,7 @@ run_s3_socket_qualifiers() {
   uv run --python 3.13 -- ../tools/s3-signed-socket.py GetBucketMetricsConfiguration
   uv run --python 3.13 -- ../tools/s3-signed-socket.py PutBucketMetricsConfiguration
   uv run --python 3.13 -- ../tools/s3-signed-socket.py PutBucketAnalyticsConfiguration
+  uv run --python 3.13 -- ../tools/s3-signed-socket.py PutBucketIntelligentTieringConfiguration
   uv run --python 3.13 -- ../tools/s3-signed-socket.py ListBucketMetricsConfigurations
   uv run --python 3.13 -- ../tools/s3-signed-socket.py ListBucketAnalyticsConfigurations
   uv run --python 3.13 -- ../tools/s3-signed-socket.py ListBucketIntelligentTieringConfigurations

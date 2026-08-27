@@ -315,6 +315,8 @@ def validate_operation_qualification(name: str, entry: dict[str, Any]) -> None:
             raise Audit_Error(f"invalid signed socket call lane: {name}/{identifier}")
         if case.get("expected") not in {
             "success",
+            "authentication_failed",
+            "authorization_failed",
             "not_found",
             "invalid_request",
             "response_invalid",

@@ -44,6 +44,15 @@ put_bucket_analytics_configuration = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+put_bucket_intelligent_tiering_configuration = [
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "./bin/s3_put_bucket_intelligent_tiering_configuration_corpus"],
+  ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "PutBucketIntelligentTieringConfiguration"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-put-bucket-intelligent-tiering-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 list_bucket_metrics_configurations = [
   ["@tests", "alr", "-n", "build"],
   ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketMetricsConfigurations"],
@@ -137,8 +146,8 @@ list_object_annotations = [
 # These counts and the three corpus repetitions preserve the pre-registry
 # maintained suite. Change them only with a reviewed registration update.
 model_verifier_count = 29
-corpus_count = 32
-socket_qualifier_count = 15
+corpus_count = 33
+socket_qualifier_count = 16
 corpus_repetitions = 3
 model_verifiers = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-create-session-preparation.py"],
@@ -198,6 +207,7 @@ corpora = [
   ["./bin/s3_put_bucket_replication_corpus"],
   ["./bin/s3_put_bucket_metrics_configuration_corpus"],
   ["./bin/s3_put_bucket_analytics_configuration_corpus"],
+  ["./bin/s3_put_bucket_intelligent_tiering_configuration_corpus"],
   ["./bin/s3_get_bucket_metadata_table_configuration_corpus"],
   ["./bin/s3_get_bucket_acl_corpus"],
   ["./bin/s3_get_object_acl_corpus"],
@@ -210,6 +220,7 @@ socket_qualifiers = [
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketMetricsConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "PutBucketMetricsConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "PutBucketAnalyticsConfiguration"],
+  ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "PutBucketIntelligentTieringConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketMetricsConfigurations"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketAnalyticsConfigurations"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "ListBucketIntelligentTieringConfigurations"],
@@ -2686,6 +2697,42 @@ headers = [["x-amz-request-id", "malformed-request"]]
 body = "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>"
 
 [[operation.signed_socket.case]]
+id = "authentication-rejection"
+lane = "synchronous"
+expected = "authentication_failed"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-authentication", Id = "authentication analytics", ExpectedBucketOwner = "123456789012" }
+request_body = "<AnalyticsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authentication analytics</Id><StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>"
+status = "401 Unauthorized"
+headers = []
+body = "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>"
+
+[[operation.signed_socket.case]]
+id = "authorization-rejection"
+lane = "synchronous"
+expected = "authorization_failed"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-authorization", Id = "authorization analytics", ExpectedBucketOwner = "123456789012" }
+request_body = "<AnalyticsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authorization analytics</Id><StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>"
+status = "403 Forbidden"
+headers = []
+body = "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>"
+
+[[operation.signed_socket.case]]
+id = "missing-bucket-rejection"
+lane = "synchronous"
+expected = "not_found"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-missing", Id = "missing analytics", ExpectedBucketOwner = "123456789012" }
+request_body = "<AnalyticsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>missing analytics</Id><StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>"
+status = "404 Not Found"
+headers = []
+body = "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>"
+
+[[operation.signed_socket.case]]
 id = "restart-rejection"
 lane = "restart"
 expected = "invalid_request"
@@ -2768,14 +2815,151 @@ provider = "buckets"
 family = "rest_xml_mutation"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "empty_response"
+public_name = "Set_Intelligent_Tiering_Configuration"
 absence = "not_applicable"
-errors = ["legacy_preserved"]
-certainty = "legacy_preserved_no_automatic_replay"
-reconciliation = "legacy_preserved"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
+certainty = "complete observed success or conclusive rejection; otherwise Outcome_Unknown; no automatic replay"
+reconciliation = "caller-selected Get_Intelligent_Tiering_Configuration or List_Intelligent_Tiering_Configurations before any retry"
 exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
-evidence = { backend = [], client = [], server = [], corpus = [] }
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-intelligent_tiering.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-rest_xml_mutations.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_put_bucket_intelligent_tiering_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-signed-socket.json", "tests/src/s3_put_bucket_intelligent_tiering_configuration_corpus.adb", "tests/src/s3_put_bucket_intelligent_tiering_configuration_qualification.adb"] }
+decision_status = "reviewed"
+qualification = "put_bucket_intelligent_tiering_configuration"
+ada_symbols = ["Prepare_Put_Bucket_Intelligent_Tiering_Configuration", "Execute_Put_Bucket_Intelligent_Tiering_Configuration", "Put_Bucket_Intelligent_Tiering_Operation", "Set_Intelligent_Tiering_Configuration", "Finish"]
+
+[operation.signed_socket]
+adapter = "./bin/s3_put_bucket_intelligent_tiering_configuration_qualification"
+
+[[operation.signed_socket.case]]
+id = "low-level-success"
+lane = "low_level"
+expected = "success"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-low-level", Id = "low-level tiering", ExpectedBucketOwner = "123456789012" }
+request_body = "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>low-level tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+status = "modeled_success"
+headers = [["x-amz-request-id", "low-level-request"]]
+body = ""
+
+[[operation.signed_socket.case]]
+id = "empty-identifier-success"
+lane = "synchronous"
+expected = "success"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-empty-id", Id = "", ExpectedBucketOwner = "123456789012" }
+request_body = "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id></Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+status = "modeled_success"
+headers = []
+body = ""
+
+[[operation.signed_socket.case]]
+id = "synchronous-success"
+lane = "synchronous"
+expected = "success"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-sync", Id = "synchronous tiering", ExpectedBucketOwner = "123456789012" }
+request_body = "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>synchronous tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+status = "modeled_success"
+headers = []
+body = ""
+
+[[operation.signed_socket.case]]
+id = "composable-malformed"
+lane = "composable"
+expected = "invalid_request"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-composable", Id = "composable tiering", ExpectedBucketOwner = "123456789012" }
+request_body = "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>composable tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+status = "400 Bad Request"
+headers = [["x-amz-request-id", "malformed-request"]]
+body = "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>"
+
+[[operation.signed_socket.case]]
+id = "authentication-rejection"
+lane = "synchronous"
+expected = "authentication_failed"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-authentication", Id = "authentication tiering", ExpectedBucketOwner = "123456789012" }
+request_body = "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authentication tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+status = "401 Unauthorized"
+headers = []
+body = "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>"
+
+[[operation.signed_socket.case]]
+id = "authorization-rejection"
+lane = "synchronous"
+expected = "authorization_failed"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-authorization", Id = "authorization tiering", ExpectedBucketOwner = "123456789012" }
+request_body = "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authorization tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+status = "403 Forbidden"
+headers = []
+body = "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>"
+
+[[operation.signed_socket.case]]
+id = "missing-bucket-rejection"
+lane = "synchronous"
+expected = "not_found"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-missing", Id = "missing tiering", ExpectedBucketOwner = "123456789012" }
+request_body = "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>missing tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+status = "404 Not Found"
+headers = []
+body = "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>"
+
+[[operation.signed_socket.case]]
+id = "restart-rejection"
+lane = "restart"
+expected = "invalid_request"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-restart", Id = "restart tiering", ExpectedBucketOwner = "123456789012" }
+request_body = "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>restart tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+status = "modeled_success"
+headers = []
+body = ""
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-restart-second", Id = "restart tiering", ExpectedBucketOwner = "123456789012" }
+request_body = "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>restart tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+status = "400 Bad Request"
+headers = []
+body = "<Error><Code>MalformedXML</Code><Message>rejected</Message></Error>"
+
+[[operation.signed_socket.case]]
+id = "duplicate-singleton-header"
+lane = "invalid_xml"
+expected = "response_invalid"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-duplicate", Id = "duplicate tiering", ExpectedBucketOwner = "123456789012" }
+request_body = "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>duplicate tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+status = "modeled_success"
+headers = [["x-amz-request-id", "one"], ["x-amz-request-id", "two"]]
+body = ""
+
+[[operation.signed_socket.case]]
+id = "bounded-response"
+lane = "invalid_xml"
+expected = "response_sink_failed"
+# Test-only separator: 280 admits the exact 236-byte request body and rejects
+# the exact 285-byte error response; it is not a production resource policy.
+limits = { maximum_document_bytes = 280 }
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-bounded", Id = "bounded tiering", ExpectedBucketOwner = "123456789012" }
+request_body = "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>bounded tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>"
+status = "400 Bad Request"
+headers = []
+body = "<Error><Code>InvalidRequest</Code><Message>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</Message></Error>"
 
 [[operation]]
 name = "PutBucketInventoryConfiguration"
@@ -2899,6 +3083,42 @@ request_body = "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-0
 status = "400 Bad Request"
 headers = [["x-amz-request-id", "too-many-request"]]
 body = "<Error><Code>TooManyConfigurations</Code><Message>full</Message></Error>"
+
+[[operation.signed_socket.case]]
+id = "authentication-rejection"
+lane = "synchronous"
+expected = "authentication_failed"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-authentication", Id = "authentication metrics", ExpectedBucketOwner = "123456789012" }
+request_body = "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authentication metrics</Id></MetricsConfiguration>"
+status = "401 Unauthorized"
+headers = []
+body = "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>"
+
+[[operation.signed_socket.case]]
+id = "authorization-rejection"
+lane = "synchronous"
+expected = "authorization_failed"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-authorization", Id = "authorization metrics", ExpectedBucketOwner = "123456789012" }
+request_body = "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authorization metrics</Id></MetricsConfiguration>"
+status = "403 Forbidden"
+headers = []
+body = "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>"
+
+[[operation.signed_socket.case]]
+id = "missing-bucket-rejection"
+lane = "synchronous"
+expected = "not_found"
+
+[[operation.signed_socket.case.exchange]]
+input_values = { Bucket = "qualified-missing", Id = "missing metrics", ExpectedBucketOwner = "123456789012" }
+request_body = "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>missing metrics</Id></MetricsConfiguration>"
+status = "404 Not Found"
+headers = []
+body = "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>"
 
 [[operation.signed_socket.case]]
 id = "restart-rejection"

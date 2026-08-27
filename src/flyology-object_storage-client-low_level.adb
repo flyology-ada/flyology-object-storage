@@ -10123,6 +10123,7 @@ package body Flyology.Object_Storage.Client.Low_Level is
           (Has_Configuration_ID
            and then Operation not in
              Model.Put_Bucket_Analytics_Configuration_Operation |
+             Model.Put_Bucket_Intelligent_Tiering_Configuration_Operation |
              Model.Put_Bucket_Metrics_Configuration_Operation)
         or else (Has_Content_MD5 and then not Wire_Core.Valid_Base64 (MD5, 16))
         or else not Valid_List_Response_Header_Text (Owner)
@@ -10459,6 +10460,34 @@ package body Flyology.Object_Storage.Client.Low_Level is
          raise Invalid_Request with
            "invalid PutBucketAnalyticsConfiguration payload";
    end Prepare_Put_Bucket_Analytics_Configuration;
+
+   function Prepare_Put_Bucket_Intelligent_Tiering_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String;
+      Value : Intelligent_Tiering.Intelligent_Tiering_Configuration;
+      Parameters : Put_Bucket_Intelligent_Tiering_Configuration_Parameters;
+      Identity : Credentials; Region, Timestamp : String;
+      Limits : S3.XML.Parse_Limits)
+      return Prepared_Request
+   is
+      Common : constant Bucket_Control_Mutation_Parameters :=
+        (Content_MD5           => US.Null_Unbounded_String,
+         Checksum_Algorithm    => US.Null_Unbounded_String,
+         Expected_Bucket_Owner => Parameters.Expected_Bucket_Owner);
+   begin
+      return Prepare_Bucket_Control_Mutation
+        (Model.Put_Bucket_Intelligent_Tiering_Configuration_Operation, "PUT",
+         "intelligent-tiering", Origin, Style, Bucket,
+         Intelligent_Tiering.Serialize (Value, Limits), False,
+         (others => <>), False, Common, Identity, Region, Timestamp,
+         One_Shot_Source => True,
+         Configuration_ID => US.To_String (Parameters.ID),
+         Has_Configuration_ID => True);
+   exception
+      when Intelligent_Tiering.Malformed_Intelligent_Tiering =>
+         raise Invalid_Request with
+           "invalid PutBucketIntelligentTieringConfiguration payload";
+   end Prepare_Put_Bucket_Intelligent_Tiering_Configuration;
 
    function Prepare_Put_Bucket_Metrics_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -10819,6 +10848,17 @@ package body Flyology.Object_Storage.Client.Low_Level is
       return Put_Bucket_Control_Outcome is
      (Execute_Bucket_Control_Mutation
         (Client, Prepared, Model.Put_Bucket_Analytics_Configuration_Operation,
+         Timeout, Token, Limits));
+
+   function Execute_Put_Bucket_Intelligent_Tiering_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Put_Bucket_Control_Outcome is
+     (Execute_Bucket_Control_Mutation
+        (Client, Prepared,
+         Model.Put_Bucket_Intelligent_Tiering_Configuration_Operation,
          Timeout, Token, Limits));
 
    function Execute_Put_Bucket_Metrics_Configuration
@@ -15408,6 +15448,28 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
          Deadline, Token, Operation);
    end Put_Bucket_Analytics_Configuration;
+
+   procedure Put_Bucket_Intelligent_Tiering_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Source    : not null access
+        Flyology.HTTP.Client.Operation_Request_Body_Source'Class;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Bucket_Control_Mutation_Operation
+        or else Prepared.Modeled_Operation /=
+          Model.Put_Bucket_Intelligent_Tiering_Configuration_Operation
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Source_Sink
+        (Bucket_Control_Mutation_Operation, Client, Prepared, Source, Sink,
+         Deadline, Token, Operation);
+   end Put_Bucket_Intelligent_Tiering_Configuration;
 
    procedure Put_Bucket_Metrics_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;

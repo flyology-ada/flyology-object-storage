@@ -15,6 +15,7 @@ with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Bucket_Controls;
 with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Errors;
+with Flyology.Object_Storage.S3.Intelligent_Tiering;
 with Flyology.Object_Storage.S3.Lifecycle;
 with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Metrics;
@@ -1776,6 +1777,180 @@ package Flyology.Object_Storage.Client.Buckets is
       Token      : access Flyology.Cancellation.Token;
       Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
       return Put_Bucket_Analytics_Result;
+
+   --  What is known about a PutBucketIntelligentTieringConfiguration
+   --  mutation after terminal drain. Unknown outcomes require caller-selected
+   --  read-only reconciliation before any retry.
+   --  @enum Intelligent_Tiering_Mutation_Completed
+   --     Complete response proves replacement
+   --  @enum Intelligent_Tiering_Mutation_Definitely_Not_Applied
+   --     Exact rejection or non-admission proves no mutation occurred
+   --  @enum Intelligent_Tiering_Mutation_Outcome_Unknown
+   --     State must be reconciled
+   --  @enum Intelligent_Tiering_Mutation_Cancelled_Before_Admission
+   --     Cancellation preceded possible server admission
+   type Intelligent_Tiering_Mutation_Disposition is
+     (Intelligent_Tiering_Mutation_Completed,
+      Intelligent_Tiering_Mutation_Definitely_Not_Applied,
+      Intelligent_Tiering_Mutation_Outcome_Unknown,
+      Intelligent_Tiering_Mutation_Cancelled_Before_Admission);
+
+   --  Shape of a terminal PutBucketIntelligentTieringConfiguration mutation.
+   --  @enum Put_Bucket_Intelligent_Tiering_Response_Available Modeled response
+   --  @enum Put_Bucket_Intelligent_Tiering_Exchange_Failed
+   --     No complete response
+   type Put_Bucket_Intelligent_Tiering_Result_Kind is
+     (Put_Bucket_Intelligent_Tiering_Response_Available,
+      Put_Bucket_Intelligent_Tiering_Exchange_Failed);
+
+   --  Typed Intelligent-Tiering replacement response and certainty. The
+   --  defaults below match the established analytics and metrics mutation
+   --  result contract: they are conservative initialization sentinels, not a
+   --  completed-operation conclusion. Finish replaces them with terminal
+   --  evidence before returning the result to a caller.
+   --  @field Kind Result shape
+   --  @field Disposition Mutation certainty
+   --  @field Failure Bounded expected failure reason
+   --  @field Admission HTTP admission certainty at terminal completion
+   --  @field Response Complete modeled S3 response
+   --  @field HTTP_Result Typed HTTP terminal outcome
+   --  @field HTTP_Phase Causal HTTP phase
+   --  @field Detail Bounded sanitized HTTP diagnostic
+   type Put_Bucket_Intelligent_Tiering_Result
+     (Kind : Put_Bucket_Intelligent_Tiering_Result_Kind :=
+        Put_Bucket_Intelligent_Tiering_Exchange_Failed)
+   is record
+      Disposition :
+        Intelligent_Tiering_Mutation_Disposition :=
+          Intelligent_Tiering_Mutation_Outcome_Unknown;
+      Failure : Failure_Reason := Corrupt_Or_Invalid_Response;
+      Admission : Flyology.HTTP.Client.Admission_Certainty :=
+        Flyology.HTTP.Client.Not_Admitted;
+      case Kind is
+         when Put_Bucket_Intelligent_Tiering_Response_Available =>
+            Response : Low_Level.Put_Bucket_Control_Outcome;
+         when Put_Bucket_Intelligent_Tiering_Exchange_Failed =>
+            HTTP_Result : Flyology.HTTP.Client.Exchange_Result_Kind :=
+              Flyology.HTTP.Client.Response_Invalid;
+            HTTP_Phase : Flyology.HTTP.Client.Exchange_Phase :=
+              Flyology.HTTP.Client.Not_Started;
+            Detail : Ada.Strings.Unbounded.Unbounded_String;
+      end case;
+   end record;
+
+   --  One-shot Intelligent-Tiering replacement with one hidden HTTP child.
+   --  The operation owns the exact serialized body through Finish and never
+   --  rewinds or automatically replays a possibly admitted mutation.
+   type Put_Bucket_Intelligent_Tiering_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink with private;
+
+   --  Start or restart one nonreplaying Intelligent-Tiering replacement.
+   --  Execution policy remains explicit, matching the existing read surface.
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose configuration is replaced
+   --  @param Value Complete caller-selected configuration body
+   --  @param Parameters Required query identifier and optional owner control
+   --  @param Identity Credentials borrowed only during request preparation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region Caller-selected SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected request and error XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Operation Fresh or consumed established mutation
+   procedure Set_Intelligent_Tiering_Configuration
+     (Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Intelligent_Tiering.Intelligent_Tiering_Configuration;
+      Parameters :
+        Low_Level.Put_Bucket_Intelligent_Tiering_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out Put_Bucket_Intelligent_Tiering_Operation)
+   with
+     Pre =>
+       not Flyology.Operations.Is_Active (Operation)
+       and then not Flyology.Operations.Is_Terminal (Operation);
+
+   --  Construct one nonreplaying Intelligent-Tiering replacement.
+   --  @param Set Caller-owned completion set
+   --  @param Client Configured origin client retained through terminal drain
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose configuration is replaced
+   --  @param Value Complete caller-selected configuration body
+   --  @param Parameters Required query identifier and optional owner control
+   --  @param Identity Credentials borrowed only during request preparation
+   --  @param Deadline Absolute whole-exchange deadline
+   --  @param Region Caller-selected SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Limits Caller-selected request and error XML limits
+   --  @param Token Caller-selected cancellation source or null
+   --  @return Started owner-driven mutation
+   function Set_Intelligent_Tiering_Configuration
+     (Set        : not null access Flyology.Operations.Completion_Set'Class;
+      Client     : not null access Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Intelligent_Tiering.Intelligent_Tiering_Configuration;
+      Parameters :
+        Low_Level.Put_Bucket_Intelligent_Tiering_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : Flyology.HTTP.Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return Put_Bucket_Intelligent_Tiering_Operation;
+
+   --  Consume one terminal PutBucketIntelligentTieringConfiguration
+   --  operation.
+   --  @param Operation Terminal operation whose owned state is consumed
+   --  @param Result Typed response and application certainty
+   procedure Finish
+     (Operation : in out Put_Bucket_Intelligent_Tiering_Operation;
+      Result    : out Put_Bucket_Intelligent_Tiering_Result)
+   with Pre => Flyology.Operations.Is_Terminal (Operation);
+
+   --  Replace one Intelligent-Tiering configuration by waiting on the same
+   --  owner-driven state machine used by composable callers. This function
+   --  does not replay a possibly admitted request; unknown outcomes require
+   --  read-only caller reconciliation through Get or List.
+   --  @param Client Configured caller-owned Flyology HTTP client
+   --  @param Origin Exact origin used by Client and SigV4
+   --  @param Bucket Bucket whose configuration is replaced
+   --  @param Value Complete caller-selected configuration body
+   --  @param Parameters Required query identifier and optional owner control
+   --  @param Identity Credentials borrowed only during request preparation
+   --  @param Region Caller-selected SigV4 signing region
+   --  @param Style Caller-selected S3 addressing style
+   --  @param Timeout Caller-selected whole owner-driven operation budget
+   --  @param Token Caller-selected cancellation source or null
+   --  @param Limits Caller-selected request and error XML limits
+   --  @return Typed response and application certainty
+   function Set_Intelligent_Tiering_Configuration
+     (Client     : aliased in out Flyology.HTTP.Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : S3.Intelligent_Tiering.Intelligent_Tiering_Configuration;
+      Parameters :
+        Low_Level.Put_Bucket_Intelligent_Tiering_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : S3.XML.Parse_Limits)
+      return Put_Bucket_Intelligent_Tiering_Result;
 
    --  Shape of a terminal DeleteBucketAnalyticsConfiguration
    --  mutation.
@@ -11313,6 +11488,49 @@ private
    end record;
 
    --  @exclude
+   function Decode_Put_Bucket_Intelligent_Tiering_Family_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Response   : Flyology.HTTP.Client.Response;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : S3.XML.Parse_Limits;
+      Admission  : Flyology.HTTP.Client.Admission_Certainty;
+      Phase      : Flyology.HTTP.Client.Exchange_Phase)
+      return Put_Bucket_Intelligent_Tiering_Result;
+
+   --  @exclude
+   function Normalize_Put_Bucket_Intelligent_Tiering_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String) return Put_Bucket_Intelligent_Tiering_Result;
+
+   --  @exclude
+   package Put_Bucket_Intelligent_Tiering_Mutations is new
+     Flyology.Object_Storage.Client.REST_XML_Mutations
+       (Result_Type       => Put_Bucket_Intelligent_Tiering_Result,
+        Operation_Name    => "PutBucketIntelligentTieringConfiguration",
+        Start_Exchange    =>
+          Low_Level.Put_Bucket_Intelligent_Tiering_Configuration,
+        Decode_Response   =>
+          Decode_Put_Bucket_Intelligent_Tiering_Family_Response,
+        Normalize_Failure =>
+          Normalize_Put_Bucket_Intelligent_Tiering_Failure);
+
+   --  @exclude
+   type Put_Bucket_Intelligent_Tiering_Operation
+     (Set          : not null access Flyology.Operations.Completion_Set'Class;
+      HTTP         : not null access Flyology.HTTP.Client.Client;
+      Cancellation : access Flyology.Cancellation.Token) is
+     new Flyology.Operations.Operation (Set)
+     and Flyology.HTTP.Client.Operation_Request_Body_Source
+     and Flyology.HTTP.Client.Response_Body_Sink
+   with record
+      State : Put_Bucket_Intelligent_Tiering_Mutations.State (Set);
+   end record;
+
+   --  @exclude
    function Decode_Put_Bucket_Metrics_Family_Response
      (Status     : Flyology.HTTP.Status_Code;
       Response   : Flyology.HTTP.Client.Response;
@@ -12702,6 +12920,39 @@ private
    --  @exclude
    overriding procedure Finalize
      (Item : in out Put_Bucket_Analytics_Operation);
+   --  @exclude
+   overriding function Declared_Length
+     (Item : Put_Bucket_Intelligent_Tiering_Operation)
+      return Flyology.HTTP.Client.Body_Length;
+   --  @exclude
+   overriding procedure Read_Now
+     (Item   : in out Put_Bucket_Intelligent_Tiering_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out Flyology.HTTP.Client.Source_Step_Kind);
+   --  @exclude
+   overriding procedure Source_Wait_Source
+     (Item       : in out Put_Bucket_Intelligent_Tiering_Operation;
+      Required   : Flyology.HTTP.Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean);
+   --  @exclude
+   overriding procedure Release_Source
+     (Item : in out Put_Bucket_Intelligent_Tiering_Operation);
+   --  @exclude
+   overriding procedure Write
+     (Item : in out Put_Bucket_Intelligent_Tiering_Operation;
+      Data : Ada.Streams.Stream_Element_Array);
+   --  @exclude
+   overriding procedure Drive
+     (Item : in out Put_Bucket_Intelligent_Tiering_Operation;
+      Event : Flyology.Operations.Driver_Event);
+   --  @exclude
+   overriding procedure Request_Cancellation
+     (Item : in out Put_Bucket_Intelligent_Tiering_Operation);
+   --  @exclude
+   overriding procedure Finalize
+     (Item : in out Put_Bucket_Intelligent_Tiering_Operation);
    --  @exclude
    overriding function Declared_Length
      (Item : Put_Bucket_Metrics_Operation)

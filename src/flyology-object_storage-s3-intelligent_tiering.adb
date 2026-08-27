@@ -573,4 +573,191 @@ package body Flyology.Object_Storage.S3.Intelligent_Tiering is
            "malformed Intelligent-Tiering-list XML";
    end Parse_List;
 
+   function Serialize
+     (Value : Intelligent_Tiering_Configuration; Limits : XML.Parse_Limits)
+      return String
+   is
+      Result     : US.Unbounded_String;
+      Elements   : Natural := 1;
+      Text_Bytes : Natural := 0;
+      Depth      : Positive := 1;
+
+      --  Pinned PutBucketIntelligentTieringConfiguration REST/XML root and
+      --  namespace. Changing either changes the provider wire contract and
+      --  signature.
+      Prefix : constant String :=
+        "<IntelligentTieringConfiguration xmlns=""" &
+        "http://s3.amazonaws.com/doc/2006-03-01/"">";
+      Suffix : constant String := "</IntelligentTieringConfiguration>";
+
+      procedure Append_Bounded (Fragment : String) is
+         Current : constant Natural := US.Length (Result);
+      begin
+         if Fragment'Length > Limits.Maximum_Document_Bytes - Current then
+            raise Malformed_Intelligent_Tiering with
+              "Intelligent-Tiering document exceeds caller limit";
+         end if;
+         US.Append (Result, Fragment);
+      end Append_Bounded;
+
+      procedure Start_Element (Name : String; At_Depth : Positive) is
+      begin
+         if Elements = Limits.Maximum_Elements then
+            raise Malformed_Intelligent_Tiering with
+              "Intelligent-Tiering elements exceed caller limit";
+         end if;
+         Elements := Elements + 1;
+         Depth := Positive'Max (Depth, At_Depth);
+         Append_Bounded ("<" & Name & ">");
+      end Start_Element;
+
+      procedure End_Element (Name : String) is
+      begin
+         Append_Bounded ("</" & Name & ">");
+      end End_Element;
+
+      procedure Add_Text (Text : String) is
+      begin
+         if Text'Length > Limits.Maximum_Text_Bytes - Text_Bytes then
+            raise Malformed_Intelligent_Tiering with
+              "Intelligent-Tiering text exceeds caller limit";
+         end if;
+         Text_Bytes := Text_Bytes + Text'Length;
+         Append_Bounded (XML.Escape_Text (Text));
+      exception
+         when XML.XML_Error =>
+            raise Malformed_Intelligent_Tiering with
+              "invalid Intelligent-Tiering XML text";
+      end Add_Text;
+
+      procedure Add_Scalar
+        (Name : String; Text : String; At_Depth : Positive) is
+      begin
+         Start_Element (Name, At_Depth);
+         Add_Text (Text);
+         End_Element (Name);
+      end Add_Scalar;
+
+      procedure Add_Optional
+        (Name : String; Item : Optional_String; At_Depth : Positive) is
+      begin
+         if Item.Is_Set then
+            Add_Scalar (Name, US.To_String (Item.Value), At_Depth);
+         elsif US.Length (Item.Value) /= 0 then
+            raise Malformed_Intelligent_Tiering with
+              "absent Intelligent-Tiering member contains text";
+         end if;
+      end Add_Optional;
+
+      procedure Add_Tag
+        (Item : Intelligent_Tiering_Tag; At_Depth : Positive) is
+      begin
+         if US.Length (Item.Key) = 0 then
+            raise Malformed_Intelligent_Tiering with
+              "empty Intelligent-Tiering tag key";
+         end if;
+         Start_Element ("Tag", At_Depth);
+         Add_Scalar ("Key", US.To_String (Item.Key), At_Depth + 1);
+         Add_Scalar ("Value", US.To_String (Item.Value), At_Depth + 1);
+         End_Element ("Tag");
+      end Add_Tag;
+
+      function Has_Filter_Content
+        (Item : Intelligent_Tiering_Filter) return Boolean is
+        (Item.Prefix.Is_Set
+         or else US.Length (Item.Prefix.Value) /= 0
+         or else Item.Tag.Is_Set
+         or else US.Length (Item.Tag.Value.Key) /= 0
+         or else US.Length (Item.Tag.Value.Value) /= 0
+         or else Item.And_Predicates.Is_Set
+         or else Item.And_Predicates.Prefix.Is_Set
+         or else US.Length (Item.And_Predicates.Prefix.Value) /= 0
+         or else not Item.And_Predicates.Tags.Is_Empty);
+
+      --  These exhaustive mappings are the pinned Botocore enum domains.
+      --  Adding a typed value must also choose its exact compatible wire text.
+      function Image (Item : Configuration_Status) return String is
+        (case Item is
+            when Enabled  => "Enabled",
+            when Disabled => "Disabled");
+
+      function Image (Item : Access_Tier_Kind) return String is
+        (case Item is
+            when Archive_Access      => "ARCHIVE_ACCESS",
+            when Deep_Archive_Access => "DEEP_ARCHIVE_ACCESS");
+   begin
+      Append_Bounded (Prefix);
+      Add_Scalar ("Id", US.To_String (Value.ID), 2);
+
+      if Value.Filter.Is_Set then
+         Start_Element ("Filter", 2);
+         Add_Optional ("Prefix", Value.Filter.Prefix, 3);
+         if Value.Filter.Tag.Is_Set then
+            Add_Tag (Value.Filter.Tag.Value, 3);
+         elsif US.Length (Value.Filter.Tag.Value.Key) /= 0
+           or else US.Length (Value.Filter.Tag.Value.Value) /= 0
+         then
+            raise Malformed_Intelligent_Tiering with
+              "absent Intelligent-Tiering tag contains text";
+         end if;
+         if Value.Filter.And_Predicates.Is_Set then
+            Start_Element ("And", 3);
+            Add_Optional
+              ("Prefix", Value.Filter.And_Predicates.Prefix, 4);
+            for Tag of Value.Filter.And_Predicates.Tags loop
+               Add_Tag (Tag, 4);
+            end loop;
+            End_Element ("And");
+         elsif Value.Filter.And_Predicates.Prefix.Is_Set
+           or else US.Length (Value.Filter.And_Predicates.Prefix.Value) /= 0
+           or else not Value.Filter.And_Predicates.Tags.Is_Empty
+         then
+            raise Malformed_Intelligent_Tiering with
+              "absent Intelligent-Tiering And contains members";
+         end if;
+         End_Element ("Filter");
+      elsif Has_Filter_Content (Value.Filter) then
+         raise Malformed_Intelligent_Tiering with
+           "absent Intelligent-Tiering filter contains members";
+      end if;
+
+      Add_Scalar ("Status", Image (Value.Status), 2);
+      if Value.Tierings.Is_Empty then
+         raise Malformed_Intelligent_Tiering with
+           "Intelligent-Tiering requires at least one transition";
+      end if;
+      for Transition of Value.Tierings loop
+         declare
+            Days : constant String := US.To_String (Transition.Days);
+         begin
+            if not Valid_Integer_Text (Days) then
+               raise Malformed_Intelligent_Tiering with
+                 "invalid Intelligent-Tiering days";
+            end if;
+            Start_Element ("Tiering", 2);
+            Add_Scalar ("Days", Days, 3);
+            Add_Scalar ("AccessTier", Image (Transition.Access_Tier), 3);
+            End_Element ("Tiering");
+         end;
+      end loop;
+
+      Append_Bounded (Suffix);
+      if Depth > Limits.Maximum_Depth then
+         raise Malformed_Intelligent_Tiering with
+           "Intelligent-Tiering depth exceeds caller limit";
+      end if;
+      declare
+         Document : constant String := US.To_String (Result);
+         Verified : constant Intelligent_Tiering_Configuration :=
+           Parse (Document, Limits);
+         pragma Unreferenced (Verified);
+      begin
+         return Document;
+      end;
+   exception
+      when XML.XML_Error =>
+         raise Malformed_Intelligent_Tiering with
+           "invalid Intelligent-Tiering XML text";
+   end Serialize;
+
 end Flyology.Object_Storage.S3.Intelligent_Tiering;

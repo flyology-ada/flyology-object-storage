@@ -102,6 +102,16 @@ procedure S3_Put_Bucket_Analytics_Configuration_Qualification is
    end Require;
 
    procedure Check_Result (Result : Buckets.Put_Bucket_Analytics_Result) is
+      procedure Check_Rejection (Failure : Client.Failure_Reason) is
+      begin
+         Require
+           (Result.Kind = Buckets.Put_Bucket_Analytics_Response_Available
+            and then Result.Disposition =
+              Buckets.
+                Bucket_Analytics_Configuration_Mutation_Definitely_Not_Applied
+            and then Result.Failure = Failure,
+            "typed rejection mismatch");
+      end Check_Rejection;
    begin
       if Expected = "success" then
          Require
@@ -113,13 +123,13 @@ procedure S3_Put_Bucket_Analytics_Configuration_Qualification is
               Low_Level.Bucket_Control_Updated,
             "typed success mismatch");
       elsif Expected = "invalid_request" then
-         Require
-           (Result.Kind = Buckets.Put_Bucket_Analytics_Response_Available
-            and then Result.Disposition =
-              Buckets.
-                Bucket_Analytics_Configuration_Mutation_Definitely_Not_Applied
-            and then Result.Failure = Client.Invalid_Request,
-            "typed rejection mismatch");
+         Check_Rejection (Client.Invalid_Request);
+      elsif Expected = "authentication_failed" then
+         Check_Rejection (Client.Authentication_Failed);
+      elsif Expected = "authorization_failed" then
+         Check_Rejection (Client.Authorization_Failed);
+      elsif Expected = "not_found" then
+         Check_Rejection (Client.Not_Found);
       elsif Expected = "response_invalid" then
          Require
            (Result.Kind = Buckets.Put_Bucket_Analytics_Exchange_Failed

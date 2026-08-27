@@ -155,10 +155,13 @@ def run_case(
         output, error = process.communicate(
             timeout=(len(case["exchange"]) + 1) * SOCKET_TIMEOUT_SECONDS
         )
-    except Exception:
+    except Exception as failure:
         process.kill()
         output, error = process.communicate()
-        raise
+        detail = error or output
+        raise RuntimeError(
+            f"{failure}; adapter output: {detail or '<none>'}"
+        ) from failure
     finally:
         listener.close()
     if process.returncode != 0:

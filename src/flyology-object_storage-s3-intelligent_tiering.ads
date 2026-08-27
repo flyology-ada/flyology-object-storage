@@ -139,4 +139,16 @@ package Flyology.Object_Storage.S3.Intelligent_Tiering is
      (Document : String; Limits : XML.Parse_Limits)
       return Intelligent_Tiering_Configuration_Page;
 
+   --  Serialize one complete PutBucketIntelligentTieringConfiguration
+   --  payload. The caller supplies the shared S3 XML resource limits; no
+   --  transfer or retry policy is selected here.
+   --  @param Value Complete typed Intelligent-Tiering configuration
+   --  @param Limits Caller-selected shared S3 XML resource limits
+   --  @return Exact namespace-qualified REST/XML document
+   --  @exception Malformed_Intelligent_Tiering Value violates the model or
+   --    exceeds the caller-selected limits
+   function Serialize
+     (Value : Intelligent_Tiering_Configuration; Limits : XML.Parse_Limits)
+      return String;
+
 end Flyology.Object_Storage.S3.Intelligent_Tiering;

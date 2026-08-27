@@ -1,4 +1,3 @@
-with Flyology.Object_Storage.S3.Intelligent_Tiering;
 with Flyology.Object_Storage.S3.Inventory;
 with Flyology.Object_Storage.S3.Logging;
 with Flyology.Object_Storage.S3.Website;
@@ -14351,6 +14350,16 @@ package body Flyology.Object_Storage.Client.Buckets is
       or else (Status = 404 and then Code = "NoSuchBucket")
       or else (Status = 501 and then Code = "NotImplemented"));
 
+   --  The pinned operation documentation fixes TooManyConfigurations at
+   --  HTTP 400. MalformedXML is likewise a complete request rejection; all
+   --  retryable or unrecognized responses remain ambiguous and unreplayed.
+   function Conclusive_Put_Bucket_Metrics_Rejection
+     (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
+     (Conclusive_Bucket_Metrics_Rejection (Status, Code)
+      or else
+        (Status = 400
+         and then Code in "MalformedXML" | "TooManyConfigurations"));
+
    function Retryable_Bucket_Metrics_Response
      (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
      ((Status = 409 and then Code = "OperationAborted")
@@ -14369,7 +14378,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       then Authorization_Failed
       elsif Status = 404 and then Code = "NoSuchBucket"
       then Not_Found
-      elsif Conclusive_Bucket_Metrics_Rejection
+      elsif Conclusive_Put_Bucket_Metrics_Rejection
         (Status, Code)
       then Invalid_Request
       elsif Retryable_Bucket_Metrics_Response
@@ -14389,16 +14398,6 @@ package body Flyology.Object_Storage.Client.Buckets is
       then
         Bucket_Metrics_Configuration_Mutation_Definitely_Not_Applied
       else Bucket_Metrics_Configuration_Mutation_Outcome_Unknown);
-
-   --  The pinned operation documentation fixes TooManyConfigurations at
-   --  HTTP 400. MalformedXML is likewise a complete request rejection; all
-   --  retryable or unrecognized responses remain ambiguous and unreplayed.
-   function Conclusive_Put_Bucket_Metrics_Rejection
-     (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
-     (Conclusive_Bucket_Metrics_Rejection (Status, Code)
-      or else
-        (Status = 400
-         and then Code in "MalformedXML" | "TooManyConfigurations"));
 
    function Normalize_Put_Bucket_Metrics_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
@@ -14427,8 +14426,6 @@ package body Flyology.Object_Storage.Client.Buckets is
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Bucket_Control_Updated
             then No_Failure
-            elsif Conclusive
-            then Invalid_Request
             else Bucket_Metrics_Response_Failure (Value.Status, Code)),
          Admission   => Admission,
          Response    => Value);
@@ -15071,6 +15068,13 @@ package body Flyology.Object_Storage.Client.Buckets is
       or else (Status = 404 and then Code = "NoSuchBucket")
       or else (Status = 501 and then Code = "NotImplemented"));
 
+   --  MalformedXML is a complete request rejection. Retryable or
+   --  unrecognized responses remain ambiguous and are never replayed.
+   function Conclusive_Put_Bucket_Analytics_Rejection
+     (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
+     (Conclusive_Bucket_Analytics_Rejection (Status, Code)
+      or else (Status = 400 and then Code = "MalformedXML"));
+
    function Retryable_Bucket_Analytics_Response
      (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
      ((Status = 409 and then Code = "OperationAborted")
@@ -15089,7 +15093,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       then Authorization_Failed
       elsif Status = 404 and then Code = "NoSuchBucket"
       then Not_Found
-      elsif Conclusive_Bucket_Analytics_Rejection
+      elsif Conclusive_Put_Bucket_Analytics_Rejection
         (Status, Code)
       then Invalid_Request
       elsif Retryable_Bucket_Analytics_Response
@@ -15109,13 +15113,6 @@ package body Flyology.Object_Storage.Client.Buckets is
       then
         Bucket_Analytics_Configuration_Mutation_Definitely_Not_Applied
       else Bucket_Analytics_Configuration_Mutation_Outcome_Unknown);
-
-   --  MalformedXML is a complete request rejection. Retryable or
-   --  unrecognized responses remain ambiguous and are never replayed.
-   function Conclusive_Put_Bucket_Analytics_Rejection
-     (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
-     (Conclusive_Bucket_Analytics_Rejection (Status, Code)
-      or else (Status = 400 and then Code = "MalformedXML"));
 
    function Normalize_Put_Bucket_Analytics_Response
      (Value     : Low_Level.Put_Bucket_Control_Outcome;
@@ -15144,8 +15141,6 @@ package body Flyology.Object_Storage.Client.Buckets is
             then Corrupt_Or_Invalid_Response
             elsif Value.Kind = Low_Level.Bucket_Control_Updated
             then No_Failure
-            elsif Conclusive
-            then Invalid_Request
             else Bucket_Analytics_Response_Failure (Value.Status, Code)),
          Admission   => Admission,
          Response    => Value);
@@ -15360,6 +15355,313 @@ package body Flyology.Object_Storage.Client.Buckets is
          return Result;
       end;
    end Set_Analytics_Configuration;
+
+   --  The pinned S3 operation/error model and maintained signed-response
+   --  corpus establish these exact rejection pairs. Unknown or retryable
+   --  responses remain ambiguous.
+   function Conclusive_Bucket_Intelligent_Tiering_Rejection
+     (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
+     ((Status = 400
+       and then Code in
+         "InvalidArgument" | "InvalidBucketName" | "InvalidRequest" |
+         "MalformedXML")
+      or else (Status = 401 and then Code = "InvalidAccessKeyId")
+      or else (Status = 403 and then Code = "AccessDenied")
+      or else (Status = 404 and then Code = "NoSuchBucket")
+      or else (Status = 501 and then Code = "NotImplemented"));
+
+   function Retryable_Bucket_Intelligent_Tiering_Response
+     (Status : Flyology.HTTP.Status_Code; Code : String) return Boolean is
+     ((Status = 409 and then Code = "OperationAborted")
+      or else (Status = 429 and then Code = "SlowDown")
+      or else (Status = 500 and then Code = "InternalError")
+      or else (Status = 502 and then Code = "BadGateway")
+      or else (Status = 503 and then Code = "SlowDown")
+      or else (Status = 504 and then Code = "RequestTimeout"));
+
+   function Bucket_Intelligent_Tiering_Response_Failure
+     (Status : Flyology.HTTP.Status_Code; Code : String)
+      return Failure_Reason is
+     (if Status = 401 and then Code = "InvalidAccessKeyId"
+      then Authentication_Failed
+      elsif Status = 403 and then Code = "AccessDenied"
+      then Authorization_Failed
+      elsif Status = 404 and then Code = "NoSuchBucket"
+      then Not_Found
+      elsif Conclusive_Bucket_Intelligent_Tiering_Rejection (Status, Code)
+      then Invalid_Request
+      elsif Retryable_Bucket_Intelligent_Tiering_Response (Status, Code)
+      then Unavailable_Or_Retryable
+      else Corrupt_Or_Invalid_Response);
+
+   function Failed_Bucket_Intelligent_Tiering_Disposition
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Intelligent_Tiering_Mutation_Disposition is
+     (if Kind = HTTP_Client.Cancelled
+        and then Admission = HTTP_Client.Not_Admitted
+      then
+        Intelligent_Tiering_Mutation_Cancelled_Before_Admission
+      elsif Admission = HTTP_Client.Not_Admitted
+      then
+        Intelligent_Tiering_Mutation_Definitely_Not_Applied
+      else Intelligent_Tiering_Mutation_Outcome_Unknown);
+
+   function Normalize_Put_Bucket_Intelligent_Tiering_Response
+     (Value     : Low_Level.Put_Bucket_Control_Outcome;
+      Admission : HTTP_Client.Admission_Certainty)
+      return Put_Bucket_Intelligent_Tiering_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Put_Bucket_Control_Rejected
+         then US.To_String (Value.Error.Code) else "");
+      Conclusive : constant Boolean :=
+        Conclusive_Bucket_Intelligent_Tiering_Rejection
+          (Value.Status, Code);
+   begin
+      return
+        (Kind => Put_Bucket_Intelligent_Tiering_Response_Available,
+         Disposition =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then
+              Intelligent_Tiering_Mutation_Outcome_Unknown
+            elsif Value.Kind = Low_Level.Bucket_Control_Updated
+            then Intelligent_Tiering_Mutation_Completed
+            elsif Conclusive
+            then
+              Intelligent_Tiering_Mutation_Definitely_Not_Applied
+            else
+              Intelligent_Tiering_Mutation_Outcome_Unknown),
+         Failure =>
+           (if Admission /= HTTP_Client.Response_Observed
+            then Corrupt_Or_Invalid_Response
+            elsif Value.Kind = Low_Level.Bucket_Control_Updated
+            then No_Failure
+            else
+              Bucket_Intelligent_Tiering_Response_Failure
+                (Value.Status, Code)),
+         Admission => Admission,
+         Response => Value);
+   end Normalize_Put_Bucket_Intelligent_Tiering_Response;
+
+   function Normalize_Put_Bucket_Intelligent_Tiering_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String) return Put_Bucket_Intelligent_Tiering_Result is
+   begin
+      return
+        (Kind => Put_Bucket_Intelligent_Tiering_Exchange_Failed,
+         Disposition =>
+           Failed_Bucket_Intelligent_Tiering_Disposition (Kind, Admission),
+         Failure =>
+           (if Kind in HTTP_Client.Response_Invalid |
+                         HTTP_Client.Response_Body_Too_Large |
+                         HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission => Admission,
+         HTTP_Result => Kind,
+         HTTP_Phase => Phase,
+         Detail => US.To_Unbounded_String (Detail));
+   end Normalize_Put_Bucket_Intelligent_Tiering_Failure;
+
+   function Decode_Put_Bucket_Intelligent_Tiering_Family_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Response   : HTTP_Client.Response;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : S3.XML.Parse_Limits;
+      Admission  : HTTP_Client.Admission_Certainty;
+      Phase      : HTTP_Client.Exchange_Phase)
+      return Put_Bucket_Intelligent_Tiering_Result is
+   begin
+      pragma Unreferenced (Response, Phase);
+      return Normalize_Put_Bucket_Intelligent_Tiering_Response
+        (Low_Level.Decode_Put_Bucket_Control_Response
+           (Status, Payload, Request_ID, Host_ID, Limits),
+         Admission);
+   end Decode_Put_Bucket_Intelligent_Tiering_Family_Response;
+
+   overriding function Declared_Length
+     (Item : Put_Bucket_Intelligent_Tiering_Operation)
+      return HTTP_Client.Body_Length is
+     (Put_Bucket_Intelligent_Tiering_Mutations.Declared_Length (Item.State));
+
+   overriding procedure Read_Now
+     (Item   : in out Put_Bucket_Intelligent_Tiering_Operation;
+      Data   : out Ada.Streams.Stream_Element_Array;
+      Last   : out Ada.Streams.Stream_Element_Offset;
+      Result : out HTTP_Client.Source_Step_Kind) is
+   begin
+      Put_Bucket_Intelligent_Tiering_Mutations.Read_Now
+        (Item.State, Data, Last, Result);
+   end Read_Now;
+
+   overriding procedure Source_Wait_Source
+     (Item       : in out Put_Bucket_Intelligent_Tiering_Operation;
+      Required   : HTTP_Client.Source_Wait_Kind;
+      Descriptor : out Flyology.IO.Descriptor;
+      Ready_Now  : out Boolean) is
+   begin
+      Put_Bucket_Intelligent_Tiering_Mutations.Source_Wait_Source
+        (Item.State, Required, Descriptor, Ready_Now);
+   end Source_Wait_Source;
+
+   overriding procedure Release_Source
+     (Item : in out Put_Bucket_Intelligent_Tiering_Operation) is
+   begin
+      Put_Bucket_Intelligent_Tiering_Mutations.Release_Source (Item.State);
+   end Release_Source;
+
+   overriding procedure Write
+     (Item : in out Put_Bucket_Intelligent_Tiering_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      Put_Bucket_Intelligent_Tiering_Mutations.Write (Item.State, Data);
+   end Write;
+
+   overriding procedure Drive
+     (Item  : in out Put_Bucket_Intelligent_Tiering_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      Put_Bucket_Intelligent_Tiering_Mutations.Drive
+        (Item.State, Item'Access, Item'Access, Item'Access, Item.HTTP,
+         Item.Cancellation, Event);
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Put_Bucket_Intelligent_Tiering_Operation) is
+   begin
+      Put_Bucket_Intelligent_Tiering_Mutations.Request_Cancellation
+        (Item.State);
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Put_Bucket_Intelligent_Tiering_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Put_Bucket_Intelligent_Tiering_Mutations.Finalize (Item.State);
+   end Finalize;
+
+   procedure Start_Put_Bucket_Intelligent_Tiering
+     (Operation  : in out Put_Bucket_Intelligent_Tiering_Operation;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Intelligent_Tiering.Intelligent_Tiering_Configuration;
+      Parameters :
+        Low_Level.Put_Bucket_Intelligent_Tiering_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "PutBucketIntelligentTieringConfiguration restart changed " &
+           "retained owner";
+      end if;
+      Put_Bucket_Intelligent_Tiering_Mutations.Start
+        (Operation.State, Operation'Access,
+         Low_Level.Prepare_Put_Bucket_Intelligent_Tiering_Configuration
+           (Origin, Style, Bucket, Value, Parameters, Identity, Region,
+            Timestamp, Limits),
+         Deadline, Limits);
+   end Start_Put_Bucket_Intelligent_Tiering;
+
+   procedure Set_Intelligent_Tiering_Configuration
+     (Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Intelligent_Tiering.Intelligent_Tiering_Configuration;
+      Parameters :
+        Low_Level.Put_Bucket_Intelligent_Tiering_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out Put_Bucket_Intelligent_Tiering_Operation) is
+   begin
+      Start_Put_Bucket_Intelligent_Tiering
+        (Operation, Client, Origin, Bucket, Value, Parameters, Identity,
+         Deadline, Region, Style, Limits, Token);
+   end Set_Intelligent_Tiering_Configuration;
+
+   function Set_Intelligent_Tiering_Configuration
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Intelligent_Tiering.Intelligent_Tiering_Configuration;
+      Parameters :
+        Low_Level.Put_Bucket_Intelligent_Tiering_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return Put_Bucket_Intelligent_Tiering_Operation is
+   begin
+      return Result :
+        Put_Bucket_Intelligent_Tiering_Operation (Set, Client, Token)
+      do
+         Start_Put_Bucket_Intelligent_Tiering
+           (Result, Client, Origin, Bucket, Value, Parameters, Identity,
+            Deadline, Region, Style, Limits, Token);
+      end return;
+   end Set_Intelligent_Tiering_Configuration;
+
+   procedure Finish
+     (Operation : in out Put_Bucket_Intelligent_Tiering_Operation;
+      Result    : out Put_Bucket_Intelligent_Tiering_Result) is
+   begin
+      Put_Bucket_Intelligent_Tiering_Mutations.Finish
+        (Operation.State, Operation'Access, Result);
+   end Finish;
+
+   function Set_Intelligent_Tiering_Configuration
+     (Client     : aliased in out HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Value      : Intelligent_Tiering.Intelligent_Tiering_Configuration;
+      Parameters :
+        Low_Level.Put_Bucket_Intelligent_Tiering_Configuration_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : S3.XML.Parse_Limits)
+      return Put_Bucket_Intelligent_Tiering_Result
+   is
+      --  Derived capacity: mutation parent, HTTP exchange, and HTTP's one
+      --  active transport child are the only simultaneous operations.
+      Set : aliased Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Put_Bucket_Intelligent_Tiering_Operation :=
+           Set_Intelligent_Tiering_Configuration
+             (Set'Access, Client'Access, Origin, Bucket, Value, Parameters,
+              Identity, HTTP_Client.Deadline_After (Timeout), Region, Style,
+              Limits, Token);
+         Result : Put_Bucket_Intelligent_Tiering_Result;
+      begin
+         Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Set_Intelligent_Tiering_Configuration;
 
    function Normalize_Delete_Bucket_Analytics_Response
      (Value     : Low_Level.Delete_Bucket_Configuration_Outcome;

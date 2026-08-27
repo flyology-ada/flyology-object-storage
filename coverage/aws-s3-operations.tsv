@@ -82,7 +82,7 @@ PutBucketAcl	extended	missing	partial	missing	missing
 PutBucketAnalyticsConfiguration	extended	missing	covered	missing	covered
 PutBucketCors	extended	covered	covered	covered	covered
 PutBucketEncryption	extended	missing	covered	missing	covered
-PutBucketIntelligentTieringConfiguration	extended	missing	partial	missing	missing
+PutBucketIntelligentTieringConfiguration	extended	missing	covered	missing	covered
 PutBucketInventoryConfiguration	extended	missing	partial	missing	missing
 PutBucketLifecycle	extended	missing	partial	missing	missing
 PutBucketLifecycleConfiguration	extended	missing	covered	missing	covered

@@ -6,26 +6,35 @@ with Flyology.HTTP.Client;
 with Flyology.Object_Storage.Client;
 with Flyology.Object_Storage.Client.Buckets;
 with Flyology.Object_Storage.Client.Low_Level;
-with Flyology.Object_Storage.S3.Metrics;
+with Flyology.Object_Storage.S3.Intelligent_Tiering;
 with Flyology.Object_Storage.S3.XML;
 with Flyology.Operations;
 
-procedure S3_Put_Bucket_Metrics_Configuration_Qualification is
+procedure S3_Put_Bucket_Intelligent_Tiering_Configuration_Qualification is
    package Environment renames Ada.Environment_Variables;
    package HTTP_Client renames Flyology.HTTP.Client;
    package Client renames Flyology.Object_Storage.Client;
    package Buckets renames Flyology.Object_Storage.Client.Buckets;
    package Low_Level renames Flyology.Object_Storage.Client.Low_Level;
-   package Metrics renames Flyology.Object_Storage.S3.Metrics;
+   package Intelligent_Tiering renames
+     Flyology.Object_Storage.S3.Intelligent_Tiering;
    package Operations renames Flyology.Operations;
    package XML renames Flyology.Object_Storage.S3.XML;
    package US renames Ada.Strings.Unbounded;
 
    use type Client.Failure_Reason;
-   use type Buckets.Bucket_Metrics_Configuration_Mutation_Disposition;
-   use type Buckets.Put_Bucket_Metrics_Result_Kind;
+   use all type
+     Buckets.Intelligent_Tiering_Mutation_Disposition;
+   use type Buckets.Put_Bucket_Intelligent_Tiering_Result_Kind;
    use type HTTP_Client.Exchange_Result_Kind;
    use type Low_Level.Put_Bucket_Control_Outcome_Kind;
+
+   subtype Mutation_Disposition is
+     Buckets.Intelligent_Tiering_Mutation_Disposition;
+   Definite_Rejection : constant Mutation_Disposition :=
+     Intelligent_Tiering_Mutation_Definitely_Not_Applied;
+   Unknown_Outcome : constant Mutation_Disposition :=
+     Intelligent_Tiering_Mutation_Outcome_Unknown;
 
    Port : constant String :=
      Environment.Value ("FLYOLOGY_S3_QUALIFICATION_PORT");
@@ -52,7 +61,7 @@ procedure S3_Put_Bucket_Metrics_Configuration_Qualification is
        ("AKIAIOSFODNN7EXAMPLE",
         "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY");
    Parameters : constant
-     Low_Level.Put_Bucket_Metrics_Configuration_Parameters :=
+     Low_Level.Put_Bucket_Intelligent_Tiering_Configuration_Parameters :=
        (ID                    => US.To_Unbounded_String (Identifier),
         Expected_Bucket_Owner =>
           US.To_Unbounded_String (Expected_Bucket_Owner));
@@ -83,11 +92,14 @@ procedure S3_Put_Bucket_Metrics_Configuration_Qualification is
           ("MAXIMUM_TEXT_BYTES", XML.Default_Limits.Maximum_Text_Bytes));
 
    Document : constant String :=
-     "<MetricsConfiguration xmlns=""http://s3.amazonaws.com/doc/" &
-     "2006-03-01/""><Id>" & XML.Escape_Text (Identifier) &
-     "</Id></MetricsConfiguration>";
-   Value : constant Metrics.Metrics_Configuration :=
-     Metrics.Parse (Document, Limits);
+     "<IntelligentTieringConfiguration xmlns=""http://s3.amazonaws.com/" &
+     "doc/2006-03-01/""><Id>" & XML.Escape_Text (Identifier) &
+     "</Id><Status>Enabled</Status><Tiering><Days>90</Days>" &
+     "<AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering>" &
+     "</IntelligentTieringConfiguration>";
+   Value : constant
+     Intelligent_Tiering.Intelligent_Tiering_Configuration :=
+       Intelligent_Tiering.Parse (Document, Limits);
 
    --  Every case is serial. One HTTP slot is the derived minimum and makes a
    --  leaked exchange observable; it is not production policy.
@@ -100,23 +112,26 @@ procedure S3_Put_Bucket_Metrics_Configuration_Qualification is
       end if;
    end Require;
 
-   procedure Check_Result (Result : Buckets.Put_Bucket_Metrics_Result) is
+   procedure Check_Result
+     (Result : Buckets.Put_Bucket_Intelligent_Tiering_Result)
+   is
       procedure Check_Rejection (Failure : Client.Failure_Reason) is
       begin
          Require
-           (Result.Kind = Buckets.Put_Bucket_Metrics_Response_Available
-            and then Result.Disposition =
-              Buckets.
-                Bucket_Metrics_Configuration_Mutation_Definitely_Not_Applied
+           (Result.Kind =
+              Buckets.Put_Bucket_Intelligent_Tiering_Response_Available
+            and then Result.Disposition = Definite_Rejection
             and then Result.Failure = Failure,
             "typed rejection mismatch");
       end Check_Rejection;
    begin
       if Expected = "success" then
          Require
-           (Result.Kind = Buckets.Put_Bucket_Metrics_Response_Available
+           (Result.Kind =
+              Buckets.Put_Bucket_Intelligent_Tiering_Response_Available
             and then Result.Disposition =
-              Buckets.Bucket_Metrics_Configuration_Mutation_Completed
+              Buckets.
+                Intelligent_Tiering_Mutation_Completed
             and then Result.Failure = Client.No_Failure
             and then Result.Response.Kind =
               Low_Level.Bucket_Control_Updated,
@@ -131,17 +146,19 @@ procedure S3_Put_Bucket_Metrics_Configuration_Qualification is
          Check_Rejection (Client.Not_Found);
       elsif Expected = "response_invalid" then
          Require
-           (Result.Kind = Buckets.Put_Bucket_Metrics_Exchange_Failed
+           (Result.Kind =
+              Buckets.Put_Bucket_Intelligent_Tiering_Exchange_Failed
             and then Result.Disposition =
-              Buckets.Bucket_Metrics_Configuration_Mutation_Outcome_Unknown
+              Unknown_Outcome
             and then Result.Failure = Client.Corrupt_Or_Invalid_Response
             and then Result.HTTP_Result = HTTP_Client.Response_Invalid,
             "typed invalid-response mismatch");
       elsif Expected = "response_sink_failed" then
          Require
-           (Result.Kind = Buckets.Put_Bucket_Metrics_Exchange_Failed
+           (Result.Kind =
+              Buckets.Put_Bucket_Intelligent_Tiering_Exchange_Failed
             and then Result.Disposition =
-              Buckets.Bucket_Metrics_Configuration_Mutation_Outcome_Unknown
+              Unknown_Outcome
             and then Result.Failure = Client.Corrupt_Or_Invalid_Response
             and then Result.HTTP_Result = HTTP_Client.Response_Sink_Failed,
             "typed bounded-sink mismatch");
@@ -155,11 +172,11 @@ begin
    if Lane = "low_level" then
       declare
          Prepared : constant Low_Level.Prepared_Request :=
-           Low_Level.Prepare_Put_Bucket_Metrics_Configuration
+           Low_Level.Prepare_Put_Bucket_Intelligent_Tiering_Configuration
              (Origin, Low_Level.Path_Style, Bucket, Value, Parameters,
               Identity, "us-east-1", "20130524T000000Z", Limits);
          Result : constant Low_Level.Put_Bucket_Control_Outcome :=
-           Low_Level.Execute_Put_Bucket_Metrics_Configuration
+           Low_Level.Execute_Put_Bucket_Intelligent_Tiering_Configuration
              (HTTP, Prepared, Socket_Timeout, null, Limits);
       begin
          Require
@@ -169,19 +186,19 @@ begin
       end;
    elsif Lane = "synchronous" or else Lane = "invalid_xml" then
       Check_Result
-        (Buckets.Set_Metrics_Configuration
+        (Buckets.Set_Intelligent_Tiering_Configuration
            (HTTP, Origin, Bucket, Value, Parameters, Identity, "us-east-1",
             Low_Level.Path_Style, Socket_Timeout, null, Limits));
    elsif Lane = "composable" then
       declare
          --  Derived owner stack: provider, HTTP exchange, transport child.
          Set : aliased Operations.Completion_Set (3);
-         Operation : Buckets.Put_Bucket_Metrics_Operation :=
-           Buckets.Set_Metrics_Configuration
+         Operation : Buckets.Put_Bucket_Intelligent_Tiering_Operation :=
+           Buckets.Set_Intelligent_Tiering_Configuration
              (Set'Access, HTTP'Access, Origin, Bucket, Value, Parameters,
               Identity, HTTP_Client.Deadline_After (Socket_Timeout),
               "us-east-1", Low_Level.Path_Style, Limits, null);
-         Result : Buckets.Put_Bucket_Metrics_Result;
+         Result : Buckets.Put_Bucket_Intelligent_Tiering_Result;
       begin
          Operations.Wait_All (Set);
          Buckets.Finish (Operation, Result);
@@ -190,21 +207,23 @@ begin
    elsif Lane = "restart" then
       declare
          Set : aliased Operations.Completion_Set (3);
-         Operation : Buckets.Put_Bucket_Metrics_Operation :=
-           Buckets.Set_Metrics_Configuration
+         Operation : Buckets.Put_Bucket_Intelligent_Tiering_Operation :=
+           Buckets.Set_Intelligent_Tiering_Configuration
              (Set'Access, HTTP'Access, Origin, Bucket, Value, Parameters,
               Identity, HTTP_Client.Deadline_After (Socket_Timeout),
               "us-east-1", Low_Level.Path_Style, Limits, null);
-         Result : Buckets.Put_Bucket_Metrics_Result;
+         Result : Buckets.Put_Bucket_Intelligent_Tiering_Result;
       begin
          Operations.Wait_All (Set);
          Buckets.Finish (Operation, Result);
          Require
-           (Result.Kind = Buckets.Put_Bucket_Metrics_Response_Available
+           (Result.Kind =
+              Buckets.Put_Bucket_Intelligent_Tiering_Response_Available
             and then Result.Disposition =
-              Buckets.Bucket_Metrics_Configuration_Mutation_Completed,
+              Buckets.
+                Intelligent_Tiering_Mutation_Completed,
             "restart first result mismatch");
-         Buckets.Set_Metrics_Configuration
+         Buckets.Set_Intelligent_Tiering_Configuration
            (HTTP'Access, Origin, Bucket & "-second", Value, Parameters,
             Identity, HTTP_Client.Deadline_After (Socket_Timeout),
             "us-east-1", Low_Level.Path_Style, Limits, null, Operation);
@@ -217,10 +236,10 @@ begin
    end if;
    HTTP_Client.Shutdown (HTTP);
    Ada.Text_IO.Put_Line
-     ("PutBucketMetricsConfiguration signed qualification " & Case_ID &
-      ": OK");
+     ("PutBucketIntelligentTieringConfiguration signed qualification " &
+      Case_ID & ": OK");
 exception
    when others =>
       HTTP_Client.Shutdown (HTTP);
       raise;
-end S3_Put_Bucket_Metrics_Configuration_Qualification;
+end S3_Put_Bucket_Intelligent_Tiering_Configuration_Qualification;

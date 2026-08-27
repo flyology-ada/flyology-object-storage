@@ -2729,6 +2729,78 @@
         {
           "exchange": [
             {
+              "body": "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authentication",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "authentication analytics"
+              },
+              "method": "PUT",
+              "request_body": "<AnalyticsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authentication analytics</Id><StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "ad2e5d2fe7dbccedb72b2fb0b7b867f5ff48df8888364ad442320536cb4354f4",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "401 Unauthorized",
+              "target": "/qualified-authentication?analytics&id=authentication%20analytics"
+            }
+          ],
+          "expected": "authentication_failed",
+          "id": "authentication-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authorization",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "authorization analytics"
+              },
+              "method": "PUT",
+              "request_body": "<AnalyticsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authorization analytics</Id><StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "242d992c508926d9142b8f4f92cdf27267c46dc0101832f24ef443fd9c80a23b",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "403 Forbidden",
+              "target": "/qualified-authorization?analytics&id=authorization%20analytics"
+            }
+          ],
+          "expected": "authorization_failed",
+          "id": "authorization-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-missing",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "missing analytics"
+              },
+              "method": "PUT",
+              "request_body": "<AnalyticsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>missing analytics</Id><StorageClassAnalysis></StorageClassAnalysis></AnalyticsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "8b76d476a160d9282c5e24c756a5ec9e359884b7cfdba2f6fe80c5de5749c3b4",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-missing?analytics&id=missing%20analytics"
+            }
+          ],
+          "expected": "not_found",
+          "id": "missing-bucket-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
               "body": "",
               "headers": [],
               "input_values": {
@@ -2829,6 +2901,290 @@
         }
       ]
     },
+    "PutBucketIntelligentTieringConfiguration": {
+      "adapter": "./bin/s3_put_bucket_intelligent_tiering_configuration_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "low-level tiering"
+              },
+              "method": "PUT",
+              "request_body": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>low-level tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "c1584142fbec7beb76cdab96b5f4e7b81887a61a6e0fbc29da4d647b9bed9d27",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?id=low-level%20tiering&intelligent-tiering"
+            }
+          ],
+          "expected": "success",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-empty-id",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": ""
+              },
+              "method": "PUT",
+              "request_body": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id></Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "c88301c7c7992b60e84189178ae9abc9a8189dcdc714f3380f0340d8b9704c2d",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-empty-id?id&intelligent-tiering"
+            }
+          ],
+          "expected": "success",
+          "id": "empty-identifier-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "synchronous tiering"
+              },
+              "method": "PUT",
+              "request_body": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>synchronous tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "d52e3e0933337436a8937677cba0843d7ee85ff9379f4f53f2d7126f85a220ec",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?id=synchronous%20tiering&intelligent-tiering"
+            }
+          ],
+          "expected": "success",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>invalid</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "malformed-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "composable tiering"
+              },
+              "method": "PUT",
+              "request_body": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>composable tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "b24d438826976a786fe7bfbdf529478239df50a17c621e6acc808e516859c03e",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-composable?id=composable%20tiering&intelligent-tiering"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "composable-malformed",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authentication",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "authentication tiering"
+              },
+              "method": "PUT",
+              "request_body": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authentication tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "f6822d82e0d4e19829446d61eb63f4e004f52d4a853cf4c00b6fb439c2c7f204",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "401 Unauthorized",
+              "target": "/qualified-authentication?id=authentication%20tiering&intelligent-tiering"
+            }
+          ],
+          "expected": "authentication_failed",
+          "id": "authentication-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authorization",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "authorization tiering"
+              },
+              "method": "PUT",
+              "request_body": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authorization tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "65766f94f684fd020effe058f28e57fdeb349dbdc8fdaebf701be5d905ea0f80",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "403 Forbidden",
+              "target": "/qualified-authorization?id=authorization%20tiering&intelligent-tiering"
+            }
+          ],
+          "expected": "authorization_failed",
+          "id": "authorization-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-missing",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "missing tiering"
+              },
+              "method": "PUT",
+              "request_body": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>missing tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "a09a60a06f5396c85d422d6a11d92ee1d71117fcd5109fa516374d33ca310c08",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-missing?id=missing%20tiering&intelligent-tiering"
+            }
+          ],
+          "expected": "not_found",
+          "id": "missing-bucket-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "restart tiering"
+              },
+              "method": "PUT",
+              "request_body": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>restart tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "3a0be21af13abcd81fd488fa370828867aef122fc6155d5324cf91646e6da372",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?id=restart%20tiering&intelligent-tiering"
+            },
+            {
+              "body": "<Error><Code>MalformedXML</Code><Message>rejected</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "restart tiering"
+              },
+              "method": "PUT",
+              "request_body": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>restart tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "3a0be21af13abcd81fd488fa370828867aef122fc6155d5324cf91646e6da372",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-restart-second?id=restart%20tiering&intelligent-tiering"
+            }
+          ],
+          "expected": "invalid_request",
+          "id": "restart-rejection",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "duplicate tiering"
+              },
+              "method": "PUT",
+              "request_body": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>duplicate tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "e7c9f5171e46a7aff68cae3342614cd4c52d90941941a922ac96059c1b7f890f",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?id=duplicate%20tiering&intelligent-tiering"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidRequest</Code><Message>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "bounded tiering"
+              },
+              "method": "PUT",
+              "request_body": "<IntelligentTieringConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>bounded tiering</Id><Status>Enabled</Status><Tiering><Days>90</Days><AccessTier>ARCHIVE_ACCESS</AccessTier></Tiering></IntelligentTieringConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "cd483a6c4790e5114b6e1d318b0dd8d0a64fde53ccba67d8676f6c8b85ddf129",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "400 Bad Request",
+              "target": "/qualified-bounded?id=bounded%20tiering&intelligent-tiering"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 280
+          }
+        }
+      ]
+    },
     "PutBucketMetricsConfiguration": {
       "adapter": "./bin/s3_put_bucket_metrics_configuration_qualification",
       "cases": [
@@ -2913,6 +3269,78 @@
           "expected": "invalid_request",
           "id": "composable-too-many",
           "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>InvalidAccessKeyId</Code><Message>invalid key</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authentication",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "authentication metrics"
+              },
+              "method": "PUT",
+              "request_body": "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authentication metrics</Id></MetricsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "6bd733aabdffc7d4c711b2d7364aa766253a733f308b6fc4716299bf89333424",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "401 Unauthorized",
+              "target": "/qualified-authentication?id=authentication%20metrics&metrics"
+            }
+          ],
+          "expected": "authentication_failed",
+          "id": "authentication-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>AccessDenied</Code><Message>denied</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-authorization",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "authorization metrics"
+              },
+              "method": "PUT",
+              "request_body": "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>authorization metrics</Id></MetricsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "405dbbcc17f8f6888f0688a6c08dc05aeeac9fe0a38b8cd208e7e74b5214b8bf",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "403 Forbidden",
+              "target": "/qualified-authorization?id=authorization%20metrics&metrics"
+            }
+          ],
+          "expected": "authorization_failed",
+          "id": "authorization-rejection",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<Error><Code>NoSuchBucket</Code><Message>missing</Message></Error>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-missing",
+                "ExpectedBucketOwner": "123456789012",
+                "Id": "missing metrics"
+              },
+              "method": "PUT",
+              "request_body": "<MetricsConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><Id>missing metrics</Id></MetricsConfiguration>",
+              "request_headers": {
+                "x-amz-content-sha256": "e0a365b27ca9ff75905e0d56700222f0c3d79edee3767481bc9193d73c563737",
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-missing?id=missing%20metrics&metrics"
+            }
+          ],
+          "expected": "not_found",
+          "id": "missing-bucket-rejection",
+          "lane": "synchronous"
         },
         {
           "exchange": [
