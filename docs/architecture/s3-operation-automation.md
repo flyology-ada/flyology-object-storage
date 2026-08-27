@@ -70,6 +70,8 @@ must not be edited directly:
 - `coverage/s3-operation-counts.json` — exact coverage/provider/family counts;
 - `coverage/s3-operation-inventory.json` — all 116 implementation modes,
   generator eligibility states, layer provenance, and executable evidence;
+- `coverage/s3-generation-canaries.json` — normalized prospective generator
+  output compared with authoritative handwritten canaries;
 - `tests/generated/s3-operation-tests.sh` — maintained verifier and corpus
   registration used by the full test gate;
 - `tests/generated/s3-negative-xml.json` — routine malformed XML cases derived
@@ -119,6 +121,23 @@ Existing handwritten codecs and provider implementations are not inputs to a
 rewrite. A prospective descriptor may be generated in a temporary directory
 to compare model-derived structure, but adopting a generated implementation
 for an existing operation requires separate user authorization.
+
+### GetBucketWebsite non-destructive canary
+
+`GetBucketWebsite` remains the authoritative shared-family handwritten
+implementation. Its canary hashes the existing codec, low-level/provider
+implementation, and typed socket adapter, then compares the generated semantic
+description with the committed model-derived negative corpus and signed socket
+plan. The comparison covers the `GET /{Bucket}?website` binding, 20 reachable
+shapes, 19 XML occurrence nodes, required nested members, exact protocol enum,
+provider-owned `Get_Website` vocabulary, synchronous/composable/restart lanes,
+typed `Finish`, coverage, and documentation evidence.
+
+The prospective descriptor is generated only outside the repository and is
+not committed. The canary records its deterministic hashes and line counts.
+The website codec's prose-only top-level exclusivity rule remains an explicit
+human rule because it is absent from Botocore; generation neither invents nor
+removes it.
 
 ## Bounded REST/XML read family
 

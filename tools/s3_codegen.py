@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
@@ -519,3 +522,136 @@ def codec_descriptor_text(
         )
     )
     return unit, spec, "\n".join(body_parts)
+
+
+def get_bucket_website_canary(
+    registry: s3_operation.Registry, model: dict[str, Any]
+) -> dict[str, Any]:
+    """Verify prospective generation against the authoritative handwritten API."""
+    operation = "GetBucketWebsite"
+    entry = registry.operations[operation]
+    plan = codec_plan(model, operation, entry)
+    audit = s3_operation.operation_audit(model, operation)
+    unit, spec, body = codec_descriptor_text(model, operation, entry)
+    generated_negative = s3_operation.negative_xml_cases(
+        model, operation, entry["negative_xml"]
+    )
+    committed_negative = json.loads(
+        s3_operation.NEGATIVE_XML_PATH.read_text(encoding="utf-8")
+    )["operations"][operation]["cases"]
+    generated_socket = json.loads(
+        s3_operation.signed_socket_text(registry, model)
+    )["operations"][operation]
+    committed_socket = json.loads(
+        s3_operation.SIGNED_SOCKET_PATH.read_text(encoding="utf-8")
+    )["operations"][operation]
+
+    source_tokens = {
+        "src/flyology-object_storage-s3-website.ads": [
+            "type Website_Configuration is record",
+            "function Parse",
+            "Malformed_Website",
+        ],
+        "src/flyology-object_storage-s3-website.adb": [
+            node["name"] for node in plan["nodes"]
+        ],
+        "src/flyology-object_storage-client-low_level.adb": [
+            "Prepare_Get_Bucket_Website",
+            "Model.Get_Bucket_Website_Operation",
+            "Decode_Get_Bucket_Website_Response",
+        ],
+        "src/flyology-object_storage-client-buckets.ads": [
+            "type Get_Bucket_Website_Operation",
+            "package Get_Bucket_Website_Reads is new",
+            "function Get_Website",
+            "procedure Get_Website",
+            "procedure Finish",
+        ],
+        "src/flyology-object_storage-client-buckets.adb": [
+            "Get_Bucket_Website_Reads.Start",
+            "Get_Bucket_Website_Reads.Request_Cancellation",
+            "Get_Bucket_Website_Reads.Finalize",
+            "function Get_Website",
+            "procedure Get_Website",
+            "procedure Finish",
+        ],
+        "tests/src/s3_get_bucket_website_qualification.adb": [
+            "low_level",
+            "synchronous",
+            "composable",
+            "restart",
+            "invalid_xml",
+            "Buckets.Finish (Operation, Result)",
+        ],
+    }
+    source_hashes: dict[str, str] = {}
+    findings: list[str] = []
+    for path_text, tokens in source_tokens.items():
+        path = s3_operation.ROOT / path_text
+        value = path.read_bytes()
+        source_hashes[path_text] = hashlib.sha256(value).hexdigest()
+        text = value.decode("utf-8")
+        for token in tokens:
+            if token not in text:
+                findings.append(f"{path_text} lacks {token}")
+
+    if generated_negative != committed_negative:
+        findings.append("generated negative XML differs from committed evidence")
+    if generated_socket != committed_socket:
+        findings.append("generated signed socket plan differs from committed evidence")
+    if entry["implementation_mode"] != "shared-family":
+        findings.append("authoritative implementation mode changed")
+    if entry["generator_eligible"]:
+        findings.append("authoritative canary became generator eligible")
+
+    return {
+        "operation": operation,
+        "status": "equivalent" if not findings else "findings",
+        "findings": findings,
+        "authoritative_implementation": {
+            "mode": entry["implementation_mode"],
+            "generator_eligible": entry["generator_eligible"],
+            "source_sha256": source_hashes,
+        },
+        "model_contract": {
+            "method": audit["method"],
+            "uri": audit["uri"],
+            "response_status": audit["response_status"],
+            "input_shape": audit["input_shape"],
+            "output_shape": audit["output_shape"],
+            "reachable_shape_count": audit["reachable_shape_count"],
+            "payload_shape": plan["payload_shape"],
+            "wire_node_count": plan["node_count"],
+        },
+        "public_contract": {
+            "provider": entry["public_provider"],
+            "operation": entry["public_name"],
+            "symbols": entry["ada_symbols"],
+            "family": entry["family"],
+        },
+        "strict_xml": {
+            "contract": plan["strict_contract"],
+            "negative_case_count": len(generated_negative),
+            "negative_categories": dict(
+                sorted(Counter(case["category"] for case in generated_negative).items())
+            ),
+            "unsupported_generator_traits": plan[
+                "unsupported_generator_traits"
+            ],
+        },
+        "signed_socket": {
+            "case_count": len(generated_socket["cases"]),
+            "lanes": [case["lane"] for case in generated_socket["cases"]],
+        },
+        "prospective_output": {
+            "unit": unit,
+            "spec_lines": len(spec.splitlines()),
+            "body_lines": len(body.splitlines()),
+            "spec_sha256": hashlib.sha256(spec.encode()).hexdigest(),
+            "body_sha256": hashlib.sha256(body.encode()).hexdigest(),
+            "committed": False,
+        },
+        "intentional_human_rules": entry["exclusions"],
+        "coverage": entry["coverage"],
+        "evidence": entry["evidence"],
+    }
