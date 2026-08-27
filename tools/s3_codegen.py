@@ -13,6 +13,9 @@ from typing import Any
 import s3_operation
 
 
+SUPPORTED_PATTERNS = {"arn:[^:]+:(s3|s3express):.*"}
+
+
 @dataclass(frozen=True)
 class XML_Node:
     identifier: str
@@ -252,6 +255,7 @@ def codec_plan(
             "enumerations": "exact_model_domain",
             "namespaces": "unqualified_or_exact_s3_consistently",
             "attributes": "exact_model_domain",
+            "patterns": "exact_supported_model_domain",
             "xml_limits": "caller_supplied",
             "collection_limit": "caller_supplied_without_default",
         },
@@ -262,7 +266,7 @@ def codec_plan(
                 "value": node.pattern,
             }
             for node in nodes
-            if node.pattern
+            if node.pattern and node.pattern not in SUPPORTED_PATTERNS
         ],
     }
 
@@ -287,7 +291,11 @@ def codec_descriptor_text(
 ) -> tuple[str, str, str]:
     """Return filename, generated descriptor spec, and descriptor body."""
     nodes = xml_nodes(model, operation, entry)
-    patterns = [node for node in nodes if node.pattern]
+    patterns = [
+        node
+        for node in nodes
+        if node.pattern and node.pattern not in SUPPORTED_PATTERNS
+    ]
     if patterns:
         raise s3_operation.Audit_Error(
             "strict XML scaffold lacks modeled pattern support: "
@@ -335,6 +343,8 @@ def codec_descriptor_text(
             "   function Enumeration_Count (Element : Element_Id) return Natural;",
             "   function Enumeration_Value",
             "     (Element : Element_Id; Index : Positive) return String;",
+            "   function Matches_Pattern",
+            "     (Element : Element_Id; Value : String) return Boolean;",
             "",
             "   generic",
             "      type Result_Type is limited private;",
@@ -448,32 +458,100 @@ def codec_descriptor_text(
     count_lines.extend(("         when others =>", "            return 0;",
                         "      end case;", "   end Enumeration_Count;", ""))
     body_parts.append("\n".join(count_lines))
+    enum_nodes = [node for node in nodes if node.enumeration]
     enum_lines = [
         "   function Enumeration_Value",
         "     (Element : Element_Id; Index : Positive) return String is",
+    ]
+    if not enum_nodes:
+        enum_lines.extend(
+            ("      pragma Unreferenced (Element, Index);",
+             "   begin",
+             "      return (raise Constraint_Error);",
+             "   end Enumeration_Value;",
+             "")
+        )
+    else:
+        enum_lines.extend(("   begin", "      case Element is"))
+        for node in enum_nodes:
+            enum_lines.append(f"         when {node.identifier} =>")
+            enum_lines.append("            case Index is")
+            for index, value in enumerate(node.enumeration, 1):
+                enum_lines.extend(
+                    (f"               when {index} =>",
+                     f"                  return {ada_string(value)};")
+                )
+            enum_lines.extend(
+                ("               when others =>",
+                 "                  raise Constraint_Error;",
+                 "            end case;")
+            )
+        enum_lines.extend(
+            ("         when others =>", "            raise Constraint_Error;",
+             "      end case;", "   end Enumeration_Value;", "")
+        )
+    body_parts.append("\n".join(enum_lines))
+    if any(node.pattern for node in nodes):
+        body_parts.append(
+            "\n".join(
+                (
+                    "   function Matches_S3_Bucket_ARN",
+                    "     (Value : String) return Boolean is",
+                    "      Service_Start : Integer;",
+                    "      Separator     : Integer;",
+                    "   begin",
+                    "      if Value'Length < 8",
+                    "        or else Value (Value'First .. Value'First + 3) /= \"arn:\"",
+                    "      then",
+                    "         return False;",
+                    "      end if;",
+                    "      Service_Start := Value'First + 4;",
+                    "      Separator := Service_Start;",
+                    "      while Separator <= Value'Last",
+                    "        and then Value (Separator) /= ':'",
+                    "      loop",
+                    "         Separator := Separator + 1;",
+                    "      end loop;",
+                    "      if Separator = Service_Start or else Separator > Value'Last then",
+                    "         return False;",
+                    "      end if;",
+                    "      Service_Start := Separator + 1;",
+                    "      return",
+                    "        (Service_Start + 2 <= Value'Last",
+                    "         and then Value (Service_Start .. Service_Start + 2) = \"s3:\")",
+                    "        or else",
+                    "        (Service_Start + 9 <= Value'Last",
+                    "         and then Value (Service_Start .. Service_Start + 9) =",
+                    "           \"s3express:\");",
+                    "   end Matches_S3_Bucket_ARN;",
+                    "",
+                )
+            )
+        )
+    pattern_lines = [
+        "   function Matches_Pattern",
+        "     (Element : Element_Id; Value : String) return Boolean is",
         "   begin",
         "      case Element is",
     ]
     for node in nodes:
-        if not node.enumeration:
-            continue
-        enum_lines.append(f"         when {node.identifier} =>")
-        enum_lines.append("            case Index is")
-        for index, value in enumerate(node.enumeration, 1):
-            enum_lines.extend(
-                (f"               when {index} =>",
-                 f"                  return {ada_string(value)};")
+        if node.pattern == "arn:[^:]+:(s3|s3express):.*":
+            pattern_lines.extend(
+                (
+                    f"         when {node.identifier} =>",
+                    "            return Matches_S3_Bucket_ARN (Value);",
+                )
             )
-        enum_lines.extend(
-            ("               when others =>",
-             "                  raise Constraint_Error;",
-             "            end case;")
+    pattern_lines.extend(
+        (
+            "         when others =>",
+            "            return True;",
+            "      end case;",
+            "   end Matches_Pattern;",
+            "",
         )
-    enum_lines.extend(
-        ("         when others =>", "            raise Constraint_Error;",
-         "      end case;", "   end Enumeration_Value;", "")
     )
-    body_parts.append("\n".join(enum_lines))
+    body_parts.append("\n".join(pattern_lines))
     body_parts.append(
         "\n".join(
             (
@@ -497,6 +575,7 @@ def codec_descriptor_text(
                 "         Maximum_Length     => Maximum_Length,",
                 "         Enumeration_Count  => Enumeration_Count,",
                 "         Enumeration_Value  => Enumeration_Value,",
+                "         Matches_Pattern    => Matches_Pattern,",
                 "         Result_Type        => Result_Type,",
                 "         Start_Node         => Start_Node,",
                 "         Set_Scalar         => Set_Scalar,",

@@ -29,7 +29,7 @@ def main() -> None:
         name
         for name, entry in registry.operations.items()
         if entry["generator_eligible"]
-    } == {"GetBucketLifecycle", "GetBucketNotification"}
+    } == set()
     canary = registry.operations["GetBucketReplication"]
     assert not s3_operation.evidence_findings(
         canary, include_partial=False
@@ -207,6 +207,25 @@ def main() -> None:
         assert website_canary["prospective_output"]["committed"] is False
         assert website_canary["prospective_output"]["spec_lines"] > 40
         assert website_canary["prospective_output"]["body_lines"] > 200
+        directory_plan = s3_codegen.codec_plan(
+            model,
+            "ListDirectoryBuckets",
+            registry.operations["ListDirectoryBuckets"],
+        )
+        assert directory_plan["unsupported_generator_traits"] == []
+        assert any(
+            node["pattern"] == "arn:[^:]+:(s3|s3express):.*"
+            for node in directory_plan["nodes"]
+        )
+        _, directory_spec, directory_body = (
+            s3_codegen.codec_descriptor_text(
+                model,
+                "ListDirectoryBuckets",
+                registry.operations["ListDirectoryBuckets"],
+            )
+        )
+        assert "function Matches_Pattern" in directory_spec
+        assert "Matches_S3_Bucket_ARN" in directory_body
         derived = s3_operation.negative_xml_cases(
             model, "GetBucketReplication", canary["negative_xml"]
         )
