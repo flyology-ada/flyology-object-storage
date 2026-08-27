@@ -49,7 +49,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketLifecycleConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketLocation | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketLogging | Get_Logging | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketMetadataConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketMetadataConfiguration | Get_Metadata_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketMetadataTableConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketMetricsConfiguration | Get_Metrics_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
 | GetBucketNotification | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |

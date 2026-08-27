@@ -68,6 +68,7 @@ The core crate includes:
   GetBucketAnalyticsConfiguration,
   GetBucketIntelligentTieringConfiguration,
   GetBucketInventoryConfiguration, GetBucketLogging, GetBucketWebsite,
+  GetBucketMetadataConfiguration,
   ListBucketMetricsConfigurations, ListBucketAnalyticsConfigurations,
   ListBucketIntelligentTieringConfigurations,
   ListBucketInventoryConfigurations, and
@@ -101,6 +102,7 @@ The core crate includes:
   GetBucketAnalyticsConfiguration,
   GetBucketIntelligentTieringConfiguration,
   GetBucketInventoryConfiguration, GetBucketLogging, GetBucketWebsite,
+  GetBucketMetadataConfiguration,
   caller-driven paginated ListBucketMetricsConfigurations and
   ListBucketAnalyticsConfigurations and
   ListBucketIntelligentTieringConfigurations and
@@ -340,6 +342,7 @@ PutBucketNotificationConfiguration,
 bounded GetBucketReplication, GetBucketMetricsConfiguration,
 GetBucketAnalyticsConfiguration, GetBucketIntelligentTieringConfiguration,
 GetBucketInventoryConfiguration, GetBucketLogging, GetBucketWebsite,
+GetBucketMetadataConfiguration,
 caller-driven paginated ListBucketMetricsConfigurations and
 ListBucketAnalyticsConfigurations and
 ListBucketIntelligentTieringConfigurations and

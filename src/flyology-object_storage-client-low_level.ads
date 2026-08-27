@@ -21,6 +21,7 @@ with Flyology.Object_Storage.S3.Errors;
 with Flyology.Object_Storage.S3.Encryption;
 with Flyology.Object_Storage.S3.Listings;
 with Flyology.Object_Storage.S3.Lifecycle;
+with Flyology.Object_Storage.S3.Metadata_Configurations;
 with Flyology.Object_Storage.S3.Metadata_Tables;
 with Flyology.Object_Storage.S3.Metrics;
 with Flyology.Object_Storage.S3.Multipart;
@@ -2701,6 +2702,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Bucket : String; Parameters : Get_Bucket_Control_Parameters;
       Identity : Credentials; Region, Timestamp : String)
       return Prepared_Request;
+   --  Prepare one exactly bound GetBucketMetadataConfiguration request.
+   function Prepare_Get_Bucket_Metadata_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request;
    --  Prepare one exactly bound GetBucketMetricsConfiguration request.
    function Prepare_Get_Bucket_Metrics_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
@@ -3153,6 +3160,18 @@ package Flyology.Object_Storage.Client.Low_Level is
       Error         : S3.Errors.Error_Response;
    end record;
 
+   --  Strict GetBucketMetadataConfiguration outcome with physical status.
+   --  @field Kind Whether configuration or a strict S3 error was returned
+   --  @field Status Exact physical HTTP status
+   --  @field Configuration Complete current metadata configuration
+   --  @field Error Structured bounded S3 rejection
+   type Get_Bucket_Metadata_Configuration_Outcome is record
+      Kind          : Get_Bucket_Control_Outcome_Kind;
+      Status        : Flyology.HTTP.Status_Code;
+      Configuration : S3.Metadata_Configurations.Metadata_Configuration;
+      Error         : S3.Errors.Error_Response;
+   end record;
+
    --  Presence-preserving GetBucketAcl outcome.  The 500 default is the
    --  established deterministic aggregate sentinel only.
    --  @field Kind Whether policy or a strict S3 error was returned
@@ -3359,6 +3378,12 @@ package Flyology.Object_Storage.Client.Low_Level is
       Request_ID : String; Host_ID : String;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Website_Outcome;
+   --  Decode one complete bounded GetBucketMetadataConfiguration response.
+   function Decode_Get_Bucket_Metadata_Configuration_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Metadata_Configuration_Outcome;
    --  Decode one complete bounded GetBucketAcl response.
    --  @param Status Exact physical response status
    --  @param Payload Complete same-response body
@@ -3572,6 +3597,13 @@ package Flyology.Object_Storage.Client.Low_Level is
       Token : access Flyology.Cancellation.Token;
       Limits : S3.XML.Parse_Limits)
       return Get_Bucket_Website_Outcome;
+   --  Execute one exact prepared GetBucketMetadataConfiguration exchange.
+   function Execute_Get_Bucket_Metadata_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Metadata_Configuration_Outcome;
    --  Execute one exact prepared GetBucketAcl request.
    --  The 30-second default is the established low-level synchronous-client
    --  compatibility budget; callers may select a different absolute budget.
@@ -5925,6 +5957,17 @@ package Flyology.Object_Storage.Client.Low_Level is
    --  Start an exact prepared GetBucketWebsite exchange into a bounded sink.
    --  Another prepared operation is rejected before HTTP admission.
    procedure Get_Bucket_Website
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation);
+
+   --  Start an exact prepared GetBucketMetadataConfiguration exchange into a
+   --  bounded sink. Another prepared operation is rejected pre-admission.
+   procedure Get_Bucket_Metadata_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;
       Prepared  : not null access constant Prepared_Request;
       Sink      : not null access

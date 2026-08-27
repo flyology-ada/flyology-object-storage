@@ -190,6 +190,18 @@ website codec and small typed result adapter remain operation-specific.
 Payload-alias verification strips documentation recursively but continues to
 compare every wire-relevant trait.
 
+GetBucketMetadataConfiguration applies the same family to the pinned
+metadata-control endpoint. The model supplies its `metadataConfiguration`
+target, expected-owner header, 200 response, complete 25-shape closure,
+required destination, optional journal/inventory/annotation table results,
+and exact state, expiration, and table-bucket domains. The reviewed manifest
+supplies the provider-owned public name, read-only absence classification,
+caller-owned S3 Express endpoint decision, typed fixtures, and exact valid
+XML. Six reviewed lanes plus 51 generated XML negatives execute 57 signed
+socket cases. The strict metadata codec preserves opaque provider status and
+error text plus arbitrary-precision signed expiration-day text; it adds no
+endpoint inference, retry, timeout, or resource default.
+
 ## Paginated REST/XML configuration-read family
 
 `Flyology.Object_Storage.S3.Paginated_REST_XML_Reads` owns the strict common

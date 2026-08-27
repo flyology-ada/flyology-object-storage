@@ -813,6 +813,182 @@
       ],
       "negative_template": "synchronous-success"
     },
+    "GetBucketMetadataConfiguration": {
+      "adapter": "./bin/s3_get_bucket_metadata_configuration_qualification",
+      "cases": [
+        {
+          "exchange": [
+            {
+              "body": "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableNamespace>low-level-metadata</TableNamespace></DestinationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "low-level-request"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-low-level",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-low-level?metadataConfiguration"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "low-level-metadata",
+          "id": "low-level-success",
+          "lane": "low_level"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableBucketType>customer</TableBucketType><TableBucketArn>arn:qualified:destination</TableBucketArn><TableNamespace>synchronous-metadata</TableNamespace></DestinationResult><JournalTableConfigurationResult><TableStatus>ACTIVE</TableStatus><Error><ErrorCode>JournalNotice</ErrorCode><ErrorMessage>reviewed</ErrorMessage></Error><TableName>journal-table</TableName><TableArn>arn:qualified:journal</TableArn><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfigurationResult><InventoryTableConfigurationResult><ConfigurationState>ENABLED</ConfigurationState><TableStatus>READY</TableStatus><Error><ErrorCode>InventoryNotice</ErrorCode><ErrorMessage>reviewed</ErrorMessage></Error><TableName>inventory-table</TableName><TableArn>arn:qualified:inventory</TableArn></InventoryTableConfigurationResult><AnnotationTableConfigurationResult><ConfigurationState>DISABLED</ConfigurationState><TableStatus>PAUSED</TableStatus><Error><ErrorCode>AnnotationNotice</ErrorCode><ErrorMessage>reviewed</ErrorMessage></Error><TableName>annotation-table</TableName><TableArn>arn:qualified:annotation</TableArn><Role>arn:qualified:role</Role></AnnotationTableConfigurationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-sync",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-sync?metadataConfiguration"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "synchronous-metadata",
+          "id": "synchronous-success",
+          "lane": "synchronous"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableNamespace>composable-metadata</TableNamespace></DestinationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>",
+              "headers": [
+                [
+                  "x-amz-id-2",
+                  "composable-host"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-composable",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-composable?metadataConfiguration"
+            }
+          ],
+          "expected": "success",
+          "expected_value": "composable-metadata",
+          "id": "composable-success",
+          "lane": "composable"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableNamespace>restart-metadata</TableNamespace></DestinationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-restart",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-restart?metadataConfiguration"
+            },
+            {
+              "body": "<Error><Code>NoSuchConfiguration</Code><Message>missing</Message></Error>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "restart-missing"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-restart-second",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "404 Not Found",
+              "target": "/qualified-restart-second?metadataConfiguration"
+            }
+          ],
+          "expected": "not_found",
+          "id": "restart-ownership",
+          "lane": "restart"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableNamespace>duplicate-metadata</TableNamespace></DestinationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>",
+              "headers": [
+                [
+                  "x-amz-request-id",
+                  "one"
+                ],
+                [
+                  "x-amz-request-id",
+                  "two"
+                ]
+              ],
+              "input_values": {
+                "Bucket": "qualified-duplicate",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-duplicate?metadataConfiguration"
+            }
+          ],
+          "expected": "response_invalid",
+          "id": "duplicate-singleton-header",
+          "lane": "invalid_xml"
+        },
+        {
+          "exchange": [
+            {
+              "body": "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableNamespace>                                                                                                bounded-metadata</TableNamespace></DestinationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>",
+              "headers": [],
+              "input_values": {
+                "Bucket": "qualified-bounded",
+                "ExpectedBucketOwner": "123456789012"
+              },
+              "method": "GET",
+              "request_headers": {
+                "x-amz-expected-bucket-owner": "123456789012"
+              },
+              "status": "200 OK",
+              "target": "/qualified-bounded?metadataConfiguration"
+            }
+          ],
+          "expected": "response_sink_failed",
+          "id": "bounded-response",
+          "lane": "invalid_xml",
+          "limits": {
+            "maximum_document_bytes": 96
+          }
+        }
+      ],
+      "negative_template": "synchronous-success"
+    },
     "GetBucketMetricsConfiguration": {
       "adapter": "./bin/s3_get_bucket_metrics_configuration_qualification",
       "cases": [

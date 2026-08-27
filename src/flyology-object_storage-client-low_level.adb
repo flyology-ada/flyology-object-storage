@@ -27,6 +27,8 @@ package body Flyology.Object_Storage.Client.Low_Level is
    package Lifecycle renames Flyology.Object_Storage.S3.Lifecycle;
    package Notifications renames Flyology.Object_Storage.S3.Notifications;
    package Replication renames Flyology.Object_Storage.S3.Replication;
+   package Metadata_Configurations renames
+     Flyology.Object_Storage.S3.Metadata_Configurations;
    package Metadata_Tables renames
      Flyology.Object_Storage.S3.Metadata_Tables;
    package Metrics renames Flyology.Object_Storage.S3.Metrics;
@@ -8452,6 +8454,16 @@ package body Flyology.Object_Storage.Client.Low_Level is
          Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
          US.Null_Unbounded_String, False, Identity, Region, Timestamp));
 
+   function Prepare_Get_Bucket_Metadata_Configuration
+     (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
+      Bucket : String; Parameters : Get_Bucket_Control_Parameters;
+      Identity : Credentials; Region, Timestamp : String)
+      return Prepared_Request is
+     (Prepare_Bucket_Control_Get
+        (Model.Get_Bucket_Metadata_Configuration_Operation,
+         Origin, Style, Bucket, Parameters.Expected_Bucket_Owner,
+         US.Null_Unbounded_String, False, Identity, Region, Timestamp));
+
    function Prepare_Get_Bucket_Metrics_Configuration
      (Origin : Flyology.HTTP.Origin; Style : Addressing_Style;
       Bucket : String; Parameters : Get_Bucket_Control_With_ID_Parameters;
@@ -9411,6 +9423,53 @@ package body Flyology.Object_Storage.Client.Low_Level is
            & Ada.Exceptions.Exception_Message (Error);
    end Decode_Get_Bucket_Website_Response;
 
+   function Empty_Metadata_Configuration
+      return Metadata_Configurations.Metadata_Configuration is
+     ((Destination =>
+         (Table_Bucket_Type =>
+            (Is_Set => False,
+             Value  => Metadata_Configurations.AWS_Table_Bucket),
+          Table_Bucket_ARN => (Is_Set => False, others => <>),
+          Table_Namespace  => (Is_Set => False, others => <>)),
+       Journal => (Is_Set => False, others => <>),
+       Inventory => (Is_Set => False, others => <>),
+       Annotation => (Is_Set => False, others => <>)));
+
+   function Decode_Get_Bucket_Metadata_Configuration_Response
+     (Status : Flyology.HTTP.Status_Code; Payload : String;
+      Request_ID : String; Host_ID : String;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Metadata_Configuration_Outcome
+   is
+   begin
+      Validate_Bucket_Control_Response_Headers (Request_ID, Host_ID);
+      --  The pinned model declares 200 as the sole success response and the
+      --  payload contains one required MetadataConfigurationResult.
+      if Status = 200 then
+         if Payload'Length = 0 then
+            raise Invalid_Response with
+              "empty GetBucketMetadataConfiguration response";
+         end if;
+         return
+           (Kind          => Bucket_Control_Found,
+            Status        => Status,
+            Configuration => Metadata_Configurations.Parse (Payload, Limits),
+            Error         => (others => <>));
+      end if;
+      return
+        (Kind          => Get_Bucket_Control_Rejected,
+         Status        => Status,
+         Configuration => Empty_Metadata_Configuration,
+         Error         =>
+           Error_Response (Payload, Request_ID, Host_ID, Limits));
+   exception
+      when Error : Metadata_Configurations.Malformed_Metadata_Configuration |
+           S3.Errors.Malformed_Error =>
+         raise Invalid_Response with
+           "malformed GetBucketMetadataConfiguration response: "
+           & Ada.Exceptions.Exception_Message (Error);
+   end Decode_Get_Bucket_Metadata_Configuration_Response;
+
    function Decode_Get_Bucket_ACL_Response
      (Status : Flyology.HTTP.Status_Code; Payload : String;
       Request_ID : String := ""; Host_ID : String := "";
@@ -9936,6 +9995,23 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Raw.Status, US.To_String (Raw.Payload),
          US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
    end Execute_Get_Bucket_Website;
+
+   function Execute_Get_Bucket_Metadata_Configuration
+     (Client : aliased in out Flyology.HTTP.Client.Client;
+      Prepared : Prepared_Request; Timeout : Duration;
+      Token : access Flyology.Cancellation.Token;
+      Limits : S3.XML.Parse_Limits)
+      return Get_Bucket_Metadata_Configuration_Outcome
+   is
+      Raw : constant Bucket_Control_Raw_Response :=
+        Execute_Bucket_Control_Get
+          (Client, Prepared, Model.Get_Bucket_Metadata_Configuration_Operation,
+           False, False, Timeout, Token, Limits);
+   begin
+      return Decode_Get_Bucket_Metadata_Configuration_Response
+        (Raw.Status, US.To_String (Raw.Payload),
+         US.To_String (Raw.Request_ID), US.To_String (Raw.Host_ID), Limits);
+   end Execute_Get_Bucket_Metadata_Configuration;
 
    function Execute_Get_Bucket_ACL
      (Client : aliased in out Flyology.HTTP.Client.Client;
@@ -14793,6 +14869,20 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Model.Get_Bucket_Website_Operation, Client, Prepared, Sink,
          Deadline, Token, Operation);
    end Get_Bucket_Website;
+
+   procedure Get_Bucket_Metadata_Configuration
+     (Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      Start_Exact_Bucket_Control_Get
+        (Model.Get_Bucket_Metadata_Configuration_Operation, Client, Prepared,
+         Sink, Deadline, Token, Operation);
+   end Get_Bucket_Metadata_Configuration;
 
    procedure Create_Bucket_Metadata_Table_Configuration
      (Client    : not null access Flyology.HTTP.Client.Client;

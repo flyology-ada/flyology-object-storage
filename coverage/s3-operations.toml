@@ -98,13 +98,21 @@ get_bucket_website = [
   ["./tools/ci/check-repository.sh", "{model}"],
   ["git", "diff", "--check"],
 ]
+get_bucket_metadata_configuration = [
+  ["@tests", "alr", "-n", "build"],
+  ["@tests", "uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketMetadataConfiguration"],
+  ["./tools/verify-coverage.sh"],
+  ["./tools/build-api-docs.sh", "/private/tmp/fos-get-bucket-metadata-gnatdoc"],
+  ["./tools/ci/check-repository.sh", "{model}"],
+  ["git", "diff", "--check"],
+]
 
 [test_registration]
 # These counts and the three corpus repetitions preserve the pre-registry
 # maintained suite. Change them only with a reviewed registration update.
 model_verifier_count = 29
 corpus_count = 30
-socket_qualifier_count = 11
+socket_qualifier_count = 12
 corpus_repetitions = 3
 model_verifiers = [
   ["uv", "run", "--python", "3.13", "--", "tools/verify-create-session-preparation.py"],
@@ -181,6 +189,7 @@ socket_qualifiers = [
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketInventoryConfiguration"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketLogging"],
   ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketWebsite"],
+  ["uv", "run", "--python", "3.13", "--", "../tools/s3-signed-socket.py", "GetBucketMetadataConfiguration"],
 ]
 
 [[operation]]
@@ -1219,14 +1228,79 @@ provider = "buckets"
 family = "bounded_rest_xml_read"
 public_provider = "Flyology.Object_Storage.Client.Buckets"
 codec = "rest_xml_and_headers"
-absence = "legacy_preserved"
-errors = ["legacy_preserved"]
+public_name = "Get_Metadata_Configuration"
+absence = "404 NoSuchBucket or NoSuchConfiguration maps to Not_Found"
+errors = ["authentication", "authorization", "not_found", "invalid_request", "unavailable_or_retryable", "corrupt_or_invalid_response"]
 certainty = "read_only"
 reconciliation = "not_applicable"
-exclusions = []
-coverage = { backend = "missing", client = "partial", server = "missing", corpus = "missing" }
-provenance = { backend = "absent", client = "generated", server = "absent", tests = "absent" }
-evidence = { backend = [], client = [], server = [], corpus = [] }
+exclusions = ["automatic S3 Express regional endpoint selection"]
+coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
+provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "shared_family" }
+evidence = { backend = [], client = ["src/flyology-object_storage-s3-metadata_configurations.adb", "src/flyology-object_storage-client-low_level.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_metadata_configuration_qualification.adb"], server = [], corpus = ["tests/generated/s3-negative-xml.json", "tests/generated/s3-signed-socket.json", "tests/src/s3_get_bucket_metadata_configuration_qualification.adb"] }
+decision_status = "reviewed"
+qualification = "get_bucket_metadata_configuration"
+ada_symbols = ["Prepare_Get_Bucket_Metadata_Configuration", "Execute_Get_Bucket_Metadata_Configuration", "Get_Bucket_Metadata_Operation", "Get_Metadata_Configuration", "Finish"]
+
+[operation.negative_xml]
+valid_document = "<GetBucketMetadataConfigurationResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"><MetadataConfigurationResult><DestinationResult><TableBucketType>customer</TableBucketType><TableBucketArn>arn:qualified:destination</TableBucketArn><TableNamespace>reviewed-metadata</TableNamespace></DestinationResult><JournalTableConfigurationResult><TableStatus>ACTIVE</TableStatus><Error><ErrorCode>JournalNotice</ErrorCode><ErrorMessage>reviewed</ErrorMessage></Error><TableName>journal-table</TableName><TableArn>arn:qualified:journal</TableArn><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfigurationResult><InventoryTableConfigurationResult><ConfigurationState>ENABLED</ConfigurationState><TableStatus>READY</TableStatus><Error><ErrorCode>InventoryNotice</ErrorCode><ErrorMessage>reviewed</ErrorMessage></Error><TableName>inventory-table</TableName><TableArn>arn:qualified:inventory</TableArn></InventoryTableConfigurationResult><AnnotationTableConfigurationResult><ConfigurationState>DISABLED</ConfigurationState><TableStatus>PAUSED</TableStatus><Error><ErrorCode>AnnotationNotice</ErrorCode><ErrorMessage>reviewed</ErrorMessage></Error><TableName>annotation-table</TableName><TableArn>arn:qualified:annotation</TableArn><Role>arn:qualified:role</Role></AnnotationTableConfigurationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>"
+xml_namespace = "http://s3.amazonaws.com/doc/2006-03-01/"
+
+[operation.signed_socket]
+adapter = "./bin/s3_get_bucket_metadata_configuration_qualification"
+negative_template = "synchronous-success"
+
+[[operation.signed_socket.case]]
+id = "low-level-success"
+lane = "low_level"
+expected = "success"
+expected_value = "low-level-metadata"
+exchange = [
+  { input_values = { Bucket = "qualified-low-level", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [["x-amz-request-id", "low-level-request"]], body = "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableNamespace>low-level-metadata</TableNamespace></DestinationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>" },
+]
+
+[[operation.signed_socket.case]]
+id = "synchronous-success"
+lane = "synchronous"
+expected = "success"
+expected_value = "synchronous-metadata"
+exchange = [
+  { input_values = { Bucket = "qualified-sync", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [], body = "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableBucketType>customer</TableBucketType><TableBucketArn>arn:qualified:destination</TableBucketArn><TableNamespace>synchronous-metadata</TableNamespace></DestinationResult><JournalTableConfigurationResult><TableStatus>ACTIVE</TableStatus><Error><ErrorCode>JournalNotice</ErrorCode><ErrorMessage>reviewed</ErrorMessage></Error><TableName>journal-table</TableName><TableArn>arn:qualified:journal</TableArn><RecordExpiration><Expiration>ENABLED</Expiration><Days>30</Days></RecordExpiration></JournalTableConfigurationResult><InventoryTableConfigurationResult><ConfigurationState>ENABLED</ConfigurationState><TableStatus>READY</TableStatus><Error><ErrorCode>InventoryNotice</ErrorCode><ErrorMessage>reviewed</ErrorMessage></Error><TableName>inventory-table</TableName><TableArn>arn:qualified:inventory</TableArn></InventoryTableConfigurationResult><AnnotationTableConfigurationResult><ConfigurationState>DISABLED</ConfigurationState><TableStatus>PAUSED</TableStatus><Error><ErrorCode>AnnotationNotice</ErrorCode><ErrorMessage>reviewed</ErrorMessage></Error><TableName>annotation-table</TableName><TableArn>arn:qualified:annotation</TableArn><Role>arn:qualified:role</Role></AnnotationTableConfigurationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>" },
+]
+
+[[operation.signed_socket.case]]
+id = "composable-success"
+lane = "composable"
+expected = "success"
+expected_value = "composable-metadata"
+exchange = [
+  { input_values = { Bucket = "qualified-composable", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [["x-amz-id-2", "composable-host"]], body = "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableNamespace>composable-metadata</TableNamespace></DestinationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>" },
+]
+
+[[operation.signed_socket.case]]
+id = "restart-ownership"
+lane = "restart"
+expected = "not_found"
+exchange = [
+  { input_values = { Bucket = "qualified-restart", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [], body = "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableNamespace>restart-metadata</TableNamespace></DestinationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>" },
+  { input_values = { Bucket = "qualified-restart-second", ExpectedBucketOwner = "123456789012" }, status = "404 Not Found", headers = [["x-amz-request-id", "restart-missing"]], body = "<Error><Code>NoSuchConfiguration</Code><Message>missing</Message></Error>" },
+]
+
+[[operation.signed_socket.case]]
+id = "duplicate-singleton-header"
+lane = "invalid_xml"
+expected = "response_invalid"
+exchange = [
+  { input_values = { Bucket = "qualified-duplicate", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [["x-amz-request-id", "one"], ["x-amz-request-id", "two"]], body = "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableNamespace>duplicate-metadata</TableNamespace></DestinationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>" },
+]
+
+[[operation.signed_socket.case]]
+id = "bounded-response"
+lane = "invalid_xml"
+expected = "response_sink_failed"
+limits = { maximum_document_bytes = 96 }
+exchange = [
+  { input_values = { Bucket = "qualified-bounded", ExpectedBucketOwner = "123456789012" }, status = "modeled_success", headers = [], body = "<GetBucketMetadataConfigurationResult><MetadataConfigurationResult><DestinationResult><TableNamespace>                                                                                                bounded-metadata</TableNamespace></DestinationResult></MetadataConfigurationResult></GetBucketMetadataConfigurationResult>" },
+]
 
 [[operation]]
 name = "GetBucketMetadataTableConfiguration"

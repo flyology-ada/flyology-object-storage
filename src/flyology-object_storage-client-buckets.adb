@@ -8193,6 +8193,221 @@ package body Flyology.Object_Storage.Client.Buckets is
       end;
    end Get_Logging;
 
+   function Empty_Get_Bucket_Metadata_Outcome
+      return Low_Level.Get_Bucket_Metadata_Configuration_Outcome is
+     --  Status 500 is the established deterministic result sentinel when no
+     --  physical response exists; Kind makes Configuration unreachable.
+     ((Kind          => Low_Level.Get_Bucket_Control_Rejected,
+       Status        => 500,
+       Configuration => (others => <>),
+       Error         => (others => <>)));
+
+   function Normalize_Get_Bucket_Metadata_Response
+     (Value : Low_Level.Get_Bucket_Metadata_Configuration_Outcome;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase : HTTP_Client.Exchange_Phase)
+      return Get_Bucket_Metadata_Result
+   is
+      Code : constant String :=
+        (if Value.Kind = Low_Level.Get_Bucket_Control_Rejected
+         then US.To_String (Value.Error.Code)
+         else "");
+      Failure : constant Failure_Reason :=
+        (if Admission /= HTTP_Client.Response_Observed
+         then Corrupt_Or_Invalid_Response
+         elsif Value.Kind = Low_Level.Bucket_Control_Found
+         then No_Failure
+         elsif Value.Status = 401 and then Code = "InvalidAccessKeyId"
+         then Authentication_Failed
+         elsif Value.Status = 403 and then Code = "AccessDenied"
+         then Authorization_Failed
+         elsif Value.Status = 404
+           and then Code in "NoSuchBucket" | "NoSuchConfiguration"
+         then Not_Found
+         elsif Value.Status = 400
+           and then Code in "InvalidBucketName" | "InvalidRequest"
+         then Invalid_Request
+         elsif Value.Status = 501 and then Code = "NotImplemented"
+         then Invalid_Request
+         elsif (Value.Status = 409 and then Code = "OperationAborted")
+           or else (Value.Status = 429 and then Code = "SlowDown")
+           or else (Value.Status = 500 and then Code = "InternalError")
+           or else (Value.Status = 502 and then Code = "BadGateway")
+           or else (Value.Status = 503 and then Code = "SlowDown")
+           or else (Value.Status = 504 and then Code = "RequestTimeout")
+         then Unavailable_Or_Retryable
+         else Corrupt_Or_Invalid_Response);
+   begin
+      return
+        (Kind        => Get_Bucket_Metadata_Response_Available,
+         Failure     => Failure,
+         Admission   => Admission,
+         Response    => Value,
+         HTTP_Result => HTTP_Client.Response_Complete,
+         HTTP_Phase  => Phase,
+         Detail      => US.Null_Unbounded_String);
+   end Normalize_Get_Bucket_Metadata_Response;
+
+   function Decode_Get_Bucket_Metadata_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Admission  : HTTP_Client.Admission_Certainty;
+      Phase      : HTTP_Client.Exchange_Phase)
+      return Get_Bucket_Metadata_Result is
+   begin
+      return Normalize_Get_Bucket_Metadata_Response
+        (Low.Decode_Get_Bucket_Metadata_Configuration_Response
+           (Status, Payload, Request_ID, Host_ID, Limits),
+         Admission, Phase);
+   exception
+      when Error : Low.Invalid_Response =>
+         return Normalize_Get_Bucket_Metadata_Failure
+           (HTTP_Client.Response_Invalid, Admission, Phase,
+            Ada.Exceptions.Exception_Message (Error));
+   end Decode_Get_Bucket_Metadata_Response;
+
+   function Normalize_Get_Bucket_Metadata_Failure
+     (Kind      : HTTP_Client.Exchange_Result_Kind;
+      Admission : HTTP_Client.Admission_Certainty;
+      Phase     : HTTP_Client.Exchange_Phase;
+      Detail    : String) return Get_Bucket_Metadata_Result is
+   begin
+      return
+        (Kind        => Get_Bucket_Metadata_Exchange_Failed,
+         Failure     =>
+           (if Kind
+               in HTTP_Client.Response_Invalid
+                | HTTP_Client.Response_Body_Too_Large
+                | HTTP_Client.Response_Sink_Failed
+            then Corrupt_Or_Invalid_Response
+            else Failed_Reason (Kind)),
+         Admission   => Admission,
+         Response    => Empty_Get_Bucket_Metadata_Outcome,
+         HTTP_Result => Kind,
+         HTTP_Phase  => Phase,
+         Detail      => US.To_Unbounded_String (Detail));
+   end Normalize_Get_Bucket_Metadata_Failure;
+
+   overriding procedure Write
+     (Item : in out Get_Bucket_Metadata_Operation;
+      Data : Ada.Streams.Stream_Element_Array) is
+   begin
+      Get_Bucket_Metadata_Reads.Write (Item.State, Data);
+   end Write;
+
+   overriding procedure Drive
+     (Item  : in out Get_Bucket_Metadata_Operation;
+      Event : Operations.Driver_Event) is
+   begin
+      Get_Bucket_Metadata_Reads.Drive
+        (Item.State, Item'Access, Item'Access, Item.HTTP,
+         Item.Cancellation, Event);
+   end Drive;
+
+   overriding procedure Request_Cancellation
+     (Item : in out Get_Bucket_Metadata_Operation) is
+   begin
+      Get_Bucket_Metadata_Reads.Request_Cancellation (Item.State);
+   end Request_Cancellation;
+
+   overriding procedure Finalize
+     (Item : in out Get_Bucket_Metadata_Operation) is
+   begin
+      begin
+         Operations.Finalize (Operations.Operation (Item));
+      exception
+         when others => null;
+      end;
+      Get_Bucket_Metadata_Reads.Finalize (Item.State);
+   end Finalize;
+
+   procedure Get_Metadata_Configuration
+     (Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token;
+      Operation  : in out Get_Bucket_Metadata_Operation) is
+   begin
+      if Operation.HTTP /= Client or else Operation.Cancellation /= Token then
+         raise Program_Error with
+           "GetBucketMetadataConfiguration restart changed owner";
+      end if;
+      Get_Bucket_Metadata_Reads.Start
+        (Operation.State, Operation'Access,
+         Low.Prepare_Get_Bucket_Metadata_Configuration
+           (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp),
+         Deadline, Limits);
+   end Get_Metadata_Configuration;
+
+   function Get_Metadata_Configuration
+     (Set        : not null access Operations.Completion_Set'Class;
+      Client     : not null access HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Deadline   : HTTP_Client.Monotonic_Deadline;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Token      : access Flyology.Cancellation.Token)
+      return Get_Bucket_Metadata_Operation is
+   begin
+      return Result : Get_Bucket_Metadata_Operation (Set, Client, Token) do
+         Get_Metadata_Configuration
+           (Client, Origin, Bucket, Parameters, Identity, Deadline, Region,
+            Style, Limits, Token, Result);
+      end return;
+   end Get_Metadata_Configuration;
+
+   procedure Finish
+     (Operation : in out Get_Bucket_Metadata_Operation;
+      Result    : out Get_Bucket_Metadata_Result) is
+   begin
+      Get_Bucket_Metadata_Reads.Finish
+        (Operation.State, Operation'Access, Result);
+   end Finish;
+
+   function Get_Metadata_Configuration
+     (Client     : aliased in out HTTP_Client.Client;
+      Origin     : Flyology.HTTP.Origin;
+      Bucket     : String;
+      Parameters : Low_Level.Get_Bucket_Control_Parameters;
+      Identity   : Low_Level.Credentials;
+      Region     : String;
+      Style      : Low_Level.Addressing_Style;
+      Timeout    : Duration;
+      Token      : access Flyology.Cancellation.Token;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits)
+      return Get_Bucket_Metadata_Result
+   is
+      --  Derived owner stack: provider parent, HTTP exchange, and HTTP's one
+      --  active transport child. This is not a caller resource default.
+      Set : aliased Operations.Completion_Set (3);
+   begin
+      declare
+         Operation : Get_Bucket_Metadata_Operation :=
+           Get_Metadata_Configuration
+             (Set'Access, Client'Access, Origin, Bucket, Parameters, Identity,
+              HTTP_Client.Deadline_After (Timeout), Region, Style, Limits,
+              Token);
+         Result : Get_Bucket_Metadata_Result;
+      begin
+         Operations.Wait_All (Set);
+         Finish (Operation, Result);
+         return Result;
+      end;
+   end Get_Metadata_Configuration;
+
    function Empty_Get_Bucket_Website_Outcome
       return Low_Level.Get_Bucket_Website_Outcome is
      --  Status 500 is the established deterministic result sentinel when no
