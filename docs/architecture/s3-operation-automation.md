@@ -192,6 +192,14 @@ retained-borrow policy, cross-field rules, and compatibility exclusions.
 Unrecognized service responses remain `Outcome_Unknown`; no generated
 mutation is automatically replayed.
 
+The pinned operation model, rather than the per-operation Python descriptor,
+owns each generated mutation's `POST` or `PUT` method, single bucket query
+subresource, `Content-MD5` member presence, and required modeled checksum.
+Generation refuses an unsupported multi-query route, a differently located
+`Content-MD5` member, or a required checksum without its modeled algorithm
+member. The descriptor remains responsible only for reviewed Ada projection
+and human policy that the model cannot establish.
+
 ### GetBucketWebsite non-destructive canary
 
 `GetBucketWebsite` remains the authoritative shared-family handwritten

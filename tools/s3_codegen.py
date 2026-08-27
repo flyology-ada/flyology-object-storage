@@ -1837,7 +1837,7 @@ def mutation_serializer_text(
         ).encode("utf-8")
     ).hexdigest()
     if (
-        operation.get("http", {}).get("method") != "PUT"
+        operation.get("http", {}).get("method") not in {"POST", "PUT"}
         or audit["response_status"] != 200
         or payload_member is None
         or payload.get("shape") != descriptor.payload_shape
@@ -1932,10 +1932,7 @@ class Generated_Mutation:
     parameters_type: str
     disposition_stem: str
     declares_disposition: bool
-    subresource: str
     has_identifier: bool
-    has_content_md5: bool
-    requires_checksum: bool
     reconciliation: str
 
     @property
@@ -2003,10 +2000,7 @@ GENERATED_MUTATIONS = (
         parameters_type="Put_Bucket_ACL_Parameters",
         disposition_stem="Bucket_ACL_Mutation",
         declares_disposition=True,
-        subresource="acl",
         has_identifier=False,
-        has_content_md5=True,
-        requires_checksum=False,
         reconciliation="Get_ACL",
     ),
     Generated_Mutation(
@@ -2020,10 +2014,7 @@ GENERATED_MUTATIONS = (
         parameters_type="Put_Bucket_Inventory_Configuration_Parameters",
         disposition_stem="Bucket_Inventory_Configuration_Mutation",
         declares_disposition=False,
-        subresource="inventory",
         has_identifier=True,
-        has_content_md5=False,
-        requires_checksum=False,
         reconciliation="Get_Inventory_Configuration or List_Inventory_Configurations",
     ),
     Generated_Mutation(
@@ -2037,10 +2028,7 @@ GENERATED_MUTATIONS = (
         parameters_type="Bucket_Control_Mutation_Parameters",
         disposition_stem="Bucket_Logging_Mutation",
         declares_disposition=True,
-        subresource="logging",
         has_identifier=False,
-        has_content_md5=True,
-        requires_checksum=True,
         reconciliation="Get_Logging",
     ),
     Generated_Mutation(
@@ -2054,13 +2042,75 @@ GENERATED_MUTATIONS = (
         parameters_type="Bucket_Control_Mutation_Parameters",
         disposition_stem="Bucket_Website_Mutation",
         declares_disposition=False,
-        subresource="website",
         has_identifier=False,
-        has_content_md5=True,
-        requires_checksum=True,
         reconciliation="Get_Website",
     ),
 )
+
+
+@dataclass(frozen=True)
+class Mutation_HTTP_Contract:
+    method: str
+    subresource: str
+    has_content_md5: bool
+    requires_checksum: bool
+
+
+def mutation_http_contract(
+    model: dict[str, Any], item: Generated_Mutation
+) -> Mutation_HTTP_Contract:
+    """Derive model-owned request routing and checksum mechanics."""
+    operation = model["operations"][item.operation]
+    method = operation["http"]["method"]
+    request_uri = operation["http"]["requestUri"]
+    prefix = "/{Bucket}?"
+    if (
+        method not in {"POST", "PUT"}
+        or not request_uri.startswith(prefix)
+        or len(request_uri) == len(prefix)
+        or any(character in request_uri[len(prefix) :] for character in "&=")
+    ):
+        raise s3_operation.Audit_Error(
+            f"unsupported generated mutation HTTP binding: {item.operation}"
+        )
+    input_shape_name = operation.get("input", {}).get("shape")
+    input_shape = model["shapes"].get(input_shape_name, {})
+    members = input_shape.get("members", {})
+    content_md5 = members.get("ContentMD5")
+    has_content_md5 = content_md5 is not None
+    if has_content_md5 and (
+        content_md5.get("location") != "header"
+        or content_md5.get("locationName", "").casefold() != "content-md5"
+    ):
+        raise s3_operation.Audit_Error(
+            f"unexpected ContentMD5 binding: {item.operation}"
+        )
+    checksum = operation.get("httpChecksum", {})
+    required_trait = checksum.get("requestChecksumRequired", False)
+    if not isinstance(required_trait, bool):
+        raise s3_operation.Audit_Error(
+            f"invalid required checksum trait: {item.operation}"
+        )
+    requires_checksum = required_trait
+    algorithm_member = checksum.get("requestAlgorithmMember")
+    if (
+        algorithm_member is not None
+        and (
+            not isinstance(algorithm_member, str)
+            or algorithm_member not in members
+        )
+    ) or (
+        requires_checksum and algorithm_member is None
+    ):
+        raise s3_operation.Audit_Error(
+            f"required checksum lacks modeled algorithm member: {item.operation}"
+        )
+    return Mutation_HTTP_Contract(
+        method=method,
+        subresource=request_uri[len(prefix) :],
+        has_content_md5=has_content_md5,
+        requires_checksum=requires_checksum,
+    )
 
 
 def _generated_mutation_low_level_spec(
@@ -2154,10 +2204,11 @@ def _generated_mutation_low_level_spec(
 
 
 def _generated_mutation_low_level_body(
-    mutations: tuple[Generated_Mutation, ...]
+    model: dict[str, Any], mutations: tuple[Generated_Mutation, ...]
 ) -> str:
     parts: list[str] = []
     for item in mutations:
+        http = mutation_http_contract(model, item)
         if item.operation == "PutBucketAcl":
             parts.append(
                 f"""   function {item.low_prepare}
@@ -2292,10 +2343,10 @@ def _generated_mutation_low_level_body(
             common = ""
             parameters = "Parameters"
             identifier = ""
-        md5 = "True" if item.has_content_md5 else "False"
+        md5 = "True" if http.has_content_md5 else "False"
         checksum = (
             ",\n         Require_Checksum => True"
-            if item.requires_checksum
+            if http.requires_checksum
             else ""
         )
         serializer = f"S3.Generated_{item.ada_stem}_XML.Serialize"
@@ -2325,7 +2376,7 @@ def _generated_mutation_low_level_body(
    begin
       return Prepare_Bucket_Control_Mutation
         (Model.{item.ada_stem}_Operation,
-         "PUT", "{item.subresource}",
+         "{http.method}", "{http.subresource}",
          Origin, Style, Bucket, Payload, {md5}, (others => <>),
          False, {parameters}, Identity, Region, Timestamp,
          One_Shot_Source => True{checksum}{identifier});
@@ -3453,7 +3504,7 @@ def generated_ada_outputs(
                 _list_directory_low_level_body()
                 if list_directory_enabled
                 else "",
-                _generated_mutation_low_level_body(mutations),
+                _generated_mutation_low_level_body(model, mutations),
             )
             if part
         ),

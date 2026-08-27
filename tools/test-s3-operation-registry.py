@@ -271,6 +271,85 @@ def main() -> None:
     model_name = os.environ.get("FLYOLOGY_S3_SERVICE_MODEL")
     if model_name:
         model = s3_operation.load_model(Path(model_name))
+        generated_mutations = {
+            item.operation: item for item in s3_codegen.GENERATED_MUTATIONS
+        }
+        for operation, expected in {
+            "PutBucketAcl": ("PUT", "acl", True, True),
+            "PutBucketInventoryConfiguration": (
+                "PUT", "inventory", False, False
+            ),
+            "PutBucketLogging": ("PUT", "logging", True, True),
+            "PutBucketWebsite": ("PUT", "website", True, True),
+        }.items():
+            contract = s3_codegen.mutation_http_contract(
+                model, generated_mutations[operation]
+            )
+            assert (
+                contract.method,
+                contract.subresource,
+                contract.has_content_md5,
+                contract.requires_checksum,
+            ) == expected
+        invalid_mutation_model = copy.deepcopy(model)
+        invalid_mutation_model["operations"]["PutBucketLogging"]["http"][
+            "requestUri"
+        ] += "&unsupported"
+        try:
+            s3_codegen.mutation_http_contract(
+                invalid_mutation_model,
+                generated_mutations["PutBucketLogging"],
+            )
+        except s3_operation.Audit_Error:
+            pass
+        else:
+            raise AssertionError(
+                "multi-query generated mutation binding was accepted"
+            )
+        invalid_checksum_model = copy.deepcopy(model)
+        logging_input = invalid_checksum_model["operations"][
+            "PutBucketLogging"
+        ]["input"]["shape"]
+        del invalid_checksum_model["shapes"][logging_input]["members"][
+            "ChecksumAlgorithm"
+        ]
+        try:
+            s3_codegen.mutation_http_contract(
+                invalid_checksum_model,
+                generated_mutations["PutBucketLogging"],
+            )
+        except s3_operation.Audit_Error:
+            pass
+        else:
+            raise AssertionError(
+                "required checksum without its algorithm member was accepted"
+            )
+        invalid_md5_model = copy.deepcopy(model)
+        invalid_md5_model["shapes"][logging_input]["members"]["ContentMD5"][
+            "locationName"
+        ] = "x-unexpected-md5"
+        try:
+            s3_codegen.mutation_http_contract(
+                invalid_md5_model,
+                generated_mutations["PutBucketLogging"],
+            )
+        except s3_operation.Audit_Error:
+            pass
+        else:
+            raise AssertionError("unexpected ContentMD5 binding was accepted")
+        post_mutation_model = copy.deepcopy(model)
+        post_mutation_model["operations"]["PutBucketLogging"]["http"].update(
+            method="POST",
+            requestUri="/{Bucket}?metadataConfiguration",
+        )
+        post_contract = s3_codegen.mutation_http_contract(
+            post_mutation_model,
+            generated_mutations["PutBucketLogging"],
+        )
+        assert (post_contract.method, post_contract.subresource) == (
+            "POST",
+            "metadataConfiguration",
+        )
         website_canary = s3_codegen.get_bucket_website_canary(registry, model)
         assert website_canary["status"] == "equivalent"
         assert website_canary["findings"] == []
