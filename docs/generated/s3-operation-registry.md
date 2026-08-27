@@ -7,121 +7,121 @@ when the human-owned registry cites executable evidence and the generated
 ledger passes its maintained evidence verifier. Historical partial cells
 remain inventory-only until their audits gain executable evidence.
 
-| Operation | Public API | Provider | Family | Backend | Client | Server | Tests |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| AbortMultipartUpload | legacy_preserved | transfers | bodyless_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| CompleteMultipartUpload | legacy_preserved | transfers | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| CopyObject | legacy_preserved | transfers | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| CreateBucket | legacy_preserved | buckets | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| CreateBucketMetadataConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| CreateBucketMetadataTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| CreateMultipartUpload | legacy_preserved | transfers | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| CreateSession | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucket | legacy_preserved | buckets | bodyless_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| DeleteBucketAnalyticsConfiguration | legacy_preserved | buckets | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketCors | legacy_preserved | buckets | bodyless_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| DeleteBucketEncryption | legacy_preserved | buckets | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketIntelligentTieringConfiguration | legacy_preserved | buckets | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketInventoryConfiguration | legacy_preserved | buckets | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketLifecycle | legacy_preserved | buckets | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketMetadataConfiguration | legacy_preserved | buckets | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketMetadataTableConfiguration | legacy_preserved | buckets | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketMetricsConfiguration | legacy_preserved | buckets | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketOwnershipControls | legacy_preserved | buckets | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketPolicy | legacy_preserved | buckets | bodyless_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| DeleteBucketReplication | legacy_preserved | buckets | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteBucketTagging | legacy_preserved | buckets | bodyless_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| DeleteBucketWebsite | legacy_preserved | buckets | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteObject | legacy_preserved | objects | bodyless_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| DeleteObjectAnnotation | legacy_preserved | objects | bodyless_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| DeleteObjectTagging | legacy_preserved | objects | bodyless_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| DeleteObjects | legacy_preserved | objects | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| DeletePublicAccessBlock | legacy_preserved | buckets | bodyless_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetBucketAbac | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketAccelerateConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketAcl | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetBucketAnalyticsConfiguration | Get_Analytics_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketCors | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetBucketEncryption | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketIntelligentTieringConfiguration | Get_Intelligent_Tiering_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketInventoryConfiguration | Get_Inventory_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketLifecycle | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
-| GetBucketLifecycleConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketLocation | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetBucketLogging | Get_Logging | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketMetadataConfiguration | Get_Metadata_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketMetadataTableConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketMetricsConfiguration | Get_Metrics_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetBucketNotification | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
-| GetBucketNotificationConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketOwnershipControls | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketPolicy | legacy_preserved | buckets | bounded_document_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetBucketPolicyStatus | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketReplication | Get_Replication_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / handwritten |
-| GetBucketRequestPayment | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketTagging | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetBucketVersioning | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetBucketWebsite | Get_Website | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| GetObject | legacy_preserved | objects | streaming_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetObjectAcl | legacy_preserved | objects | bounded_rest_xml_read | missing / absent | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetObjectAnnotation | legacy_preserved | objects | streaming_read | missing / absent | partial / generated | missing / absent | missing / absent |
-| GetObjectAttributes | legacy_preserved | objects | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetObjectLegalHold | legacy_preserved | objects | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetObjectLockConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetObjectRetention | legacy_preserved | objects | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetObjectTagging | legacy_preserved | objects | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| GetObjectTorrent | legacy_preserved | objects | bounded_binary_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetPublicAccessBlock | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| HeadBucket | legacy_preserved | buckets | response_head_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| HeadObject | legacy_preserved | objects | response_head_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| ListBucketAnalyticsConfigurations | List_Analytics_Configurations | buckets | paginated_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| ListBucketIntelligentTieringConfigurations | List_Intelligent_Tiering_Configurations | buckets | paginated_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| ListBucketInventoryConfigurations | List_Inventory_Configurations | buckets | paginated_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| ListBucketMetricsConfigurations | List_Metrics_Configurations | buckets | paginated_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| ListBuckets | legacy_preserved | buckets | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| ListDirectoryBuckets | legacy_preserved | buckets | paginated_rest_xml_read | missing / absent | partial / generated | missing / absent | missing / absent |
-| ListMultipartUploads | legacy_preserved | transfers | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| ListObjectAnnotations | List_Annotations | objects | paginated_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| ListObjectVersions | legacy_preserved | objects | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| ListObjects | legacy_preserved | objects | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| ListObjectsV2 | legacy_preserved | objects | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| ListParts | legacy_preserved | transfers | paginated_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutBucketAbac | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutBucketAccelerateConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutBucketAcl | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| PutBucketAnalyticsConfiguration | Set_Analytics_Configuration | buckets | rest_xml_mutation | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| PutBucketCors | legacy_preserved | buckets | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutBucketEncryption | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutBucketIntelligentTieringConfiguration | Set_Intelligent_Tiering_Configuration | buckets | rest_xml_mutation | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| PutBucketInventoryConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| PutBucketLifecycle | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| PutBucketLifecycleConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutBucketLogging | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| PutBucketMetricsConfiguration | Set_Metrics_Configuration | buckets | rest_xml_mutation | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
-| PutBucketNotification | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| PutBucketNotificationConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutBucketOwnershipControls | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutBucketPolicy | legacy_preserved | buckets | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutBucketReplication | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / shared_family | missing / absent | covered / handwritten |
-| PutBucketRequestPayment | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutBucketTagging | legacy_preserved | buckets | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutBucketVersioning | legacy_preserved | buckets | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutBucketWebsite | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| PutObject | legacy_preserved | objects | streaming_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutObjectAcl | legacy_preserved | objects | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| PutObjectAnnotation | legacy_preserved | objects | streaming_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| PutObjectLegalHold | legacy_preserved | objects | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutObjectLockConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutObjectRetention | legacy_preserved | objects | rest_xml_mutation | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| PutObjectTagging | legacy_preserved | objects | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| PutPublicAccessBlock | legacy_preserved | buckets | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| RenameObject | legacy_preserved | objects | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| RestoreObject | legacy_preserved | objects | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| SelectObjectContent | legacy_preserved | objects | event_stream_read | missing / absent | partial / generated | missing / absent | missing / absent |
-| UpdateBucketMetadataAnnotationTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| UpdateBucketMetadataInventoryTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| UpdateBucketMetadataJournalTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| UpdateObjectEncryption | legacy_preserved | objects | rest_xml_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
-| UploadPart | legacy_preserved | transfers | streaming_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| UploadPartCopy | legacy_preserved | transfers | rest_xml_mutation | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
-| WriteGetObjectResponse | legacy_preserved | objects | streaming_mutation | missing / absent | partial / generated | missing / absent | missing / absent |
+| Operation | Public API | Provider | Family | Implementation | Generator eligible | Decisions resolved | Backend | Client | Server | Tests |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| AbortMultipartUpload | legacy_preserved | transfers | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| CompleteMultipartUpload | legacy_preserved | transfers | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| CopyObject | legacy_preserved | transfers | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| CreateBucket | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| CreateBucketMetadataConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| CreateBucketMetadataTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| CreateMultipartUpload | legacy_preserved | transfers | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| CreateSession | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucket | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| DeleteBucketAnalyticsConfiguration | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketCors | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| DeleteBucketEncryption | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketIntelligentTieringConfiguration | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketInventoryConfiguration | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketLifecycle | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketMetadataConfiguration | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketMetadataTableConfiguration | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketMetricsConfiguration | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketOwnershipControls | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketPolicy | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| DeleteBucketReplication | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteBucketTagging | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| DeleteBucketWebsite | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteObject | legacy_preserved | objects | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| DeleteObjectAnnotation | legacy_preserved | objects | bodyless_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| DeleteObjectTagging | legacy_preserved | objects | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| DeleteObjects | legacy_preserved | objects | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| DeletePublicAccessBlock | legacy_preserved | buckets | bodyless_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetBucketAbac | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetBucketAccelerateConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetBucketAcl | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetBucketAnalyticsConfiguration | Get_Analytics_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| GetBucketCors | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetBucketEncryption | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetBucketIntelligentTieringConfiguration | Get_Intelligent_Tiering_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| GetBucketInventoryConfiguration | Get_Inventory_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| GetBucketLifecycle | legacy_preserved | buckets | bounded_rest_xml_read | generated | true | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketLifecycleConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetBucketLocation | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetBucketLogging | Get_Logging | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| GetBucketMetadataConfiguration | Get_Metadata_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| GetBucketMetadataTableConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetBucketMetricsConfiguration | Get_Metrics_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| GetBucketNotification | legacy_preserved | buckets | bounded_rest_xml_read | generated | true | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetBucketNotificationConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetBucketOwnershipControls | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetBucketPolicy | legacy_preserved | buckets | bounded_document_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetBucketPolicyStatus | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetBucketReplication | Get_Replication_Configuration | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / handwritten |
+| GetBucketRequestPayment | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetBucketTagging | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetBucketVersioning | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetBucketWebsite | Get_Website | buckets | bounded_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| GetObject | legacy_preserved | objects | streaming_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetObjectAcl | legacy_preserved | objects | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetObjectAnnotation | legacy_preserved | objects | streaming_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| GetObjectAttributes | legacy_preserved | objects | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetObjectLegalHold | legacy_preserved | objects | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetObjectLockConfiguration | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetObjectRetention | legacy_preserved | objects | bounded_rest_xml_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetObjectTagging | legacy_preserved | objects | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| GetObjectTorrent | legacy_preserved | objects | bounded_binary_read | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetPublicAccessBlock | legacy_preserved | buckets | bounded_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| HeadBucket | legacy_preserved | buckets | response_head_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| HeadObject | legacy_preserved | objects | response_head_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| ListBucketAnalyticsConfigurations | List_Analytics_Configurations | buckets | paginated_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| ListBucketIntelligentTieringConfigurations | List_Intelligent_Tiering_Configurations | buckets | paginated_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| ListBucketInventoryConfigurations | List_Inventory_Configurations | buckets | paginated_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| ListBucketMetricsConfigurations | List_Metrics_Configurations | buckets | paginated_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| ListBuckets | legacy_preserved | buckets | paginated_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| ListDirectoryBuckets | legacy_preserved | buckets | paginated_rest_xml_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| ListMultipartUploads | legacy_preserved | transfers | paginated_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| ListObjectAnnotations | List_Annotations | objects | paginated_rest_xml_read | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| ListObjectVersions | legacy_preserved | objects | paginated_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| ListObjects | legacy_preserved | objects | paginated_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| ListObjectsV2 | legacy_preserved | objects | paginated_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| ListParts | legacy_preserved | transfers | paginated_rest_xml_read | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| PutBucketAbac | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutBucketAccelerateConfiguration | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutBucketAcl | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutBucketAnalyticsConfiguration | Set_Analytics_Configuration | buckets | rest_xml_mutation | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| PutBucketCors | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| PutBucketEncryption | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutBucketIntelligentTieringConfiguration | Set_Intelligent_Tiering_Configuration | buckets | rest_xml_mutation | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| PutBucketInventoryConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutBucketLifecycle | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutBucketLifecycleConfiguration | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutBucketLogging | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutBucketMetricsConfiguration | Set_Metrics_Configuration | buckets | rest_xml_mutation | shared-family | false | true | missing / absent | covered / shared_family | missing / absent | covered / shared_family |
+| PutBucketNotification | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutBucketNotificationConfiguration | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutBucketOwnershipControls | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutBucketPolicy | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| PutBucketReplication | legacy_preserved | buckets | rest_xml_mutation | shared-family | false | false | missing / absent | covered / shared_family | missing / absent | covered / handwritten |
+| PutBucketRequestPayment | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutBucketTagging | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| PutBucketVersioning | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| PutBucketWebsite | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutObject | legacy_preserved | objects | streaming_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| PutObjectAcl | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutObjectAnnotation | legacy_preserved | objects | streaming_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| PutObjectLegalHold | legacy_preserved | objects | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutObjectLockConfiguration | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutObjectRetention | legacy_preserved | objects | rest_xml_mutation | handwritten | false | false | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| PutObjectTagging | legacy_preserved | objects | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| PutPublicAccessBlock | legacy_preserved | buckets | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| RenameObject | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| RestoreObject | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| SelectObjectContent | legacy_preserved | objects | event_stream_read | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| UpdateBucketMetadataAnnotationTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| UpdateBucketMetadataInventoryTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| UpdateBucketMetadataJournalTableConfiguration | legacy_preserved | buckets | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| UpdateObjectEncryption | legacy_preserved | objects | rest_xml_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |
+| UploadPart | legacy_preserved | transfers | streaming_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| UploadPartCopy | legacy_preserved | transfers | rest_xml_mutation | handwritten | false | false | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
+| WriteGetObjectResponse | legacy_preserved | objects | streaming_mutation | generated | false | false | missing / absent | partial / generated | missing / absent | missing / absent |

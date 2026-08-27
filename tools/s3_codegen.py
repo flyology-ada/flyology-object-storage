@@ -1,0 +1,521 @@
+#!/usr/bin/env python3
+"""Deterministic Ada wire-codec generation from the pinned S3 model."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Any
+
+import s3_operation
+
+
+@dataclass(frozen=True)
+class XML_Node:
+    identifier: str
+    name: str
+    parent: str
+    shape: str
+    scalar: bool
+    attribute: bool
+    attribute_namespace: str
+    repeated: bool
+    required: bool
+    boolean: bool
+    integer: bool
+    minimum_length: int
+    maximum_length: int | None
+    pattern: str
+    enumeration: tuple[str, ...]
+
+
+def ada_identifier(value: str) -> str:
+    value = s3_operation.camel_to_ada(value)
+    words = re.findall(r"[A-Za-z]+|[0-9]+", value)
+    result = "_".join(word.capitalize() for word in words)
+    if not result or result[0].isdigit():
+        result = "Node_" + result
+    return result
+
+
+def ada_string(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def payload_shape(
+    model: dict[str, Any], operation: str, entry: dict[str, Any]
+) -> str:
+    modeled = s3_operation.output_payload_shape(model, operation)
+    return entry.get("negative_xml", {}).get("payload_shape", modeled)
+
+
+def xml_nodes(
+    model: dict[str, Any], operation: str, entry: dict[str, Any]
+) -> list[XML_Node]:
+    """Expand the response payload into occurrence-specific XML nodes."""
+    shapes = model["shapes"]
+    root_shape = payload_shape(model, operation, entry)
+    root_name = shapes[root_shape].get("locationName", root_shape)
+    nodes: list[XML_Node] = []
+    identifiers: set[str] = set()
+
+    def identifier(path: tuple[str, ...]) -> str:
+        base = ada_identifier("_".join(path))
+        candidate = base
+        suffix = 2
+        while candidate in identifiers:
+            candidate = f"{base}_{suffix}"
+            suffix += 1
+        identifiers.add(candidate)
+        return candidate
+
+    def add_node(
+        *,
+        path: tuple[str, ...],
+        name: str,
+        parent: str,
+        shape_name: str,
+        attribute: bool = False,
+        attribute_namespace: str = "",
+        repeated: bool = False,
+        required: bool = False,
+    ) -> str:
+        shape = shapes[shape_name]
+        kind = shape["type"]
+        if kind in {"blob", "map"}:
+            raise s3_operation.Audit_Error(
+                f"strict XML generator does not support {kind}: "
+                f"{operation}/{shape_name}"
+            )
+        node_id = identifier(path)
+        nodes.append(
+            XML_Node(
+                identifier=node_id,
+                name=name,
+                parent=parent,
+                shape=shape_name,
+                scalar=kind not in {"structure", "list"},
+                attribute=attribute,
+                attribute_namespace=attribute_namespace,
+                repeated=repeated,
+                required=required,
+                boolean=kind == "boolean",
+                integer=kind in {"integer", "long"},
+                minimum_length=(
+                    int(shape.get("min", 0)) if kind == "string" else 0
+                ),
+                maximum_length=(
+                    int(shape["max"])
+                    if kind == "string" and "max" in shape
+                    else None
+                ),
+                pattern=str(shape.get("pattern", "")),
+                enumeration=tuple(shape.get("enum", [])),
+            )
+        )
+        if kind == "structure":
+            add_structure(shape_name, node_id, path)
+        elif kind == "list":
+            add_list(shape_name, node_id, path, required=False)
+        return node_id
+
+    active: list[str] = []
+
+    def add_structure(
+        shape_name: str, parent: str, path: tuple[str, ...]
+    ) -> None:
+        if shape_name in active:
+            raise s3_operation.Audit_Error(
+                f"recursive XML shape requires human design: "
+                f"{operation}/{shape_name}"
+            )
+        active.append(shape_name)
+        shape = shapes[shape_name]
+        required_members = set(shape.get("required", []))
+        for member_name, member in shape.get("members", {}).items():
+            location = member.get("location", "body")
+            attribute = bool(member.get("xmlAttribute", False))
+            if location != "body" and not attribute:
+                continue
+            target_name = member["shape"]
+            target = shapes[target_name]
+            tag = member.get(
+                "locationName", member.get("xmlName", member_name)
+            )
+            member_path = (*path, member_name)
+            if attribute:
+                namespace = member.get("xmlNamespace", {}).get("uri", "")
+                raw_tag = tag
+                if ":" in raw_tag:
+                    prefix, raw_tag = raw_tag.split(":", 1)
+                    shape_namespace = shape.get("xmlNamespace", {})
+                    if shape_namespace.get("prefix") == prefix:
+                        namespace = shape_namespace.get("uri", namespace)
+                add_node(
+                    path=member_path,
+                    name=raw_tag,
+                    parent=parent,
+                    shape_name=target_name,
+                    attribute=True,
+                    attribute_namespace=namespace,
+                    required=member_name in required_members,
+                )
+            elif target["type"] == "list":
+                flattened = bool(
+                    member.get("flattened", False)
+                    or target.get("flattened", False)
+                )
+                if flattened:
+                    add_list(
+                        target_name,
+                        parent,
+                        member_path,
+                        required=member_name in required_members,
+                        flattened_tag=tag,
+                    )
+                else:
+                    container = add_node(
+                        path=member_path,
+                        name=tag,
+                        parent=parent,
+                        shape_name=target_name,
+                        required=member_name in required_members,
+                    )
+                    # add_node expands list members itself.
+                    assert container
+            else:
+                add_node(
+                    path=member_path,
+                    name=tag,
+                    parent=parent,
+                    shape_name=target_name,
+                    required=member_name in required_members,
+                )
+        active.pop()
+
+    def add_list(
+        shape_name: str,
+        parent: str,
+        path: tuple[str, ...],
+        *,
+        required: bool,
+        flattened_tag: str | None = None,
+    ) -> None:
+        shape = shapes[shape_name]
+        member = shape["member"]
+        item_shape = member["shape"]
+        item = shapes[item_shape]
+        item_name = flattened_tag or member.get(
+            "locationName", item.get("locationName", item_shape)
+        )
+        add_node(
+            path=(*path, "Item"),
+            name=item_name,
+            parent=parent,
+            shape_name=item_shape,
+            repeated=True,
+            required=required or int(shape.get("min", 0)) > 0,
+        )
+
+    root_id = add_node(
+        path=("Root",),
+        name=root_name,
+        parent="No_Element",
+        shape_name=root_shape,
+    )
+    if root_id != "Root":
+        raise AssertionError("root identifier generation changed")
+    return nodes
+
+
+def codec_plan(
+    model: dict[str, Any], operation: str, entry: dict[str, Any]
+) -> dict[str, Any]:
+    nodes = xml_nodes(model, operation, entry)
+    return {
+        "operation": operation,
+        "package": (
+            "Flyology.Object_Storage.S3.Generated_"
+            + ada_identifier(operation)
+            + "_XML"
+        ),
+        "payload_shape": payload_shape(model, operation, entry),
+        "node_count": len(nodes),
+        "nodes": [node.__dict__ for node in nodes],
+        "strict_contract": {
+            "duplicate_singletons": "reject",
+            "unknown_members": "reject",
+            "required_members": "reject_when_absent",
+            "enumerations": "exact_model_domain",
+            "namespaces": "unqualified_or_exact_s3_consistently",
+            "attributes": "exact_model_domain",
+            "xml_limits": "caller_supplied",
+            "collection_limit": "caller_supplied_without_default",
+        },
+        "unsupported_generator_traits": [
+            {
+                "element": node.identifier,
+                "trait": "pattern",
+                "value": node.pattern,
+            }
+            for node in nodes
+            if node.pattern
+        ],
+    }
+
+
+def _true_cases(nodes: list[XML_Node], field: str) -> list[str]:
+    return [node.identifier for node in nodes if getattr(node, field)]
+
+
+def _boolean_function(name: str, nodes: list[XML_Node], field: str) -> str:
+    cases = _true_cases(nodes, field)
+    expression = (
+        "Element in " + " | ".join(cases) if cases else "False"
+    )
+    return (
+        f"   function {name} (Element : Element_Id) return Boolean is\n"
+        f"     ({expression});\n"
+    )
+
+
+def codec_descriptor_text(
+    model: dict[str, Any], operation: str, entry: dict[str, Any]
+) -> tuple[str, str, str]:
+    """Return filename, generated descriptor spec, and descriptor body."""
+    nodes = xml_nodes(model, operation, entry)
+    patterns = [node for node in nodes if node.pattern]
+    if patterns:
+        raise s3_operation.Audit_Error(
+            "strict XML scaffold lacks modeled pattern support: "
+            + ", ".join(
+                f"{node.identifier}={node.pattern}" for node in patterns
+            )
+        )
+    package = (
+        "Flyology.Object_Storage.S3.Generated_"
+        + ada_identifier(operation)
+        + "_XML"
+    )
+    unit = package.lower().replace(".", "-")
+    identifiers = ["No_Element", *(node.identifier for node in nodes)]
+    spec = "\n".join(
+        [
+            "with Flyology.Object_Storage.S3.XML;",
+            "",
+            "--  Generated by tools/s3-operation.py; do not edit.",
+            f"--  Operation: {operation}",
+            f"--  Botocore revision: {s3_operation.EXPECTED_MODEL_REVISION}",
+            f"--  Model SHA-256: {s3_operation.EXPECTED_MODEL_SHA256}",
+            "pragma Style_Checks (Off);",
+            f"package {package} is",
+            "",
+            "   type Element_Id is",
+            "     (" + ",\n      ".join(identifiers) + ");",
+            "",
+            "   Root_Element : constant Element_Id := Root;",
+            "",
+            "   function Element_Name (Element : Element_Id) return String;",
+            "   function Parent (Element : Element_Id) return Element_Id;",
+            "   function Is_Scalar (Element : Element_Id) return Boolean;",
+            "   function Is_Attribute (Element : Element_Id) return Boolean;",
+            "   function Attribute_Namespace",
+            "     (Element : Element_Id) return String;",
+            "   function Is_Repeated (Element : Element_Id) return Boolean;",
+            "   function Is_Required (Element : Element_Id) return Boolean;",
+            "   function Is_Boolean (Element : Element_Id) return Boolean;",
+            "   function Is_Integer (Element : Element_Id) return Boolean;",
+            "   function Minimum_Length (Element : Element_Id) return Natural;",
+            "   function Has_Maximum_Length",
+            "     (Element : Element_Id) return Boolean;",
+            "   function Maximum_Length (Element : Element_Id) return Natural;",
+            "   function Enumeration_Count (Element : Element_Id) return Natural;",
+            "   function Enumeration_Value",
+            "     (Element : Element_Id; Index : Positive) return String;",
+            "",
+            "   generic",
+            "      type Result_Type is limited private;",
+            "      with procedure Start_Node",
+            "        (Result : in out Result_Type; Element : Element_Id);",
+            "      with procedure Set_Scalar",
+            "        (Result : in out Result_Type; Element : Element_Id;",
+            "         Value : String);",
+            "      with procedure End_Node",
+            "        (Result : in out Result_Type; Element : Element_Id);",
+            "   package Decoder is",
+            "      Malformed_Document : exception;",
+            "      procedure Parse",
+            "        (Document         : String;",
+            "         Limits           : XML.Parse_Limits;",
+            "         Collection_Limit : Positive;",
+            "         Result           : aliased in out Result_Type);",
+            "   end Decoder;",
+            "",
+            f"end {package};",
+            "",
+        ]
+    )
+
+    def case_function(name: str, values: dict[str, str], default: str) -> str:
+        lines = [f"   function {name} (Element : Element_Id) return String is",
+                 "   begin", "      case Element is"]
+        for node_id, value in values.items():
+            lines.extend(
+                (f"         when {node_id} =>",
+                 f"            return {ada_string(value)};")
+            )
+        lines.extend(("         when others =>", f"            return {ada_string(default)};",
+                      "      end case;", f"   end {name};", ""))
+        return "\n".join(lines)
+
+    body_parts = [
+        "with Flyology.Object_Storage.S3.Strict_XML_Codecs;\n\n"
+        "--  Generated by tools/s3-operation.py; do not edit.\n"
+        "pragma Style_Checks (Off);\n"
+        f"package body {package} is\n",
+        case_function(
+            "Element_Name",
+            {node.identifier: node.name for node in nodes},
+            "",
+        ),
+    ]
+    parent_values = {node.identifier: node.parent for node in nodes}
+    lines = ["   function Parent (Element : Element_Id) return Element_Id is",
+             "   begin", "      case Element is"]
+    for node_id, parent in parent_values.items():
+        lines.extend((f"         when {node_id} =>", f"            return {parent};"))
+    lines.extend(("         when No_Element =>", "            return No_Element;",
+                  "      end case;", "   end Parent;", ""))
+    body_parts.append("\n".join(lines))
+    for function_name, field in (
+        ("Is_Scalar", "scalar"),
+        ("Is_Attribute", "attribute"),
+        ("Is_Repeated", "repeated"),
+        ("Is_Required", "required"),
+        ("Is_Boolean", "boolean"),
+        ("Is_Integer", "integer"),
+        ("Has_Maximum_Length", "maximum_length"),
+    ):
+        body_parts.append(_boolean_function(function_name, nodes, field))
+    body_parts.append(
+        case_function(
+            "Attribute_Namespace",
+            {
+                node.identifier: node.attribute_namespace
+                for node in nodes
+                if node.attribute
+            },
+            "",
+        )
+    )
+    for function_name, field in (
+        ("Minimum_Length", "minimum_length"),
+        ("Maximum_Length", "maximum_length"),
+    ):
+        value_lines = [
+            f"   function {function_name}",
+            "     (Element : Element_Id) return Natural is",
+            "   begin",
+            "      case Element is",
+        ]
+        for node in nodes:
+            value = getattr(node, field)
+            if value not in (None, 0):
+                value_lines.extend(
+                    (f"         when {node.identifier} =>",
+                     f"            return {value};")
+                )
+        value_lines.extend(
+            ("         when others =>", "            return 0;",
+             "      end case;", f"   end {function_name};", "")
+        )
+        body_parts.append("\n".join(value_lines))
+    count_lines = [
+        "   function Enumeration_Count",
+        "     (Element : Element_Id) return Natural is",
+        "   begin",
+        "      case Element is",
+    ]
+    for node in nodes:
+        if node.enumeration:
+            count_lines.extend(
+                (f"         when {node.identifier} =>",
+                 f"            return {len(node.enumeration)};")
+            )
+    count_lines.extend(("         when others =>", "            return 0;",
+                        "      end case;", "   end Enumeration_Count;", ""))
+    body_parts.append("\n".join(count_lines))
+    enum_lines = [
+        "   function Enumeration_Value",
+        "     (Element : Element_Id; Index : Positive) return String is",
+        "   begin",
+        "      case Element is",
+    ]
+    for node in nodes:
+        if not node.enumeration:
+            continue
+        enum_lines.append(f"         when {node.identifier} =>")
+        enum_lines.append("            case Index is")
+        for index, value in enumerate(node.enumeration, 1):
+            enum_lines.extend(
+                (f"               when {index} =>",
+                 f"                  return {ada_string(value)};")
+            )
+        enum_lines.extend(
+            ("               when others =>",
+             "                  raise Constraint_Error;",
+             "            end case;")
+        )
+    enum_lines.extend(
+        ("         when others =>", "            raise Constraint_Error;",
+         "      end case;", "   end Enumeration_Value;", "")
+    )
+    body_parts.append("\n".join(enum_lines))
+    body_parts.append(
+        "\n".join(
+            (
+                "   package body Decoder is",
+                "      package Runtime is new",
+                "        Flyology.Object_Storage.S3.Strict_XML_Codecs",
+                "        (Element_Id          => Element_Id,",
+                "         No_Element         => No_Element,",
+                "         Root_Element       => Root_Element,",
+                "         Element_Name       => Element_Name,",
+                "         Parent             => Parent,",
+                "         Is_Scalar          => Is_Scalar,",
+                "         Is_Attribute       => Is_Attribute,",
+                "         Attribute_Namespace => Attribute_Namespace,",
+                "         Is_Repeated        => Is_Repeated,",
+                "         Is_Required        => Is_Required,",
+                "         Is_Boolean         => Is_Boolean,",
+                "         Is_Integer         => Is_Integer,",
+                "         Minimum_Length     => Minimum_Length,",
+                "         Has_Maximum_Length => Has_Maximum_Length,",
+                "         Maximum_Length     => Maximum_Length,",
+                "         Enumeration_Count  => Enumeration_Count,",
+                "         Enumeration_Value  => Enumeration_Value,",
+                "         Result_Type        => Result_Type,",
+                "         Start_Node         => Start_Node,",
+                "         Set_Scalar         => Set_Scalar,",
+                "         End_Node           => End_Node);",
+                "",
+                "      procedure Parse",
+                "        (Document         : String;",
+                "         Limits           : XML.Parse_Limits;",
+                "         Collection_Limit : Positive;",
+                "         Result           : aliased in out Result_Type) is",
+                "      begin",
+                "         Runtime.Parse",
+                "           (Document, Limits, Collection_Limit, Result);",
+                "      exception",
+                "         when Runtime.Malformed_Document =>",
+                "            raise Malformed_Document;",
+                "      end Parse;",
+                "   end Decoder;",
+                "",
+                f"end {package};",
+                "",
+            )
+        )
+    )
+    return unit, spec, "\n".join(body_parts)

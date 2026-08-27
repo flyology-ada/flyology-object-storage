@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "coverage/s3-operations.toml"
 LEDGER_PATH = ROOT / "coverage/aws-s3-operations.tsv"
 COUNTS_PATH = ROOT / "coverage/s3-operation-counts.json"
+INVENTORY_PATH = ROOT / "coverage/s3-operation-inventory.json"
 TEST_REGISTRATION_PATH = ROOT / "tests/generated/s3-operation-tests.sh"
 DOCUMENTATION_PATH = ROOT / "docs/generated/s3-operation-registry.md"
 NEGATIVE_XML_PATH = ROOT / "tests/generated/s3-negative-xml.json"
@@ -38,6 +39,7 @@ EXPECTED_SHAPE_COUNT = 718
 LAYERS = ("backend", "client", "server", "corpus")
 COVERAGE_STATES = {"missing", "partial", "covered"}
 PROVENANCE_STATES = {"absent", "handwritten", "generated", "shared_family"}
+IMPLEMENTATION_MODES = {"handwritten", "generated", "shared-family"}
 PROVIDERS = {"buckets", "objects", "transfers"}
 FAMILIES = {
     "bodyless_mutation",
@@ -66,7 +68,7 @@ class Registry:
 
 def load_registry(path: Path = REGISTRY_PATH) -> Registry:
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
-    if raw.get("schema_version") != 1:
+    if raw.get("schema_version") != 2:
         raise Audit_Error("unsupported S3 operation registry schema")
     if raw.get("model_sha256") != EXPECTED_MODEL_SHA256:
         raise Audit_Error("registry names an unexpected pinned model hash")
@@ -104,6 +106,9 @@ def load_registry(path: Path = REGISTRY_PATH) -> Registry:
             "exclusions",
             "coverage",
             "provenance",
+            "implementation_mode",
+            "generator_eligible",
+            "human_decisions_resolved",
             "evidence",
         )
         missing = [field for field in required if field not in entry]
@@ -122,6 +127,52 @@ def load_registry(path: Path = REGISTRY_PATH) -> Registry:
             raise Audit_Error(f"invalid provenance layers: {name}")
         if any(state not in PROVENANCE_STATES for state in provenance.values()):
             raise Audit_Error(f"invalid provenance state: {name}")
+        if entry["implementation_mode"] not in IMPLEMENTATION_MODES:
+            raise Audit_Error(f"invalid implementation mode: {name}")
+        expected_mode = {
+            "handwritten": "handwritten",
+            "generated": "generated",
+            "shared_family": "shared-family",
+        }[provenance["client"]]
+        if entry["implementation_mode"] != expected_mode:
+            raise Audit_Error(
+                f"client provenance/implementation mode mismatch: {name}"
+            )
+        if not isinstance(entry["generator_eligible"], bool):
+            raise Audit_Error(f"invalid generator eligibility: {name}")
+        if not isinstance(entry["human_decisions_resolved"], bool):
+            raise Audit_Error(f"invalid human decision state: {name}")
+        if entry["human_decisions_resolved"] != (
+            entry["decision_status"] == "reviewed"
+        ):
+            raise Audit_Error(f"decision status/state mismatch: {name}")
+        if entry["generator_eligible"] and entry["implementation_mode"] != "generated":
+            raise Audit_Error(
+                f"authoritative existing implementation marked generator eligible: {name}"
+            )
+        generation = entry.get("generation")
+        if entry["generator_eligible"]:
+            required_generation = {
+                "public_result",
+                "response_representation",
+                "replay",
+                "ownership",
+                "retained_borrows",
+                "cross_field_validation",
+                "intentional_exclusions",
+            }
+            if not isinstance(generation, dict) or set(generation) != required_generation:
+                raise Audit_Error(f"invalid generation decisions: {name}")
+            if any(
+                not isinstance(generation[field], str)
+                or not generation[field]
+                for field in required_generation - {"intentional_exclusions"}
+            ) or not isinstance(generation["intentional_exclusions"], list):
+                raise Audit_Error(f"invalid generation decision values: {name}")
+        elif generation is not None:
+            raise Audit_Error(
+                f"non-eligible operation carries generation decisions: {name}"
+            )
         if entry["provider"] not in PROVIDERS:
             raise Audit_Error(f"invalid provider: {name}")
         if entry["family"] not in FAMILIES:
@@ -1247,6 +1298,9 @@ def unresolved_decisions(entry: dict[str, Any]) -> list[str]:
         "exclusions",
         "coverage",
         "provenance",
+        "implementation_mode",
+        "generator_eligible",
+        "human_decisions_resolved",
         "decision_status",
     )
     missing = [name for name in required if name not in entry]
@@ -1266,6 +1320,18 @@ def unresolved_decisions(entry: dict[str, Any]) -> list[str]:
             for item in values
         ):
             missing.append(f"{field}: operation-specific review")
+    generation = entry.get("generation")
+    if entry.get("generator_eligible"):
+        if not isinstance(generation, dict):
+            missing.append("generation: reviewed human decisions")
+        else:
+            for field, value in generation.items():
+                values = value if isinstance(value, list) else [value]
+                if any(
+                    isinstance(item, str) and item.startswith("unresolved")
+                    for item in values
+                ):
+                    missing.append(f"generation.{field}: human decision")
     return missing
 
 
@@ -1353,6 +1419,10 @@ def counts_text(registry: Registry) -> str:
     counts["providers"] = {}
     counts["families"] = {}
     counts["decision_status"] = {}
+    counts["implementation_mode"] = {
+        state: 0 for state in sorted(IMPLEMENTATION_MODES)
+    }
+    counts["generator_eligible"] = {"false": 0, "true": 0}
     counts["provenance"] = {
         layer: {state: 0 for state in sorted(PROVENANCE_STATES)}
         for layer in ("backend", "client", "server", "tests")
@@ -1365,9 +1435,40 @@ def counts_text(registry: Registry) -> str:
         counts["decision_status"][status] = (
             counts["decision_status"].get(status, 0) + 1
         )
+        counts["implementation_mode"][entry["implementation_mode"]] += 1
+        counts["generator_eligible"][
+            str(entry["generator_eligible"]).lower()
+        ] += 1
         for layer, state in entry["provenance"].items():
             counts["provenance"][layer][state] += 1
     return json.dumps(counts, indent=2, sort_keys=True) + "\n"
+
+
+def inventory_text(registry: Registry) -> str:
+    """Lossless generated view of implementation and executable evidence."""
+    operations = {}
+    for name in sorted(registry.operations):
+        entry = registry.operations[name]
+        operations[name] = {
+            "coverage": entry["coverage"],
+            "implementation_mode": entry["implementation_mode"],
+            "provider": entry["provider"],
+            "family": entry["family"],
+            "evidence": entry["evidence"],
+            "provenance": entry["provenance"],
+            "generator_eligible": entry["generator_eligible"],
+            "human_decisions_resolved": entry["human_decisions_resolved"],
+        }
+    return json.dumps(
+        {
+            "model_revision": EXPECTED_MODEL_REVISION,
+            "model_sha256": EXPECTED_MODEL_SHA256,
+            "operation_count": len(operations),
+            "operations": operations,
+        },
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
 
 
 def shell_words(command: list[str]) -> str:
@@ -1408,8 +1509,8 @@ def documentation_text(registry: Registry) -> str:
         "ledger passes its maintained evidence verifier. Historical partial cells",
         "remain inventory-only until their audits gain executable evidence.",
         "",
-        "| Operation | Public API | Provider | Family | Backend | Client | Server | Tests |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Operation | Public API | Provider | Family | Implementation | Generator eligible | Decisions resolved | Backend | Client | Server | Tests |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for name in sorted(registry.operations):
         entry = registry.operations[name]
@@ -1422,6 +1523,9 @@ def documentation_text(registry: Registry) -> str:
                     entry["public_name"],
                     entry["provider"],
                     entry["family"],
+                    entry["implementation_mode"],
+                    str(entry["generator_eligible"]).lower(),
+                    str(entry["human_decisions_resolved"]).lower(),
                     f"{coverage['backend']} / {entry['provenance']['backend']}",
                     f"{coverage['client']} / {entry['provenance']['client']}",
                     f"{coverage['server']} / {entry['provenance']['server']}",
@@ -1439,6 +1543,7 @@ def generated_outputs(
     result = {
         LEDGER_PATH: ledger_text(registry),
         COUNTS_PATH: counts_text(registry),
+        INVENTORY_PATH: inventory_text(registry),
         TEST_REGISTRATION_PATH: test_registration_text(registry),
         DOCUMENTATION_PATH: documentation_text(registry),
     }

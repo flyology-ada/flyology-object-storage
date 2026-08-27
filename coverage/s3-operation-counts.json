@@ -30,6 +30,15 @@
     "streaming_mutation": 4,
     "streaming_read": 2
   },
+  "generator_eligible": {
+    "false": 114,
+    "true": 2
+  },
+  "implementation_mode": {
+    "generated": 21,
+    "handwritten": 78,
+    "shared-family": 17
+  },
   "operations": 116,
   "provenance": {
     "backend": {
