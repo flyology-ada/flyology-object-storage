@@ -41,8 +41,8 @@
     "client": {
       "absent": 0,
       "generated": 36,
-      "handwritten": 80,
-      "shared_family": 0
+      "handwritten": 79,
+      "shared_family": 1
     },
     "server": {
       "absent": 75,

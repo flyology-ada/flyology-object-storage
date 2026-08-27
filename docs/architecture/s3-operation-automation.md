@@ -67,3 +67,36 @@ declaration or registry edit alone cannot promote coverage. Historical
 `partial` client cells remain losslessly inventoried; auditing one reports the
 missing executable evidence and it cannot be scaffolded until that gap is
 reviewed.
+
+## Bounded REST/XML read family
+
+`Flyology.Object_Storage.Client.Bounded_REST_XML_Reads` is the shared
+owner-driven implementation family for complete bounded REST/XML reads. It is
+an implementation package, and its state does not appear in a provider's
+visible type view. Provider packages still own the public operation type,
+synchronous wrapper, limited constructor,
+operation-last restart, typed `Finish`, request preparation, response decoder,
+and modeled result classification.
+
+The family owns only mechanics that are invariant across those reviewed
+decisions: the bounded response sink, duplicate and empty singleton-header
+rejection, hidden HTTP child, cancellation and terminal drain, owner-safe
+restart cleanup, retained exception propagation, and typed terminal storage.
+It accepts the caller-selected XML limits and absolute deadline; it introduces
+no default, resource policy, replay, mutation certainty, or reconciliation
+rule. The synchronous provider form continues to wait on the same public
+operation state machine.
+
+GetBucketReplication is the first retrospective canary. Its visible
+declarations and modeled classification are unchanged. Its deterministic
+corpus and signed socket lane exercise successful decoding, modeled absence
+and rejection, duplicate request identifiers, response bounds, composition,
+typed `Finish`, and restart of the same operation object. The registry marks
+its client implementation `shared_family` only because those executable gates
+also pass through the family instance; its tests remain handwritten.
+
+Generated files are unchanged by the Ada family itself. The human-owned files
+are the generic specification/body, each provider's private instantiation and
+decoder/classifier callbacks, and the operation-specific manifest decisions.
+Future bounded reads should add those small typed adapters instead of copying
+the transport and operation-lifetime state machine.

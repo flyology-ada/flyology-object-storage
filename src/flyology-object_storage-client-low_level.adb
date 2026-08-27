@@ -13322,6 +13322,26 @@ package body Flyology.Object_Storage.Client.Low_Level is
         (Client, Prepared.Message'Access, Sink, Deadline, Token, Operation);
    end Start_Model_Sink;
 
+   procedure Start_Exact_Bucket_Control_Get
+     (Expected  : S3.Model.Operation_Id;
+      Client    : not null access Flyology.HTTP.Client.Client;
+      Prepared  : not null access constant Prepared_Request;
+      Sink      : not null access
+        Flyology.HTTP.Client.Response_Body_Sink'Class;
+      Deadline  : Flyology.HTTP.Client.Monotonic_Deadline;
+      Token     : access Flyology.Cancellation.Token;
+      Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
+   begin
+      if Prepared.Operation /= Get_Bucket_Control_Operation
+        or else Prepared.Modeled_Operation /= Expected
+      then
+         raise Invalid_Request with "prepared request operation mismatch";
+      end if;
+      Start_Sink
+        (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
+         Token, Operation);
+   end Start_Exact_Bucket_Control_Get;
+
    procedure Start_Model_Source_Sink
      (Expected  : S3.Model.Operation_Id;
       Client    : not null access Flyology.HTTP.Client.Client;
@@ -13787,15 +13807,9 @@ package body Flyology.Object_Storage.Client.Low_Level is
       Token     : access Flyology.Cancellation.Token;
       Operation : in out Flyology.HTTP.Client.Exchange_Operation) is
    begin
-      if Prepared.Operation /= Get_Bucket_Control_Operation
-        or else Prepared.Modeled_Operation /=
-          Model.Get_Bucket_Replication_Operation
-      then
-         raise Invalid_Request with "prepared request operation mismatch";
-      end if;
-      Start_Sink
-        (Get_Bucket_Control_Operation, Client, Prepared, Sink, Deadline,
-         Token, Operation);
+      Start_Exact_Bucket_Control_Get
+        (Model.Get_Bucket_Replication_Operation, Client, Prepared, Sink,
+         Deadline, Token, Operation);
    end Get_Bucket_Replication;
 
    procedure Create_Bucket_Metadata_Table_Configuration

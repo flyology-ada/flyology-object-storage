@@ -7,6 +7,7 @@ with Flyology.Operations;
 with Flyology.Cancellation;
 with Flyology.HTTP;
 with Flyology.HTTP.Client;
+with Flyology.Object_Storage.Client.Bounded_REST_XML_Reads;
 with Flyology.Object_Storage.Client.Low_Level;
 with Flyology.Object_Storage.S3.Buckets;
 with Flyology.Object_Storage.S3.Bucket_Controls;
@@ -8940,6 +8941,33 @@ private
    end record;
 
    --  @exclude
+   function Decode_Get_Bucket_Replication_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Admission  : Flyology.HTTP.Client.Admission_Certainty;
+      Phase      : Flyology.HTTP.Client.Exchange_Phase)
+      return Get_Bucket_Replication_Result;
+
+   --  @exclude
+   function Normalize_Get_Bucket_Replication_Failure
+     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
+      Admission : Flyology.HTTP.Client.Admission_Certainty;
+      Phase     : Flyology.HTTP.Client.Exchange_Phase;
+      Detail    : String) return Get_Bucket_Replication_Result;
+
+   --  @exclude
+   package Get_Bucket_Replication_Reads is new
+     Flyology.Object_Storage.Client.Bounded_REST_XML_Reads
+       (Result_Type       => Get_Bucket_Replication_Result,
+        Operation_Name    => "GetBucketReplication",
+        Start_Exchange    => Low_Level.Get_Bucket_Replication,
+        Decode_Response   => Decode_Get_Bucket_Replication_Response,
+        Normalize_Failure => Normalize_Get_Bucket_Replication_Failure);
+
+   --  @exclude
    type Get_Bucket_Replication_Operation
      (Set          : not null access Flyology.Operations.Completion_Set'Class;
       HTTP         : not null access Flyology.HTTP.Client.Client;
@@ -8947,16 +8975,7 @@ private
      new Flyology.Operations.Operation (Set)
      and Flyology.HTTP.Client.Response_Body_Sink
    with record
-      Deadline         : Flyology.HTTP.Client.Monotonic_Deadline;
-      Prepared         : aliased Low_Level.Prepared_Request;
-      Child            : Flyology.HTTP.Client.Exchange_Operation (Set);
-      Limits           : Flyology.Object_Storage.S3.XML.Parse_Limits;
-      Response_Data    : Flyology.Bytes.Unbounded_Bytes;
-      Response_Limit   : Natural;
-      Final_Result     : Get_Bucket_Replication_Result;
-      Has_Final_Result : Boolean;
-      Has_Saved_Error  : Boolean;
-      Saved_Error      : Ada.Exceptions.Exception_Occurrence;
+      State : Get_Bucket_Replication_Reads.State (Set);
    end record;
 
    --  @exclude
@@ -11342,12 +11361,6 @@ private
       Admission : Flyology.HTTP.Client.Admission_Certainty;
       Phase : Flyology.HTTP.Client.Exchange_Phase)
       return Get_Bucket_Replication_Result;
-   --  @exclude
-   function Normalize_Get_Bucket_Replication_Failure
-     (Kind      : Flyology.HTTP.Client.Exchange_Result_Kind;
-      Admission : Flyology.HTTP.Client.Admission_Certainty;
-      Phase     : Flyology.HTTP.Client.Exchange_Phase;
-      Detail    : String) return Get_Bucket_Replication_Result;
    --  @exclude
    function Normalize_Put_Bucket_Replication_Response
      (Value : Low_Level.Put_Bucket_Control_Outcome;

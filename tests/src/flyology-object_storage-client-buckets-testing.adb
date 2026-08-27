@@ -2931,17 +2931,18 @@ package body Flyology.Object_Storage.Client.Buckets.Testing is
       Wrong : aliased Low_Level.Prepared_Request := Prepared;
       Operation : aliased Get_Bucket_Replication_Operation
         (Set'Access, Client, null);
+      Exchange : Flyology.HTTP.Client.Exchange_Operation (Set'Access);
       Rejected : Boolean := False;
    begin
       begin
          Low_Level.Get_Bucket_Replication
            (Client, Wrong'Access, Operation'Access, Deadline, null,
-            Operation.Child);
+            Exchange);
       exception
          when Low_Level.Invalid_Request => Rejected := True;
       end;
       if not Rejected
-        or else Flyology.Operations.Is_Active (Operation.Child)
+        or else Flyology.Operations.Is_Active (Exchange)
       then
          raise Program_Error with
            "GetBucketReplication wrong prepared operation crossed admission";

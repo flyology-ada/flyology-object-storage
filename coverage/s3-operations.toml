@@ -871,8 +871,8 @@ certainty = "read_only"
 reconciliation = "not_applicable"
 exclusions = []
 coverage = { backend = "missing", client = "covered", server = "missing", corpus = "covered" }
-provenance = { backend = "absent", client = "handwritten", server = "absent", tests = "handwritten" }
-evidence = { backend = [], client = ["tests/src/s3_get_bucket_replication_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_replication_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
+provenance = { backend = "absent", client = "shared_family", server = "absent", tests = "handwritten" }
+evidence = { backend = [], client = ["src/flyology-object_storage-client-bounded_rest_xml_reads.adb", "src/flyology-object_storage-client-buckets.adb", "tests/src/s3_get_bucket_replication_corpus.adb", "tests/src/s3_http_socket_corpus.adb"], server = [], corpus = ["tests/src/s3_get_bucket_replication_corpus.adb", "tests/src/s3_http_socket_corpus.adb"] }
 decision_status = "reviewed"
 qualification = "get_bucket_replication"
 ada_symbols = ["Prepare_Get_Bucket_Replication", "Execute_Get_Bucket_Replication", "Get_Bucket_Replication_Operation", "Get_Replication_Configuration", "Finish"]

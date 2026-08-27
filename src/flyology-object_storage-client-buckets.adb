@@ -5969,6 +5969,26 @@ package body Flyology.Object_Storage.Client.Buckets is
          Detail      => US.Null_Unbounded_String);
    end Normalize_Get_Bucket_Replication_Response;
 
+   function Decode_Get_Bucket_Replication_Response
+     (Status     : Flyology.HTTP.Status_Code;
+      Payload    : String;
+      Request_ID : String;
+      Host_ID    : String;
+      Limits     : Flyology.Object_Storage.S3.XML.Parse_Limits;
+      Admission  : HTTP_Client.Admission_Certainty;
+      Phase      : HTTP_Client.Exchange_Phase)
+      return Get_Bucket_Replication_Result is
+   begin
+      return Normalize_Get_Bucket_Replication_Response
+        (Low.Decode_Get_Bucket_Replication_Response
+           (Status, Payload, Request_ID, Host_ID, Limits),
+         Admission, Phase);
+   exception
+      when Low.Invalid_Response =>
+         return Normalize_Get_Bucket_Replication_Failure
+           (HTTP_Client.Response_Invalid, Admission, Phase, "");
+   end Decode_Get_Bucket_Replication_Response;
+
    function Normalize_Get_Bucket_Replication_Failure
      (Kind      : HTTP_Client.Exchange_Result_Kind;
       Admission : HTTP_Client.Admission_Certainty;
@@ -5996,142 +6016,22 @@ package body Flyology.Object_Storage.Client.Buckets is
      (Item : in out Get_Bucket_Replication_Operation;
       Data : Ada.Streams.Stream_Element_Array) is
    begin
-      if Natural (Data'Length)
-        > Item.Response_Limit - Flyology.Bytes.Length (Item.Response_Data)
-      then
-         raise Response_Limit_Exceeded with
-           "GetBucketReplication response exceeds the caller-selected " &
-           "limit";
-      end if;
-      Flyology.Bytes.Append (Item.Response_Data, Data);
+      Get_Bucket_Replication_Reads.Write (Item.State, Data);
    end Write;
-
-   procedure Complete_Get_Bucket_Replication_Child
-     (Item : in out Get_Bucket_Replication_Operation)
-   is
-      Admission : constant HTTP_Client.Admission_Certainty :=
-        HTTP_Client.Admission (Item.Child);
-      HTTP_Result : HTTP_Client.Exchange_Result;
-      Response : HTTP_Client.Response;
-
-      function Singleton_Header (Name : String) return String is
-         Count : constant Natural := HTTP_Client.Header_Count (Response, Name);
-      begin
-         if Count > 1 then
-            raise Low_Level.Invalid_Response with
-              "duplicate replication response header";
-         elsif Count = 0 then
-            return "";
-         end if;
-         declare
-            Value : constant String := HTTP_Client.Header (Response, Name);
-         begin
-            if Value'Length = 0 then
-               raise Low_Level.Invalid_Response with
-                 "empty replication response header";
-            end if;
-            return Value;
-         end;
-      end Singleton_Header;
-   begin
-      begin
-         HTTP_Client.Finish (Item.Child, HTTP_Result, Response);
-      exception
-         when Response_Limit_Exceeded =>
-            Operations.Release (Item.Child);
-            Item.Final_Result :=
-              Normalize_Get_Bucket_Replication_Failure
-                (HTTP_Client.Response_Sink_Failed, Admission,
-                 HTTP_Client.Receiving_Response_Body, "");
-            Low.Clear_Prepared_Request (Item.Prepared);
-            Item.Has_Final_Result := True;
-            Operation_Drivers.Complete (Item, Operations.Succeeded);
-            return;
-         when Error : others =>
-            if Operations.Id (Item.Child) /= 0
-              and then not Operations.Is_Active (Item.Child)
-              and then not Operations.Is_Terminal (Item.Child)
-            then
-               Operations.Release (Item.Child);
-            end if;
-            Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
-            Item.Has_Saved_Error := True;
-            if not Operations.Is_Active (Item.Child) then
-               Low.Clear_Prepared_Request (Item.Prepared);
-            end if;
-            Operation_Drivers.Complete (Item, Operations.Failed);
-            return;
-      end;
-      Operations.Release (Item.Child);
-      if HTTP_Client.Kind (HTTP_Result) /= HTTP_Client.Response_Complete then
-         Item.Final_Result :=
-           Normalize_Get_Bucket_Replication_Failure
-             (HTTP_Client.Kind (HTTP_Result),
-              HTTP_Client.Certainty (HTTP_Result),
-              HTTP_Client.Phase (HTTP_Result),
-              HTTP_Client.Failure_Detail (HTTP_Result));
-      else
-         begin
-            Item.Final_Result :=
-              Normalize_Get_Bucket_Replication_Response
-                (Low_Level.Decode_Get_Bucket_Replication_Response
-                   (HTTP_Client.Status (Response),
-                    Flyology.Bytes.To_Byte_String (Item.Response_Data),
-                    Singleton_Header ("x-amz-request-id"),
-                    Singleton_Header ("x-amz-id-2"), Item.Limits),
-                 HTTP_Client.Certainty (HTTP_Result),
-                 HTTP_Client.Phase (HTTP_Result));
-         exception
-            when Low_Level.Invalid_Response =>
-               Item.Final_Result :=
-                 Normalize_Get_Bucket_Replication_Failure
-                   (HTTP_Client.Response_Invalid,
-                    HTTP_Client.Certainty (HTTP_Result),
-                    HTTP_Client.Phase (HTTP_Result), "");
-         end;
-      end if;
-      Low.Clear_Prepared_Request (Item.Prepared);
-      Item.Has_Final_Result := True;
-      Operation_Drivers.Complete (Item, Operations.Succeeded);
-   end Complete_Get_Bucket_Replication_Child;
 
    overriding procedure Drive
      (Item  : in out Get_Bucket_Replication_Operation;
       Event : Operations.Driver_Event) is
    begin
-      if Event = Operations.Start_Operation then
-         Low.Get_Bucket_Replication
-           (Item.HTTP, Item.Prepared'Access, Item'Access, Item.Deadline,
-            Item.Cancellation, Item.Child);
-         Operations.Continue_After (Item, Item.Child);
-      elsif Event = Operations.Dependency_Changed
-        and then Operations.Is_Terminal (Item.Child)
-      then
-         Complete_Get_Bucket_Replication_Child (Item);
-      else
-         raise Program_Error with
-           "invalid GetBucketReplication driver event";
-      end if;
-   exception
-      when Error : others =>
-         Ada.Exceptions.Save_Occurrence (Item.Saved_Error, Error);
-         Item.Has_Saved_Error := True;
-         if not Operations.Is_Active (Item.Child) then
-            Low.Clear_Prepared_Request (Item.Prepared);
-         end if;
-         if Operations.Is_Active (Item) then
-            Operation_Drivers.Complete (Item, Operations.Failed);
-         end if;
+      Get_Bucket_Replication_Reads.Drive
+        (Item.State, Item'Access, Item'Access, Item.HTTP,
+         Item.Cancellation, Event);
    end Drive;
 
    overriding procedure Request_Cancellation
      (Item : in out Get_Bucket_Replication_Operation) is
    begin
-      if Operations.Is_Active (Item.Child) then
-         Operations.Cancel (Item.Child);
-      end if;
-   exception
-      when others => null;
+      Get_Bucket_Replication_Reads.Request_Cancellation (Item.State);
    end Request_Cancellation;
 
    overriding procedure Finalize
@@ -6142,8 +6042,7 @@ package body Flyology.Object_Storage.Client.Buckets is
       exception
          when others => null;
       end;
-      Low.Clear_Prepared_Request (Item.Prepared);
-      Flyology.Bytes.Clear (Item.Response_Data);
+      Get_Bucket_Replication_Reads.Finalize (Item.State);
    end Finalize;
 
    procedure Start_Get_Bucket_Replication
@@ -6163,28 +6062,11 @@ package body Flyology.Object_Storage.Client.Buckets is
          raise Program_Error with
            "GetBucketReplication restart changed owner";
       end if;
-      Operation.Prepared :=
-        Low_Level.Prepare_Get_Bucket_Replication
-          (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp);
-      Operation.Deadline := Deadline;
-      Operation.Limits := Limits;
-      Flyology.Bytes.Clear (Operation.Response_Data);
-      Operation.Response_Limit := Limits.Maximum_Document_Bytes;
-      Operation.Has_Final_Result := False;
-      Operation.Has_Saved_Error := False;
-      Operation_Drivers.Start (Operation);
-      begin
-         Operations.Drive
-           (Operations.Operation'Class (Operation),
-            Operations.Start_Operation);
-      exception
-         when others =>
-            if Operations.Is_Active (Operation) then
-               Operation_Drivers.Rollback_Start (Operation);
-            end if;
-            Low.Clear_Prepared_Request (Operation.Prepared);
-            raise;
-      end;
+      Get_Bucket_Replication_Reads.Start
+        (Operation.State, Operation'Access,
+         Low.Prepare_Get_Bucket_Replication
+           (Origin, Style, Bucket, Parameters, Identity, Region, Timestamp),
+         Deadline, Limits);
    end Start_Get_Bucket_Replication;
 
    function Get_Replication_Configuration
@@ -6212,17 +6094,8 @@ package body Flyology.Object_Storage.Client.Buckets is
      (Operation : in out Get_Bucket_Replication_Operation;
       Result    : out Get_Bucket_Replication_Result) is
    begin
-      Operations.Consume (Operation);
-      Low.Clear_Prepared_Request (Operation.Prepared);
-      if Operation.Has_Saved_Error then
-         Ada.Exceptions.Raise_Exception
-           (Ada.Exceptions.Exception_Identity (Operation.Saved_Error),
-            Ada.Exceptions.Exception_Message (Operation.Saved_Error));
-      elsif not Operation.Has_Final_Result then
-         raise Program_Error with
-           "GetBucketReplication has no terminal result";
-      end if;
-      Result := Operation.Final_Result;
+      Get_Bucket_Replication_Reads.Finish
+        (Operation.State, Operation'Access, Result);
    end Finish;
 
    --  These exact status/code pairs prove that the provider rejected the

@@ -57,7 +57,7 @@ remain inventory-only until their audits gain executable evidence.
 | GetBucketOwnershipControls | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketPolicy | legacy_preserved | buckets | bounded_document_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketPolicyStatus | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
-| GetBucketReplication | Get_Replication_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
+| GetBucketReplication | Get_Replication_Configuration | buckets | bounded_rest_xml_read | missing / absent | covered / shared_family | missing / absent | covered / handwritten |
 | GetBucketRequestPayment | legacy_preserved | buckets | bounded_rest_xml_read | missing / absent | covered / handwritten | missing / absent | covered / handwritten |
 | GetBucketTagging | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
 | GetBucketVersioning | legacy_preserved | buckets | bounded_rest_xml_read | covered / handwritten | covered / handwritten | covered / handwritten | covered / handwritten |
